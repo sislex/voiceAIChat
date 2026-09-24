@@ -10,18 +10,22 @@ Document status: implementation specification; orchestration is not installed by
 
 ## Start here: instructions for every machine
 
-The owner wants 1–10 machines to implement this plan, share progress, wait for
-eligible work, release each stage, test production, fix defects, and only then
-advance. Reading this file does not itself start a persistent worker.
+The owner wants 1–10 machines, with multiple concurrent agents on each machine,
+to implement this plan, share progress, wait for eligible work, release each
+stage, test production, fix defects, and only then advance. Every agent is an
+independent worker with its own task checkout. Reading this file does not itself
+start a persistent worker.
 
 1. Read this document and the target repository's `AGENTS.md`. Preserve existing
    work; create an isolated task checkout from the assigned base SHA.
 2. Before the control service exists, only the explicitly designated bootstrap
-   machine may implement Stage 0. Other machines must report `bootstrap_required`;
+   worker on the designated machine may implement Stage 0. Other workers must
+   report `bootstrap_required`;
    they must not guess task ownership from this file or start competing coordinators.
 3. After bootstrap, use the installed delivery worker and its configured control
-   endpoint. Register the machine, obtain the live run and pinned plan revision,
-   and join the durable queue. No endpoint or credential is embedded in this file.
+   endpoint. Register the machine and a distinct worker for each concurrent agent,
+   obtain the live run and pinned plan revision, and join the durable queue per
+   worker. No endpoint or credential is embedded in this file.
 4. Accept work only through an atomic server assignment. Check the active stage,
    dependencies, repository/base SHA, scope, lease, and acceptance criteria.
 5. Execute the task, publish progress and evidence, and submit the result. A
@@ -109,8 +113,9 @@ backups, a tested restore procedure, health monitoring and an operator pause.
 
 ### 2.1 Minimum records and interfaces
 
-Implement records for `runs`, `stages`, `tasks`, `task_attempts`, `workers`,
-`waiters`, `leases`, `events`, `artifacts`, `defects`, `release_sets`,
+Implement records for `runs`, `stages`, `tasks`, `task_attempts`, `machines`,
+`workers`, `workspaces`, `resource_allocations`, `waiters`, `leases`, `events`,
+`artifacts`, `defects`, `release_sets`,
 `deployments`, `qa_batches`, and `operation_intents`. Use server timestamps.
 
 Every task contains:
@@ -119,12 +124,14 @@ Every task contains:
   published contract dependencies.
 - Preconditions and dependency task IDs; priority; required machine capabilities;
   repository/resource concurrency key; acceptance and required gate profile.
-- Assigned base SHA, branch/PR/head SHA, attempt number, worker ID, lease epoch,
-  expiry and heartbeat; result and evidence references.
+- Assigned base SHA, branch/PR/head SHA, attempt number, machine/worker/session
+  IDs, workspace paths, lease epoch, expiry and heartbeat; result and evidence
+  references.
 - Limits for runtime, no-progress interval, retries and execution spend, plus a
   typed blocking reason. A blocked task is visible and never treated as done.
 
-Minimum API operations: register/update worker, join/leave waiting queue, read
+Minimum API operations: register/update machine and worker, reserve/release local
+resources, join/leave waiting queue, read
 run/status, atomically dispatch/claim next assignment, renew lease, append event,
 submit result, report defect, subscribe after event cursor, and read artifacts.
 Coordinator-only operations compile QA batches, validate/accept results, merge,
@@ -132,7 +139,8 @@ prepare/reconcile release sets, deploy, and advance stages. Every mutating reque
 has an idempotency key; stale epochs and illegal transitions are rejected.
 
 Expose a human-readable dashboard/CLI showing stage, ready/running/blocked/done
-tasks, machine queue positions, lease age, latest progress, PRs, logs, deployment
+tasks, worker queue positions grouped by machine, machine capacity, workspace
+paths, lease age, latest progress, PRs, logs, deployment
 versions, QA coverage, and unresolved defects. Every authorized worker can read
 this shared view across repositories.
 
@@ -141,10 +149,13 @@ this shared view across repositories.
 Dispatch under a database transaction with row locks/compare-and-swap. Assign the
 oldest **eligible** waiting worker by `(waiting_since, worker_id)` and the highest
 priority eligible task by `(priority, ready_since, task_id)`. Eligibility includes
-capabilities, stage, dependencies, access and resource locks. An offline or
-incompatible worker cannot block the queue. Task completion returns the machine
+capabilities, stage, dependencies, access, machine capacity and resource locks.
+An offline or incompatible worker cannot block the queue. Task completion returns the worker
 to the tail; transient reconnect preserves its position while its presence lease
-is valid. A machine has one active assignment by default.
+is valid. A worker has one active assignment; a machine may host several workers
+up to its configured slot and resource limits. Queue positions belong to workers,
+not hostnames. Enrollment limits who may add slots, so spawning new agent processes
+cannot bypass the configured machine capacity or create duplicate queue entries.
 
 Defaults for the initial implementation: heartbeat every 15 seconds, work lease
 120 seconds, waiting-worker presence 90 seconds, and event reconciliation at most
@@ -175,9 +186,13 @@ the existing environment operation is reconciled under the deployment lock.
 
 Install a versioned worker supervisor as a system service (`launchd`/`systemd`
 as appropriate), independently of the interactive Codex window. It owns machine
-registration, subscriptions, heartbeat, process lifecycle, task worktrees,
+registration, subscriptions, heartbeat, process lifecycle, task checkouts,
 artifact upload, cancellation, and restart recovery. Enrollment checks repository
 access, installed tools, Codex authentication, disk capacity and capabilities.
+One host supervisor manages the configured worker slots; each slot has independent
+assignment, execution session, process group, working directory and event cursor.
+Starting another supervisor on the same host must attach to the existing service
+or fail its host lock, not double the registered capacity.
 
 The supported Codex building block is non-interactive `codex exec`, with `--json`
 for events and `--output-schema` for structured final results. See the
@@ -191,7 +206,8 @@ A dropped notification must not lose a ready task. On restart, reconcile existin
 processes and assignments before launching anything. If the service is unavailable,
 retain local logs, stop new work/effects, and reconnect with bounded backoff.
 
-Each log event includes run/stage/task/attempt/worker IDs, sequence, timestamp,
+Each log event includes run/stage/task/attempt/machine/worker/session IDs,
+sequence, timestamp,
 event type, summary and optional artifact reference. Publish progress at task
 start, meaningful milestones, gate start/end, blockage and handoff. Upload command
 output incrementally; show exit codes and exact tested SHAs. Shared logs must omit
@@ -212,10 +228,73 @@ free worker. Use an exclusive role lease per run; record all decisions durably.
 If that machine disconnects, another resumes from records, not conversation memory.
 
 After it creates the QA tasks or triages a defect, the coordinator releases its
-role/assignment and returns to the queue. This avoids reserving the only machine.
-With one machine, implementation, review and QA use separate clean invocations.
-With several machines, prefer a reviewer/tester other than the implementation
+role/assignment and returns to the queue. This avoids reserving the only worker.
+With one worker, implementation, review and QA use separate clean invocations.
+With several workers, prefer a reviewer/tester other than the implementation
 author, while avoiding starvation when no other capable machine is available.
+
+### 2.5 Multiple agents on one machine: workspace and resource isolation
+
+`machineId` identifies the enrolled physical/virtual host. `workerId` identifies
+one independently queued agent slot on that host. `workerSessionId` identifies a
+particular worker process incarnation; a restarted process cannot renew an old
+session's lease without reconciliation. `attemptId` identifies one task attempt.
+Neither the hostname nor the Codex conversation alone is a sufficient lock key.
+
+Every attempt receives a new exclusive directory, for example:
+
+```text
+<deliveryRoot>/machines/<machineId>/workers/<workerId>/runs/<runId>/
+  tasks/<taskId>/attempts/<attemptId>/
+    repos/<owner>/<repository>/
+    runtime/
+    tmp/
+    logs/
+    artifacts/
+```
+
+Each repository path is a separate clone by default, with its own `.git`, index,
+branch, dependencies and build outputs. Multiple agents may work on the same
+remote repository, but never in the same writable checkout. A task that needs
+several repositories gets a separate clone for each under its own attempt root;
+cross-owner implementation changes still require explicitly assigned scope.
+Use a unique branch such as `delivery/<runId>/<taskId>/<attemptId>` and bind its
+publication to the attempt's fencing epoch.
+
+Before executing a command, bind its working directory to the allocated canonical
+path and verify repository origin/base identity against the assignment manifest.
+Do not run tasks in the user's current checkout, another worker's checkout, a
+shared `main` checkout, or the production data checkout. Branch switching, stash,
+reset, cleanup and dependency installation must never affect another agent.
+Shared Git worktrees are an optional later optimization only with supervisor-owned
+locking around shared refs/config/pruning; separate clones are the initial rule.
+Immutable download caches may be shared through a concurrency-safe cache service;
+writable `node_modules`, build directories and test output must not be shared.
+
+Allocate ports atomically through the host supervisor and confirm binding at
+process start; a failed bind requests a new allocation. Give each attempt unique
+Compose project/container/volume names, test database/schema or file, browser
+profile, temporary directory and service socket. Preserve the user's environment
+and configure task-specific paths rather than repurposing `HOME`. Reserve CPU,
+memory, disk and browser/GPU/exclusive-device capacity before dispatch. Serialize
+native UI/performance tests when they share a physical display or measurement
+environment; separate folders alone do not isolate those resources.
+
+The supervisor owns process groups and a durable resource manifest per attempt.
+Lease loss or cancellation terminates only that attempt's processes and containers;
+never use broad process-name kills or system-wide Docker cleanup. Reconcile live
+process/container identity before releasing resources after restart. Keep logs and
+unpublished changes until uploaded/recovered; remove an attempt directory only
+after proving ownership, terminal state and absence of live processes. Validate
+canonical paths and reject symlink escapes outside the attempt root. Use a
+container or OS isolation when filesystem/process enforcement is required; folder
+naming is not itself an access-control boundary.
+
+Resource reservations and workspace records are visible to all workers. One worker
+crash must leave sibling agents running; losing the host makes all its worker
+leases recoverable independently. Repository scope locks from section 2.2 still
+apply globally across hosts: filesystem isolation does not resolve conflicting
+changes to the same source or incompatible public contracts.
 
 ## 3. State machine and release barrier
 
@@ -283,7 +362,7 @@ before any retry. Never edit the production data checkout to fix application cod
 ### 3.2 After deployment: test creation and bug loop
 
 On verified deployment, enqueue exactly one `Sx-QA-PLAN` task for the first eligible
-free machine. It becomes coordinator temporarily and materializes the QA matrix
+free worker. It becomes coordinator temporarily and materializes the QA matrix
 below into repository-owned test tasks. The service enforces uniqueness by
 `(stage, release_set, suite, target)` and rejects a QA plan missing required suites.
 
@@ -319,32 +398,37 @@ activates the next stage and wakes the queue. The final stage completes the run.
 
 The tables define task specifications, not live assignments. Stage dependencies
 are implicit: every row in S(n) requires acceptance of S(n-1). Within each table,
-`Depends on` adds finer dependencies; independent rows can run on separate machines.
+`Depends on` adds finer dependencies; independent rows can run on separate workers,
+including workers on the same machine with isolated resources.
 Each task includes owner tests, relevant documentation and immutable handoff
 evidence. Repository aliases below refer to the exact owners in section 1.
 
 ### S0 — Build and commission distributed delivery
 
 This one-time bootstrap must precede parallel product work. The owner designates
-one bootstrap machine and provides the private repository, control hosting,
-PostgreSQL/artifact storage, machine enrollment and release access. That machine
+one bootstrap worker on one machine and provides the private repository, control
+hosting, PostgreSQL/artifact storage, machine enrollment and release access. That worker
 implements B01–B03 sequentially; after B03 passes, it imports this backlog and
 enrolls the other machines to execute the remaining S0 tasks through the service.
 Before that handoff there is no automatic waiting subscription to promise.
 
 | ID | Owner | Depends on | Deliverable and acceptance |
 | --- | --- | --- | --- |
-| B01 | delivery-control | — | Repository, versioned schemas, migrations, pinned plan compiler and task DAG validator; invalid/cyclic/mismatched manifests cannot activate |
-| B02 | delivery-control | B01 | Authenticated API, FIFO eligible dispatch, task/role leases, fencing, durable events, idempotency and state transitions; simultaneous claims yield one winner |
-| B03 | delivery-control | B02 | Persistent worker, enrollment/start instructions, Codex adapter, sanitized logs, wait subscription and restart recovery; two workers demonstrate claim/wait/wakeup and lost-worker reassignment |
-| B04 | delivery-control | B03 | Readable shared status/log dashboard or CLI, machine draining, pause/resume, retry budgets and database/artifact backup/restore drill |
+| B01 | delivery-control | — | Repository, versioned schemas including separate machine/worker/session/workspace identities, migrations, pinned plan compiler and task DAG validator; invalid/cyclic/mismatched manifests cannot activate |
+| B02 | delivery-control | B01 | Authenticated API, FIFO eligible dispatch, machine resource reservations, task/role leases, fencing, durable events, idempotency and state transitions; simultaneous claims yield one winner and cannot exceed host capacity |
+| B03 | delivery-control | B02 | Host supervisor with multiple worker slots, isolated per-attempt repository clones/runtime resources, enrollment/start instructions, Codex adapter, logs and restart recovery; sibling workers demonstrate claim/wait/wakeup and independent failure recovery |
+| B04 | delivery-control | B03 | Shared status/log dashboard or CLI with worker queues grouped by machine and workspace/resource visibility, worker/host draining, pause/resume, retry budgets and database/artifact backup/restore drill |
 | B05 | Core | B03 | Versioned tooling adapters for existing owner gates, release manifests, deployment locking and observed-version evidence; use published interfaces without changing product runtime; demonstrate isolated no-op and failed-release recovery |
-| B06 | delivery-control | B04, B05 | Trusted publication/merge/release adapters, coordinator role, QA generation and defect loop; completed rehearsal with 1 worker and 10 simulated workers, including stale effects and coordinator failover |
+| B06 | delivery-control | B04, B05 | Trusted publication/merge/release adapters, coordinator role, QA generation and defect loop; rehearsals with 1 worker, at least 3 real concurrent workers on one host, and 10 simulated hosts with multiple slots, including stale effects, sibling isolation and coordinator failover |
 
 **Release/acceptance:** deploy the control service separately; do not redeploy
 unchanged product services. Prove queue fairness, missed-event recovery, expired
-lease fencing, control outage behavior, one-machine progress, duplicate deploy
-rejection, restore recovery and complete shared evidence. Then accept S0 and open S1.
+lease fencing, control outage behavior, single-worker progress, duplicate deploy
+rejection, restore recovery and complete shared evidence. On one host, demonstrate
+isolated clones of the same remote repository, simultaneous installs/builds/tests,
+noncolliding ports/databases/Compose/browser resources, capacity enforcement and
+termination/cleanup of one attempt without affecting siblings. Exercise both a
+worker crash and host-supervisor restart. Then accept S0 and open S1.
 
 ### S1 — Freeze contracts and compatible foundations
 
@@ -456,7 +540,7 @@ same release-set ID; resource locks isolate accounts, conversations and browsers
 
 | QA family | Owner/test checkout | Minimum evidence |
 | --- | --- | --- |
-| Control reliability | delivery-control | Concurrent claim, fairness, wait/wakeup, restart, lost worker, stale coordinator, duplicate effect and restored-state behavior |
+| Control reliability | delivery-control | Concurrent claim, fairness, wait/wakeup, restart, lost worker, stale coordinator, duplicate effect, restored state and multiple agents on one host with independent checkouts/resources/cleanup |
 | Chat/settings parity | core-ui | Both skins, all settings, rendering/stream/stop/queue/attachments, accessible keyboard/mobile flows, isolated instances |
 | Product embedding | Each Make/Reader owner and core-ui Console/Kanban | Real host context/tools, no settings divergence, navigation and cleanup |
 | Core transport/access | Core | REST/WS parity, reconnect, conversations/resources/tenant isolation, uploads and existing-session regression |
@@ -492,7 +576,7 @@ stage history after opening the next stage.
 ## 7. Initial activation checklist
 
 1. Publish this plan to Core `main` and record its full commit SHA.
-2. Designate the single S0 bootstrap machine; create/configure the private
+2. Designate the single S0 bootstrap worker and its machine; create/configure the private
    `delivery-control` repository and independent control hosting/storage.
 3. Configure repository access and run policy for branches, PRs/merges, artifact
    publication and allowed staging/production releases. Respect repository gates
@@ -500,8 +584,10 @@ stage history after opening the next stage.
 4. Implement and validate B01–B03, install the supervisor, import the pinned plan
    and compile all task dependencies and QA templates. Mark completed bootstrap
    tasks only with their evidence; leave remaining tasks blocked/ready as computed.
-5. Enroll 1–10 machines with capabilities and budgets; validate clean checkouts,
-   authentication and artifact access. Publish the actual join/status/log commands.
+5. Enroll 1–10 machines with capabilities, capacity and budgets. Configure one or
+   more independent worker slots per machine; validate isolated checkouts/runtime
+   resources, authentication and artifact access. Publish actual commands to add
+   a worker, join, inspect the queue/logs and drain one worker or the whole host.
 6. Complete B04–B06 through the queue, commission and test the control deployment,
    then let the accepted-stage transition open S1 automatically.
 
