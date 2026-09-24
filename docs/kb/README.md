@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 19 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 36 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1629 коммит(ов) в areas после сверки: 0457ed25 fix: tolerate loaded release test hooks … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1630 коммит(ов) в areas после сверки: 4b2c9a4b docs: record Delivery Control worker acceptance and deployment … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 9e028b00 fix: remove local release branch on deletion |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -54,8 +54,9 @@
 
 ## Журнал сессий
 
-Всего записей: 939. Последние:
+Всего записей: 940. Последние:
 
+- [2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md](log/2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md) — delivery-release-adapter-b05
 - [2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-workers.md](log/2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-workers.md) — delivery-control-workers
 - [2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-bootstrap.md](log/2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-bootstrap.md) — delivery-control-bootstrap
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
@@ -65,7 +66,6 @@
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-delete-local-branch.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-delete-local-branch.md) — release-delete-local-branch
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-330-team-tenants.md) — production-0-1-330-team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-production-0-1-329-analytics-ui.md) — production-0-1-329-analytics-ui
-- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-operations-correlation-recovery.md) — operations-correlation-recovery
 
 ## Исторические планы
 
