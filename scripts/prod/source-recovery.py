@@ -118,7 +118,9 @@ def main():
                 require(record.get('schemaVersion') == 2 and record['operation'] == op and record['hostLock'] == lock_path)
                 require(lease['epoch'] >= record['epoch'])
                 if lease['epoch'] == record['epoch']:
-                    require(record['leaseId'] == lease['leaseId'] and record['action'] == lease['action'])
+                    # Status has its own live authorization but cannot advance the effect fence.
+                    require(record['leaseId'] == lease['leaseId'] and
+                            (lease['action'] == 'status' or record['action'] == lease['action']))
             if lease['action'] == 'status':
                 require(record is not None)
                 print(json.dumps(record)); return

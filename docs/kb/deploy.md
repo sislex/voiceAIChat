@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: fca3a356
+checked: 95969de2
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -52,10 +52,14 @@ live children, missing artifacts, changed composition or revoked authority keep
 the uncertain barrier. Recovery failures cannot cause automatic repeated effects.
 
 Repeated/lost-reply recovery reuses the durable action; reconciliation only observes.
+Read-only `status` requires independent live authorization for the exact immutable
+operation. At the stored epoch it accepts only the same lease ID, regardless of
+the stored effect action. Neither same-epoch nor higher-epoch status changes the
+journal's effect epoch, lease, action or command history.
 `recovered` requires the exact previous Core SHA/image, readiness and unchanged
 composition evidence. It is a failed release, never stage acceptance. Legacy v1
 records cannot be upgraded by guessing missing previous artifacts. Isolated process
-fixtures passed 16 Linux tests including flock exclusion, detached owner death,
+fixtures passed 18 Linux tests including read-only status fencing, flock exclusion, detached owner death,
 known-failure recovery and volume guards. The complete Core owner gate passed.
 Immutable pair installation and downstream operator commissioning remain required.
 No deployment was performed by this change.

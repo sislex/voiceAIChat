@@ -642,7 +642,7 @@ args=sys.argv[1:]; kind=args.pop(0)
 def emit(v): print(json.dumps(v))
 if kind=='verify':
  lease=json.load(sys.stdin)
- emit({'valid':not (r/'revoked').exists(),'epoch':lease['epoch'],'leaseId':lease['leaseId']});sys.exit()
+ emit({'valid':not (r/'revoked').exists() and not (options.get('rejectStatus') and lease['action']=='status'),'epoch':lease['epoch'],'leaseId':lease['leaseId']});sys.exit()
 active=(r/'active').read_text()
 if kind=='curl':
  if args[-1].endswith('/ui/runtime.json'): emit({'generation':2 if (r/'changed-ui').exists() else 1});sys.exit()
@@ -739,6 +739,36 @@ sys.exit(23 if (which=='target' and options.get('composeFailure')) or (which=='p
     assert.equal(f.record().state, 'succeeded')
     assert.equal(f.run(f.deploy).status, 0)
     assert.equal(f.ups().length, 1)
+  }))
+  await t.test('live-authorized status preserves the same lease and immutable effect fence', () => scenario({}, f => {
+    const before = f.record(), calls = f.calls()
+    for (const epoch of [1, 2]) {
+      const result = f.run(f.request('status', epoch))
+      assert.equal(result.status, 0, result.stderr)
+      assert.deepEqual(JSON.parse(result.stdout), before)
+      assert.deepEqual(f.record(), before)
+      assert.equal(f.calls(), calls)
+    }
+    const wrongLease = f.request('status', 1)
+    const envelope = JSON.parse(readFileSync(wrongLease, 'utf8'))
+    envelope.lease.leaseId = 'different-live-lease'
+    writeFileSync(wrongLease, JSON.stringify(envelope))
+    assert.notEqual(f.run(wrongLease).status, 0)
+    assert.notEqual(f.run(f.request('status', 1, { expectedCommit: previous })).status, 0)
+    assert.deepEqual(f.record(), before)
+    assert.equal(f.calls(), calls)
+    // A higher-epoch read did not supersede the original idempotent deploy lease.
+    assert.equal(f.run(f.deploy).status, 0)
+    assert.equal(f.calls(), calls)
+    f.put('revoked', '')
+    assert.notEqual(f.run(f.request('status', 1)).status, 0)
+    assert.deepEqual(f.record(), before)
+  }))
+  await t.test('status needs independent action authorization even with the exact effect lease', () => scenario({ rejectStatus: true }, f => {
+    const before = f.record(), calls = f.calls()
+    assert.notEqual(f.run(f.request('status', 1)).status, 0)
+    assert.deepEqual(f.record(), before)
+    assert.equal(f.calls(), calls)
   }))
   await t.test('existing named volume covers image-declared storage without creating a volume', () => scenario({ namedVolume: true }, f => {
     assert.equal(f.record().state, 'succeeded')
