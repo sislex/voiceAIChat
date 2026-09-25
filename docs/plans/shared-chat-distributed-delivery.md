@@ -8,6 +8,12 @@ Baseline: Core `origin/main` at `cbd8592d`
 
 Document status: implementation specification; orchestration is not installed by this commit.
 
+Amendment 2026-09-25: O01 adds a required worker operations web UI, independently
+of B06. The currently imported `shared-chat-v1` run is pinned to the earlier
+37-task revision. This document amendment does not mutate that run or its active
+attempt. Import O01 through a reviewed plan revision/migration, preserving task
+IDs, completed evidence and active assignments, before dispatching the new task.
+
 ## Start here: instructions for every machine
 
 The owner wants 1–10 machines, with multiple concurrent agents on each machine,
@@ -143,6 +149,50 @@ tasks, worker queue positions grouped by machine, machine capacity, workspace
 paths, lease age, latest progress, PRs, logs, deployment
 versions, QA coverage, and unresolved defects. Every authorized worker can read
 this shared view across repositories.
+
+### 2.1.1 Worker operations web UI (O01)
+
+Provide a browser UI owned by `sislex/delivery-control`, using the coordinator's
+shared status/events and authenticated read-only monitoring APIs. A CLI alone
+does not satisfy O01. The first version is for observation; pause, cancellation,
+retry and deployment controls remain outside this task.
+
+- Overview: current run/stage, paused state, task totals, active/available worker
+  counts, queue length, blockers and last successful refresh.
+- Group workers by machine, including multiple slots on the same host. Show
+  machine/worker IDs, connectivity, current task/repository/attempt, execution
+  phase, elapsed time, latest sanitized progress, heartbeat age, queue position
+  and a link to shared task evidence/logs. Make task details easy to open.
+- Distinguish running, preparing, checking, waiting, blocked and cancelling where
+  reported. Display drained/revoked machines separately from connectivity. A
+  worker with a live coordinator/review lease is occupied even if its transport
+  state says waiting. Derive availability from authoritative capacity, roles and
+  reservations, not from an absence of log lines.
+- Show declared host capacity and task reservations separately from measured
+  load. Collect timestamped host CPU utilization, used/total RAM and free disk;
+  show per-worker process-tree CPU/RAM when supported, occupied/free slots and
+  reserved resources. Define CPU percentage normalization so values are comparable.
+  Unsupported or stale measurements display unknown/stale, never zero. Host load
+  includes unrelated processes and must not be attributed entirely to workers.
+- Extend the versioned supervisor/monitoring contract with bounded optional
+  metrics and documented sampling, staleness and retention limits. Older workers
+  remain compatible; failed metrics collection cannot stop leases or task work.
+  Metrics are observational and must not silently change scheduling limits.
+- Subscribe to durable events with reconnect/cursor recovery and periodic status
+  reconciliation. On connection loss, retain the last snapshot with an explicit
+  stale indicator. Never present an expired heartbeat as a healthy worker.
+- Support filtering by run, machine, worker state, repository and task. Provide
+  readable mobile/desktop layouts, keyboard navigation and text labels alongside
+  colors. Expose no machine/admin tokens, private credentials, raw model reasoning
+  or customer data. Use authenticated operator access with read-only scope;
+  privileged credentials must not be shipped to the browser.
+
+Acceptance covers one worker, multiple workers on one machine and ten simulated
+hosts; waiting/running transitions, live role occupancy, offline/stale workers,
+reconnect with missed events, absent metrics from older clients and reservations
+that differ from measured load. Owner API/UI tests and an observed staging check
+must match the coordinator and supervisor facts. Release this dashboard as part
+of delivery-control without redeploying unchanged product applications.
 
 ### 2.2 Atomic claims, queue order and leases
 
@@ -434,6 +484,7 @@ worker crash and host-supervisor restart. Then accept S0 and open S1.
 
 | ID | Owner | Depends on | Deliverable and acceptance |
 | --- | --- | --- | --- |
+| O01 | delivery-control | B06 | Required authenticated worker operations web UI and compatible load telemetry: machine/worker availability, assignments, queue, live role occupancy, measured CPU/RAM/disk versus capacity/reservations, stale/reconnect handling and tests from section 2.1.1; independent of chat contract tasks |
 | C01 | core-ui | — | Inventory current chat features/settings in every host; define reusable runtime, skin/slot boundary, ownership of settings and migration matrix; approve shared parity fixtures |
 | C02 | SDK | — | Versioned registered-application/delegation and origin-application attribution contracts; distinguish origin from executor, token and module; old payload fixtures remain supported |
 | C03 | Core | C01, C02 | Additive REST/WS chat/settings and verified application context contracts; permission/capability semantics and reconnect rules; publish immutable contract artifact |
@@ -445,6 +496,8 @@ worker crash and host-supervisor restart. Then accept S0 and open S1.
 consumers, and deploy changed foundations with existing behavior preserved.
 No external-application access is enabled yet. All existing chat/auth/accounting
 flows pass against the mixed-version and candidate matrices.
+O01 deploys the delivery-control dashboard separately and verifies its observed
+worker states and metrics; unchanged product services are not restarted for it.
 
 ### S2 — One complete chat, two skins, all internal hosts
 
