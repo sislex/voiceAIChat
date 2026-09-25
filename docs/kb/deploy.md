@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: 8b13348e
+checked: d3ecd654
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -46,6 +46,37 @@ activation uses its existing owner interface and requires B06 commissioning;
 irreversible migrations fail closed. Isolated no-op, failed-release recovery,
 interrupted reconciliation and real process-lock tests do not constitute a
 production rollout or acceptance of S0.
+
+## Controlled deployment operation status
+
+`voicechat-deploy --operation-id <id> --expected-commit <full-sha>` adds an
+idempotent operation to the existing detached deployment entrypoint. Its initial
+JSON `accepted` response is only a launch acknowledgement. Read the durable result
+with `--status-operation <id>`. The journal defaults to
+`/var/lib/voicechat/deploy-operations` (private mode 0700);
+`VC_DEPLOY_OPERATIONS` selects a separate commissioned environment. The existing
+Core/UI host lock remains authoritative; do not acquire it again around this CLI.
+
+A controlled operation requires a clean exact HEAD after `git pull --ff-only`,
+a known full previous runtime SHA, successful Compose completion, component
+readiness and a healthy `application.applicationId=core` response with the exact
+expected full commit. Moving main causes failure before Docker. An identical
+operation ID/request returns its stored record without deploying again; changed
+SHA, release metadata or environment identity is rejected. States distinguish
+`accepted`, `running`, `failed`, `uncertain`, `succeeded` and `recovered`. Failed
+preflight is not deployment success; only verified runtime completion produces
+`succeeded`.
+
+`--reconcile-operation <id>` acquires the same host lock and observes health and
+readiness without deploying. After confirmed Compose completion it can record the
+exact intended runtime as succeeded, or the exact previous runtime as recovered.
+Recovery is not successful release acceptance. If command completion is unknown
+(including SIGKILL during Compose), observation alone cannot clear the barrier;
+operator recovery is required. Pending/uncertain records block new controlled
+operations and must not be deleted to retry. Normal legacy invocations remain
+available for existing callers; delivery-control must use the controlled form.
+This tooling change is validated with disposable fixtures and is not a live Core
+rollout or evidence that S0 is accepted.
 
 ## Independent browser release rollout (2026-09-22)
 

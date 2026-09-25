@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
@@ -617,4 +617,83 @@ test('production compose закрепляет каноническое имя se
   assert.match(compose, /vc-data:\n {4}name: voicechat-server-data/)
   assert.match(compose, /- vc-data:\/data/)
   assert.match(compose, /- vc-data:\/mnt\/server-data:ro/)
+})
+
+test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
+  const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
+  const head = 'a'.repeat(40), previous = 'b'.repeat(40)
+  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false } = {}, check) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'controlled-deploy-')))
+    const bin = join(root, 'bin'), state = join(root, 'operations'), calls = join(root, 'calls')
+    mkdirSync(bin); mkdirSync(state, { mode: 0o700 }); mkdirSync(join(root, 'apps/server'), { recursive: true })
+    writeFileSync(join(root, 'apps/server/release.json'), JSON.stringify({ apiVersion: '1.0.0', dataVersion: '1.0.0' }))
+    const executable = (name, body) => { const path = join(bin, name); writeFileSync(path, '#!/bin/bash\nset -eu\n' + body); chmodSync(path, 0o755) }
+    executable('setsid', 'exec "$@"'); executable('nohup', 'exec "$@"')
+    executable('flock', busy ? 'exit 1' : 'exit 0')
+    executable('sleep', 'exit 0')
+    executable('git', `case "$*" in
+      'status --porcelain --untracked-files=all') ${statusFailure ? 'exit 1' : dirty ? "echo '?? injected-source.js'" : 'exit 0'};;
+      'rev-parse HEAD') echo ${actual};;
+      'rev-parse --short HEAD'|'rev-parse --short=12 HEAD') echo ${actual.slice(0, 12)};;
+    esac`)
+    executable('curl', `if test -f "$FIXTURE_ROOT/up"; then commit=${wrongHealth ? previous : head}; else commit=${previous}; fi
+      printf '{"ok":true,"application":{"applicationId":"core","commit":"%s"}}' "$commit"`)
+    executable('docker', `printf '%s\n' "$*" >>"$FIXTURE_ROOT/calls"
+      if [[ "$*" == 'compose up -d --build' ]]; then touch "$FIXTURE_ROOT/up"; ${killChild ? 'kill -9 "$PPID"; touch "$FIXTURE_ROOT/killed";' : ''} exit ${failCompose ? 1 : 0}; fi
+      exit 0`)
+    const env = { ...process.env, PATH: bin + ':' + process.env.PATH, VC_REPO_DIR: root,
+      VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOG: join(root, 'log'), VC_DEPLOY_LOCK: join(root, 'lock'),
+      VC_RELEASE_VERSION: '0.1.77', VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
+    delete env.VC_DEPLOY_CHILD
+    const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: 10000 })
+    const start = run('--operation-id', 'one', '--expected-commit', head)
+    assert.equal(start.status, 0, start.stderr)
+    assert.equal(JSON.parse(start.stdout).state, 'accepted')
+    let record
+    for (let n = 0; n < 500; n++) {
+      record = JSON.parse(readFileSync(join(state, 'one.json'), 'utf8'))
+      if (!['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))) break
+      await delay(20)
+    }
+    try { await check({ root, state, record, run, calls: () => existsSync(calls) ? readFileSync(calls, 'utf8') : '' }) }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  }
+  await t.test('success is observed at the exact SHA and an identical request is read-only', () => scenario({}, ({ record, run, calls }) => {
+    assert.equal(record.state, 'succeeded'); assert.equal(record.composeCompleted, true)
+    assert.equal(record.request.expectedCommit, head); assert.equal(record.previousCommit, previous)
+    assert.equal(JSON.parse(run('--status-operation', 'one').stdout).state, 'succeeded')
+    assert.equal(run('--operation-id', 'one', '--expected-commit', head).status, 0)
+    assert.equal(calls().split('compose up -d --build').length - 1, 1)
+    assert.notEqual(run('--operation-id', 'one', '--expected-commit', previous).status, 0)
+  }))
+  await t.test('a moved checkout fails before Docker', () => scenario({ actual: previous }, ({ record, calls }) => {
+    assert.equal(record.state, 'failed'); assert.equal(record.exitCode, 65); assert.equal(calls(), '')
+  }))
+  for (const options of [{ dirty: true }, { statusFailure: true }]) {
+    await t.test('untracked source or unreadable Git status fails before Docker: ' + JSON.stringify(options), () => scenario(options, ({ record, calls }) => {
+      assert.equal(record.state, 'failed'); assert.equal(calls(), '')
+    }))
+  }
+  await t.test('host-lock contention is a failed operation, not successful deployment', () => scenario({ busy: true }, ({ record, calls }) => {
+    assert.equal(record.state, 'failed'); assert.equal(record.exitCode, 75); assert.equal(calls(), '')
+  }))
+  await t.test('unknown command completion blocks a new effect and cannot be cleared by healthy observation', () => scenario({ failCompose: true }, ({ record, run, calls }) => {
+    assert.equal(record.state, 'uncertain'); assert.equal(record.composeCompleted, undefined)
+    assert.notEqual(run('--operation-id', 'two', '--expected-commit', head).status, 0)
+    assert.notEqual(run('--reconcile-operation', 'one').status, 0)
+    assert.equal(calls().split('compose up -d --build').length - 1, 1)
+  }))
+  await t.test('SIGKILL leaves durable uncertainty and never launches a replacement', () => scenario({ killChild: true }, ({ record, run, calls }) => {
+    assert.equal(record.state, 'running'); assert.equal(record.composeCompleted, undefined)
+    assert.notEqual(run('--operation-id', 'two', '--expected-commit', head).status, 0)
+    assert.notEqual(run('--reconcile-operation', 'one').status, 0)
+    assert.equal(calls().split('compose up -d --build').length - 1, 1)
+  }))
+  await t.test('wrong healthy runtime remains uncertain until observation proves completed recovery', () => scenario({ wrongHealth: true }, ({ record, run, calls }) => {
+    assert.equal(record.state, 'uncertain'); assert.equal(record.composeCompleted, true)
+    assert.notEqual(run('--operation-id', 'two', '--expected-commit', head).status, 0)
+    const observed = run('--reconcile-operation', 'one')
+    assert.equal(observed.status, 0, observed.stderr); assert.equal(JSON.parse(observed.stdout).state, 'recovered')
+    assert.equal(calls().split('compose up -d --build').length - 1, 1)
+  }))
 })
