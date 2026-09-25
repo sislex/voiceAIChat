@@ -67,7 +67,8 @@ test('production launcher only executes the running container, without rebuild/r
 test('controlled UI owner binds generation, live authority and immutable operation recovery', async (t) => {
   const execute = promisify(execFile)
   async function scenario(behavior, check) {
-    const root = realpathSync(mkdtempSync(join(homedir(), '.ui-delivery-test-'))), bin = join(root, 'bin')
+    const base = process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : homedir()
+    const root = realpathSync(mkdtempSync(join(base, '.ui-delivery-test-'))), bin = join(root, 'bin')
     mkdirSync(bin, { mode: 0o700 })
     const node = realpathSync(process.execPath), candidate = fixture(root)
     const write = (name, value) => writeFileSync(join(root, name), JSON.stringify(value), { mode: 0o600 })

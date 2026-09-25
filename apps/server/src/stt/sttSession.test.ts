@@ -1,3 +1,4 @@
+import { privateDataDir } from '../test/privateDataDir.js'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
@@ -21,14 +22,17 @@ const mockStt: SttEngine = {
   })
 }
 
+let dataDir: ReturnType<typeof privateDataDir>
 let app: FastifyInstance
 let db: VoiceChatDb
 let port: number
+const clients = new Set<WebSocket>()
 
 beforeEach(async () => {
+  dataDir = privateDataDir('core-integration-')
   db = new VoiceChatDb(':memory:')
   app = await buildServer({
-    config: loadConfig({ PORT: '0' }),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir.path }),
     db,
     sttEngine: mockStt,
     sessionSecret: SECRET
@@ -37,12 +41,17 @@ beforeEach(async () => {
   port = (app.server.address() as AddressInfo).port
 })
 afterEach(async () => {
-  await app.close()
-  db.close()
+  for (const ws of clients) ws.terminate()
+  clients.clear()
+  await app?.close()
+  await db?.close()
+  dataDir?.remove()
 })
 
 function connect(): Promise<WebSocket> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TOKEN}`)
+  clients.add(ws)
+  ws.once('close', () => clients.delete(ws))
   return new Promise((res, rej) => {
     ws.on('open', () => res(ws))
     ws.on('error', rej)

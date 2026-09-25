@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TemporaryResource } from '@voicechat/shared'
 import { RESOURCE_HELPER } from './remote.js'
+import { privateDataDir } from '../test/privateDataDir.js'
 
 let root: string
-beforeEach(() => { root = realpathSync(mkdtempSync(join(tmpdir(), 'cleanup-fs-'))) })
+beforeEach(() => { root = privateDataDir('cleanup-fs-').path })
 afterEach(() => { rmSync(root, { recursive: true, force: true }) })
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd, encoding: 'utf8', stdio: ['ignore','pipe','pipe'] }).trim()
 function resource(category: TemporaryResource['category'] = 'process', name = 'owned'): TemporaryResource {
@@ -25,6 +25,22 @@ function repository(): TemporaryResource {
   writeFileSync(join(r.path,'file.txt'),'saved'); git(r.path,'add','.'); git(r.path,'commit','-m','saved'); git(r.path,'push','origin','main')
   return r
 }
+it('traverses search-only ancestors without reading them or following symlinks', () => {
+  const ancestor = join(root, 'search-only')
+  const storage = join(ancestor, 'storage')
+  mkdirSync(storage, { recursive: true })
+  const r = { ...resource(), root: storage, path: join(storage, 'owned') }
+  chmodSync(ancestor, 0o100)
+  try {
+    create(r)
+    expect(call(r, 'bind')).toMatchObject({ present: true, identity: r.identity, reasons: [] })
+    // O_PATH may open a symlink itself on Linux, so O_DIRECTORY must remain set.
+    symlinkSync(r.path, join(storage, 'alias'))
+    expect(call({ ...r, path: join(storage, 'alias') }, 'bind').reasons.length).toBeGreaterThan(0)
+  } finally {
+    chmodSync(ancestor, 0o700)
+  }
+})
 // @testCase TC-01
 it('deletes an owned temporary directory and preserves its external results', () => {
   const r=resource(); create(r); writeFileSync(join(r.path,'temporary'),'scratch')

@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { privateDataDir } from '../test/privateDataDir.js'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
@@ -9,33 +10,46 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { Board, BoardStatuses, ProjectDetail, ServerMessage } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
+let dataDir: ReturnType<typeof privateDataDir>
 let app: FastifyInstance
 let db: VoiceChatDb
 let port: number
 let adminTok: string
 let bobTok: string
+const clients = new Set<WebSocket>()
 /** Часы БД: тестам про скрытие завершённых нужно перевести их за полночь. */
 let clock = Date.now()
 
 beforeEach(async () => {
+  dataDir = privateDataDir('core-integration-')
   clock = Date.now()
   db = new VoiceChatDb(':memory:', { now: () => clock })
   await db.identity.createUser('bob', '', 'developer')
-  app = await buildServer({ config: loadConfig({ PORT: '0' }), db, sessionSecret: SECRET })
+  app = await buildServer({ config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir.path }), db, sessionSecret: SECRET })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
   adminTok = signToken({ name: 'admin', role: 'admin' }, SECRET)
   bobTok = signToken({ name: 'bob', role: 'developer' }, SECRET)
 })
 afterEach(async () => {
-  await app.close()
-  db.close()
+  for (const ws of clients) ws.terminate()
+  clients.clear()
+  await app?.close()
+  await db?.close()
+  dataDir?.remove()
 })
 
 function connect(token: string): Promise<WebSocket> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${token}`)
+  clients.add(ws)
+  ws.once('close', () => clients.delete(ws))
   return new Promise((res, rej) => {
-    ws.on('open', () => res(ws))
+    const ready = (data: Buffer) => {
+      if (JSON.parse(data.toString()).t !== 'claude.active') return
+      ws.off('message', ready)
+      res(ws)
+    }
+    ws.on('message', ready)
     ws.on('error', rej)
   })
 }
@@ -46,12 +60,13 @@ function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000): Promise<
     const onMsg = (d: Buffer) => {
       const m = JSON.parse(d.toString()) as ServerMessage
       if (m.t === 'board.changed' && m.projectId === projectId) {
+        clearTimeout(timer)
         ws.off('message', onMsg)
         resolve(m)
       }
     }
     ws.on('message', onMsg)
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       ws.off('message', onMsg)
       resolve(null)
     }, ms)
@@ -184,7 +199,11 @@ describe('WS: живое обновление доски', () => {
     // Результат этапа живёт во второй фазе доски: скелет отдаёт только карточки.
     const statusesOf = async (): Promise<BoardStatuses> =>
       (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board/statuses`, headers: auth })).json() as BoardStatuses
-    expect((await statusesOf()).tasks.find((item) => item.taskId === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
+    // The POST and its first invalidation precede asynchronous QA completion.
+    await vi.waitFor(async () => {
+      expect((await statusesOf()).tasks.find((item) => item.taskId === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
+    })
+    expect(await db.qa.getQaStageRun('admin', run.id)).toMatchObject({ status: 'failed', currentStep: 'workspace', error: 'Development workspace недоступен' })
 
     const cancelled = waitBoardChanged(ws, p.id)
     expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
