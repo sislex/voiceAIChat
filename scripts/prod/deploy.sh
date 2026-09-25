@@ -24,30 +24,132 @@ HEALTH_TRIES=${VC_HEALTH_TRIES:-60}   # × 5 с = до 5 минут на под�
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 
-# Первый проход: отцепиться от родителя и выйти. Передаём release metadata
-# явно: detached-процесс не должен зависеть от окружения вызывающей сессии.
-if [[ ${VC_DEPLOY_CHILD:-} != 1 ]]; then
-  release_version=${VC_RELEASE_VERSION-}
-  release_version_source=${VC_RELEASE_VERSION_SOURCE:-${release_version:+explicit}}
-  VC_DEPLOY_CHILD=1 setsid nohup "$0" \
-    --release-version "$release_version" \
-    --release-version-source "$release_version_source" \
-    "$@" >>"$LOG" 2>&1 </dev/null &
-  cat <<EOF
-деплой запущен в фоне (pid $!) и не зависит от этой сессии
-лог:     tail -f $LOG
-статус:  docker compose -f $REPO/docker-compose.yml ps
-здоровье: curl -s $HEALTH_URL
-EOF
-  exit 0
+# Optional control-plane contract. Plain invocations retain the legacy launcher.
+operation_id=
+expected_commit=
+operation_command=deploy
+while (( $# )); do
+  case "$1" in
+    --operation-id) operation_id=${2:?}; shift 2 ;;
+    --expected-commit) expected_commit=${2:?}; shift 2 ;;
+    --status-operation) operation_id=${2:?}; operation_command=status; shift 2 ;;
+    --reconcile-operation) operation_id=${2:?}; operation_command=reconcile; shift 2 ;;
+    --release-version) export VC_RELEASE_VERSION=$2; shift 2 ;;
+    --release-version-source) export VC_RELEASE_VERSION_SOURCE=$2; shift 2 ;;
+    *) echo 'Unknown deployment argument' >&2; exit 64 ;;
+  esac
+done
+if [[ -n $operation_id || -n $expected_commit ]]; then
+  [[ $operation_id =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$ ]] || exit 64
+  if [[ $operation_command == deploy ]]; then
+    [[ $expected_commit =~ ^[a-f0-9]{40}$ ]] || exit 64
+  fi
+fi
+export VC_RELEASE_VERSION_SOURCE=${VC_RELEASE_VERSION_SOURCE:-${VC_RELEASE_VERSION:+explicit}}
+OPERATION_ROOT=${VC_DEPLOY_OPERATIONS:-/var/lib/voicechat/deploy-operations}
+
+# Embedded in the content-addressed shell copy: git pull cannot replace journal
+# code midway through a detached operation. No credential or raw health body is stored.
+operation_record() {
+  python3 - "$OPERATION_ROOT" "$operation_id" "$1" "$expected_commit" "$REPO" \
+    "${VC_RELEASE_VERSION-}" "${VC_RELEASE_VERSION_SOURCE-}" "$$" "${2-}" "$HEALTH_URL" "$LOCK" <<'PYTHON'
+import fcntl,json,os,pathlib,re,sys,tempfile,time
+root,ident,action,expected,repo,version,source,pid,value,health,host_lock=sys.argv[1:]
+root=pathlib.Path(root)
+if not root.is_absolute() or root.resolve()!=root: raise SystemExit('operation_path_not_canonical')
+if action!='status': root.mkdir(mode=0o700,parents=True,exist_ok=True)
+st=root.stat()
+if st.st_uid!=os.geteuid() or st.st_mode & 0o077: raise SystemExit('operation_directory_not_private')
+path=root/(ident+'.json')
+def read(p):
+ if p.is_symlink(): raise SystemExit('operation_symlink_rejected')
+ return json.loads(p.read_text())
+def output(v): print(json.dumps(v,separators=(',',':')))
+if action=='status': output(read(path)); sys.exit(0)
+lock=root/'.lock'
+fd=os.open(lock,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+with os.fdopen(fd,'r+') as guard:
+ fcntl.flock(guard,fcntl.LOCK_EX)
+ request={'expectedCommit':expected,'repository':repo,'version':version,'versionSource':source,'healthUrl':health,'hostLock':host_lock}
+ record=read(path) if path.exists() else None
+ if action=='reserve':
+  if record:
+   if record['request']!=request: raise SystemExit('operation_identity_conflict')
+   output(record);sys.exit(10)
+  for other in root.glob('*.json'):
+   if read(other)['state'] in ('accepted','running','uncertain'): raise SystemExit('unreconciled_operation_exists')
+  record={'schemaVersion':1,'operationId':ident,'request':request,'state':'accepted','createdAt':int(time.time()*1000)}
+ elif not record: raise SystemExit('operation_not_found')
+ elif action=='start':
+  if record['state']!='accepted' or record['request']!=request: raise SystemExit('operation_start_conflict')
+  record.update(state='running',pid=int(pid),phase='preparing')
+ elif action=='phase':
+  if record['state']!='running' or record.get('pid')!=int(pid): raise SystemExit('operation_owner_changed')
+  record.update(phase='deploying',previousCommit=value or None)
+ elif action=='composed':
+  if record['state']!='running' or record.get('pid')!=int(pid): raise SystemExit('operation_owner_changed')
+  record['composeCompleted']=True
+ elif action=='finish':
+  if record['state'] not in ('accepted','running'): raise SystemExit('operation_terminal')
+  code=int(value)
+  if code==0 and record.get('phase')=='deploying': record['observedCommit']=expected
+  record.update(state=('succeeded' if code==0 else 'uncertain') if record.get('phase')=='deploying' else 'failed',exitCode=code)
+ elif action=='reconcile':
+  if any(record['request'][k]!=request[k] for k in ('repository','healthUrl','hostLock')): raise SystemExit('operation_environment_changed')
+  if record['state'] not in ('accepted','running','uncertain'): output(record);sys.exit(0)
+  if record.get('phase')=='deploying' and not record.get('composeCompleted'): raise SystemExit('deployment_command_completion_unknown')
+  if value==record['request']['expectedCommit']: record['state']='succeeded'
+  elif value and value==record.get('previousCommit'): record['state']='recovered'
+  else: raise SystemExit('observed_commit_does_not_resolve_operation')
+  record.update(observedCommit=value,reconciled=True)
+ else: raise SystemExit('operation_action_invalid')
+ record['updatedAt']=int(time.time()*1000)
+ fd,temp=tempfile.mkstemp(prefix='.write-',dir=root)
+ try:
+  with os.fdopen(fd,'w') as stream:
+   json.dump(record,stream);stream.flush();os.fsync(stream.fileno())
+  os.replace(temp,path)
+  directory=os.open(root,os.O_RDONLY)
+  try: os.fsync(directory)
+  finally: os.close(directory)
+ finally:
+  if os.path.exists(temp): os.unlink(temp)
+ output(record)
+PYTHON
+}
+observed_commit() {
+  curl -fsS -m 5 "$HEALTH_URL" | python3 -c 'import json,re,sys; h=json.load(sys.stdin); c=h.get("application",{}).get("commit",""); assert h.get("ok") is True and h.get("application",{}).get("applicationId")=="core" and re.fullmatch("[a-f0-9]{40}",c); print(c)'
+}
+if [[ $operation_command == status ]]; then operation_record status; exit; fi
+if [[ $operation_command == reconcile ]]; then
+  exec 9>"$LOCK"
+  flock -n 9 || { echo 'Deployment still owns the host lock' >&2; exit 75; }
+  cd "$REPO"
+  observed=$(observed_commit)
+  docker compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null
+  operation_record reconcile "$observed"
+  exit
 fi
 
-# Второй проход получает канонические значения позиционно: это надёжная граница
-# между вызывающей сессией и detached-процессом, независимо от сохранённого env.
-if [[ ${1:-} == --release-version && ${3:-} == --release-version-source ]]; then
-  export VC_RELEASE_VERSION=$2
-  export VC_RELEASE_VERSION_SOURCE=$4
-  shift 4
+# Reserve idempotency before detaching. A lost launch response cannot start twice.
+if [[ ${VC_DEPLOY_CHILD:-} != 1 ]]; then
+  if [[ -n $operation_id ]]; then
+    if operation_record reserve; then :; else
+      code=$?; [[ $code == 10 ]] && exit 0; exit "$code"
+    fi
+  fi
+  release_version=${VC_RELEASE_VERSION-}
+  release_version_source=${VC_RELEASE_VERSION_SOURCE:-${release_version:+explicit}}
+  launch_args=(--release-version "$release_version" --release-version-source "$release_version_source")
+  [[ -z $operation_id ]] || launch_args+=(--operation-id "$operation_id" --expected-commit "$expected_commit")
+  VC_DEPLOY_CHILD=1 setsid nohup "$0" "${launch_args[@]}" >>"$LOG" 2>&1 </dev/null &
+  if [[ -z $operation_id ]]; then
+    printf 'Deployment started (pid %s). Log: %s; health: %s\n' "$!" "$LOG" "$HEALTH_URL"
+  fi
+  exit 0
+fi
+if [[ -n $operation_id ]]; then
+  trap 'code=$?; trap - EXIT; operation_record finish "$code" >/dev/null || true; exit "$code"' EXIT
 fi
 
 # Второй проход — собственно деплой. Блокировка на дескрипторе: если процесс убьют,
@@ -55,9 +157,11 @@ fi
 exec 9>"$LOCK"
 if ! flock -n 9; then
   log 'другой деплой уже идёт — выходим'
+  [[ -z $operation_id ]] || exit 75
   exit 0
 fi
 
+[[ -z $operation_id ]] || operation_record start >/dev/null
 cd "$REPO"
 log "=== деплой начат, HEAD $(git rev-parse --short HEAD) ==="
 
@@ -65,6 +169,14 @@ log 'git pull --ff-only и git fetch --tags'
 git pull --ff-only
 git fetch --tags origin
 log "HEAD после pull: $(git rev-parse --short HEAD)"
+
+if [[ -n $expected_commit ]]; then
+  checkout_state=$(git status --porcelain --untracked-files=all)
+  [[ $(git rev-parse HEAD) == "$expected_commit" && -z $checkout_state ]] || {
+    log 'Expected clean commit does not match checkout; runtime unchanged'; exit 65;
+  }
+  previous=$(observed_commit) || { log 'Exact previous runtime is required'; exit 65; }
+fi
 
 # Метаданные именно того коммита, из которого сейчас собирается приложение.
 export VC_RELEASE_COMMIT=$(git rev-parse --short=12 HEAD)
@@ -177,13 +289,20 @@ else
   fi
 fi
 
+if [[ -n $operation_id ]]; then
+  operation_record phase "$previous" >/dev/null
+fi
 log 'docker compose up -d --build'
 docker compose up -d --build
+[[ -z $operation_id ]] || operation_record composed >/dev/null
 
 log 'ждём /api/health'
 for ((i = 1; i <= HEALTH_TRIES; i++)); do
   if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1 &&
      docker compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
+    if [[ -n $expected_commit && $(observed_commit) != "$expected_commit" ]]; then
+      log 'Healthy runtime does not match expected commit'; sleep 5; continue
+    fi
     log "=== деплой успешен: $(curl -fsS -m 5 "$HEALTH_URL") ==="
     exit 0
   fi

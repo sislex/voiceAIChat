@@ -165,3 +165,22 @@ Unknown runtime versions, missing owner reports, irreversible data migrations an
 unconfigured environments block release. B06 additionally owns authenticated
 coordinator integration, provider/consumer release ordering, publication,
 production authorization and the QA/defect/stage transition loop.
+
+## Existing Core detached entrypoint
+
+Source deployments through `voicechat-deploy` support `--operation-id <id>` with
+`--expected-commit <40-hex-sha>`. Poll `--status-operation <id>`; initial `accepted`
+and a zero launcher exit code do not prove completion. The source launcher checks
+the clean expected HEAD after its normal fast-forward pull and matches the live
+Core application SHA after readiness. A moved branch fails before runtime effects.
+The private durable journal deduplicates identical requests and blocks replacement
+effects after an uncertain operation. `--reconcile-operation <id>` only observes
+under the existing host lock; it never starts another deployment. Unknown Compose
+completion requires operator recovery even if a health probe currently succeeds.
+
+This is a separate existing owner entrypoint, not a command to run under the
+B05 inherited-lock launcher: it takes the Core/UI lock itself. Delivery-control
+retains its own fenced intent, polls the owner operation and verifies the full
+composition and unaffected containers before accepting a release. A `recovered`
+owner operation is a failed release with proven previous runtime, never acceptance.
+See the deployment KB for journal fields and commissioning limitations.
