@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: 44cc4ae5
+checked: fca3a356
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -16,6 +16,7 @@ areas:
   - Caddyfile
   - .dockerignore
   - scripts/prod/deploy.sh
+  - scripts/prod/source-recovery.py
   - scripts/prod/rebuild-when-idle.sh
   - scripts/prod/install.sh
   - scripts/affected-check.test.mjs
@@ -27,6 +28,37 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Controlled source recovery v2
+
+The opt-in `voicechat-deploy --source-request /protected/request.json` interface
+adds automatic source-only recovery under the existing Core/UI host lock. The
+versioned schema, exact status fields, exit semantics and broker commissioning
+requirements are in [the release adapter](../delivery-release-adapter.md#recoverable-detached-source-protocol-v2).
+Install the shell launcher and adjacent `source-recovery.py` together in a trusted
+immutable location; the existing installer does not install the helper yet.
+Manual source deployment and controlled UI retain their existing behavior.
+
+Before the first effect, v2 records the operator-validated previous immutable
+source image/Compose identity, local availability, configuration hashes, unaffected
+container identities and UI runtime hash. Anonymous/inherited volume mounts are
+rejected, and image-declared storage must be covered by pinned binds or existing
+named volumes. Only Core's immutable image may change;
+the helper never builds, pulls current main, migrates or copies customer data.
+Each external command inherits the lock, and its exit/completion is fsynced after
+waiting. A known failed Compose command or failed health check can recover with a
+renewed live lease bound to the unchanged original operation. Unknown completion,
+live children, missing artifacts, changed composition or revoked authority keep
+the uncertain barrier. Recovery failures cannot cause automatic repeated effects.
+
+Repeated/lost-reply recovery reuses the durable action; reconciliation only observes.
+`recovered` requires the exact previous Core SHA/image, readiness and unchanged
+composition evidence. It is a failed release, never stage acceptance. Legacy v1
+records cannot be upgraded by guessing missing previous artifacts. Isolated process
+fixtures passed 16 Linux tests including flock exclusion, detached owner death,
+known-failure recovery and volume guards. The complete Core owner gate passed.
+Immutable pair installation and downstream operator commissioning remain required.
+No deployment was performed by this change.
 
 ## Delivery-control release tooling (S0 B05)
 

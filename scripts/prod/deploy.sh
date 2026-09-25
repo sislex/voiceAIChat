@@ -15,6 +15,13 @@ set -Eeuo pipefail
 if [[ -z ${VC_REPO_DIR:-} && -r /etc/voicechat/production.env ]]; then
   source /etc/voicechat/production.env
 fi
+# Opt-in v2 source recovery uses a trusted adjacent installation. Legacy source
+# and UI launchers retain their existing interfaces and the same host lock.
+if [[ ${1:-} == --source-request ]]; then
+  [[ $# == 2 ]] || exit 64
+  export VC_DEPLOY_LOCK VC_DEPLOY_OPERATIONS VC_DEPLOY_LOG
+  exec python3 "$(dirname "$0")/source-recovery.py" launch "$2"
+fi
 : "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"
 REPO=$VC_REPO_DIR
 LOG=${VC_DEPLOY_LOG:-/var/log/voicechat-deploy.log}

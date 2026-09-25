@@ -95,6 +95,125 @@ reconciliation never launches deployment or rollback. This contract covers only
 the Core source transition. OCI composition and independent UI generation have
 their own owner contracts. Installing this tooling is not deployment acceptance.
 
+## Recoverable detached source protocol v2
+
+`voicechat-deploy --source-request /protected/request.json` is the opt-in source
+owner interface for controlled automatic recovery. It uses the same detached
+launcher and Core/UI host lock, and the same `VC_DEPLOY_OPERATIONS` journal as v1.
+It does not upgrade old v1 records: those lack the required pre-effect artifact
+evidence. Manual deployment, v1 fencing, and the UI owner interface are unchanged.
+
+Install this revision of `deploy.sh` and `source-recovery.py` together in a trusted
+immutable installation. The helper must be adjacent to the executed shell copy
+(for the current content-addressed wrapper, `/usr/local/lib/voicechat/source-recovery.py`).
+The existing installer does not install this new helper: the operator must install
+and pin both files before enabling v2 in the broker. Never resolve the helper from
+a worker checkout or replace it while an operation is running. No installation or
+downstream commissioning is performed by this patch.
+
+The private envelope has exactly `schemaVersion: 2`, `operation`, `lease`,
+`verifyLeaseCommand`, and `environment`. Protection and live verifier receipts use
+the v1 rules above. Maximum envelope size is 16 KiB. `operation` has exactly:
+
+| Field | Value |
+| --- | --- |
+| `id` | Original deployment operation ID, reused for recovery |
+| `runId`, `environment`, `releaseSetId`, `manifestHash` | Original run, staging/production, candidate ID, 64-hex candidate hash |
+| `expectedCommit`, `expectedPreviousCommit` | Exact failed target and known previous 40-hex source commits |
+| `project` | Commissioned Compose project name |
+| `healthUrl` | Explicit loopback `http://127.0.0.1:PORT/api/health` |
+| `previous`, `target` | Each exactly `{path, sha256, image, validationSha256}` |
+| `compositionFiles` | Up to 100 `{path, sha256}` pinned configuration/secret files |
+
+Each `path` is an absolute protected Compose artifact, `sha256` hashes its bytes,
+`image` is an already available local immutable `sha256:<64 hex>` image ID, and
+`validationSha256` references the operator's retained validation evidence. Images
+must label `org.opencontainers.image.revision` with the matching full source SHA.
+The broker must validate those reports, source/build provenance, available previous
+artifacts, compatible data formats and a tested source-only recovery before issuing
+deploy authority. Evidence hashes are references, not self-attestation. The helper
+independently verifies local image availability and labels before the first effect.
+
+The two resolved Compose configurations must differ only in the Core `voicechat`
+image. Builds are rejected. Bind mounts must be pinned regular files listed in
+`compositionFiles`; directory binds are unsupported. Compose configs/secrets must
+also reference pinned files. Use existing named volumes for customer data.
+Every named volume is inspected before either replacement;
+missing volumes, anonymous Compose mounts and inherited `volumes_from` mounts are
+rejected. Every Core image `VOLUME` destination must be covered by an explicit
+pinned bind or existing named-volume mount; an image cannot introduce anonymous
+storage outside the reviewed composition. Core's live Compose config-hash label must match
+`docker compose config --hash voicechat` during health verification. Retain
+immutable resolved composition artifacts and every referenced file; never use a
+mutable checkout, interpolated/unpinned environment, image tags, or a new main
+checkout as rollback material. The operator must ensure every relevant external
+configuration dependency is represented. Recovery runs only
+`docker compose -p PROJECT -f PREVIOUS up -d --no-build --pull never --no-deps voicechat`.
+There is no Git pull, build, volume creation/copy, migration or customer-data restore.
+
+The lease has the exact v1 fields, but `action` is `deploy`, `recover`, `reconcile`
+or `status`. Its ID/run/environment/candidate/hash must equal the operation.
+Recovery repeats the entire unchanged operation with a fresh live `recover` lease
+whose epoch exceeds the original deployment epoch and is not below any stored
+epoch. Changed requests are rejected, including a changed failed target, previous
+artifact, composition or health endpoint. Equal epochs require the same lease ID
+and action. The broker must maintain monotonic epochs and validate current action
+authority, including revocation, at every verifier invocation.
+
+Deploy/recover calls return a JSON launch acknowledgement with exit 0, then work
+in a detached owner. A lost acknowledgement is retried with the same operation;
+each action is durably reserved only once. An acknowledgement is not success.
+Submit a renewed `status` envelope through the same entrypoint to read the journal;
+lock contention is rejection, so retry the observation later. `reconcile` executes
+synchronously and is strictly observation-only. It may verify a completed recovery
+whose final observation was interrupted; it never starts/retries a replacement.
+A failed recovery effect cannot be retried with this protocol. A missing launch
+or unknown child completion requires operator investigation, not deleting a journal.
+
+Status fields are `schemaVersion: 2`, immutable `operation`, `hostLock`, `state`,
+highest non-status `epoch`, `leaseId`, `action`, `launches` (action-to-envelope-byte-hash), and
+`commands`. Optional evidence is `prepared`, `deployEpoch`, `previousConfig`, `targetConfig`
+(canonical resolved configuration hash), `unaffected` (non-Core container ID/image/
+start time and canonical `/ui/runtime.json` hash), `deploymentCompleted`,
+`recoveryStarted`, `recoveryCompleted`, and `finishedAction`. Each command records
+`argv`, `completed`, and, when known, `pid`, `exitCode`, `exitedAt`, `completedAt`
+(epoch ms). A negative signal exit records process exit but leaves command
+completion unknown, since Docker daemon work might continue.
+`outcomes` retains per-action `{exitCode, completedAt}` owner completion receipts,
+including the original failed deployment after recovery. A receipt is written
+before owner exit; acquiring the host lock additionally proves that owner/children
+no longer hold it.
+Records are atomically replaced and file/directory-fsynced before effects and after
+wait/exit. No probe body, secret file content or verifier response is journaled.
+Journals are bounded to 1 MiB, commands to 256 receipts and command results to 1 MiB; exhausting
+the bound fails closed. The journal is authoritative, not a child PID alone.
+
+States are `accepted`, `uncertain`, `succeeded`, and `recovered`. A known nonzero
+Compose exit is durably distinguished from unknown completion and can authorize
+recovery; a failed health/readiness check after a completed Compose call can too.
+The owner and every external runtime child retain the inherited kernel lock until
+exit. After owner death a live child still excludes Core/UI operations; after child
+death a missing completion receipt still blocks recovery, even with healthy probes.
+All prior commands must have durable completion before any recovery effect.
+Every command and terminal observation checks live authority. Missing artifacts,
+changed configuration/UI/unaffected containers, expired/revoked leases and recovery
+failure retain the barrier. Recovered requires exact previous image, healthy Core
+source SHA, component readiness and unchanged composition evidence.
+
+Status/launch acknowledgement exits 0; synchronous successful reconciliation exits
+0, recovered reconciliation exits 2, rejection/uncertainty exits 1 (invalid shell
+argument count exits 64). Detached completion appears in the journal/log, not the
+original caller's exit code. `recovered` is always a **failed release**, never
+`succeeded`, QA success, or stage acceptance. Delivery Control must map it that way,
+retain the original failure and gather its own complete release evidence.
+
+Real-process fixtures in `scripts/affected-check.test.mjs` use fake Docker/curl
+executables and private allocated directories, with actual detachment, waits and
+kernel locks. Linux additionally checks exclusion with util-linux `flock`; macOS
+does not provide that command. They do not access production or a database. The
+restricted worker can reject process spawning (`EPERM`); the supervisor must run
+`npm run gate` outside that sandbox and Linux coverage before operator commissioning.
+
 ## Owner gate and manifest
 
 Gate input is `{ "repository": "sislex/make", "commit": "<40 hex SHA>",
