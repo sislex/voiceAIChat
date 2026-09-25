@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: d3ecd654
+checked: 4bebb812
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -66,6 +66,18 @@ SHA, release metadata or environment identity is rejected. States distinguish
 `accepted`, `running`, `failed`, `uncertain`, `succeeded` and `recovered`. Failed
 preflight is not deployment success; only verified runtime completion produces
 `succeeded`.
+
+Delivery Control additionally supplies `--delivery-fence /protected/input.json`.
+The frozen launcher pins this operator-owned private envelope before detaching,
+checks its expected previous Core commit while holding the host lock, and checks
+the live lease before Git updates, every Docker invocation and successful
+completion. The envelope binds the operation, candidate manifest hash, run,
+environment and exact previous/target commits. A revoked lease or changed input
+stops further commands; if effects have begun the result remains uncertain.
+See the envelope contract in [delivery-release-adapter.md](../delivery-release-adapter.md#detached-source-deployment-authority).
+Reconciliation of such an operation requires a new envelope with the same
+immutable transition and live `reconcile` authority. An unfenced reconciliation
+cannot clear its journal. Plain manual invocations retain the existing behavior.
 
 `--reconcile-operation <id>` acquires the same host lock and observes health and
 readiness without deploying. After confirmed Compose completion it can record the

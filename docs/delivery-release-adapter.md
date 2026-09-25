@@ -40,6 +40,61 @@ replace that lock file. All release callers must use that lock and the shared
 adapter state directory. The exported JavaScript function assumes this host lock
 is already held; it is not an alternative unlocked deployment entry point.
 
+## Detached source deployment authority
+
+Source deployments use `voicechat-deploy`, not the OCI launcher. The trusted
+broker creates a private immutable JSON envelope outside candidate workspaces and
+calls `voicechat-deploy --operation-id <id> --expected-commit <sha>
+--delivery-fence /protected/input.json`. The envelope has exactly these fields:
+
+```json
+{
+  "schemaVersion": 1,
+  "expectedCommit": "<40 hex target Core commit>",
+  "expectedPreviousCommit": "<40 hex observed Core commit>",
+  "lease": {
+    "id": "effect-id",
+    "epoch": 1,
+    "leaseId": "lease-id",
+    "expiresAt": 1790200000000,
+    "action": "deploy",
+    "runId": "shared-chat-v1",
+    "environment": "production",
+    "releaseSetId": "candidate-id",
+    "manifestHash": "<64 hex canonical candidate hash>"
+  },
+  "verifyLeaseCommand": ["/opt/delivery-control/bin/verify-release-lease"],
+  "environment": {}
+}
+```
+
+The broker must validate the candidate's exact source transition and owner gate
+evidence before writing this envelope. Worker input cannot set verifier commands,
+environment or file paths. Install the verifier outside worker-writable paths;
+its command accepts the same stdin/receipt protocol as B05. Only `PATH`, `HOME`,
+`DELIVERY_CONTROL_URL` and `DELIVERY_RELEASE_VERIFIER_TOKEN_FILE` are permitted in
+its explicit environment. Keep credentials in the protected token file. The
+envelope is a regular mode-0600 file with canonical, root/operator-owned ancestors
+that are not group/world writable. Do not place it under `/tmp`.
+
+The parent verifies current authority and pins the envelope's byte hash. The
+detached child rejects changed bytes and independently verifies authority. Under
+the existing host lock it compares the live previous Core commit before any Git
+or Docker mutation; every Docker call and successful completion verifies again.
+The envelope and its immutable transition are recorded by hash/identity only;
+credentials and verifier output are never journaled. Verification has a ten-second
+timeout and rejects expired leases, errors and mismatched receipts. Losing
+authority does not kill an already-running Docker operation: the host lock stays
+held until it exits, and further commands stop. This prevents a replacement
+operation from overlapping it; it is not instantaneous cancellation.
+
+Use `--reconcile-operation <id> --delivery-fence /protected/new-input.json` with
+new live `reconcile` authority and the same run/environment/candidate/hash/source
+transition. Unknown command completion still requires explicit owner recovery;
+reconciliation never launches deployment or rollback. This contract covers only
+the Core source transition. OCI composition and independent UI generation have
+their own owner contracts. Installing this tooling is not deployment acceptance.
+
 ## Owner gate and manifest
 
 Gate input is `{ "repository": "sislex/make", "commit": "<40 hex SHA>",

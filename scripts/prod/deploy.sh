@@ -28,12 +28,16 @@ log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 operation_id=
 expected_commit=
 operation_command=deploy
+delivery_fence=
+delivery_fence_hash=
 while (( $# )); do
   case "$1" in
     --operation-id) operation_id=${2:?}; shift 2 ;;
     --expected-commit) expected_commit=${2:?}; shift 2 ;;
     --status-operation) operation_id=${2:?}; operation_command=status; shift 2 ;;
     --reconcile-operation) operation_id=${2:?}; operation_command=reconcile; shift 2 ;;
+    --delivery-fence) delivery_fence=${2:?}; shift 2 ;;
+    --delivery-fence-sha256) delivery_fence_hash=${2:?}; shift 2 ;;
     --release-version) export VC_RELEASE_VERSION=$2; shift 2 ;;
     --release-version-source) export VC_RELEASE_VERSION_SOURCE=$2; shift 2 ;;
     *) echo 'Unknown deployment argument' >&2; exit 64 ;;
@@ -48,13 +52,72 @@ fi
 export VC_RELEASE_VERSION_SOURCE=${VC_RELEASE_VERSION_SOURCE:-${VC_RELEASE_VERSION:+explicit}}
 OPERATION_ROOT=${VC_DEPLOY_OPERATIONS:-/var/lib/voicechat/deploy-operations}
 
+# The trusted broker supplies this private, immutable envelope. It binds the
+# exact source transition to live authority; candidate source supplies no command.
+# Keep verification embedded in the frozen launcher, including after git pull.
+delivery_authority() {
+  [[ -n $delivery_fence ]] || { [[ -z $delivery_fence_hash ]]; return; }
+  python3 - "$delivery_fence" "$delivery_fence_hash" "$operation_id" "$expected_commit" "$operation_command" "$1" <<'FENCE_PYTHON'
+import hashlib,json,os,pathlib,re,stat,subprocess,sys,time
+try:
+ path,pinned,ident,expected,action,mode=sys.argv[1:]
+ p=pathlib.Path(path)
+ assert p.is_absolute() and p.resolve()==p
+ for item in (p,*p.parents):
+  s=item.lstat()
+  assert s.st_uid in (0,os.geteuid()) and not s.st_mode & 0o022
+  assert stat.S_ISREG(s.st_mode) if item==p else stat.S_ISDIR(s.st_mode)
+ assert p.stat().st_size<=16384 and not p.stat().st_mode & 0o077
+ raw=p.read_bytes(); fingerprint=hashlib.sha256(raw).hexdigest()
+ assert not pinned or pinned==fingerprint
+ value=json.loads(raw)
+ assert set(value)=={'schemaVersion','expectedCommit','expectedPreviousCommit','lease','verifyLeaseCommand','environment'}
+ assert value['schemaVersion']==1
+ assert all(isinstance(value[k],str) and re.fullmatch('[a-f0-9]{40}',value[k]) for k in ('expectedCommit','expectedPreviousCommit'))
+ assert action=='reconcile' or value['expectedCommit']==expected
+ lease=value['lease']
+ assert set(lease)=={'id','epoch','leaseId','expiresAt','action','runId','environment','releaseSetId','manifestHash'}
+ assert lease['id']==ident and lease['action']==action
+ assert type(lease['epoch']) is int and lease['epoch']>0
+ assert type(lease['expiresAt']) is int and lease['expiresAt']>int(time.time()*1000)
+ assert lease['environment'] in ('staging','production')
+ assert all(isinstance(lease[k],str) and re.fullmatch('[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}',lease[k]) for k in ('id','leaseId','runId','releaseSetId'))
+ assert isinstance(lease['manifestHash'],str) and re.fullmatch('[a-f0-9]{64}',lease['manifestHash'])
+ command=value['verifyLeaseCommand']; environment=value['environment']
+ assert isinstance(command,list) and 1<=len(command)<=20 and all(isinstance(x,str) and 0<len(x)<=4096 for x in command)
+ assert pathlib.Path(command[0]).is_absolute()
+ assert isinstance(environment,dict) and set(environment)<= {'PATH','HOME','DELIVERY_CONTROL_URL','DELIVERY_RELEASE_VERIFIER_TOKEN_FILE'}
+ assert all(isinstance(v,str) and len(v)<=4096 for v in environment.values())
+ if mode=='identity':
+  print(json.dumps({'expectedCommit':value['expectedCommit'],'expectedPreviousCommit':value['expectedPreviousCommit'],
+   **{k:lease[k] for k in ('runId','environment','releaseSetId','manifestHash')}}))
+ elif mode=='previous': print(value['expectedPreviousCommit'])
+ else:
+  result=subprocess.run(command,input=json.dumps(lease).encode(),stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+   env=environment,timeout=10,check=True)
+  assert len(result.stdout)<=4096
+  receipt=json.loads(result.stdout)
+  assert isinstance(receipt,dict) and set(receipt)=={'valid','epoch','leaseId'}
+  assert receipt['valid'] is True and type(receipt['epoch']) is int
+  assert receipt['epoch']==lease['epoch'] and receipt['leaseId']==lease['leaseId']
+  assert lease['expiresAt']>int(time.time()*1000)
+  if mode=='pin': print(fingerprint)
+except Exception:
+ print('delivery_authority_rejected',file=sys.stderr);sys.exit(76)
+FENCE_PYTHON
+}
+
+# Every Docker invocation, including a detached child's mutations, checks live
+# authority. The original host flock remains held by this launcher and Docker.
+docker() { delivery_authority verify && command docker "$@"; }
+
 # Embedded in the content-addressed shell copy: git pull cannot replace journal
 # code midway through a detached operation. No credential or raw health body is stored.
 operation_record() {
   python3 - "$OPERATION_ROOT" "$operation_id" "$1" "$expected_commit" "$REPO" \
-    "${VC_RELEASE_VERSION-}" "${VC_RELEASE_VERSION_SOURCE-}" "$$" "${2-}" "$HEALTH_URL" "$LOCK" <<'PYTHON'
+    "${VC_RELEASE_VERSION-}" "${VC_RELEASE_VERSION_SOURCE-}" "$$" "${2-}" "$HEALTH_URL" "$LOCK" "$fence_identity" "$delivery_fence_hash" <<'PYTHON'
 import fcntl,json,os,pathlib,re,sys,tempfile,time
-root,ident,action,expected,repo,version,source,pid,value,health,host_lock=sys.argv[1:]
+root,ident,action,expected,repo,version,source,pid,value,health,host_lock,fence_identity,fence_hash=sys.argv[1:]
 root=pathlib.Path(root)
 if not root.is_absolute() or root.resolve()!=root: raise SystemExit('operation_path_not_canonical')
 if action!='status': root.mkdir(mode=0o700,parents=True,exist_ok=True)
@@ -71,6 +134,7 @@ fd=os.open(lock,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
 with os.fdopen(fd,'r+') as guard:
  fcntl.flock(guard,fcntl.LOCK_EX)
  request={'expectedCommit':expected,'repository':repo,'version':version,'versionSource':source,'healthUrl':health,'hostLock':host_lock}
+ if fence_identity: request.update(delivery=json.loads(fence_identity),deliveryFenceSha256=fence_hash)
  record=read(path) if path.exists() else None
  if action=='reserve':
   if record:
@@ -96,6 +160,7 @@ with os.fdopen(fd,'r+') as guard:
   record.update(state=('succeeded' if code==0 else 'uncertain') if record.get('phase')=='deploying' else 'failed',exitCode=code)
  elif action=='reconcile':
   if any(record['request'][k]!=request[k] for k in ('repository','healthUrl','hostLock')): raise SystemExit('operation_environment_changed')
+  if record['request'].get('delivery')!=request.get('delivery'): raise SystemExit('operation_delivery_identity_changed')
   if record['state'] not in ('accepted','running','uncertain'): output(record);sys.exit(0)
   if record.get('phase')=='deploying' and not record.get('composeCompleted'): raise SystemExit('deployment_command_completion_unknown')
   if value==record['request']['expectedCommit']: record['state']='succeeded'
@@ -120,6 +185,22 @@ PYTHON
 observed_commit() {
   curl -fsS -m 5 "$HEALTH_URL" | python3 -c 'import json,re,sys; h=json.load(sys.stdin); c=h.get("application",{}).get("commit",""); assert h.get("ok") is True and h.get("application",{}).get("applicationId")=="core" and re.fullmatch("[a-f0-9]{40}",c); print(c)'
 }
+if [[ ${VC_DEPLOY_CHILD:-} == 1 && -n $operation_id ]]; then
+  trap 'code=$?; trap - EXIT; operation_record finish "$code" >/dev/null || true; exit "$code"' EXIT
+fi
+fence_identity=
+if [[ -n $delivery_fence ]]; then
+  [[ -n $operation_id && $operation_command != status ]] || exit 64
+  if [[ ${VC_DEPLOY_CHILD:-} == 1 ]]; then
+    [[ $delivery_fence_hash =~ ^[a-f0-9]{64}$ ]] || exit 64
+    delivery_authority verify
+  else
+    delivery_fence_hash=$(delivery_authority pin)
+  fi
+  fence_identity=$(delivery_authority identity)
+elif [[ -n $delivery_fence_hash ]]; then exit 64
+fi
+
 if [[ $operation_command == status ]]; then operation_record status; exit; fi
 if [[ $operation_command == reconcile ]]; then
   exec 9>"$LOCK"
@@ -142,6 +223,7 @@ if [[ ${VC_DEPLOY_CHILD:-} != 1 ]]; then
   release_version_source=${VC_RELEASE_VERSION_SOURCE:-${release_version:+explicit}}
   launch_args=(--release-version "$release_version" --release-version-source "$release_version_source")
   [[ -z $operation_id ]] || launch_args+=(--operation-id "$operation_id" --expected-commit "$expected_commit")
+  [[ -z $delivery_fence ]] || launch_args+=(--delivery-fence "$delivery_fence" --delivery-fence-sha256 "$delivery_fence_hash")
   VC_DEPLOY_CHILD=1 setsid nohup "$0" "${launch_args[@]}" >>"$LOG" 2>&1 </dev/null &
   if [[ -z $operation_id ]]; then
     printf 'Deployment started (pid %s). Log: %s; health: %s\n' "$!" "$LOG" "$HEALTH_URL"
@@ -163,10 +245,18 @@ fi
 
 [[ -z $operation_id ]] || operation_record start >/dev/null
 cd "$REPO"
+delivery_authority verify
+if [[ -n $delivery_fence ]]; then
+  [[ $(observed_commit) == "$(delivery_authority previous)" ]] || {
+    log 'Expected previous runtime does not match under the deployment lock'; exit 65;
+  }
+fi
 log "=== деплой начат, HEAD $(git rev-parse --short HEAD) ==="
 
 log 'git pull --ff-only и git fetch --tags'
+delivery_authority verify
 git pull --ff-only
+delivery_authority verify
 git fetch --tags origin
 log "HEAD после pull: $(git rev-parse --short HEAD)"
 
@@ -176,6 +266,9 @@ if [[ -n $expected_commit ]]; then
     log 'Expected clean commit does not match checkout; runtime unchanged'; exit 65;
   }
   previous=$(observed_commit) || { log 'Exact previous runtime is required'; exit 65; }
+  if [[ -n $delivery_fence ]]; then
+    [[ $previous == "$(delivery_authority previous)" ]] || exit 65
+  fi
 fi
 
 # Метаданные именно того коммита, из которого сейчас собирается приложение.
@@ -232,6 +325,10 @@ migration_error() {
   exit 1
 }
 
+if [[ -n $delivery_fence ]]; then
+  delivery_authority verify
+  operation_record phase "$previous" >/dev/null
+fi
 log "проверяем постоянный том серверных данных $data_volume"
 docker volume create "$data_volume" >/dev/null ||
   migration_error "не удалось создать или открыть постоянный том"
@@ -304,6 +401,7 @@ for ((i = 1; i <= HEALTH_TRIES; i++)); do
       log 'Healthy runtime does not match expected commit'; sleep 5; continue
     fi
     log "=== деплой успешен: $(curl -fsS -m 5 "$HEALTH_URL") ==="
+    delivery_authority verify
     exit 0
   fi
   sleep 5
