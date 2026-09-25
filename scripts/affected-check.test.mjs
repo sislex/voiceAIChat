@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -622,7 +622,7 @@ test('production compose закрепляет каноническое имя se
 test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
   const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
   const head = 'a'.repeat(40), previous = 'b'.repeat(40)
-  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false } = {}, check) {
+  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'controlled-deploy-')))
     const bin = join(root, 'bin'), state = join(root, 'operations'), calls = join(root, 'calls')
     mkdirSync(bin); mkdirSync(state, { mode: 0o700 }); mkdirSync(join(root, 'apps/server'), { recursive: true })
@@ -645,8 +645,27 @@ test('controlled deployment pins a commit, persists detached completion and neve
       VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOG: join(root, 'log'), VC_DEPLOY_LOCK: join(root, 'lock'),
       VC_RELEASE_VERSION: '0.1.77', VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
     delete env.VC_DEPLOY_CHILD
+    // The operator envelope is outside the candidate checkout, with protected
+    // ancestors. A conventional /tmp ancestor is intentionally not accepted.
+    const protectedRoot = fence ? realpathSync(mkdtempSync(join(homedir(), '.delivery-fence-test-'))) : null
+    const fencePath = protectedRoot && join(protectedRoot, 'fence.json')
+    const verifier = join(root, 'verifier.cjs')
+    if (fence) {
+      chmodSync(protectedRoot, 0o700)
+      writeFileSync(verifier, `const fs=require('node:fs'),path=require('node:path');let input='';process.stdin.on('data',x=>input+=x);process.stdin.on('end',()=>{
+        const lease=JSON.parse(input),root=process.argv[2],countFile=path.join(root,'verifications');
+        let n=fs.existsSync(countFile)?Number(fs.readFileSync(countFile,'utf8')):0;fs.writeFileSync(countFile,String(++n));
+        fs.appendFileSync(path.join(root,'calls'),'verify '+n+'\\n');
+        if (${changeEnvelope} && n===2) fs.appendFileSync(process.argv[3],' ');
+        const rejected=(${rejectChild}&&n>=2)||(${revokeAfterDocker}&&fs.readFileSync(path.join(root,'calls'),'utf8').includes('volume create'));
+        console.log(JSON.stringify(rejected?{valid:false}:{valid:true,epoch:lease.epoch,leaseId:lease.leaseId}));
+      });`)
+      writeFileSync(fencePath, JSON.stringify({ schemaVersion: 1, expectedCommit: head, expectedPreviousCommit: expectedPrevious,
+        lease: { id: 'one', epoch: 1, leaseId: 'fixture-lease', expiresAt: Date.now() + 60000, action: 'deploy', runId: 'fixture', environment: 'staging', releaseSetId: 'candidate', manifestHash: 'c'.repeat(64) },
+        verifyLeaseCommand: [process.execPath, verifier, root, fencePath], environment: {} }), { mode: 0o600 })
+    }
     const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: 10000 })
-    const start = run('--operation-id', 'one', '--expected-commit', head)
+    const start = run('--operation-id', 'one', '--expected-commit', head, ...(fence ? ['--delivery-fence', fencePath] : []))
     assert.equal(start.status, 0, start.stderr)
     assert.equal(JSON.parse(start.stdout).state, 'accepted')
     let record
@@ -655,8 +674,8 @@ test('controlled deployment pins a commit, persists detached completion and neve
       if (!['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))) break
       await delay(20)
     }
-    try { await check({ root, state, record, run, calls: () => existsSync(calls) ? readFileSync(calls, 'utf8') : '' }) }
-    finally { rmSync(root, { recursive: true, force: true }) }
+    try { await check({ root, state, record, run, fencePath, calls: () => existsSync(calls) ? readFileSync(calls, 'utf8') : '' }) }
+    finally { rmSync(root, { recursive: true, force: true }); if (protectedRoot) rmSync(protectedRoot, { recursive: true, force: true }) }
   }
   await t.test('success is observed at the exact SHA and an identical request is read-only', () => scenario({}, ({ record, run, calls }) => {
     assert.equal(record.state, 'succeeded'); assert.equal(record.composeCompleted, true)
@@ -695,5 +714,37 @@ test('controlled deployment pins a commit, persists detached completion and neve
     const observed = run('--reconcile-operation', 'one')
     assert.equal(observed.status, 0, observed.stderr); assert.equal(JSON.parse(observed.stdout).state, 'recovered')
     assert.equal(calls().split('compose up -d --build').length - 1, 1)
+  }))
+  await t.test('detached source deployment verifies live authority before every Docker invocation', () => scenario({ fence: true }, ({ record, calls }) => {
+    assert.equal(record.state, 'succeeded')
+    assert.equal(record.request.delivery.expectedPreviousCommit, previous)
+    const lines = calls().trim().split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      if (/^(volume |run |compose )/.test(lines[i])) assert.match(lines[i - 1], /^verify /)
+    }
+    assert.ok(lines.includes('compose up -d --build'))
+  }))
+  await t.test('previous runtime mismatch under the host lock prevents all Docker effects', () => scenario({ fence: true, expectedPrevious: head }, ({ record, calls }) => {
+    assert.equal(record.state, 'failed'); assert.equal(record.exitCode, 65)
+    assert.doesNotMatch(calls(), /volume |compose |run /)
+  }))
+  for (const options of [{ rejectChild: true }, { changeEnvelope: true }]) {
+    await t.test('authority lost between parent and child prevents deployment: ' + JSON.stringify(options), () => scenario({ fence: true, ...options }, ({ record, calls }) => {
+      assert.equal(record.state, 'failed'); assert.doesNotMatch(calls(), /volume |compose |run /)
+    }))
+  }
+  await t.test('revocation after an effect preserves uncertainty and stops subsequent mutations', () => scenario({ fence: true, revokeAfterDocker: true }, ({ record, calls }) => {
+    assert.equal(record.state, 'uncertain'); assert.match(calls(), /volume create/)
+    assert.doesNotMatch(calls(), /compose up/)
+  }))
+  await t.test('reconciliation requires renewed live authority and the same immutable transition', () => scenario({ fence: true, wrongHealth: true }, ({ record, run, fencePath }) => {
+    assert.equal(record.state, 'uncertain')
+    assert.notEqual(run('--reconcile-operation', 'one').status, 0)
+    const value = JSON.parse(readFileSync(fencePath, 'utf8'))
+    value.lease.action = 'reconcile'; value.lease.epoch++
+    writeFileSync(fencePath, JSON.stringify(value))
+    const result = run('--reconcile-operation', 'one', '--delivery-fence', fencePath)
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(JSON.parse(result.stdout).state, 'recovered')
   }))
 })

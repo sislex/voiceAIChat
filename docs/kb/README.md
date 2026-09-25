@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 19 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 36 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1633 коммит(ов) в areas после сверки: d3ecd654 docs: record coordinator 0.3.1 and one-worker B06 trial … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1634 коммит(ов) в areas после сверки: 4bebb812 feat: expose exact-commit detached deployment operation status … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 1 коммит(ов) в areas после сверки: 9e028b00 fix: remove local release branch on deletion |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 2 коммит(ов) в areas после сверки: 4bebb812 feat: expose exact-commit detached deployment operation status … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 27 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 395 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
@@ -40,7 +40,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 223 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-23 | ⚠ 2 коммит(ов) в areas после сверки: 95eaf002 feat(delivery): add fenced Core release tooling adapters … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-23 | ⚠ 3 коммит(ов) в areas после сверки: 4bebb812 feat: expose exact-commit detached deployment operation status … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 175 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -54,8 +54,9 @@
 
 ## Журнал сессий
 
-Всего записей: 943. Последние:
+Всего записей: 944. Последние:
 
+- [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md) — delivery-source-fencing
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md) — delivery-control-031-worker-trial
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-deployment-observation.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-deployment-observation.md) — controlled-deployment-observation
 - [2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md](log/2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md) — delivery-release-adapter-b05
@@ -65,7 +66,6 @@
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-team-tenants.md) — team-tenants
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-server-owned-runner-release.md) — server-owned-runner-release
 - [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-route-budget-font-css.md) — release-route-budget-font-css
-- [2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-hook-timeout.md](log/2026-09-23-alexeys-macbook-air-tailae39a6-ts-net-release-hook-timeout.md) — release-hook-timeout
 
 ## Исторические планы
 
