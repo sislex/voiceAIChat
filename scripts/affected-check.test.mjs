@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -619,6 +620,257 @@ test('production compose закрепляет каноническое имя se
   assert.match(compose, /- vc-data:\/mnt\/server-data:ro/)
 })
 
+test('source recovery v2 uses real detached processes and the Core/UI kernel lock', async (t) => {
+  const launcher = fileURLToPath(new URL('./prod/deploy.sh', import.meta.url))
+  const hash = value => createHash('sha256').update(value).digest('hex')
+  const previous = 'b'.repeat(40), target = 'a'.repeat(40)
+  const previousImage = 'sha256:' + 'b'.repeat(64), targetImage = 'sha256:' + 'a'.repeat(64)
+  async function scenario(options, check) {
+    const base = process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : homedir()
+    const root = realpathSync(mkdtempSync(join(base, '.source-recovery-')))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    chmodSync(root, 0o700)
+    const bin = join(root, 'bin'), state = join(root, 'operations')
+    mkdirSync(bin); mkdirSync(state, { mode: 0o700 })
+    const put = (name, value) => writeFileSync(join(root, name), value, { mode: 0o600 })
+    put('active', 'previous'); put('options.json', JSON.stringify(options))
+    const fixture = join(root, 'fixture.py')
+    writeFileSync(fixture, `import hashlib,json,os,pathlib,signal,sys,time
+r=pathlib.Path(${JSON.stringify(root)})
+options=json.loads((r/'options.json').read_text())
+args=sys.argv[1:]; kind=args.pop(0)
+def emit(v): print(json.dumps(v))
+if kind=='verify':
+ lease=json.load(sys.stdin)
+ emit({'valid':not (r/'revoked').exists() and not (options.get('rejectStatus') and lease['action']=='status'),'epoch':lease['epoch'],'leaseId':lease['leaseId']});sys.exit()
+active=(r/'active').read_text()
+if kind=='curl':
+ if args[-1].endswith('/ui/runtime.json'): emit({'generation':2 if (r/'changed-ui').exists() else 1});sys.exit()
+ commit=${JSON.stringify(previous)} if active=='previous' else ${JSON.stringify(target)}
+ emit({'ok':not(options.get('healthFailure') and active=='target'),'application':{'applicationId':'core','commit':commit}});sys.exit()
+with (r/'calls').open('a') as out: out.write(' '.join(args)+'\\n')
+def image(which): return ${JSON.stringify(previousImage)} if which=='previous' else ${JSON.stringify(targetImage)}
+def container(service):
+ return {'Id':service+'-id','Image':image(active) if service=='voicechat' else 'unchanged','Config':{'Labels':{'com.docker.compose.service':service,'com.docker.compose.config-hash':hashlib.sha256((r/(active+'.json')).read_bytes()).hexdigest()}},'State':{'StartedAt':'fixed'}}
+if args[:2]==['image','inspect']:
+ which='previous' if args[2]==image('previous') else 'target'
+ if (r/'missing').exists() and which=='previous': sys.exit(1)
+ declared={'/data':{}} if options.get('namedVolume') else ({'/unbound':{}} if options.get('unboundImageVolume') and which=='target' else {})
+ emit([{'Id':image(which),'Config':{'Labels':{'org.opencontainers.image.revision':${JSON.stringify(previous)} if which=='previous' else ${JSON.stringify(target)}},'Volumes':declared}}]);sys.exit()
+if args[:2]==['volume','inspect']: emit([{'Name':args[2]}]);sys.exit()
+if args[0]=='inspect': emit([container(x.replace('-id','')) for x in args[1:]]);sys.exit()
+assert args[0]=='compose'
+which=pathlib.Path(args[4]).stem
+tail=args[5:]
+if tail==['config','--hash','voicechat']: print('voicechat '+hashlib.sha256((r/(which+'.json')).read_bytes()).hexdigest());sys.exit()
+if tail[:1]==['config']: print((r/(which+'.json')).read_text());sys.exit()
+if tail==['ps','-aq']: print('voicechat-id dependency-id');sys.exit()
+if tail==['ps','-q','voicechat']: print('voicechat-id');sys.exit()
+if tail[:1]==['exec']: sys.exit(0)
+assert tail==['up','-d','--no-build','--pull','never','--no-deps','voicechat']
+(r/'active').write_text(which)
+if options.get('liveChild') and which=='target':
+ (r/'live').write_text(str(os.getpid()))
+ if options.get('killOwner'): os.kill(os.getppid(),signal.SIGKILL)
+ deadline=time.time()+15
+ while not (r/'release').exists() and time.time()<deadline: time.sleep(.02)
+ (r/'child-ended').touch()
+if options.get('revokeAfterEffect') or (options.get('revokeRecovery') and which=='previous'): (r/'revoked').touch()
+sys.exit(23 if (which=='target' and options.get('composeFailure')) or (which=='previous' and options.get('rollbackFailure')) else 0)
+`)
+    const python = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' })
+    assert.equal(python.status, 0, python.error?.message || python.stderr)
+    for (const name of ['docker', 'curl']) {
+      writeFileSync(join(bin, name), `#!/bin/sh\nexec '${python.stdout.trim()}' '${fixture}' '${name}' "$@"\n`, { mode: 0o755 })
+    }
+    const spec = (name, image) => {
+      const configuration = { services: { voicechat: { image }, dependency: { image: 'unchanged' } } }
+      if (options.anonymousVolume) configuration.services.voicechat.volumes = [{ type: 'volume', target: '/data' }]
+      if (options.namedVolume) {
+        configuration.services.voicechat.volumes = [{ type: 'volume', source: 'data', target: '/data' }]
+        configuration.volumes = { data: { name: 'existing-fixture-data' } }
+      }
+      const value = JSON.stringify(configuration)
+      put(name + '.json', value)
+      return { path: join(root, name + '.json'), sha256: hash(value), image, validationSha256: 'c'.repeat(64) }
+    }
+    const operation = { id: 'one', runId: 'fixture', environment: 'staging', releaseSetId: 'candidate', manifestHash: 'c'.repeat(64),
+      expectedCommit: target, expectedPreviousCommit: previous, project: process.env.COMPOSE_PROJECT_NAME || 'source-fixture',
+      previous: spec('previous', previousImage), target: spec('target', targetImage), compositionFiles: [],
+      healthUrl: `http://127.0.0.1:${process.env.DELIVERY_PORTS?.match(/\d+/)?.[0] || '23000'}/api/health` }
+    const env = { ...process.env, PATH: bin + ':' + process.env.PATH, VC_REPO_DIR: root, VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOCK: join(root, 'lock'), VC_DEPLOY_LOG: join(root, 'log'), TMPDIR: root }
+    const request = (action, epoch, change = {}) => {
+      const path = join(root, action + '-' + epoch + '-' + Math.random().toString(16).slice(2) + '.json')
+      writeFileSync(path, JSON.stringify({ schemaVersion: 2, operation: { ...operation, ...change },
+        lease: { id: 'one', runId: 'fixture', environment: 'staging', releaseSetId: 'candidate', manifestHash: 'c'.repeat(64), epoch, leaseId: 'lease-' + epoch, expiresAt: Date.now() + 60000, action },
+        verifyLeaseCommand: [python.stdout.trim(), fixture, 'verify'], environment: {} }), { mode: 0o600 })
+      return path
+    }
+    const run = path => spawnSync('bash', [launcher, '--source-request', path], { env, encoding: 'utf8', timeout: 5000 })
+    const record = () => JSON.parse(readFileSync(join(state, 'one.json'), 'utf8'))
+    const wait = async predicate => {
+      for (let i = 0; i < 500; i++) { if (predicate()) return; await delay(20) }
+      assert.fail('fixture did not finish: ' + (existsSync(join(root, 'log')) ? readFileSync(join(root, 'log'), 'utf8') : 'no log'))
+    }
+    const calls = () => existsSync(join(root, 'calls')) ? readFileSync(join(root, 'calls'), 'utf8') : ''
+    const ups = () => calls().split('\n').filter(x => x.includes(' up '))
+    try {
+      const deploy = request('deploy', 1)
+      const start = run(deploy)
+      assert.equal(start.status, 0, start.error?.message || start.stderr)
+      if (options.liveChild) await wait(() => existsSync(join(root, 'live')))
+      else await wait(() => record().finishedAction === 'deploy')
+      await check({ root, put, request, run, record, wait, calls, ups, deploy })
+    } finally {
+      put('release', '')
+      if (options.liveChild) await wait(() => existsSync(join(root, 'child-ended')))
+      // Ensure the last inherited lock holder has exited before removing fixtures.
+      let lockReleased = false
+      for (let i = 0; i < 100; i++) {
+        const free = spawnSync(python.stdout.trim(), ['-c', 'import fcntl,sys; f=open(sys.argv[1],"a"); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)', join(root, 'lock')])
+        if (free.status === 0) { lockReleased = true; break }
+        await delay(20)
+      }
+      assert.equal(lockReleased, true, 'fixture cleanup must not hide a live inherited lock holder')
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+  await t.test('exact successful source deployment is idempotent', () => scenario({}, f => {
+    assert.equal(f.record().state, 'succeeded')
+    assert.equal(f.run(f.deploy).status, 0)
+    assert.equal(f.ups().length, 1)
+  }))
+  await t.test('live-authorized status preserves the same lease and immutable effect fence', () => scenario({}, f => {
+    const before = f.record(), calls = f.calls()
+    for (const epoch of [1, 2]) {
+      const result = f.run(f.request('status', epoch))
+      assert.equal(result.status, 0, result.stderr)
+      assert.deepEqual(JSON.parse(result.stdout), before)
+      assert.deepEqual(f.record(), before)
+      assert.equal(f.calls(), calls)
+    }
+    const wrongLease = f.request('status', 1)
+    const envelope = JSON.parse(readFileSync(wrongLease, 'utf8'))
+    envelope.lease.leaseId = 'different-live-lease'
+    writeFileSync(wrongLease, JSON.stringify(envelope))
+    assert.notEqual(f.run(wrongLease).status, 0)
+    assert.notEqual(f.run(f.request('status', 1, { expectedCommit: previous })).status, 0)
+    assert.deepEqual(f.record(), before)
+    assert.equal(f.calls(), calls)
+    // A higher-epoch read did not supersede the original idempotent deploy lease.
+    assert.equal(f.run(f.deploy).status, 0)
+    assert.equal(f.calls(), calls)
+    f.put('revoked', '')
+    assert.notEqual(f.run(f.request('status', 1)).status, 0)
+    assert.deepEqual(f.record(), before)
+  }))
+  await t.test('status needs independent action authorization even with the exact effect lease', () => scenario({ rejectStatus: true }, f => {
+    const before = f.record(), calls = f.calls()
+    assert.notEqual(f.run(f.request('status', 1)).status, 0)
+    assert.deepEqual(f.record(), before)
+    assert.equal(f.calls(), calls)
+  }))
+  await t.test('existing named volume covers image-declared storage without creating a volume', () => scenario({ namedVolume: true }, f => {
+    assert.equal(f.record().state, 'succeeded')
+    assert.equal(f.ups().length, 1)
+    assert.match(f.calls(), /volume inspect existing-fixture-data/)
+    assert.doesNotMatch(f.calls(), /volume create/)
+  }))
+  for (const storage of [{ anonymousVolume: true }, { unboundImageVolume: true }]) {
+    await t.test('unpinned storage blocks before any replacement: ' + JSON.stringify(storage), () => scenario(storage, f => {
+      assert.equal(f.record().state, 'uncertain')
+      assert.equal(f.record().outcomes.deploy.exitCode, 1)
+      assert.equal(f.ups().length, 0)
+      assert.equal(f.record().prepared, undefined)
+    }))
+  }
+  for (const failure of [{ composeFailure: true }, { healthFailure: true }]) {
+    await t.test('known terminal failure recovers exact previous source: ' + JSON.stringify(failure), () => scenario(failure, async f => {
+      assert.equal(f.record().state, 'uncertain'); assert.equal(f.record().deploymentCompleted, true)
+      assert.equal(f.record().outcomes.deploy.exitCode, 1)
+      assert.ok(f.record().commands.every(x => x.completed))
+      const recover = f.request('recover', 2)
+      assert.equal(f.run(recover).status, 0)
+      await f.wait(() => f.record().finishedAction === 'recover')
+      assert.equal(f.record().state, 'recovered'); assert.equal(f.ups().length, 2)
+      assert.equal(f.record().outcomes.deploy.exitCode, 1)
+      assert.equal(f.record().outcomes.recover.exitCode, 2)
+      // Discarded launch reply and repeated/renewed requests reconcile the same record.
+      assert.equal(f.run(recover).status, 0)
+      assert.equal(f.run(f.request('recover', 3)).status, 0)
+      assert.equal(f.ups().length, 2)
+      assert.notEqual(f.run(f.request('recover', 4, { expectedCommit: previous })).status, 0)
+      assert.equal(f.ups().length, 2)
+    }))
+  }
+  await t.test('observation only cannot turn a failed candidate into recovery', () => scenario({ composeFailure: true }, f => {
+    assert.notEqual(f.run(f.request('reconcile', 2)).status, 0)
+    assert.equal(f.ups().length, 1); assert.equal(f.record().state, 'uncertain')
+  }))
+  await t.test('stale and revoked recovery authority have no effects', () => scenario({ composeFailure: true }, f => {
+    assert.notEqual(f.run(f.request('recover', 1)).status, 0)
+    const expired = f.request('recover', 2)
+    const envelope = JSON.parse(readFileSync(expired, 'utf8'))
+    envelope.lease.expiresAt = Date.now() - 1
+    writeFileSync(expired, JSON.stringify(envelope))
+    assert.notEqual(f.run(expired).status, 0)
+    f.put('revoked', '')
+    assert.notEqual(f.run(f.request('recover', 2)).status, 0)
+    assert.equal(f.ups().length, 1); assert.equal(f.record().state, 'uncertain')
+  }))
+  await t.test('lost terminal observation reconciles completed recovery without effects', () => scenario({ composeFailure: true, revokeRecovery: true }, async f => {
+    assert.equal(f.run(f.request('recover', 2)).status, 0)
+    await f.wait(() => f.record().finishedAction === 'recover')
+    assert.equal(f.record().state, 'uncertain'); assert.equal(f.record().recoveryCompleted, true)
+    assert.notEqual(f.run(f.request('reconcile', 3)).status, 0)
+    rmSync(join(f.root, 'revoked'))
+    assert.equal(f.run(f.request('reconcile', 3)).status, 2)
+    assert.equal(f.record().state, 'recovered'); assert.equal(f.ups().length, 2)
+  }))
+  await t.test('changed artifact bytes cannot be used for recovery', () => scenario({ composeFailure: true }, async f => {
+    f.put('previous.json', '{}')
+    assert.equal(f.run(f.request('recover', 2)).status, 0)
+    await f.wait(() => f.record().finishedAction === 'recover')
+    assert.equal(f.record().state, 'uncertain'); assert.equal(f.ups().length, 1)
+  }))
+  for (const marker of ['missing', 'changed-ui']) {
+    await t.test('missing artifact or changed composition retains barrier: ' + marker, () => scenario({ composeFailure: true }, async f => {
+      f.put(marker, '')
+      assert.equal(f.run(f.request('recover', 2)).status, 0)
+      await f.wait(() => f.record().finishedAction === 'recover')
+      assert.equal(f.record().state, 'uncertain'); assert.equal(f.ups().length, 1)
+    }))
+  }
+  await t.test('rollback failure is durable and never retries the effect', () => scenario({ composeFailure: true, rollbackFailure: true }, async f => {
+    const recovery = f.request('recover', 2)
+    assert.equal(f.run(recovery).status, 0)
+    await f.wait(() => f.record().finishedAction === 'recover')
+    assert.equal(f.record().state, 'uncertain')
+    assert.equal(f.record().commands.at(-1).exitCode, 23)
+    assert.equal(f.run(recovery).status, 0)
+    assert.notEqual(f.run(f.request('reconcile', 3)).status, 0)
+    assert.equal(f.ups().length, 2)
+  }))
+  for (const killOwner of [false, true]) {
+    await t.test('live child excludes owner and legacy flock; unknown completion stays blocked: ' + killOwner, () => scenario({ liveChild: true, killOwner, composeFailure: true }, async f => {
+      assert.notEqual(f.run(f.request('recover', 2)).status, 0)
+      if (process.platform === 'linux') {
+        const contender = spawnSync('flock', ['-n', join(f.root, 'lock'), 'true'])
+        assert.equal(contender.status, 1)
+      }
+      f.put('release', '')
+      await f.wait(() => existsSync(join(f.root, 'child-ended')))
+      if (killOwner) {
+        await delay(100)
+        assert.notEqual(f.run(f.request('recover', 2)).status, 0)
+        assert.notEqual(f.run(f.request('reconcile', 3)).status, 0)
+        assert.ok(f.record().commands.some(x => !x.completed))
+      } else await f.wait(() => f.record().finishedAction === 'deploy')
+      assert.equal(f.ups().length, 1)
+    }))
+  }
+})
+
 test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
   const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
   const head = 'a'.repeat(40), previous = 'b'.repeat(40)
@@ -647,7 +899,7 @@ test('controlled deployment pins a commit, persists detached completion and neve
     delete env.VC_DEPLOY_CHILD
     // The operator envelope is outside the candidate checkout, with protected
     // ancestors. A conventional /tmp ancestor is intentionally not accepted.
-    const protectedRoot = fence ? realpathSync(mkdtempSync(join(homedir(), '.delivery-fence-test-'))) : null
+    const protectedRoot = fence ? realpathSync(mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : homedir(), '.delivery-fence-test-'))) : null
     const fencePath = protectedRoot && join(protectedRoot, 'fence.json')
     const verifier = join(root, 'verifier.cjs')
     if (fence) {

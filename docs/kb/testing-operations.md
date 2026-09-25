@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-23
-checked: 9e028b00
+updated: 2026-09-25
+checked: fca3a356
 areas:
   - package.json
   - scripts
@@ -16,6 +16,52 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+## Controlled deployment fixture isolation
+
+The source-fence and browser UI owner process fixtures use `DELIVERY_ATTEMPT_ROOT/tmp` when the
+worker assigns a private runtime. They fall back to the invoking user's home only
+for direct local checks without an assigned runtime. This keeps protected fixture
+paths inside the native gate's writable boundary without broadening permissions
+or repurposing HOME. Use a canonical private runtime with protected ancestry;
+world-writable temporary ancestors are correctly rejected by the owner contract.
+
+## Isolated native Core fixtures
+
+Core integration fixtures must supply a private `VC_DATA_DIR`, even with an
+in-memory database: `FeaturePreviewManager.reconcile()` persists
+`feature-previews.json` during startup. `src/test/privateDataDir.ts` allocates
+unique directories under `DELIVERY_ATTEMPT_ROOT/tmp` when assigned, otherwise
+the platform temporary directory. Close client sockets, await application and
+database shutdown, then remove the directory. Never redirect `HOME` or change
+production defaults to isolate a test.
+
+STT, TTS and project fixtures pass their directories explicitly. The server
+Vitest setup adapts partial config objects only in the legacy session,
+account-access and Runner-proxy integration suites; it uses the real config
+loader and leaves explicit directories and config contract tests unchanged.
+The published Runner contract tests likewise allocate a unique real data root
+for RunReceipts and close the app before deletion, including failed startup.
+They continue to exercise the published Runner server, not a replacement.
+
+An Automated QA `202` response and the initial board invalidation do not imply
+that background completion is persisted. Assert the eventual normalized status
+and keep WS clients in fixture teardown so assertion failures cannot hang close.
+
+The cleanup helper opens ancestors with `O_SEARCH` on macOS or `O_PATH` on Linux,
+retaining `O_DIRECTORY`, `O_NOFOLLOW` and descriptor-relative traversal. It only
+requests read access for the final directory it enumerates. Missing directories
+are created after a failed lookup, not by attempting mkdir on every ancestor.
+Do not widen sandbox read roots to make ancestor enumeration work. Search-only
+ancestor coverage runs alongside the ownership, symlink and replacement-race
+regressions. Platforms without search handles retain the read-only fallback.
+
+In restricted model sandboxes, loopback `listen EPERM` still requires the
+supervisor's native gate. Passing fixture-only tests is not full gate acceptance;
+complete owner checks remain required. On macOS, the native command boundary
+can pass Core server suites while Chromium is refused Mach port registration.
+Keep that browser result blocked; a separate passing owner gate is not proof that
+the native browser boundary works. Do not disable the model sandbox to hide it.
 
 ## Core UI test ownership
 

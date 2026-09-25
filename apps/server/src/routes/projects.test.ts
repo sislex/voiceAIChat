@@ -1,6 +1,5 @@
+import { privateDataDir } from '../test/privateDataDir.js'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
@@ -10,6 +9,7 @@ import type { Board, BoardStatuses, ProjectDetail, ProjectSummary, Task } from '
 import { BUILTIN_PROJECT_TYPE_IDS } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
+let dataDir: ReturnType<typeof privateDataDir>
 let app: FastifyInstance
 let db: VoiceChatDb
 let adminTok: string
@@ -20,13 +20,14 @@ function inj(token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | '
 }
 
 beforeEach(async () => {
+  dataDir = privateDataDir('core-integration-')
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
   await db.identity.createUser('bob', '', 'developer')
   await db.identity.createUser('carol', '', 'developer')
   app = await buildServer({
-    config: loadConfig({ PORT: '0', VC_DATA_DIR: join(tmpdir(), `vc-proj-${Date.now()}-${id}`) }),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir.path }),
     db,
     sessionSecret: SECRET
   })
@@ -34,8 +35,9 @@ beforeEach(async () => {
   bobTok = signToken({ name: 'bob', role: 'developer' }, SECRET)
 })
 afterEach(async () => {
-  await app.close()
-  db.close()
+  await app?.close()
+  await db?.close()
+  dataDir?.remove()
 })
 
 async function reworkFixture() {
@@ -54,6 +56,41 @@ async function createProject(name = 'P1'): Promise<ProjectDetail> {
   expect(res.statusCode).toBe(200)
   return res.json() as ProjectDetail
 }
+
+it('returns QA acceptance before the missing-workspace result is persisted', async () => {
+  const project = await createProject()
+  const board = (await db.tasks.getBoard('admin', project.id))!
+  const task = (await db.tasks.createTask('admin', project.id, {
+    columnId: board.columns.find(column => column.semanticType === 'automated_qa')!.id,
+    title: 'Deferred workspace failure'
+  }))!
+  let release!: () => void
+  const completion = new Promise<void>(resolve => { release = resolve })
+  let persisted = false
+  const update = db.qa.updateQaStageRun.bind(db.qa)
+  const heldUpdate = vi.spyOn(db.qa, 'updateQaStageRun').mockImplementation(async (...args) => {
+    if (args[1].currentStep === 'workspace') await completion
+    await update(...args)
+    persisted = true
+  })
+  const status = async () => {
+    const response = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board/statuses` })
+    return (response.json() as BoardStatuses).tasks.find(item => item.taskId === task.id)?.latestRunResult
+  }
+  try {
+    const started = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/qa/runs/automated_qa` })
+    expect(started.statusCode).toBe(202)
+    expect(persisted).toBe(false)
+    release()
+    await vi.waitFor(async () => {
+      expect(await status()).toMatchObject({ id: started.json().id, outcome: 'failure' })
+    })
+    expect(await db.qa.getQaStageRun('admin', started.json().id)).toMatchObject({ status: 'failed', currentStep: 'workspace' })
+  } finally {
+    release()
+    heldUpdate.mockRestore()
+  }
+})
 
 describe('вложения задачи REST', () => {
   it('отдаёт файл вложения владельцу и прячет от неучастника', async () => {

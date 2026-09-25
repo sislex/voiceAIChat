@@ -3,9 +3,8 @@
 #   cd /path/to/production/checkout && bash scripts/prod/install.sh
 # Либо: VC_REPO_DIR=/path/to/production/checkout bash scripts/prod/install.sh
 #
-# Установленный launcher остаётся стабильным, а при каждом запуске делает неизменяемую
-# content-addressed копию актуального deploy.sh из checkout. Так исправления метаданных
-# не застревают в старой /usr/local/bin-копии, а git pull не меняет исполняемый файл.
+# The stable launcher freezes deploy.sh and its optional adjacent recovery helper
+# into one verified content-addressed directory before deploy.sh can detach.
 
 set -Eeuo pipefail
 
@@ -20,6 +19,8 @@ printf 'VC_REPO_DIR=%q\n' "$REPO" >/etc/voicechat/production.env
 chmod 644 /etc/voicechat/production.env
 
 install -d -m 755 /usr/local/lib/voicechat
+[[ ! -L /usr/local/lib/voicechat/source-runtime.py ]] || { echo 'source-runtime.py symlink rejected' >&2; exit 1; }
+install -m 755 "$SRC/source-runtime.py" /usr/local/lib/voicechat/source-runtime.py
 cat >/usr/local/bin/voicechat-deploy <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -27,12 +28,9 @@ set -Eeuo pipefail
 source /etc/voicechat/production.env
 : "${VC_REPO_DIR:?VC_REPO_DIR не задан}"
 REPO=$VC_REPO_DIR
-source="$REPO/scripts/prod/deploy.sh"
-digest=$(sha256sum "$source" | awk '{print $1}')
-runtime="/usr/local/lib/voicechat/deploy-$digest.sh"
-if [[ ! -x $runtime ]]; then install -m 755 "$source" "$runtime"; fi
-# Зафиксировать metadata на границе стабильного launcher.
-exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"
+# Preserve the metadata boundary and argv; pin both files before any detach.
+exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" \
+  python3 /usr/local/lib/voicechat/source-runtime.py "$REPO/scripts/prod" /usr/local/lib/voicechat "$@"
 EOF
 chmod 755 /usr/local/bin/voicechat-deploy
 cat >/usr/local/bin/voicechat-ui-deploy <<'EOF'

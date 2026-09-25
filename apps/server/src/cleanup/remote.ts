@@ -16,15 +16,23 @@ fds=[]
 deleting=False
 def fail(reason):
     raise RuntimeError(reason)
+# Ancestors need lookup, not enumeration. O_SEARCH (macOS) and O_PATH
+# (Linux) retain openat/fstat and no-follow semantics without read access.
+search_flags=getattr(os,'O_SEARCH',getattr(os,'O_PATH',os.O_RDONLY))|os.O_DIRECTORY|os.O_NOFOLLOW
 def opened(path, create=False):
     if not isinstance(path,str) or not path.startswith('/') or path=='/' or os.path.normpath(path)!=path:
         fail('path_not_canonical')
-    fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY); fds.append(fd)
-    for part in path.split('/')[1:]:
-        if create:
+    fd=os.open('/',search_flags); fds.append(fd)
+    parts=path.split('/')[1:]
+    for index,part in enumerate(parts):
+        flags=(os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW) if index==len(parts)-1 else search_flags
+        try: child=os.open(part,flags,dir_fd=fd)
+        except FileNotFoundError:
+            if not create: raise
             try: os.mkdir(part,0o700,dir_fd=fd)
             except FileExistsError: pass
-        fd=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd); fds.append(fd)
+            child=os.open(part,flags,dir_fd=fd)
+        fd=child; fds.append(fd)
     return fd
 def ident(st): return str(st.st_dev)+':'+str(st.st_ino)
 def git(fd,*args, allow=False):

@@ -8,6 +8,8 @@
 // проверяются валидация тела, авторизация и адресация отмены.
 
 import { describe, it, expect } from 'vitest'
+import { join } from 'node:path'
+import { privateDataDir } from '../test/privateDataDir.js'
 import type { AddressInfo } from 'node:net'
 import { buildRunner } from '@sislex/llm-runner/server'
 import type { FastifyInstance } from 'fastify'
@@ -68,30 +70,41 @@ class FakeRuns {
   cancelAll(): void {}
 }
 
-async function startRunner(): Promise<{ app: FastifyInstance; url: string; runs: FakeRuns }> {
+async function startRunner(): Promise<{ close: () => Promise<void>; url: string; runs: FakeRuns }> {
   const runs = new FakeRuns()
-  const app = await buildRunner({
-    config: {
-      host: '127.0.0.1',
-      port: 0,
-      token: TOKEN,
-      dataDir: '/tmp/voicechat-runner-contract',
-      home: '/tmp/voicechat-runner-contract/home',
-      claudeBin: 'claude',
-      codexBin: 'codex',
-      orphanMs: 0
-    },
-    runs: runs as never,
-    health: async () => ({
-      ok: true,
-      bins: { claude: { present: true, version: null }, codex: { present: true, version: null } },
-      login: { claude: { loggedIn: true }, codex: { loggedIn: true } } as never,
-      runs: 0
+  const dataDir = privateDataDir('voicechat-runner-contract-')
+  let app: FastifyInstance | undefined
+  const close = async () => {
+    await app?.close()
+    dataDir.remove()
+  }
+  try {
+    app = await buildRunner({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        token: TOKEN,
+        dataDir: dataDir.path,
+        home: join(dataDir.path, 'home'),
+        claudeBin: 'claude',
+        codexBin: 'codex',
+        orphanMs: 0
+      },
+      runs: runs as never,
+      health: async () => ({
+        ok: true,
+        bins: { claude: { present: true, version: null }, codex: { present: true, version: null } },
+        login: { claude: { loggedIn: true }, codex: { loggedIn: true } } as never,
+        runs: 0
+      })
     })
-  })
-  await app.listen({ port: 0, host: '127.0.0.1' })
-  const { port } = app.server.address() as AddressInfo
-  return { app, url: `http://127.0.0.1:${port}`, runs }
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = app.server.address() as AddressInfo
+    return { close, url: `http://127.0.0.1:${port}`, runs }
+  } catch (error) {
+    await close()
+    throw error
+  }
 }
 
 function collect(): { handlers: LlmStreamHandlers; events: unknown[]; finished: Promise<void> } {
@@ -139,7 +152,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
         model: 'sonnet'
       })
     } finally {
-      await runner.app.close()
+      await runner.close()
     }
   })
 
@@ -160,7 +173,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
       ])
       expect(runner.runs.bodies[0]).toMatchObject({ kind: 'codex', model: '' })
     } finally {
-      await runner.app.close()
+      await runner.close()
     }
   })
 
@@ -177,7 +190,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
       expect(runner.runs.bodies).toHaveLength(0)
       expect((c.events[0] as { t: string; message: string }).message).toContain('VC_LLM_RUNNER_TOKEN')
     } finally {
-      await runner.app.close()
+      await runner.close()
     }
   })
 
@@ -195,7 +208,7 @@ describe('контракт /v1/run: RemoteLlmClient против настоящ�
 
       expect(runner.runs.cancelled[0]).toBe(runner.runs.bodies[0].runId)
     } finally {
-      await runner.app.close()
+      await runner.close()
     }
   })
 })

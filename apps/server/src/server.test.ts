@@ -118,7 +118,7 @@ describe('docker-compose: runtime-метаданные и адрес испол�
     const deploy = readFileSync(new URL('../../../scripts/prod/deploy.sh', import.meta.url), 'utf8')
     expect(install).toContain("printf 'VC_REPO_DIR=%q\\n' \"$REPO\" >/etc/voicechat/production.env")
     expect(install).toContain('EnvironmentFile=/etc/voicechat/production.env')
-    expect(install).toContain('exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"')
+    expect(install).toMatch(/exec env VC_REPO_DIR="\$REPO" VC_RELEASE_VERSION="\$\{VC_RELEASE_VERSION-\}" VC_RELEASE_VERSION_SOURCE="\$\{VC_RELEASE_VERSION_SOURCE-\}"\s+\\\n\s+python3 \/usr\/local\/lib\/voicechat\/source-runtime\.py "\$REPO\/scripts\/prod" \/usr\/local\/lib\/voicechat "\$@"/)
     expect(deploy).toContain(': "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"')
     for (const script of ['deploy.sh', 'watchdog.sh', 'rebuild-when-idle.sh']) {
       const source = readFileSync(new URL(`../../../scripts/prod/${script}`, import.meta.url), 'utf8')

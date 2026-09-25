@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: 44cc4ae5
+checked: fca3a356
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -16,8 +16,11 @@ areas:
   - Caddyfile
   - .dockerignore
   - scripts/prod/deploy.sh
+  - scripts/prod/source-recovery.py
   - scripts/prod/rebuild-when-idle.sh
   - scripts/prod/install.sh
+  - scripts/prod/source-runtime.py
+  - scripts/source-runtime-installation.test.mjs
   - scripts/affected-check.test.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -27,6 +30,41 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Controlled source recovery v2
+
+The opt-in `voicechat-deploy --source-request /protected/request.json` interface
+adds automatic source-only recovery under the existing Core/UI host lock. The
+versioned schema, exact status fields, exit semantics and broker commissioning
+requirements are in [the release adapter](../delivery-release-adapter.md#recoverable-detached-source-protocol-v2).
+Install the shell launcher and adjacent `source-recovery.py` together in a trusted
+immutable location; the existing installer does not install the helper yet.
+Manual source deployment and controlled UI retain their existing behavior.
+
+Before the first effect, v2 records the operator-validated previous immutable
+source image/Compose identity, local availability, configuration hashes, unaffected
+container identities and UI runtime hash. Anonymous/inherited volume mounts are
+rejected, and image-declared storage must be covered by pinned binds or existing
+named volumes. Only Core's immutable image may change;
+the helper never builds, pulls current main, migrates or copies customer data.
+Each external command inherits the lock, and its exit/completion is fsynced after
+waiting. A known failed Compose command or failed health check can recover with a
+renewed live lease bound to the unchanged original operation. Unknown completion,
+live children, missing artifacts, changed composition or revoked authority keep
+the uncertain barrier. Recovery failures cannot cause automatic repeated effects.
+
+Repeated/lost-reply recovery reuses the durable action; reconciliation only observes.
+Read-only `status` requires independent live authorization for the exact immutable
+operation. At the stored epoch it accepts only the same lease ID, regardless of
+the stored effect action. Neither same-epoch nor higher-epoch status changes the
+journal's effect epoch, lease, action or command history.
+`recovered` requires the exact previous Core SHA/image, readiness and unchanged
+composition evidence. It is a failed release, never stage acceptance. Legacy v1
+records cannot be upgraded by guessing missing previous artifacts. Isolated process
+fixtures passed 18 Linux tests including read-only status fencing, flock exclusion, detached owner death,
+known-failure recovery and volume guards. The complete Core owner gate passed.
+Immutable pair installation and downstream operator commissioning remain required.
+No deployment was performed by this change.
 
 ## Delivery-control release tooling (S0 B05)
 
@@ -653,11 +691,18 @@ supplementary groups процесса, поэтому одной настрой�
 копия обработчика сразу вступила в силу; его журнал читается
 через `journalctl -u voicechat-deploy-api.service`, а сам deploy продолжает писать
 в `/var/log/voicechat-deploy.log`. `/usr/local/bin/voicechat-deploy` — стабильный
-launcher: при каждом запуске он берёт актуальный `scripts/prod/deploy.sh` из
-production checkout, сохраняет его как content-addressed неизменяемую копию в
-`/usr/local/lib/voicechat` и запускает её. Поэтому обновление checkout не меняет
-исполняемый файл посреди `git pull`, а исправления передачи release metadata не
-застревают в старой установленной копии.
+launcher. It freezes the selected checkout's `scripts/prod/deploy.sh` and optional
+adjacent `source-recovery.py` together in `/usr/local/lib/voicechat/source-<sha256>`
+before launch/detachment. The identity binds both exact byte sequences, sanitized
+script modes and companion absence/presence. Private verified copies are published
+atomically; concurrent calls validate and reuse the same complete runtime, rejecting
+symlinks, corrupt or partial state without repair. The publication directory flock
+is released before execution; the existing Core/UI host deployment lock is unchanged.
+Legacy checkouts without the companion remain usable. A v2 `--source-request`
+requires the companion before launch; other callers can require it explicitly
+with `VC_SOURCE_RECOVERY_REQUIRED=1`.
+See [paired source installation](../source-runtime-installation.md) for invariants,
+isolated tests and the boundary between this B01 patch and B06 commissioning.
 
 При отделении через `setsid nohup` launcher явно передаёт фоновой копии
 `VC_RELEASE_VERSION`, `VC_RELEASE_SOURCE`, `VC_RELEASED_AT`,
