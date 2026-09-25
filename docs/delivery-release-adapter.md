@@ -239,3 +239,84 @@ retains its own fenced intent, polls the owner operation and verifies the full
 composition and unaffected containers before accepting a release. A `recovered`
 owner operation is a failed release with proven previous runtime, never acceptance.
 See the deployment KB for journal fields and commissioning limitations.
+
+## Controlled browser UI owner entrypoint
+
+`voicechat-ui-deploy delivery /protected/envelope.json` takes the existing
+Core/UI host lock and invokes `scripts/prod/ui-delivery.py` with that same locked
+file description. Do not hold a second copy of the lock around this entrypoint.
+`voicechat-ui-deploy delivery-status OPERATION_ID` reads the durable record under
+the lock; a stored result alone is not fresh release acceptance.
+
+The operator writes a private mode-0600 envelope under protected canonical
+ancestors. It contains exactly `schemaVersion: 1`, `operation`, `lease`,
+`verifyLeaseCommand` and `environment`. Neither commands nor host paths may come
+from worker/model input. The operator installation and verifier code/configuration
+must remain outside candidate checkouts.
+
+The operation fields are:
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `manifestHash` | Coordinator operation ID and exact candidate manifest SHA-256 |
+| `expectedCoreCommit` | Full healthy Core commit that must remain running |
+| `expectedGeneration`, `expectedActive` | Frozen previous UI generation/release, or JSON null for the initial bundle |
+| `targetRelease` | Immutable browser release ID, or null to activate the bundle |
+| `action` | `install` or `activate` |
+| `sourceDirectory`, `manifestSha256` | Protected extracted directory and SHA-256 of raw manifest.json bytes for install; both null for activate |
+
+The lease uses the existing live-verifier fields: `id`, integer `epoch`,
+`leaseId`, integer `expiresAt` in epoch milliseconds, `action` (`deploy` or
+`reconcile`), `runId`, `environment`, `releaseSetId` and `manifestHash`. Its ID
+and manifest hash must match the operation. The verifier returns exactly
+`{valid:true,epoch,leaseId}`. It is invoked with a ten-second timeout under the
+host lock before every Docker invocation and before terminal observation. Only
+`PATH`, `HOME`, `DELIVERY_CONTROL_URL` and
+`DELIVERY_RELEASE_VERIFIER_TOKEN_FILE` are allowed in its explicit environment.
+The executable and all arguments are trusted installation configuration.
+
+`VC_UI_DELIVERY_OPERATIONS` selects the private journal directory (default
+`/var/lib/voicechat/ui-delivery`); its protected parent must already exist.
+`VC_UI_DOCKER` defaults to `/usr/bin/docker`, and `VC_HEALTH_URL` must be a
+loopback HTTP Core health endpoint. The default is
+`http://127.0.0.1:8787/api/health`. Use distinct journals per commissioned
+environment and preserve monotonic epochs across run/session changes.
+
+The host checks the container CLI's `describe` version 2 before effects, so an
+older CLI that ignores extra flags cannot silently bypass the expected-generation
+contract. Core's actual CLI exposes `--expected-generation` and
+`--expected-active` as JSON values; install additionally accepts
+`--manifest-sha256` and `--target-release`. It verifies these values before
+installation and passes the intent-bound generation into the existing activation
+CAS. The existing owner installer validates the manifest and asset bytes.
+Legacy manual CLI calls retain their existing behavior.
+
+Before effects, the journal records the immutable operation identity, previous
+composition, Core container ID/image/start time and active barrier. States include
+`prepared`, `activation-started`, `activated`, `succeeded`, `noop`, `recovered`
+and `uncertain`. Reusing an operation ID with different immutable fields, a stale
+epoch, or another unresolved operation fails. Each terminal observation requires
+the exact healthy Core commit, unchanged container identity, and agreement between
+the configured and served UI generation.
+
+Use the same operation with a renewed `reconcile` lease after loss of a response.
+Reconciliation does not install or activate. A matching activation actor bound
+to the operation hash and runtime generation proves completed activation even
+when its response was lost. Unknown activation completion retains the barrier;
+merely observing the previous release does not prove that an in-flight activation
+is over. A prepared operation with no activation started can recover to the exact
+previous composition. Recovery is a failed release, never stage acceptance.
+
+Disposable staging cleanup is allowed after revocation. Its known directory and
+cleanup failures persist in the journal; a later reconciliation retries cleanup
+without reactivation. A cleanup failure keeps the barrier and makes the command
+fail. Consumers require a successful terminal state **and** `cleanup: complete`.
+An already running external command is not preempted by revocation; the durable
+barrier and subsequent live checks govern recovery. A process killed before a
+staging directory name is returned can leave disposable orphan files; operator
+cleanup of those files is separate from proof of activation completion.
+
+This entrypoint supplies owner operations, not a delivery-control transport or
+production acceptance. B06 still supplies the protected archive/broker transport,
+signed receipts, live gateway asset evidence, full composition validation, QA and
+commissioning. These changes do not deploy Core or activate a browser release.

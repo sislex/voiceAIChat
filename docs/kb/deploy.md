@@ -1,13 +1,14 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-25
-checked: 4bebb812
+checked: 44cc4ae5
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
   - scripts/delivery-release-command.py
   - scripts/browser-ui-release.mjs
   - scripts/prod/ui-deploy.sh
+  - scripts/prod/ui-delivery.py
   - apps/server/src/browserUi
   - Dockerfile
   - docker-compose.yml
@@ -89,6 +90,25 @@ operations and must not be deleted to retry. Normal legacy invocations remain
 available for existing callers; delivery-control must use the controlled form.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
+
+## Controlled browser UI deployment authority
+
+`voicechat-ui-deploy delivery /protected/envelope.json` adds a fenced operation
+under the existing Core/UI flock. The envelope binds the expected previous UI
+generation/release, exact Core commit, target release and raw manifest bytes to
+a coordinator operation. The installed container CLI must describe version 2;
+the same expected generation reaches its activation CAS. Live authority is checked
+before Docker calls and terminal observation. `delivery-status OPERATION_ID` reads
+the private durable journal, which defaults to `/var/lib/voicechat/ui-delivery`.
+
+A renewed reconcile lease observes without installation or activation. The bound
+activation actor and runtime generation resolve lost replies; unknown completion
+keeps the barrier. Known staging cleanup failures persist and are retried without
+reactivation. Successful results require complete cleanup, unchanged Core
+container identity and the exact healthy Core commit. The broker still owns archive
+provenance, gateway asset evidence and authenticated acceptance. See the
+[controlled UI protocol](../delivery-release-adapter.md#controlled-browser-ui-owner-entrypoint).
+This owner change alone is not production deployment or completion of B06.
 
 ## Independent browser release rollout (2026-09-22)
 

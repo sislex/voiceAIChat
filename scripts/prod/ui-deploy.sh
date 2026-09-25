@@ -5,7 +5,16 @@ if [[ -z ${VC_REPO_DIR:-} && -r /etc/voicechat/production.env ]]; then
   source /etc/voicechat/production.env
 fi
 : "${VC_REPO_DIR:?VC_REPO_DIR is required}"
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$VC_REPO_DIR"
+if [[ ${1:-} == delivery || ${1:-} == delivery-status ]]; then
+  action=$1; shift
+  # The owner takes its existing lock. The verifier/operation journal executes
+  # under the same inherited open-file description, never a nested lock.
+  exec 9>"${VC_DEPLOY_LOCK:-/var/lock/voicechat-deploy.lock}"
+  flock -n 9 || { echo 'Another Core/UI deployment is running' >&2; exit 75; }
+  exec python3 "$script_dir/ui-delivery.py" "$action" "$@"
+fi
 container=$(docker compose ps -q voicechat)
 [[ -n $container ]] || { echo 'Core is not running' >&2; exit 1; }
 command=${1:-status}
