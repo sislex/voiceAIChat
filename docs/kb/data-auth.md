@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-27
-checked: 3daeebbd
+updated: 2026-09-28
+checked: 4c48bfa8
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -125,6 +125,21 @@ updates, but there is no new public rename operation. Live account context retur
 field optional for rolling compatibility; Billing requires it and never treats a
 login string as a stable identity. The SQL translator preserves both update and
 delete foreign-key actions in PostgreSQL.
+
+### Public-client browser authorization transport (S4)
+
+The managed Identity session proxy owns `/api/session/*`. With the S4 Identity
+artifact pinned, Core forwards `OPTIONS /api/session/oauth/token` through the
+same authenticated component RPC as other session requests. It relays only
+Identity's explicit CORS and consent protection headers: allowed origin,
+methods and headers, `Vary`, CSP, no-referrer, no-sniff, cache control and
+content type. Identity remains responsible for the live user session, selected
+tenant, CSRF, exact redirect URI, PKCE exchange and token rotation. The Core
+component grant is used only on the internal RPC and never reaches the browser.
+The installed proxy test exercises preflight and consent headers against a real
+in-memory Identity provider; external browser onboarding is a separate E07
+acceptance check. Identity owns the five public-client tables in Core's
+compatibility schema and PostgreSQL ownership manifest.
 
 ## Billing reservation service
 
