@@ -68,8 +68,8 @@
       "package": "@sislexa/analytics",
       "workspace": ".",
       "repository": "https://github.com/sislex/analytics",
-      "version": "1.2.0",
-      "commit": "7ff6fb8b02f629938e4430683e7c505f423a6de5"
+      "version": "1.2.3",
+      "commit": "f398196a38438cc818d9d5c6db375c205dd0dea3"
     }
   }
 }

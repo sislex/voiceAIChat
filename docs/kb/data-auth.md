@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-28
-checked: 75422e3f
+checked: fc8074fd
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -77,12 +77,12 @@ execution only when accounting is configured and the resource permits execution.
 MCP/child operations remain explicitly disabled until resource-specific adapters
 exist and cannot inherit unrestricted user authority. Legacy session billing is
 unchanged. Exact-composition A07 acceptance is not complete. The artifact
-preflight `node scripts/a07-composition.mjs` requires the A05 SDK commit
+preflight `node scripts/a07-composition.mjs` pins the A05 SDK commit
 `f6313db5ff58cc35fa8dacc90b9844f9706dcfba` and A06 Analytics commit
-`a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942`, alongside the existing S3
+`f398196a38438cc818d9d5c6db375c205dd0dea3`, alongside the existing S3
 Identity/Billing/Runner pins. It verifies provenance, archive and installed bytes,
 consumer integrity and deployment locks; passing it is only an artifact check.
-The current checkout lacks those SDK/Analytics artifacts. Full synthetic paid
+The SDK and Analytics artifacts now satisfy the preflight. Full synthetic paid
 execution, recovery and report reconciliation against that composition still
 need implementation and validation. This code gap is distinct from subsequent
 operator commissioning; no production acceptance is claimed.
