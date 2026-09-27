@@ -1,3 +1,7 @@
+import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
+import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/index'
+import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
+import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
@@ -175,6 +179,7 @@ const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 export interface BuildOptions {
+  delegationClient?: DelegationIntrospectionClient
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
   db?: VoiceChatDb
@@ -428,6 +433,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const { authenticate } = managedIdentity
     ? await registerRemoteIdentity(app, db, managedIdentity, sessionSecret, authOptions)
     : await registerAuth(app, db, sessionSecret, authOptions)
+  const delegationClient = opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
+    url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
+  }) : undefined)
+  const delegation = delegationClient ? new ChatDelegation(delegationClient, db) : undefined
+  registerChatDelegation(app, delegation)
   registerAccountAccess(app, db)
   registerBillingProxy(app, managedBilling)
   registerAnalyticsProxy(app, managedAnalytics)
@@ -1155,6 +1165,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void reconcile()
   }
   const turnManager = createTurnManager({
+    delegation,
     accounting,
     db,
     claude: await claude,
@@ -1332,8 +1343,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingStore?.close()
   })
 
-  const makeHandlers = (user: SessionUser, sid: string | null, token: string): WsHandlers =>
+  const makeHandlers = (user: SessionUser, sid: string | null, token: string, delegated?: ChatDelegationReference): WsHandlers =>
     createSession({
+      delegation: delegated,
       billingSession: billingSessions.register(user, sid, token),
       db,
       turns: turnManager,
@@ -1439,8 +1451,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         } catch { return null }
       }
       const user = await verifySocket()
-      socket.off('message', buffer)
       if (!user) {
+        socket.off('message', buffer)
         socket.close()
         return
       }
@@ -1449,6 +1461,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const active = await verifySocket()
         return sameAccountContext(user, active)
       }
+      let delegated: ChatDelegationReference | undefined
+      const grant = request.headers[DELEGATION_HEADER]
+      try {
+        if (grant !== undefined) {
+          if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
+          delegated = await delegation.bind(grant, user.name, user.account?.tenantId)
+        }
+      } catch { socket.off('message', buffer); socket.close(4003, 'Delegation denied'); return }
       const sid = verifyToken(token, sessionSecret)?.sid ?? null
       const unsubscribe = sessionHub.onChange(event => {
         if(event.user!==user.name)return
@@ -1463,10 +1483,33 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       },30_000)
       identityTimer?.unref()
       socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
-      await attachWs(socket, makeHandlers(user, sid, token!), {
+      socket.off('message', buffer)
+      await attachWs(socket, makeHandlers(user, sid, token!, delegated), {
         initialFrames: early,
-        authorizeMessage: socketIdentityCurrent,
+        authorizeMessage: async () => {
+          if (!await socketIdentityCurrent()) return false
+          try { if (delegated) await delegation!.current(delegated); return true } catch { return false }
+        },
+        authorizeOutput: delegated ? async message => {
+          if (!('conversationId' in message) || typeof message.conversationId !== 'string') return false
+          try { await delegation!.authorize(delegated!, 'read', message.conversationId); return true } catch { return false }
+        } : undefined,
         authorizeCommand: async (message, context) => {
+          if (rejectsAttribution(message)) return false
+          if (delegated) {
+            try {
+              if (!['claude.send', 'claude.cancel', 'claude.queue.edit', 'claude.queue.delete', 'claude.queue.reorder', 'claude.queue.now'].includes(message.t)
+                || !('conversationId' in message) || typeof message.conversationId !== 'string') throw new DelegationDenied()
+              const scope = ['claude.send', 'claude.queue.now'].includes(message.t) ? 'execute' : 'write'
+              await delegation!.authorize(delegated, scope, message.conversationId)
+              const ids = 'ids' in message ? message.ids : 'id' in message ? [message.id] : []
+              for (const id of ids) {
+                const payload = await db.chat.queuedTurnPayload(user.name, message.conversationId, id)
+                if (!payload?.delegation || payload.delegation.applicationId !== delegated.applicationId
+                  || payload.delegation.grantId !== delegated.grantId) throw new DelegationDenied()
+              }
+            } catch { context.send({ t: 'claude.error', conversationId: '', message: 'delegation_denied' }); return false }
+          }
           const error = await commandAccessError(db, user, message)
           if (error) { context.send(error); return false }
           return true

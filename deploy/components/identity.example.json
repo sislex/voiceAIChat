@@ -9,7 +9,9 @@
         "identity.verify",
         "identity.session",
         "identity.store",
-        "identity.events"
+        "identity.events",
+        "identity.delegation.introspect",
+        "identity.delegation.audience.core"
       ],
       "maxTtlSeconds": 2592000
     },
