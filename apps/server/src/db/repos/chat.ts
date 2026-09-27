@@ -7,6 +7,8 @@ import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
 import { BaseRepo } from './base.js'
 import { parseJsonValue } from './support.js'
+import type { Values } from './chatSettings.js'
+import { InvalidChatSettings } from '../../chatSettingsValidation.js'
 
 interface ConversationRow {
   id: string
@@ -180,6 +182,45 @@ function decodeSearchCursor(cursor: string | null | undefined): { score: number;
   return { score, rowid }
 }
 export class ChatRepo extends BaseRepo {
+  /** Lock the legacy row as well as the canonical revision during mixed-client writes. */
+  async lockChatSettings(userId: string, id: string): Promise<void> {
+    await this.sql.run('UPDATE conversations SET id = id WHERE id = ? AND user_id = ?', [id, userId])
+  }
+
+  /** Called inside the settings transaction; reuse domain mutations and their invariants. */
+  async applyCanonicalSettings(userId: string, id: string, values: Values): Promise<void> {
+    let current = await this.getConversation(userId, id)
+    if (!current) throw new InvalidChatSettings('Conversation not found')
+    if (values.projectId !== undefined && values.projectId !== (current.projectId ?? null)) {
+      current = await this.setConversationProject(userId, id, values.projectId as string | null)
+      if (!current) throw new InvalidChatSettings('Project not available')
+    }
+    if (values.previewEngine !== undefined && values.previewEngine !== (current.previewEngine ?? 'proxy')
+      && current.assistantKind !== 'web-recorder') {
+      throw new InvalidChatSettings('Browser engine belongs to a Web Reader conversation')
+    }
+    if (values.title !== undefined) await this.renameConversation(userId, id, values.title as string)
+    const provider = values.llmProvider === undefined ? current.llmProvider : values.llmProvider as LlmProvider | null
+    const model = provider === 'codex' ? values.codexModel : values.model
+    await this.setConversationExecTarget(userId, id,
+      values.execTarget === undefined ? current.execTarget : values.execTarget as string | null,
+      values.workdir as string | null | undefined, values.skills as string[] | undefined,
+      values.llmProvider as LlmProvider | null | undefined, model as string | null | undefined,
+      values.permissionMode as PermissionMode | null | undefined, values.llmEngineId as string | null | undefined)
+    if (values.kbMode !== undefined) await this.setConversationKbContextMode(userId, id, values.kbMode as 'auto' | 'manual' | 'off')
+    if (values.disabledContext !== undefined) {
+      const disabled = values.disabledContext as string[]
+      if (disabled.some(key => !isContextToggleable(key))) throw new InvalidChatSettings('Context item cannot be disabled')
+      for (const key of new Set([...(current.disabledContext ?? []), ...disabled])) {
+        await this.setConversationContextEnabled(userId, id, key, !disabled.includes(key))
+      }
+    }
+    if (values.previewUrl !== undefined || values.previewEngine !== undefined) {
+      await this.setConversationPreviewUrl(userId, id,
+        values.previewUrl === undefined ? current.previewUrl ?? null : values.previewUrl as string | null,
+        values.previewEngine as 'proxy' | 'chromium' | undefined)
+    }
+  }
   /** Доступен ли FTS5 в этой сборке SQLite (иначе поиск по сообщениям пустой). */
   private ftsReady = false
 
@@ -624,7 +665,11 @@ export class ChatRepo extends BaseRepo {
   async deleteConversation(userId: string, id: string): Promise<void> {
     // ON DELETE CASCADE удалит сообщения и спикеров. Никаких проверок «чат занят»:
     // Feature Run убран, а CI-раны с разговорами не связаны.
-    await this.sql.run(`DELETE FROM conversations WHERE id = ? AND user_id = ?`, [id, userId])
+    await this.sql.transaction(async () => {
+      // Match canonical writes' lock order: settings first, conversation second.
+      await this.repos.settings.deleteConversationChatSettings(userId, id)
+      await this.sql.run(`DELETE FROM conversations WHERE id = ? AND user_id = ?`, [id, userId])
+    })
   }
 
   async setClaudeSession(userId: string, id: string, sessionId: string | null): Promise<void> {
