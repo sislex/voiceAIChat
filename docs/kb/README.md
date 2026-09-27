@@ -12,9 +12,9 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 11 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 3 коммит(ов) в areas после сверки: 35b142b0 feat: pin exact S2 shared chat releases in Core … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 4 коммит(ов) в areas после сверки: 762d1923 Pin final S2 UI and Desktop HTTP-compatible releases … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-23 | ⚠ 3 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-25 | ⚠ 1 коммит(ов) в areas после сверки: fca3a356 Fence controlled browser UI deployment and reconcile lost activation replies |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-27 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 29 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 10 коммит(ов) в areas после сверки: 4c0bb6a9 feat(releases): manage browser UI from release center … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 18 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 20 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 37 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1640 коммит(ов) в areas после сверки: d185ee5c Review Account route budgets for Core UI 1.4.3 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1641 коммит(ов) в areas после сверки: 762d1923 Pin final S2 UI and Desktop HTTP-compatible releases … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 4 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
@@ -54,18 +54,18 @@
 
 ## Журнал сессий
 
-Всего записей: 950. Последние:
+Всего записей: 951. Последние:
 
 - [2026-09-27-delivery-c03-c03-chat-contracts.md](log/2026-09-27-delivery-c03-c03-chat-contracts.md) — c03-chat-contracts
 - [2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md](log/2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md) — u10-final-artifact-acceptance
 - [2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md](log/2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md) — u10-exact-artifacts
 - [2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md](log/2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md) — u02-canonical-chat-settings
+- [2026-09-27-alexeys-macbook-air-2-s2-local-release.md](log/2026-09-27-alexeys-macbook-air-2-s2-local-release.md) — s2-local-release
 - [2026-09-27-alexeys-macbook-air-2-c03-chat-settings-ownership.md](log/2026-09-27-alexeys-macbook-air-2-c03-chat-settings-ownership.md) — c03-chat-settings-ownership
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md) — delivery-source-fencing
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md) — delivery-control-031-worker-trial
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-ui-delivery-authority.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-ui-delivery-authority.md) — controlled-ui-delivery-authority
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-deployment-observation.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-deployment-observation.md) — controlled-deployment-observation
-- [2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md](log/2026-09-24-alexeys-macbook-air-tailae39a6-ts-net-delivery-release-adapter-b05.md) — delivery-release-adapter-b05
 
 ## Исторические планы
 

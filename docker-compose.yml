@@ -163,7 +163,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:e4c5676feeae7efacbe054e920bb7b9b62d80024}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:064f6666fa613de0a4c6f3f7638930f947f67fb2}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -186,7 +186,7 @@ services:
   # Playwright Reader владеет REST-сессиями и действиями модели. БД и том ему не нужны:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:6cd0c54f0f7c368c9b63362f2e50e91dd50f272f}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:55091701d4b7e8be7cea3659dfa6d2ef7ec3b14f}
     mem_limit: 256m
     depends_on:
       - browser-runner
@@ -351,7 +351,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:295807f94d7c35d242f79144fd6422b92bd3478d}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:ae1c6190cf106dadf34c2e7657e1683072ead287}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -398,7 +398,7 @@ services:
   # Изолированный Chromium: Playwright Reader и этап автотестов. Наружу не
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:6cd0c54f0f7c368c9b63362f2e50e91dd50f272f}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:55091701d4b7e8be7cea3659dfa6d2ef7ec3b14f}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"

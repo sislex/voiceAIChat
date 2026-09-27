@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-25
-checked: 44cc4ae5
+updated: 2026-09-27
+checked: 762d1923
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1242,6 +1242,26 @@ do not append it permanently to the operator's default override chain, which
 must remain able to build the next release. The deploy still performs volume
 validation, release metadata setup, container replacement and component readiness
 checks. Record the resulting image IDs with the release backup.
+
+## Local owner image delivery
+
+Owner repositories run their complete release gates on the assigned local
+machines at the exact clean source commits. Build Linux AMD64 images with the
+owner Dockerfile's `APPLICATION_VERSION` and `APPLICATION_COMMIT` arguments,
+then verify both OCI labels and image IDs. GitHub Actions and GHCR publication
+are not part of this delivery path. Transfer each image over authenticated SSH
+using `docker save` and `docker load`; verify its architecture, labels and ID on
+the production host before selecting it. Keep the source commit, gate log hash,
+archive digest, local image ID and loaded image ID together in the release
+receipt. A loaded image is only preparation, never evidence that a container was
+replaced.
+
+Use a temporary release-specific Compose override to select the verified local
+image IDs with `pull_policy: never`, and invoke the installed `voicechat-deploy`
+under its existing lock, backup and rollback procedure. Do not edit the
+persistent operator Compose chain to hide unavailable registry images. Activate
+an independently packaged browser UI only after the compatible Core release is
+healthy, and update Desktop distribution through its separate pinned overlay.
 
 Production 0.1.313 (`451cf46c9acd759bcf1aa3ffb54745ea04f70550`) completed through
 `voicechat-deploy` at 2026-09-20 03:25:48 UTC. It pins Make 1.1.1 and both Readers
