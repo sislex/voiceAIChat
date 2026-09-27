@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-23
-checked: 5123d6dc
+updated: 2026-09-27
+checked: fca3a356
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,38 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Versioned chat/application boundary
+
+`packages/shared/src/chatContract.ts` is the additive public boundary for reusable
+chat clients. It declares a freshly verified application context at
+`GET /api/chat/context`; `/api/chat/settings` and
+`/api/conversations/:conversationId/settings` are the planned revisioned account
+and conversation settings routes. The contract lists the existing chat-owned
+settings from the C01 parity inventory and separates local device preferences.
+Device settings are echoed by a local adapter and Core never persists them.
+These routes and WebSocket frames are contracts for subsequent implementation;
+the current `/api/settings` route remains the running API during migration.
+
+The context keeps SDK application attribution, principal, exact permissions,
+resource grants and host capabilities separate. A capability only describes
+whether a feature can currently be used and never grants a permission or resource.
+Core constructs the context only from authenticated Identity/SDK output; request
+bodies cannot provide or override it. `createVerifiedChatApplicationContext` is
+the validating boundary adapter and `decideChatAccess` applies expiry,
+permission, capability and conversation grants independently.
+
+The new WebSocket handshake will start with `chat.connect` on every open,
+including reconnect. Core will re-authenticate and answer with `chat.ready`, a new verified context, settings
+snapshot and either a resumed cursor or `resync-required`. Expired cursors,
+changed scopes and server restarts require authoritative REST snapshots; clients
+must not reuse old context, subscriptions or infer missed state. Settings changes
+are invalidations via `chat.settings.updated`; revision conflicts return the
+current snapshot.
+
+`CHAT_CONTRACT_ARTIFACT` is the canonical deeply frozen consumer manifest and
+`CHAT_CONTRACT_ARTIFACT_SHA256` pins its canonical JSON. The Core contracts
+release archive exports both through `@voicechat/shared`.
 
 ## Request correlation and operations endpoints
 
