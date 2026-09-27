@@ -1,6 +1,6 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-23
+updated: 2026-09-27
 checked: 9e028b00
 areas:
   - package.json
@@ -951,6 +951,16 @@ and recover after credential-file rotation. The deployment tests also require
 readiness in both directions for managed installations.
 
 ## E2E Make в реальном Chromium (2026-08-27)
+
+Shared-chat U10 candidate input preflight is available through
+`npm run verify:shared-chat-inputs -- <assigned-artifact-directory>`.
+It validates the nine assigned archive hashes/provenance and first-party peer
+versions, including Desktop's embedded Core UI identity. It does not install
+the candidate or replace host/resource/transport acceptance. The initial S2
+handoff lacks compatible chat-ui, chat-app and UI Foundation artifacts and
+requires reconciliation with Shared 0.1.10. See
+[U10 acceptance status](../u10-acceptance.md) for the exact blockers and remaining
+gates; candidate pins live in `docs/u10-owner-inputs.json`.
 
 The original Make product scenarios now belong to `sislex/make/e2e`. The remaining
 shell split checks moved to `sislex/sislexa-core-ui/system-tests/make.e2e.test.ts`.
