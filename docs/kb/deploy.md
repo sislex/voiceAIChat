@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-27
-checked: 762d1923
+checked: 999a980c
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -2102,3 +2102,17 @@ and four fresh PostgreSQL scenarios passed. Attempt 2 runs from that exact base
 in a new isolated clone. Concrete trusted publication/release adapters and the
 automatic QA/defect/stage workflow still require completion and commissioning.
 The live coordinator remains on schema v3; no partial v4 migration was deployed.
+
+## S2 Make frontend runtime correction (2026-09-27)
+
+The initial Core 0.1.332 cutover started Make API 1.2.2 but its frontend image
+restarted: the owner server resolved the frontend directory from
+`APPLICATION_CATALOG.paths[0]`, which is intentionally absent for external
+repositories. The operator restored only the previous Make frontend image while
+leaving Core and the other S2 services active. Make 1.2.3 fixes the directory to
+`packages/make-app/dist`, sets the frontend API metadata to the panel's 2.0.0
+contract, and adds a real startup/manifest check to its owner gate. Core pins its
+clean owner archive and source commit in `dependency-snapshots.json`,
+`vendor/owner-artifacts.json`, and `deploy/tools.lock.json`. Before replacing the
+temporary overlay, start the exact frontend image and verify `/v1/health` and
+`/manifest.json`; Core readiness alone did not detect this container failure.

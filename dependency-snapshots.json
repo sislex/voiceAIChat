@@ -8,18 +8,18 @@
   "packages": [
     {
       "name": "@sislexa/make",
-      "version": "1.2.2",
-      "filename": "sislexa-make-1.2.2.tgz",
-      "asset": "sislexa-make-1.2.2-e64dce30f2f1.tgz",
-      "sha256": "e64dce30f2f1d40f92613545ae6223da24fe1b6c574a5613335256b9b265e486",
-      "integrity": "sha512-+9Pj4IlVcd8ZfzKBHSIwy+W9zUDCLWPau7FVf9XXvWJA2VnZm1OSbM+NHpRHSpVgKxwpI8ZJkDMFH6Y6p+62zg==",
+      "version": "1.2.3",
+      "filename": "sislexa-make-1.2.3.tgz",
+      "asset": "sislexa-make-1.2.3-c57a1696f6d9.tgz",
+      "sha256": "c57a1696f6d9b7d3a24561e665a26d651852454a4775f0466fa721bbfbe1ecc8",
+      "integrity": "sha512-UkjLjU6I8eOjMjpRWTp6G/z+nwV2p6P+D2DIahNr19OLhlL3fxs3un35MwFNX8vbF4izwPxMGl/7Xzp1USWsCQ==",
       "repository": "https://github.com/sislex/make",
-      "commit": "064f6666fa613de0a4c6f3f7638930f947f67fb2",
+      "commit": "6e1eaa9cf133d075bdf5812e67fc053b16a84829",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "version": "1.2.2",
-        "commit": "064f6666fa613de0a4c6f3f7638930f947f67fb2"
+        "version": "1.2.3",
+        "commit": "6e1eaa9cf133d075bdf5812e67fc053b16a84829"
       }
     },
     {
