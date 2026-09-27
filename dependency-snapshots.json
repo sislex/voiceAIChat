@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "purpose": "shared-chat-s2-candidate",
+  "handoff": {
+    "repository": "sislex/delivery-control",
+    "commit": "98906ddd56b68952b0be2f72a146d705af07c63b"
+  },
+  "packages": [
+    {
+      "name": "@sislexa/make",
+      "version": "1.2.1",
+      "filename": "sislexa-make-1.2.1.tgz",
+      "asset": "sislexa-make-1.2.1-10193c459dc0.tgz",
+      "sha256": "10193c459dc069ae571a996424b5fb2a509945760b8012f00a23492b32775f4c",
+      "integrity": "sha512-UhH4dTxGgCztMm+1rPAio1RM+v6VEbKJC8jGF7A0UV0C0lk/Re83Dez2NljW58JvpFwLLNrxwfpKDQ5waj8Ffg==",
+      "repository": "https://github.com/sislex/make",
+      "commit": "32cc74aff2a6e6ab242a5ddc94ec0634315370c3",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/make",
+        "version": "1.2.1",
+        "commit": "32cc74aff2a6e6ab242a5ddc94ec0634315370c3"
+      }
+    },
+    {
+      "name": "@voicechat/make-contracts",
+      "version": "1.3.0",
+      "filename": "voicechat-make-contracts-1.3.0.tgz",
+      "asset": "voicechat-make-contracts-1.3.0-e227efe2abed.tgz",
+      "sha256": "e227efe2abed559fad9034f035e10f028f18b37e6f985765ea0291aab94a57ed",
+      "integrity": "sha512-7io682cCSNnz3vD1c2tTJslZ9LHUghsBXHELt13e0kQ2K59K1l+Z3y5gWr5p9qeYJJ6gxZr1gYL9bNeqVqJ0ZA==",
+      "repository": "https://github.com/sislex/make",
+      "commit": "32cc74aff2a6e6ab242a5ddc94ec0634315370c3",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/make",
+        "version": "1.3.0",
+        "commit": "32cc74aff2a6e6ab242a5ddc94ec0634315370c3"
+      }
+    },
+    {
+      "name": "@sislexa/web-reader",
+      "version": "1.2.1",
+      "filename": "sislexa-web-reader-1.2.1.tgz",
+      "asset": "sislexa-web-reader-1.2.1-90b3883a7029.tgz",
+      "sha256": "90b3883a7029b484b1d1d124e5ab2f34c995421fc6758f30f6b285db29194c1f",
+      "integrity": "sha512-UzpczTiNAW3ko6/kUPGcQ4AvwLuJbcJw8uW/7m8QRBMtrsSUFhGGxkBksZriN2OBUTjQYILNk2DBZ2MpQwZ08w==",
+      "repository": "https://github.com/sislex/webreader",
+      "commit": "b710a141d957274758d8903dae0b1bf1cdf97f34",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/webreader",
+        "version": "1.2.1",
+        "commit": "b710a141d957274758d8903dae0b1bf1cdf97f34"
+      }
+    },
+    {
+      "name": "@voicechat/web-reader-contracts",
+      "version": "1.3.0",
+      "filename": "voicechat-web-reader-contracts-1.3.0.tgz",
+      "asset": "voicechat-web-reader-contracts-1.3.0-fd44037af122.tgz",
+      "sha256": "fd44037af122ff524824abf5fb24628f9cd331211d621df4c14f9013d3a3d5fa",
+      "integrity": "sha512-Vbit9kskGACbfigP4Pj2rfLhIvA7nTECvd/DH5qLx9rV4AsCsrdbXDMcA8Oq+CSs20rPZKoEI2okeaEcrAUBng==",
+      "repository": "https://github.com/sislex/webreader",
+      "commit": "b710a141d957274758d8903dae0b1bf1cdf97f34",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/webreader",
+        "version": "1.3.0",
+        "commit": "b710a141d957274758d8903dae0b1bf1cdf97f34"
+      }
+    },
+    {
+      "name": "@sislexa/playwright-reader",
+      "version": "1.2.2",
+      "filename": "sislexa-playwright-reader-1.2.2.tgz",
+      "asset": "sislexa-playwright-reader-1.2.2-0fbdd4493852.tgz",
+      "sha256": "0fbdd4493852935c7dfa056083aa06de1b2ce2975f9252847b5bf016f07a3d1e",
+      "integrity": "sha512-TaPIOjbV/AFsZHC/MlrIkoEgsjhcVXiZYEkxsbkfw2PT0R81KNCK66hxomyxL/bPx2Wku4Co2mtBqt5muDe6nw==",
+      "repository": "https://github.com/sislex/playwrightreader",
+      "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/playwrightreader",
+        "version": "1.2.2",
+        "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25"
+      }
+    },
+    {
+      "name": "@voicechat/playwright-reader-contracts",
+      "version": "1.2.0",
+      "filename": "voicechat-playwright-reader-contracts-1.2.0.tgz",
+      "asset": "voicechat-playwright-reader-contracts-1.2.0-13de7060b9f2.tgz",
+      "sha256": "13de7060b9f20239a42ab7fd7b9c8a32992f156af96a1c7db6518a57ffbc88fb",
+      "integrity": "sha512-42deCrROA2WskGwurHcCP9HJX1XVK+38H4Ks2K3mNVVXPXerk/zHJIn//sukKExEgJDaUx+gipwzRiT72n5PCQ==",
+      "repository": "https://github.com/sislex/playwrightreader",
+      "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/playwrightreader",
+        "version": "1.2.0",
+        "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25"
+      }
+    },
+    {
+      "name": "@voicechat/browser-contracts",
+      "version": "1.1.0",
+      "filename": "voicechat-browser-contracts-1.1.0.tgz",
+      "asset": "voicechat-browser-contracts-1.1.0-a06c73deaca8.tgz",
+      "sha256": "a06c73deaca892ec1e9008d2bdb906d04263578edc35c88ac3c78910c527647a",
+      "integrity": "sha512-6QBaRWzOuGnn8pikfLrzmRRrfdyTzUfjdWLwBUS8oVOh3K0VswbvfkYnjH6uoFY0AoJW6PamQ8tm0tOAi01arg==",
+      "repository": "https://github.com/sislex/playwrightreader",
+      "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/playwrightreader",
+        "version": "1.1.0",
+        "commit": "eee094908363ccb0d24f887ae9dd929ecaa7fd25"
+      }
+    },
+    {
+      "name": "@sislexa/core-ui",
+      "version": "1.4.3",
+      "filename": "sislexa-core-ui-1.4.3.tgz",
+      "asset": "sislexa-core-ui-1.4.3-dfd4287674a0.tgz",
+      "sha256": "dfd4287674a066f5221378935cee29b94653d2068c6b6719b641aa24340fff5e",
+      "integrity": "sha512-PH19WijQNhFrkJuQA/FwZoySwSz/ZuI857IM3agEIBaB+/catjljyLcDcPhaB/BvMwmXz4dUgV0oPIj3e+WcWg==",
+      "repository": "https://github.com/sislex/sislexa-core-ui",
+      "commit": "c5345c8c661bd027e55158f5ac20c46f110c1bef",
+      "provenance": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "version": "1.4.3",
+        "commit": "c5345c8c661bd027e55158f5ac20c46f110c1bef",
+        "dirty": false,
+        "requires": {
+          "coreApi": "^1.0.0",
+          "desktopHost": "^1.0.0",
+          "shared": "0.1.10"
+        }
+      }
+    },
+    {
+      "name": "@sislexa/desktop",
+      "version": "1.0.6",
+      "filename": "sislexa-desktop-1.0.6.tgz",
+      "asset": "sislexa-desktop-1.0.6-b97cc862b134.tgz",
+      "sha256": "b97cc862b134285f35474ab775334d2e5150e977726264b0bab83c613bc4d316",
+      "integrity": "sha512-eLdkxc71OHsiWRm0ZXwnmbJcdkn+TOU9BKRnN5SVtuUhWgVcksvtvtpwSntAk+nV2Ki5h80G6+7xwsJ1Zojk9w==",
+      "repository": "https://github.com/sislex/desktop",
+      "commit": "cb0c50cd555ec59c8de460d2d7b52c8f497efd14",
+      "provenance": {
+        "repository": "https://github.com/sislex/desktop",
+        "commit": "cb0c50cd555ec59c8de460d2d7b52c8f497efd14",
+        "version": "1.0.6",
+        "apiVersion": "1.0.0",
+        "requires": {
+          "coreApi": "^1.0.0",
+          "agent": "^0.20.0",
+          "coreUi": "^1.4.3",
+          "legacyChatContract": "1.0.1"
+        },
+        "dependencies": {
+          "coreUi": {
+            "repository": "https://github.com/sislex/sislexa-core-ui",
+            "version": "1.4.3",
+            "commit": "c5345c8c661bd027e55158f5ac20c46f110c1bef",
+            "dirty": false,
+            "requires": {
+              "coreApi": "^1.0.0",
+              "desktopHost": "^1.0.0",
+              "shared": "0.1.10"
+            }
+          },
+          "legacyChatContract": {
+            "repository": "https://github.com/sislex/voiceAIChat",
+            "commit": "e96c10c3bc302312d42fd709c8cc5b31c44e71cd",
+            "version": "1.0.1",
+            "requires": {
+              "coreApi": "^1.0.0",
+              "desktopHost": "^1.0.0"
+            }
+          },
+          "agent": {
+            "repository": "https://github.com/sislex/agent",
+            "commit": "eabeddd09a291dc44277222a2bd606a62743e516",
+            "version": "0.20.0",
+            "protocolVersion": "1.0.0",
+            "requires": {
+              "coreApi": "^1.0.0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "@sislexa/chat-ui",
+      "version": "0.2.0",
+      "filename": "sislexa-chat-ui-0.2.0.tgz",
+      "asset": "sislexa-chat-ui-0.2.0-a36f5106684e.tgz",
+      "sha256": "a36f5106684ee73afedfba2d38b2536f11331462113ed6cb338596f261d07f9e",
+      "integrity": "sha512-JNCmV6MkR9alrK8Ak8LB+z1XvE/VfvoTBvfcim1lrj9FZuwll8sNd4POoh4v2ANl1OOGQ1ZhxdM/W3xAoMA6Aw==",
+      "repository": "https://github.com/sislex/sislexa-core-ui",
+      "commit": "92c07705450c5f2298ee9cf0fe4554ae306c5a0f",
+      "provenance": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "commit": "92c07705450c5f2298ee9cf0fe4554ae306c5a0f",
+        "lockSha256": "04d329cde1c45042b88e3df45333a6fca1750ec09bfaeb2c06e6d39d3fa9c1af",
+        "name": "@sislexa/chat-ui",
+        "version": "0.2.0"
+      }
+    },
+    {
+      "name": "@voicechat/chat-app",
+      "version": "0.2.0",
+      "filename": "voicechat-chat-app-0.2.0.tgz",
+      "asset": "voicechat-chat-app-0.2.0-9f07df490e38.tgz",
+      "sha256": "9f07df490e38c9cac7ab2557c28de6bafff5307f52840ac6a909a522c1b3b82c",
+      "integrity": "sha512-XAu4jNYY0/Mwh9Ru9qeuQNlTdYHJ7IQFiGA4Hw9Qp1+UP+6QFyHjah3QqaJEA7fCyPecNK05ksXK3IhxAT1eqw==",
+      "repository": "https://github.com/sislex/sislexa-core-ui",
+      "commit": "92c07705450c5f2298ee9cf0fe4554ae306c5a0f",
+      "provenance": {
+        "repository": "https://github.com/sislex/sislexa-core-ui",
+        "commit": "92c07705450c5f2298ee9cf0fe4554ae306c5a0f",
+        "lockSha256": "04d329cde1c45042b88e3df45333a6fca1750ec09bfaeb2c06e6d39d3fa9c1af",
+        "name": "@voicechat/chat-app",
+        "version": "0.2.0"
+      }
+    },
+    {
+      "name": "@voicechat/ui-foundation",
+      "version": "0.1.8",
+      "filename": "voicechat-ui-foundation-0.1.8-e5b4ef76c06b.tgz",
+      "asset": "voicechat-ui-foundation-0.1.8-e5b4ef76c06b-fcfeefb8a485.tgz",
+      "sha256": "fcfeefb8a48533d5d06ebdc12a55a0971445e7989a78df08035a9047f00adf5c",
+      "integrity": "sha512-9VCSgglkgpmuRZ97vqCHY1jWZlO2YOZ1DA5JXkzbgf2QSQNUx3yMr6opy8WbKfAYMov8wZ0fdh+hbAjpyCnThA==",
+      "repository": "https://github.com/sislex/sielexa-ui",
+      "commit": "e5b4ef76c06b1798e106babd7b0ca3024ce28a99",
+      "provenance": {
+        "schemaVersion": 1,
+        "repository": "https://github.com/sislex/sielexa-ui",
+        "commit": "e5b4ef76c06b1798e106babd7b0ca3024ce28a99",
+        "package": "@voicechat/ui-foundation",
+        "version": "0.1.8"
+      }
+    },
+    {
+      "name": "@voicechat/shared",
+      "version": "0.1.10",
+      "filename": "voicechat-shared-0.1.10.tgz",
+      "asset": "voicechat-shared-0.1.10-be3a958dba78.tgz",
+      "sha256": "be3a958dba787f1d8b3a8c3ce6af14b8dd6e4680556de8a0fcd9e7f5dab6cd33",
+      "integrity": "sha512-M3snUarhpwtqF+sgqP4K6T/IJSogZon30NnkiApoGMrWK6NQXO3fRJ8OOfqHQIgq5EcVbJ9k5tZGGzz2SsvE4g==",
+      "repository": "https://github.com/sislex/voiceAIChat",
+      "commit": "5123d6dcd0bf608e95ad8375b45aa83fcde2456c",
+      "provenance": {
+        "repository": "https://github.com/sislex/voiceAIChat",
+        "commit": "5123d6dcd0bf608e95ad8375b45aa83fcde2456c",
+        "version": "0.1.10"
+      }
+    }
+  ]
+}
