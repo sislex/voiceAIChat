@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-27
-checked: 999a980c
+checked: c971c278
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -2116,3 +2116,20 @@ clean owner archive and source commit in `dependency-snapshots.json`,
 `vendor/owner-artifacts.json`, and `deploy/tools.lock.json`. Before replacing the
 temporary overlay, start the exact frontend image and verify `/v1/health` and
 `/manifest.json`; Core readiness alone did not detect this container failure.
+
+## S3 provider source pins (2026-09-27)
+
+The A04 Core implementation consumes accepted A01–A03 provider sources through
+four content-addressed archives: Identity, Billing, LLM Runner, and Runner
+Contracts. `deploy/s3-provider-artifacts.json` records each owner repository,
+exact source commit, archive digest, provided interface, and consumer task.
+`vendor/owner-artifacts.json`, `deploy/tools.lock.json`, and the npm lockfile
+carry the matching pins. `scripts/s3-provider-artifacts.test.mjs` verifies the
+archive bytes and embedded release provenance before Core accepts them.
+Core's database ownership manifest also assigns the provider's three new
+application registry tables to Identity so SQLite and PostgreSQL schema checks
+agree after the archive update.
+
+These are development dependencies for A04 and do not deploy the S3 services.
+The S2 browser/desktop release snapshot in `dependency-snapshots.json` remains
+unchanged; publish and verify S3 service images separately when releasing S3.

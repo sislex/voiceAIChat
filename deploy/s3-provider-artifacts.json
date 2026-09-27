@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "runId": "shared-chat-v1",
+  "stage": 3,
+  "purpose": "A04 delegated application implementation against accepted provider artifacts",
+  "providers": [
+    {
+      "name": "@sislexa/identity",
+      "version": "1.4.2",
+      "repository": "https://github.com/sislex/identity",
+      "commit": "b84d23755d9c49c4f96067acb3a2c9d934d20438",
+      "asset": "sislexa-identity-1.4.2-19ff4b194350.tgz",
+      "sha256": "19ff4b194350a712f25abda815b17f490bfecbe41faa9265e7acd1ec931e95f7",
+      "integrity": "sha512-ib/e35EzGay7q4fJ0iyLfZVL6QEKSTiODFR2bmfdOBRkNXg98ZGrrRjaE2r9pOUXrK6CLf3TQEMUtXT26tWkkQ==",
+      "producerTask": "A01",
+      "interfaces": [
+        "delegated principal introspection",
+        "application registry and scoped grants"
+      ],
+      "consumers": [
+        "A04"
+      ]
+    },
+    {
+      "name": "@sislexa/billing",
+      "version": "1.2.2",
+      "repository": "https://github.com/sislex/billing",
+      "commit": "8d132b15f5288c72380b390cf918761e248fb71d",
+      "asset": "sislexa-billing-1.2.2-e49ec42363ab.tgz",
+      "sha256": "e49ec42363abaa02c5b73eed7b64d80a633b034e7af1df5e56be71a56f788e0f",
+      "integrity": "sha512-sYXrHpqLoTOOLsUA1rIq9jJyybB4MqugWu3E3BzsZj+MdCN+xacvoQcky/AhkAi+mabop9ZXhZAEbDAqrpgPpw==",
+      "producerTask": "A02",
+      "interfaces": [
+        "trusted originApplicationId ledger attribution",
+        "application usage totals"
+      ],
+      "consumers": [
+        "A04"
+      ]
+    },
+    {
+      "name": "@sislex/llm-runner",
+      "version": "0.3.5",
+      "repository": "https://github.com/sislex/llm-runner",
+      "commit": "8f38d05e385b2b5b2c78cd04ba04ba155078121a",
+      "asset": "sislex-llm-runner-0.3.5-64f8ce8d508c.tgz",
+      "sha256": "64f8ce8d508c04cac4da96ca7c465c892975135bf12ec94d3aa75fe5c624bfff",
+      "integrity": "sha512-qTKtBOeUBXQfbNHbnKPuHggC600FqqQZmQroWMPD9A4QwrSJ0vE2m34oZZGTFPxtVGEwGVeUEaUlipV+FXMKeg==",
+      "producerTask": "A03",
+      "interfaces": [
+        "verified application attribution in claims and receipts"
+      ],
+      "consumers": [
+        "A04"
+      ]
+    },
+    {
+      "name": "@sislex/runner-contracts",
+      "version": "0.1.1",
+      "repository": "https://github.com/sislex/llm-runner",
+      "commit": "8f38d05e385b2b5b2c78cd04ba04ba155078121a",
+      "asset": "sislex-runner-contracts-0.1.1-55088c3b3b4d.tgz",
+      "sha256": "55088c3b3b4de65a097ca5b7d09e01d55444463177f5a5dfe9236a49766abe28",
+      "integrity": "sha512-11GbUsr08IAFLQtab12qgGtOTCfBAEzxdrilkh/P4TNvMoSCC2KQrAm27YZRu6VYd6RrwXD4nsmDyAyZOUvbyw==",
+      "producerTask": "A03",
+      "interfaces": [
+        "runner attribution receipt contract"
+      ],
+      "consumers": [
+        "A04"
+      ]
+    }
+  ]
+}
