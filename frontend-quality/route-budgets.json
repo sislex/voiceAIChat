@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. Reviewed Sislexa extraction baseline (2026-09-20) corrects pre-existing budget drift; initial Web assets at that checkpoint matched production 0.1.310 SHA-256. See measurements/sislexa-extraction. Revised limits allow at most 0.2% plus rounding headroom; CI never rewrites limits.",
+  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. Reviewed Sislexa extraction baseline (2026-09-20) corrects pre-existing budget drift; initial Web assets at that checkpoint matched production 0.1.310 SHA-256. See measurements/sislexa-extraction. Revised limits allow at most 0.2% plus rounding headroom; CI never rewrites limits. U10 Account Identity/Analytics layout correction adds a measured CSS payload; only Account CSS ceilings increase: Web by at most 400 raw, 300 gzip and 100 Brotli bytes; Electron by 150 gzip bytes.",
   "routes": {
     "web/chat/cold": {
       "js": {
@@ -33,9 +33,9 @@
         "brotli": 309800
       },
       "css": {
-        "raw": 387300,
-        "gzip": 67200,
-        "brotli": 54100
+        "raw": 387700,
+        "gzip": 67500,
+        "brotli": 54200
       }
     },
     "web/account/warm": {
@@ -45,9 +45,9 @@
         "brotli": 309800
       },
       "css": {
-        "raw": 387300,
-        "gzip": 67200,
-        "brotli": 54100
+        "raw": 387700,
+        "gzip": 67500,
+        "brotli": 54200
       }
     },
     "web/account/navigation": {
@@ -57,9 +57,9 @@
         "brotli": 309800
       },
       "css": {
-        "raw": 387300,
-        "gzip": 67200,
-        "brotli": 54100
+        "raw": 387700,
+        "gzip": 67500,
+        "brotli": 54200
       }
     },
     "web/settings/cold": {
@@ -130,7 +130,7 @@
       },
       "css": {
         "raw": 385500,
-        "gzip": 66900,
+        "gzip": 67050,
         "brotli": 53900
       }
     },
@@ -142,7 +142,7 @@
       },
       "css": {
         "raw": 385500,
-        "gzip": 66900,
+        "gzip": 67050,
         "brotli": 53900
       }
     },
@@ -154,7 +154,7 @@
       },
       "css": {
         "raw": 385500,
-        "gzip": 66900,
+        "gzip": 67050,
         "brotli": 53900
       }
     },
