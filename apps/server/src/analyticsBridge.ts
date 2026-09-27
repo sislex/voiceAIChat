@@ -14,10 +14,14 @@ export function registerAnalyticsProxy(app: FastifyInstance, transport: Analytic
       const token = request.headers.authorization?.startsWith('Bearer ') ? request.headers.authorization :
         readCookie(request, SESSION_COOKIE) ? 'Bearer ' + readCookie(request, SESSION_COOKIE) : undefined
       if (!token) return reply.code(401).send({ error: 'user_session_required' })
+      const tenant = request.headers['x-sislexa-tenant-id']
+      if (tenant !== undefined && typeof tenant !== 'string') return reply.code(400).send({ error: 'invalid_tenant_id' })
       const query = method === 'GET' && request.url.includes('?') ? request.url.slice(request.url.indexOf('?')) : ''
       try {
         const response = await transport.publicFetchImpl(transport.url + url + query, { method, redirect: 'error', signal: AbortSignal.timeout(10_000),
-          headers: { authorization: token, 'x-request-id': request.id, ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
+          headers: { authorization: token, 'x-request-id': request.id,
+            ...(tenant ? { 'x-sislexa-tenant-id': tenant } : {}),
+            ...(method === 'POST' ? { 'content-type': 'application/json' } : {}) },
           ...(method === 'POST' ? { body: JSON.stringify(request.body) } : {}) })
         if (response.status >= 300 && response.status < 400) return reply.code(503).send({ error: 'analytics_unavailable' })
         return reply.code(response.status).send(await response.json())
