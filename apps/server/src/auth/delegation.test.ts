@@ -27,11 +27,14 @@ function fixture() {
       return new Response(JSON.stringify(active ? { version: 1, active: true, principal } : { version: 1, active: false }))
     } })
   let projectId: string | null = null
-  const db = { chat: { getConversation: async (user: string, id: string) =>
+  const access = { userId: 'subject', tenant: { id: 'tenant', kind: 'personal' }, systemRole: 'developer',
+    tariff: { id: 'standard', revision: 1 }, capabilities: ['chat.use'] }
+  const db = { identity: { getUser: async () => ({ blocked: false }),
+    getAccountAccess: async () => access }, chat: { getConversation: async (user: string, id: string) =>
     user === 'alice' && id === 'chat' ? { id, tenantId: 'tenant', projectId } : null },
     projects: { projectTenant: async (id: string) => id === 'project' ? { id: 'tenant' } : null } } as unknown as VoiceChatDb
   const authority = new ChatDelegation(client, db, () => now)
-  return { authority, principal, requests, revoke: () => { active = false }, expire: () => { now = 2000 },
+  return { authority, principal, requests, access, revoke: () => { active = false }, expire: () => { now = 2000 },
     project: () => { projectId = 'project' } }
 }
 const apps: ReturnType<typeof Fastify>[] = []
@@ -81,6 +84,7 @@ describe('Core delegated authorization', () => {
     const reference = await f.authority.bind(fixtureCredential1, 'alice', 'tenant')
     await expect(f.authority.current({ ...reference, applicationId: 'spoof' })).rejects.toThrow()
     f.principal.grantId = 'rotated'
+    await expect(f.authority.current({ ...reference, grantId: 'rotated' })).rejects.toThrow()
     await expect(f.authority.current(reference)).rejects.toThrow()
     await expect(fixture().authority.current(JSON.parse(JSON.stringify(reference)))).rejects.toThrow()
   })
@@ -89,7 +93,7 @@ describe('Core delegated authorization', () => {
     const app = Fastify(); apps.push(app)
     app.decorateRequest('user', null)
     app.addHook('preHandler', async req => { req.user = { name: 'alice', account: { tenantId: 'tenant' } } as typeof req.user })
-    registerChatDelegation(app, f.authority)
+    registerChatDelegation(app, f.authority, () => true)
     app.get('/api/conversations/:id', async () => ({ ok: true }))
     app.post('/api/conversations/:id/messages', async () => ({ ok: true }))
     app.get('/api/conversations/:id/context-diff/:other', async () => ({ secret: true }))
@@ -105,12 +109,36 @@ describe('Core delegated authorization', () => {
     expect((await app.inject({ method: 'POST', url: '/api/uploads', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/conversations/chat/messages', headers,
       payload: { text: 'unsupported mutation' } })).statusCode).toBe(403)
-    expect((await app.inject({ url: '/api/chat/context?conversationId=chat', headers })).statusCode).toBe(200)
+    const context = await app.inject({ url: '/api/chat/context?conversationId=chat', headers })
+    expect(context.statusCode).toBe(200)
+    expect(context.json().context.capabilities.find((c: { id: string }) => c.id === 'chat.text')).toMatchObject({ available: true })
     expect((await app.inject({ url: '/api/chat/context?conversationId=other', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/conversations/chat/messages', headers,
       payload: { meta: { application: { originApplicationId: 'spoof' } } } })).statusCode).toBe(400)
     f.revoke()
     expect((await app.inject({ url: '/api/conversations/chat', headers })).statusCode).toBe(403)
+  })
+  it('binds billing to the original stable account and rechecks exact resources', async () => {
+    const f = fixture()
+    const ref = await f.authority.bind(fixtureCredential1, 'alice', 'tenant')
+    expect(await f.authority.billingAuthorization(ref, 'chat')).toEqual({
+      authorization: 'Bearer '+fixtureCredential1,
+      principal: { userId: 'subject', tenantId: 'tenant', delegationId: 'grant' }
+    })
+    await expect(f.authority.billingAuthorization(ref, 'other')).rejects.toThrow()
+    f.project()
+    await expect(f.authority.billingAuthorization(ref, 'chat')).rejects.toThrow()
+    f.principal.permissions[1]!.scopes.push('execute')
+    await expect(f.authority.billingAuthorization(ref, 'chat')).resolves.toBeDefined()
+    f.access.userId = 'recreated-subject'
+    await expect(f.authority.billingAuthorization(ref, 'chat')).rejects.toThrow()
+  })
+  it.each(['revoke', 'expire'] as const)('denies billing after %s and after restart', async action => {
+    const f = fixture()
+    const ref = await f.authority.bind(fixtureCredential1, 'alice', 'tenant')
+    await expect(fixture().authority.billingAuthorization(ref, 'chat')).rejects.toThrow()
+    f[action]()
+    await expect(f.authority.billingAuthorization(ref, 'chat')).rejects.toThrow()
   })
   it('forgets bearer credentials when a delegated connection closes', async () => {
     const f = fixture()

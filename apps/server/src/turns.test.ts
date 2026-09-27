@@ -50,6 +50,45 @@ it('rejects a queued delegated turn after its grant is revoked, before model or 
   } finally { await db.close() }
 })
 
+it('resumes a scoped token-only queue with delegated billing and refuses the same reference after restart', async () => {
+  const { ChatDelegation } = await import('./auth/delegation.js')
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Delegated paid queue')
+    const tenantId = (await db.chat.getConversation(U, conv.id))!.tenantId!
+    const introspect = async () => ({ version: 1 as const, active: true as const, principal: {
+      kind: 'delegated' as const, userId: U, tenantId, applicationId: 'assistant', grantId: 'grant', audience: 'core',
+      issuedAt: 0, expiresAt: Date.now()+60_000,
+      permissions: [{ resource: { tenantId, type: 'conversation' as const, id: conv.id }, scopes: ['read', 'execute'] as ('read' | 'execute')[] }]
+    } })
+    const delegation = new ChatDelegation({ introspect }, db)
+    const reference = await delegation.bind(fixtureCredential1, U, tenantId)
+    const message = await db.chat.addMessage(U, conv.id, 'u0', 'Run', '10:00')
+    await db.chat.enqueueTurn(U, conv.id, message.id, { segments: [{ speakerId: 1, text: 'Run' }], delegation: reference })
+    const queued = (await db.chat.takeQueuedTurn(U, conv.id))!
+    const rec = recorder()
+    const wrap = vi.fn((client: LlmClient, turn: import('./billing/chatAccounting.js').AccountingTurn) => {
+      expect(turn.session).toBeUndefined()
+      expect(turn.application?.originApplicationId).toBe('assistant')
+      expect(turn.delegatedAuthorization).toBeTypeOf('function')
+      return client
+    })
+    const turns = createTurnManager({ db, claude: rec.client, delegation, accounting: { wrap } as unknown as ChatAccounting })
+    await turns.start({ userId: U, conversationId: conv.id, messageId: message.id, ...queued.payload })
+    await turns.idle()
+    expect(wrap).toHaveBeenCalledOnce()
+    expect(rec.last()).toMatchObject({ textOnly: true, application: { originApplicationId: 'assistant' } })
+    const admission = await wrap.mock.calls[0]![1].delegatedAuthorization!()
+    expect(admission.principal).toMatchObject({ tenantId, delegationId: 'grant' })
+    expect(admission.authorization).toBe('Bearer '+fixtureCredential1)
+    const restarted = createTurnManager({ db, claude: rec.client, delegation: new ChatDelegation({ introspect }, db),
+      accounting: { wrap } as unknown as ChatAccounting })
+    await restarted.start({ userId: U, conversationId: conv.id, messageId: message.id, ...queued.payload })
+    await restarted.idle()
+    expect(wrap).toHaveBeenCalledOnce()
+  } finally { await db.close() }
+})
+
 it('never runs a standalone application through the unmetered legacy fallback', async () => {
   const { ChatDelegation } = await import('./auth/delegation.js')
   const db = await freshDb()

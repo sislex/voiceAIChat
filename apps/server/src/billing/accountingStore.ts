@@ -8,7 +8,7 @@ export interface AccountingJob {
   application?: import('@voicechat/shared').ChatApplicationAttribution
   id: string
   login: string
-  session: LlmBillingSession
+  session: LlmBillingSession | { userId: string; tenantId: string; delegationId: string }
   originModuleId: string
   input: BillingReservationInput
   target: { kind: 'claude' | 'codex'; baseUrl: string; engineId?: string }
