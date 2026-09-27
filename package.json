@@ -56,7 +56,7 @@
     "verify:core-ui": "node scripts/core-ui-artifact.mjs",
     "build:core-contracts": "node scripts/core-contracts-release.mjs",
     "test:storybook": "npm run verify:core-ui",
-    "test:tooling": "node --import tsx --test scripts/browser-ui-release.test.mjs scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/delivery-release.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs scripts/operations-restore-drill.test.mjs scripts/operations-backup-retention.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/browser-gate.test.mjs scripts/long-run.test.mjs scripts/system-gate.test.mjs",
+    "test:tooling": "node --import tsx --test scripts/browser-ui-release.test.mjs scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/delivery-release.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs scripts/operations-restore-drill.test.mjs scripts/operations-backup-retention.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/browser-gate.test.mjs scripts/long-run.test.mjs scripts/system-gate.test.mjs && node --test scripts/shared-chat-artifacts.test.mjs",
     "operations:restore-drill": "node scripts/operations-restore-drill.mjs",
     "operations:backup-retention": "node scripts/operations-backup-retention.mjs",
     "gate:audit": "node --import tsx scripts/gate-audit.mjs",
@@ -65,7 +65,8 @@
     "gate:system": "node scripts/system-gate.mjs",
     "gate:release": "npm run gate:all && npm run gate:performance && npm run gate:system",
     "gate:performance": "npm run frontend:route-gates",
-    "ui:release": "node --import tsx scripts/browser-ui-release.mjs"
+    "ui:release": "node --import tsx scripts/browser-ui-release.mjs",
+    "verify:shared-chat-inputs": "node scripts/shared-chat-artifacts.mjs"
   },
   "devDependencies": {
     "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz",
@@ -91,6 +92,7 @@
     "electron": "33.4.11",
     "@sislexa/desktop": "file:vendor/sislexa-desktop-1.0.2-05f2d6c971d2.tgz",
     "@sislexa/core-ui": "file:vendor/sislexa-core-ui-1.0.0-e5f926d30031.tgz",
-    "@sislexa/analytics": "file:vendor/sislexa-analytics-1.2.0-7ff6fb8b02f6.tgz"
+    "@sislexa/analytics": "file:vendor/sislexa-analytics-1.2.0-7ff6fb8b02f6.tgz",
+    "semver": "7.8.5"
   }
 }
