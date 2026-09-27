@@ -461,7 +461,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     sessionAuthenticate = identity.authenticate
     if (identityApp.hasDecorator('resetLoginLimiters')) app.decorate('resetLoginLimiters', identityApp.getDecorator('resetLoginLimiters'))
   })
-  registerChatDelegation(app, delegation)
+  registerChatDelegation(app, delegation, () => !!accounting)
   registerAccountAccess(app, db)
   registerBillingProxy(app, managedBilling)
   registerAnalyticsProxy(app, managedAnalytics)
@@ -1370,7 +1370,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeHandlers = (user: SessionUser, sid: string | null, token: string, delegated?: ChatDelegationReference): WsHandlers =>
     createSession({
       delegation: delegated,
-      billingSession: billingSessions.register(user, sid, token),
+      billingSession: delegated ? undefined : billingSessions.register(user, sid, token),
       db,
       turns: turnManager,
       user,
@@ -1538,7 +1538,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             try {
               if (message.t === 'chat.connect') {
                 if (message.v !== 1 || !message.conversationId) throw new DelegationDenied()
-                context.send({ t: 'chat.ready', snapshot: await delegation!.snapshot(delegated, message.conversationId, !!sid && !!accounting) })
+                context.send({ t: 'chat.ready', snapshot: await delegation!.snapshot(delegated, message.conversationId, !!accounting) })
                 return false
               }
               if (!['claude.send', 'claude.cancel', 'claude.queue.edit', 'claude.queue.delete', 'claude.queue.reorder', 'claude.queue.now'].includes(message.t)

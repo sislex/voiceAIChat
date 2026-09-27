@@ -18,12 +18,14 @@ export function rejectsAttribution(value: unknown): boolean {
 
 /** Tokens stay in memory. Persisted queue references fail closed after a restart. */
 export class ChatDelegation {
-  private credentials = new Map<string, { token: string; principal: DelegatedPrincipal }>()
+  private credentials = new Map<string, { token: string; principal: DelegatedPrincipal; billingUserId: string }>()
   constructor(private client: DelegationIntrospectionClient, private db: VoiceChatDb, private now = Date.now,
     private environmentId = 'legacy') {}
   /** Resolve the live subject through Identity, never through caller attribution. */
   async user(token: string): Promise<SessionUser> {
-    const principal = await this.verify(token)
+    return this.account(await this.verify(token))
+  }
+  private async account(principal: DelegatedPrincipal): Promise<SessionUser> {
     const row = await this.db.identity.getUser(principal.userId)
     const access = await this.db.identity.getAccountAccess(principal.userId, principal.tenantId)
     if (!row || row.blocked || row.mustChangePassword || !access || access.tenant.id !== principal.tenantId) throw new DelegationDenied()
@@ -57,7 +59,9 @@ export class ChatDelegation {
     const principal = await this.verify(token)
     if (principal.userId !== userId || principal.tenantId !== tenantId) throw new DelegationDenied()
     const reference = { id: randomUUID(), userId, tenantId: principal.tenantId, applicationId: principal.applicationId, grantId: principal.grantId }
-    this.credentials.set(reference.id, { token, principal })
+    const user = await this.account(principal)
+    if (!user.account?.userId || user.account.tenantId !== tenantId) throw new DelegationDenied()
+    this.credentials.set(reference.id, { token, principal: { ...principal }, billingUserId: user.account.userId })
     return Object.freeze(reference)
   }
   release(reference: ChatDelegationReference): void { this.credentials.delete(reference.id) }
@@ -70,11 +74,23 @@ export class ChatDelegation {
   }
   async current(reference: ChatDelegationReference): Promise<DelegatedPrincipal> {
     const stored = this.credentials.get(reference.id)
-    if (!stored) throw new DelegationDenied()
+    if (!stored || stored.principal.userId !== reference.userId || stored.principal.tenantId !== reference.tenantId
+      || stored.principal.applicationId !== reference.applicationId || stored.principal.grantId !== reference.grantId) throw new DelegationDenied()
     const principal = await this.verify(stored.token)
     if (principal.userId !== reference.userId || principal.tenantId !== reference.tenantId
       || principal.applicationId !== reference.applicationId || principal.grantId !== reference.grantId) throw new DelegationDenied()
     return principal
+  }
+  /** Admission-only credential; never include this result in a queue or outbox. */
+  async billingAuthorization(reference: ChatDelegationReference, conversationId: string) {
+    await this.authorize(reference, 'execute', conversationId)
+    const stored = this.credentials.get(reference.id)
+    if (!stored) throw new DelegationDenied()
+    const user = await this.account(stored.principal)
+    if (this.credentials.get(reference.id) !== stored || user.name !== reference.userId || user.account?.tenantId !== reference.tenantId
+      || user.account.userId !== stored.billingUserId) throw new DelegationDenied()
+    return { authorization: 'Bearer '+stored.token,
+      principal: { userId: stored.billingUserId, tenantId: reference.tenantId, delegationId: reference.grantId } }
   }
   attribution(reference: ChatDelegationReference): ChatApplicationAttribution {
     return { version: 1, originApplicationId: reference.applicationId, executorApplicationId: 'core', tokenId: null, delegationId: reference.grantId }
@@ -104,13 +120,13 @@ export class ChatDelegation {
 }
 
 /** Every delegated route must have an explicit resource adapter. */
-export function registerChatDelegation(app: FastifyInstance, authority?: ChatDelegation): void {
+export function registerChatDelegation(app: FastifyInstance, authority?: ChatDelegation, executionAvailable: () => boolean = () => false): void {
   app.get<{ Querystring: { conversationId?: string } }>('/api/chat/context', async (req, reply) => {
     reply.header('cache-control', 'no-store')
     const token = req.headers[DELEGATION_HEADER]
     if (!authority || typeof token !== 'string' || !req.user || !req.query.conversationId) throw new DelegationDenied()
     const reference = await authority.bind(token, req.user.name, req.user.account?.tenantId)
-    try { return await authority.snapshot(reference, req.query.conversationId) }
+    try { return await authority.snapshot(reference, req.query.conversationId, executionAvailable()) }
     finally { authority.release(reference) }
   })
   app.addHook('preHandler', async (req, reply) => {

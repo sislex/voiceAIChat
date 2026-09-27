@@ -19,6 +19,7 @@ export interface ChatAccountingOptions {
 export interface AccountingTurn {
   application?: import('@voicechat/shared').ChatApplicationAttribution
   authorize?: () => Promise<void>
+  delegatedAuthorization?: () => Promise<{ authorization: string; principal: { userId: string; tenantId: string; delegationId: string } }>
   login: string
   session?: LlmBillingSession
   originModuleId: string
@@ -42,11 +43,12 @@ export class ChatAccounting {
   private stopping = false
   private now: () => number
   constructor(private opts: ChatAccountingOptions) { this.now = opts.now ?? Date.now }
-  private async call<T>(path: string, body?: unknown, authorization?: string): Promise<T> {
+  private async call<T>(path: string, body?: unknown, authorization?: string, delegated = false): Promise<T> {
     const response = await this.opts.billing.fetchImpl(this.opts.billing.url+'/v1/billing/'+path, {
       method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
       headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-        ...(authorization ? { 'x-sislexa-user-authorization': authorization } : {}) },
+        ...(authorization ? { 'x-sislexa-user-authorization': authorization } : {}),
+        ...(delegated ? { 'x-sislexa-delegated-billing': '1' } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
     const result = await response.json() as T & { error?: string }
     if (!response.ok) throw new AdmissionError(response.status, result.error ?? 'billing_unavailable')
@@ -83,29 +85,40 @@ export class ChatAccounting {
           if (!(client instanceof RemoteLlmClient) || !await client.accountingReady()) {
             throw Error('accounting_runner_required')
           }
-          const authorization = this.opts.sessions.authorization(turn.login, turn.session)
-          if (!authorization || !turn.session) {
+          const delegated = await turn.delegatedAuthorization?.()
+          const authorization = delegated?.authorization ?? this.opts.sessions.authorization(turn.login, turn.session)
+          const principal = delegated?.principal ?? turn.session
+          if (delegated && (!turn.application || turn.application.delegationId !== delegated.principal.delegationId)) {
+            throw Error('billing_principal_mismatch')
+          }
+          if (!authorization || !principal) {
             error('Для запуска очереди нужно восстановить исходную сессию входа. Откройте чат в ней или отправьте запрос заново.'); return
           }
           if (cancelled) return
           await turn.authorize?.()
           const id = randomUUID()
-          job = { id, application: turn.application, login: turn.login, session: { ...turn.session }, originModuleId: turn.originModuleId,
+          job = { id, application: turn.application, login: turn.login, session: { ...principal }, originModuleId: turn.originModuleId,
             input: { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded', expiresAt: this.now()+60_000 },
             target: { ...client.accountingTarget, ...(turn.engineId ? { engineId: turn.engineId } : {}) },
             model: request.model, prices: estimatePrices(request.model), state: 'admitting' }
           this.active.add(id); this.opts.store.save(job)
-          const admitted = await this.call<BillingReservation>('reservations', { ...job.input, application: job.application, originModuleId: turn.originModuleId }, authorization)
+          const admitted = await this.call<BillingReservation>('reservations', { ...job.input, application: job.application, originModuleId: turn.originModuleId }, authorization, !!delegated)
           this.assertReservation(job, admitted)
           job.reservation = admitted; job.state = 'reserved'; this.opts.store.save(job)
           if (cancelled) return
           job.state = 'claiming'; this.opts.store.save(job)
-          const started = await this.call<BillingReservation & { transitioned: boolean }>('reservations/'+admitted.id+'/start', {}, authorization)
+          await turn.authorize?.()
+          const refreshed = await turn.delegatedAuthorization?.()
+          if (delegated && (!refreshed || !isDeepStrictEqual(refreshed.principal, principal))) throw Error('billing_principal_mismatch')
+          const started = await this.call<BillingReservation & { transitioned: boolean }>('reservations/'+admitted.id+'/start', {}, refreshed?.authorization ?? authorization, !!delegated)
           this.assertReservation(job, started)
           if (!started.transitioned || started.state !== 'running') throw Error('billing_claim_not_acquired')
           if (cancelled) return
           // This durable boundary distinguishes a never-dispatched start from possibly incurred work.
           await turn.authorize?.()
+          const dispatchAuthority = await turn.delegatedAuthorization?.()
+          if (delegated && (!dispatchAuthority || !isDeepStrictEqual(dispatchAuthority.principal, principal))) throw Error('billing_principal_mismatch')
+          if (cancelled) return
           job.state = 'dispatching'; this.opts.store.save(job)
           const forwarded: LlmStreamHandlers = { ...handlers,
             onDone: (text, meta) => { void complete(() => handlers.onDone(text, meta)) },

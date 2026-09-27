@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-27
-checked: 93a5005b
+checked: 3daeebbd
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -55,15 +55,22 @@ only to the turn feed: account-wide auth, machine, project, CI, preview and tool
 feeds are never attached, so filtering at the transport is not the sole isolation
 boundary. Closing the socket also discards its in-memory bearer reference.
 
-Standalone credential admission supports reading and handshake. Identity API
-1.4.0 and the pinned Billing owner archive now provide a separate component-only
-delegated billing admission path, which rechecks the live grant and current
-account at reservation and start. Core has not yet wired its in-memory grant
-reference into that path. Core never manufactures a user session or falls back
-to unmetered execution; standalone paid turns remain disabled until the Core
-adapter and its end-to-end tests are complete. A04 is not complete.
-MCP/child operations remain explicitly disabled and cannot inherit unrestricted
-user authority. Existing paired-session execution retains verified attribution.
+Standalone credentials support paid text turns through Billing's component-only
+delegated admission. Core sends the original opaque grant as a Bearer credential
+in `x-sislexa-user-authorization` and `x-sislexa-delegated-billing: 1` on reserve
+and start; the managed transport authenticates Core separately. Billing rechecks
+the live grant and account with Identity. Core binds its in-memory reference to
+the stable account subject, tenant and grant, and rechecks exact conversation and
+project scopes before reserve, start and dispatch. The outbox keeps that binding
+without a session ID or bearer. Queue replay requires the original in-memory
+reference; restart or socket close denies new admission while incurred usage can
+still settle through executor authorization. No user session is manufactured and
+no unmetered fallback is allowed. REST/WS connection snapshots advertise text
+execution only when accounting is configured and the resource permits execution.
+MCP/child operations remain explicitly disabled until resource-specific adapters
+exist and cannot inherit unrestricted user authority. Legacy session billing is
+unchanged. Production commissioning and exact-composition A07 acceptance remain
+operator work with compatible Identity, Billing and Runner providers.
 
 Managed Identity commissioning requires `identity.delegation.introspect` and
 `identity.delegation.audience.core` component scopes. The installation template

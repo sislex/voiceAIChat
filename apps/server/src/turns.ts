@@ -405,9 +405,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
         if (req.attachments?.length || req.assistantContext) throw Error('delegation_denied')
         await deps.delegation.authorize(req.delegation, 'execute', conversationId)
-        // Billing's current admission API requires an authenticated user session.
-        // Never fall back to unattributed/unmetered execution for an application.
-        if (!deps.accounting || !req.billingSession) throw Error('delegation_billing_session_required')
+        // Applications must use live delegated Billing admission, never the legacy fallback.
+        if (!deps.accounting) throw Error('delegation_billing_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
@@ -496,6 +495,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
     const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
+      delegatedAuthorization: req.delegation ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
       application: req.delegation ? deps.delegation!.attribution(req.delegation) : undefined,
       authorize: req.delegation ? () => deps.delegation!.authorize(req.delegation!, 'execute', conversationId) : undefined,
       originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
