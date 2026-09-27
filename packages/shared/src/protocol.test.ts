@@ -41,6 +41,15 @@ describe('контракт протокола', () => {
     expect(REST.conversation('abc')).toBe('/api/conversations/abc')
     expect(REST.messages('x')).toBe('/api/conversations/x/messages')
     expect(REST.ttsVoiceDownload('ru_RU-irina-medium')).toContain('ru_RU-irina-medium')
+    expect(REST.chatContext).toBe('/api/chat/context')
+    expect(REST.chatSettings).toBe('/api/chat/settings')
+    expect(REST.conversationSettings('a/b')).toBe('/api/conversations/a%2Fb/settings')
+  })
+
+  it('declares additive chat handshake, settings invalidation and reconnect frames', () => {
+    expect(CLIENT_MESSAGE_TYPES).toContain('chat.connect')
+    expect(SERVER_MESSAGE_TYPES).toContain('chat.ready')
+    expect(SERVER_MESSAGE_TYPES).toContain('chat.settings.updated')
   })
 })
 

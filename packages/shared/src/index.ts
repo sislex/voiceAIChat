@@ -7,6 +7,7 @@ export * from './universalSearch'
 export * from './types'
 
 export * from './protocol'
+export * from './chatContract'
 export * from './stateMachine'
 export * from './sentences'
 

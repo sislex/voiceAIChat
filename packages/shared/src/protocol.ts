@@ -302,6 +302,11 @@ export const REST = {
   /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
   promptSuggest: '/api/prompt/suggest',
   systemCapabilities: '/api/system/capabilities',
+  /** Verified application/access context for the current authenticated chat session. */
+  chatContext: '/api/chat/context',
+  /** Versioned account chat settings snapshot and revision-checked patches. */
+  chatSettings: '/api/chat/settings',
+  conversationSettings: (id: string) => `/api/conversations/${encodeURIComponent(id)}/settings`,
   sttStatus: '/api/stt/status',
   sttModels: '/api/stt/models',
   sttModel: (model: string) => `/api/stt/models/${model}`,
@@ -717,6 +722,7 @@ export interface ActiveTurn extends Partial<TurnTarget> {
 
 /** client → server. */
 export type ClientMessage =
+  | { t: 'chat.connect'; v: 1; cursor?: string }
   | { t: 'audio.start'; sampleRate: number }
   | { t: 'audio.stop' }
   | {
@@ -780,6 +786,8 @@ export type ClientMessage =
 
 /** server → client. */
 export type ServerMessage =
+  | { t: 'chat.ready'; snapshot: import('./chatContract').ChatConnectionSnapshot }
+  | { t: 'chat.settings.updated'; settings: import('./chatContract').ChatSettingsSnapshot }
   | { t: 'auth.status'; v: 1; status: LoginStatusMap }
   | { t: 'stt.partial'; update: SttUpdate }
   | { t: 'stt.final'; update: SttUpdate }
@@ -914,6 +922,7 @@ export type ServerMessageType = ServerMessage['t']
 
 /** Полный список типов сообщений — для проверок контракта в тестах. */
 export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
+  'chat.connect',
   'audio.start',
   'audio.stop',
   'claude.send',
@@ -944,6 +953,8 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
+  'chat.ready',
+  'chat.settings.updated',
   'auth.status',
   'stt.partial',
   'stt.final',
