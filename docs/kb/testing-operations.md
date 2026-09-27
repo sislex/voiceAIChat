@@ -1,9 +1,9 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-23
-checked: 9e028b00
-areas:
-  - package.json
+updated: 2026-09-27
+checked:
+
+  ed6a73f2
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -18,6 +18,40 @@ areas:
 # Разработка, тестирование, диагностика и эксплуатация
 
 ## Core UI test ownership
+
+### Shared chat exact-artifact acceptance (U10)
+
+`dependency-snapshots.json` pins the 13 supplied S2 owner archives by package,
+version, source commit, SHA-256 and npm integrity. Content-addressed archives live
+in `vendor/`; package manifests and the lockfile select the same builds. Core's
+Shared workspace is version 0.1.10; the consumer fixture separately extracts the
+published Shared 0.1.10 archive, without aliases to workspace source.
+
+`npm run gate:shared-chat` verifies archive provenance, installed package bytes,
+and the complete Desktop renderer against Core UI's file manifest. It then runs
+public package adapters against Core's real settings routes, SQLite repository
+and WebSocket dispatcher. Checks cover Make selection lifetime, Reader resource
+scope/ownership, independent runtime disposal, shared settings/conflicts, local
+device preferences, wire commands, stream/queue/error routing and reconnect.
+The transport test binds only the first `DELIVERY_PORTS` port when a delivery
+attempt is present and closes its server/sockets in teardown.
+
+Evidence is written to `$DELIVERY_ATTEMPT_ROOT/artifacts/shared-chat/acceptance.json`
+(or `artifacts/shared-chat` outside delivery), with the snapshot digest, Core
+source/lock digest, individual check exit codes and logs. A failed or missing
+check is never converted to acceptance. `gate:system` runs this check before the
+existing owner suites and derives their source commits from the snapshot. The
+existing committed-Core requirement for those owner suites remains in force.
+`gate:all` continues to own real browser integration; `gate:performance` retains
+Web/Electron route measurements. This boundary suite does not replace owner UI
+parity/accessibility tests or deployed-version commissioning.
+
+The U10 sandbox run passed the three artifact tests and the two local
+host/resource/settings checks. The socket check encountered loopback `EPERM` on
+allocated port 23000. Offline installation could not obtain the new xterm peer
+packages, and the registry DNS was unavailable. Full installation and release
+gates therefore require the supervisor; these observations are not a passed
+release or production acceptance record.
 
 Core UI unit/DOM tests, Storybook, accessibility fixtures, lazy-screen recovery, panel-loader fixtures, VPN component QA and release-center component QA belong to `sislex/sislexa-core-ui`. Its affected gate runs complete ownership groups plus reverse-import consumers and shell integration; common host state, CSS and dependency changes select all groups. Generic library tests remain in `sielexa-ui`.
 
