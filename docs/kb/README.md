@@ -12,10 +12,10 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 11 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ⚠ 5 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 5 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 6 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-23 | ⚠ 3 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-27 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 30 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 31 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 10 коммит(ов) в areas после сверки: 4c0bb6a9 feat(releases): manage browser UI from release center … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 18 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 232 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 20 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 37 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1642 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1643 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 5 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 6 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 27 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 396 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
@@ -38,10 +38,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-27 | ⚠ 1 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-23 | ⚠ 4 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-22 | ⚠ 7 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 224 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 225 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-27 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 176 коммит(ов) в areas после сверки: 999a980c chore(release): pin local S2 application sources … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 177 коммит(ов) в areas после сверки: c971c278 chore(release): pin Make 1.2.3 frontend runtime fix … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ⚠ 7 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
@@ -54,18 +54,18 @@
 
 ## Журнал сессий
 
-Всего записей: 952. Последние:
+Всего записей: 953. Последние:
 
 - [2026-09-27-delivery-c03-c03-chat-contracts.md](log/2026-09-27-delivery-c03-c03-chat-contracts.md) — c03-chat-contracts
 - [2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md](log/2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md) — u10-final-artifact-acceptance
 - [2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md](log/2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md) — u10-exact-artifacts
 - [2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md](log/2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md) — u02-canonical-chat-settings
+- [2026-09-27-alexeys-macbook-air-2-s3-provider-source-pins.md](log/2026-09-27-alexeys-macbook-air-2-s3-provider-source-pins.md) — s3-provider-source-pins
 - [2026-09-27-alexeys-macbook-air-2-s2-make-frontend-hotfix.md](log/2026-09-27-alexeys-macbook-air-2-s2-make-frontend-hotfix.md) — s2-make-frontend-hotfix
 - [2026-09-27-alexeys-macbook-air-2-s2-local-release.md](log/2026-09-27-alexeys-macbook-air-2-s2-local-release.md) — s2-local-release
 - [2026-09-27-alexeys-macbook-air-2-c03-chat-settings-ownership.md](log/2026-09-27-alexeys-macbook-air-2-c03-chat-settings-ownership.md) — c03-chat-settings-ownership
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-source-fencing.md) — delivery-source-fencing
 - [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-031-worker-trial.md) — delivery-control-031-worker-trial
-- [2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-ui-delivery-authority.md](log/2026-09-25-alexeys-macbook-air-tailae39a6-ts-net-controlled-ui-delivery-authority.md) — controlled-ui-delivery-authority
 
 ## Исторические планы
 

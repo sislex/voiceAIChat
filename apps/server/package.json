@@ -26,7 +26,7 @@
     "@voicechat/web-reader-contracts": "file:../../vendor/voicechat-web-reader-contracts-1.3.0-fd44037af122.tgz",
     "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-13de7060b9f2.tgz",
     "@sislexa/component-runtime": "*",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-c7aaebd15a60.tgz",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-19ff4b194350.tgz",
     "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.2.0-b7688964e67c.tgz",
     "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "file:../../vendor/sislexa-make-1.2.3-c57a1696f6d9.tgz",
@@ -48,7 +48,7 @@
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
     "ws": "^8.18.0",
-    "@sislex/llm-runner": "file:../../vendor/sislex-llm-runner-0.3.1-8ec5100952c3.tgz",
-    "@sislex/runner-contracts": "file:../../vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz"
+    "@sislex/llm-runner": "file:../../vendor/sislex-llm-runner-0.3.5-64f8ce8d508c.tgz",
+    "@sislex/runner-contracts": "file:../../vendor/sislex-runner-contracts-0.1.1-55088c3b3b4d.tgz"
   }
 }
