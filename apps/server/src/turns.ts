@@ -403,7 +403,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (req.delegation) {
       try {
         if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
+        if (req.attachments?.length || req.assistantContext) throw Error('delegation_denied')
         await deps.delegation.authorize(req.delegation, 'execute', conversationId)
+        // Billing's current admission API requires an authenticated user session.
+        // Never fall back to unattributed/unmetered execution for an application.
+        if (!deps.accounting || !req.billingSession) throw Error('delegation_billing_session_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
@@ -634,7 +638,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Блок персонализации строит `prompt/contextBlocks.ts` — тот же код, что и
     // предпросмотр в инспекторе контекста: иначе панель обещает не то, что уйдёт.
-    const personalizationBlock = personalizationPromptBlock(settings.personalization, new Date())
+    const personalizationBlock = req.delegation ? '' : personalizationPromptBlock(settings.personalization, new Date())
     if (personalizationBlock && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n${personalizationBlock}`
     // Инструкции чата (терминал/проводник, вопросы, картинки, task-launch, свои) —
     // включённые в настройках и не выключенные в инспекторе этого разговора.
@@ -647,7 +651,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // двумя `.filter`, предпросмотр показывал подсказки, которых в этом чате
     // не будет.
     const instructions = instructionsForAssistantKind(
-      effectiveChatInstructions(settings.chatInstructions, disabledContext),
+      effectiveChatInstructions(req.delegation ? [] : settings.chatInstructions, disabledContext),
       conv?.assistantKind ?? null
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его

@@ -723,7 +723,7 @@ export interface ActiveTurn extends Partial<TurnTarget> {
 
 /** client → server. */
 export type ClientMessage =
-  | { t: 'chat.connect'; v: 1; cursor?: string }
+  | { t: 'chat.connect'; v: 1; cursor?: string; conversationId?: string }
   | { t: 'audio.start'; sampleRate: number }
   | { t: 'audio.stop' }
   | {

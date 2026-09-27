@@ -31,7 +31,7 @@ it('rejects a queued delegated turn after its grant is revoked, before model or 
     const delegation = new ChatDelegation({ introspect: async () => active ? { version: 1, active: true, principal: {
       kind: 'delegated', userId: U, tenantId, applicationId: 'assistant', grantId: 'grant', audience: 'core',
       issuedAt: 0, expiresAt: Date.now() + 60_000,
-      permissions: [{ resource: { tenantId, type: 'conversation', id: conv.id }, scopes: ['execute'] }]
+      permissions: [{ resource: { tenantId, type: 'conversation', id: conv.id }, scopes: ['read', 'execute'] }]
     } } : { version: 1, active: false } }, db)
     const reference = await delegation.bind(fixtureCredential1, U, tenantId)
     const message = await db.chat.addMessage(U, conv.id, 'u0', 'Run', '10:00')
@@ -47,6 +47,27 @@ it('rejects a queued delegated turn after its grant is revoked, before model or 
     expect(rec.last()).toBeNull()
     expect(wrap).not.toHaveBeenCalled()
     await turns.idle()
+  } finally { await db.close() }
+})
+
+it('never runs a standalone application through the unmetered legacy fallback', async () => {
+  const { ChatDelegation } = await import('./auth/delegation.js')
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Delegated')
+    const tenantId = (await db.chat.getConversation(U, conv.id))!.tenantId!
+    const delegation = new ChatDelegation({ introspect: async () => ({ version: 1, active: true, principal: {
+      kind: 'delegated', userId: U, tenantId, applicationId: 'assistant', grantId: 'grant', audience: 'core',
+      issuedAt: 0, expiresAt: Date.now() + 60_000,
+      permissions: [{ resource: { tenantId, type: 'conversation', id: conv.id }, scopes: ['read', 'execute'] }]
+    } }) }, db)
+    const reference = await delegation.bind(fixtureCredential1, U, tenantId)
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, delegation })
+    await turns.start({ userId: U, conversationId: conv.id, delegation: reference,
+      segments: [{ speakerId: 1, text: 'Run' }] })
+    await turns.idle()
+    expect(rec.last()).toBeNull()
   } finally { await db.close() }
 })
 

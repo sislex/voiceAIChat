@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-27
-checked: 8ed85134
+checked: 47c276b2
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -23,13 +23,22 @@ areas:
 
 ### Core delegated chat adapter
 
-Core accepts `x-sislexa-delegation` alongside an authenticated user session on
-resource-addressed conversation REST requests and the WebSocket upgrade. The
+Core accepts `x-sislexa-delegation` on resource-addressed conversation REST
+reads and the WebSocket upgrade, including server clients without a browser cookie. The
 Identity introspection client verifies the opaque grant for audience `core` on
-admission, each command/event and again before execution. Subject and tenant must
-match the authenticated session. A project-bound conversation requires both the
+admission, each command/event and again before execution. Core resolves the live
+subject and selected tenant through Identity's account store. When a user session
+is also supplied, its account context must match. A project-bound conversation requires both the
 conversation permission and the corresponding project permission; scopes remain
 paired with resources. Unsupported REST/WS operations fail closed.
+
+`GET /api/chat/context?conversationId=...` and `chat.connect` v1 with
+`conversationId` return a versioned connection snapshot (`chat.ready` on WS).
+Snapshots contain only the selected conversation grant and no account settings;
+reconnect requires resynchronization. REST mutations, settings, list/create/upload,
+attachments and child tools remain disabled pending resource-specific adapters.
+Execution additionally requires read access to conversation history and project
+context. Delegated prompts do not inherit account personalization or instructions.
 
 Application attribution in client bodies is rejected. Queue payloads contain an
 opaque server reference with user, tenant, application and grant IDs, never the
@@ -46,11 +55,15 @@ only to the turn feed: account-wide auth, machine, project, CI, preview and tool
 feeds are never attached, so filtering at the transport is not the sole isolation
 boundary. Closing the socket also discards its in-memory bearer reference.
 
-This adapter currently requires a user session in addition to the grant; it does
-not implement standalone delegated bearer authentication. Delegated turns use
-tool-free execution. MCP/child operations still need resource-specific delegated
-adapters before they can be enabled; they must not inherit unrestricted user
-authority. These are implementation gaps, not operator commissioning steps.
+Standalone credential admission supports reading and handshake, but standalone
+execution is blocked by the pinned provider contract: Billing reserve/start calls
+Identity's session verifier, which does not accept application grants. Core never
+manufactures a user session or falls back to unmetered execution. Delegated turns
+require both accounting and the original billing session until a provider-owned
+delegated billing admission/exchange API is available. This is an implementation
+dependency, not an operator commissioning step; A04 is not complete.
+MCP/child operations remain explicitly disabled and cannot inherit unrestricted
+user authority. Existing paired-session execution retains verified attribution.
 
 Managed Identity commissioning requires `identity.delegation.introspect` and
 `identity.delegation.audience.core` component scopes. The installation template

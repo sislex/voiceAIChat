@@ -62,6 +62,19 @@ describe('Core delegated authorization', () => {
     await expect(f.authority.authorize(reference, 'execute', 'chat')).rejects.toThrow()
     await expect(f.authority.bind(fixtureCredential1, 'bob', 'tenant')).rejects.toThrow()
     await expect(f.authority.bind(fixtureCredential1, 'alice', 'other')).rejects.toThrow()
+    await expect(f.authority.authorize(reference, 'read', 'chat', 'other')).rejects.toThrow()
+  })
+  it('returns a resource-bound handshake without account settings or credentials', async () => {
+    const f = fixture()
+    const reference = await f.authority.bind(fixtureCredential1, 'alice', 'tenant')
+    const snapshot = await f.authority.snapshot(reference, 'chat')
+    expect(snapshot.context.resources).toEqual({ kind: 'conversation-ids', conversationIds: ['chat'] })
+    expect(snapshot.context.application.originApplicationId).toBe('assistant')
+    expect(snapshot.settings).toEqual({ version: 1, revision: 0, account: {}, conversation: {}, device: {} })
+    expect(snapshot.context.capabilities.find(c => c.id === 'chat.text')).toMatchObject({ available: false })
+    expect(JSON.stringify(snapshot)).not.toContain(fixtureCredential1)
+    f.expire()
+    await expect(f.authority.snapshot(reference, 'chat')).rejects.toThrow()
   })
   it('rejects rotated identity, forged references and queue replay without the originating credential', async () => {
     const f = fixture()
@@ -90,6 +103,10 @@ describe('Core delegated authorization', () => {
     expect((await app.inject({ url: '/api/conversations', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/conversations', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/uploads', headers })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations/chat/messages', headers,
+      payload: { text: 'unsupported mutation' } })).statusCode).toBe(403)
+    expect((await app.inject({ url: '/api/chat/context?conversationId=chat', headers })).statusCode).toBe(200)
+    expect((await app.inject({ url: '/api/chat/context?conversationId=other', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/conversations/chat/messages', headers,
       payload: { meta: { application: { originApplicationId: 'spoof' } } } })).statusCode).toBe(400)
     f.revoke()

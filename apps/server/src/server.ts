@@ -60,7 +60,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { registerAuth, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
+import { registerAuth, registerAuthGuard, type AuthenticateFn, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
@@ -430,13 +430,37 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
   const authOptions = { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) }
-  const { authenticate } = managedIdentity
-    ? await registerRemoteIdentity(app, db, managedIdentity, sessionSecret, authOptions)
-    : await registerAuth(app, db, sessionSecret, authOptions)
   const delegationClient = opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
     url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
   }) : undefined)
-  const delegation = delegationClient ? new ChatDelegation(delegationClient, db) : undefined
+  const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now, component?.config.environmentId ?? 'legacy') : undefined
+  // Keep Identity session routes encapsulated; Core composes resource admission.
+  let sessionAuthenticate: AuthenticateFn
+  const authenticate: AuthenticateFn = async req => {
+    const grant = req.headers[DELEGATION_HEADER]
+    if (grant === undefined) return sessionAuthenticate(req)
+    try {
+      if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
+      if (!/^\/(?:ws$|api\/chat\/context(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      const user = await delegation.user(grant)
+      const tenant = req.headers['x-sislexa-tenant-id']
+      if (tenant !== undefined && tenant !== user.account?.tenantId) throw new DelegationDenied()
+      if (req.headers.authorization || req.headers.cookie) {
+        const session = await sessionAuthenticate(req)
+        if (!session.ok || !sameAccountContext(user, session.user)) throw new DelegationDenied()
+      }
+      return { ok: true, user }
+    } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+  }
+  registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
+    ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
+  await app.register(async identityApp => {
+    const identity = managedIdentity
+      ? await registerRemoteIdentity(identityApp, db, managedIdentity, sessionSecret, authOptions)
+      : await registerAuth(identityApp, db, sessionSecret, authOptions)
+    sessionAuthenticate = identity.authenticate
+    if (identityApp.hasDecorator('resetLoginLimiters')) app.decorate('resetLoginLimiters', identityApp.getDecorator('resetLoginLimiters'))
+  })
   registerChatDelegation(app, delegation)
   registerAccountAccess(app, db)
   registerBillingProxy(app, managedBilling)
@@ -1435,6 +1459,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
       const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
+      if (rejectsAttribution(request.query)) { socket.close(4003, 'Untrusted attribution'); return }
       const token = wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
@@ -1443,10 +1468,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const buffer = (data: Buffer, isBinary: boolean): void => { early.push([data, isBinary]) }
       socket.on('message', buffer)
       const verifySocket = async () => {
-        if (!token) return null
+        if (!token && request.headers[DELEGATION_HEADER] === undefined) return null
         try {
           const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{authorization:'Bearer '+token, ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }
@@ -1459,6 +1484,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       // A role change requires fresh handlers; an old socket must not retain its former privileges.
       const socketIdentityCurrent = async () => {
         const active = await verifySocket()
+        if (delegated) { try { await delegation!.current(delegated) } catch { return false } }
         return sameAccountContext(user, active)
       }
       let delegated: ChatDelegationReference | undefined
@@ -1495,6 +1521,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           try { if (delegated) await delegation!.current(delegated); return true } catch { return false }
         },
         authorizeOutput: delegated ? async message => {
+          if (message.t === 'chat.ready') {
+            try {
+              const resources = message.snapshot.context.resources
+              if (resources.kind !== 'conversation-ids') return false
+              for (const id of resources.conversationIds) await delegation!.authorize(delegated!, 'read', id)
+              return true
+            } catch { return false }
+          }
           if (!('conversationId' in message) || typeof message.conversationId !== 'string') return false
           try { await delegation!.authorize(delegated!, 'read', message.conversationId); return true } catch { return false }
         } : undefined,
@@ -1502,8 +1536,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           if (rejectsAttribution(message)) return false
           if (delegated) {
             try {
+              if (message.t === 'chat.connect') {
+                if (message.v !== 1 || !message.conversationId) throw new DelegationDenied()
+                context.send({ t: 'chat.ready', snapshot: await delegation!.snapshot(delegated, message.conversationId, !!sid && !!accounting) })
+                return false
+              }
               if (!['claude.send', 'claude.cancel', 'claude.queue.edit', 'claude.queue.delete', 'claude.queue.reorder', 'claude.queue.now'].includes(message.t)
                 || !('conversationId' in message) || typeof message.conversationId !== 'string') throw new DelegationDenied()
+              if (message.t === 'claude.send' && (message.attachments?.length || message.assistantContext || message.execTarget)) throw new DelegationDenied()
               const scope = ['claude.send', 'claude.queue.now'].includes(message.t) ? 'execute' : 'write'
               await delegation!.authorize(delegated, scope, message.conversationId)
               const ids = 'ids' in message ? message.ids : 'id' in message ? [message.id] : []
