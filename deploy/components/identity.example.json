@@ -18,7 +18,8 @@
     {
       "consumerId": "billing",
       "scopes": [
-        "identity.verify"
+        "identity.verify",
+        "identity.delegation.billing-admission"
       ],
       "maxTtlSeconds": 2592000
     },
