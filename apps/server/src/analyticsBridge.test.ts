@@ -10,9 +10,10 @@ it('forwards bearer identity, query and activity without exposing a component cr
   const app = Fastify(), request = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200 }))
   registerAnalyticsProxy(app, { url: 'https://analytics.test', publicFetchImpl: request as unknown as typeof fetch }); cleanup.push(() => app.close())
   expect((await app.inject({ url: REST.analyticsAccount + '?from=1&to=2' })).statusCode).toBe(401)
-  expect((await app.inject({ url: REST.analyticsAccount + '?from=1&to=2', headers: { authorization: 'Bearer user' } })).statusCode).toBe(200)
+  expect((await app.inject({ url: REST.analyticsAccount + '?from=1&to=2', headers: { authorization: 'Bearer user', 'x-sislexa-tenant-id': 'team-2' } })).statusCode).toBe(200)
   expect(String(request.mock.calls[0]![0])).toBe('https://analytics.test/api/analytics/account?from=1&to=2')
-  expect(request.mock.calls[0]![1]?.headers).toMatchObject({ authorization: 'Bearer user', 'x-request-id': expect.any(String) })
+  expect(request.mock.calls[0]![1]?.headers).toMatchObject({ authorization: 'Bearer user',
+    'x-sislexa-tenant-id': 'team-2', 'x-request-id': expect.any(String) })
   const payload = { intervals: [{ version: 1 }] }
   expect((await app.inject({ method: 'POST', url: REST.analyticsActivity, headers: { authorization: 'Bearer user' }, payload })).statusCode).toBe(200)
   expect(request.mock.calls[1]![1]).toMatchObject({ method: 'POST', body: JSON.stringify(payload) })

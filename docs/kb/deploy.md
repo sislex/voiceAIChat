@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-27
-checked: c971c278
+checked: 75422e3f
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1120,6 +1120,14 @@ contracts; installation JSON can select origins and credentials but cannot lower
 these requirements. Configured Core tool dependencies select remote mode and
 replace their legacy endpoint variables. A remote tool missing from managed config
 is a startup error. No configuration preserves the legacy migration mode.
+
+The S4 application-report preparation branch pins Billing source
+`41263c7c20f8e852b508bbd76220245fbb62bd10` (API 1.2.0, with verified
+per-application token buckets) and Analytics source
+`ed541a84561da06d1a45a1d11b5c73875716867e` (API 1.2.0, report v2).
+Core's managed contract requires those API versions in this branch. These pins
+and local archives are development inputs; production remains on the S2 release
+until the S3/S4 release set passes its own integration and deployment checks.
 
 Initialize a **new** private directory from the pinned host checkout:
 
