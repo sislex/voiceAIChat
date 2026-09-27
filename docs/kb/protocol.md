@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-27
-checked: fca3a356
+checked: ce64a08
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -23,12 +23,41 @@ areas:
 `packages/shared/src/chatContract.ts` is the additive public boundary for reusable
 chat clients. It declares a freshly verified application context at
 `GET /api/chat/context`; `/api/chat/settings` and
-`/api/conversations/:conversationId/settings` are the planned revisioned account
-and conversation settings routes. The contract lists the existing chat-owned
+`/api/conversations/:conversationId/settings` are revisioned account
+and conversation settings routes (GET, PATCH, and PUT). The contract lists the existing chat-owned
 settings from the C01 parity inventory and separates local device preferences.
 Device settings are echoed by a local adapter and Core never persists them.
-These routes and WebSocket frames are contracts for subsequent implementation;
-the current `/api/settings` route remains the running API during migration.
+The settings routes use existing authenticated user ownership. They do not enable
+external application access. The application context and WebSocket handshake remain
+contracts for subsequent implementation; `/api/settings` remains compatible.
+
+Settings writes require `{ version: 1, expectedRevision, owner, values }`.
+The account route accepts only `account`; the conversation route accepts only
+`conversation`. Invalid types, unknown keys and device writes return 400;
+inaccessible conversations return 404. Stale revisions return HTTP 409 with
+`{ code: 'settings_revision_conflict', current }`. A successful write increments
+the account-wide revision, including no-op patches. Clients must read the returned
+snapshot before their next write; revisions are not per host or browser instance.
+
+`SettingsRepo` lazily migrates legacy settings into a versioned record in the
+existing settings table. Account defaults are persisted, conversation overrides
+retain null inheritance, and legacy names (`skillNames`, `llmModel`,
+`kbContextMode`) map to the S1 names (`skills`, provider-specific `model` /
+`codexModel`, `kbMode`). Inactive provider model selections and context preset IDs
+are retained in the canonical record. Selecting a context preset applies its
+disabled-context list to the existing runtime; later manual list changes clear
+the preset selection. Device values are omitted from migration and responses have
+`device: {}`; local adapters supply local preferences.
+
+Database transactions lock the revision record and affected legacy rows before
+checking revisions and writing. Both SQLite and Postgres use the existing SQL
+adapter. No process-local mutex or host identifier defines settings identity.
+The canonical adapter writes through existing conversation domain methods, so
+turn execution sees the same values; legacy API edits are reconciled on the next
+settings read/write and invalidate stale revisions. A conflict never applies any
+part of a patch. Restarting Core retains revisions and migrated values.
+Deleting a conversation removes its canonical preferences in the same transaction;
+account deletion removes the versioned settings record.
 
 The context keeps SDK application attribution, principal, exact permissions,
 resource grants and host capabilities separate. A capability only describes

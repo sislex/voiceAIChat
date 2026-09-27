@@ -203,6 +203,8 @@ export const CHAT_SETTING_OWNERS = immutable({
 } as const)
 
 function validateSettingValues(owner: ChatSettingOwner, values: Readonly<Record<string, ChatSettingValue>>): void {
+  if (!Object.hasOwn(CHAT_SETTING_OWNERS, owner)) throw Error('Invalid settings owner')
+  if (!values || typeof values !== 'object' || Array.isArray(values)) throw Error('Invalid settings values')
   const allowed = CHAT_SETTING_OWNERS[owner] as readonly string[]
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.includes(key)) throw Error(`Setting ${key} does not belong to ${owner}`)
@@ -245,6 +247,7 @@ export function createChatSettingsSnapshot(input: ChatSettingsSnapshot): ChatSet
 export function applyChatSettingsPatch(current: ChatSettingsSnapshot, patch: ChatSettingsPatch): ChatSettingsSnapshot | ChatSettingsConflict {
   const snapshot = createChatSettingsSnapshot(current)
   if (patch.version !== 1 || !Number.isSafeInteger(patch.expectedRevision) || patch.expectedRevision < 0) throw Error('Invalid settings patch')
+  if (patch.owner !== 'account' && patch.owner !== 'conversation') throw Error('Invalid settings owner')
   validateSettingValues(patch.owner, patch.values)
   if (patch.expectedRevision !== snapshot.revision) return { code: 'settings_revision_conflict', current: snapshot }
   return createChatSettingsSnapshot({ ...snapshot, revision: snapshot.revision + 1,

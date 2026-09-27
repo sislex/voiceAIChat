@@ -16,6 +16,7 @@ import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import { MAKE_ONLY_DISALLOWED_TOOLS } from '../turns.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
+import { registerChatSettingsRoutes } from './chatSettings.js'
 
 /**
  * Порог замечания о размере постоянной части промпта (в приблизительных
@@ -1498,6 +1499,7 @@ export async function registerRest(
     await db.settings.saveSettings(userId, repaired)
     return repaired
   }
+  registerChatSettingsRoutes(app, db)
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
   const myLlmAccess = async (req: Parameters<typeof uid>[0]) => await db.identity.getUserLlmAccess(uid(req))
   app.get(REST.llmAccess, myLlmAccess)

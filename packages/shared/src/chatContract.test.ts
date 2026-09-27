@@ -74,6 +74,17 @@ describe('chat reconnect contract', () => {
 })
 
 describe('chat settings adapter', () => {
+  it('rejects device owners and malformed values received over an untyped transport', () => {
+    const current = { version: 1 as const, revision: 0, account: {}, conversation: {}, device: {} }
+    for (const invalid of [
+      { owner: 'device', values: { micDeviceId: 'local' } },
+      { owner: 'unknown', values: {} },
+      { owner: 'account', values: null },
+      { owner: 'account', values: [] }
+    ]) {
+      expect(() => applyChatSettingsPatch(current, { version: 1, expectedRevision: 0, ...invalid } as never)).toThrow()
+    }
+  })
   it('applies the owning scope atomically and returns the current snapshot on conflict', () => {
     const current = { version: 1 as const, revision: 4, account: { theme: 'dark' },
       conversation: { model: 'default' }, device: { micDeviceId: null } }
