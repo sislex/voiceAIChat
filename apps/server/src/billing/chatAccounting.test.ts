@@ -22,6 +22,7 @@ async function fixture() {
       if (token !== 'Bearer user-secret' || revoked) throw new BillingError(401, 'user_session_required')
       return { userId: 'subject', tenantId: 'tenant', role: 'developer', capabilities: ['chat.use'] }
     },
+    async verifyDelegation() { throw new BillingError(401, 'delegation_denied') },
     async verifyComponent(token) {
       if (token !== 'Bearer component-secret') throw new BillingError(403, 'component_access_denied')
       return { consumerId: 'core' }

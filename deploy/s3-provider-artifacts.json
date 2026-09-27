@@ -7,32 +7,37 @@
     {
       "name": "@sislexa/identity",
       "version": "1.4.2",
+      "filename": "sislexa-identity-1.4.2.tgz",
+      "integrity": "sha512-RqZxNGrubGkAFtxkIvGXOIF0kVw5AD9kbAelNTbPA0o5tGzC6sdzRURAOkj0siGUmAhEL82SgRFtGJNIw6hXAA==",
+      "sha256": "5da738355c790d2097e1791049450f71b3587c384e61fda22bb21f09cdc2a315",
       "repository": "https://github.com/sislex/identity",
-      "commit": "645b0bc65a748276d0738a94a6a631779a697642",
-      "asset": "sislexa-identity-1.4.2-28256e39f406.tgz",
-      "sha256": "28256e39f4060e008a3592bec7628bfc12ee2e3d035d819a9662f04176533093",
-      "integrity": "sha512-E5fW9Y3LL5VkTUQKlwz81ruVsY8f4GxpqT091WsktZ9N/C3R984+8fM0uAs9Xf0UQ+snhEtaW5sU5U5WlU+HdA==",
+      "commit": "a88c1fca8bb576702a091c628cfeb4de650511d5",
+      "asset": "sislexa-identity-1.4.2-5da738355c79.tgz",
       "producerTask": "A01",
       "interfaces": [
         "delegated principal introspection",
-        "application registry and scoped grants"
+        "application registry and scoped grants",
+        "live delegated billing admission"
       ],
       "consumers": [
+        "A02",
         "A04"
       ]
     },
     {
       "name": "@sislexa/billing",
       "version": "1.2.2",
+      "filename": "sislexa-billing-1.2.2.tgz",
+      "integrity": "sha512-ejXON1u+wizbqDM3uJzo1mxrdNBoUHT19Z40HucP+/S3X4XSYMEvVKC21dWIvB21aLk+ZhWUQmAU3PnZL4TCVg==",
+      "sha256": "7ece419a8a5cd189afaec10a37f5b7ecde9560eb37f12fd9a4d1cb34d554680c",
       "repository": "https://github.com/sislex/billing",
-      "commit": "ba885c6212b27a757804e16b2949569caf5c3644",
-      "asset": "sislexa-billing-1.2.2-7858a8ba3bae.tgz",
-      "sha256": "7858a8ba3bae94f2fb3e6c90151782aecbca6a356610a9ff740b89b8abf8080f",
-      "integrity": "sha512-OGojmcuwKgzGVf3OchbnZj5pAXJjxAs6i/PRGD+eqqhznRDHrp18cPberTXXujq/2gCeisnKPzQTRdWMcxTDvg==",
+      "commit": "7c54c7fc203a8dfff79533a70d712de4e002328a",
+      "asset": "sislexa-billing-1.2.2-7ece419a8a5c.tgz",
       "producerTask": "A02",
       "interfaces": [
         "trusted originApplicationId ledger attribution",
-        "application usage totals"
+        "application usage totals",
+        "delegated paid reservation admission and start"
       ],
       "consumers": [
         "A04"

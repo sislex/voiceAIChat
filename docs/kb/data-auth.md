@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-27
-checked: 47c276b2
+checked: 93a5005b
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -55,13 +55,13 @@ only to the turn feed: account-wide auth, machine, project, CI, preview and tool
 feeds are never attached, so filtering at the transport is not the sole isolation
 boundary. Closing the socket also discards its in-memory bearer reference.
 
-Standalone credential admission supports reading and handshake, but standalone
-execution is blocked by the pinned provider contract: Billing reserve/start calls
-Identity's session verifier, which does not accept application grants. Core never
-manufactures a user session or falls back to unmetered execution. Delegated turns
-require both accounting and the original billing session until a provider-owned
-delegated billing admission/exchange API is available. This is an implementation
-dependency, not an operator commissioning step; A04 is not complete.
+Standalone credential admission supports reading and handshake. Identity API
+1.4.0 and the pinned Billing owner archive now provide a separate component-only
+delegated billing admission path, which rechecks the live grant and current
+account at reservation and start. Core has not yet wired its in-memory grant
+reference into that path. Core never manufactures a user session or falls back
+to unmetered execution; standalone paid turns remain disabled until the Core
+adapter and its end-to-end tests are complete. A04 is not complete.
 MCP/child operations remain explicitly disabled and cannot inherit unrestricted
 user authority. Existing paired-session execution retains verified attribution.
 
