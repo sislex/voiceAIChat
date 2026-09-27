@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-28
-checked: 4c48bfa8
+checked: e6318e71
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -136,10 +136,16 @@ methods and headers, `Vary`, CSP, no-referrer, no-sniff, cache control and
 content type. Identity remains responsible for the live user session, selected
 tenant, CSRF, exact redirect URI, PKCE exchange and token rotation. The Core
 component grant is used only on the internal RPC and never reaches the browser.
-The installed proxy test exercises preflight and consent headers against a real
-in-memory Identity provider; external browser onboarding is a separate E07
-acceptance check. Identity owns the five public-client tables in Core's
-compatibility schema and PostgreSQL ownership manifest.
+The installed proxy tests include a loopback HTTP integration with the pinned
+Identity provider and an in-memory database. Requests carrying a synthetic
+external HTTPS app origin pass through Core; the test also covers application and
+redirect enrollment without a component grant, cookie and CSRF protected consent,
+S256 code exchange, refresh rotation, replay revocation and proxy security headers.
+This is protocol integration rather than a real browser UI run: no product app
+implements the callback/consent navigation in this repository, and the local
+servers use HTTP. A deployed HTTPS browser run remains the E07 acceptance gap.
+Identity owns the five public-client tables in Core's compatibility schema and
+PostgreSQL ownership manifest.
 
 ## Billing reservation service
 
