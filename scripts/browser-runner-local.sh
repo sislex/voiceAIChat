@@ -10,7 +10,7 @@ set -Eeuo pipefail
 NAME=${VC_BROWSER_LOCAL_NAME:-vc-browser-local}
 PORT=${VC_BROWSER_LOCAL_PORT:-8892}
 TOKEN=${VC_BROWSER_RUNNER_TOKEN:-vc-local-reader}
-IMAGE=${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:6cd0c54f0f7c368c9b63362f2e50e91dd50f272f}
+IMAGE=${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:55091701d4b7e8be7cea3659dfa6d2ef7ec3b14f}
 
 case "${1:-up}" in
   up)
