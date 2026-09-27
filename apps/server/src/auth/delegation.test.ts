@@ -80,14 +80,26 @@ describe('Core delegated authorization', () => {
     app.get('/api/conversations/:id', async () => ({ ok: true }))
     app.post('/api/conversations/:id/messages', async () => ({ ok: true }))
     app.get('/api/conversations/:id/context-diff/:other', async () => ({ secret: true }))
+    app.get('/api/conversations', async () => ({ secret: true }))
+    app.post('/api/conversations', async () => ({ secret: true }))
+    app.post('/api/uploads', async () => ({ secret: true }))
     const headers = { 'x-sislexa-delegation': fixtureCredential1 }
     expect((await app.inject({ url: '/api/conversations/chat', headers })).statusCode).toBe(200)
     expect((await app.inject({ url: '/api/conversations/other', headers })).statusCode).toBe(403)
     expect((await app.inject({ url: '/api/conversations/chat/context-diff/other', headers })).statusCode).toBe(403)
+    expect((await app.inject({ url: '/api/conversations', headers })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/uploads', headers })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: '/api/conversations/chat/messages', headers,
       payload: { meta: { application: { originApplicationId: 'spoof' } } } })).statusCode).toBe(400)
     f.revoke()
     expect((await app.inject({ url: '/api/conversations/chat', headers })).statusCode).toBe(403)
+  })
+  it('forgets bearer credentials when a delegated connection closes', async () => {
+    const f = fixture()
+    const reference = await f.authority.bind(fixtureCredential1, 'alice', 'tenant')
+    f.authority.release(reference)
+    await expect(f.authority.current(reference)).rejects.toThrow('delegation_denied')
   })
   it('rejects client attribution without a delegated header too', () => {
     expect(rejectsAttribution({ applicationId: 'spoof' })).toBe(true)

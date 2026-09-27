@@ -115,21 +115,21 @@
       "name": "@sislexa/billing",
       "version": "1.2.2",
       "filename": "sislexa-billing-1.2.2.tgz",
-      "integrity": "sha512-sYXrHpqLoTOOLsUA1rIq9jJyybB4MqugWu3E3BzsZj+MdCN+xacvoQcky/AhkAi+mabop9ZXhZAEbDAqrpgPpw==",
-      "sha256": "e49ec42363abaa02c5b73eed7b64d80a633b034e7af1df5e56be71a56f788e0f",
+      "integrity": "sha512-OGojmcuwKgzGVf3OchbnZj5pAXJjxAs6i/PRGD+eqqhznRDHrp18cPberTXXujq/2gCeisnKPzQTRdWMcxTDvg==",
+      "sha256": "7858a8ba3bae94f2fb3e6c90151782aecbca6a356610a9ff740b89b8abf8080f",
       "repository": "https://github.com/sislex/billing",
-      "commit": "8d132b15f5288c72380b390cf918761e248fb71d",
-      "asset": "sislexa-billing-1.2.2-e49ec42363ab.tgz"
+      "commit": "ba885c6212b27a757804e16b2949569caf5c3644",
+      "asset": "sislexa-billing-1.2.2-7858a8ba3bae.tgz"
     },
     {
       "name": "@sislexa/sdk",
       "version": "1.2.0",
       "filename": "sislexa-sdk-1.2.0.tgz",
-      "integrity": "sha512-nx/tlbvHYCdT+dNsTWQBBghZ4JroN0vUk7NfGdnoozA14F5T7jkxFxrI3mW5ysiDg9D64ju8M/gshs1T/hRPeg==",
-      "sha256": "fb4f0595204bfd1a5486045bed8dc7ab54403a16d0c98649ad91c67c8341a47a",
+      "integrity": "sha512-JLzSo79e3RKYG19qCAeUgFHZN7k82nQWqwyzBWDkgVuLCN/jmtSR6FlWsKaQqapw9AqDrWxY/hashsz0m8d8zg==",
+      "sha256": "415161184fd346af0786593f2416b6e4557d795f53a1332105cc46e05d10acba",
       "repository": "https://github.com/sislex/sdk",
-      "commit": "b7688964e67c201c97b1f6d446a42d458d460850",
-      "asset": "sislexa-sdk-1.2.0-b7688964e67c.tgz"
+      "commit": "f58c2c890b1d0aa2d81b279b3bc426114b5fb465",
+      "asset": "sislexa-sdk-1.2.0-415161184fd3.tgz"
     },
     {
       "name": "@sislexa/web-reader",
@@ -187,21 +187,21 @@
       "name": "@sislex/llm-runner",
       "version": "0.3.5",
       "filename": "sislex-llm-runner-0.3.5.tgz",
-      "integrity": "sha512-qTKtBOeUBXQfbNHbnKPuHggC600FqqQZmQroWMPD9A4QwrSJ0vE2m34oZZGTFPxtVGEwGVeUEaUlipV+FXMKeg==",
-      "sha256": "64f8ce8d508c04cac4da96ca7c465c892975135bf12ec94d3aa75fe5c624bfff",
+      "integrity": "sha512-M+rwDnMWQ4J9438MlTbs7Ak0XTaVj4XuVYDA2SGeYjhKob9Ny+yGexgz5LnCmOOlAbQ5k0SRlsyiYXv9QY8tBw==",
+      "sha256": "b498ff1dd395c1453ea844e5d768febcd93e442e0d5be533e76b5565a60b7b18",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "8f38d05e385b2b5b2c78cd04ba04ba155078121a",
-      "asset": "sislex-llm-runner-0.3.5-64f8ce8d508c.tgz"
+      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a",
+      "asset": "sislex-llm-runner-0.3.5-b498ff1dd395.tgz"
     },
     {
       "name": "@sislex/runner-contracts",
       "version": "0.1.1",
       "filename": "sislex-runner-contracts-0.1.1.tgz",
-      "integrity": "sha512-11GbUsr08IAFLQtab12qgGtOTCfBAEzxdrilkh/P4TNvMoSCC2KQrAm27YZRu6VYd6RrwXD4nsmDyAyZOUvbyw==",
-      "sha256": "55088c3b3b4de65a097ca5b7d09e01d55444463177f5a5dfe9236a49766abe28",
+      "integrity": "sha512-luqg4sJQ60NI805fy+/q+9pLGAf/wO3pgXvl1/D/btsKitQJHQhbMoBqJptwvbi7me4ZpR1NvQ1i3h6vZEcTNA==",
+      "sha256": "3cd7f9015a8f68de9eacc573ec66300edfbeb382a8f7a09236be21f6d526fc21",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "8f38d05e385b2b5b2c78cd04ba04ba155078121a",
-      "asset": "sislex-runner-contracts-0.1.1-55088c3b3b4d.tgz"
+      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a",
+      "asset": "sislex-runner-contracts-0.1.1-3cd7f9015a8f.tgz"
     },
     {
       "name": "@sislexa/core-ui",

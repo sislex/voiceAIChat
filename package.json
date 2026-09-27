@@ -69,13 +69,13 @@
     "gate:shared-chat": "node --import tsx scripts/shared-chat-gate.mjs"
   },
   "devDependencies": {
-    "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-55088c3b3b4d.tgz",
-    "@sislexa/billing": "file:vendor/sislexa-billing-1.2.2-e49ec42363ab.tgz",
+    "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-3cd7f9015a8f.tgz",
+    "@sislexa/billing": "file:vendor/sislexa-billing-1.2.2-7858a8ba3bae.tgz",
     "@sislexa/identity": "file:vendor/sislexa-identity-1.4.2-28256e39f406.tgz",
     "@sislexa/image-studio": "file:vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "file:vendor/sislexa-make-1.2.3-c57a1696f6d9.tgz",
     "@sislexa/playwright-reader": "file:vendor/sislexa-playwright-reader-1.2.3-4e69a4482993.tgz",
-    "@sislexa/sdk": "file:vendor/sislexa-sdk-1.2.0-b7688964e67c.tgz",
+    "@sislexa/sdk": "file:vendor/sislexa-sdk-1.2.0-415161184fd3.tgz",
     "@sislexa/voice": "file:vendor/sislexa-voice-1.1.0-7e51e57ebf3b.tgz",
     "@sislexa/web-reader": "file:vendor/sislexa-web-reader-1.2.2-9ee5d078076e.tgz",
     "@vitest/coverage-v8": "2.1.9",

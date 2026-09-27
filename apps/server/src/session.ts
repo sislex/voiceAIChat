@@ -150,6 +150,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
 
   return {
     async onOpen(ctx) {
+      // A delegated socket is a conversation transport, not a user session.  Do
+      // not attach it to account-wide feeds (machines, projects, CI, previews,
+      // auth status, or another browser's queued work).  Conversation frames
+      // still pass through the per-event grant check installed by server.ts.
+      if (deps.delegation) {
+        unsubTurns = deps.turns.subscribe((message, ownerUserId) => {
+          if (ownerUserId === deps.user.name) ctx.send(message)
+        })
+        return
+      }
       if (deps.authStatus) {
         let delivered = ''
         unsubAuthStatus = deps.authStatus.subscribe((status, userId) => {
@@ -192,7 +202,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.widgetUi) {
         unsubWidgetUi = deps.widgetUi.subscribe(deps.user.name, (m) => ctx.send(m))
       }
-      if (!deps.delegation) await deps.turns.resumeQueues(deps.user.name)
+      await deps.turns.resumeQueues(deps.user.name)
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: await deps.agentsFeed.list() })
         unsubAgents = deps.agentsFeed.subscribe(async () =>

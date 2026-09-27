@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import type { LlmBillingSession, LlmAccountingContext, LlmClient, LlmStreamHandlers } from '@voicechat/shared'
 import type { BillingReservation } from '@sislexa/sdk'
 import { RemoteLlmClient } from '../llm/remoteClient.js'
@@ -54,12 +55,16 @@ export class ChatAccounting {
   private context(job: AccountingJob): LlmAccountingContext {
     const r = job.reservation!
     return { operationId: job.id, reservationId: r.id, userId: job.session.userId,
-      tenantId: job.session.tenantId, environmentId: this.opts.environmentId, originModuleId: job.originModuleId }
+      tenantId: job.session.tenantId, environmentId: this.opts.environmentId, originModuleId: job.originModuleId,
+      ...(job.application ? { application: job.application } : {}) }
   }
   private assertReservation(job: AccountingJob, r: BillingReservation): void {
     if (r.operationId !== job.id || r.userId !== job.session.userId || r.tenantId !== job.session.tenantId ||
       r.environmentId !== this.opts.environmentId || r.actorClientId !== 'core' || r.originModuleId !== job.originModuleId ||
-      r.executionBound !== 'unbounded' || !r.id) throw Error('billing_principal_mismatch')
+      r.executionBound !== 'unbounded' || !r.id ||
+      !isDeepStrictEqual((r as BillingReservation & { application?: AccountingJob['application'] }).application, job.application)) {
+      throw Error('billing_principal_mismatch')
+    }
   }
   wrap(client: LlmClient, turn: AccountingTurn): LlmClient {
     return { send: (request, handlers) => {
@@ -174,7 +179,9 @@ export class ChatAccounting {
       if (!runner || runner.accountingTarget.baseUrl !== job.target.baseUrl || runner.accountingTarget.kind !== job.target.kind) return
       const context = this.context(job), receipt = await runner.executionReceipt(context)
       if (receipt.version !== 1 || receipt.runId !== job.id || receipt.kind !== job.target.kind ||
-        Object.entries(context).some(([key, value]) => receipt.context?.[key as keyof LlmAccountingContext] !== value)) throw Error('execution_receipt_mismatch')
+        receipt.context?.originModuleId !== 'core' ||
+        Object.entries(context).some(([key, value]) => key !== 'originModuleId' &&
+          !isDeepStrictEqual(receipt.context?.[key as keyof LlmAccountingContext], value))) throw Error('execution_receipt_mismatch')
       if (receipt.state === 'not_started') job.settlement = { eventId: 'no-spawn:'+job.id, actualMicroUsd: 0 }
       else {
         const settlement = receiptSettlement(receipt, job.model, job.prices)
