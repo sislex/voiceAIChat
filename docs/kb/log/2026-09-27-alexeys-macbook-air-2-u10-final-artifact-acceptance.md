@@ -10,13 +10,14 @@ author: alexeyrozhnov
 ## Changes
 
 - Pinned 13 published S2 owner archives to Core manifests, lockfile and vendor inventory.
-- Verified the final Core UI 1.4.3 and Desktop 1.0.6 archives against their release provenance and checksums.
-- Adjusted only Account CSS route ceilings for the measured layout correction in Core UI 1.4.3.
+- Verified the final Core UI 1.4.4 and Desktop 1.0.7 archives against their release provenance and checksums.
+- Adjusted only Account CSS route ceilings for the measured layout correction in Core UI 1.4.4.
 
 ## Verified facts
 
 - The previous Core UI Make host selected the standalone default export from the new Make artifact; the corrected host selects `pane` and accepts the legacy default only when `pane` is absent.
 - The Account Identity panel must retain its natural height to keep Analytics from covering mobile controls.
+- Analytics 1.2.3 generates browser activity IDs with `crypto.getRandomValues` when `randomUUID` is unavailable on insecure HTTP origins; Core UI 1.4.4 and Desktop 1.0.7 pin that fix.
 - Fresh Account measurements were Web navigation 387,679 raw / 67,484 gzip / 54,185 Brotli and Electron 384,293 raw / 67,027 gzip / 53,864 Brotli bytes; the adjusted limits cover these values without changing other routes.
 
 ## Knowledge base

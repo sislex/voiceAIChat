@@ -24,7 +24,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 20 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 37 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1639 коммит(ов) в areas после сверки: 35b142b0 feat: pin exact S2 shared chat releases in Core … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1640 коммит(ов) в areas после сверки: d185ee5c Review Account route budgets for Core UI 1.4.3 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 59 коммит(ов) в areas после сверки: b63dfa0c feat(operations): add request correlation and recovery drills (#252) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 4 коммит(ов) в areas после сверки: ce64a086 Add shared chat application and settings contracts … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
