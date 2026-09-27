@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
@@ -16,7 +17,38 @@ import type { ChatAccounting } from './billing/chatAccounting.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
+const fixtureCredential1 = randomUUID()
+
 const U = 'admin'
+
+it('rejects a queued delegated turn after its grant is revoked, before model or billing admission', async () => {
+  const { ChatDelegation } = await import('./auth/delegation.js')
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Delegated')
+    const tenantId = (await db.chat.getConversation(U, conv.id))!.tenantId!
+    let active = true
+    const delegation = new ChatDelegation({ introspect: async () => active ? { version: 1, active: true, principal: {
+      kind: 'delegated', userId: U, tenantId, applicationId: 'assistant', grantId: 'grant', audience: 'core',
+      issuedAt: 0, expiresAt: Date.now() + 60_000,
+      permissions: [{ resource: { tenantId, type: 'conversation', id: conv.id }, scopes: ['execute'] }]
+    } } : { version: 1, active: false } }, db)
+    const reference = await delegation.bind(fixtureCredential1, U, tenantId)
+    const message = await db.chat.addMessage(U, conv.id, 'u0', 'Run', '10:00')
+    const payload = { segments: [{ speakerId: 1, text: 'Run' }], delegation: reference }
+    await db.chat.enqueueTurn(U, conv.id, message.id, payload)
+    const queued = await db.chat.takeQueuedTurn(U, conv.id)
+    expect(queued?.payload.delegation).toEqual(reference)
+    active = false
+    const rec = recorder()
+    const wrap = vi.fn((client: LlmClient) => client)
+    const turns = createTurnManager({ db, claude: rec.client, delegation, accounting: { wrap } as unknown as ChatAccounting })
+    await turns.start({ userId: U, conversationId: conv.id, messageId: message.id, ...queued!.payload })
+    expect(rec.last()).toBeNull()
+    expect(wrap).not.toHaveBeenCalled()
+    await turns.idle()
+  } finally { await db.close() }
+})
 
 /** Мок движка: запоминает запрос и сразу завершает ход. */
 function recorder(): { client: LlmClient; last: () => LlmRequest | null } {

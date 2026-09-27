@@ -5,6 +5,7 @@ import type { LlmBillingSession } from '@voicechat/shared'
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
 export interface AccountingJob {
+  application?: import('@voicechat/shared').ChatApplicationAttribution
   id: string
   login: string
   session: LlmBillingSession

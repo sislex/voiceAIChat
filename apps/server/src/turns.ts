@@ -1,3 +1,4 @@
+import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
 // Процесс-глобальный реестр ходов LLM. Ход привязан к разговору, а не к
 // WS-соединению: обновление страницы/обрыв сети его НЕ отменяет — модель
@@ -34,6 +35,7 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  delegation?: ChatDelegation
   accounting?: ChatAccounting
   db: VoiceChatDb
   claude: LlmClient
@@ -234,6 +236,7 @@ async function loadAttachment(
 }
 
 export interface StartTurnRequest {
+  delegation?: import('@voicechat/shared').ChatDelegationReference
   billingSession?: LlmBillingSession
   /** Владелец разговора (логин пользователя) — для изоляции данных. */
   userId: string
@@ -397,6 +400,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   async function start(req: StartTurnRequest): Promise<void> {
     const conversationId = req.conversationId
     const userId = req.userId
+    if (req.delegation) {
+      try {
+        if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
+        await deps.delegation.authorize(req.delegation, 'execute', conversationId)
+        req = { ...req, execTarget: 'none', skipProjectSync: true }
+      } catch {
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        broadcast({ t: 'claude.error', conversationId, message: 'delegation_denied' }, userId)
+        return
+      }
+    }
     // Заблокированный пользователь не может запускать ходы (страховка сверх WS-гейта).
     const account = await deps.db.identity.getUser(userId)
     if (!account || account.blocked) {
@@ -444,6 +458,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         verbose: req.verbose,
         execTarget: req.execTarget,
         assistantContext: req.assistantContext,
+        delegation: req.delegation,
         billingSession: req.billingSession
       })
       await emitQueue(userId, conversationId)
@@ -477,6 +492,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
     const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
+      application: req.delegation ? deps.delegation!.attribution(req.delegation) : undefined,
+      authorize: req.delegation ? () => deps.delegation!.authorize(req.delegation!, 'execute', conversationId) : undefined,
       originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
     const selectedModel = conv?.llmProvider === provider
       ? conv.llmModel
@@ -540,7 +557,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
-    if (deps.kb && kbMode === 'auto') {
+    if (!req.delegation && deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
         const usage = await deps.kbUsage?.begin(
@@ -587,7 +604,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
     // Контекст задачи выключается отдельно от проекта: постановка бывает
     // длинной, и «убрать критерии приёмки, оставив проект» — законное желание.
-    if (conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
+    if (!req.delegation && conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
       const tc = await deps.db.tasks.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
         const task = conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
@@ -635,12 +652,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
-    const makeContextBlock = conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
+    const makeContextBlock = !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
       ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
     // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
     // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
-    const studioContextBlock = conv?.assistantKind === 'images' && deps.studioContext
+    const studioContextBlock = !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
       ? await deps.studioContext(conversationId).catch(() => '')
       : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
@@ -775,7 +792,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     let kbToolToken: string | null = null
     let kbMcpUrl: string | undefined
-    if (await kbToolAvailable()) {
+    if (!req.delegation && await kbToolAvailable()) {
       kbToolToken = randomUUID()
       kbMcpUrl = `${deps.kbMcpBaseUrl}&turn=${encodeURIComponent(kbToolToken)}`
       deps.kbTool?.register(kbToolToken, {
@@ -813,19 +830,19 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewMcpUrl: string | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
+    if (!req.delegation && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
     // разговора (ptyId `console:<conv>`). Только у чата этого вида.
     let consoleMcpUrl: string | undefined
-    if (conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
+    if (!req.delegation && conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
       consoleMcpUrl = `${deps.consoleMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}`
     }
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    if (conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
+    if (!req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
@@ -833,13 +850,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
     }
     let imageStudioMcpUrl: string | undefined
-    if (conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
+    if (!req.delegation && conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
       imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
     }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (kanbanTurn && deps.kanbanMcpBaseUrl) {
+    if (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
       kanbanMcpUrl = `${deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }
@@ -956,7 +973,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const executionRemote = readOnlyRemote && remote
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
-    const linkedTask = conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
+    const linkedTask = !req.delegation && conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
     const makeSources = linkedTask && conv?.projectId
       ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
@@ -971,8 +988,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       const thread = { ...usage.codexThreadUsage, ...(codexThreadId ? { sessionId: codexThreadId } : {}) }
       return { ...usage, ...codexTurnUsage(thread, previousThreadUsage), codexThreadUsage: thread }
     }
+    if (req.delegation) {
+      try { await deps.delegation!.authorize(req.delegation, 'execute', conversationId) }
+      catch {
+        finish()
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        broadcast({ t: 'claude.error', conversationId, message: 'delegation_denied' }, userId)
+        return
+      }
+    }
     turn.handle = client.send(
       {
+        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
         remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
@@ -1097,7 +1124,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           }
           // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
           // Fire-and-forget: галерея — побочный продукт хода, а не его условие.
-          if (conv?.assistantKind === 'images' && deps.captureStudioImages) {
+          if (!req.delegation && conv?.assistantKind === 'images' && deps.captureStudioImages) {
             void deps.captureStudioImages(userId, conversationId, taskLaunch.text)
           }
           const emitDone = (finalText: string, message?: Message): void => {
@@ -1179,7 +1206,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               verbose: req.verbose,
               execTarget: req.execTarget,
               assistantContext: req.assistantContext,
-        billingSession: req.billingSession
+              delegation: req.delegation,
+              billingSession: req.billingSession
             }, false)
             await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
             await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
@@ -1312,6 +1340,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         verbose: turn.source.verbose,
         execTarget: turn.source.execTarget,
         assistantContext: turn.source.assistantContext,
+        delegation: turn.source.delegation,
         billingSession: turn.source.billingSession
       }
     )

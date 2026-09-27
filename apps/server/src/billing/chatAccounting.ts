@@ -16,6 +16,8 @@ export interface ChatAccountingOptions {
   now?: () => number
 }
 export interface AccountingTurn {
+  application?: import('@voicechat/shared').ChatApplicationAttribution
+  authorize?: () => Promise<void>
   login: string
   session?: LlmBillingSession
   originModuleId: string
@@ -81,13 +83,14 @@ export class ChatAccounting {
             error('Для запуска очереди нужно восстановить исходную сессию входа. Откройте чат в ней или отправьте запрос заново.'); return
           }
           if (cancelled) return
+          await turn.authorize?.()
           const id = randomUUID()
-          job = { id, login: turn.login, session: { ...turn.session }, originModuleId: turn.originModuleId,
+          job = { id, application: turn.application, login: turn.login, session: { ...turn.session }, originModuleId: turn.originModuleId,
             input: { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded', expiresAt: this.now()+60_000 },
             target: { ...client.accountingTarget, ...(turn.engineId ? { engineId: turn.engineId } : {}) },
             model: request.model, prices: estimatePrices(request.model), state: 'admitting' }
           this.active.add(id); this.opts.store.save(job)
-          const admitted = await this.call<BillingReservation>('reservations', { ...job.input, originModuleId: turn.originModuleId }, authorization)
+          const admitted = await this.call<BillingReservation>('reservations', { ...job.input, application: job.application, originModuleId: turn.originModuleId }, authorization)
           this.assertReservation(job, admitted)
           job.reservation = admitted; job.state = 'reserved'; this.opts.store.save(job)
           if (cancelled) return
@@ -97,6 +100,7 @@ export class ChatAccounting {
           if (!started.transitioned || started.state !== 'running') throw Error('billing_claim_not_acquired')
           if (cancelled) return
           // This durable boundary distinguishes a never-dispatched start from possibly incurred work.
+          await turn.authorize?.()
           job.state = 'dispatching'; this.opts.store.save(job)
           const forwarded: LlmStreamHandlers = { ...handlers,
             onDone: (text, meta) => { void complete(() => handlers.onDone(text, meta)) },

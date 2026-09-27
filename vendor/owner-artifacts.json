@@ -5,11 +5,11 @@
       "name": "@sislexa/identity",
       "version": "1.4.2",
       "filename": "sislexa-identity-1.4.2.tgz",
-      "integrity": "sha512-ib/e35EzGay7q4fJ0iyLfZVL6QEKSTiODFR2bmfdOBRkNXg98ZGrrRjaE2r9pOUXrK6CLf3TQEMUtXT26tWkkQ==",
-      "sha256": "19ff4b194350a712f25abda815b17f490bfecbe41faa9265e7acd1ec931e95f7",
+      "integrity": "sha512-E5fW9Y3LL5VkTUQKlwz81ruVsY8f4GxpqT091WsktZ9N/C3R984+8fM0uAs9Xf0UQ+snhEtaW5sU5U5WlU+HdA==",
+      "sha256": "28256e39f4060e008a3592bec7628bfc12ee2e3d035d819a9662f04176533093",
       "repository": "https://github.com/sislex/identity",
-      "commit": "b84d23755d9c49c4f96067acb3a2c9d934d20438",
-      "asset": "sislexa-identity-1.4.2-19ff4b194350.tgz"
+      "commit": "645b0bc65a748276d0738a94a6a631779a697642",
+      "asset": "sislexa-identity-1.4.2-28256e39f406.tgz"
     },
     {
       "name": "@sislexa/make",

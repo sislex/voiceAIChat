@@ -679,6 +679,7 @@ export interface ServerFileInfo {
 /** Серверная запись очереди следующего хода. Payload хранится в SQLite, поэтому
  * карточка и вложения восстанавливаются после reconnect/restart. */
 export interface QueueTurnPayload {
+  delegation?: import('./chatContract').ChatDelegationReference
   billingSession?: import('./llmAccounting').LlmBillingSession
   segments: SttSegmentWire[]
   attachments?: string[]

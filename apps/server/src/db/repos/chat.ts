@@ -830,6 +830,8 @@ export class ChatRepo extends BaseRepo {
       // Не дедуплицируем: одинаковая ссылка в двух сообщениях остаётся двумя
       // упорядоченными позициями, как и передал пользователь.
       const details = [...parseDetails(active.attachments), ...parseDetails(queued.attachments)]
+      // Combining different principals would turn one application's input into another's authority.
+      if (JSON.stringify(activePayload.delegation ?? null) !== JSON.stringify(queuedPayload.delegation ?? null)) return null
       const payload: QueueTurnPayload = {
         ...activePayload,
         ...queuedPayload,

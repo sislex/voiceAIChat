@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-23
-checked: 8f06c3a6
+updated: 2026-09-27
+checked: 00ef14ae
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -20,6 +20,36 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## Identity repository and request authentication
+
+### Core delegated chat adapter
+
+Core accepts `x-sislexa-delegation` alongside an authenticated user session on
+resource-addressed conversation REST requests and the WebSocket upgrade. The
+Identity introspection client verifies the opaque grant for audience `core` on
+admission, each command/event and again before execution. Subject and tenant must
+match the authenticated session. A project-bound conversation requires both the
+conversation permission and the corresponding project permission; scopes remain
+paired with resources. Unsupported REST/WS operations fail closed.
+
+Application attribution in client bodies is rejected. Queue payloads contain an
+opaque server reference with user, tenant, application and grant IDs, never the
+bearer. Execution re-introspects the original grant; after process restart the
+credential is unavailable and replay is denied. Queues with different references
+cannot be merged. Billing outbox records and runner requests retain origin app
+and executor attribution. Delegated sockets do not resume every user queue and
+their outbound conversation events are authorized independently.
+
+This adapter currently requires a user session in addition to the grant; it does
+not implement standalone delegated bearer authentication. Delegated turns use
+tool-free execution. MCP/child operations still need resource-specific delegated
+adapters before they can be enabled; they must not inherit unrestricted user
+authority. These are implementation gaps, not operator commissioning steps.
+
+Managed Identity commissioning requires `identity.delegation.introspect` and
+`identity.delegation.audience.core` component scopes. The installation template
+at `deploy/components/identity.example.json` grants both to Core; existing
+installations require a reviewed token update before enabling delegation.
+No live credentials are changed by this implementation.
 
 `https://github.com/sislex/identity` owns authentication, registration, recovery,
 TOTP, sessions/device trust, the identity SQL repository/schema, login/account UI,

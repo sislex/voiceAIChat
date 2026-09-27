@@ -1,3 +1,12 @@
+/** Opaque server-issued reference; contains no bearer credential. */
+export interface ChatDelegationReference {
+  readonly id: string
+  readonly userId: string
+  readonly tenantId: string
+  readonly applicationId: string
+  readonly grantId: string
+}
+
 /** Stable permissions are authorization decisions. Capabilities only describe usable features. */
 export const CHAT_PERMISSIONS = [
   'chat:conversations:read',

@@ -3,6 +3,19 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WebSocket } from 'ws'
 import { attachWs } from './ws.js'
 
+it('rechecks delegated output and never delivers unscoped binary output', async () => {
+  const socket = fakeSocket()
+  const authorizeOutput = vi.fn().mockResolvedValue(true)
+  const context = await attachWs(socket, {}, { authorizeOutput })
+  context.send({ t: 'claude.token', conversationId: 'allowed', delta: 'first' })
+  await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+  authorizeOutput.mockResolvedValue(false)
+  context.send({ t: 'claude.token', conversationId: 'allowed', delta: 'after revocation' })
+  context.sendBinary(Buffer.from('unscoped audio'))
+  await vi.waitFor(() => expect(authorizeOutput).toHaveBeenCalledTimes(2))
+  expect(socket.sent).toHaveLength(1)
+})
+
 function fakeSocket(): WebSocket & { sent: string[]; bufferedAmount: number; terminate: ReturnType<typeof vi.fn> } {
   const listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   const socket = {

@@ -22,6 +22,7 @@ import type { KbUsageTracker } from './kb/usage.js'
 import type { AuthStatusState } from './auth/statusState.js'
 
 export interface SessionDeps {
+  delegation?: import('@voicechat/shared').ChatDelegationReference
   billingSession?: import('@voicechat/shared').LlmBillingSession
   db: VoiceChatDb
   /** Пользователь этого соединения (изоляция данных/ходов). */
@@ -191,7 +192,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.widgetUi) {
         unsubWidgetUi = deps.widgetUi.subscribe(deps.user.name, (m) => ctx.send(m))
       }
-      await deps.turns.resumeQueues(deps.user.name)
+      if (!deps.delegation) await deps.turns.resumeQueues(deps.user.name)
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: await deps.agentsFeed.list() })
         unsubAgents = deps.agentsFeed.subscribe(async () =>
@@ -255,6 +256,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       switch (msg.t) {
         case 'claude.send':
           void deps.turns.start({
+            delegation: deps.delegation,
             ...(deps.billingSession ? { billingSession: deps.billingSession } : {}),
             userId: deps.user.name,
             conversationId: msg.conversationId,

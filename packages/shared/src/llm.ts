@@ -41,6 +41,7 @@ export interface LlmMakeSource {
 }
 
 export interface LlmRequest {
+  application?: import('./chatContract').ChatApplicationAttribution
   /** Durable accounting identity is separate from the legacy login-based CLI profile. */
   accounting?: LlmAccountingContext
   /** Владелец CLI-профиля: история одного пользователя не смешивается с другими. */

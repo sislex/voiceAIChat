@@ -30,7 +30,9 @@ export interface WsContext {
 export const WS_MAX_BUFFERED_BYTES = 8 * 1024 * 1024
 
 export interface AttachWsOptions {
-  /** Recheck the user before accepting an authenticated command. Audio chunks belong to that command. */
+  /** Recheck delegated resource authority before delivering each event. */
+  authorizeOutput?: (message: ServerMessage) => Promise<boolean>
+  /** Recheck the user before accepting an authenticated command. */
   authorizeMessage?: () => Promise<boolean>
   authorizeCommand?: (message: ClientMessage, context: WsContext) => Promise<boolean>
   maxBufferedBytes?: number
@@ -52,15 +54,18 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
     try { socket.terminate() } catch { /* уже закрыт */ }
     return true
   }
+  let output: Promise<void> = Promise.resolve()
   const ctx: WsContext = {
     send: (msg) => {
       if (socket.readyState !== socket.OPEN || overflowed) return
       frames.set(msg.t, (frames.get(msg.t) ?? 0) + 1)
-      socket.send(JSON.stringify(msg))
-      guard()
+      const deliver = () => { if (socket.readyState === socket.OPEN) { socket.send(JSON.stringify(msg)); guard() } }
+      if (options.authorizeOutput) {
+        output = output.then(async () => { if (await options.authorizeOutput!(msg)) deliver() }).catch(() => {})
+      } else deliver()
     },
     sendBinary: (data) => {
-      if (socket.readyState !== socket.OPEN || overflowed) return
+      if (options.authorizeOutput || socket.readyState !== socket.OPEN || overflowed) return
       frames.set('(binary)', (frames.get('(binary)') ?? 0) + 1)
       socket.send(data)
       guard()
@@ -80,8 +85,9 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
     queue = queue
       .then(async () => {
         if (openingFailed || socket.readyState !== socket.OPEN) return
-        if (!isBinary && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(4001, 'Session expired');return}
+        if ((!isBinary || options.authorizeOutput) && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(4001, 'Session expired');return}
         if (isBinary) {
+          if (options.authorizeOutput) return
           handlers.onBinary?.(data, ctx)
           return
         }
