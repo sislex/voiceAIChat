@@ -9,7 +9,8 @@ const root = new URL('..', import.meta.url).pathname
 const readJson = path => JSON.parse(readFileSync(join(root, path)))
 const manifest = readJson('deploy/s3-provider-artifacts.json')
 const s4 = readJson('deploy/s4-report-provider-artifacts.json')
-const superseded = new Set(s4.providers.map(row => row.name))
+const s4Identity = readJson('deploy/s4-identity-provider-artifact.json')
+const superseded = new Set([...s4.providers, ...s4Identity.providers].map(row => row.name))
 const inventory = readJson('vendor/owner-artifacts.json')
 const tools = readJson('deploy/tools.lock.json').tools
 const lock = readJson('package-lock.json')
@@ -83,4 +84,32 @@ test('S4 report providers replace only Billing and Analytics with verified curre
   const dependencies = readJson('apps/server/component-contract.json').dependencies
   assert.equal(dependencies.find(row => row.applicationId === 'billing').minApiVersion, '1.2.0')
   assert.equal(dependencies.find(row => row.applicationId === 'analytics').minApiVersion, '1.2.0')
+})
+
+test('S4 Identity public-client provider has verified source and current consumer pins', async () => {
+  assert.equal(s4Identity.runId, 'shared-chat-v1')
+  assert.equal(s4Identity.stage, 4)
+  assert.deepEqual(s4Identity.providers.map(row => row.name), ['@sislexa/identity'])
+  const row = s4Identity.providers[0]
+  const bytes = readFileSync(join(root, 'vendor', row.asset))
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), row.sha256)
+  assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), row.integrity)
+  const files = await archiveFiles(bytes)
+  const pkg = JSON.parse(files.get('package.json'))
+  const source = JSON.parse(files.get('release-source.json'))
+  assert.equal(pkg.name, row.name)
+  assert.equal(pkg.version, row.version)
+  assert.equal(source.commit, row.commit)
+  assert.equal(source.repository, row.repository)
+  assert.equal(files.has('packages/client/src/publicClient.ts'), true)
+  assert.equal(files.has('packages/contracts/src/publicClient.ts'), true)
+  const pinned = inventory.packages.find(item => item.name === row.name)
+  assert.equal(pinned?.asset, row.asset)
+  assert.equal(pinned?.sha256, row.sha256)
+  assert.equal(pinned?.commit, row.commit)
+  const installed = lock.packages['node_modules/' + row.name]
+  assert.equal(installed?.resolved, 'file:vendor/' + row.asset)
+  assert.equal(installed?.integrity, row.integrity)
+  assert.equal(installed?.version, row.version)
+  assert.equal(tools.identity.commit, row.commit)
 })

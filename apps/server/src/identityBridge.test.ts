@@ -87,3 +87,34 @@ it('enforces live tariff and tenant context across the real Identity RPC boundar
   expect(executions).toBe(2)
  } finally { await core.close(); await identity.close() }
 })
+
+it('carries public-client preflight and consent protections through the real Identity RPC', async () => {
+ const {default: Fastify} = await import('fastify')
+ const {buildIdentityServer} = await import('@sislexa/identity/server/server')
+ const {registerRemoteIdentity} = await import('@sislexa/identity/client/server')
+ const db = new VoiceChatDb(':memory:'); databases.push(db); await db.ready
+ const {app: identity} = await buildIdentityServer({database: db, secret: 'public-client-test',
+  authorize: header => header === 'Bearer core-grant' ? {ok: true} : {ok: false, status: 401}})
+ const core = Fastify()
+ const fetchImpl: typeof fetch = async (input, init) => {
+  const request = new Request(input, init)
+  const response = await identity.inject({method: 'POST', url: new URL(request.url).pathname,
+   headers: Object.fromEntries(request.headers), payload: await request.text()})
+  return new Response(response.body, {status: response.statusCode, headers: {'content-type': 'application/json'}})
+ }
+ try {
+  await registerRemoteIdentity(core, db, {url: 'http://identity.test', token: 'core-grant', fetchImpl}, 'public-client-test')
+  const preflight = await core.inject({method: 'OPTIONS', url: '/api/session/oauth/token', headers: {origin: 'https://client.example'}})
+  expect(preflight.statusCode).toBe(204)
+  expect(preflight.headers['access-control-allow-origin']).toBe('https://client.example')
+  expect(preflight.headers['access-control-allow-methods']).toBe('POST, OPTIONS')
+  const consent = await core.inject('/api/session/oauth/authorize')
+  expect(consent.statusCode).toBe(401)
+  expect(consent.headers['content-security-policy']).toContain("default-src 'none'")
+  expect(consent.headers['referrer-policy']).toBe('no-referrer')
+  const script = await core.inject('/api/session/oauth/consent.js')
+  expect(script.statusCode).toBe(200)
+  expect(script.headers['x-content-type-options']).toBe('nosniff')
+  expect(script.body).not.toContain('core-grant')
+ } finally { await core.close(); await identity.close() }
+})

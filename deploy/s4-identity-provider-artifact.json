@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "runId": "shared-chat-v1",
+  "stage": 4,
+  "purpose": "E01 and E03 application management and public-client authorization",
+  "providers": [
+    {
+      "name": "@sislexa/identity",
+      "version": "1.4.2",
+      "filename": "sislexa-identity-1.4.2.tgz",
+      "integrity": "sha512-yWO9g9WWkBLPsmGVtk7w4IsuFQTtXmiBYRvHIzaTiSAjuc+eY/+cJ9w85eu8fT+nN6sm+xQhtSsxnpBrmRxPuQ==",
+      "sha256": "57662eab8526f98edccf8cbe961961b7b2ec1982f9b3c03d914ed10f3aab397d",
+      "repository": "https://github.com/sislex/identity",
+      "commit": "5aa61299187848aa65aef28cb699ac50e192bbf5",
+      "asset": "sislexa-identity-1.4.2-57662eab8526.tgz"
+    }
+  ]
+}
