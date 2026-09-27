@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface ServerConfig {
+  /** Explicit opt-in for delegated external applications; disabled until S3 acceptance. */
+  delegatedChatEnabled: boolean
   port: number
   host: string
   /** Origins Electron/web dev-клиентов, которым разрешены credentialed CORS-запросы. */
@@ -228,6 +230,7 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   return {
+    delegatedChatEnabled: env.VC_DELEGATED_CHAT_ENABLED === 'true',
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,

@@ -49,6 +49,8 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_DATA_DIR: /data
+      # Enable only for controlled S3 acceptance with verified provider artifacts.
+      VC_DELEGATED_CHAT_ENABLED: ${VC_DELEGATED_CHAT_ENABLED:-false}
       # Web Reader использует те же разрешённые алиасы, что и browser-runner.
       VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}
       # Make — отдельный сервис (docs/plans/make-standalone.md): ядро переправляет

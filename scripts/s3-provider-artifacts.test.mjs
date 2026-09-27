@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { archiveFiles } from './shared-chat-artifacts.mjs'
+import { requiredSources, requireSources } from './a07-composition.mjs'
 
 const root = new URL('..', import.meta.url).pathname
 const readJson = path => JSON.parse(readFileSync(join(root, path)))
@@ -12,6 +13,20 @@ const inventory = readJson('vendor/owner-artifacts.json')
 const tools = readJson('deploy/tools.lock.json').tools
 const lock = readJson('package-lock.json')
 const packageFiles = ['package.json', 'apps/server/package.json', 'packages/shared/package.json']
+
+test('A07 rejects missing, duplicate and wrong owner sources, including S4 Billing', () => {
+  const packages = Object.entries(requiredSources).map(([name, [repository, commit]]) => ({
+    name, repository: 'https://github.com/' + repository, commit
+  }))
+  assert.doesNotThrow(() => requireSources(packages))
+  for (const row of packages) {
+    assert.throws(() => requireSources(packages.filter(item => item !== row)), /A07 composition unavailable/)
+    assert.throws(() => requireSources([...packages, row]), /A07 composition unavailable/)
+    assert.throws(() => requireSources(packages.map(item => item === row ? { ...item, commit: '0'.repeat(40) } : item)), /A07 composition unavailable/)
+  }
+  assert.throws(() => requireSources(packages.map(row => row.name === '@sislexa/billing'
+    ? { ...row, commit: '41263c7c20f8e852b508bbd76220245fbb62bd10' } : row)), /@sislexa\/billing/)
+})
 
 test('S3 provider pins have verified source, bytes and consumer lock entries', async () => {
   assert.equal(manifest.runId, 'shared-chat-v1')

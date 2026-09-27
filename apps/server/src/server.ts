@@ -430,9 +430,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // без него остаёмся на loopback dev-сервера, где раннер и сервер — один хост.
   const runnerFacingBase = opts.config.browserPreviewBase ?? opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`
   const authOptions = { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, previewRunKeys, ...(opts.geo ? { geo: opts.geo } : {}) }
-  const delegationClient = opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
+  const delegationClient = opts.config.delegatedChatEnabled ? opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
     url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
-  }) : undefined)
+  }) : undefined) : undefined
   const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now, component?.config.environmentId ?? 'legacy') : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
