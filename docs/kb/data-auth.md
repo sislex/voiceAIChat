@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-27
-checked: 00ef14ae
+checked: 8ed85134
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -35,9 +35,16 @@ Application attribution in client bodies is rejected. Queue payloads contain an
 opaque server reference with user, tenant, application and grant IDs, never the
 bearer. Execution re-introspects the original grant; after process restart the
 credential is unavailable and replay is denied. Queues with different references
-cannot be merged. Billing outbox records and runner requests retain origin app
-and executor attribution. Delegated sockets do not resume every user queue and
-their outbound conversation events are authorized independently.
+cannot be merged. Billing reservations and settlements, Core outbox records, and
+Runner receipt contexts retain the same immutable origin and executor application
+snapshot. Runner normalizes its legacy module field to the authenticated Core
+service owner; Core compares application identity separately from that field and
+rejects a missing or changed snapshot during recovery. Billing
+reports distinguish legacy unattributed work from each application. Delegated sockets do not resume every user queue and
+their outbound conversation events are authorized independently. They subscribe
+only to the turn feed: account-wide auth, machine, project, CI, preview and tool
+feeds are never attached, so filtering at the transport is not the sole isolation
+boundary. Closing the socket also discards its in-memory bearer reference.
 
 This adapter currently requires a user session in addition to the grant; it does
 not implement standalone delegated bearer authentication. Delegated turns use

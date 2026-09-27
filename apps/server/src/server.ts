@@ -1482,7 +1482,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session expired')}).finally(()=>{checkingIdentity=false})
       },30_000)
       identityTimer?.unref()
-      socket.once('close',()=>{unsubscribe();if(identityTimer)clearInterval(identityTimer)})
+      socket.once('close',()=>{
+        unsubscribe()
+        if(identityTimer)clearInterval(identityTimer)
+        if(delegated) delegation?.release(delegated)
+      })
       socket.off('message', buffer)
       await attachWs(socket, makeHandlers(user, sid, token!, delegated), {
         initialFrames: early,

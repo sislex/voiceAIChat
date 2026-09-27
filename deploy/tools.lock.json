@@ -55,14 +55,14 @@
       "workspace": ".",
       "repository": "https://github.com/sislex/billing",
       "version": "1.2.2",
-      "commit": "8d132b15f5288c72380b390cf918761e248fb71d"
+      "commit": "ba885c6212b27a757804e16b2949569caf5c3644"
     },
     "llm-runner": {
       "package": "@sislex/llm-runner",
       "workspace": ".",
       "repository": "https://github.com/sislex/llm-runner",
       "version": "0.3.5",
-      "commit": "8f38d05e385b2b5b2c78cd04ba04ba155078121a"
+      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a"
     },
     "analytics": {
       "package": "@sislexa/analytics",

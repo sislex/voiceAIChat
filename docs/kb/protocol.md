@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-09-27
-checked: ce64a08
+checked: 8ed85134
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -74,6 +74,12 @@ changed scopes and server restarts require authoritative REST snapshots; clients
 must not reuse old context, subscriptions or infer missed state. Settings changes
 are invalidations via `chat.settings.updated`; revision conflicts return the
 current snapshot.
+
+`LlmAccountingContext.application` is an optional versioned attribution snapshot
+for executor requests and receipts. Core derives it from the verified delegation,
+never from a client-supplied body. Existing runs without this field remain
+unattributed. The runner accepts application snapshots only from its authenticated
+Core service owner; Core compares returned receipt attribution before settlement.
 
 `CHAT_CONTRACT_ARTIFACT` is the canonical deeply frozen consumer manifest and
 `CHAT_CONTRACT_ARTIFACT_SHA256` pins its canonical JSON. The Core contracts

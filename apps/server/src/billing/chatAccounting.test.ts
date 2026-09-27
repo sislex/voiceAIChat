@@ -39,14 +39,14 @@ async function fixture() {
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
     receipts.get(req.params.id) ?? reply.code(404).send({ error: 'execution_not_found' }))
   runner.post<{ Params: { id: string }; Body: { context: LlmExecutionReceipt['context']; kind: 'codex' } }>('/v1/execution-receipts/:id/fence', async req => {
-    const receipt: LlmExecutionReceipt = { version: 1, runId: req.params.id, context: req.body.context, kind: req.body.kind,
+    const receipt: LlmExecutionReceipt = { version: 1, runId: req.params.id, context: { ...req.body.context, originModuleId: 'core' }, kind: req.body.kind,
       state: 'not_started', createdAt: Date.now(), updatedAt: Date.now(), finalUsage: false }
     receipts.set(req.params.id, receipt); return receipt
   })
   runner.post<{ Body: LlmRunBody }>('/v1/run', async (req, reply) => {
     runs++; lastRequest = req.body
     const id = req.body.runId!, context = req.body.accounting!
-    receipts.set(id, { version: 1, runId: id, context, kind: 'codex', model: req.body.model,
+    receipts.set(id, { version: 1, runId: id, context: { ...context, originModuleId: 'core' }, kind: 'codex', model: req.body.model,
       state: 'finished', finalUsage: true, createdAt: Date.now(), updatedAt: Date.now(),
       baseline: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
       usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 } })
@@ -71,25 +71,33 @@ async function fixture() {
   return { ledger, outbox, sessions, session, client, options, accounting, receipts,
     runs: () => runs, lastRequest: () => lastRequest, revoke: () => { revoked = true }, loseSettlement: () => { loseSettlement = true } }
 }
-const request: LlmRequest = { userId: 'login', prompt: 'PRIVATE_PROMPT', sessionId: null, model: 'gpt-5.6-sol' }
+const application = { version: 1 as const, originApplicationId: 'delegated-app', executorApplicationId: 'core', tokenId: null, delegationId: 'grant' }
+const request: LlmRequest = { userId: 'login', prompt: 'PRIVATE_PROMPT', sessionId: null, model: 'gpt-5.6-sol', application }
 const execute = (f: Awaited<ReturnType<typeof fixture>>, session = f.session): Promise<{ text?: string; error?: string }> =>
   new Promise(resolve => {
     const handlers: LlmStreamHandlers = { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }
-    f.accounting.wrap(f.client, { login: 'login', session, originModuleId: 'chat' }).send(request, handlers)
+    f.accounting.wrap(f.client, { login: 'login', session, originModuleId: 'chat', application }).send(request, handlers)
   })
 
 it('admits a real HTTP model request with stable identity and settles once after a lost response', async () => {
   const f = await fixture(); f.loseSettlement()
   expect(await execute(f)).toEqual({ text: 'done' })
   expect(f.runs()).toBe(1)
-  expect(f.lastRequest()).toMatchObject({ userId: 'login', accounting: { userId: 'subject', tenantId: 'tenant', originModuleId: 'chat' } })
+  expect(f.lastRequest()).toMatchObject({ userId: 'login', application,
+    accounting: { userId: 'subject', tenantId: 'tenant', originModuleId: 'chat', application } })
   expect(f.ledger.balance('test', 'tenant')).toMatchObject({ requests: 1, spentMicroUsd: 600, active: 0 })
   expect(f.outbox.pending()).toHaveLength(1)
+  expect(f.outbox.pending()[0]?.application).toEqual(application)
   f.revoke()
   const recovered = new ChatAccounting(f.options)
   await recovered.reconcileAll()
   expect(f.outbox.pending()).toHaveLength(0)
+  expect(f.outbox.get(f.lastRequest()!.runId!)?.application).toEqual(application)
   expect(f.ledger.balance('test', 'tenant').spentMicroUsd).toBe(600)
+  expect(f.ledger.usageReport({ userId: 'subject', tenantId: 'tenant', environmentId: 'test' },
+    Date.now() - 60_000, Date.now() + 60_000)).toMatchObject({
+    applications: [{ applicationId: 'delegated-app', events: 1, actualMicroUsd: 600 }]
+  })
 })
 
 it('denies finite budgets before execution and rejects a changed session identity', async () => {
@@ -137,7 +145,7 @@ it('retains a concurrency hold when terminal usage cannot be priced or proved', 
   f.outbox.save({ id, login: 'login', session: f.session, originModuleId: 'chat', input,
     target: f.client.accountingTarget, model: 'unknown-model', reservation, state: 'dispatching' })
   f.receipts.set(id, { version: 1, runId: id, kind: 'codex', state: 'finished', finalUsage: false,
-    context: { operationId: id, reservationId: reservation.id, userId: 'subject', tenantId: 'tenant', environmentId: 'test', originModuleId: 'chat' },
+    context: { operationId: id, reservationId: reservation.id, userId: 'subject', tenantId: 'tenant', environmentId: 'test', originModuleId: 'core' },
     createdAt: 1, updatedAt: 2 })
   await f.accounting.reconcile(id)
   expect(f.ledger.reservation(principal, reservation.id).state).toBe('uncertain')
