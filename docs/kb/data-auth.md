@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-27
-checked: 3daeebbd
+updated: 2026-09-28
+checked: 75422e3f
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -22,6 +22,13 @@ areas:
 ## Identity repository and request authentication
 
 ### Core delegated chat adapter
+
+External delegated REST/WS access is disabled by default. Controlled synthetic
+acceptance must explicitly set `VC_DELEGATED_CHAT_ENABLED=true`; other values,
+including `1`, leave it disabled. The gate applies even when an introspection
+client is injected or managed Identity is configured. Ordinary user sessions
+continue through their existing authentication path. Compose forwards the flag
+with a default of `false`. Enabling it does not itself prove accounting acceptance.
 
 Core accepts `x-sislexa-delegation` on resource-addressed conversation REST
 reads and the WebSocket upgrade, including server clients without a browser cookie. The
@@ -69,8 +76,23 @@ no unmetered fallback is allowed. REST/WS connection snapshots advertise text
 execution only when accounting is configured and the resource permits execution.
 MCP/child operations remain explicitly disabled until resource-specific adapters
 exist and cannot inherit unrestricted user authority. Legacy session billing is
-unchanged. Production commissioning and exact-composition A07 acceptance remain
-operator work with compatible Identity, Billing and Runner providers.
+unchanged. Exact-composition A07 acceptance is not complete. The artifact
+preflight `node scripts/a07-composition.mjs` requires the A05 SDK commit
+`f6313db5ff58cc35fa8dacc90b9844f9706dcfba` and A06 Analytics commit
+`a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942`, alongside the existing S3
+Identity/Billing/Runner pins. It verifies provenance, archive and installed bytes,
+consumer integrity and deployment locks; passing it is only an artifact check.
+The current checkout lacks those SDK/Analytics artifacts. Full synthetic paid
+execution, recovery and report reconciliation against that composition still
+need implementation and validation. This code gap is distinct from subsequent
+operator commissioning; no production acceptance is claimed.
+
+`server.delegationRegistry.test.ts` exercises Core REST/WS using grants issued,
+rotated and revoked by the published embedded Identity repository. It checks
+resource isolation, spoof rejection, closed sessions after rotation, stable
+application identity after rename/revoke, and disabled execution capability
+without Billing. It does not substitute for the SDK/Billing/Runner/Analytics
+end-to-end acceptance.
 
 Managed Identity commissioning requires `identity.delegation.introspect` and
 `identity.delegation.audience.core` component scopes. The installation template

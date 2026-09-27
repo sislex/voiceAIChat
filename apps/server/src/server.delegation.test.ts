@@ -16,7 +16,7 @@ it('admits a server credential without cookies, isolates resources and preserves
   const password = randomUUID()
   let active = true
   let principal!: DelegatedPrincipal
-  const app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: dataDir }),
+  const app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: dataDir, VC_DELEGATED_CHAT_ENABLED: 'true' }),
     delegationClient: { introspect: async input => active && Object.is(input.token, credential)
       ? { version: 1, active: true, principal } : { version: 1, active: false } } })
   try {
