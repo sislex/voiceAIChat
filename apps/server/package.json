@@ -29,7 +29,7 @@
     "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-c7aaebd15a60.tgz",
     "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.2.0-b7688964e67c.tgz",
     "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
-    "@sislexa/make": "file:../../vendor/sislexa-make-1.2.2-e64dce30f2f1.tgz",
+    "@sislexa/make": "file:../../vendor/sislexa-make-1.2.3-c57a1696f6d9.tgz",
     "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.2.3-4e69a4482993.tgz",
     "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.2.2-9ee5d078076e.tgz",
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-a06c73deaca8.tgz",
