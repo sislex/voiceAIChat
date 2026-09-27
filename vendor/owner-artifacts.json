@@ -125,11 +125,11 @@
       "name": "@sislexa/sdk",
       "version": "1.2.0",
       "filename": "sislexa-sdk-1.2.0.tgz",
-      "integrity": "sha512-JLzSo79e3RKYG19qCAeUgFHZN7k82nQWqwyzBWDkgVuLCN/jmtSR6FlWsKaQqapw9AqDrWxY/hashsz0m8d8zg==",
-      "sha256": "415161184fd346af0786593f2416b6e4557d795f53a1332105cc46e05d10acba",
+      "integrity": "sha512-k2ObjaL7xTsn/uoEjt4L+Q0T1Ia8vaWybBvAZZGRcTbB4GacrppCDlDIPtDLw7DNe1nhB1cBB3GinU5M6MVaBQ==",
+      "sha256": "354b8e560bacf5e942b665bd65541a767b00903546719d6dd41ca85e7a9fb600",
       "repository": "https://github.com/sislex/sdk",
-      "commit": "f58c2c890b1d0aa2d81b279b3bc426114b5fb465",
-      "asset": "sislexa-sdk-1.2.0-415161184fd3.tgz"
+      "commit": "f6313db5ff58cc35fa8dacc90b9844f9706dcfba",
+      "asset": "sislexa-sdk-1.2.0-354b8e560bac.tgz"
     },
     {
       "name": "@sislexa/web-reader",
@@ -226,13 +226,13 @@
     },
     {
       "name": "@sislexa/analytics",
-      "version": "1.2.0",
-      "filename": "sislexa-analytics-1.2.0.tgz",
-      "integrity": "sha512-OPsOHZDiC14449W06wqUqiF8/e2W7gcMluR1r6ZxMrjF6e1Vxyz4LgFYKlxVWh5S2yy4aEsrWzFFqiKEOMHp8Q==",
-      "sha256": "7b3466535e54767c811368ab23d93a03555fb1b90f9164cffe35e4e480596acb",
+      "version": "1.2.3",
+      "filename": "sislexa-analytics-1.2.3.tgz",
+      "integrity": "sha512-LKo5DmFhUVOdO1xonLFhfWLRa7wHquTXsrWdB2ZckM+Pgi94O+jd+Bv7zqY/soWQYRaRQlJAvrApaLgdRfQ+wA==",
+      "sha256": "3c2dfce7c6cf314c54afb3b44a9be42c31ab13e976c43b2a8007f220b810198a",
       "repository": "https://github.com/sislex/analytics",
-      "commit": "7ff6fb8b02f629938e4430683e7c505f423a6de5",
-      "asset": "sislexa-analytics-1.2.0-7ff6fb8b02f6.tgz"
+      "commit": "f398196a38438cc818d9d5c6db375c205dd0dea3",
+      "asset": "sislexa-analytics-1.2.3-3c2dfce7c6cf.tgz"
     },
     {
       "name": "@sislexa/desktop",
