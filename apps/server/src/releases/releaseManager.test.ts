@@ -1,7 +1,7 @@
 import { DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VoiceChatDb } from '../db/database.js'
-import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseDeleteCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
+import { knowledgeBaseTimeoutMs, RELEASE_TEST_TIMEOUT_MS, ReleaseManager, releaseCheckoutCommand, releaseDeleteCommand, releaseDeployCommand, releaseKnowledgeBaseCommand, releaseRegressionCleanupCommand, releaseRegressionInstallCommand, releaseRegressionSetupCommand, releaseRegressionStageCommand, releaseSwitchCommand, releaseTestCommands, type ProductionTarget, type ReleaseProjectTarget, type ReleaseRuntime } from './releaseManager.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тест опирается на порядок событий синхронного драйвера.
 
 let db:VoiceChatDb
@@ -235,7 +235,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     await settled(attempt.id)
     expect(commands.join('\n')).not.toMatch(/affected-check|merge |tag |push .*main/)
     expect(commands.some(command=>command.includes("checkout -B 'release/0.1.27' 'fixed-sha'"))).toBe(true)
-    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.27' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.27 commit=fixed-sha source=release-manager' && npm run deploy:prod")
+    expect(commands.some(command=>command.includes("VC_RELEASE_EXPECTED_COMMIT='fixed-sha'")&&command.endsWith('&& npm run deploy:prod'))).toBe(true)
     expect(commands.join('\n')).not.toContain('install -m 755 scripts/prod/deploy.sh')
     expect((await db.releases.getProjectRelease('owner',projectId,attempt.id))?.status).toBe('released')
     expect(prepared.status).toBe('ready')
@@ -268,7 +268,15 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const target={...prod(),deployCommand:'git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy'}
     const attempt=await new ReleaseManager(db,runtime).start('owner',ci(),target,'release/0.1.44')
     await settled(attempt.id)
-    expect(commands).toContain("cd '/prod' && export VC_RELEASE_VERSION='0.1.44' VC_RELEASE_VERSION_SOURCE='release-manager' && echo 'Ожидаемые production metadata: version=0.1.44 commit=fixed-sha source=release-manager' && install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && git branch --set-upstream-to=origin/$(git branch --show-current) && /usr/local/bin/voicechat-deploy")
+    expect(commands.some(command=>command.includes("VC_RELEASE_EXPECTED_COMMIT='fixed-sha'")&&command.includes('git branch --set-upstream-to=origin/$(git branch --show-current) && bash scripts/prod/release-manager-deploy.sh'))).toBe(true)
+  })
+
+  it('binds the standard production launcher to the selected checkout and SHA',()=>{
+    const command=releaseDeployCommand({...prod(),deployCommand:'/usr/local/bin/voicechat-deploy'},'0.1.44','a'.repeat(40),'expected metadata')
+    expect(command).toContain('git rev-parse HEAD')
+    expect(command).toContain(`VC_RELEASE_EXPECTED_COMMIT='${'a'.repeat(40)}'`)
+    expect(command).toContain('bash scripts/prod/release-manager-deploy.sh')
+    expect(command).not.toContain('&& /usr/local/bin/voicechat-deploy')
   })
 
   it('reconcile закрывает подготовку, оборванную рестартом: шаг failed, релиз failed — его можно повторить',async()=>{
