@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-22
-checked: 457b6260
+updated: 2026-09-28
+checked: 7483c76b
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -15,6 +15,26 @@ areas:
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
 
+
+## Independent browser chat hosts
+
+Core's E07 adapter exposes `POST /api/chat/session` for SDK E02 and UI E06.
+An exact Origin allowlist protects cookie exchanges and REST/WS admission.
+Five-minute memory-only handles retain the live Identity session/grant,
+selected tenant and origin. E02 public Bearer and paired backend application/user
+credentials retain delegated scopes and cap handle expiry to the live grant.
+Handles cannot authorize unrelated APIs or mint more
+handles. Ordinary sessions support authenticated settings and uploads.
+Delegated sessions additionally bind a conversation, remain default-disabled,
+and preserve the text-only grant boundary and Billing requirement. Standalone
+sockets exchange `chat.connect`/`chat.ready` without shell subscriptions.
+
+The pinned-SDK external fixture and commissioning details are in
+[browser integration](../browser-chat-integration.md). Its real browser suite is
+`e2e/externalChat.e2e.test.ts`; Core owns transport/authentication integration,
+while the E06 page/widget skins remain owned by Core UI. Sandbox execution of
+the browser suite fails on loopback `EPERM`; a supervisor must run the full
+gate and operator commissioning remains separate from code completion.
 
 ## Independent Agent and Desktop owners
 
