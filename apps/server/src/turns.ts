@@ -409,7 +409,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!deps.accounting) throw Error('delegation_billing_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
+        // takeQueuedTurn removes the row before admission. Retain rejected work
+        // for explicit recovery, without replacing its original grant reference.
+        if (req.messageId) {
+          await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
+            segments: req.segments, attachments: req.attachments, verbose: req.verbose,
+            execTarget: req.execTarget, assistantContext: req.assistantContext,
+            delegation: req.delegation, billingSession: req.billingSession
+          }, false)
+          await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
+        }
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
         broadcast({ t: 'claude.error', conversationId, message: 'delegation_denied' }, userId)
         return
       }
@@ -445,6 +456,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         broadcast({ t: 'claude.error', conversationId, message: `Достигнут месячный лимит расхода LLM: $${spent.toFixed(2)} из $${account.llmLimitUsd.toFixed(2)}. Лимит меняет администратор.` }, userId)
         return
       }
+    }
+    // Delegated clients cannot use the ordinary REST message mutation. Persist
+    // their admitted text here so each turn has its own durable queue identity.
+    if (req.delegation && !req.messageId) {
+      const message = await deps.db.chat.addMessage(userId, conversationId, 'u0',
+        req.segments.map(segment => segment.text).join('\n'), timeHHMM())
+      req.messageId = message.id
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —

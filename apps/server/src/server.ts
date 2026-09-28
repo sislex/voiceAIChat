@@ -179,6 +179,8 @@ const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 export interface BuildOptions {
+  /** Embedded hosts supply the same authenticated transport as managed Billing. */
+  billingTransport?: { url: string; fetchImpl: typeof fetch; environmentId: string }
   delegationClient?: DelegationIntrospectionClient
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
@@ -433,7 +435,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegationClient = opts.config.delegatedChatEnabled ? opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
     url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
   }) : undefined) : undefined
-  const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now, component?.config.environmentId ?? 'legacy') : undefined
+  const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now,
+    component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy') : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
   const authenticate: AuthenticateFn = async req => {
@@ -1164,11 +1167,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let accounting: ChatAccounting | undefined
   let accountingStore: AccountingStore | undefined
   let accountingTimer: NodeJS.Timeout | undefined
-  if (managedBilling && component) {
+  const billingTransport = opts.billingTransport ?? (managedBilling && component
+    ? { ...managedBilling, environmentId: component.config.environmentId } : undefined)
+  if (billingTransport) {
     mkdirSync(opts.config.dataDir, { recursive: true })
     accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
-      billing: managedBilling, environmentId: component.config.environmentId,
+      billing: billingTransport, environmentId: billingTransport.environmentId,
       resolveRunner: async target => {
         if (target.engineId) {
           const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')

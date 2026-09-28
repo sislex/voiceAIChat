@@ -21,6 +21,37 @@ const fixtureCredential1 = randomUUID()
 
 const U = 'admin'
 
+it('persists token-only text as a distinct message before execution without REST write access', async () => {
+  const { ChatDelegation } = await import('./auth/delegation.js')
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'External application')
+    const tenantId = (await db.identity.getAccountAccess(U))!.tenant.id
+    const application = await db.identity.createApplication(U, tenantId, 'Synthetic')
+    const issued = (await db.identity.issueApplicationGrant(U, tenantId, application.id, {
+      audience: 'core', expiresAt: Date.now() + 60_000,
+      permissions: [{ resource: { tenantId, type: 'conversation', id: conversation.id }, scopes: ['read', 'execute'] }]
+    }))!
+    const delegation = new ChatDelegation({ introspect: async ({ token, audience }) => {
+      const principal = await db.identity.introspectApplicationGrant(token, audience)
+      return principal ? { version: 1, active: true, principal } : { version: 1, active: false }
+    } }, db)
+    const reference = await delegation.bind(issued.token, U, tenantId)
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, delegation,
+      accounting: { wrap: (client: LlmClient) => client } as unknown as ChatAccounting })
+    for (const text of ['First delegated message', 'Second delegated message']) {
+      await turns.start({ userId: U, conversationId: conversation.id, delegation: reference,
+        segments: [{ speakerId: 1, text }] })
+      await turns.idle()
+    }
+    const messages = (await db.chat.listMessages(U, conversation.id)).filter(message => message.role !== 'ai')
+    expect(messages.map(message => message.text)).toEqual(['First delegated message', 'Second delegated message'])
+    expect(new Set(messages.map(message => message.id)).size).toBe(2)
+    expect(JSON.stringify(messages)).not.toContain(issued.token)
+  } finally { await db.close() }
+})
+
 it('rejects a queued delegated turn after its grant is revoked, before model or billing admission', async () => {
   const { ChatDelegation } = await import('./auth/delegation.js')
   const db = await freshDb()
@@ -47,6 +78,10 @@ it('rejects a queued delegated turn after its grant is revoked, before model or 
     expect(rec.last()).toBeNull()
     expect(wrap).not.toHaveBeenCalled()
     await turns.idle()
+    expect(await db.chat.listQueuedTurns(U, conv.id)).toEqual([
+      expect.objectContaining({ messageId: message.id, status: 'failed' })
+    ])
+    expect(await db.chat.isTurnQueuePaused(U, conv.id)).toBe(true)
   } finally { await db.close() }
 })
 

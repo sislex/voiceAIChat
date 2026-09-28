@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-09-28
-checked: fc8074fd
+checked: 79d9f8d0
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -76,16 +76,37 @@ no unmetered fallback is allowed. REST/WS connection snapshots advertise text
 execution only when accounting is configured and the resource permits execution.
 MCP/child operations remain explicitly disabled until resource-specific adapters
 exist and cannot inherit unrestricted user authority. Legacy session billing is
-unchanged. Exact-composition A07 acceptance is not complete. The artifact
-preflight `node scripts/a07-composition.mjs` pins the A05 SDK commit
-`f6313db5ff58cc35fa8dacc90b9844f9706dcfba` and A06 Analytics commit
-`f398196a38438cc818d9d5c6db375c205dd0dea3`, alongside the existing S3
-Identity/Billing/Runner pins. It verifies provenance, archive and installed bytes,
-consumer integrity and deployment locks; passing it is only an artifact check.
-The SDK and Analytics artifacts now satisfy the preflight. Full synthetic paid
-execution, recovery and report reconciliation against that composition still
-need implementation and validation. This code gap is distinct from subsequent
-operator commissioning; no production acceptance is claimed.
+unchanged. A07 uses an exact owner composition pinned by
+`node scripts/a07-composition.mjs`: Identity `e33958be`, Billing `41263c7c`,
+Runner `097282f2`, SDK `f6313db5`, and Analytics `a85d8ff1` (full hashes are in
+`vendor/owner-artifacts.json`). Preflight verifies source provenance, archive and
+installed bytes, consumer integrity and deployment locks. Passing it alone is
+only an artifact check.
+
+`npm run gate:a07` runs a synthetic server-side SDK consumer against published
+owner implementations. Runner is a pinned development dependency and its
+installed bytes are checked. The harness allocates temporary Core/Runner
+loopback listeners, uses the real Identity/Billing/Analytics HTTP handlers and
+lets Runner spawn a bounded synthetic Claude CLI child. It verifies one paid
+turn, credential rotation/revocation, loss of settlement response, restart and
+queue denial, and exact account/application money and token totals. It uses
+`DELIVERY_PORTS` and a private attempt root inside delivery attempts, and
+otherwise creates disposable local state. The normal tooling gate includes the
+loopback command. Identity's billing admission now returns the stable subject
+UUID, and Billing's application report supplies the token buckets Analytics
+requires. The delegated request remains `textOnly`; pinned Runner accepts this
+for Claude but rejects Codex before child startup. Codex support requires a
+separately reviewed no-tools execution path and is not certified by A07.
+The feature flag remains off by default; passing code acceptance does not claim
+production commissioning or deployment.
+
+The synthetic host adapts A05's socket handshake to include the selected
+conversation and unwraps Core's scoped connection snapshot for SDK capability
+discovery. It is disabled unless explicitly enabled. Core persists admitted
+delegated text messages itself, because these clients have no general REST write
+permission. A failed queue admission preserves the original payload/reference as
+a failed, paused item rather than losing the item after dequeue; a new connection
+does not replace the original grant authority.
 
 `server.delegationRegistry.test.ts` exercises Core REST/WS using grants issued,
 rotated and revoked by the published embedded Identity repository. It checks

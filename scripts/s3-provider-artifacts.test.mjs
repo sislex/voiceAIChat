@@ -25,7 +25,7 @@ test('A07 rejects missing, duplicate and wrong owner sources, including S4 Billi
     assert.throws(() => requireSources(packages.map(item => item === row ? { ...item, commit: '0'.repeat(40) } : item)), /A07 composition unavailable/)
   }
   assert.throws(() => requireSources(packages.map(row => row.name === '@sislexa/billing'
-    ? { ...row, commit: '41263c7c20f8e852b508bbd76220245fbb62bd10' } : row)), /@sislexa\/billing/)
+    ? { ...row, commit: '7c54c7fc203a8dfff79533a70d712de4e002328a' } : row)), /@sislexa\/billing/)
 })
 
 test('S3 provider pins have verified source, bytes and consumer lock entries', async () => {
