@@ -228,6 +228,98 @@ describe('WS: аутентификация соединения', () => {
   })
 })
 
+describe('chat message synchronization', () => {
+  const collectChatMessages = (ws: WebSocket): Array<Record<string, unknown>> => {
+    const frames: Array<Record<string, unknown>> = []
+    ws.on('message', (data) => {
+      const frame = JSON.parse(data.toString()) as Record<string, unknown>
+      if (frame.t === 'chat.message') frames.push(frame)
+    })
+    return frames
+  }
+
+  // @testCase TC-API-01
+  it('publishes a persisted user message to both owner sessions before generation starts', async () => {
+    const conversation = await db.chat.createConversation(U, 'Synced chat')
+    const first = await connectReady()
+    const second = await connectReady()
+    const firstFrames = collectChatMessages(first)
+    const secondFrames = collectChatMessages(second)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/conversations/${conversation.id}/messages`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { messageId: 'sync-user-1', role: 'u1', text: 'Synchronized', time: '10:00' }
+    })
+
+    expect(response.statusCode).toBe(200)
+    await vi.waitFor(() => {
+      expect(firstFrames).toHaveLength(1)
+      expect(secondFrames).toHaveLength(1)
+    })
+    for (const frame of [...firstFrames, ...secondFrames]) {
+      expect(frame).toMatchObject({
+        t: 'chat.message',
+        conversationId: conversation.id,
+        message: { id: 'sync-user-1', role: 'u1', text: 'Synchronized' }
+      })
+    }
+    first.close()
+    second.close()
+  })
+
+  // @testCase TC-API-02
+  it('does not publish a chat message when persistence fails', async () => {
+    const conversation = await db.chat.createConversation(U, 'Failed persistence')
+    const socket = await connectReady()
+    const frames = collectChatMessages(socket)
+    vi.spyOn(db.chat, 'addMessage').mockRejectedValueOnce(new Error('storage unavailable'))
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/conversations/${conversation.id}/messages`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { messageId: 'sync-failed-1', role: 'u1', text: 'Never published', time: '10:00' }
+    })
+
+    expect(response.statusCode).toBe(500)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(frames).toEqual([])
+    socket.close()
+  })
+
+  // @testCase TC-SEC-01
+  it('routes chat messages to every owner connection and never to another user', async () => {
+    await db.identity.createUser('bob', '', 'developer')
+    const bobToken = signToken({ name: 'bob', role: 'developer' }, SECRET)
+    const conversation = await db.chat.createConversation(U, 'Private chat')
+    const ownerA = await connectReady()
+    const ownerB = await connectReady()
+    const foreign = await connectReady(port, bobToken)
+    const ownerAFrames = collectChatMessages(ownerA)
+    const ownerBFrames = collectChatMessages(ownerB)
+    const foreignFrames = collectChatMessages(foreign)
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/conversations/${conversation.id}/messages`,
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { messageId: 'owner-only-1', role: 'u1', text: 'owner secret', time: '10:00' }
+    })
+
+    await vi.waitFor(() => {
+      expect(ownerAFrames).toHaveLength(1)
+      expect(ownerBFrames).toHaveLength(1)
+    })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(foreignFrames).toEqual([])
+    ownerA.close()
+    ownerB.close()
+    foreign.close()
+  })
+})
+
 describe('WS: живые изменения списка сессий', () => {
   /** Собирает кадры сессий, пришедшие на соединение. */
   const collect = (ws: WebSocket): Array<Record<string, unknown>> => {
@@ -691,6 +783,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     slowDbs.delete(sdb)
   }
 
+  // @testCase TC-REG-01
   // @testCase TC-WS-04
   it('обрыв WS не отменяет ход: ответ сохраняет в БД сам сервер', async () => {
     const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча', 'сть'], 'Часть ответа', 60))
@@ -717,7 +810,9 @@ describe('WS: ходы переживают обрыв соединения (Tur
     await cleanupSlow(sapp, sdb, [ws])
   })
 
+  // @testCase TC-WS-01
   // @testCase TC-WS-03
+  // @testCase TC-WS-04
   it('новое подключение получает claude.active с накопленным текстом, а затем done с сообщением из БД', async () => {
     let finish: (() => void) | undefined
     const controlledClaude: LlmClient = {

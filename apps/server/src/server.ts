@@ -552,7 +552,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
-    publish: (message, userId) => frames.publish(message, userId),
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
     // Геттером, а не объектом: `kb` создаётся ниже, а нужен только в запросе
     // (предпросмотр автоконтекста БЗ для черновика сообщения).
@@ -573,6 +572,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // раз при создании чата — единственное, что Make делает с репозиторием.
     // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
     // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
+    publishChatMessage: (userId, conversationId, message) => {
+      frames.publish({ t: 'chat.message', conversationId, message }, userId)
+    },
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return
