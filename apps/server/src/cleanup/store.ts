@@ -71,6 +71,9 @@ export class CleanupStore {
     try { process.kill(consumer.pid, 0); return true }
     catch (e) { return (e as NodeJS.ErrnoException).code !== 'ESRCH' }
   }
+  private lockYoung(lock: string): boolean {
+    try { return Date.now() - statSync(lock).mtimeMs < LEGACY_LOCK_STALE_MS } catch { return true }
+  }
   private lockOwnerAlive(owner: Owner, lock: string): boolean {
     if (owner.instance === INSTANCE_ID) return (heldLocks.get(lock) ?? 0) > 0
     if (typeof owner.instance === 'string' && owner.instance) return this.instanceAlive(owner.instance)
@@ -111,15 +114,23 @@ export class CleanupStore {
       try { guard = openSync(recovery, 'wx', 0o600) } catch { throw new CleanupBusy() }
       closeSync(guard)
       try {
-        let owner: Owner
-        try { owner = JSON.parse(readFileSync(lock, 'utf8')) } catch { throw new CleanupBusy() }
-        if (this.lockOwnerAlive(owner, lock)) throw new CleanupBusy()
+        let owner: Owner | null = null
+        try { owner = JSON.parse(readFileSync(lock, 'utf8')) as Owner } catch { owner = null }
+        // An empty or unreadable lock has no owner to ask: its creator failed
+        // before recording itself (e.g. disk full). Retire it only after it ages.
+        if (owner ? this.lockOwnerAlive(owner, lock) : this.lockYoung(lock)) throw new CleanupBusy()
         unlinkSync(lock)
       } finally { unlinkSync(recovery) }
     }
     let fd: number
     try { fd = openSync(lock, 'wx', 0o600) } catch { throw new CleanupBusy() }
-    writeFileSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), instance: INSTANCE_ID }))
+    try { writeFileSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), instance: INSTANCE_ID })) }
+    catch (error) {
+      // Never leave an ownerless lock behind: it would block every task request.
+      try { closeSync(fd) } catch { /* already closed */ }
+      try { unlinkSync(lock) } catch { /* nothing to remove */ }
+      throw error
+    }
     closeSync(fd)
     heldLocks.set(lock, (heldLocks.get(lock) ?? 0) + 1)
     try {
