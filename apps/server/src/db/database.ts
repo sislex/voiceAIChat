@@ -361,6 +361,10 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'user_id')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'archived_at')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN archived_at INTEGER`)
+    }
+    await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_owner_archive ON conversations(tenant_id, user_id, archived_at, updated_at)`)
     // Кэш стоимости беседы: в старых БД колонок нет, а `cost_dirty = 1`
     // заставит пересчитать итог при первом же показе списка.
     for (const [column, ddl] of [
