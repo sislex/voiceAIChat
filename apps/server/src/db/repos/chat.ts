@@ -392,7 +392,7 @@ export class ChatRepo extends BaseRepo {
     })
   }
 
-  async updateConversationGroup(userId: string, tenantId: string, groupId: string, input: { name?: string; conversationIds?: string[] }): Promise<ConversationGroup | null> {
+  async updateConversationGroup(userId: string, tenantId: string, groupId: string, input: { name?: string; position?: number; conversationIds?: string[] }): Promise<ConversationGroup | null> {
     if (input.name !== undefined && !input.name.trim()) throw new Error('group name is required')
     const conversationIds = input.conversationIds === undefined ? undefined : [...new Set(input.conversationIds)].sort()
     return await this.sql.transaction(async () => {
@@ -411,6 +411,18 @@ export class ChatRepo extends BaseRepo {
         for (const conversationId of conversationIds) await this.sql.run(`INSERT INTO conversation_group_memberships (group_id, conversation_id) VALUES (?, ?)`, [groupId, conversationId])
       }
       if (input.name !== undefined) await this.sql.run(`UPDATE conversation_groups SET name = ?, updated_at = ? WHERE id = ?`, [input.name.trim(), this.now(), groupId])
+      if (input.position !== undefined) {
+        const ordered = await this.sql.all<{ id: string }>(`SELECT id FROM conversation_groups
+          WHERE user_id = ? AND tenant_id = ? ORDER BY position, id`, [userId, tenantId])
+        const ids = ordered.map((item) => item.id).filter((id) => id !== groupId)
+        ids.splice(Math.min(input.position, ids.length), 0, groupId)
+        const ts = this.now()
+        // Free the unique (tenant, user, position) slots before assigning the normalized order.
+        await this.sql.run(`UPDATE conversation_groups SET position = -position - 1 WHERE user_id = ? AND tenant_id = ?`, [userId, tenantId])
+        for (let position = 0; position < ids.length; position += 1) {
+          await this.sql.run(`UPDATE conversation_groups SET position = ?, updated_at = CASE WHEN id = ? THEN ? ELSE updated_at END WHERE id = ?`, [position, groupId, ts, ids[position]])
+        }
+      }
       return (await this.listConversationGroups(userId, tenantId)).find((item) => item.id === groupId) ?? null
     })
   }

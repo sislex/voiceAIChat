@@ -836,14 +836,16 @@ export async function registerRest(
     return await db.chat.createConversationGroup(uid(req), req.user!.account!.tenantId, req.body.name)
   })
 
-  app.patch<{ Params: { id: string }; Body: { name?: string; conversationIds?: unknown } }>('/api/conversation-groups/:id', async (req, reply) => {
+  app.patch<{ Params: { id: string }; Body: { name?: string; position?: unknown; conversationIds?: unknown } }>('/api/conversation-groups/:id', async (req, reply) => {
     if ((req.body?.name !== undefined && (typeof req.body.name !== 'string' || !req.body.name.trim()))
+      || (req.body?.position !== undefined && (!Number.isInteger(req.body.position) || Number(req.body.position) < 0))
       || (req.body?.conversationIds !== undefined && (!Array.isArray(req.body.conversationIds) || req.body.conversationIds.some((id) => typeof id !== 'string')))) {
       return reply.code(400).send({ error: 'invalid group update' })
     }
     try {
       const group = await db.chat.updateConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id, {
         ...(req.body?.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body?.position !== undefined ? { position: Number(req.body.position) } : {}),
         ...(Array.isArray(req.body?.conversationIds) ? { conversationIds: req.body.conversationIds as string[] } : {})
       })
       return group ?? reply.code(404).send({ error: 'group not found' })
