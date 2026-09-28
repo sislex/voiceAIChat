@@ -286,10 +286,8 @@ export class ChatRepo extends BaseRepo {
       ? settings.contextPresets.find((entry) => entry.id === settings.defaultContextPresetId)
       : undefined
     const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
-    if (disabledContext.length) {
-      await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), id, userId])
-    }
-    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    await this.sql.run(`UPDATE conversations SET disabled_context_json = ?, reasoning_effort = ?, deep_thinking = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), settings.reasoningEffort, settings.deepThinking ? 1 : 0, id, userId])
+    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, reasoningEffort: settings.reasoningEffort, deepThinking: settings.deepThinking, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -1546,7 +1544,7 @@ export class ChatRepo extends BaseRepo {
       llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
       llmModel: row.llm_model,
       reasoningEffort: row.reasoning_effort === 'low' || row.reasoning_effort === 'high' || row.reasoning_effort === 'xhigh' || row.reasoning_effort === 'max' ? row.reasoning_effort : 'medium',
-      deepThinking: row.deep_thinking === 1 || row.deep_thinking === true,
+      deepThinking: row.deep_thinking === true || row.deep_thinking === 1,
       // Мусор в колонке (например, откат версии) читаем как «из общих настроек».
       permissionMode:
         row.permission_mode === 'plan' || row.permission_mode === 'acceptEdits' || row.permission_mode === 'bypassPermissions'

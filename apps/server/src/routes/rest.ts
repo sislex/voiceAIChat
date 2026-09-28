@@ -1168,6 +1168,8 @@ export async function registerRest(
       llmEngineId?: string | null
       llmProvider?: string | null
       llmModel?: string | null
+      reasoningEffort?: string
+      deepThinking?: boolean
       permissionMode?: string | null
       reasoningEffort?: string
       deepThinking?: boolean
@@ -1214,7 +1216,7 @@ export async function registerRest(
         await db.chat.setConversationExecTarget(
           uid(req),
           req.params.id,
-          req.body.execTarget,
+          req.body.execTarget ?? current.execTarget,
           req.body.workdir,
           req.body.skillNames,
           llmProvider,
@@ -1240,6 +1242,8 @@ export async function registerRest(
         ...(req.body.llmProvider !== undefined || req.body.llmModel !== undefined
           ? [['llm', conversation.llmProvider ? `${conversation.llmProvider}${conversation.llmModel ? ` · ${conversation.llmModel}` : ''}` : 'из общих настроек'] as [string, string]]
           : []),
+        ...(req.body.reasoningEffort !== undefined ? [['reasoning-effort', conversation.reasoningEffort] as [string, string]] : []),
+        ...(req.body.deepThinking !== undefined ? [['deep-thinking', conversation.deepThinking ? 'on' : 'off'] as [string, string]] : []),
         ...(req.body.execTarget !== undefined ? [['machine', conversation.execTarget ?? 'резолвер сервера'] as [string, string]] : [])
       ]
       for (const [itemId, value] of settingEvents) {

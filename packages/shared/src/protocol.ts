@@ -299,8 +299,6 @@ export const REST = {
   usage: '/api/usage',
   meUsage: '/api/me/usage',
   llmEngines: '/api/llm-engines',
-  /** Помощник промптов: переформулировки черновика запроса (одноразовый LLM-вызов). */
-  promptSuggest: '/api/prompt/suggest',
   systemCapabilities: '/api/system/capabilities',
   /** Verified application/access context for the current authenticated chat session. */
   chatContext: '/api/chat/context',
