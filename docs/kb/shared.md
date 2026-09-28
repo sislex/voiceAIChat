@@ -110,9 +110,7 @@ selected/required/invalid у описания элемента и узла a11y.
 
 Аудио микрофона передаётся бинарными PCM16-кадрами; управляющие события — JSON. TTS может использовать бинарный кадр с заголовком. Кодирование/декодирование должно оставаться симметричным между `protocol.ts`, серверным `ws.ts` и `packages/ui/src/remote/decode.ts`.
 
-`chat.message` несёт `conversationId` и полную сохранённую `Message`; один вариант контракта используется и для создания, и для обновления. Стабильный `Message.id` является ключом слияния HTTP-ответа, оптимистичной записи и повторных realtime-кадров.
-
-Ходы LLM адресованы `conversationId`. `ActiveTurn` переносит partial text, activity и usage при reconnect, поэтому клиент не должен считать WebSocket владельцем генерации. `claude.start/token/log/usage/done/error/active/queue` остаются адресными событиями разговора; пользовательская отмена завершается существующим `claude.done` с `meta.interrupted=true`, если partial непустой.
+Ходы LLM адресованы `conversationId`. `ActiveTurn` переносит partial text, activity и usage при reconnect, поэтому клиент не должен считать WebSocket владельцем генерации. Сохранённые пользовательские реплики и обновления сообщения передаются существующим `chat.message` с полным `Message`; стабильный `Message.id` является ключом слияния optimistic, HTTP и повторных realtime-подтверждений. `claude.start/token/log/usage/done/error/active/queue` сохраняют обязательную адресацию разговора, а пользовательская отмена с partial завершается `claude.done` с сохранённым сообщением и `meta.interrupted=true`.
 
 ## Мосты UI
 
