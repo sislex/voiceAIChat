@@ -68,6 +68,9 @@ export interface StoredUpload {
   agentId?: string
   /** Владелец upload; обязателен для новых записей и серверной привязки к задаче. */
   ownerId?: string
+  /** Scope enforced by standalone browser transports before dispatch. */
+  tenantId?: string
+  conversationId?: string
 }
 
 export function machineUploadDir(root: string): string {

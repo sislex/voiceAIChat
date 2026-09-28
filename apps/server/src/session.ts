@@ -22,6 +22,8 @@ import type { KbUsageTracker } from './kb/usage.js'
 import type { AuthStatusState } from './auth/statusState.js'
 
 export interface SessionDeps {
+  /** Standalone browser transports subscribe only to chat events. */
+  chatOnly?: boolean
   delegation?: import('@voicechat/shared').ChatDelegationReference
   billingSession?: import('@voicechat/shared').LlmBillingSession
   db: VoiceChatDb
@@ -154,7 +156,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       // not attach it to account-wide feeds (machines, projects, CI, previews,
       // auth status, or another browser's queued work).  Conversation frames
       // still pass through the per-event grant check installed by server.ts.
-      if (deps.delegation) {
+      if (deps.delegation || deps.chatOnly) {
         unsubTurns = deps.turns.subscribe((message, ownerUserId) => {
           if (ownerUserId === deps.user.name) ctx.send(message)
         })
