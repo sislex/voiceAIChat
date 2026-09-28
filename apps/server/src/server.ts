@@ -552,6 +552,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
+    publish: (message, userId) => frames.publish(message, userId),
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
     // Геттером, а не объектом: `kb` создаётся ниже, а нужен только в запросе
     // (предпросмотр автоконтекста БЗ для черновика сообщения).

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-23
-checked: 964cd5de
+updated: 2026-09-28
+checked: 7483c76b
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -366,7 +366,9 @@ closes the socket without dispatching queued commands. A disconnect during setup
 runs cleanup once setup settles, avoiding subscriptions left behind by an early
 close. Regression tests cover ordering, initialization failure and early close.
 
-`ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup.
+`ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup. Общая `UserFrameHub` подписывает каждую браузерную сессию и фильтрует публикации по аутентифицированному `userId`.
+
+`POST /api/conversations/:id/messages` сначала сохраняет реплику с проверкой владельца, затем публикует `chat.message` через `UserFrameHub` всем активным соединениям этого пользователя, включая соединение-источник. Публикации при ошибке записи нет; повтор с тем же `messageId` повторно доставляет ту же серверную сущность и рассчитывает на дедупликацию клиента по `Message.id`. `PATCH` метаданных сообщения после успешной записи использует тот же кадр как обновление сущности.
 
 При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
 
