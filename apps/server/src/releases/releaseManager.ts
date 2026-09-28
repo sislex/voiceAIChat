@@ -72,11 +72,23 @@ export function releaseSwitchCommand(target:ProductionTarget,release:Pick<Projec
  * Refreshing from the already verified release checkout makes the first deploy after
  * an installer update safe as well; subsequent installs replace this with the stable launcher.
  */
-export function releaseDeployCommand(target:ProductionTarget,version:string,expectedMetadata:string):string {
-  const refreshLauncher=target.deployCommand.includes('/usr/local/bin/voicechat-deploy')
+export function releaseDeployCommand(target:ProductionTarget,version:string,sha:string,expectedMetadata:string):string {
+  const legacyUpstream='git branch --set-upstream-to=origin/$(git branch --show-current) && '
+  const configured=target.deployCommand.trim()
+  const usesInstalledLauncher=target.deployCommand.includes('/usr/local/bin/voicechat-deploy')
+  const refreshLauncher=usesInstalledLauncher
     ? 'install -m 755 scripts/prod/deploy.sh /usr/local/bin/voicechat-deploy && '
     : ''
-  return at(target,`export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${refreshLauncher}${target.deployCommand}`)
+  // The standard launcher reads VC_REPO_DIR from production.env. That path can
+  // point at an older immutable release even after this checkout was switched.
+  // The wrapper binds source, Compose paths and locally available owner images
+  // to the selected release before the detached deployment starts.
+  const deploy=configured==='/usr/local/bin/voicechat-deploy'
+    ? 'bash scripts/prod/release-manager-deploy.sh'
+    : configured===`${legacyUpstream}/usr/local/bin/voicechat-deploy`
+      ? `${legacyUpstream}bash scripts/prod/release-manager-deploy.sh`
+      : target.deployCommand
+  return at(target,`if [ "$(git rev-parse HEAD)" != ${quote(sha)} ]; then echo 'Release checkout no longer matches the selected commit'; exit 1; fi && export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' VC_RELEASE_EXPECTED_COMMIT=${quote(sha)} && echo ${quote(expectedMetadata)} && ${refreshLauncher}${deploy}`)
 }
 
 /**
@@ -413,7 +425,7 @@ export class ReleaseManager {
         if(after!==null&&after<RELEASE_MIN_FREE_KB)throw new Error(`Сборка и обновление контейнеров: на диске production свободно ${gb(after)} ГБ, нужно не меньше ${gb(RELEASE_MIN_FREE_KB)} ГБ. Освободите место (docker system df, старые образы/тома) и повторите деплой.`)
       }else if(free!==null){ diskNote=`Свободно на диске: ${gb(free)} ГБ` }
       await this.setStep(target.projectId,release.id,'building','running',[expectedMetadata,diskNote].filter(Boolean).join('\n'),actor)
-      const built=await this.runtime.exec(target,releaseDeployCommand(target,release.version,expectedMetadata),buildLimit)
+      const built=await this.runtime.exec(target,releaseDeployCommand(target,release.version,release.sha,expectedMetadata),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
       await this.setStep(target.projectId,release.id,'building','passed',built.output,actor)
