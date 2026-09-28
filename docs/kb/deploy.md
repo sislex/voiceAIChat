@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-27
-checked: c971c278
+updated: 2026-09-28
+checked: 405fe6cf
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1244,6 +1244,26 @@ validation, release metadata setup, container replacement and component readines
 checks. Record the resulting image IDs with the release backup.
 
 ## Local owner image delivery
+
+The in-product release manager has a separate mutable production checkout. Its
+default deploy command now verifies the selected branch and full commit before
+calling `voicechat-deploy`. The release-manager wrapper replaces the old
+`VC_REPO_DIR` prefix in the installed Compose chain with that checkout, pins
+each already-running non-Core service to its current image reference after
+verifying that reference resolves to the running local image ID, and requires
+that only Core is built from the selected checkout. A missing local owner image
+stops the release before Compose changes containers. The detached deployment
+also receives the expected full commit, so a branch moving during `git pull`
+stops before the build. This path does not need a GHCR login. Custom production
+deploy commands retain their own image-delivery policy but still receive the
+selected SHA and a checkout preflight.
+
+Do not point the in-product release button at an immutable older release
+directory: the checkout switched by the manager and the checkout used by
+`voicechat-deploy` must be the same. The wrapper enforces this during a release;
+the production environment should also name the manager checkout for direct
+operator invocations. Keep old immutable release directories as rollback
+sources, not as the active `VC_REPO_DIR` for future in-product releases.
 
 Owner repositories run their complete release gates on the assigned local
 machines at the exact clean source commits. Build Linux AMD64 images with the
