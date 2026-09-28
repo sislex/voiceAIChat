@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-28
-checked: 7483c76b
+checked: fb94d3d8
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -1851,7 +1851,7 @@ have no stories or none are selected». Сам `iframe.html` от query не з�
 
 ## Разговор и ход модели
 
-Text drafts are owned by the separately versioned `@voicechat/chat-app` package; Core consumes its pinned artifact at `node_modules/@voicechat/chat-app/dist/store/chatStore.js` and verifies it through `scripts/shared-chat-acceptance.test.mjs`. The former in-repository `packages/chat-app` and `packages/ui` source paths belong to the owner repositories and are not present in this checkout. `AppRuntime` supplies `CHAT_DRAFTS_KEY` (`vc.chat.drafts.v1`) from `ui-foundation/persistence.ts` through the preferences port. Drafts are keyed by conversation id, retained while HTTP is pending, restored on selection, and removed after persistence acknowledgement only when the captured revision still matches. The composer can immediately accept newer input. Storage errors leave the in-memory draft usable. Failed submissions retain their original recipient, message id, text and upload ids in `failedSubmits`; retry and local deletion are exposed in `ChatColumn`. A retry reuses the message id and concurrent retry clicks are ignored.
+Text drafts are owned by the separately versioned `@voicechat/chat-app` package; Core consumes its pinned tarball from the root `package.json`, loads the installed store at `node_modules/@voicechat/chat-app/dist/store/chatStore.js` and verifies it through `scripts/shared-chat-acceptance.test.mjs`. WebSocket event adapters and UI components/tests similarly belong to the published `@voicechat/chat-app` and `@sislexa/core-ui` owner repositories. The former in-repository `packages/chat-app` and `packages/ui` source paths are not present in this checkout; Core owns `packages/shared/src/protocol.ts`, the server REST/WS delivery, and consumer/integration tests against the exact published artifacts. `AppRuntime` supplies `CHAT_DRAFTS_KEY` (`vc.chat.drafts.v1`) from `ui-foundation/persistence.ts` through the preferences port. Drafts are keyed by conversation id, retained while HTTP is pending, restored on selection, and removed after persistence acknowledgement only when the captured revision still matches. The composer can immediately accept newer input. Storage errors leave the in-memory draft usable. Failed submissions retain their original recipient, message id, text and upload ids in `failedSubmits`; retry and local deletion are exposed in `ChatColumn`. A retry reuses the message id and concurrent retry clicks are ignored.
 
 `VoiceBar` sends clipboard files and external drops through the same `onAddFiles` callback as the file picker. Existing processing/ready/error previews and removal remain the attachment UI. Upload targeting is captured before file encoding; removed attachment ids are not reinserted by completion. `ChatColumn` provides literal case-insensitive local search through its header and a focus-scoped `mod+f` binding registered with `useHotkeys`; screen commands expose search and density. Rendered matches carry `data-chat-match`, navigation selects individual occurrences, and highlighting does not change stored Markdown or code text. The unread button counts answers rather than token chunks and returns to the end on click.
 

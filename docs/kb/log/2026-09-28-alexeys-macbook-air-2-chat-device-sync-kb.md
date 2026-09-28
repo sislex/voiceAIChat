@@ -1,11 +1,11 @@
 ---
-title: chat-device-sync
+title: chat-device-sync-kb
 date: 2026-09-28
-machine: macbook-air-user
-author: NikolayTola
+machine: alexeys-macbook-air-2
+author: alexeyrozhnov
 ---
 
-# chat-device-sync
+# chat-device-sync-kb
 
 ## Что сделано
 
