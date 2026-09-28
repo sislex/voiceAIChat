@@ -56,7 +56,7 @@
     "verify:core-ui": "node scripts/core-ui-artifact.mjs",
     "build:core-contracts": "node scripts/core-contracts-release.mjs",
     "test:storybook": "npm run verify:core-ui",
-    "test:tooling": "node --import tsx --test scripts/shared-chat-artifacts.test.mjs scripts/s3-provider-artifacts.test.mjs scripts/browser-ui-release.test.mjs scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/delivery-release.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs scripts/operations-restore-drill.test.mjs scripts/operations-backup-retention.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/browser-gate.test.mjs scripts/long-run.test.mjs scripts/system-gate.test.mjs",
+    "test:tooling": "node --import tsx --test scripts/shared-chat-artifacts.test.mjs scripts/s3-provider-artifacts.test.mjs scripts/browser-ui-release.test.mjs scripts/application-gate.test.mjs scripts/application-build.test.mjs scripts/owner-application-release.test.mjs scripts/application-frontend.test.mjs scripts/application-deploy.test.mjs scripts/delivery-release.test.mjs scripts/application-compatibility.test.mjs scripts/application-links.test.mjs scripts/component-installation.test.mjs scripts/component-readiness.test.mjs scripts/operations-restore-drill.test.mjs scripts/operations-backup-retention.test.mjs && node --test scripts/affected-check.test.mjs scripts/core-ui-artifact.test.mjs scripts/route-budgets.test.mjs scripts/route-compression.test.mjs scripts/full-gate.test.mjs scripts/browser-gate.test.mjs scripts/long-run.test.mjs scripts/system-gate.test.mjs && npm run gate:a07",
     "operations:restore-drill": "node scripts/operations-restore-drill.mjs",
     "operations:backup-retention": "node scripts/operations-backup-retention.mjs",
     "gate:audit": "node --import tsx scripts/gate-audit.mjs",
@@ -66,12 +66,13 @@
     "gate:release": "npm run gate:all && npm run gate:performance && npm run gate:system",
     "gate:performance": "npm run frontend:route-gates",
     "ui:release": "node --import tsx scripts/browser-ui-release.mjs",
-    "gate:shared-chat": "node --import tsx scripts/shared-chat-gate.mjs"
+    "gate:shared-chat": "node --import tsx scripts/shared-chat-gate.mjs",
+    "gate:a07": "node --import tsx --test scripts/a07-acceptance.test.mjs"
   },
   "devDependencies": {
     "@sislex/runner-contracts": "file:vendor/sislex-runner-contracts-0.1.1-3cd7f9015a8f.tgz",
-    "@sislexa/billing": "file:vendor/sislexa-billing-1.2.2-7ece419a8a5c.tgz",
-    "@sislexa/identity": "file:vendor/sislexa-identity-1.4.2-5da738355c79.tgz",
+    "@sislexa/billing": "file:vendor/sislexa-billing-1.2.2-54901a743aae.tgz",
+    "@sislexa/identity": "file:vendor/sislexa-identity-1.4.2-0207bffe45ba.tgz",
     "@sislexa/image-studio": "file:vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "file:vendor/sislexa-make-1.2.3-c57a1696f6d9.tgz",
     "@sislexa/playwright-reader": "file:vendor/sislexa-playwright-reader-1.2.3-4e69a4482993.tgz",
@@ -92,11 +93,12 @@
     "electron": "33.4.11",
     "@sislexa/desktop": "file:vendor/sislexa-desktop-1.0.7-c94e85999b29.tgz",
     "@sislexa/core-ui": "file:vendor/sislexa-core-ui-1.4.4-abf0494abef3.tgz",
-    "@sislexa/analytics": "file:vendor/sislexa-analytics-1.2.3-3c2dfce7c6cf.tgz",
+    "@sislexa/analytics": "file:vendor/sislexa-analytics-1.3.0-058c5ebed59f.tgz",
     "tar-stream": "2.2.0",
     "@sislexa/chat-ui": "file:vendor/sislexa-chat-ui-0.2.0-a36f5106684e.tgz",
     "@voicechat/chat-app": "file:vendor/voicechat-chat-app-0.2.0-9f07df490e38.tgz",
     "@xterm/addon-fit": "0.10.0",
-    "@xterm/xterm": "5.5.0"
+    "@xterm/xterm": "5.5.0",
+    "@sislex/llm-runner": "file:vendor/sislex-llm-runner-0.3.5-b498ff1dd395.tgz"
   }
 }

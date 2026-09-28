@@ -6,12 +6,12 @@ import { pathToFileURL } from 'node:url'
 import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
 
 export const requiredSources = Object.freeze({
-  '@sislexa/identity': ['sislex/identity', 'a88c1fca8bb576702a091c628cfeb4de650511d5'],
-  '@sislexa/billing': ['sislex/billing', '7c54c7fc203a8dfff79533a70d712de4e002328a'],
+  '@sislexa/identity': ['sislex/identity', 'e33958be66c7a1f44b3cb4c6b4619f7c2fefe322'],
+  '@sislexa/billing': ['sislex/billing', '41263c7c20f8e852b508bbd76220245fbb62bd10'],
   '@sislex/llm-runner': ['sislex/llm-runner', '097282f2418c245454fe963b10d9b61e0b4d814a'],
   '@sislex/runner-contracts': ['sislex/llm-runner', '097282f2418c245454fe963b10d9b61e0b4d814a'],
   '@sislexa/sdk': ['sislex/sdk', 'f6313db5ff58cc35fa8dacc90b9844f9706dcfba'],
-  '@sislexa/analytics': ['sislex/analytics', 'f398196a38438cc818d9d5c6db375c205dd0dea3']
+  '@sislexa/analytics': ['sislex/analytics', 'a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942']
 })
 
 export function requireSources(packages) {
@@ -45,8 +45,8 @@ export async function verifyA07Composition(directory = root) {
     const pkg = JSON.parse(files.get('package.json')), source = JSON.parse(files.get('release-source.json'))
     if (pkg.name !== name || pkg.version !== row.version || source.repository !== row.repository
       || source.commit !== row.commit || source.version !== row.version) throw Error('Artifact provenance mismatch: ' + name)
-    // Runner is deployed separately; the other five archives are Core runtime dependencies.
-    if (name !== '@sislex/llm-runner') {
+    // Runner is also installed as a dev dependency for exact-composition acceptance.
+    {
       const installed = lock['node_modules/' + name]
       if (installed?.resolved !== 'file:vendor/' + row.asset || installed?.integrity !== row.integrity
         || installed?.version !== row.version) throw Error('Consumer lock mismatch: ' + name)

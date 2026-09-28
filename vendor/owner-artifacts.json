@@ -5,11 +5,11 @@
       "name": "@sislexa/identity",
       "version": "1.4.2",
       "filename": "sislexa-identity-1.4.2.tgz",
-      "integrity": "sha512-RqZxNGrubGkAFtxkIvGXOIF0kVw5AD9kbAelNTbPA0o5tGzC6sdzRURAOkj0siGUmAhEL82SgRFtGJNIw6hXAA==",
-      "sha256": "5da738355c790d2097e1791049450f71b3587c384e61fda22bb21f09cdc2a315",
+      "integrity": "sha512-iIUnTqlFORYjq/ClSmuNBoi70joyuE6kDmkvwp7jB/iKHn5Qe2PyAVTd3AZmTPekCKewagBOSizTwBXzgYK52Q==",
+      "sha256": "0207bffe45ba79eb7cbafa96d82662357d6a53423ff780c3e989a50f2e45274e",
       "repository": "https://github.com/sislex/identity",
-      "commit": "a88c1fca8bb576702a091c628cfeb4de650511d5",
-      "asset": "sislexa-identity-1.4.2-5da738355c79.tgz"
+      "commit": "e33958be66c7a1f44b3cb4c6b4619f7c2fefe322",
+      "asset": "sislexa-identity-1.4.2-0207bffe45ba.tgz"
     },
     {
       "name": "@sislexa/make",
@@ -115,11 +115,11 @@
       "name": "@sislexa/billing",
       "version": "1.2.2",
       "filename": "sislexa-billing-1.2.2.tgz",
-      "integrity": "sha512-ejXON1u+wizbqDM3uJzo1mxrdNBoUHT19Z40HucP+/S3X4XSYMEvVKC21dWIvB21aLk+ZhWUQmAU3PnZL4TCVg==",
-      "sha256": "7ece419a8a5cd189afaec10a37f5b7ecde9560eb37f12fd9a4d1cb34d554680c",
+      "integrity": "sha512-h/iWMDDAB1eRMrC0OlxnvB2lFf6vnOfobChZBxyULxFsSPZtg8c8qtv+TVW1I+8y9Ryf+RHStLyo/I2MtJgaUg==",
+      "sha256": "54901a743aaeb7f76cf4f9784b98f94b7acde6af7aba285bfa05ac2612fd4dcd",
       "repository": "https://github.com/sislex/billing",
-      "commit": "7c54c7fc203a8dfff79533a70d712de4e002328a",
-      "asset": "sislexa-billing-1.2.2-7ece419a8a5c.tgz"
+      "commit": "41263c7c20f8e852b508bbd76220245fbb62bd10",
+      "asset": "sislexa-billing-1.2.2-54901a743aae.tgz"
     },
     {
       "name": "@sislexa/sdk",
@@ -226,13 +226,13 @@
     },
     {
       "name": "@sislexa/analytics",
-      "version": "1.2.3",
-      "filename": "sislexa-analytics-1.2.3.tgz",
-      "integrity": "sha512-LKo5DmFhUVOdO1xonLFhfWLRa7wHquTXsrWdB2ZckM+Pgi94O+jd+Bv7zqY/soWQYRaRQlJAvrApaLgdRfQ+wA==",
-      "sha256": "3c2dfce7c6cf314c54afb3b44a9be42c31ab13e976c43b2a8007f220b810198a",
+      "version": "1.3.0",
+      "filename": "sislexa-analytics-1.3.0.tgz",
+      "integrity": "sha512-a7qOGF096bewas0nPDaKfmkCfZYQK0QfJrF5c9kf3ImNgyYsKD5a3s7yBOWUUA2vQy/QghNvwcVZlIxZzxinCg==",
+      "sha256": "058c5ebed59f58b9ee82f14763981b4277230ed4d8a0612b9f4d5957dd0dc1cf",
       "repository": "https://github.com/sislex/analytics",
-      "commit": "f398196a38438cc818d9d5c6db375c205dd0dea3",
-      "asset": "sislexa-analytics-1.2.3-3c2dfce7c6cf.tgz"
+      "commit": "a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942",
+      "asset": "sislexa-analytics-1.3.0-058c5ebed59f.tgz"
     },
     {
       "name": "@sislexa/desktop",
