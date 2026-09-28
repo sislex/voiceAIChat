@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-09-28
-checked: 7483c76b
+checked: 23625b0c
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -49,6 +49,16 @@ and recovery commands. The bundled package remains the fallback and is still
 verified during a Core image build.
 
 Core publishes `@voicechat/shared` contracts with `build:core-contracts -- --version <version> --commit <full SHA>`. This exporter reads committed files and locked peer versions, excludes internal tests and records the source SHA. UI installs the contract archive without a Core checkout. Legacy published `@shared/*` imports resolve to that installed contract, not sibling source.
+
+Conversation groups follow the same owner boundary. Core owns the public group and
+membership models, authenticated REST routes, tenant/user isolation, persistence,
+and system-filter semantics. The separate `sislexa-core-ui` repository owns the
+responsive group rail, Sidebar integration, store, DOM tests, and Component QA;
+Core must not recreate historical `packages/ui` or `packages/chat-app` workspaces.
+The system identifiers are `all` and `archive`; user groups are ordered persisted
+records, while membership is many-to-many and available only to non-archived
+conversations. Archiving atomically clears memberships, and unarchiving does not
+restore them.
 
 
 ## Story ownership after repository extraction
