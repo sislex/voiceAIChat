@@ -192,6 +192,18 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
   })
 }
 
+// @testCase TC-INT-01
+it('applies saved model, reasoning effort and deep thinking to the next turn', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Reasoning')
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'claude', 'sonnet', undefined, undefined, 'xhigh', true)
+    const rec = recorder()
+    await runTurn(rec.client, db, conversation.id)
+    expect(rec.last()).toMatchObject({ model: 'sonnet', reasoningEffort: 'xhigh', deepThinking: true })
+  } finally { await db.close() }
+})
+
 it.each([
   ['Chat', undefined, 'chat', 'chat'],
   ['Make', 'make', 'make', 'make'],

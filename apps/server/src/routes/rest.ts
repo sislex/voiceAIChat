@@ -1169,6 +1169,8 @@ export async function registerRest(
       llmProvider?: string | null
       llmModel?: string | null
       permissionMode?: string | null
+      reasoningEffort?: string
+      deepThinking?: boolean
       kbContextMode?: string
     }
   }>(
@@ -1187,7 +1189,7 @@ export async function registerRest(
       }
       if (typeof req.body.title === 'string') await db.chat.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') await db.chat.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
-      if (req.body.execTarget !== undefined) {
+      if (req.body.execTarget !== undefined || req.body.llmEngineId !== undefined || req.body.llmProvider !== undefined || req.body.llmModel !== undefined || req.body.permissionMode !== undefined || req.body.reasoningEffort !== undefined || req.body.deepThinking !== undefined) {
         const role = (await db.identity.getUser(uid(req)))?.role ?? 'developer'
         if (req.body.llmEngineId && !(await db.llm.listLlmEnginesForRole(role)).some((engine) => engine.id === req.body.llmEngineId)) {
           return reply.code(403).send({ error: 'llm engine is not available for role' })
@@ -1206,6 +1208,9 @@ export async function registerRest(
             : req.body.permissionMode === 'plan' || req.body.permissionMode === 'acceptEdits' || req.body.permissionMode === 'bypassPermissions'
               ? req.body.permissionMode
               : null
+        const reasoningEffort = req.body.reasoningEffort === 'low' || req.body.reasoningEffort === 'medium' || req.body.reasoningEffort === 'high' || req.body.reasoningEffort === 'xhigh' || req.body.reasoningEffort === 'max'
+          ? req.body.reasoningEffort
+          : undefined
         await db.chat.setConversationExecTarget(
           uid(req),
           req.params.id,
@@ -1215,7 +1220,9 @@ export async function registerRest(
           llmProvider,
           req.body.llmModel,
           permissionMode,
-          req.body.llmEngineId
+          req.body.llmEngineId,
+          reasoningEffort,
+          typeof req.body.deepThinking === 'boolean' ? req.body.deepThinking : undefined
         )
       }
       const conversation = await db.chat.getConversation(uid(req), req.params.id)

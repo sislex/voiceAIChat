@@ -72,75 +72,32 @@ describe('PromptSuggester', () => {
   })
 })
 
-describe('REST /api/prompt/suggest', () => {
+// @testCase TC-REG-02
+describe('removed REST /api/prompt/suggest', () => {
   let app: FastifyInstance
   let db: VoiceChatDb
-  let token: string
-  const SECRET = 'test-secret'
-
-  async function build(reply: string | { error: string }): Promise<void> {
-    let id = 0
-    let clock = 1000
-    db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-    const dataDir = join(tmpdir(), `vc-prompt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-    app = await buildServer({
-      config: loadConfig({
-        PORT: '0',
-        VC_DATA_DIR: dataDir,
-        VC_MODELS_DIR: join(dataDir, 'models'),
-        VC_PIPER_VOICES_DIR: join(dataDir, 'voices')
-      }),
-      db,
-      claude: fakeClient(reply).client,
-      sessionSecret: SECRET
-    })
-    token = signToken({ name: 'admin', role: 'admin' }, SECRET)
-  }
 
   afterEach(async () => {
     await app.close()
-    db.close()
+    await db.close()
   })
 
-  it('требует токен', async () => {
-    await build('{"variants":["x"]}')
-    const res = await app.inject({ method: 'POST', url: REST.promptSuggest, payload: { prompt: 'привет', modifiers: [] } })
-    expect(res.statusCode).toBe(401)
-  })
-
-  it('возвращает варианты для черновика', async () => {
-    await build('{"variants":["Опиши задачу подробнее","Переформулируй как ТЗ"]}')
+  it('does not expose the former user-facing AI assistant endpoint', async () => {
+    const dataDir = join(tmpdir(), `vc-prompt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    db = new VoiceChatDb(':memory:')
+    app = await buildServer({
+      config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices') }),
+      db,
+      claude: fakeClient('unused').client,
+      sessionSecret: 'test-secret'
+    })
+    const token = signToken({ name: 'admin', role: 'admin' }, 'test-secret')
     const res = await app.inject({
       method: 'POST',
       url: REST.promptSuggest,
       headers: { authorization: `Bearer ${token}` },
       payload: { prompt: 'сделай форму', modifiers: [] }
     })
-    expect(res.statusCode).toBe(200)
-    expect(res.json().variants.map((item: { text: string }) => item.text)).toEqual(['Опиши задачу подробнее', 'Переформулируй как ТЗ'])
-  })
-
-  it('пустой текст → пустой список без обращения к движку', async () => {
-    await build({ error: 'не должно вызываться' })
-    const res = await app.inject({
-      method: 'POST',
-      url: REST.promptSuggest,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { prompt: '   ', modifiers: [] }
-    })
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ variants: [] })
-  })
-
-  it('ошибка движка → 502', async () => {
-    await build({ error: 'Claude CLI не найден' })
-    const res = await app.inject({
-      method: 'POST',
-      url: REST.promptSuggest,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { prompt: 'сделай штуку', modifiers: [] }
-    })
-    expect(res.statusCode).toBe(502)
-    expect(res.json().error).toContain('Claude CLI не найден')
+    expect(res.statusCode).toBe(404)
   })
 })

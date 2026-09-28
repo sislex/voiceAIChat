@@ -62,7 +62,7 @@
       "workspace": ".",
       "repository": "https://github.com/sislex/llm-runner",
       "version": "0.3.5",
-      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a"
+      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a"
     },
     "analytics": {
       "package": "@sislexa/analytics",

@@ -129,6 +129,17 @@ describe('VoiceChatDb — разговоры', () => {
     expect(fetched?.title).toBe('Поездка в Лиссабон')
   })
 
+  // @testCase TC-REG-01
+  it('uses compatible reasoning defaults for legacy and persists explicit conversation overrides', async () => {
+    const conversation = await db.chat.createConversation(U, 'Legacy')
+    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ reasoningEffort: 'medium', deepThinking: false })
+
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'codex', 'gpt-5.6-sol', undefined, undefined, 'high', true)
+    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({
+      llmProvider: 'codex', llmModel: 'gpt-5.6-sol', reasoningEffort: 'high', deepThinking: true
+    })
+  })
+
   it('список отсортирован по updated_at убыванию', async () => {
     const a = await db.chat.createConversation(U, 'A')
     const b = await db.chat.createConversation(U, 'B')
