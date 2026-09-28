@@ -296,11 +296,14 @@ export function resolveChatReconnect(input: {
 const artifactPayload = {
   artifactVersion: 1,
   contract: 'sislexa.core.chat',
-  contractVersion: '1.0.0',
+  contractVersion: '1.1.0',
   rest: {
     context: '/api/chat/context',
     settings: '/api/chat/settings',
-    conversationSettings: '/api/conversations/:conversationId/settings'
+    conversationSettings: '/api/conversations/:conversationId/settings',
+    conversationGroups: '/api/conversation-groups',
+    conversationGroup: '/api/conversation-groups/:groupId',
+    conversationMembership: '/api/conversations/:conversationId/membership'
   },
   websocket: {
     client: ['chat.connect'],
@@ -317,7 +320,7 @@ const artifactPayload = {
 
 /** Canonical, deeply frozen handoff artifact. Its canonical JSON has the exported SHA-256. */
 export const CHAT_CONTRACT_ARTIFACT = immutable(artifactPayload)
-export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'a11dfc0d9dd95abbb455198e6050019b4a7355b0af12df7bdf6790b1293112d4'
+export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'ef081621be040c94e2b94cb076bec08f0780fed7aeb71be149919d6cbeb99c6f'
 
 export function canonicalChatContractArtifact(): string {
   return JSON.stringify(CHAT_CONTRACT_ARTIFACT)

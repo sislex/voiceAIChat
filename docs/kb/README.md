@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 11 коммит(ов) в areas после сверки: 5123d6dc feat(chat): add idempotent Make handoff … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 12 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-22 | ⚠ 12 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 12 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ код изменён 2026-09-28, сверка 2026-09-23 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-28 | ⚠ 1 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-28 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-17 | ⚠ 40 коммит(ов) в areas после сверки: ee2d2458 Recover empty cleanup locks and never leave an ownerless lock … |
@@ -24,9 +24,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 27 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-16 | ⚠ 46 коммит(ов) в areas после сверки: ee2d2458 Recover empty cleanup locks and never leave an ownerless lock … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 6 коммит(ов) в areas после сверки: ed6a73f2 Persist canonical chat settings across Core hosts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1652 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1653 коммит(ов) в areas после сверки: ca362be0 fix(releases): deploy selected checkout with verified local owner images … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 66 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 13 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 14 коммит(ов) в areas после сверки: ca362be0 fix(releases): deploy selected checkout with verified local owner images … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 23 коммит(ов) в areas после сверки: 8f744434 feat: scope projects and chats to team tenants (#245) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 34 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 403 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
@@ -36,13 +36,13 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-23 | ⚠ 7 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-27 | ⚠ 1 коммит(ов) в areas после сверки: 93a5005b Checkpoint standalone delegated chat admission and scoped transport |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-23 | ⚠ 14 коммит(ов) в areas после сверки: ee2d2458 Recover empty cleanup locks and never leave an ownerless lock … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-23 | ⚠ код изменён 2026-09-28, сверка 2026-09-23 (по датам: правки того же дня не видны — поставь checked) |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-22 | ⚠ 10 коммит(ов) в areas после сверки: 93a5005b Checkpoint standalone delegated chat admission and scoped transport … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 232 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-09-27 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 184 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-22 | ⚠ 14 коммит(ов) в areas после сверки: 412d60c4 Accept S3 A07 exact shared-chat composition … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-28 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -54,8 +54,9 @@
 
 ## Журнал сессий
 
-Всего записей: 964. Последние:
+Всего записей: 965. Последние:
 
+- [2026-09-28-pc-radvilovich-conversation-groups.md](log/2026-09-28-pc-radvilovich-conversation-groups.md) — conversation-groups
 - [2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md](log/2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md) — s3-a07-owner-artifacts
 - [2026-09-28-alexeys-macbook-air-2-s3-a07-exact-composition.md](log/2026-09-28-alexeys-macbook-air-2-s3-a07-exact-composition.md) — s3-a07-exact-composition
 - [2026-09-28-alexeys-macbook-air-2-release-manager-source-images.md](log/2026-09-28-alexeys-macbook-air-2-release-manager-source-images.md) — release-manager-source-images
@@ -65,7 +66,6 @@
 - [2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md](log/2026-09-27-alexeys-macbook-air-2-u10-final-artifact-acceptance.md) — u10-final-artifact-acceptance
 - [2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md](log/2026-09-27-alexeys-macbook-air-2-u10-exact-artifacts.md) — u10-exact-artifacts
 - [2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md](log/2026-09-27-alexeys-macbook-air-2-u02-canonical-chat-settings.md) — u02-canonical-chat-settings
-- [2026-09-27-alexeys-macbook-air-2-s3-provider-source-pins.md](log/2026-09-27-alexeys-macbook-air-2-s3-provider-source-pins.md) — s3-provider-source-pins
 
 ## Исторические планы
 

@@ -93,6 +93,53 @@ describe('REST: conversations/messages/settings', () => {
     expect(exec).not.toHaveBeenCalled()
   })
 
+  // @testCase TC-API-01
+  it('CRUD групп сохраняет порядок и валидирует название', async () => {
+    const first = await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: '  Работа  ' } })
+    const second = await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'Личное' } })
+    expect(first.json()).toMatchObject({ name: 'Работа', position: 0 })
+    expect(second.json()).toMatchObject({ name: 'Личное', position: 1 })
+    expect((await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: '  ' } })).statusCode).toBe(400)
+    expect((await inj({ method: 'PATCH', url: `/api/conversation-groups/${first.json().id}`, payload: { name: 'Проекты' } })).json()).toMatchObject({ name: 'Проекты', position: 0 })
+    expect((await inj({ method: 'DELETE', url: `/api/conversation-groups/${second.json().id}` })).statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/conversation-groups' })).json()).toMatchObject([{ name: 'Проекты', position: 0 }])
+  })
+
+  // @testCase TC-INT-02
+  it('поддерживает множественное членство и системные выборки', async () => {
+    const conversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'В двух группах' } })).json()
+    const other = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Без группы' } })).json()
+    const a = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'A' } })).json()
+    const b = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'B' } })).json()
+    await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [a.id, b.id, a.id], archived: false } })
+    expect((await inj({ method: 'GET', url: '/api/conversations?group=all' })).json().map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining([conversation.id, other.id]))
+    expect((await inj({ method: 'GET', url: `/api/conversations?group=${a.id}` })).json().map((item: { id: string }) => item.id)).toEqual([conversation.id])
+    expect((await inj({ method: 'GET', url: `/api/conversations?group=${b.id}` })).json().map((item: { id: string }) => item.id)).toEqual([conversation.id])
+  })
+
+  // @testCase TC-INT-03
+  it('архивирует атомарно с очисткой и разархивирует без восстановления групп', async () => {
+    const conversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Архив' } })).json()
+    const group = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'G' } })).json()
+    await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [group.id], archived: false } })
+    const archived = await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [], archived: true } })
+    expect(archived.json()).toMatchObject({ archivedAt: expect.any(Number), groupIds: [] })
+    expect((await inj({ method: 'GET', url: '/api/conversations?group=archive' })).json().map((item: { id: string }) => item.id)).toContain(conversation.id)
+    const restored = await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [], archived: false } })
+    expect(restored.json()).toMatchObject({ archivedAt: null, groupIds: [] })
+  })
+
+  // @testCase TC-NEG-04
+  it('скрывает чужие группы, защищает системные id и отклоняет архивное членство', async () => {
+    const conversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Negative' } })).json()
+    const group = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'G' } })).json()
+    expect((await inj({ method: 'PATCH', url: '/api/conversation-groups/all', payload: { name: 'X' } })).statusCode).toBe(404)
+    expect((await inj({ method: 'DELETE', url: '/api/conversation-groups/archive' })).statusCode).toBe(404)
+    expect((await inj({ method: 'PATCH', url: '/api/conversation-groups/not-owned', payload: { name: 'X' } })).statusCode).toBe(404)
+    expect((await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [group.id], archived: true } })).statusCode).toBe(409)
+    expect((await inj({ method: 'GET', url: `/api/conversations/${conversation.id}` })).json().conversation).toMatchObject({ archivedAt: null, groupIds: [] })
+  })
+
   it('create → list → get', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Тест' } })).json()
     expect(created.title).toBe('Тест')
