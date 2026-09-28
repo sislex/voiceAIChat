@@ -3,6 +3,7 @@
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { ServerMessage } from '@voicechat/shared'
 import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, buildConversationPrompt, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
@@ -788,6 +789,8 @@ export async function registerRest(
      * offline-машины.
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
+    /** Publish a persisted chat entity to every active connection of its owner. */
+    publish?: (message: ServerMessage, ownerUserId: string) => void
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1338,7 +1341,9 @@ export async function registerRest(
           effectiveTarget = machine?.source === 'disabled' ? 'none' : machine?.agentId ?? null
         }
       }
-      return await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
+      const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
+      opts.publish?.({ t: 'chat.message', conversationId: req.params.id, message }, userId)
+      return message
     }
   )
 
@@ -1347,7 +1352,10 @@ export async function registerRest(
     async (req, reply) => {
       if (!req.body?.meta) return reply.code(400).send({ error: 'meta required' })
       try {
-        return await db.chat.updateMessageMeta(uid(req), req.params.id, req.params.messageId, req.body.meta)
+        const userId = uid(req)
+        const message = await db.chat.updateMessageMeta(userId, req.params.id, req.params.messageId, req.body.meta)
+        opts.publish?.({ t: 'chat.message', conversationId: req.params.id, message }, userId)
+        return message
       } catch {
         return reply.code(404).send({ error: 'not found' })
       }
