@@ -67,6 +67,35 @@ describe('идемпотентность начальных тарифов', () 
   })
 })
 
+// @testCase TC-INT-07
+describe('conversation groups persistence', () => {
+  it.skipIf(ON_POSTGRES)('restores group order, memberships and archive state after restart', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-conversation-groups-'))
+    const file = join(dir, 'voicechat.db')
+    try {
+      let db = new VoiceChatDb(file, { newId: (() => { let id = 0; return () => `group-${++id}` })(), now: (() => { let now = 1000; return () => ++now })() })
+      await db.identity.createUser(U, '', 'admin')
+      const tenantId = (await db.identity.getAccountAccess(U))!.tenant.id
+      const active = await db.chat.createConversation(U, 'Active', null, null, undefined, tenantId)
+      const archived = await db.chat.createConversation(U, 'Archived', null, null, undefined, tenantId)
+      const first = await db.chat.createConversationGroup(U, tenantId, 'First')
+      const second = await db.chat.createConversationGroup(U, tenantId, 'Second')
+      await db.chat.setConversationMembership(U, tenantId, active.id, { groupIds: [first.id, second.id], archived: false })
+      await db.chat.setConversationMembership(U, tenantId, archived.id, { groupIds: [], archived: true })
+      await db.close()
+
+      db = new VoiceChatDb(file)
+      await db.ready
+      expect((await db.chat.listConversationGroups(U, tenantId)).map((group) => [group.name, group.position])).toEqual([['First', 0], ['Second', 1]])
+      expect(await db.chat.getConversation(U, active.id)).toMatchObject({ groupIds: [first.id, second.id], archivedAt: null })
+      expect(await db.chat.getConversation(U, archived.id)).toMatchObject({ groupIds: [], archivedAt: expect.any(Number) })
+      await db.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('conversations: окно недели и курсорная догрузка', () => {
   /** База с управляемыми часами: метка беседы — момент её создания. */
   function withClock(): { db: VoiceChatDb; at: (mark: number, title: string) => Promise<string> } {

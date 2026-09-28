@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-27
-checked: 8ed85134
+updated: 2026-09-28
+checked: 405fe6cf
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -84,6 +84,8 @@ Core service owner; Core compares returned receipt attribution before settlement
 `CHAT_CONTRACT_ARTIFACT` is the canonical deeply frozen consumer manifest and
 `CHAT_CONTRACT_ARTIFACT_SHA256` pins its canonical JSON. The Core contracts
 release archive exports both through `@voicechat/shared`.
+
+Chat contract 1.1 adds `chat:groups:read`/`chat:groups:write`, the ordered user-group catalog and a full conversation membership mutation. `GET`/`POST /api/conversation-groups` and `PATCH`/`DELETE /api/conversation-groups/:groupId` own group CRUD; `PUT /api/conversations/:conversationId/membership` atomically replaces membership or archives and clears it. Conversation list/search use `view=all|archive` and an optional owned `groupId`. Missing or foreign resources return 404, invalid bodies return 400, and archive/membership conflicts return 409.
 
 ## Request correlation and operations endpoints
 

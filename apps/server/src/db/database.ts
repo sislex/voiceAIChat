@@ -235,6 +235,9 @@ export class VoiceChatDb {
   }
 
   private async migrate(): Promise<void> {
+    const conversationCols = (await this.sql.all(`PRAGMA table_info(conversations)`)) as Array<{ name: string }>
+    if (conversationCols.length && !conversationCols.some((c) => c.name === 'archived_at')) await this.sql.exec(`ALTER TABLE conversations ADD COLUMN archived_at INTEGER`)
+
     // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
     // accounts are elevated. Future accounts are never promoted implicitly.
     await this.sql.run(`UPDATE users SET role = 'developer' WHERE role = 'user'`)
