@@ -572,6 +572,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // раз при создании чата — единственное, что Make делает с репозиторием.
     // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
     // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
+    publishChatMessage: (userId, conversationId, message) => {
+      frames.publish({ t: 'chat.message', conversationId, message }, userId)
+    },
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return

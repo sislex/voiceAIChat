@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-23
-checked: 964cd5de
+updated: 2026-09-28
+checked: b1a5e170
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -367,6 +367,8 @@ runs cleanup once setup settles, avoiding subscriptions left behind by an early
 close. Regression tests cover ordering, initialization failure and early close.
 
 `ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup.
+
+После успешного `db.chat.addMessage`, атомарного создания draft-разговора или обновления meta REST публикует `chat.message` через процесс-глобальный `UserFrameHub`. Кадр содержит `conversationId` и полный сохранённый `Message`, адресуется по аутентифицированному `userId` и поэтому приходит всем активным соединениям владельца, включая источник, но не другому аккаунту. Публикация выполняется только после завершения записи; повтор с тем же `messageId` может повторить кадр, а клиент обязан слить его по `Message.id`.
 
 При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
 

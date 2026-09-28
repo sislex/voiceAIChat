@@ -788,6 +788,8 @@ export async function registerRest(
      * offline-машины.
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
+    /** Publish a persisted message to every authenticated connection of its owner. */
+    publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -927,7 +929,10 @@ export async function registerRest(
       return reply.code(404).send({ error: 'project not found' })
     }
     try {
-      const result = await db.chat.createConversationDraft(uid(req), idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId, assistantKind ?? null)
+      const userId = uid(req)
+      const result = await db.chat.createConversationDraft(userId, idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId, assistantKind ?? null)
+      const persisted = result.messages[0]
+      if (persisted) opts.publishChatMessage?.(userId, result.conversation.id, persisted)
       if (result.created && assistantKind === 'make' && result.conversation.projectId) {
         opts.refreshProjectMain?.(uid(req), result.conversation.projectId)
       }
@@ -1338,7 +1343,9 @@ export async function registerRest(
           effectiveTarget = machine?.source === 'disabled' ? 'none' : machine?.agentId ?? null
         }
       }
-      return await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
+      const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
+      opts.publishChatMessage?.(userId, req.params.id, message)
+      return message
     }
   )
 
@@ -1347,7 +1354,10 @@ export async function registerRest(
     async (req, reply) => {
       if (!req.body?.meta) return reply.code(400).send({ error: 'meta required' })
       try {
-        return await db.chat.updateMessageMeta(uid(req), req.params.id, req.params.messageId, req.body.meta)
+        const userId = uid(req)
+        const message = await db.chat.updateMessageMeta(userId, req.params.id, req.params.messageId, req.body.meta)
+        opts.publishChatMessage?.(userId, req.params.id, message)
+        return message
       } catch {
         return reply.code(404).send({ error: 'not found' })
       }

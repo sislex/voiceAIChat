@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-22
-checked: ded5c894
+updated: 2026-09-28
+checked: b1a5e170
 areas:
   - packages/shared/src
 ---
@@ -110,7 +110,7 @@ selected/required/invalid у описания элемента и узла a11y.
 
 Аудио микрофона передаётся бинарными PCM16-кадрами; управляющие события — JSON. TTS может использовать бинарный кадр с заголовком. Кодирование/декодирование должно оставаться симметричным между `protocol.ts`, серверным `ws.ts` и `packages/ui/src/remote/decode.ts`.
 
-Ходы LLM адресованы `conversationId`. `ActiveTurn` переносит partial text, activity и usage при reconnect, поэтому клиент не должен считать WebSocket владельцем генерации.
+Ходы LLM адресованы `conversationId`. `ActiveTurn` переносит partial text, activity и usage при reconnect, поэтому клиент не должен считать WebSocket владельцем генерации. Сохранённые пользовательские реплики и обновления сообщения передаются существующим `chat.message` с полным `Message`; стабильный `Message.id` является ключом слияния optimistic, HTTP и повторных realtime-подтверждений. `claude.start/token/log/usage/done/error/active/queue` сохраняют обязательную адресацию разговора, а пользовательская отмена с partial завершается `claude.done` с сохранённым сообщением и `meta.interrupted=true`.
 
 ## Мосты UI
 
