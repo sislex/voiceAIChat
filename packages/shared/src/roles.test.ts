@@ -5,9 +5,11 @@ import {
   CLAUDE_MODELS,
   CODEX_MODELS,
   DEFAULT_CODEX_MODEL,
+  DEFAULT_SETTINGS,
+  REASONING_EFFORT_OPTIONS,
   normalizeClaudeModel
 } from './types'
-import { allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed } from './llmAccess'
+import { allowedModels, chatModelMenu, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed } from './llmAccess'
 
 describe('персональный доступ к моделям', () => {
   // @testCase TC-UI-1
@@ -32,6 +34,45 @@ describe('персональный доступ к моделям', () => {
     const access = [{ provider: 'claude' as const, modelId: '*' }]
     expect(isProviderAllowed(access, 'claude')).toBe(false)
     expect(firstAllowedProvider(access)).toBe('codex')
+  })
+})
+
+describe('chat composer model and speed menu', () => {
+  // @testCase TC-UI-01
+  it('projects a new chat as five Codex entries plus the Claude legacy catalog', () => {
+    const menu = chatModelMenu({ messageCount: 0, provider: 'codex', model: 'gpt-6-astra', access: [] })
+    expect(menu.state).toBe('new')
+    expect(menu.primary.map((item) => item.id)).toEqual(CODEX_MODELS.map((item) => item.id))
+    expect(menu.catalogLabel).toBe('Модели')
+    expect(menu.catalog.map((item) => item.id)).toEqual(CLAUDE_MODELS.map((item) => item.id))
+  })
+
+  // @testCase TC-UI-02
+  it('projects a started chat with one current item and a checked full catalog row', () => {
+    const menu = chatModelMenu({ messageCount: 1, provider: 'codex', model: 'gpt-5.6-luna', access: [] })
+    expect(menu.primary).toMatchObject([{ provider: 'codex', id: 'gpt-5.6-luna', current: true }])
+    expect(menu.catalogLabel).toBe('Все модели')
+    expect(menu.catalog.filter((item) => item.current)).toMatchObject([{ provider: 'codex', id: 'gpt-5.6-luna' }])
+  })
+
+  // @testCase TC-UI-03
+  it('defines one five-value speed group while deep thinking remains independent', () => {
+    expect(REASONING_EFFORT_OPTIONS.map((item) => item.id)).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(DEFAULT_SETTINGS.reasoningEffort).toBe('medium')
+    expect(DEFAULT_SETTINGS.deepThinking).toBe(false)
+  })
+
+  // @testCase TC-NEG-01
+  it('filters denied models and exposes an unavailable state for an empty catalog', () => {
+    const access = [{ provider: 'claude' as const, modelId: '*' }, { provider: 'codex' as const, modelId: '*' }]
+    expect(chatModelMenu({ messageCount: 0, provider: 'codex', model: 'gpt-6-astra', access })).toMatchObject({ primary: [], catalog: [], unavailable: true })
+  })
+
+  // @testCase TC-UI-04
+  it('keeps menu content presentation-neutral so the owner UI can auto-position submenus at every viewport', () => {
+    const menu = chatModelMenu({ messageCount: 0, provider: 'codex', model: 'gpt-6-astra', access: [] })
+    expect(Object.keys(menu)).not.toContain('width')
+    expect(Object.keys(menu)).not.toContain('direction')
   })
 })
 

@@ -8,7 +8,6 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
-import { REST } from '@voicechat/shared'
 
 /** Мок движка: отдаёт заранее заданный текст ответа (и запоминает запрос). */
 function fakeClient(reply: string | { error: string }): { client: LlmClient; last: () => LlmRequest | null } {
@@ -72,31 +71,32 @@ describe('PromptSuggester', () => {
   })
 })
 
-// @testCase TC-REG-02
 describe('removed REST /api/prompt/suggest', () => {
   let app: FastifyInstance
   let db: VoiceChatDb
+  const SECRET = 'test-secret'
 
   afterEach(async () => {
     await app.close()
     await db.close()
   })
 
+  // @testCase TC-REG-02
   it('does not expose the former user-facing AI assistant endpoint', async () => {
-    const dataDir = join(tmpdir(), `vc-prompt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
     db = new VoiceChatDb(':memory:')
+    const dataDir = join(tmpdir(), `vc-prompt-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
     app = await buildServer({
       config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices') }),
       db,
-      claude: fakeClient('unused').client,
-      sessionSecret: 'test-secret'
+      claude: fakeClient('should not run').client,
+      sessionSecret: SECRET
     })
-    const token = signToken({ name: 'admin', role: 'admin' }, 'test-secret')
+    const token = signToken({ name: 'admin', role: 'admin' }, SECRET)
     const res = await app.inject({
       method: 'POST',
-      url: REST.promptSuggest,
+      url: '/api/prompt/suggest',
       headers: { authorization: `Bearer ${token}` },
-      payload: { prompt: 'сделай форму', modifiers: [] }
+      payload: { prompt: 'draft', modifiers: [] }
     })
     expect(res.statusCode).toBe(404)
   })
