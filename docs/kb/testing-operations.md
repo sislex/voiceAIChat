@@ -1080,14 +1080,19 @@ still cannot change its own budgets. No production Electron comparison was avail
 
 The historical CHAT-473 comparison is environment-specific (Node/compression
 versions and actual Electron viewport). The route gate selects exactly one
-reviewed report matching all conditions and tool versions: the original Linux
-report, the extraction's macOS report, or the clean-main macOS measurement under
-`frontend-quality/measurements/chat-accounting-runtime/`. The latter was captured
-on September 21 from clean commit `1b82ffaa` with an actual 1440x872 Electron
-viewport at scale factor 2, after the workstation stopped clamping it to
-1280x774. All 96 size comparisons against the accounting branch were unchanged;
-the absolute budget file was retained. Unknown/ambiguous environments still
-fail; `artifacts/route-budgets/diff.json` identifies the selected baseline.
+reviewed report matching every condition, compression setting and tool version:
+the original Linux report, the extraction's 1280x774 macOS report, or the
+component-QA Web/Electron report under
+`frontend-quality/measurements/component-qa-chat-sync/`. The component-QA
+baseline records Node 22.19.0, zlib 1.3.1-470d3a2, Brotli 1.1.0, Chrome
+151.0.7922.34, Electron 33.4.11, a 1440x900 Web viewport at scale factor 1 and a
+1440x872 Electron viewport at scale factor 2. Its 16 routes, 152 resources and
+both editor activations form a complete report; all 96 existing route-budget
+checks pass without changing `frontend-quality/route-budgets.json`. It supersedes
+the previously registered `chat-accounting-runtime` candidate with the identical
+runtime signature so the registry still has exactly one match. Unknown or
+ambiguous environments still fail; `artifacts/route-budgets/diff.json` identifies
+the selected baseline and contains both budget and baseline comparisons.
 
 The Electron measurement window remains visible but opens without taking focus
 and ignores native workstation mouse input. Playwright still drives its real
