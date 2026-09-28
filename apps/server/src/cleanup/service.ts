@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import type { CleanupAttempt, CleanupCandidate, CleanupSnapshot, TemporaryResource } from '@voicechat/shared'
-import { CleanupStore, type CleanupData } from './store.js'
+import { CleanupStore, type CleanupData, INSTANCE_ID } from './store.js'
 
 /** How many attempts of one task the journal keeps — exactly what `snapshot` shows. */
 const ATTEMPT_JOURNAL_PER_TASK = 100
@@ -55,7 +55,7 @@ export class TemporaryCleanup {
   async acquire(taskId: string): Promise<() => Promise<void>> {
     const id = randomUUID()
     await this.deps.store.waitLocked(async (data, save) => {
-      data.consumers.push({ id, taskId, pid: process.pid, host: hostname() }); save()
+      data.consumers.push({ id, taskId, pid: process.pid, host: hostname(), instance: INSTANCE_ID }); save()
     })
     return async () => {
       // A failed release leaves a conservative persistent consumer, never permission.
@@ -116,7 +116,7 @@ export class TemporaryCleanup {
             if (this.now() < retainUntil) reasons.push('diagnostic_retention')
           }
         }
-        const consumers = this.deps.store.read().consumers.filter(c => c.taskId === resource.taskId && CleanupStore.alive(c))
+        const consumers = this.deps.store.read().consumers.filter(c => c.taskId === resource.taskId && this.deps.store.alive(c))
         if (consumers.length) reasons.push('active_consumer')
         if (!resource.identity) reasons.push('ownership_unconfirmed')
         inspected = await this.deps.backend.inspect(resource)
