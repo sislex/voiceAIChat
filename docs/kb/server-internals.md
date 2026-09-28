@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-09-28
-checked: 7483c76b
+checked: fb94d3d8
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -368,7 +368,9 @@ close. Regression tests cover ordering, initialization failure and early close.
 
 `ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup. Общая `UserFrameHub` подписывает каждую браузерную сессию и фильтрует публикации по аутентифицированному `userId`.
 
-После успешного `db.chat.addMessage`, атомарного создания draft-разговора или обновления meta REST публикует `chat.message` через процесс-глобальный `UserFrameHub`. Кадр содержит `conversationId` и полный сохранённый `Message`, адресуется по аутентифицированному `userId` и поэтому приходит всем активным соединениям владельца, включая источник, но не другому аккаунту. Публикации при ошибке записи нет; повтор с тем же `messageId` может повторить кадр, а клиент обязан слить его по `Message.id`.
+После успешного `db.chat.addMessage`, атомарного создания draft-разговора или обновления meta REST публикует `chat.message` через процесс-глобальный `UserFrameHub`. Кадр содержит `conversationId` и полный сохранённый `Message`, адресуется по аутентифицированному `userId` и поэтому приходит всем активным соединениям владельца, включая источник, но не другому аккаунту. Публикации при ошибке записи нет; повтор с тем же `messageId` может повторить кадр, а клиент обязан слить его по `Message.id`. Эта публикация не зависит от старта модели или первого токена: серверные проверки двух одновременных сессий находятся в `apps/server/src/session.test.ts`.
+
+`TurnManager` также публикует весь lifecycle хода и авторитетные снимки очереди всем сессиям владельца через подписку с `ownerUserId`. В `createSession.onOpen` подписка на ходы устанавливается до отправки `claude.active`, затем сессия подписывается на `UserFrameHub` до первого ожидания БД и вызывает `resumeQueues(userId)`. Поэтому reconnect получает накопленный active-turn, восстановленные из SQLite очереди и последующие `start/token/log/usage/done/error`; история сообщений остаётся авторитетным REST-снимком `conversations:get`, который клиент сливает с уже увиденными realtime-кадрами.
 
 При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
 
