@@ -46,6 +46,7 @@ describe('контракт протокола', () => {
     expect(REST.conversationSettings('a/b')).toBe('/api/conversations/a%2Fb/settings')
   })
 
+  // @testCase TC-CONTRACT-01
   it('declares additive chat handshake, settings invalidation and reconnect frames', () => {
     expect(CLIENT_MESSAGE_TYPES).toContain('chat.connect')
     expect(SERVER_MESSAGE_TYPES).toContain('chat.ready')

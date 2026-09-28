@@ -136,7 +136,6 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
-  // @testCase TC-API-01
   it('Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления', async () => {
     const conv = await db.chat.createConversation(U, 'Настройки Make', 'make')
     const pairs = [
