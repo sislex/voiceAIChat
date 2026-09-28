@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-09-28
-checked: 405fe6cf
+checked: b1a5e170
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -1264,6 +1264,20 @@ directory: the checkout switched by the manager and the checkout used by
 the production environment should also name the manager checkout for direct
 operator invocations. Keep old immutable release directories as rollback
 sources, not as the active `VC_REPO_DIR` for future in-product releases.
+
+After a successful Core health and component-readiness check, the installed
+`voicechat-deploy` prunes old immutable Core releases under
+`/opt/voicechat/releases`. `VC_KEEP_RELEASES` in `production.env` defaults to
+`3` (the newest release and two rollback sources); `0` disables cleanup.
+The active checkout, the checkout in `production.env`, `VC_ROLLBACK_REPO_DIR`,
+Compose source paths and repositories named by unfinished deploy operations are
+always protected, even if this exceeds the retention count. Only matching local
+`sislexa-core` or `sislexa-s3-core` image tags are removed with ordinary
+`docker image rm`; GHCR images and named volumes are never selected. An image
+still used by a container keeps its source directory. The same post-health
+step prunes the Docker build cache and dangling images and logs each removal
+and the resulting free space. Cleanup failure is logged without changing the
+successful deployment result. The pre-build disk-space check remains in place.
 
 Owner repositories run their complete release gates on the assigned local
 machines at the exact clean source commits. Build Linux AMD64 images with the

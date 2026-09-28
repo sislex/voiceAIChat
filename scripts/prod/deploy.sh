@@ -24,6 +24,51 @@ HEALTH_TRIES=${VC_HEALTH_TRIES:-60}   # × 5 с = до 5 минут на под�
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 
+cleanup_old_releases() {
+  local keep=${VC_KEEP_RELEASES:-3}
+  [[ $keep =~ ^(0|[1-9][0-9]*)$ ]] || { log "release cleanup skipped: invalid VC_KEEP_RELEASES=$keep"; return 0; }
+  (( keep > 0 )) || { log 'release cleanup disabled by VC_KEEP_RELEASES=0'; return 0; }
+  local root=/opt/voicechat/releases
+  local before after plan directory images image image_ok
+  before=$(df -Pk / | awk 'NR==2 {print $4}')
+  if ! plan=$(docker image ls --format '{{.Repository}}:{{.Tag}}' |
+    python3 "$REPO/scripts/prod/release_retention.py" \
+      --root "$root" --keep "$keep" --current "$REPO" \
+      --production-env /etc/voicechat/production.env \
+      --operations "$OPERATION_ROOT" \
+      --rollback "${VC_ROLLBACK_REPO_DIR:-}" \
+      --compose-file "${COMPOSE_FILE:-}"); then
+    log 'release cleanup skipped: retention plan failed'
+    return 0
+  fi
+  while IFS='|' read -r directory images; do
+    [[ -n $directory ]] || continue
+    [[ $directory =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{8,40}$ ]] || { log 'release cleanup skipped invalid directory'; continue; }
+    image_ok=1
+    for image in $images; do
+      if docker image rm "$image"; then
+        log "removed old Core image $image"
+      else
+        log "kept release $directory: Core image $image is still in use or removal failed"
+        image_ok=0
+        break
+      fi
+    done
+    (( image_ok )) || continue
+    if [[ -d $root/$directory && ! -L $root/$directory ]] && delivery_authority verify; then
+      if rm -r -- "$root/$directory"; then
+        log "removed old release directory $root/$directory"
+      else
+        log "could not remove old release directory $root/$directory"
+      fi
+    fi
+  done < <(python3 -c 'import json,sys; [print(x["directory"]+"|"+" ".join(x["images"])) for x in json.load(sys.stdin)]' <<<"$plan")
+  docker builder prune -f || log 'Docker build cache cleanup failed'
+  docker image prune -f || log 'Docker dangling image cleanup failed'
+  after=$(df -Pk / | awk 'NR==2 {print $4}')
+  log "release cleanup freed $(( (after - before) / 1024 )) MiB; available $(( after / 1024 )) MiB"
+}
+
 # Optional control-plane contract. Plain invocations retain the legacy launcher.
 operation_id=
 expected_commit=
@@ -402,6 +447,7 @@ for ((i = 1; i <= HEALTH_TRIES; i++)); do
     fi
     log "=== деплой успешен: $(curl -fsS -m 5 "$HEALTH_URL") ==="
     delivery_authority verify
+    cleanup_old_releases || log 'release cleanup failed after successful health check'
     exit 0
   fi
   sleep 5
