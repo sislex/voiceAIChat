@@ -1,6 +1,6 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-22
+updated: 2026-09-28
 checked: 55f5a95b
 areas:
   - apps/server/src/claude
@@ -87,17 +87,26 @@ Codex grants currently fail closed with `preview_text_only_unavailable`. Existin
 и сохраняются тем же `onChange`. Маршрут `/settings/llm` открывает этот раздел
 напрямую, а неполный или неизвестный маршрут общих настроек нормализуется к нему.
 Из общего каталога и с фильтрацией через `llm:access` строятся пользовательские
-селекторы в `SettingsModal` (включая AI-помощника) и CI-компонентах.
+селекторы чата и CI-компонентов. Пользовательский AI-помощник ввода удалён:
+`POST /api/prompt/suggest` больше не регистрируется, а его раздел настроек,
+кнопка и клиентские actions отсутствуют.
 `ConversationSettings` редактирует LLM-переопределение конкретного разговора на адресуемой вкладке `/chat/:id/settings/general`: общий `LlmSettingsEditor` показывает исполнитель, провайдер и модель, а `showEngine` сохраняет видимость селектора даже при пустом каталоге персональных engine. Изменение записывает `llmEngineId`, `llmProvider` и `llmModel` только в разговор. Сброс выключает override и при сохранении передаёт для всех трёх полей `null`; это возвращает динамическое наследование эффективных проектных/пользовательских настроек. Вкладка `/chat/:id/settings/context` содержит `ContextInspector`, а legacy `/chat/:id/context` заменяется этим каноническим адресом. У
 Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
-`claude --model` как есть, включая суффикс окна `[1m]`. У Codex —
-`gpt-5.6-sol`, `gpt-6-astra`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`,
-`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex-spark` (в `codex -m`; первый —
-`DEFAULT_CODEX_MODEL`). Новая модель добавляется после первого пункта, поэтому
-действующий default остаётся `gpt-5.6-sol`; выбранный id передаётся в `-m`
-дословно, без алиаса. Старые значения
-из БД/настроек не ломают ход: `normalizeClaudeModel` тянет их к пункту меню по
+`claude --model` как есть, включая суффикс окна `[1m]`. У Codex актуальный каталог состоит из `gpt-6-astra`,
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`; первый пункт
+`gpt-6-astra` является `DEFAULT_CODEX_MODEL`. Выбранный id передаётся в
+`codex -m` дословно, без алиаса. Старые значения
+из БД/настроек не ломают ход:
+
+Настройки разговора `reasoningEffort=low|medium|high|xhigh|max` и независимый
+`deepThinking` входят в `LlmRequest`. Claude получает `--effort`: `xhigh`
+безопасно преобразуется в `high`, а `deepThinking=true` — в `max`. Codex
+получает `model_reasoning_effort` (его `max` преобразуется в `xhigh`) и при
+глубоком мышлении `model_reasoning_summary="detailed"`. Неизвестные CLI-флаги
+не передаются; преобразования зафиксированы тестами fake spawn.
+
+Старые значения `normalizeClaudeModel` тянет их к пункту меню по
 префиксу алиаса (`opus`, `opus-4.5` → `opus[1m]`; неизвестное → `default`), а
 `turns.ts` нормализует Claude до проверки персонального доступа. Пустая модель
 codex (прежний пункт «По умолчанию (из codex)») по-прежнему допустима —
@@ -132,13 +141,11 @@ codex (прежний пункт «По умолчанию (из codex)») по-
 `@voicechat/llm-runner/cli`, но сам `spawn` уже не содержит — см.
 [features/llm-runners.md](features/llm-runners.md).
 
-**Одноразовые вызовы без разговора.** Не всё идёт через `TurnManager`: KB-reranker
-(`kb/reranker.ts`) и помощник промптов (`prompt/suggester.ts`) дергают тот же
-`LlmClient.send` напрямую с `sessionId: null`, `permissionMode: 'plan'`,
-`executionDisabled: true` и ждут единственный `onDone`. Помощник промптов
-(`PromptSuggester`, модель `haiku`) по черновику возвращает переформулировки —
-роут `POST /api/prompt/suggest`, конструируется из инъектированного `claude` в
-`server.ts`, поэтому тесты мокают его через `opts.claude`.
+**Одноразовые вызовы без разговора.** Не всё идёт через `TurnManager`:
+KB-reranker (`kb/reranker.ts`) вызывает `LlmClient.send` напрямую с
+`sessionId: null`, `permissionMode: 'plan'`, `executionDisabled: true` и ждёт
+единственный `onDone`. Пользовательский помощник промптов и его HTTP-маршрут
+удалены; внутреннее применение `permissionMode` одноразовыми вызовами сохранено.
 
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`, но сам уже не
 читает локальный `HOME`: при настроенном исполнителе `routes/rest.ts` получает

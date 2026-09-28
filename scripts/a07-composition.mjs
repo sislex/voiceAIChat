@@ -8,8 +8,8 @@ import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
 export const requiredSources = Object.freeze({
   '@sislexa/identity': ['sislex/identity', 'e33958be66c7a1f44b3cb4c6b4619f7c2fefe322'],
   '@sislexa/billing': ['sislex/billing', '41263c7c20f8e852b508bbd76220245fbb62bd10'],
-  '@sislex/llm-runner': ['sislex/llm-runner', '097282f2418c245454fe963b10d9b61e0b4d814a'],
-  '@sislex/runner-contracts': ['sislex/llm-runner', '097282f2418c245454fe963b10d9b61e0b4d814a'],
+  '@sislex/llm-runner': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
+  '@sislex/runner-contracts': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
   '@sislexa/sdk': ['sislex/sdk', 'f6313db5ff58cc35fa8dacc90b9844f9706dcfba'],
   '@sislexa/analytics': ['sislex/analytics', 'a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942']
 })

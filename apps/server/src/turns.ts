@@ -840,6 +840,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               llmProvider: conv.llmProvider ?? settings.llmProvider,
               llmModel: conv.llmModel ?? (settings.llmProvider === 'claude' ? settings.model : settings.codexModel),
               permissionMode: conv.permissionMode ?? settings.permissionMode,
+              reasoningEffort: conv.reasoningEffort,
+              deepThinking: conv.deepThinking,
               kbContextMode: conv.kbContextMode ?? 'auto', projectId: conv.projectId ?? null
             } : null
           }
@@ -1023,6 +1025,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
+        reasoningEffort: conv?.reasoningEffort ?? 'medium', deepThinking: conv?.deepThinking ?? false,
         remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),

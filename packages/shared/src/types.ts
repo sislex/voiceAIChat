@@ -848,6 +848,10 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
   }
 }
 
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -875,6 +879,10 @@ export interface Conversation {
    * умолчанию codex). Действует лишь вместе с llmProvider; null — из настроек.
    */
   llmModel: string | null
+  /** Reasoning effort for subsequent turns. Legacy rows read as medium. */
+  reasoningEffort?: ReasoningEffort
+  /** Independent extended-thinking preference for subsequent turns. */
+  deepThinking?: boolean
   /** Режим прав агента только этого разговора; null — из общих настроек. */
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
