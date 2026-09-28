@@ -104,6 +104,33 @@ describe('chat settings adapter', () => {
 })
 
 describe('immutable chat contract artifact', () => {
+  // @testCase TC-REG-08
+  it('publishes the versioned group and membership contract with its exact digest', () => {
+    expect(CHAT_CONTRACT_ARTIFACT).toMatchObject({
+      artifactVersion: 2,
+      contractVersion: '1.1.0',
+      rest: {
+        conversationGroups: '/api/conversation-groups',
+        conversationGroup: '/api/conversation-groups/:groupId',
+        conversationMembership: '/api/conversations/:conversationId/membership'
+      },
+      semantics: {
+        systemConversationGroupsComputed: true,
+        archiveClearsMembershipAtomically: true,
+        unarchiveRestoresMembership: false
+      }
+    })
+  })
+
+  // @testCase TC-UI-06
+  it('keeps the existing context/settings surface additive for Core UI desktop and mobile consumers', () => {
+    expect(CHAT_CONTRACT_ARTIFACT.rest).toMatchObject({
+      context: '/api/chat/context',
+      settings: '/api/chat/settings',
+      conversationSettings: '/api/conversations/:conversationId/settings'
+    })
+  })
+
   it('is frozen and matches its published digest', () => {
     expect(Object.isFrozen(CHAT_CONTRACT_ARTIFACT)).toBe(true)
     expect(createHash('sha256').update(canonicalChatContractArtifact()).digest('hex')).toBe(CHAT_CONTRACT_ARTIFACT_SHA256)

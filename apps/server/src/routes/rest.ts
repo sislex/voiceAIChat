@@ -827,11 +827,71 @@ export async function registerRest(
     return res.file
   })
 
+  app.get(REST.conversationGroups, async (req) => ({
+    system: [{ id: 'all', name: 'Все' }, { id: 'archive', name: 'Архив бесед' }],
+    groups: await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)
+  }))
+
+  app.post<{ Body: { name?: unknown } }>(REST.conversationGroups, async (req, reply) => {
+    if (typeof req.body?.name !== 'string' || !req.body.name.trim()) return reply.code(400).send({ error: 'name is required' })
+    return reply.code(201).send(await db.chat.createConversationGroup(uid(req), req.user!.account!.tenantId, req.body.name))
+  })
+
+  app.patch<{ Params: { id: string }; Body: { name?: unknown; conversationIds?: unknown } }>(
+    '/api/conversation-groups/:id',
+    async (req, reply) => {
+      if (req.params.id === 'all' || req.params.id === 'archive') return reply.code(404).send({ error: 'not found' })
+      const { name, conversationIds } = req.body ?? {}
+      if (name === undefined && conversationIds === undefined) return reply.code(400).send({ error: 'name or conversationIds is required' })
+      if (name !== undefined && (typeof name !== 'string' || !name.trim())) return reply.code(400).send({ error: 'name is required' })
+      if (conversationIds !== undefined && (!Array.isArray(conversationIds) || conversationIds.some((id) => typeof id !== 'string'))) {
+        return reply.code(400).send({ error: 'conversationIds must be a string array' })
+      }
+      try {
+        const group = await db.chat.updateConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id, {
+          ...(typeof name === 'string' ? { name } : {}),
+          ...(Array.isArray(conversationIds) ? { conversationIds: conversationIds as string[] } : {})
+        })
+        return group ?? reply.code(404).send({ error: 'not found' })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return reply.code(message === 'Conversation not found' ? 404 : 409).send({ error: message })
+      }
+    }
+  )
+
+  app.delete<{ Params: { id: string } }>('/api/conversation-groups/:id', async (req, reply) => {
+    if (req.params.id === 'all' || req.params.id === 'archive') return reply.code(404).send({ error: 'not found' })
+    return await db.chat.deleteConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id)
+      ? { ok: true }
+      : reply.code(404).send({ error: 'not found' })
+  })
+
+  app.put<{ Params: { id: string }; Body: { groupIds?: unknown; archived?: unknown } }>(
+    '/api/conversations/:id/membership',
+    async (req, reply) => {
+      const { groupIds, archived } = req.body ?? {}
+      if (!Array.isArray(groupIds) || groupIds.some((id) => typeof id !== 'string') || typeof archived !== 'boolean') {
+        return reply.code(400).send({ error: 'groupIds and archived are required' })
+      }
+      try {
+        const conversation = await db.chat.setConversationMembership(
+          uid(req), req.user!.account!.tenantId, req.params.id,
+          { groupIds: groupIds as string[], archived }
+        )
+        return conversation ?? reply.code(404).send({ error: 'not found' })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return reply.code(message === 'Group not found' ? 404 : 409).send({ error: message })
+      }
+    }
+  )
+
   // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
   // (по умолчанию их в списке нет, см. `listConversations`).
   // since — окно «свежие беседы» (сайдбар грузит текущую неделю), beforeAt+beforeId
   // с limit — курсорная догрузка секции «Более старые» порциями.
-  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
+  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string; view?: string; groupId?: string } }>(
     REST.conversations,
     async (req, reply) => {
       const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
@@ -841,11 +901,18 @@ export async function registerRest(
         return value !== undefined && Number.isFinite(parsed) ? parsed : undefined
       }
       const beforeAt = num(req.query.beforeAt)
+      if (req.query.view !== undefined && req.query.view !== 'all' && req.query.view !== 'archive') return reply.code(400).send({ error: 'view must be all or archive' })
+      if (req.query.groupId) {
+        const groups = await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)
+        if (!groups.some((group) => group.id === req.query.groupId)) return reply.code(404).send({ error: 'not found' })
+      }
       return await db.chat.listConversations(uid(req), {
         tenantId: req.user!.account!.tenantId,
         scope,
         projectId: req.query.projectId,
         includeCompleted: queryFlag(req.query.includeCompleted),
+        archived: req.query.view === 'archive',
+        groupId: req.query.groupId,
         ...(num(req.query.since) !== undefined ? { since: num(req.query.since)! } : {}),
         ...(beforeAt !== undefined && req.query.beforeId ? { before: { updatedAt: beforeAt, id: req.query.beforeId } } : {}),
         ...(num(req.query.limit) !== undefined ? { limit: num(req.query.limit)! } : {})
@@ -937,10 +1004,15 @@ export async function registerRest(
     }
   })
 
-  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
+  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string; view?: string; groupId?: string } }>(REST.conversationsSearch, async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted), tenantId: req.user!.account!.tenantId })
+    if (req.query.view !== undefined && req.query.view !== 'all' && req.query.view !== 'archive') return reply.code(400).send({ error: 'view must be all or archive' })
+    if (req.query.groupId) {
+      const groups = await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)
+      if (!groups.some((group) => group.id === req.query.groupId)) return reply.code(404).send({ error: 'not found' })
+    }
+    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted), tenantId: req.user!.account!.tenantId, archived: req.query.view === 'archive', groupId: req.query.groupId })
   })
 
   /**

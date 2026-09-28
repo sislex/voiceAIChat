@@ -848,6 +848,28 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
   }
 }
 
+export interface ConversationGroup {
+  id: string
+  name: string
+  position: number
+  createdAt: number
+  updatedAt: number
+  conversationCount?: number
+}
+
+export interface ConversationGroupCatalog {
+  system: readonly [
+    { id: 'all'; name: 'Все' },
+    { id: 'archive'; name: 'Архив бесед' }
+  ]
+  groups: ConversationGroup[]
+}
+
+export interface ConversationMembershipMutation {
+  groupIds: string[]
+  archived: boolean
+}
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -901,6 +923,10 @@ export interface Conversation {
   /** Задача, с которой связан чат (кнопка «Чат» на карточке); null — не связан. */
   taskId?: string | null
 
+  /** Архив является отдельным взаимоисключающим состоянием; null означает активную беседу. */
+  archivedAt?: number | null
+  /** Пользовательские группы активной беседы. У архивной беседы список всегда пуст. */
+  groupIds?: string[]
   /** Статус жизненного цикла чата; дефолт 'developing'. */
   status?: ConversationStatus
   /** Суммарная стоимость всех сохранённых AI-ходов; null, пока итог недостоверен. */

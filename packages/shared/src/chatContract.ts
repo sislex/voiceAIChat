@@ -11,6 +11,8 @@ export interface ChatDelegationReference {
 export const CHAT_PERMISSIONS = [
   'chat:conversations:read',
   'chat:conversations:create',
+  'chat:groups:read',
+  'chat:groups:write',
   'chat:messages:write',
   'chat:turns:run',
   'chat:turns:cancel',
@@ -196,6 +198,30 @@ export interface ChatSettingsConflict {
   current: ChatSettingsSnapshot
 }
 
+/** Persistent user group; system groups are computed views and never use this model. */
+export interface ChatConversationGroup {
+  id: string
+  name: string
+  position: number
+  createdAt: number
+  updatedAt: number
+  conversationCount?: number
+}
+
+export interface ChatConversationGroupCatalog {
+  system: readonly [
+    { id: 'all'; name: 'Все' },
+    { id: 'archive'; name: 'Архив бесед' }
+  ]
+  groups: readonly ChatConversationGroup[]
+}
+
+/** Full atomic replacement: archive and user membership cannot coexist. */
+export interface ChatConversationMembershipMutation {
+  groupIds: readonly string[]
+  archived: boolean
+}
+
 export const CHAT_SETTING_OWNERS = immutable({
   account: [
     'llmEngineId', 'llmProvider', 'model', 'codexModel', 'permissionMode', 'workdir', 'execTarget',
@@ -294,13 +320,16 @@ export function resolveChatReconnect(input: {
 }
 
 const artifactPayload = {
-  artifactVersion: 1,
+  artifactVersion: 2,
   contract: 'sislexa.core.chat',
-  contractVersion: '1.0.0',
+  contractVersion: '1.1.0',
   rest: {
     context: '/api/chat/context',
     settings: '/api/chat/settings',
-    conversationSettings: '/api/conversations/:conversationId/settings'
+    conversationSettings: '/api/conversations/:conversationId/settings',
+    conversationGroups: '/api/conversation-groups',
+    conversationGroup: '/api/conversation-groups/:groupId',
+    conversationMembership: '/api/conversations/:conversationId/membership'
   },
   websocket: {
     client: ['chat.connect'],
@@ -310,14 +339,17 @@ const artifactPayload = {
     capabilityGrantsPermission: false,
     reconnectReverifiesContext: true,
     missedEventsRequireSnapshot: true,
-    deviceSettingsPersistedByCore: false
+    deviceSettingsPersistedByCore: false,
+    systemConversationGroupsComputed: true,
+    archiveClearsMembershipAtomically: true,
+    unarchiveRestoresMembership: false
   },
   settingsOwnership: CHAT_SETTING_OWNERS
 } as const
 
 /** Canonical, deeply frozen handoff artifact. Its canonical JSON has the exported SHA-256. */
 export const CHAT_CONTRACT_ARTIFACT = immutable(artifactPayload)
-export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'a11dfc0d9dd95abbb455198e6050019b4a7355b0af12df7bdf6790b1293112d4'
+export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'b2de821f85c16478e8e17390608a504941c64ad820bc8dbd52635be9250afe2a'
 
 export function canonicalChatContractArtifact(): string {
   return JSON.stringify(CHAT_CONTRACT_ARTIFACT)

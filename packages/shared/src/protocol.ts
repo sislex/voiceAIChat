@@ -5,6 +5,8 @@ import type { MakePresenceClient } from '@voicechat/make-contracts/make'
 import type {
   ClaudeLogEntry,
   Conversation,
+  ConversationGroupCatalog,
+  ConversationMembershipMutation,
   LlmProvider,
   Message,
   MessageAttachment,
@@ -85,6 +87,9 @@ export interface ConversationWithMessages {
   messages: Message[]
 }
 
+export type ConversationGroupsResponse = ConversationGroupCatalog
+export type UpdateConversationMembershipBody = ConversationMembershipMutation
+
 export interface AddMessageArgs {
   /** Заранее назначенный клиентом id; ключ идемпотентности повторного POST. */
   messageId?: string
@@ -132,6 +137,9 @@ export const REST = {
   uiPerformance: '/api/ui-performance',
   uiPerformanceReport: '/api/ui-performance/report',
   health: '/api/health',
+  conversationGroups: '/api/conversation-groups',
+  conversationGroup: (id: string) => `/api/conversation-groups/${encodeURIComponent(id)}`,
+  conversationMembership: (id: string) => `/api/conversations/${encodeURIComponent(id)}/membership`,
   kbStatus: '/api/kb/status',
   kbTopics: '/api/kb/topics',
   kbSearch: '/api/kb/search',
