@@ -848,6 +848,27 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
   }
 }
 
+export const SYSTEM_CONVERSATION_GROUP_IDS = ['all', 'archive'] as const
+export type SystemConversationGroupId = typeof SYSTEM_CONVERSATION_GROUP_IDS[number]
+
+export interface ConversationGroup {
+  id: string
+  name: string
+  position: number
+  createdAt: number
+  updatedAt: number
+  conversationCount?: number
+}
+
+export interface ConversationGroupCatalog {
+  groups: ConversationGroup[]
+}
+
+export interface ConversationMembershipMutation {
+  groupIds: string[]
+  archived: boolean
+}
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -903,6 +924,10 @@ export interface Conversation {
 
   /** Статус жизненного цикла чата; дефолт 'developing'. */
   status?: ConversationStatus
+  /** Момент архивирования; null означает активную беседу. */
+  archivedAt?: number | null
+  /** Пользовательские группы беседы; архивная беседа всегда имеет пустой список. */
+  groupIds?: string[]
   /** Суммарная стоимость всех сохранённых AI-ходов; null, пока итог недостоверен. */
   costUsd?: number | null
   /** Полнота серверного агрегата стоимости. Поле отсутствует у legacy-клиентов. */

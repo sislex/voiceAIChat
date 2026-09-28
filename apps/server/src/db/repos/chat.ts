@@ -1,7 +1,7 @@
 // Домен «chat»: таблицы conversations, messages, messages_fts, fts_state, speakers, conversation_context_events, conversation_draft_requests, conversation_turn_queue, conversation_turn_control, conversation_workspaces.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, type ConversationGroup, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
 import { MAKE_KIND } from '@voicechat/make-contracts/make'
 import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
@@ -40,6 +40,7 @@ interface ConversationRow {
   cost_prices_stamp?: number | null
   cost_dirty?: number
   last_exec_target?: string | null
+  archived_at: number | null
 }
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined (не роняет чтение ленты). */
@@ -362,6 +363,84 @@ export class ChatRepo extends BaseRepo {
     return await this.getConversation(userId, id)
   }
 
+  async listConversationGroups(userId: string, tenantId: string): Promise<ConversationGroup[]> {
+    const rows = await this.sql.all<{
+      id: string; name: string; position: number; created_at: number; updated_at: number; conversation_count: number
+    }>(`SELECT g.id, g.name, g.position, g.created_at, g.updated_at,
+        COUNT(m.conversation_id) AS conversation_count
+      FROM conversation_groups g
+      LEFT JOIN conversation_group_memberships m ON m.group_id = g.id
+      WHERE g.user_id = ? AND g.tenant_id = ?
+      GROUP BY g.id, g.name, g.position, g.created_at, g.updated_at
+      ORDER BY g.position, g.id`, [userId, tenantId])
+    return rows.map((row) => ({ id: row.id, name: row.name, position: row.position,
+      createdAt: row.created_at, updatedAt: row.updated_at, conversationCount: Number(row.conversation_count) }))
+  }
+
+  async createConversationGroup(userId: string, tenantId: string, rawName: string): Promise<ConversationGroup> {
+    const name = rawName.trim()
+    if (!name) throw new Error('group name is required')
+    return await this.sql.transaction(async () => {
+      const row = await this.sql.get<{ position: number }>(`SELECT COALESCE(MAX(position), -1) + 1 AS position
+        FROM conversation_groups WHERE user_id = ? AND tenant_id = ?`, [userId, tenantId])
+      const id = this.newId()
+      const ts = this.now()
+      const position = Number(row?.position ?? 0)
+      await this.sql.run(`INSERT INTO conversation_groups (id, tenant_id, user_id, name, position, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`, [id, tenantId, userId, name, position, ts, ts])
+      return { id, name, position, createdAt: ts, updatedAt: ts, conversationCount: 0 }
+    })
+  }
+
+  async updateConversationGroup(userId: string, tenantId: string, groupId: string, input: { name?: string; conversationIds?: string[] }): Promise<ConversationGroup | null> {
+    if (input.name !== undefined && !input.name.trim()) throw new Error('group name is required')
+    const conversationIds = input.conversationIds === undefined ? undefined : [...new Set(input.conversationIds)].sort()
+    return await this.sql.transaction(async () => {
+      const group = await this.sql.get<{ id: string }>(`SELECT id FROM conversation_groups WHERE id = ? AND user_id = ? AND tenant_id = ?`, [groupId, userId, tenantId])
+      if (!group) return null
+      if (conversationIds) {
+        for (const conversationId of conversationIds) {
+          // Lock every conversation in the same transaction as composition replacement.
+          // Archiving takes the same row lock, so the invariant cannot be lost in a race.
+          await this.sql.run(`UPDATE conversations SET id = id WHERE id = ? AND user_id = ? AND tenant_id = ?`, [conversationId, userId, tenantId])
+          const conversation = await this.sql.get<{ archived_at: number | null }>(`SELECT archived_at FROM conversations WHERE id = ? AND user_id = ? AND tenant_id = ?`, [conversationId, userId, tenantId])
+          if (!conversation) throw new Error('conversation not found')
+          if (conversation.archived_at !== null) throw new Error('archived conversation cannot join a group')
+        }
+        await this.sql.run(`DELETE FROM conversation_group_memberships WHERE group_id = ?`, [groupId])
+        for (const conversationId of conversationIds) await this.sql.run(`INSERT INTO conversation_group_memberships (group_id, conversation_id) VALUES (?, ?)`, [groupId, conversationId])
+      }
+      if (input.name !== undefined) await this.sql.run(`UPDATE conversation_groups SET name = ?, updated_at = ? WHERE id = ?`, [input.name.trim(), this.now(), groupId])
+      return (await this.listConversationGroups(userId, tenantId)).find((item) => item.id === groupId) ?? null
+    })
+  }
+
+  async deleteConversationGroup(userId: string, tenantId: string, groupId: string): Promise<boolean> {
+    const result = await this.sql.run(`DELETE FROM conversation_groups WHERE id = ? AND user_id = ? AND tenant_id = ?`, [groupId, userId, tenantId])
+    return result.changes > 0
+  }
+
+  async setConversationMembership(userId: string, tenantId: string, conversationId: string, input: { groupIds: string[]; archived: boolean }): Promise<Conversation | null> {
+    const groupIds = [...new Set(input.groupIds)]
+    if (input.archived && groupIds.length) throw new Error('archived conversation cannot join a group')
+    return await this.sql.transaction(async () => {
+      await this.sql.run(`UPDATE conversations SET id = id WHERE id = ? AND user_id = ? AND tenant_id = ?`, [conversationId, userId, tenantId])
+      const conversation = await this.sql.get<{ id: string }>(`SELECT id FROM conversations WHERE id = ? AND user_id = ? AND tenant_id = ?`, [conversationId, userId, tenantId])
+      if (!conversation) return null
+      for (const groupId of groupIds) {
+        const group = await this.sql.get(`SELECT 1 FROM conversation_groups WHERE id = ? AND user_id = ? AND tenant_id = ?`, [groupId, userId, tenantId])
+        if (!group) throw new Error('group not found')
+      }
+      await this.sql.run(`DELETE FROM conversation_group_memberships WHERE conversation_id = ?`, [conversationId])
+      const archivedAt = input.archived ? this.now() : null
+      await this.sql.run(`UPDATE conversations SET archived_at = ?, updated_at = ? WHERE id = ?`, [archivedAt, this.now(), conversationId])
+      if (!input.archived) {
+        for (const groupId of groupIds) await this.sql.run(`INSERT INTO conversation_group_memberships (group_id, conversation_id) VALUES (?, ?)`, [groupId, conversationId])
+      }
+      return await this.getConversation(userId, conversationId)
+    })
+  }
+
   /**
    * Список бесед пользователя. Чаты задач, лежащих в колонке с семантикой
    * `done`, из него убраны: завершённая задача забивала бы сайдбар навсегда.
@@ -383,6 +462,7 @@ export class ChatRepo extends BaseRepo {
     before?: { updatedAt: number; id: string }
     limit?: number
     tenantId?: string
+    groupId?: string
   }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
@@ -397,6 +477,9 @@ export class ChatRepo extends BaseRepo {
            AND (@tenantId IS NULL OR c.tenant_id = @tenantId)
            AND c.scope = @scope
            AND (@scope <> 'kanban' OR c.project_id = @projectId)
+           AND ((@groupId = 'archive' AND c.archived_at IS NOT NULL)
+             OR (@groupId <> 'archive' AND c.archived_at IS NULL
+               AND (@groupId = 'all' OR EXISTS (SELECT 1 FROM conversation_group_memberships gm WHERE gm.conversation_id = c.id AND gm.group_id = @groupId))))
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (@includeCompleted = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (@since IS NULL OR c.updated_at >= @since)
@@ -407,6 +490,7 @@ export class ChatRepo extends BaseRepo {
         tenantId: opts?.tenantId ?? null,
         scope,
         projectId: opts?.projectId ?? null,
+        groupId: opts?.groupId ?? 'all',
         includeCompleted: opts?.includeCompleted ? 1 : 0,
         since: opts?.since ?? null,
         beforeAt: opts?.before?.updatedAt ?? null,
@@ -464,7 +548,7 @@ export class ChatRepo extends BaseRepo {
    * только с `includeCompleted` — иначе выключенный фильтр возвращал бы их
    * через строку поиска.
    */
-  async searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean; tenantId?: string }): Promise<Conversation[]> {
+  async searchConversations(userId: string, query: string, opts?: { scope?: ConversationScope; projectId?: string; includeCompleted?: boolean; tenantId?: string; groupId?: string }): Promise<Conversation[]> {
     const scope = opts?.scope ?? 'chat'
     if (scope === 'kanban' && !opts?.projectId) return []
     const q = query.trim()
@@ -479,12 +563,15 @@ export class ChatRepo extends BaseRepo {
            AND (? IS NULL OR c.tenant_id = ?)
            AND c.scope = ?
            AND (? <> 'kanban' OR c.project_id = ?)
+           AND ((? = 'archive' AND c.archived_at IS NOT NULL)
+             OR (? <> 'archive' AND c.archived_at IS NULL
+               AND (? = 'all' OR EXISTS (SELECT 1 FROM conversation_group_memberships gm WHERE gm.conversation_id = c.id AND gm.group_id = ?))))
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
                        WHERE m.conversation_id = c.id AND ulower(m.text) LIKE ? ESCAPE '\\'))
-         ORDER BY c.updated_at DESC`, [userId, opts?.tenantId ?? null, opts?.tenantId ?? null, scope, scope, opts?.projectId ?? null, opts?.includeCompleted ? 1 : 0, like, like])) as Array<ConversationRow & { message_count: number }>
+         ORDER BY c.updated_at DESC`, [userId, opts?.tenantId ?? null, opts?.tenantId ?? null, scope, scope, opts?.projectId ?? null, opts?.groupId ?? 'all', opts?.groupId ?? 'all', opts?.groupId ?? 'all', opts?.groupId ?? 'all', opts?.includeCompleted ? 1 : 0, like, like])) as Array<ConversationRow & { message_count: number }>
     const costs = await this.conversationCosts(rows)
     return await Promise.all(rows.map(async (r) => await this.mapConversation(r, r.message_count, costs.get(r.id))))
   }
@@ -1546,6 +1633,8 @@ export class ChatRepo extends BaseRepo {
       projectPreviewUrl: row.project_id ? (((await this.sql.get(`SELECT preview_url FROM projects WHERE id = ?`, [row.project_id])) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
       status: normStatus(row.status),
+      archivedAt: row.archived_at ?? null,
+      groupIds: (await this.sql.all<{ group_id: string }>(`SELECT m.group_id FROM conversation_group_memberships m JOIN conversation_groups g ON g.id = m.group_id WHERE m.conversation_id = ? ORDER BY g.position, g.id`, [row.id])).map((entry) => entry.group_id),
       ...cost,
       lastExecTarget: row.last_exec_target ?? null
     }

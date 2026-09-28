@@ -1195,6 +1195,35 @@ describe('VoiceChatDb — хранилища машин', () => {
   })
 })
 
+describe('VoiceChatDb — группы бесед', () => {
+  // @testCase TC-INT-07
+  it.skipIf(ON_POSTGRES)('сохраняет порядок, членство и архив после рестарта', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'voicechat-groups-'))
+    const file = join(dir, 'db.sqlite')
+    let db = new VoiceChatDb(file)
+    await db.identity.createUser(U, '', 'admin')
+    const tenantId = (await db.identity.getAccountAccess(U))!.tenant.id
+    const active = await db.chat.createConversation(U, 'active', null, null, 'chat', tenantId)
+    const archived = await db.chat.createConversation(U, 'archived', null, null, 'chat', tenantId)
+    const first = await db.chat.createConversationGroup(U, tenantId, 'First')
+    const second = await db.chat.createConversationGroup(U, tenantId, 'Second')
+    await db.chat.setConversationMembership(U, tenantId, active.id, { groupIds: [first.id, second.id], archived: false })
+    await db.chat.setConversationMembership(U, tenantId, archived.id, { groupIds: [], archived: true })
+    await db.close()
+
+    db = new VoiceChatDb(file)
+    await db.ready
+    expect(await db.chat.listConversationGroups(U, tenantId)).toMatchObject([
+      { id: first.id, position: 0, conversationCount: 1 },
+      { id: second.id, position: 1, conversationCount: 1 }
+    ])
+    expect(await db.chat.getConversation(U, active.id)).toMatchObject({ groupIds: [first.id, second.id], archivedAt: null })
+    expect(await db.chat.getConversation(U, archived.id)).toMatchObject({ groupIds: [], archivedAt: expect.any(Number) })
+    await db.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe('VoiceChatDb — персистентная очередь ходов', () => {
   it.skipIf(ON_POSTGRES)('дедуплицирует повторную доставку, сохраняет порядок и переживает restart', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'voicechat-queue-'))

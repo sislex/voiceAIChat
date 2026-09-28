@@ -137,6 +137,65 @@ describe('REST: conversations/messages/settings', () => {
   })
 
   // @testCase TC-API-01
+  it('CRUD групп сохраняет порядок и валидирует названия', async () => {
+    const work = await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: ' Работа ' } })
+    const personal = await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'Личное' } })
+    expect(work.statusCode).toBe(200)
+    expect(personal.statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/conversation-groups' })).json().groups)
+      .toMatchObject([{ id: work.json().id, name: 'Работа', position: 0 }, { id: personal.json().id, name: 'Личное', position: 1 }])
+    expect((await inj({ method: 'PATCH', url: `/api/conversation-groups/${work.json().id}`, payload: { name: 'Проекты' } })).json().name).toBe('Проекты')
+    expect((await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: '   ' } })).statusCode).toBe(400)
+    expect((await inj({ method: 'DELETE', url: `/api/conversation-groups/${personal.json().id}` })).json()).toEqual({ ok: true })
+    expect((await inj({ method: 'DELETE', url: `/api/conversation-groups/${personal.json().id}` })).statusCode).toBe(404)
+  })
+
+  // @testCase TC-INT-02
+  // @testCase TC-UI-06
+  // This Core-side consumer regression verifies the filtered payload used by both responsive layouts;
+  // detailed desktop/mobile DOM coverage belongs to the external Core UI owner repository.
+  it('поддерживает множественное членство и вычисляемые системные выборки', async () => {
+    const first = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Первая' } })).json()
+    const second = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Вторая' } })).json()
+    const archived = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Архивная' } })).json()
+    const one = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'Один' } })).json()
+    const two = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'Два' } })).json()
+    await inj({ method: 'PUT', url: `/api/conversations/${first.id}/membership`, payload: { groupIds: [one.id, two.id, one.id], archived: false } })
+    await inj({ method: 'PUT', url: `/api/conversations/${archived.id}/membership`, payload: { groupIds: [], archived: true } })
+    const ids = async (groupId: string) => (await inj({ method: 'GET', url: `/api/conversations?groupId=${groupId}` })).json().map((item: { id: string }) => item.id)
+    expect(await ids('all')).toEqual(expect.arrayContaining([first.id, second.id]))
+    expect(await ids('all')).not.toContain(archived.id)
+    expect(await ids(one.id)).toEqual([first.id])
+    expect(await ids(two.id)).toEqual([first.id])
+    expect(await ids('archive')).toEqual([archived.id])
+  })
+
+  // @testCase TC-INT-03
+  it('архивирует атомарно и разархивирует без восстановления групп', async () => {
+    const conversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Жизненный цикл' } })).json()
+    const first = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'A' } })).json()
+    const second = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'B' } })).json()
+    await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [first.id, second.id], archived: false } })
+    const archived = await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [], archived: true } })
+    expect(archived.json()).toMatchObject({ archivedAt: expect.any(Number), groupIds: [] })
+    const restored = await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [], archived: false } })
+    expect(restored.json()).toMatchObject({ archivedAt: null, groupIds: [] })
+  })
+
+  // @testCase TC-NEG-04
+  it('не раскрывает чужие группы и запрещает архивное членство и системные мутации', async () => {
+    const group = (await inj({ method: 'POST', url: '/api/conversation-groups', payload: { name: 'Секретная' } })).json()
+    const conversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Архив' } })).json()
+    await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [], archived: true } })
+    expect((await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, payload: { groupIds: [group.id], archived: true } })).statusCode).toBe(409)
+    for (const id of ['all', 'archive']) expect((await inj({ method: 'PATCH', url: `/api/conversation-groups/${id}`, payload: { name: 'Нет' } })).statusCode).toBe(404)
+    await db.identity.createUser('outsider', '', 'developer')
+    const outsider = signToken({ name: 'outsider', role: 'developer' }, SECRET)
+    const headers = { authorization: `Bearer ${outsider}` }
+    expect((await inj({ method: 'PATCH', url: `/api/conversation-groups/${group.id}`, headers, payload: { name: 'Украдено' } })).statusCode).toBe(404)
+    expect((await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, headers, payload: { groupIds: [], archived: false } })).statusCode).toBe(404)
+  })
+
   it('Make notes GET/PUT сохраняет прежний контракт stack/uiKit и частичные обновления', async () => {
     const conv = await db.chat.createConversation(U, 'Настройки Make', 'make')
     const pairs = [
