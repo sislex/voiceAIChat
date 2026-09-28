@@ -431,6 +431,10 @@ export class VoiceChatDb {
         WHEN assistant_kind = 'web-recorder' THEN 'web-reader'
         ELSE 'chat' END`)
     }
+    if (!convCols.some((c) => c.name === 'archived_at')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN archived_at INTEGER`)
+    }
+    await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_archive_updated ON conversations(user_id, tenant_id, scope, archived_at, updated_at DESC)`)
     await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_user_scope_project_updated ON conversations(user_id, scope, project_id, updated_at DESC)`)
     // Чат карточки ищется по task_id: индекс по (user_id, scope, …) для этого
     // не годится, и поиск чата вырождался в перебор всех бесед пользователя.

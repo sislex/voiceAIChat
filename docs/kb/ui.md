@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-22
-checked: ba7f3ec5
+updated: 2026-09-28
+checked: b1a5e170
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -22,6 +22,32 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+## Conversation groups and archive contract
+
+Core persists user conversation groups in `conversation_groups` with an explicit stable
+`position`; a new group is appended after the owner's existing groups. Membership is
+many-to-many in `conversation_group_memberships` and both foreign keys cascade on
+deletion. `conversations.archived_at` is the separate archive state.
+
+The public UI contract uses `GET/POST /api/conversation-groups`,
+`PATCH/DELETE /api/conversation-groups/:id`, and
+`PUT /api/conversations/:id/membership` with the full `groupIds` set and
+`archived` flag. Archiving updates `archived_at` and clears every membership in one
+database transaction. Unarchiving does not restore memberships. Empty names are 400,
+missing or foreign groups are hidden as 404, and incompatible archive membership is
+409 without a partial write.
+
+`GET /api/conversations?group=all` returns non-archived conversations,
+`group=archive` returns archived conversations, and a user-group id returns its
+non-archived members. The existing project, completed-task, pagination and scope
+filters remain in the same repository query. The returned `Conversation` includes
+`archivedAt` and ordered `groupIds`.
+
+The separate group rail, its loading/error/empty states, accessible menus, desktop
+collapse/resize integration and mobile drawer behavior are implemented and tested in
+the owner repository `sislexa-core-ui`; Core validates the pinned owner artifact and
+exports the versioned chat contract for that consumer.
 
 ## Core UI owner and consumer boundary
 

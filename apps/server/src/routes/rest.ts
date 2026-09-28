@@ -17,6 +17,7 @@ import { kbViewOf } from '../kb/access.js'
 import { MAKE_ONLY_DISALLOWED_TOOLS } from '../turns.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { registerChatSettingsRoutes } from './chatSettings.js'
+import { ConversationGroupConflict } from '../db/repos/chat.js'
 
 /**
  * Порог замечания о размере постоянной части промпта (в приблизительных
@@ -831,7 +832,7 @@ export async function registerRest(
   // (по умолчанию их в списке нет, см. `listConversations`).
   // since — окно «свежие беседы» (сайдбар грузит текущую неделю), beforeAt+beforeId
   // с limit — курсорная догрузка секции «Более старые» порциями.
-  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
+  app.get<{ Querystring: { scope?: string; projectId?: string; group?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
     REST.conversations,
     async (req, reply) => {
       const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
@@ -841,11 +842,15 @@ export async function registerRest(
         return value !== undefined && Number.isFinite(parsed) ? parsed : undefined
       }
       const beforeAt = num(req.query.beforeAt)
+      const group = req.query.group
+      if (group && group !== 'all' && group !== 'archive' && !(await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)).some((item) => item.id === group)) return reply.code(404).send({ error: 'not found' })
       return await db.chat.listConversations(uid(req), {
         tenantId: req.user!.account!.tenantId,
         scope,
         projectId: req.query.projectId,
         includeCompleted: queryFlag(req.query.includeCompleted),
+        archived: group === 'archive',
+        ...(group && group !== 'all' && group !== 'archive' ? { groupId: group } : {}),
         ...(num(req.query.since) !== undefined ? { since: num(req.query.since)! } : {}),
         ...(beforeAt !== undefined && req.query.beforeId ? { before: { updatedAt: beforeAt, id: req.query.beforeId } } : {}),
         ...(num(req.query.limit) !== undefined ? { limit: num(req.query.limit)! } : {})
@@ -855,6 +860,40 @@ export async function registerRest(
    app.post<{ Body: DesktopMigrationBundle }>(REST.desktopMigration, async (req, reply) => {
     if (!req.body || !Array.isArray(req.body.conversations)) return reply.code(400).send({ error: 'invalid migration bundle' })
     return await db.chat.importDesktopData(uid(req), req.body)
+  })
+
+  app.get(REST.conversationGroups, async (req) => await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId))
+  app.post<{ Body: { name?: string } }>(REST.conversationGroups, async (req, reply) => {
+    if (typeof req.body?.name !== 'string' || !req.body.name.trim()) return reply.code(400).send({ error: 'name is required' })
+    return await db.chat.createConversationGroup(uid(req), req.user!.account!.tenantId, req.body.name)
+  })
+  app.patch<{ Params: { id: string }; Body: { name?: string; conversationIds?: string[] } }>('/api/conversation-groups/:id', async (req, reply) => {
+    if (req.body?.name !== undefined && (typeof req.body.name !== 'string' || !req.body.name.trim())) return reply.code(400).send({ error: 'name is required' })
+    if (req.body?.conversationIds !== undefined && (!Array.isArray(req.body.conversationIds) || req.body.conversationIds.some((id) => typeof id !== 'string'))) return reply.code(400).send({ error: 'invalid conversationIds' })
+    try {
+      const group = await db.chat.updateConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id, req.body ?? {})
+      return group ?? reply.code(404).send({ error: 'not found' })
+    } catch (error) {
+      if (error instanceof ConversationGroupConflict) return reply.code(409).send({ error: error.message })
+      throw error
+    }
+  })
+  app.delete<{ Params: { id: string } }>('/api/conversation-groups/:id', async (req, reply) => {
+    return await db.chat.deleteConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id)
+      ? { ok: true }
+      : reply.code(404).send({ error: 'not found' })
+  })
+  app.put<{ Params: { id: string }; Body: { groupIds?: string[]; archived?: boolean } }>('/api/conversations/:id/membership', async (req, reply) => {
+    if (!Array.isArray(req.body?.groupIds) || req.body.groupIds.some((id) => typeof id !== 'string') || typeof req.body?.archived !== 'boolean') return reply.code(400).send({ error: 'invalid membership' })
+    const groups = await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)
+    if (req.body.groupIds.some((id) => !groups.some((group) => group.id === id))) return reply.code(404).send({ error: 'not found' })
+    try {
+      const conversation = await db.chat.setConversationMembership(uid(req), req.user!.account!.tenantId, req.params.id, { groupIds: req.body.groupIds, archived: req.body.archived })
+      return conversation ?? reply.code(404).send({ error: 'not found' })
+    } catch (error) {
+      if (error instanceof ConversationGroupConflict) return reply.code(409).send({ error: error.message })
+      throw error
+    }
   })
 
   app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {

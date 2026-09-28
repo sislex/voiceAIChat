@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { verifyCoreUi } from './core-ui-artifact.mjs'
+// @testCase TC-UI-06
 test('owner artifact rejects corruption, missing provenance and unsafe entries', () => {
   const root = mkdtempSync(join(tmpdir(), 'core-ui-'))
   try {

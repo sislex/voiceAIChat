@@ -103,7 +103,16 @@ describe('chat settings adapter', () => {
   })
 })
 
+// @testCase TC-REG-08
 describe('immutable chat contract artifact', () => {
+  it('publishes conversation groups, membership and archive-compatible version', () => {
+    expect(CHAT_CONTRACT_ARTIFACT.contractVersion).toBe('1.1.0')
+    expect(CHAT_CONTRACT_ARTIFACT.rest).toMatchObject({
+      conversationGroups: '/api/conversation-groups',
+      conversationGroup: '/api/conversation-groups/:groupId',
+      conversationMembership: '/api/conversations/:conversationId/membership'
+    })
+  })
   it('is frozen and matches its published digest', () => {
     expect(Object.isFrozen(CHAT_CONTRACT_ARTIFACT)).toBe(true)
     expect(createHash('sha256').update(canonicalChatContractArtifact()).digest('hex')).toBe(CHAT_CONTRACT_ARTIFACT_SHA256)
