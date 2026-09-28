@@ -1,9 +1,9 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-27
+updated: 2026-09-29
 checked:
 
-  d185ee5c
+  8891f44d
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -20,6 +20,14 @@ checked:
 ## Core UI test ownership
 
 ### Shared chat exact-artifact acceptance (U10)
+
+For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
+committed Shared contract as version 0.1.11 with bounded Identity
+`>=1.4.2 <1.5.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
+must still contain the accepted 1.4.2/1.2.0 baseline; other peers remain exact.
+The release-tool test checks the packed manifest and source commit. Consumer
+owners must install and gate against the actual released archives without
+disabling npm peer resolution.
 
 `dependency-snapshots.json` pins the 13 supplied S2 owner archives by package,
 version, source commit, SHA-256 and npm integrity. Content-addressed archives live
