@@ -27,7 +27,7 @@ import { randomBytes } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -125,7 +125,6 @@ import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { RemoteLlmClient } from './llm/remoteClient.js'
 import { RunnerFsClient } from './llm/runnerFsClient.js'
-import { PromptSuggester } from './prompt/suggester.js'
 // CLI spawning and profiles belong to the independent LLM Runner. Core
 // requires configured HTTP endpoints instead of silently starting a local CLI.
 import { unconfiguredLlmClient, unconfiguredLoginStatus } from './llm/unconfigured.js'
@@ -619,31 +618,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
   registerUiPerformanceRoutes(app)
   registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
-
-  // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
-  // Историю разговора не трогает, shell выключен.
-  app.post<{ Body: { prompt?: string; modifiers?: import('@voicechat/shared').ModifierPrompt[] } }>(REST.promptSuggest, async (req, reply) => {
-    const prompt = (req.body?.prompt ?? '').trim()
-    if (!prompt) return { variants: [] as Array<{ id: string; text: string }> }
-    const settings = await db.settings.getSettings(uid(req))
-    const access = await db.identity.getUserLlmAccess(uid(req))
-    const provider = isProviderAllowed(access, settings.aiAssistProvider)
-      ? settings.aiAssistProvider
-      : firstAllowedProvider(access)
-    if (!provider) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
-    const requestedModel = settings.aiAssistModel || (provider === 'claude' ? 'haiku' : '')
-    const model = clampModel(access, provider, requestedModel)
-    if (!model) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
-    const client = await (provider === 'codex' ? codex : claude)
-    const modifiers = (req.body?.modifiers ?? []).filter((item) => item.enabled && item.text.trim())
-    try {
-      const texts = await new PromptSuggester(client, model).suggest(prompt, modifiers, uid(req))
-      return { variants: texts.map((text, index) => ({ id: `${Date.now()}-${index}`, text })) }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
-      return reply.code(502).send({ error: message }) as never
-    }
-  })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.

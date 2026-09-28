@@ -1191,6 +1191,20 @@ describe('turns: движок и модель разговора приорит�
     db.close()
   })
 
+  // @testCase TC-INT-01
+  it('snapshots persisted model, reasoning effort and deep thinking into the next runner request', async () => {
+    const db = new VoiceChatDb(':memory:')
+    await db.identity.createUser(U, '', 'admin')
+    const conv = await db.chat.createConversation(U, 'Чат')
+    await db.chat.setConversationExecTarget(U, conv.id, null, undefined, undefined, 'codex', 'gpt-5.6-sol', undefined, undefined, 'high', true)
+
+    const { codex, run } = managers(db)
+    await run(conv.id)
+
+    expect(codex.last()).toMatchObject({ model: 'gpt-5.6-sol', reasoningEffort: 'high', deepThinking: true })
+    await db.close()
+  })
+
   it('без переопределения действуют общие настройки (модель из settings)', async () => {
     const db = new VoiceChatDb(':memory:')
     await db.identity.createUser(U, '', 'admin')

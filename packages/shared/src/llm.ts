@@ -52,6 +52,10 @@ export interface LlmRequest {
   sessionId: string | null
   /** Модель для CLI (алиас, напр. 'sonnet' | 'opus'). */
   model: string
+  /** Provider-neutral reasoning speed; the runner maps it through declared capabilities. */
+  reasoningEffort?: import('./types').ReasoningEffort
+  /** Independent deep-thinking request; unsupported runners must reject it explicitly. */
+  deepThinking?: boolean
   /** Режим прав агента (`--permission-mode`); undefined — не передавать флаг. */
   permissionMode?: string
   /** Желаемый рабочий каталог процесса CLI; исполнитель сам решает, применим ли он. */

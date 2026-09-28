@@ -26,6 +26,7 @@ import type {
   MessageRole,
   MessageSearchResult,
   PermissionMode,
+  ReasoningEffort,
   SessionUser,
   SessionUsage,
   Settings,
@@ -316,6 +317,10 @@ export interface IpcInvokeMap {
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
       llmModel?: string | null
+      /** Скорость рассуждения следующих ходов. undefined — не менять. */
+      reasoningEffort?: ReasoningEffort
+      /** Независимый режим глубокого мышления. undefined — не менять. */
+      deepThinking?: boolean
       /** Режим прав разговора; null — из общих настроек. undefined — не менять. */
       permissionMode?: PermissionMode | null
       /** Режим автоматического KB-контекста. */

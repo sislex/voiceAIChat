@@ -1,7 +1,7 @@
 // Домен «chat»: таблицы conversations, messages, messages_fts, fts_state, speakers, conversation_context_events, conversation_draft_requests, conversation_turn_queue, conversation_turn_control, conversation_workspaces.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type ReasoningEffort, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
 import { MAKE_KIND } from '@voicechat/make-contracts/make'
 import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
@@ -23,6 +23,8 @@ interface ConversationRow {
   llm_engine_id: string | null
   llm_provider: string | null
   llm_model: string | null
+  reasoning_effort: string | null
+  deep_thinking: number | boolean | null
   permission_mode: string | null
   kb_context_mode: string | null
   disabled_context_json: string | null
@@ -284,10 +286,8 @@ export class ChatRepo extends BaseRepo {
       ? settings.contextPresets.find((entry) => entry.id === settings.defaultContextPresetId)
       : undefined
     const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
-    if (disabledContext.length) {
-      await this.sql.run(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), id, userId])
-    }
-    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    await this.sql.run(`UPDATE conversations SET disabled_context_json = ?, reasoning_effort = ?, deep_thinking = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), settings.reasoningEffort, settings.deepThinking ? 1 : 0, id, userId])
+    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, reasoningEffort: settings.reasoningEffort, deepThinking: settings.deepThinking, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -502,7 +502,9 @@ export class ChatRepo extends BaseRepo {
     llmProvider?: LlmProvider | null,
     llmModel?: string | null,
     permissionMode?: PermissionMode | null,
-    llmEngineId?: string | null
+    llmEngineId?: string | null,
+    reasoningEffort?: ReasoningEffort,
+    deepThinking?: boolean
   ): Promise<Conversation | null> {
     // Make-чату машина не назначается: ход её всё равно игнорирует, а запись
     // в БД возвращала бы мусор, который чистит миграция. Явное «none» проходит.
@@ -533,6 +535,14 @@ export class ChatRepo extends BaseRepo {
     if (permissionMode !== undefined) {
       fields.push('permission_mode = ?')
       values.push(permissionMode)
+    }
+    if (reasoningEffort !== undefined) {
+      fields.push('reasoning_effort = ?')
+      values.push(reasoningEffort)
+    }
+    if (deepThinking !== undefined) {
+      fields.push('deep_thinking = ?')
+      values.push(deepThinking ? 1 : 0)
     }
     await this.sql.run(`UPDATE conversations SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, [...values, id, userId])
     return await this.getConversation(userId, id)
@@ -1529,6 +1539,8 @@ export class ChatRepo extends BaseRepo {
       llmEngineId: row.llm_engine_id ?? null,
       llmProvider: row.llm_provider === 'claude' || row.llm_provider === 'codex' ? row.llm_provider : null,
       llmModel: row.llm_model,
+      reasoningEffort: row.reasoning_effort === 'low' || row.reasoning_effort === 'high' || row.reasoning_effort === 'xhigh' || row.reasoning_effort === 'max' ? row.reasoning_effort : 'medium',
+      deepThinking: row.deep_thinking === true || row.deep_thinking === 1,
       // Мусор в колонке (например, откат версии) читаем как «из общих настроек».
       permissionMode:
         row.permission_mode === 'plan' || row.permission_mode === 'acceptEdits' || row.permission_mode === 'bypassPermissions'
