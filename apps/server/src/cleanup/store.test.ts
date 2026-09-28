@@ -62,3 +62,14 @@ it('judges consumers by instance heartbeat and keeps legacy consumers conservati
   expect(s.alive({ pid: 1, host: 'other', instance: dead })).toBe(false)
   expect(s.alive({ pid: 1, host: 'other' })).toBe(true)
 })
+
+it('retires an empty lock left by a failed owner write once it ages, but not a fresh one', async () => {
+  const s = store()
+  writeFileSync(s.path + '.lock', '')
+  await expect(s.locked(async () => 'x')).rejects.toBeInstanceOf(CleanupBusy)
+  age(s.path + '.lock', 11 * 60_000)
+  await expect(s.locked(async () => 'recovered')).resolves.toBe('recovered')
+  writeFileSync(s.path + '.lock', 'not json')
+  age(s.path + '.lock', 11 * 60_000)
+  await expect(s.locked(async () => 'unreadable')).resolves.toBe('unreadable')
+})
