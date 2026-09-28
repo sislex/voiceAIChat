@@ -539,6 +539,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     const sessionId = resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
+    // Reasoning settings are snapshotted before the turn starts; later UI changes affect only the next turn.
+    const reasoningEffort = conv?.reasoningEffort ?? settings.reasoningEffort ?? 'medium'
+    const deepThinking = conv?.deepThinking ?? settings.deepThinking ?? false
     // Режим прав: переопределение разговора приоритетнее общих настроек.
     let permissionMode = conv?.permissionMode ?? settings.permissionMode
     // Большая переделка Make (п.20): ход идёт в режиме «План» (файлы только на чтение), модель отвечает
@@ -839,6 +842,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               skillNames: conv.skillNames, llmEngineId: conv.llmEngineId ?? settings.llmEngineId,
               llmProvider: conv.llmProvider ?? settings.llmProvider,
               llmModel: conv.llmModel ?? (settings.llmProvider === 'claude' ? settings.model : settings.codexModel),
+              reasoningEffort,
+              deepThinking,
               permissionMode: conv.permissionMode ?? settings.permissionMode,
               kbContextMode: conv.kbContextMode ?? 'auto', projectId: conv.projectId ?? null
             } : null
@@ -953,6 +958,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       prompt,
       promptChars: prompt.length,
       resumed: Boolean(sessionId),
+      reasoningEffort,
+      deepThinking,
       ...(permissionMode ? { permissionMode } : {}),
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
@@ -1022,7 +1029,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
-        userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
+        userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),

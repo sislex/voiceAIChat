@@ -599,7 +599,8 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it.skipIf(ON_POSTGRES)('ALTER добавляет engine/user_id и удаляет строки без владельца', async () => {
+  // @testCase TC-REG-01
+  it.skipIf(ON_POSTGRES)('ALTER adds reasoning defaults for legacy conversations and removes ownerless rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')
     // Готовим «старую» однопользовательскую БД: без engine и без user_id.
@@ -629,6 +630,11 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
       .prepare(`PRAGMA table_info(messages)`)
       .all() as Array<{ name: string }>
     expect(cols.some((c) => c.name === 'engine')).toBe(true)
+    const conversationCols = (db as unknown as { db: Database.Database }).db
+      .prepare(`PRAGMA table_info(conversations)`)
+      .all() as Array<{ name: string; dflt_value: string | null }>
+    expect(conversationCols.find((c) => c.name === 'reasoning_effort')?.dflt_value).toBe("'medium'")
+    expect(conversationCols.find((c) => c.name === 'deep_thinking')?.dflt_value).toBe('0')
     // Legacy без владельца — удалены (чистый старт многопользовательского режима).
     expect(await db.chat.listConversations('admin')).toHaveLength(0)
     expect(await db.chat.listMessages('admin', 'c1')).toHaveLength(0)
@@ -724,6 +730,8 @@ describe('VoiceChatDb — настройки', () => {
       execTarget: 'agent-1',
       llmEngineId: null,
       llmProvider: 'claude',
+      reasoningEffort: 'medium',
+      deepThinking: false,
       codexModel: '',
       defaultAgentId: null,
       aiAssistProvider: 'claude',
