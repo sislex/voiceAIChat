@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-09-17
-checked: afbca61a
+updated: 2026-09-28
+checked: b267f0d1
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1321,6 +1321,25 @@ Development-run нельзя запустить из `backlog` или `preparati
 `repository/<task-key>`; `REPO_ROOT`, `WORKSPACE`, `NPM_CACHE_DIR` и
 `npm_config_cache` строятся одной portable-функцией shared для POSIX, Termux,
 macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
+
+Независимые owner-репозитории получают отдельный канонический корень
+`projects/<project-id>/tasks/<task-id>/owners` через переменную
+`OWNER_WORKSPACES_ROOT`; конкретный checkout обязан жить в
+`<owner>/repository`, рядом с task environment, а не внутри основного `WORKSPACE`.
+Shared-helper `managedOwnerWorkspacePaths` строит одинаковый layout для POSIX,
+Windows drive и UNC. Это делает Git-ветку и подтверждённый remote SHA границей
+переноса разработки между машинами: новая машина клонирует owner-ветку в свой
+MachineStorage вместо копирования или вложения старого каталога.
+
+Системный bootstrap до fetch и обязательный development-push повторяют один
+fail-closed guard вложенных Git-репозиториев. Guard ищет `.git` ниже корня
+основного checkout, допускает только зарегистрированный gitlink/submodule mode
+`160000`, а для неизвестного checkout печатает относительный путь, origin, branch,
+HEAD, dirty-состояние и совпадение HEAD с одноимённой remote-веткой. Ран завершается
+с exit `66`; вложенные данные не удаляются, не stash'ятся и не переносятся
+автоматически. Диагностика направляет восстановление в
+`$OWNER_WORKSPACES_ROOT/<owner>/repository`, поэтому неопубликованный коммит
+остаётся доступен для ручного merge/cherry-pick перед повтором на другой машине.
 
 Перед запуском подготовки задачи общая рабочая копия проекта обновляет настроенную
 базовую ветку только fast-forward. Fetch обязан использовать полный refspec

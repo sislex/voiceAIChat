@@ -9,7 +9,7 @@ import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiCommand,
   CiRunMode, CiInteraction, CiInteractionAnswer, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
-import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
+import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths, managedOwnerWorkspacesRoot } from '@voicechat/shared'
 import { extractImprovementFiles, isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -1126,16 +1126,56 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   }
 
   /**
+   * Reject independently cloned repositories below the primary checkout. A nested
+   * repository is not protected by the outer stash/push and caused task work to be
+   * stranded on another machine. Registered submodules (gitlink mode 160000) are
+   * allowed; every other marker is reported with enough evidence for safe recovery.
+   */
+  const NESTED_GIT_GUARD_SCRIPT = `check_nested_git() {
+  nested_root="$1"
+  [ -d "$nested_root" ] || return 0
+  nested_markers=$(find "$nested_root" -mindepth 2 -name .git \\( -type d -o -type f \\) -print 2>/dev/null || true)
+  [ -z "$nested_markers" ] && return 0
+  nested_failed=0
+  nested_old_ifs=$IFS
+  IFS='\n'
+  for nested_marker in $nested_markers; do
+    nested_repo=\${nested_marker%/.git}
+    nested_rel=\${nested_repo#"$nested_root"/}
+    if git -C "$nested_root" ls-files --stage -- "$nested_rel" 2>/dev/null | grep -q '^160000 '; then
+      continue
+    fi
+    nested_failed=1
+    nested_origin=$(git -C "$nested_repo" remote get-url origin 2>/dev/null || echo '<none>')
+    nested_branch=$(git -C "$nested_repo" branch --show-current 2>/dev/null || echo '<detached>')
+    nested_head=$(git -C "$nested_repo" rev-parse HEAD 2>/dev/null || echo '<unknown>')
+    nested_dirty=$(git -C "$nested_repo" status --porcelain --untracked-files=all 2>/dev/null || echo '<unavailable>')
+    nested_remote=$(git -C "$nested_repo" ls-remote --heads origin "refs/heads/$nested_branch" 2>/dev/null | awk '{print $1}' || true)
+    [ "$nested_remote" = "$nested_head" ] && nested_published=yes || nested_published=no
+    echo "Вложенный Git-репозиторий запрещён: $nested_rel" >&2
+    echo "  origin=$nested_origin branch=$nested_branch head=$nested_head published=$nested_published" >&2
+    [ -z "$nested_dirty" ] || { echo "  локальные изменения:" >&2; printf '%s\\n' "$nested_dirty" >&2; }
+  done
+  IFS=$nested_old_ifs
+  if [ "$nested_failed" -ne 0 ]; then
+    echo "Переместите owner checkout в $OWNER_WORKSPACES_ROOT/<owner>/repository и повторите запуск; данные автоматически не удаляются." >&2
+    return 66
+  fi
+}`
+
+  /**
    * Cleanup-команда удаляет рабочую директорию вместе с коммитами модели, поэтому
    * перед ней ветку задачи обязательно отправляем в origin. Скрипт идемпотентен:
    * без новых коммитов ничего не делает, при незакоммиченных изменениях падает —
    * тогда рабочая директория остаётся на машине и работу можно забрать руками.
    */
   const PUSH_BRANCH_SCRIPT = `set -eu
+${NESTED_GIT_GUARD_SCRIPT}
 test -n "$SLUG"
 test -n "$BRANCH"
 cd -- "$SLUG"
 if [ ! -d .git ]; then echo "Git-репозиторий не найден — сохранять нечего"; exit 0; fi
+check_nested_git "$PWD" || exit $?
 if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
   echo "В рабочей директории есть незакоммиченные изменения — не отдаю её на удаление" >&2
   git status --short >&2
@@ -1581,6 +1621,12 @@ fi`
     // каждый повтор качал бы пакеты заново.
     const npmCacheRoot = managedPaths?.npmCacheRoot ?? `${repoRoot || workspacePath}/.npm-cache`
     const npmCacheDir = managedPaths?.npmCacheDir ?? `${npmCacheRoot}/${taskKey}`
+    // External owner repositories are independent checkouts. Give the model and
+    // commands one canonical sibling root so switching machines always resumes
+    // from Git instead of cloning another repository below the primary checkout.
+    const ownerWorkspacesRoot = managedStorage
+      ? managedOwnerWorkspacesRoot(managedStorage.rootPath, runRow.projectId, runRow.taskId)
+      : `${repoRoot}/.owner-workspaces/${taskNumber}`
     const env: Record<string, string> = {
       TASK_NUMBER: taskNumber,
       TASK_KEY: taskKey,
@@ -1590,6 +1636,7 @@ fi`
       REPO_URL: project.gitUrl ?? '',
       REPO_ROOT: repoRoot,
       WORKSPACE: workspacePath,
+      OWNER_WORKSPACES_ROOT: ownerWorkspacesRoot,
       PROJECT: projectSlug,
       // Путь для скриптов шагов; `npm_config_cache` npm подхватывает сам.
       NPM_CACHE_DIR: npmCacheDir,
@@ -1659,8 +1706,8 @@ fi`
     const strategy = project.ciReuseStrategy || 'fail'
     // Cache age alone is not ownership evidence; shared caches are retained.
     const ensureManaged = managedStorage
-      ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
-      : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)}`
+      ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} ${shq(ownerWorkspacesRoot)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
+      : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} ${shq(ownerWorkspacesRoot)}`
     const freeDiskCheck = `available_kb="$(df -Pk . | awk 'NR == 2 { print $4 }')" || exit 74; case "$available_kb" in ''|*[!0-9]*) echo "Не удалось определить свободное место перед запуском рана" >&2; exit 74;; esac; if [ "$available_kb" -lt ${minRunFreeDiskKb} ]; then echo "Недостаточно места для запуска рана: свободно $((available_kb / 1024)) МБ, нужно не меньше ${Math.ceil(minRunFreeDiskKb / 1024)} МБ. Освободите диск и повторите запуск." >&2; exit 74; fi`
     const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true`
     const repoPath = workspacePath
@@ -1670,7 +1717,9 @@ fi`
       await deps.db.chat.setConversationExecTarget(userId, runRow.conversationId, agentId, repoPath, task.skills)
     }
     const guardExisting = [
+      NESTED_GIT_GUARD_SCRIPT,
       `if git -C ${shq(repoPath)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
+      `  check_nested_git ${shq(repoPath)} || exit $?`,
       `  git_status="$(git -C ${shq(repoPath)} status --porcelain --untracked-files=all)" || exit $?`,
       `  if [ -n "$git_status" ]; then`,
       `    echo "Рабочая копия содержит локальные изменения: ${repoPath}. Они могли остаться после отменённого рана. Откройте техническую ленту и нажмите «Сбросить рабочую копию»." >&2; exit 66`,
