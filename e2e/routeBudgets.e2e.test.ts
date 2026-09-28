@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 
+// @testCase TC-GATE-01
 // @testCase TC-BUNDLE
 // @testCase TC-ELECTRON
 // @testCase TC-GATES
