@@ -919,6 +919,8 @@ export interface Conversation {
   assistantAutonomy?: import('./widgetAssistant').WidgetAssistantAutonomy
   /** Движок Web Reader сохраняется с разговором, чтобы refresh не менял рабочую сессию. */
   previewEngine?: 'proxy' | 'chromium'
+  /** Make: Web Reader or Playwright Reader conversation whose browser the assistant uses; null — none. */
+  makeBrowserSessionId?: string | null
   /** URL веб-превью только этого разговора; null — наследовать у проекта. */
   previewUrl?: string | null
   /** URL проекта для превью; сервер отдаёт рядом, чтобы чат не зависел от загрузки списка проектов. */

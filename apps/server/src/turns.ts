@@ -11,7 +11,7 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, buildConversationPrompt, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, buildConversationPrompt, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -685,7 +685,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const studioContextBlock = !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
       ? await deps.studioContext(conversationId).catch(() => '')
       : ''
-    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
+    // Make: the browser belongs to a bound Web Reader or Playwright Reader conversation of
+    // the same user. The executor (Claude or Codex) is independent of that engine.
+    const makeBrowser = !req.delegation && conv?.assistantKind === 'make' ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities) : null
+    const makeBrowserBlock = makeBrowser ? makeBrowserPromptBlock(makeBrowser) : ''
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
@@ -855,10 +859,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
     let previewMcpUrl: string | undefined
+    let previewSurface: 'panel' | 'chromium' | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
     if (!req.delegation && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
+    }
+    // The Make turn acts on the bound reader conversation, never on the Make chat itself.
+    if (makeBrowser?.available && deps.previewMcpBaseUrl && deps.previewTurns) {
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId: makeBrowser.session.id }))}`
+      previewSurface = makeBrowser.surface
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
     // разговора (ptyId `console:<conv>`). Только у чата этого вида.
@@ -1035,6 +1045,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
+        ...(previewMcpUrl && previewSurface ? { previewSurface } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
         ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
@@ -1505,4 +1516,40 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }))
     }
   }
+}
+
+export interface MakeBrowserSession {
+  session: Conversation
+  surface: 'panel' | 'chromium'
+  available: boolean
+  reason: string | null
+}
+
+/** Resolve the bound browser session of a Make chat with the caller's user id. */
+export async function makeBrowserSession(db: VoiceChatDb, userId: string, conv: Conversation, capabilities: readonly string[]): Promise<MakeBrowserSession | null> {
+  if (!conv.makeBrowserSessionId) return null
+  const session = await db.chat.getConversation(userId, conv.makeBrowserSessionId)
+  if (!session || (session.assistantKind !== 'web-recorder' && session.assistantKind !== 'playwright-reader')) return null
+  const surface = isChromiumReaderConversation(session) ? 'chromium' : 'panel'
+  const capability = session.assistantKind === 'playwright-reader' ? 'playwright-reader.use' : 'web-reader.use'
+  const available = capabilities.includes(capability)
+  return { session, surface, available, reason: available ? null : `нет доступа к возможности ${capability}` }
+}
+
+/** Tell the model which browser it has, where it runs and what stays forbidden. */
+export function makeBrowserPromptBlock(browser: MakeBrowserSession): string {
+  const title = browser.session.title || browser.session.id
+  const engine = browser.surface === 'chromium'
+    ? 'Playwright Chromium на сервере (browser-runner): доступны скриншот, консоль, сеть и размер окна'
+    : 'Web Reader в панели пользователя через серверный прокси: действия выполняются, только пока у пользователя открыт этот чат Web Reader'
+  const url = browser.session.previewUrl ? ` Текущий адрес: ${browser.session.previewUrl}.` : ''
+  if (!browser.available) return `## Браузер Make\nК чату привязан браузер чата «${title}», но он недоступен: ${browser.reason}. Скажи пользователю об этом и не пытайся открывать сайты другими способами.`
+  return [
+    '## Браузер Make',
+    `Для просмотра сайтов у тебя есть браузер чата «${title}»: ${engine}.${url}`,
+    'Используй инструменты mcp__browser__*, чтобы открыть адрес, прочитать страницу и ссылки, найти элемент, нажать, ввести текст, прокрутить и получить ошибки.',
+    'Каждый раз коротко называй пользователю маршрут: исполнитель (ты), браузер, чат-сессию, адрес и где выполняется действие (панель пользователя, серверный прокси или browser-runner). Машину или IP называй, только если они известны, иначе пиши «неизвестно».',
+    'Если пользователь просит другой браузер, скажи, что его переключают в настройках чата Make, и не подменяй браузер молча.',
+    'Браузер нужен только для просмотра и проверки. Файлы проекта меняй только инструментами make_*.'
+  ].join('\n')
 }
