@@ -34,7 +34,7 @@ export class ChatDelegation {
   async snapshot(reference: ChatDelegationReference, conversationId: string, executionAvailable = false): Promise<ChatConnectionSnapshot> {
     await this.authorize(reference, 'read', conversationId)
     const principal = await this.current(reference)
-    const permissions: ChatPermission[] = ['chat:conversations:read']
+    const permissions: ChatPermission[] = ['chat:conversations:read', 'chat:settings:read']
     try { await this.authorize(reference, 'execute', conversationId); permissions.push('chat:turns:run') } catch { /* Not granted. */ }
     try { await this.authorize(reference, 'write', conversationId); permissions.push('chat:turns:cancel') } catch { /* Not granted. */ }
     await this.authorize(reference, 'read', conversationId)
@@ -138,10 +138,10 @@ export function registerChatDelegation(app: FastifyInstance, authority?: ChatDel
     const reference = await authority.bind(token, req.user.name, req.user.account?.tenantId)
     try {
       const path = req.url.split('?')[0]!
-      if (path === '/api/chat/context' && req.method === 'GET') return
+      if (path === '/api/chat/context' && req.method === 'GET' || path === '/api/chat/session' && req.method === 'POST') return
       const conversationId = /^\/api\/conversations\/([^/]+)(?:\/|$)/.exec(path)?.[1]
       // Other APIs need a resource-specific adapter before applications may call them.
-      if (!conversationId || !/^\/api\/conversations\/[^/]+(?:\/(?:messages(?:\/[^/]+)?|status))?$/.test(path)
+      if (!conversationId || !/^\/api\/conversations\/[^/]+(?:\/(?:messages(?:\/[^/]+)?|status|settings))?$/.test(path)
         || !['GET', 'HEAD'].includes(req.method)) throw new DelegationDenied()
       await authority.authorize(reference, 'read', decodeURIComponent(conversationId))
     } finally { authority.release(reference) }

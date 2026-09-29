@@ -225,7 +225,14 @@ export async function measure({ web, desktop, output }) {
   } finally {
     await browser?.close(); await desktopApp?.close()
     server.kill('SIGTERM')
-    await new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) })
+    await Promise.race([
+      new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) }),
+      delay(5000)
+    ])
+    if (server.exitCode === null) {
+      server.kill('SIGKILL')
+      await new Promise(resolve => server.once('exit', resolve))
+    }
     log.end()
     await rm(data, { recursive: true, force: true })
   }
