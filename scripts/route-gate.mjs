@@ -29,7 +29,7 @@ if (process.platform === 'linux' && !process.env.DISPLAY) {
     const baseline = selectRouteBaseline([
       'frontend-quality/measurements/CHAT-473/before.json',
       'frontend-quality/measurements/sislexa-extraction/after.json',
-      'frontend-quality/measurements/chat-accounting-runtime/before.json',
+      'frontend-quality/measurements/component-qa-chat-sync/before.json',
       'frontend-quality/measurements/chat-495-macbook-m1/after.json'
     ].map(path => ({ path, report: JSON.parse(readFileSync(path, 'utf8')) })), report)
     const comparison = compareRoutes(baseline.report, report)

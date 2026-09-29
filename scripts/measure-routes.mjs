@@ -226,15 +226,11 @@ export async function measure({ web, desktop, output, clients = ['web', 'electro
     return report
   } finally {
     await browser?.close(); await desktopApp?.close()
+    const exited = new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) })
     server.kill('SIGTERM')
-    await Promise.race([
-      new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) }),
-      delay(5000)
-    ])
-    if (server.exitCode === null) {
-      server.kill('SIGKILL')
-      await new Promise(resolve => server.once('exit', resolve))
-    }
+    const graceful = await Promise.race([exited.then(() => true), delay(5000).then(() => false)])
+    if (!graceful) server.kill('SIGKILL')
+    await exited
     log.end()
     await rm(data, { recursive: true, force: true })
   }
