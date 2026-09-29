@@ -52,15 +52,6 @@ EXPOSE 8787
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
 
-FROM runtime-base AS kanban-runtime
-ENV PORT=8789
-RUN mkdir -p /data \
-  && chown -R node:node /data
-VOLUME ["/data"]
-EXPOSE 8789
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/kanban/standalone/index.ts"]
-
 FROM runtime-base AS machines-runtime
 ENV PORT=8793
 RUN mkdir -p /data \
