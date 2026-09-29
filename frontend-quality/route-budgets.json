@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. Reviewed Sislexa extraction baseline (2026-09-20) corrects pre-existing budget drift; initial Web assets at that checkpoint matched production 0.1.310 SHA-256. See measurements/sislexa-extraction. Revised limits allow at most 0.2% plus rounding headroom; CI never rewrites limits. U10 Account Identity/Analytics layout correction adds a measured CSS payload; only Account CSS ceilings increase: Web by at most 400 raw, 300 gzip and 100 Brotli bytes; Electron by 150 gzip bytes. Release 0.1.342 measurement on the reviewed 29f9fbf Core UI artifact showed Account growth after CHAT-495/496 (Web JS 380591 gzip/311742 Brotli; CSS 393473 raw/68815 gzip/55264 Brotli) and shared CSS 387348 raw on Chat/Settings. Only those Web limits are raised, with at most 0.2% rounding headroom over the observed values.",
+  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. Reviewed Sislexa extraction baseline (2026-09-20) corrects pre-existing budget drift; initial Web assets at that checkpoint matched production 0.1.310 SHA-256. See measurements/sislexa-extraction. Revised limits allow at most 0.2% plus rounding headroom; CI never rewrites limits. U10 Account Identity/Analytics layout correction adds a measured CSS payload; only Account CSS ceilings increase: Web by at most 400 raw, 300 gzip and 100 Brotli bytes; Electron by 150 gzip bytes. Release 0.1.342 measurement on the reviewed 29f9fbf Core UI artifact showed Account growth after CHAT-495/496 (Web JS 380591 gzip/311742 Brotli; CSS 393473 raw/68815 gzip/55264 Brotli) and shared CSS 387348 raw on Chat/Settings. A repeat measurement returned a second Google Fonts CSS body in Account cold/warm, raising raw CSS to 394709 while compressed totals stayed below the reviewed ceilings. Raw CSS limits cover both observed external responses with less than 0.2% headroom over the larger body; only affected Web routes change.",
   "routes": {
     "web/chat/cold": {
       "js": {
@@ -9,7 +9,7 @@
         "brotli": 304600
       },
       "css": {
-        "raw": 388000,
+        "raw": 389300,
         "gzip": 67200,
         "brotli": 54100
       }
@@ -21,7 +21,7 @@
         "brotli": 304600
       },
       "css": {
-        "raw": 388000,
+        "raw": 389300,
         "gzip": 67200,
         "brotli": 54100
       }
@@ -33,7 +33,7 @@
         "brotli": 312300
       },
       "css": {
-        "raw": 394200,
+        "raw": 395400,
         "gzip": 68950,
         "brotli": 55350
       }
@@ -45,7 +45,7 @@
         "brotli": 312300
       },
       "css": {
-        "raw": 394200,
+        "raw": 395400,
         "gzip": 68950,
         "brotli": 55350
       }
@@ -57,7 +57,7 @@
         "brotli": 312300
       },
       "css": {
-        "raw": 394200,
+        "raw": 395400,
         "gzip": 68950,
         "brotli": 55350
       }
@@ -69,7 +69,7 @@
         "brotli": 314400
       },
       "css": {
-        "raw": 388000,
+        "raw": 389300,
         "gzip": 67200,
         "brotli": 54100
       }
@@ -81,7 +81,7 @@
         "brotli": 314400
       },
       "css": {
-        "raw": 388000,
+        "raw": 389300,
         "gzip": 67200,
         "brotli": 54100
       }
@@ -93,7 +93,7 @@
         "brotli": 314400
       },
       "css": {
-        "raw": 388000,
+        "raw": 389300,
         "gzip": 67200,
         "brotli": 54100
       }
