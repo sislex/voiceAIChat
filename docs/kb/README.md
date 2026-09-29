@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 17 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-09-28 | ⚠ 7 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 18 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ код изменён 2026-09-29, сверка 2026-09-23 (по датам: правки того же дня не видны — поставь checked) |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 5 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-09-28 | ⚠ 13 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-09-28 | ⚠ 10 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
@@ -25,7 +25,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 41 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 1 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 17 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1676 коммит(ов) в areas после сверки: fb93e484 docs(agents): commit and push verified task work … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1677 коммит(ов) в areas после сверки: acaa6106 test(release): temporarily opt in Electron checks … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 78 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 33 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 31 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
@@ -35,7 +35,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-23 | ⚠ 20 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-27 | ⚠ 16 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-09-28 | ⚠ 20 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-09-28 | ⚠ 12 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
@@ -55,9 +55,10 @@
 
 ## Журнал сессий
 
-Всего записей: 979. Последние:
+Всего записей: 980. Последние:
 
 - [2026-09-29-pc-radvilovich-chat-model-controls-kb.md](log/2026-09-29-pc-radvilovich-chat-model-controls-kb.md) — chat-model-controls-kb
+- [2026-09-29-pc-radvilovich-chat-499-kanban-virtualization.md](log/2026-09-29-pc-radvilovich-chat-499-kanban-virtualization.md) — chat-499-kanban-virtualization
 - [2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md](log/2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md) — Temporary Web-only release gate
 - [2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md](log/2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md) — s4-shared-contract-peers
 - [2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md](log/2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md) — Separate merge checks from release checks
@@ -66,7 +67,6 @@
 - [2026-09-29-alexeys-macbook-air-2-autonomous-commit-push.md](log/2026-09-29-alexeys-macbook-air-2-autonomous-commit-push.md) — Commit and push completed work without a separate request
 - [2026-09-28-macbook-air-user-conversation-groups.md](log/2026-09-28-macbook-air-user-conversation-groups.md) — conversation-groups
 - [2026-09-28-macbook-air-user-chat-model-reasoning.md](log/2026-09-28-macbook-air-user-chat-model-reasoning.md) — chat-model-reasoning
-- [2026-09-28-macbook-air-user-chat-device-sync.md](log/2026-09-28-macbook-air-user-chat-device-sync.md) — chat-device-sync
 
 ## Исторические планы
 
