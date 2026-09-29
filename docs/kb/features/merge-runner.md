@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-09-29
-checked: 37aa9c69
+checked: 3ed5c019
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -378,9 +378,11 @@ worktree создаётся пустым и удаляется после ран
 финального `exit`. Любая неуспешная обязательная проверка оставляет
 `origin/main` неизменным и возвращает карточку в `awaiting_merge`.
 
-`project.mergeTestCommand` is an optional merge-only override; an empty value keeps
-the existing `testCommand` behavior, so release checks remain independent. Core
-can use `npm run gate:merge`: the merge runner pins `--base` to the fetched target
+`project.mergeTestCommand` is the merge-only check command. An empty value uses
+`npm run affected-check`; merge never inherits `project.testCommand`, which may
+contain release acceptance. A merge configuration containing `gate:release` is
+rejected before checks or push. Core can use `npm run gate:merge`: the merge
+runner pins `--base` to the fetched target
 ref. This gate checks changed feature regression files and typechecks their owner
 packages. Shared contract changes also require a changed server consumer suite.
 Known changed tooling has dedicated tests; unknown paths, missing tests and

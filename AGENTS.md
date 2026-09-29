@@ -8,13 +8,16 @@ the task needs them. Keep this file small.
 
 1. Run `git status --short --branch` and `git fetch origin`.
 2. If a clean `main` only trails `origin/main`, fast-forward it. With local
-   changes, diverged history, or another branch, do not switch or overwrite;
-   report the state and ask the user how to proceed. Read-only inspection may use
-   `origin/main` when the checkout is stale.
+   changes, diverged history, or another branch, preserve existing work and
+   continue in an isolated branch or worktree when safe. Report the state; ask
+   only when ownership or a safe continuation is unclear. Read-only inspection
+   may use `origin/main` when the checkout is stale.
 3. Before code research, run `npm run kb:context -- "<task>"` and open only the
    returned topics and relevant package `AGENTS.md` files.
 
-Do not commit or push without a direct user request.
+After required checks pass, commit and push completed task changes without a
+separate permission request. Use a reviewed PR for `main` unless the user asks
+for a direct push. Keep unrelated changes out of the commit.
 
 ## Repository ownership
 

@@ -114,6 +114,23 @@ describe('MergeRunManager',()=>{
     expect(scripts.some(script=>script.includes('npm run gate:merge -- --base')&&script.includes('refs/merge-runs/r1/target'))).toBe(true)
     expect(scripts).not.toContain('npm run gate:release')
   })
+  it('does not inherit the project release gate when no merge command is configured',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run gate:release')
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(['success','failed']).toContain(s.run.status))
+    expect(s.run.status, `${s.run.error}\n${s.run.log}`).toBe('success')
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts).toContain('npm run affected-check')
+    expect(scripts).not.toContain('npm run gate:release')
+  })
+  it('rejects an explicitly configured release gate before running merge checks or pushing',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n'],base(),'npm run affected-check','git@example/repo.git',undefined,undefined,[],undefined,undefined,'["npm run affected-check","npm run gate:release"]')
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
+    expect(s.run.error).toContain('Merge checks cannot run gate:release')
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('npm ci')||script.includes('gate:release')||script.includes('git push'))).toBe(false)
+  })
   it('finishes instantly with success when the branch is already merged into main',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'MERGED\n',''])
     s.manager.start(s.run)
@@ -307,7 +324,7 @@ describe('MergeRunManager',()=>{
   })
 
   it('runs a JSON test pipeline sequentially',async()=>{
-    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','one ok\n','two ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),JSON.stringify(['npm run one','npm run two']))
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','one ok\n','two ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run affected-check','git@example/repo.git',undefined,undefined,[],undefined,undefined,JSON.stringify(['npm run one','npm run two']))
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('success'))
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
