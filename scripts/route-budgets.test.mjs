@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { COMPRESSION, checkRoutes, compareRoutes, selectRouteBaseline, resourceSet, totals, sizes, completedResource, externalStylesheet } from './route-budgets.mjs'
@@ -19,6 +19,23 @@ const fixture = () => {
   const report = { schemaVersion: 1, commit: 'a'.repeat(40), conditions: { scenario: 'fixture', theme: 'light', transport: 'fixture', node: process.version, zlib: 'fixture', brotli: 'fixture', cpu: 'fixture', network: 'fixture', cache: 'fixture', actualViewports: { web: { width: 1440, height: 900, deviceScaleFactor: 1 }, electron: { width: 1440, height: 875, deviceScaleFactor: 1 } }, viewport: { width: 1440, height: 900 }, settleMs: 5000 }, tools: { web: 'fixture', electron: 'fixture' }, compression: COMPRESSION, resources, routes: { 'web/chat/cold': route } }
   return { report, budget: { schemaVersion: 1, routes: { 'web/chat/cold': totals(resources, initial) } } }
 }
+
+// @testCase TC-BASELINE-01
+test('selects the reviewed component QA baseline for its exact production runtime', () => {
+  const path = 'frontend-quality/measurements/component-qa-chat-sync/before.json'
+  const report = JSON.parse(readFileSync(path, 'utf8'))
+  const candidates = [
+    'frontend-quality/measurements/CHAT-473/before.json',
+    'frontend-quality/measurements/sislexa-extraction/after.json',
+    path
+  ].map(candidatePath => ({ path: candidatePath, report: JSON.parse(readFileSync(candidatePath, 'utf8')) }))
+  assert.equal(selectRouteBaseline(candidates, report).path, path)
+  assert.equal(checkRoutes(JSON.parse(readFileSync('frontend-quality/route-budgets.json', 'utf8')), report).length, 96)
+  assert.equal(compareRoutes(report, structuredClone(report)).length, 96)
+  assert.match(readFileSync('scripts/route-gate.mjs', 'utf8'), new RegExp(path.replaceAll('/', '\\/')))
+})
+
+// @testCase TC-BASELINE-02
 test('selects a reviewed environment without accepting unknown or ambiguous measurements', () => {
   const { report } = fixture()
   const different = structuredClone(report)
@@ -46,6 +63,7 @@ test('includes shared dependencies once regardless of index-like names', () => {
   assert.equal(totals(report.resources, ['entry.js']).js.raw, 150)
   assert.ok(sizes(Buffer.from('a'.repeat(1000))).brotli < 1000)
 })
+// @testCase TC-BUDGET-01
 // @testCase TC-BUDGET
 test('accepts the exact limit and identifies a one-byte regression with resources', () => {
   const { report, budget } = fixture()
@@ -100,6 +118,7 @@ test('rejects incomplete before/after data and changed measurement conditions', 
   report.routes['web/chat/cold'].ready = false
   assert.throws(() => compareRoutes(report, after), /incomplete ready/)
 })
+// @testCase TC-BUDGET-01
 // @testCase TC-BUDGET
 test('enforces every JS and CSS raw/gzip/Brotli metric', () => {
   for (const type of ['js', 'css']) for (const metric of ['raw', 'gzip', 'brotli']) {
