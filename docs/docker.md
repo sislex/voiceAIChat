@@ -77,6 +77,7 @@ docker compose exec -u node runner-personal claude setup-token
 | `VC_ADMIN_MODE` / `VC_ADMIN_URL` | `voicechat` | `embedded` / `http://admin:8794` | админка отдельным сервисом (профиль `admin`, требует `VC_DB_URL`): ядро переправляет `/api/admin/*`, деплой и отзыв сессий отдаёт по `/internal/admin/rpc` |
 | `VC_MACHINES_MODE` / `VC_MACHINES_URL` | `voicechat` | `embedded` / `http://machines:8793` | машины отдельным сервисом (профиль `machines`, требует `VC_DB_URL`): ядро переправляет туда REST машин, установщики и WebSocket `/agent`, а состояние машин читает из зеркала по шине событий |
 | `VC_KANBAN_MODE` / `VC_KANBAN_URL` / `VC_KANBAN_MCP_PUBLIC_BASE` | `voicechat` | `embedded` / `http://kanban:8789` | канбан отдельным сервисом (профиль `kanban`, требует `VC_DB_URL`): ядро переправляет ему `/api/projects/*`, `/api/ci/*`, `/api/qa/*`, MCP канбана и CI-команд, отдаёт состояние машин/KB по `/internal/*` |
+| `SISLEXA_KANBAN_IMAGE` | `kanban` | локальный образ `sislexa-kanban:<commit>` | образ из репозитория `sislex/sislexa-kanban`; Core его не собирает |
 | `VC_DB_URL` | `voicechat` | пусто (SQLite) | база на Postgres: `postgres://voicechat:<пароль>@postgres:5432/voicechat`; сервис `postgres` — профиль `--profile postgres`, пароль `VC_PG_PASSWORD` в `.env`; перенос данных — `npx tsx apps/server/src/db/copyToPostgres.cli.ts --sqlite /data/voicechat.db --url …` |
 
 В проде `VC_LLM_RUNNER_TOKEN`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`, `VC_ADMIN_PASSWORD` и upstream-ключи держи в
