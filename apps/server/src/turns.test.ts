@@ -192,6 +192,18 @@ async function runTurn(client: LlmClient, db: VoiceChatDb, conversationId: strin
   })
 }
 
+// @testCase TC-INT-01
+it('applies saved model, reasoning effort and deep thinking to the next turn', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Reasoning')
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'claude', 'sonnet', undefined, undefined, 'xhigh', true)
+    const rec = recorder()
+    await runTurn(rec.client, db, conversation.id)
+    expect(rec.last()).toMatchObject({ model: 'sonnet', reasoningEffort: 'xhigh', deepThinking: true })
+  } finally { await db.close() }
+})
+
 it.each([
   ['Chat', undefined, 'chat', 'chat'],
   ['Make', 'make', 'make', 'make'],
@@ -1189,6 +1201,20 @@ describe('turns: движок и модель разговора приорит�
 
     expect(claude.last()?.model).toBe('haiku')
     db.close()
+  })
+
+  // @testCase TC-INT-01
+  it('snapshots persisted model, reasoning effort and deep thinking into the next runner request', async () => {
+    const db = new VoiceChatDb(':memory:')
+    await db.identity.createUser(U, '', 'admin')
+    const conv = await db.chat.createConversation(U, 'Чат')
+    await db.chat.setConversationExecTarget(U, conv.id, null, undefined, undefined, 'codex', 'gpt-5.6-sol', undefined, undefined, 'high', true)
+
+    const { codex, run } = managers(db)
+    await run(conv.id)
+
+    expect(codex.last()).toMatchObject({ model: 'gpt-5.6-sol', reasoningEffort: 'high', deepThinking: true })
+    await db.close()
   })
 
   it('без переопределения действуют общие настройки (модель из settings)', async () => {

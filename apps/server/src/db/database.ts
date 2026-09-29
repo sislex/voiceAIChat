@@ -396,6 +396,12 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'permission_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN permission_mode TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'reasoning_effort')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'medium'`)
+    }
+    if (!convCols.some((c) => c.name === 'deep_thinking')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN deep_thinking INTEGER NOT NULL DEFAULT 0`)
+    }
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     }

@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import './model-speed-artifacts.test.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { archiveFiles, verifySnapshot } from './shared-chat-artifacts.mjs'

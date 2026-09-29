@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   llm_engine_id     TEXT,
   llm_provider      TEXT,
   llm_model         TEXT,
+  reasoning_effort  TEXT NOT NULL DEFAULT 'medium',
+  deep_thinking     INTEGER NOT NULL DEFAULT 0,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
   disabled_context_json TEXT NOT NULL DEFAULT '[]',
   project_id        TEXT,

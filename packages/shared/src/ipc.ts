@@ -26,6 +26,7 @@ import type {
   MessageRole,
   MessageSearchResult,
   PermissionMode,
+  ReasoningEffort,
   SessionUser,
   SessionUsage,
   Settings,
@@ -150,8 +151,8 @@ export interface IpcInvokeMap {
   'kb:research': { arg: { projectId: string }; result: KbResearchRun }
   'kb:researchStatus': { arg: { projectId: string }; result: KbResearchRun | null }
   /**
-   * Помощник промптов: по черновику запроса вернуть несколько переформулировок.
-   * Одноразовый LLM-вызов, историю разговора не трогает.
+   * Совместимый внутренний транспорт подсказок для owner-компонентов.
+   * Пользовательский маршрут Core не регистрирует этот вызов.
    */
   'prompt:suggest': {
     arg: { prompt: string; modifiers: ModifierPrompt[] }
@@ -316,6 +317,10 @@ export interface IpcInvokeMap {
       llmProvider?: LlmProvider | null
       /** Модель разговора (действует вместе с llmProvider). undefined — не менять. */
       llmModel?: string | null
+      /** Скорость рассуждения следующих ходов. undefined — не менять. */
+      reasoningEffort?: ReasoningEffort
+      /** Независимый режим глубокого мышления. undefined — не менять. */
+      deepThinking?: boolean
       /** Режим прав разговора; null — из общих настроек. undefined — не менять. */
       permissionMode?: PermissionMode | null
       /** Режим автоматического KB-контекста. */
