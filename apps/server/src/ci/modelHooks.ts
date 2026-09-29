@@ -1371,6 +1371,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         tail,
         'Правь минимально и по причине ошибки, а не подгоняй тесты под код: удалять и ослаблять проверки нельзя.',
         'Не выполняй git commit, push, reset, checkout, stash и не удаляй рабочую копию — коммит сделает сервер сам.',
+        'В merge-ране не запускай npm run gate:release; используй настроенную команду проверок и точечные тесты.',
         'Перед завершением прогони упавшую команду локально и убедись, что она проходит.'
       ].filter(Boolean).join('\n'),
       sessionId:null, model, permissionMode:'acceptEdits',
