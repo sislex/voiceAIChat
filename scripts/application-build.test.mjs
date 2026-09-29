@@ -80,6 +80,16 @@ test('external library build requests identify the independent owner', () => {
   }
 })
 
+test('Kanban Compose service consumes an owner image instead of building Core source', () => {
+  const compose = readFileSync(new URL('../docker-compose.yml', import.meta.url), 'utf8')
+  const kanban = compose.match(/^  kanban:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$)/m)?.[1]
+  assert.ok(kanban)
+  assert.match(kanban, /^    image: \$\{SISLEXA_KANBAN_IMAGE:-sislexa-kanban:[a-f0-9]{40}\}$/m)
+  assert.doesNotMatch(kanban, /^    build:/m)
+  const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')
+  assert.doesNotMatch(dockerfile, /\bAS kanban-runtime\b/)
+})
+
 
 test('Core build closure contains no extracted application workspace', () => {
   const paths = applicationBuildPaths('core')
