@@ -3,7 +3,7 @@ title: Разработка, тестирование, диагностика и
 updated: 2026-09-29
 checked:
 
-  7fc02be3
+  29c7b619
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -1116,11 +1116,16 @@ and a 1440x872 Electron viewport at scale factor 2. Its 16 routes, 152 resources
 and both editor activations form a complete report; all 96 existing route-budget
 checks pass without changing `frontend-quality/route-budgets.json`. It supersedes
 the previously registered `chat-accounting-runtime` candidate with the identical
-runtime signature so the registry still has exactly one match. The CHAT-495
-baseline covers its distinct Node/compression tools and measured `1382x842`
-Electron viewport at scale factor 2. Unknown or ambiguous environments still
-fail; `artifacts/route-budgets/diff.json` identifies the selected baseline and
-contains both budget and baseline comparisons.
+runtime signature so the registry still has exactly one match. Thus, for a
+component-QA run that previously failed baseline selection with `found 0` on
+this exact runtime, the supported baseline is
+`frontend-quality/measurements/component-qa-chat-sync/before.json`; another
+`found 0` means at least one condition, compression setting or tool version has
+drifted and must not be bypassed by choosing a merely similar report. The
+CHAT-495 baseline covers its distinct Node/compression tools and measured
+`1382x842` Electron viewport at scale factor 2. Unknown or ambiguous
+environments still fail; `artifacts/route-budgets/diff.json` identifies the
+selected baseline and contains both budget and baseline comparisons.
 
 Route measurement cleanup first sends `SIGTERM` to its fixture server, waits up to
 five seconds, and then escalates to `SIGKILL`; a server retaining open connections
