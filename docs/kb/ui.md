@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-28
-checked: fb94d3d8
+updated: 2026-09-29
+checked: 4242196b
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -49,6 +49,8 @@ and recovery commands. The bundled package remains the fallback and is still
 verified during a Core image build.
 
 Core publishes `@voicechat/shared` contracts with `build:core-contracts -- --version <version> --commit <full SHA>`. This exporter reads committed files and locked peer versions, excludes internal tests and records the source SHA. UI installs the contract archive without a Core checkout. Legacy published `@shared/*` imports resolve to that installed contract, not sibling source.
+
+Conversation groups follow the same owner boundary: Core owns contracts, transport and persistence, while `sislexa-core-ui` owns the responsive rail, store and component QA. The complete server semantics are documented in [conversation-groups.md](conversation-groups.md).
 
 
 ## Story ownership after repository extraction
@@ -425,6 +427,8 @@ written to `.generated_images/chat468/before.json` and `after.json`.
 Кнопка ошибки последнего этапа на канбан-карточке открывает саму задачу сразу на вкладке «AI-чат» — и в новой, и в legacy-версии карточки — вместо перехода в ленту рана или общий чат. `KanbanBoard` передаёт через контейнер локальный начальный черновик `Найди в чем причина ошибки по задаче: "<ошибка>"`; если в сводке нет текста ошибки, используется нейтральное описание сбоя. `TaskChatPanel` по-прежнему получает или создаёт разговор через `tasks:openChat`, загружает его через `conversations:get` и лишь подставляет черновик в редактируемое поле «Поле ввода сообщения»: `messages:add` и запуск модели происходят только после явной отправки пользователя. Источники — `packages/ui/src/components/kanban/TaskCard.tsx`, `KanbanBoard.tsx`, `TaskCardContainer.tsx` и `TaskModal.tsx`; отсутствие автоотправки и редактируемость закреплены DOM-тестами обеих версий карточки.
 
 ### Общий Sidebar: разделы, controls и desktop resize
+
+Серверная модель групп и архива, её REST-фильтры и транзакционные инварианты описаны в [conversation-groups.md](conversation-groups.md). В этом репозитории граница UI не меняется: React-колонка, store и responsive DOM-проверки принадлежат внешнему `sislex/sislexa-core-ui`.
 
 После переноса состояний Make «Проект 3» общий shell отдельно оформляет отсутствие данных. На обычном маршруте чата, только когда список бесед уже имеет статус `ready`, активной беседы нет и сам список пуст, `packages/ui/src/App.tsx` показывает страницу «Чаты» с версией приложения, общим `SidebarToggle` и действием «Добавить новый чат»; действие открывает уже существующее окно создания разговора. Загрузочная, ошибочная и непустая ветки остаются в прежнем chat layout, поэтому новое состояние не подменяет skeleton/error, поиск, фильтры или список.
 

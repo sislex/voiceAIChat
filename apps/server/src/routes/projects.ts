@@ -213,6 +213,7 @@ export function registerProjectRoutes(
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      mergeTestCommand?: string
       componentQaCommand?: string
       integrationTestCommand?: string
       automatedQaCommand?: string

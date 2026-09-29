@@ -1,13 +1,17 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 
-/** Exact origins only; neither suffix matching nor a wildcard grants browser access. */
-export function browserOriginAllowed(origin: string, origins: readonly string[], ownOrigin: string): boolean {
+/**
+ * Exact origins only; neither suffix matching nor a wildcard grants browser access.
+ * `ownOrigin` may list several same-origin addresses: the configured public URL and
+ * the address the request actually reached (for example a direct IP next to a domain).
+ */
+export function browserOriginAllowed(origin: string, origins: readonly string[], ownOrigin: string | readonly string[]): boolean {
   if (origin === 'sislexa://app') return origins.includes(origin)
   try {
     const parsed = new URL(origin)
     return ['http:', 'https:'].includes(parsed.protocol) && parsed.origin === origin
-      && (origin === ownOrigin || origins.includes(origin))
+      && ((typeof ownOrigin === 'string' ? [ownOrigin] : ownOrigin).includes(origin) || origins.includes(origin))
   } catch { return false }
 }
 

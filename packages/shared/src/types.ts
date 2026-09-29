@@ -848,6 +848,27 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
   }
 }
 
+export const SYSTEM_CONVERSATION_GROUP_IDS = ['all', 'archive'] as const
+export type SystemConversationGroupId = typeof SYSTEM_CONVERSATION_GROUP_IDS[number]
+
+export interface ConversationGroup {
+  id: string
+  name: string
+  position: number
+  createdAt: number
+  updatedAt: number
+  conversationCount?: number
+}
+
+export interface ConversationGroupCatalog {
+  groups: ConversationGroup[]
+}
+
+export interface ConversationMembershipMutation {
+  groupIds: string[]
+  archived: boolean
+}
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -875,6 +896,10 @@ export interface Conversation {
    * умолчанию codex). Действует лишь вместе с llmProvider; null — из настроек.
    */
   llmModel: string | null
+  /** Скорость рассуждения следующих ходов; legacy-разговоры читаются как medium. */
+  reasoningEffort: ReasoningEffort
+  /** Независимый режим глубокого мышления следующих ходов. */
+  deepThinking: boolean
   /** Режим прав агента только этого разговора; null — из общих настроек. */
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
@@ -903,6 +928,10 @@ export interface Conversation {
 
   /** Статус жизненного цикла чата; дефолт 'developing'. */
   status?: ConversationStatus
+  /** Момент архивирования; null означает активную беседу. */
+  archivedAt?: number | null
+  /** Пользовательские группы беседы; архивная беседа всегда имеет пустой список. */
+  groupIds?: string[]
   /** Суммарная стоимость всех сохранённых AI-ходов; null, пока итог недостоверен. */
   costUsd?: number | null
   /** Полнота серверного агрегата стоимости. Поле отсутствует у legacy-клиентов. */
@@ -1263,6 +1292,10 @@ export interface TurnRequestInfo {
   prompt: string
   /** Размер промпта в символах. */
   promptChars: number
+  /** Скорость рассуждения, зафиксированная в начале хода. */
+  reasoningEffort?: ReasoningEffort
+  /** Независимый режим глубокого мышления, зафиксированный в начале хода. */
+  deepThinking?: boolean
   /** Режим прав агента (permission mode). */
   permissionMode?: string
   /** Рабочий каталог процесса CLI. */
@@ -1561,6 +1594,10 @@ export interface Settings {
   llmEngineId: string | null
   /** LLM-движок: Claude Code CLI или Codex CLI. */
   llmProvider: LlmProvider
+  /** Скорость рассуждения по умолчанию для следующего хода. */
+  reasoningEffort: ReasoningEffort
+  /** Независимый режим глубокого мышления по умолчанию. */
+  deepThinking: boolean
   /** Модель Codex (`codex exec -m`); '' — модель по умолчанию из конфига codex. */
   codexModel: string
   /** id машины-агента по умолчанию для новых разговоров; null — сервер. */
@@ -1595,6 +1632,17 @@ export interface Settings {
 
 /** Поддерживаемые LLM-движки (CLI). */
 export type LlmProvider = 'claude' | 'codex'
+
+/** Provider-neutral reasoning speed selected in the chat composer. */
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
+export const REASONING_EFFORT_OPTIONS: ReadonlyArray<{ id: ReasoningEffort; label: string }> = [
+  { id: 'low', label: 'Маленькая' },
+  { id: 'medium', label: 'Средняя' },
+  { id: 'high', label: 'Высокая' },
+  { id: 'xhigh', label: 'Экстра высокая' },
+  { id: 'max', label: 'Максимальная' }
+]
 
 /** Авторизованный серверный снимок эффективного контекста следующего хода. */
 export interface ContextSnapshotItem {
@@ -1932,6 +1980,8 @@ export const DEFAULT_SETTINGS: Settings = {
   execTarget: null,
   llmEngineId: null,
   llmProvider: 'claude',
+  reasoningEffort: 'medium',
+  deepThinking: false,
   codexModel: DEFAULT_CODEX_MODEL,
   defaultAgentId: null,
   aiAssistProvider: 'claude',
@@ -1976,6 +2026,8 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   oneOf('machineCommandNotices', ['all', 'failures', 'off'] as const)
   oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
   oneOf('llmProvider', ['claude', 'codex'] as const)
+  oneOf('reasoningEffort', REASONING_EFFORTS)
+  bool('deepThinking')
   oneOf('aiAssistProvider', ['claude', 'codex'] as const)
   for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails', 'machineCommandSystemNotifications'] as const) bool(key)
   for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
