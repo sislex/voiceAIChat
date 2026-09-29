@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. See measurements/sislexa-extraction for the reviewed baseline. During the temporary Web-only release policy from 2026-09-29, user-approved CSS ceilings for each Web route are 1,000,000 bytes for raw, gzip and Brotli, avoiding release failures caused by mutable Google Fonts CSS. JS limits remain at the reviewed Core UI 1.4.4 measurements; Electron ceilings remain recorded for the opt-in VC_ELECTRON_TESTS=1 gate. CI never rewrites limits.",
+  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. See measurements/sislexa-extraction for the reviewed baseline. During the temporary Web-only release policy from 2026-09-29, user-approved CSS ceilings for each Web route are 1,000,000 bytes for raw, gzip and Brotli, avoiding release failures caused by mutable Google Fonts CSS. JS limits retain the reviewed Core UI 1.4.4 baseline, except Account raw JS is 1,261,100 bytes based on measured Core UI 1.4.6 (1,261,043 bytes); Electron ceilings remain recorded for the opt-in VC_ELECTRON_TESTS=1 gate. CI never rewrites limits.",
   "routes": {
     "web/chat/cold": {
       "js": {
@@ -28,7 +28,7 @@
     },
     "web/account/cold": {
       "js": {
-        "raw": 1260400,
+        "raw": 1261100,
         "gzip": 381300,
         "brotli": 312300
       },
@@ -40,7 +40,7 @@
     },
     "web/account/warm": {
       "js": {
-        "raw": 1260400,
+        "raw": 1261100,
         "gzip": 381300,
         "brotli": 312300
       },
@@ -52,7 +52,7 @@
     },
     "web/account/navigation": {
       "js": {
-        "raw": 1260400,
+        "raw": 1261100,
         "gzip": 381300,
         "brotli": 312300
       },

@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-28
-checked: 7483c76b
+updated: 2026-09-29
+checked: dc80c8b8
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -45,7 +45,11 @@ tests and source directories are removed from Core. Both owners install and gate
 without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
-own repository. Desktop does not compile Core UI source.
+own repository. Desktop does not compile Core UI source. The restored Core UI 1.4.6
+archive comes from owner commit `9aa5cf3a8c30e5c613a0ccc58b1b5734983124b4`;
+Desktop 1.0.9 pins the same renderer. Standalone chat-app/chat-ui archives remain
+at their compatible versions until Make and Web Reader owners update their exact
+peer dependencies.
 
 Core browser integration uses the published Core UI renderer, Desktop preload and its own Electron
 test dependency, with no `npm ci --prefix apps/desktop`. Desktop's owner gate
