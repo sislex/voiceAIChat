@@ -370,7 +370,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigins)
     if (req.url.startsWith('/api/') || req.url.split('?')[0] === '/ws') {
       reply.header('vary', 'Origin')
-      if (origin && !allowed) return reply.code(403).send({ error: 'origin_denied' })
+      if (origin && !allowed) {
+        // A WebSocket upgrade socket is detached from the HTTP server: a regular reply is
+        // written but the connection is never ended, so it leaks and app.close() waits forever.
+        if (req.headers.upgrade) {
+          reply.hijack()
+          const body = JSON.stringify({ error: 'origin_denied' })
+          req.raw.socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n'
+            + 'Vary: Origin\r\nContent-Length: ' + Buffer.byteLength(body) + '\r\n\r\n' + body)
+          return reply
+        }
+        return reply.code(403).send({ error: 'origin_denied' })
+      }
     }
     if (allowed) {
       req.corsAllowed = !ownOrigins.includes(origin)
