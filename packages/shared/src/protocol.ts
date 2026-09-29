@@ -182,6 +182,9 @@ export const REST = {
   adminSessionUntrust: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}/trust`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
+  conversationGroups: '/api/conversation-groups',
+  conversationGroup: (id: string) => `/api/conversation-groups/${encodeURIComponent(id)}`,
+  conversationMembership: (id: string) => `/api/conversations/${encodeURIComponent(id)}/membership`,
   /** Make: состояние/файлы проекта разговора. */
   makeState: (id: string) => `/api/make/${encodeURIComponent(id)}`,
   makeFile: (id: string) => `/api/make/${encodeURIComponent(id)}/file`,
@@ -302,6 +305,7 @@ export const REST = {
   systemCapabilities: '/api/system/capabilities',
   /** Verified application/access context for the current authenticated chat session. */
   chatContext: '/api/chat/context',
+  chatSession: '/api/chat/session',
   /** Versioned account chat settings snapshot and revision-checked patches. */
   chatSettings: '/api/chat/settings',
   conversationSettings: (id: string) => `/api/conversations/${encodeURIComponent(id)}/settings`,

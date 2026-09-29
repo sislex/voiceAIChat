@@ -146,3 +146,73 @@ test('exact published transport adapter traverses Core WS dispatch, reconnects a
     consumer.close()
   }
 })
+
+async function chatStoreFixture() {
+  const consumer = await createConsumer()
+  const { createChatStore } = await consumer.importChat('store/chatStore')
+  const snapshots = new Map()
+  const conversation = id => ({ id, title: id, scope: 'chat', createdAt: 1, updatedAt: 1, claudeSessionId: null, execTarget: null })
+  for (const id of ['active', 'background']) snapshots.set(id, { conversation: conversation(id), messages: [] })
+  const empty = async () => []
+  const client = new Proxy({
+    turn: { enabled: false },
+    'conversations:get': async ({ id }) => snapshots.get(id) ?? null,
+    'conversations:list': empty,
+    'conversations:taskContext': async () => null,
+    'conversations:taskChats': empty
+  }, { get: (target, property) => property in target ? target[property] : empty })
+  const voice = {
+    state: () => 'idle', dispatch: () => true, restoreThinking: () => true, beginTurn() {},
+    speakDelta() {}, finishStreamedTurn: () => true, speakReply() {}, autoSpeakActive: () => false,
+    cancelSpeech() {}, cancelTimers() {}, resetForChatSwitch() {}
+  }
+  const store = createChatStore({
+    chat: client,
+    prefs: { get: () => null, set() {}, remove() {} },
+    voice,
+    getSettings: () => ({}),
+    listAgents: () => [],
+    download: { file() {} }
+  })
+  return { consumer, store, snapshots, conversation }
+}
+
+// @testCase TC-CLIENT-01
+test('published chat store merges optimistic, realtime and HTTP confirmations by Message.id', async () => {
+  const fixture = await chatStoreFixture()
+  try {
+    await fixture.store.actions.selectConversation('active')
+    const optimistic = { id: 'stable-1', conversationId: 'active', role: 'u1', text: 'draft', time: '10:00', createdAt: 1 }
+    const persisted = { ...optimistic, text: 'persisted', createdAt: 2 }
+    fixture.store.actions.applyChatMessage('active', optimistic)
+    fixture.store.actions.applyChatMessage('active', persisted)
+    fixture.store.actions.applyChatMessage('active', persisted)
+    fixture.snapshots.set('active', { conversation: fixture.conversation('active'), messages: [persisted] })
+    await fixture.store.actions.reloadActiveMessages()
+
+    assert.deepEqual(fixture.store.getState().messages.map(message => [message.id, message.text]), [['stable-1', 'persisted']])
+  } finally {
+    fixture.store.dispose()
+    fixture.consumer.close()
+  }
+})
+
+// @testCase TC-CLIENT-02
+test('published chat store caches an inactive conversation without replacing the visible timeline', async () => {
+  const fixture = await chatStoreFixture()
+  try {
+    await fixture.store.actions.selectConversation('active')
+    const activeMessage = { id: 'active-1', conversationId: 'active', role: 'u1', text: 'visible', time: '10:00', createdAt: 1 }
+    const backgroundMessage = { id: 'background-1', conversationId: 'background', role: 'u1', text: 'cached', time: '10:01', createdAt: 2 }
+    fixture.store.actions.applyChatMessage('active', activeMessage)
+    fixture.store.actions.applyChatMessage('background', backgroundMessage)
+    fixture.store.actions.applyChatMessage('background', backgroundMessage)
+
+    assert.deepEqual(fixture.store.getState().messages.map(message => message.id), ['active-1'])
+    await fixture.store.actions.selectConversation('background')
+    assert.deepEqual(fixture.store.getState().messages.map(message => message.id), ['background-1'])
+  } finally {
+    fixture.store.dispose()
+    fixture.consumer.close()
+  }
+})

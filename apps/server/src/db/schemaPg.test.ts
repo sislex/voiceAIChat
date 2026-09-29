@@ -54,6 +54,20 @@ CREATE INDEX IF NOT EXISTS idx_a_enabled ON a(enabled);`)
     expect(out.afterColumnsSql).toContain('CREATE INDEX IF NOT EXISTS idx_a_enabled ON a(enabled)')
   })
 
+  // @testCase TC-INT-07
+  it('keeps conversation group persistence and archive filtering equivalent in PostgreSQL', () => {
+    expect(PG_SCHEMA.tables.some((table) => table.includes('CREATE TABLE IF NOT EXISTS conversation_groups'))).toBe(true)
+    expect(PG_SCHEMA.tables.some((table) => table.includes('CREATE TABLE IF NOT EXISTS conversation_group_memberships'))).toBe(true)
+    expect(PG_SCHEMA.columns).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: 'conversations', name: 'archived_at' }),
+      expect.objectContaining({ table: 'conversation_groups', name: 'position' }),
+      expect.objectContaining({ table: 'conversation_group_memberships', name: 'conversation_id' })
+    ]))
+    expect(PG_SCHEMA.afterColumnsSql).toContain('idx_conversations_owner_archive')
+    expect(PG_SCHEMA.afterColumnsSql).toContain('idx_conversation_groups_owner_order')
+    expect(PG_SCHEMA.afterColumnsSql).toContain('idx_conversation_group_memberships_conversation')
+  })
+
   it('includes the task manual-QA flag in additive PostgreSQL upgrades', () => {
     const existing = PG_SCHEMA.columns
       .filter((column) => !(column.table === 'tasks' && column.name === 'auto_pilot_requires_manual_qa'))

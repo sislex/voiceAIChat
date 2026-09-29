@@ -35,6 +35,7 @@ export interface AttachWsOptions {
   /** Recheck the user before accepting an authenticated command. */
   authorizeMessage?: () => Promise<boolean>
   authorizeCommand?: (message: ClientMessage, context: WsContext) => Promise<boolean>
+  unauthorizedCloseCode?: number
   maxBufferedBytes?: number
   /** Куда сообщить о разрыве: счётчики кадров по типам показывают, что именно переполнило очередь. */
   onOverflow?: (info: { bufferedAmount: number; frames: Array<[string, number]> }) => void
@@ -85,7 +86,7 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
     queue = queue
       .then(async () => {
         if (openingFailed || socket.readyState !== socket.OPEN) return
-        if ((!isBinary || options.authorizeOutput) && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(4001, 'Session expired');return}
+        if ((!isBinary || options.authorizeOutput) && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(options.unauthorizedCloseCode ?? 4001, 'Session expired');return}
         if (isBinary) {
           if (options.authorizeOutput) return
           handlers.onBinary?.(data, ctx)

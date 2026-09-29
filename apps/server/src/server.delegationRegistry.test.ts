@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,11 +21,17 @@ it.each([undefined, 'false', '1', 'TRUE'])('denies delegated REST and WS without
   const app = await buildServer({ db, config, delegationClient: { introspect } })
   try {
     for (const url of ['/api/chat/context?conversationId=synthetic', '/api/conversations/synthetic']) {
-      const response = await app.inject({ url, headers: { 'x-sislexa-delegation': 'synthetic-credential' } })
+      const response = await app.inject({ url, headers: { 'x-sislexa-delegation': randomUUID() } })
       expect(response.statusCode).toBe(403)
     }
+    expect((await app.inject({ method: 'POST', url: '/api/chat/session?conversationId=synthetic',
+      headers: { 'x-sislexa-delegation': randomUUID() } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/chat/session',
+      headers: { authorization: 'Bearer ' + randomUUID() } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/chat/session',
+      headers: { authorization: 'Bearer ' + randomUUID(), 'x-app-credential': randomUUID() } })).statusCode).toBe(403)
     let closed!: Promise<unknown[]>
-    const socket = await app.injectWS('/ws', { headers: { 'x-sislexa-delegation': 'synthetic-credential' } }, {
+    const socket = await app.injectWS('/ws', { headers: { 'x-sislexa-delegation': randomUUID() } }, {
       onInit: ws => { closed = once(ws, 'close') }
     })
     try { await closed; expect(socket.readyState).toBe(3) } finally { socket.terminate() }

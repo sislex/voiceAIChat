@@ -40,8 +40,32 @@ CREATE TABLE IF NOT EXISTS conversations (
   cost_status       TEXT,
   cost_prices_stamp INTEGER,
   cost_dirty        INTEGER NOT NULL DEFAULT 1,
-  permission_mode TEXT
+  permission_mode TEXT,
+  archived_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS conversation_groups (
+  id         TEXT PRIMARY KEY,
+  tenant_id  TEXT NOT NULL,
+  user_id    TEXT NOT NULL,
+  name       TEXT NOT NULL CHECK (length(trim(name)) > 0),
+  position   INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(tenant_id, user_id, position)
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_owner_order
+  ON conversation_groups(tenant_id, user_id, position, id);
+
+CREATE TABLE IF NOT EXISTS conversation_group_memberships (
+  group_id       TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  PRIMARY KEY (group_id, conversation_id),
+  FOREIGN KEY (group_id) REFERENCES conversation_groups(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conversation_group_memberships_conversation
+  ON conversation_group_memberships(conversation_id, group_id);
 
 
 CREATE TABLE IF NOT EXISTS conversation_draft_requests (
@@ -434,6 +458,8 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
+  -- Merge has a separate fast gate; an empty value inherits test_command.
+  merge_test_command TEXT NOT NULL DEFAULT '',
   -- Пустое значение наследует test_command: пост-development стадии сужают гейт,
   -- а не заводят вторую копию настройки.
   component_qa_command TEXT NOT NULL DEFAULT '',

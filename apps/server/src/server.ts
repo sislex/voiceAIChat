@@ -1,3 +1,5 @@
+import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
+import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS } from '@voicechat/shared'
 import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
 import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/index'
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
@@ -351,15 +353,37 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     component.close()
     throw new Error('Managed remote tools require declared component dependencies')
   }
-  const corsOrigins = new Set(opts.config.corsOrigins)
+  const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-request-id'
+  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin
-    if (origin && corsOrigins.has(origin)) {
-      req.corsAllowed = true
+    // The UI served by this Core is same-origin at every address it answers on. VC_PUBLIC_URL
+    // names the canonical address; a direct IP or second host name must not lose mutations.
+    const ownOrigins = [...new Set([
+      ...(opts.config.publicUrl ? [new URL(opts.config.publicUrl).origin] : []),
+      req.protocol + '://' + req.host
+    ])]
+    const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigins)
+    if (req.url.startsWith('/api/') || req.url.split('?')[0] === '/ws') {
+      reply.header('vary', 'Origin')
+      if (origin && !allowed) {
+        // A WebSocket upgrade socket is detached from the HTTP server: a regular reply is
+        // written but the connection is never ended, so it leaks and app.close() waits forever.
+        if (req.headers.upgrade) {
+          reply.hijack()
+          const body = JSON.stringify({ error: 'origin_denied' })
+          req.raw.socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n'
+            + 'Vary: Origin\r\nContent-Length: ' + Buffer.byteLength(body) + '\r\n\r\n' + body)
+          return reply
+        }
+        return reply.code(403).send({ error: 'origin_denied' })
+      }
+    }
+    if (allowed) {
+      req.corsAllowed = !ownOrigins.includes(origin)
       reply.header('access-control-allow-origin', origin)
       reply.header('access-control-allow-credentials', 'true')
       reply.header('access-control-expose-headers', REQUEST_ID_HEADER)
@@ -370,6 +394,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
     }
     if (req.method === 'OPTIONS' && req.url.startsWith('/api/')) await reply.code(204).send()
+  })
+  const browserSessions = new BrowserChatSessions()
+  browserSessions.register(app)
+  app.addHook('onRequest', async (req, reply) => {
+    const application = req.headers['x-app-credential']
+    if (application === undefined) return
+    if (req.url.split('?')[0] !== REST.chatSession || req.method !== 'POST'
+      || typeof application !== 'string' || !application || req.headers[DELEGATION_HEADER] !== undefined
+      || !req.headers.authorization?.startsWith('Bearer ')) {
+      return reply.code(403).send({ error: 'delegation_denied' })
+    }
+    // E02 backend adapter: validate both the application grant and its paired user session.
+    req.headers[DELEGATION_HEADER] = application
+    delete req.headers['x-app-credential']
   })
   // Толерантный JSON-парсер: пустое тело (напр. DELETE с Content-Type) → undefined,
   // а не 400. Делает REST устойчивым к любым клиентам.
@@ -439,11 +477,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
   const authenticate: AuthenticateFn = async req => {
-    const grant = req.headers[DELEGATION_HEADER]
-    if (grant === undefined) return sessionAuthenticate(req)
+    let grant = req.headers[DELEGATION_HEADER]
+    if (grant === undefined) {
+      if (req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
+        && req.headers.origin && req.headers.authorization === undefined) {
+        // Issuance is read-only; the onRequest origin guard protects this cookie exchange.
+        return sessionAuthenticate({ method: 'GET', url: req.url, headers: req.headers })
+      }
+      const verdict = await sessionAuthenticate(req)
+      const bearer = req.headers.authorization?.replace(/^Bearer /, '')
+      if (verdict.ok || verdict.status !== 401 || req.url.split('?')[0] !== REST.chatSession || !bearer || !delegation) return verdict
+      // E03 public-client access tokens introspect to the same delegated principal.
+      // They must never acquire the authority of an ordinary user session.
+      grant = bearer
+      req.headers[DELEGATION_HEADER] = bearer
+      delete req.headers.authorization
+    }
     try {
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
-      if (!/^\/(?:ws$|api\/chat\/context(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      if (!/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
       const user = await delegation.user(grant)
       const tenant = req.headers['x-sislexa-tenant-id']
       if (tenant !== undefined && tenant !== user.account?.tenantId) throw new DelegationDenied()
@@ -464,6 +516,30 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (identityApp.hasDecorator('resetLoginLimiters')) app.decorate('resetLoginLimiters', identityApp.getDecorator('resetLoginLimiters'))
   })
   registerChatDelegation(app, delegation, () => !!accounting)
+  app.post<{ Querystring: { conversationId?: string } }>(REST.chatSession, async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    if (!req.user?.account || req.user.mustChangePassword) return reply.code(403).send({ error: 'chat_session_denied' })
+    const grant = req.headers[DELEGATION_HEADER]
+    let authorityExpiresAt: number | undefined
+    let id = req.query.conversationId
+    if (id !== undefined && (typeof id !== 'string' || !id)) throw new DelegationDenied()
+    if (grant !== undefined) {
+      if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
+      const reference = await delegation.bind(grant, req.user.name, req.user.account.tenantId)
+      try {
+        const principal = await delegation.current(reference)
+        authorityExpiresAt = principal.expiresAt
+        if (!id) {
+          const ids = [...new Set(principal.permissions.filter(permission => permission.resource.type === 'conversation'
+            && permission.scopes.includes('read')).map(permission => permission.resource.id))]
+          if (ids.length !== 1) throw new DelegationDenied()
+          id = ids[0]!
+        }
+        await delegation.authorize(reference, 'read', id)
+      } finally { delegation.release(reference) }
+    }
+    return browserSessions.issue(req, cookieToken(req.headers.cookie), grant === undefined ? undefined : id, authorityExpiresAt)
+  })
   registerAccountAccess(app, db)
   registerBillingProxy(app, managedBilling)
   registerAnalyticsProxy(app, managedAnalytics)
@@ -571,6 +647,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // раз при создании чата — единственное, что Make делает с репозиторием.
     // Ошибка (нет машины, offline, dirty без возможности stash) не мешает
     // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
+    publishChatMessage: (userId, conversationId, message) => {
+      frames.publish({ t: 'chat.message', conversationId, message }, userId)
+    },
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return
@@ -932,7 +1011,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     async (req, reply): Promise<UploadInfo> => {
       const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
       const userId = uid(req)
-      if (conversationId && !await db.chat.getConversation(userId, conversationId)) return reply.code(404).send({ error: 'conversation not found' }) as never
+      if (browserSessions.requests.has(req) && !conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
+      if (conversationId) {
+        const conversation = await db.chat.getConversation(userId, conversationId)
+        if (!conversation || conversation.tenantId && conversation.tenantId !== req.user?.account?.tenantId) {
+          return reply.code(404).send({ error: 'conversation not found' }) as never
+        }
+      }
       const resolvedMachine = !requestedAgentId && conversationId
         ? await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
         : null
@@ -967,12 +1052,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           await agentRegistry.fsMkdir(writeAgentId, directory)
           await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
           const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
+          rec.tenantId = req.user?.account?.tenantId
+          rec.conversationId = conversationId
           return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }
         } catch (err) {
           return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
         }
       }
       const rec = uploads.save(uploadName, bytes, safeMime, userId)
+      rec.tenantId = req.user?.account?.tenantId
+      rec.conversationId = conversationId
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
@@ -1346,9 +1435,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingStore?.close()
   })
 
-  const makeHandlers = (user: SessionUser, sid: string | null, token: string, delegated?: ChatDelegationReference): WsHandlers =>
+  const makeHandlers = (user: SessionUser, sid: string | null, token: string, delegated?: ChatDelegationReference, chatOnly = false): WsHandlers =>
     createSession({
       delegation: delegated,
+      chatOnly,
       billingSession: delegated ? undefined : billingSessions.register(user, sid, token),
       db,
       turns: turnManager,
@@ -1439,7 +1529,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
       const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
       if (rejectsAttribution(request.query)) { socket.close(4003, 'Untrusted attribution'); return }
-      const token = wsQuery?.token ?? cookieToken(request.headers.cookie)
+      const browserSession = browserSessions.requests.get(request)
+      const token = browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
+        : wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
       // укладывалась в микрозадачи и окно было незаметно; с Postgres оно — миллисекунды сети.
@@ -1447,6 +1539,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const buffer = (data: Buffer, isBinary: boolean): void => { early.push([data, isBinary]) }
       socket.on('message', buffer)
       const verifySocket = async () => {
+        if (browserSession && !browserSessions.current(browserSession)) return null
         if (!token && request.headers[DELEGATION_HEADER] === undefined) return null
         try {
           const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
@@ -1457,7 +1550,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const user = await verifySocket()
       if (!user) {
         socket.off('message', buffer)
-        socket.close()
+        socket.close(browserSession ? 4403 : 1008, 'Unauthorized')
         return
       }
       // A role change requires fresh handlers; an old socket must not retain its former privileges.
@@ -1475,16 +1568,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         }
       } catch { socket.off('message', buffer); socket.close(4003, 'Delegation denied'); return }
       const sid = verifyToken(token, sessionSecret)?.sid ?? null
+      const expiryTimer = browserSession ? setTimeout(() => socket.close(4401, 'Chat session expired'),
+        Math.max(1, browserSession.expiresAt - Date.now())) : undefined
+      expiryTimer?.unref()
+      socket.once('close', () => clearTimeout(expiryTimer))
       const unsubscribe = sessionHub.onChange(event => {
         if(event.user!==user.name)return
-        if(event.revokedSid===sid)queueMicrotask(()=>socket.close(4001,'Session revoked'))
-        else void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session revoked')})
+        if(event.revokedSid===sid)queueMicrotask(()=>socket.close(browserSession ? 4403 : 4001,'Session revoked'))
+        else void socketIdentityCurrent().then(active=>{if(!active)socket.close(browserSession ? 4403 : 4001,'Session revoked')})
       })
       let checkingIdentity=false
       const identityTimer=setInterval(()=>{
         if(checkingIdentity||socket.readyState!==socket.OPEN)return
         checkingIdentity=true
-        void socketIdentityCurrent().then(active=>{if(!active)socket.close(4001,'Session expired')}).finally(()=>{checkingIdentity=false})
+        void socketIdentityCurrent().then(active=>{if(!active)socket.close(browserSession ? (browserSessions.current(browserSession) ? 4403 : 4401) : 4001,'Session expired')}).finally(()=>{checkingIdentity=false})
       },30_000)
       identityTimer?.unref()
       socket.once('close',()=>{
@@ -1493,13 +1590,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         if(delegated) delegation?.release(delegated)
       })
       socket.off('message', buffer)
-      await attachWs(socket, makeHandlers(user, sid, token!, delegated), {
+      let browserReady = false
+      await attachWs(socket, makeHandlers(user, sid, token!, delegated, !!browserSession), {
+        unauthorizedCloseCode: browserSession ? 4403 : 4001,
         initialFrames: early,
         authorizeMessage: async () => {
+          if (browserSession && !browserSessions.current(browserSession)) { socket.close(4401, 'Chat session expired'); return false }
           if (!await socketIdentityCurrent()) return false
           try { if (delegated) await delegation!.current(delegated); return true } catch { return false }
         },
-        authorizeOutput: delegated ? async message => {
+        authorizeOutput: delegated || browserSession ? async message => {
+          if (browserSession && !await socketIdentityCurrent()) return false
+          if (browserSession?.conversationId && 'conversationId' in message && message.conversationId !== browserSession.conversationId) return false
+          if (!delegated) {
+            if ('conversationId' in message && typeof message.conversationId === 'string') {
+              const conversation = await db.chat.getConversation(user.name, message.conversationId)
+              if (!conversation || conversation.tenantId !== user.account?.tenantId) return false
+            }
+            if (message.t === 'chat.ready') { browserReady = true; return true }
+            return browserReady && (message.t.startsWith('claude.') || message.t === 'chat.message' || message.t === 'chat.settings.updated')
+          }
           if (message.t === 'chat.ready') {
             try {
               const resources = message.snapshot.context.resources
@@ -1513,11 +1623,47 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         } : undefined,
         authorizeCommand: async (message, context) => {
           if (rejectsAttribution(message)) return false
+          if (browserSession && !['chat.connect', 'claude.send', 'claude.cancel', 'claude.queue.edit',
+            'claude.queue.delete', 'claude.queue.reorder', 'claude.queue.now'].includes(message.t)) return false
+          if (browserSession?.conversationId && 'conversationId' in message
+            && message.conversationId !== undefined && message.conversationId !== browserSession.conversationId) return false
+          if (browserSession && message.t === 'claude.send' && message.attachments !== undefined) {
+            if (!Array.isArray(message.attachments) || message.attachments.some(id => {
+              const upload = typeof id === 'string' ? uploads.get(id) : undefined
+              return !upload || upload.ownerId !== user.name || upload.tenantId !== user.account?.tenantId
+                || upload.conversationId !== message.conversationId
+            })) {
+              context.send({ t: 'claude.error', conversationId: message.conversationId, message: 'attachment_not_allowed' })
+              return false
+            }
+          }
+          if (browserSession && message.t === 'chat.connect' && !delegated) {
+            if (message.v !== 1 || !user.account) return false
+            context.send({ t: 'chat.ready', snapshot: {
+              version: 1, connectionId: browserSession.sessionId, cursor: randomBytes(16).toString('hex'),
+              context: createVerifiedChatApplicationContext({
+                version: 1, application: { version: 1, originApplicationId: 'core', executorApplicationId: 'core', tokenId: null, delegationId: null },
+                principal: { identityIssuer: 'identity', userId: user.name, tenantId: user.account.tenantId,
+                  environmentId: component?.config.environmentId ?? 'legacy' },
+                sessionId: browserSession.sessionId, verifiedAt: Date.now(), expiresAt: browserSession.expiresAt,
+                permissions: hasProductCapability(user.account, 'chat.use') ? CHAT_PERMISSIONS : ['chat:conversations:read', 'chat:settings:read', 'chat:turns:cancel'], resources: { kind: 'all-conversations' },
+                capabilities: [{ id: 'chat.text', available: hasProductCapability(user.account, 'chat.use'),
+                    ...(!hasProductCapability(user.account, 'chat.use') ? { reason: 'not-granted' as const } : {}) }, { id: 'chat.attachments', available: true },
+                  { id: 'chat.queue', available: true }, { id: 'chat.tools', available: false, reason: 'host-unsupported' },
+                  { id: 'chat.voice.input', available: false, reason: 'host-unsupported' },
+                  { id: 'chat.voice.output', available: false, reason: 'host-unsupported' }]
+              }, Date.now()),
+              settings: (await db.settings.getChatSettings(user.name))!,
+              reconnect: { status: 'resync-required', reason: 'initial-connect' }
+            } })
+            return false
+          }
           if (delegated) {
             try {
               if (message.t === 'chat.connect') {
-                if (message.v !== 1 || !message.conversationId) throw new DelegationDenied()
-                context.send({ t: 'chat.ready', snapshot: await delegation!.snapshot(delegated, message.conversationId, !!accounting) })
+                const id = browserSession?.conversationId ?? message.conversationId
+                if (message.v !== 1 || !id) throw new DelegationDenied()
+                context.send({ t: 'chat.ready', snapshot: await delegation!.snapshot(delegated, id, !!accounting) })
                 return false
               }
               if (!['claude.send', 'claude.cancel', 'claude.queue.edit', 'claude.queue.delete', 'claude.queue.reorder', 'claude.queue.now'].includes(message.t)
