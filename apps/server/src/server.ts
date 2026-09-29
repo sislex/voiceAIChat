@@ -361,14 +361,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin
-    const ownOrigin = opts.config.publicUrl ? new URL(opts.config.publicUrl).origin : req.protocol + '://' + req.host
-    const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigin)
+    // The UI served by this Core is same-origin at every address it answers on. VC_PUBLIC_URL
+    // names the canonical address; a direct IP or second host name must not lose mutations.
+    const ownOrigins = [...new Set([
+      ...(opts.config.publicUrl ? [new URL(opts.config.publicUrl).origin] : []),
+      req.protocol + '://' + req.host
+    ])]
+    const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigins)
     if (req.url.startsWith('/api/') || req.url.split('?')[0] === '/ws') {
       reply.header('vary', 'Origin')
       if (origin && !allowed) return reply.code(403).send({ error: 'origin_denied' })
     }
     if (allowed) {
-      req.corsAllowed = origin !== ownOrigin
+      req.corsAllowed = !ownOrigins.includes(origin)
       reply.header('access-control-allow-origin', origin)
       reply.header('access-control-allow-credentials', 'true')
       reply.header('access-control-expose-headers', REQUEST_ID_HEADER)
