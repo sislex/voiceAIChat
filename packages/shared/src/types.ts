@@ -848,10 +848,6 @@ export function scaleBrowserCoordinates(x: number, y: number, renderedWidth: num
   }
 }
 
-export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-
-export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
-
 export const SYSTEM_CONVERSATION_GROUP_IDS = ['all', 'archive'] as const
 export type SystemConversationGroupId = typeof SYSTEM_CONVERSATION_GROUP_IDS[number]
 

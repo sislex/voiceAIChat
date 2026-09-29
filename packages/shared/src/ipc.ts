@@ -323,8 +323,6 @@ export interface IpcInvokeMap {
       deepThinking?: boolean
       /** Режим прав разговора; null — из общих настроек. undefined — не менять. */
       permissionMode?: PermissionMode | null
-      reasoningEffort?: ReasoningEffort
-      deepThinking?: boolean
       /** Режим автоматического KB-контекста. */
       kbContextMode?: KbContextMode
     }
