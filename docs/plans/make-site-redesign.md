@@ -6,6 +6,8 @@ Created: 2026-09-29
 
 Baseline: Core `origin/main` at `8891f44d`
 
+**Superseded by [`make-browser-v1`](make-browser.md) on 2026-09-30; do not import.**
+
 Activation: after plan `shared-chat-v1` Stage S4 is accepted. Until then this
 document is a specification only; no task is claimed or running.
 
