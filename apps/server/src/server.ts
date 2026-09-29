@@ -29,7 +29,7 @@ import { randomBytes } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -127,7 +127,6 @@ import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
 import { RemoteLlmClient } from './llm/remoteClient.js'
 import { RunnerFsClient } from './llm/runnerFsClient.js'
-import { PromptSuggester } from './prompt/suggester.js'
 // CLI spawning and profiles belong to the independent LLM Runner. Core
 // requires configured HTTP endpoints instead of silently starting a local CLI.
 import { unconfiguredLlmClient, unconfiguredLoginStatus } from './llm/unconfigured.js'
@@ -361,14 +360,30 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin
-    const ownOrigin = opts.config.publicUrl ? new URL(opts.config.publicUrl).origin : req.protocol + '://' + req.host
-    const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigin)
+    // The UI served by this Core is same-origin at every address it answers on. VC_PUBLIC_URL
+    // names the canonical address; a direct IP or second host name must not lose mutations.
+    const ownOrigins = [...new Set([
+      ...(opts.config.publicUrl ? [new URL(opts.config.publicUrl).origin] : []),
+      req.protocol + '://' + req.host
+    ])]
+    const allowed = origin && browserOriginAllowed(origin, corsOrigins, ownOrigins)
     if (req.url.startsWith('/api/') || req.url.split('?')[0] === '/ws') {
       reply.header('vary', 'Origin')
-      if (origin && !allowed) return reply.code(403).send({ error: 'origin_denied' })
+      if (origin && !allowed) {
+        // A WebSocket upgrade socket is detached from the HTTP server: a regular reply is
+        // written but the connection is never ended, so it leaks and app.close() waits forever.
+        if (req.headers.upgrade) {
+          reply.hijack()
+          const body = JSON.stringify({ error: 'origin_denied' })
+          req.raw.socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n'
+            + 'Vary: Origin\r\nContent-Length: ' + Buffer.byteLength(body) + '\r\n\r\n' + body)
+          return reply
+        }
+        return reply.code(403).send({ error: 'origin_denied' })
+      }
     }
     if (allowed) {
-      req.corsAllowed = origin !== ownOrigin
+      req.corsAllowed = !ownOrigins.includes(origin)
       reply.header('access-control-allow-origin', origin)
       reply.header('access-control-allow-credentials', 'true')
       reply.header('access-control-expose-headers', REQUEST_ID_HEADER)
@@ -682,31 +697,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
   registerUiPerformanceRoutes(app)
   registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
-
-  // Помощник формулировки — одноразовый вызов выбранного пользователем CLI.
-  // Историю разговора не трогает, shell выключен.
-  app.post<{ Body: { prompt?: string; modifiers?: import('@voicechat/shared').ModifierPrompt[] } }>(REST.promptSuggest, async (req, reply) => {
-    const prompt = (req.body?.prompt ?? '').trim()
-    if (!prompt) return { variants: [] as Array<{ id: string; text: string }> }
-    const settings = await db.settings.getSettings(uid(req))
-    const access = await db.identity.getUserLlmAccess(uid(req))
-    const provider = isProviderAllowed(access, settings.aiAssistProvider)
-      ? settings.aiAssistProvider
-      : firstAllowedProvider(access)
-    if (!provider) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
-    const requestedModel = settings.aiAssistModel || (provider === 'claude' ? 'haiku' : '')
-    const model = clampModel(access, provider, requestedModel)
-    if (!model) return reply.code(403).send({ error: 'Нет доступных моделей' }) as never
-    const client = await (provider === 'codex' ? codex : claude)
-    const modifiers = (req.body?.modifiers ?? []).filter((item) => item.enabled && item.text.trim())
-    try {
-      const texts = await new PromptSuggester(client, model).suggest(prompt, modifiers, uid(req))
-      return { variants: texts.map((text, index) => ({ id: `${Date.now()}-${index}`, text })) }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось получить подсказки'
-      return reply.code(502).send({ error: message }) as never
-    }
-  })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.

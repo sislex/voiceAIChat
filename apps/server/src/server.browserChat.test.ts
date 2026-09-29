@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { connect } from 'node:net'
 import { once } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -147,4 +148,46 @@ it('exchanges a live delegated grant, keeps its resource boundary and observes r
     socket.send(JSON.stringify({ t: 'chat.connect', v: 1 }))
     await closed
   } finally { socket?.terminate(); await app.close(); await db.close(); rmSync(directory, { recursive: true, force: true }) }
+})
+
+it('keeps same-origin mutations working at a direct address next to VC_PUBLIC_URL', async () => {
+  const directory = mkdtempSync(join(temp(), 'browser-chat-own-'))
+  const db = new VoiceChatDb(':memory:')
+  const app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: directory, VC_PUBLIC_URL: 'https://chat.example', VC_CORS_ORIGINS: origin }) })
+  try {
+    const direct = { host: '203.0.113.7:8787', origin: 'http://203.0.113.7:8787' }
+    const own = await app.inject({ method: 'PUT', url: '/api/settings', headers: direct, payload: {} })
+    expect(own.statusCode).not.toBe(403)
+    expect(own.json().error).not.toBe('origin_denied')
+    const canonical = await app.inject({ method: 'PUT', url: '/api/settings', headers: { host: '203.0.113.7:8787', origin: 'https://chat.example' }, payload: {} })
+    expect(canonical.json().error).not.toBe('origin_denied')
+    const foreign = await app.inject({ method: 'PUT', url: '/api/settings', headers: { host: '203.0.113.7:8787', origin: 'http://203.0.113.8:8787' }, payload: {} })
+    expect(foreign.statusCode).toBe(403)
+    expect(foreign.json().error).toBe('origin_denied')
+  } finally {
+    await app.close()
+    await db.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('ends a WebSocket upgrade rejected by origin so shutdown is not blocked', async () => {
+  const directory = mkdtempSync(join(temp(), 'browser-chat-upgrade-'))
+  const db = new VoiceChatDb(':memory:')
+  const app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: directory, VC_CORS_ORIGINS: origin }) })
+  try {
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const { port } = app.server.address() as { port: number }
+    const reply = await new Promise<{ closed: boolean; status: string }>((resolve) => {
+      const socket = connect(port, '127.0.0.1', () => socket.write(['GET /ws HTTP/1.1', 'Host: 127.0.0.1:' + port, 'Origin: file://',
+        'Connection: Upgrade', 'Upgrade: websocket', 'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', '', ''].join('\r\n')))
+      let data = ''
+      const timer = setTimeout(() => { socket.destroy(); resolve({ closed: false, status: data.split('\r\n')[0] }) }, 3000)
+      socket.on('data', (chunk) => { data += chunk })
+      socket.on('close', () => { clearTimeout(timer); resolve({ closed: true, status: data.split('\r\n')[0] }) })
+    })
+    expect(reply).toEqual({ closed: true, status: 'HTTP/1.1 403 Forbidden' })
+    const closing = app.close().then(() => 'closed')
+    expect(await Promise.race([closing, new Promise((resolve) => setTimeout(() => resolve('blocked'), 3000))])).toBe('closed')
+  } finally { await app.close(); await db.close(); rmSync(directory, { recursive: true, force: true }) }
 })

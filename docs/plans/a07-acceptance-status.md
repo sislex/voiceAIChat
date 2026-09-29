@@ -26,7 +26,7 @@ The composition uses reviewed owner commits: Identity
 `41263c7c20f8e852b508bbd76220245fbb62bd10` (application token totals),
 Analytics `a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942` (application projection),
 SDK `f6313db5ff58cc35fa8dacc90b9844f9706dcfba`, and Runner
-`097282f2418c245454fe963b10d9b61e0b4d814a`. The preflight checks the exact
+`1ccbdeb47b0419730e5b460c0e6610bf73fef29a`. The preflight checks the exact
 archives, installed bytes, consumer lock and deployment lock.
 
 Run `npm ci` and `npm run gate` on the final Core commit. The gate includes

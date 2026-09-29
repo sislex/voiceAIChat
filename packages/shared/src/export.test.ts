@@ -15,6 +15,8 @@ const conv: Conversation = {
   skillNames: [],
   llmProvider: null,
   llmModel: null,
+  reasoningEffort: 'medium',
+  deepThinking: false,
   permissionMode: null,
   lastExecTarget: null
 }

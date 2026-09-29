@@ -468,7 +468,12 @@ exit 0`,repo,30000)
       await this.deps.db.ci.updateMergeRun(id,{mergeSha:checkedSha}); await this.stage(id,'merging','passed',`Проверяемый SHA ${checkedSha.slice(0,8)} (feature + main)`)
 
       if (!this.deps.kbUpdate) throw new Error('Обязательный обработчик актуализации базы знаний не подключён')
-      const commands=testStages(project.testCommand??'',['npm run affected-check'])
+      // Merge checks have their own configuration. The release command may
+      // include product deployment acceptance and must never be inherited here.
+      const configuredCommands=testStages(project.mergeTestCommand ?? '',['npm run affected-check'])
+      if(configuredCommands.some(command=>/\bgate:release\b/.test(command)))
+        throw new Error('Merge checks cannot run gate:release; configure mergeTestCommand with a merge-specific gate')
+      const commands=configuredCommands.map(command => command === 'npm run gate:merge' ? `npm run gate:merge -- --base ${shellQuote(targetRef)}` : command)
       const runGate=async(workdir:string,gateCommands:string[],name:string):Promise<MergeCheck>=>{
         const began=this.now()
         const installed=await this.cmd(run,`npm_config_cache=${shellQuote(cacheDir)} npm ci --no-audit --no-fund`,workdir,900000)
