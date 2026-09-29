@@ -620,6 +620,7 @@ export interface ProjectSummary {
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
+  mergeTestCommand?: string
   /**
    * Команды пост-development стадий. Пустое значение наследует `testCommand`,
    * поэтому старые проекты работают как раньше. Смысл раздельных настроек в
