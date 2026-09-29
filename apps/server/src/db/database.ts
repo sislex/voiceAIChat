@@ -421,6 +421,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'preview_engine')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN preview_engine TEXT NOT NULL DEFAULT 'proxy'`)
     }
+    if (!convCols.some((c) => c.name === 'make_browser_session')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN make_browser_session TEXT`)
+    }
     if (!convCols.some((c) => c.name === 'preview_url')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN preview_url TEXT`)
     }
