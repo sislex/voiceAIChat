@@ -307,6 +307,7 @@ export const REST = {
   systemCapabilities: '/api/system/capabilities',
   /** Verified application/access context for the current authenticated chat session. */
   chatContext: '/api/chat/context',
+  chatSession: '/api/chat/session',
   /** Versioned account chat settings snapshot and revision-checked patches. */
   chatSettings: '/api/chat/settings',
   conversationSettings: (id: string) => `/api/conversations/${encodeURIComponent(id)}/settings`,
