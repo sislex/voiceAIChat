@@ -456,6 +456,8 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
+  -- Merge has a separate fast gate; an empty value inherits test_command.
+  merge_test_command TEXT NOT NULL DEFAULT '',
   -- Пустое значение наследует test_command: пост-development стадии сужают гейт,
   -- а не заводят вторую копию настройки.
   component_qa_command TEXT NOT NULL DEFAULT '',

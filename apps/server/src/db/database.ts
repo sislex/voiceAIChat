@@ -742,6 +742,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN merge_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'component_qa_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN component_qa_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'integration_test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN integration_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
