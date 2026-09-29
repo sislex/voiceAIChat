@@ -99,6 +99,14 @@ describe.skipIf(ON_POSTGRES)('Component QA: контекст исполнени�
     expect((await db.ci.componentQaExecutionContext(run.id))?.commands).toEqual(['npm run gate'])
   })
 
+  it('stores a separate merge gate without changing the release command', async () => {
+    const { project } = await componentFixture()
+    await db.projects.updateProject('owner', project.id, { testCommand: 'npm run gate:release', mergeTestCommand: 'npm run gate:merge' })
+    expect(await db.projects.getProject('owner', project.id)).toMatchObject({
+      testCommand: 'npm run gate:release', mergeTestCommand: 'npm run gate:merge'
+    })
+  })
+
   // Рабочие директории, созданные до появления колонки, кэша не знают: стадия
   // ставит зависимости кэшем npm по умолчанию, а не падает без контекста.
   it.skipIf(ON_POSTGRES)('у старой рабочей директории кэш пустой, но контекст выдаётся', async () => {
