@@ -1231,8 +1231,6 @@ export async function registerRest(
       reasoningEffort?: string
       deepThinking?: boolean
       permissionMode?: string | null
-      reasoningEffort?: string
-      deepThinking?: boolean
       kbContextMode?: string
     }
   }>(

@@ -845,8 +845,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               reasoningEffort,
               deepThinking,
               permissionMode: conv.permissionMode ?? settings.permissionMode,
-              reasoningEffort: conv.reasoningEffort,
-              deepThinking: conv.deepThinking,
               kbContextMode: conv.kbContextMode ?? 'auto', projectId: conv.projectId ?? null
             } : null
           }
