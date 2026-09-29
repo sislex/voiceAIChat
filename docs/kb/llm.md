@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-28
-checked: 55f5a95b
+updated: 2026-09-29
+checked: 8ed7728f
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -96,13 +96,18 @@ Claude это `default` («Default (recommended)» — модель выбира
 `claude --model` как есть, включая суффикс окна `[1m]`. У Codex актуальный каталог
 состоит из `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
 `gpt-5.5`; первый пункт является `DEFAULT_CODEX_MODEL`. Выбранный id передаётся
-в `codex -m` дословно, без алиаса. Чистая проекция `chatModelMenu` даёт пустому
-чату пять доступных Codex-моделей и каталог Claude, а начатому — текущую модель и
-полный объединённый каталог; оба списка фильтруются персональным `llm:access`,
-допустимая legacy-модель сохраняется в полном каталоге.
+в `codex -m` дословно, без алиаса. Чистая проекция `chatModelMenu` считает чат
+новым только при `messageCount === 0`. Тогда верхний уровень содержит пять
+доступных `CODEX_MODELS`, пункт «Скорость работы» и пункт «Модели» с доступными
+`CLAUDE_MODELS`. После появления сообщения верхний уровень содержит только
+текущую модель, «Скорость работы» и «Все модели» с объединённым каталогом Claude
+и Codex. Оба каталога фильтруются персональным `llm:access`; допустимая
+legacy-модель сохраняется в полном каталоге. Выбор строки сохраняет provider/model
+разговора, сразу меняет заголовок контрола и единственную галочку текущей модели.
 
-Настройки разговора `reasoningEffort=low|medium|high|xhigh|max` и независимый
-`deepThinking` входят в `LlmRequest`. Claude получает `--effort`: `xhigh`
+«Скорость работы» — одиночный выбор `reasoningEffort=low|medium|high|xhigh|max`,
+а `deepThinking` — независимый переключатель, поэтому одно значение не сбрасывает
+другое. Оба входят в `LlmRequest`. Claude получает `--effort`: `xhigh`
 безопасно преобразуется в `high`, а `deepThinking=true` — в `max`. Codex
 получает `model_reasoning_effort` (его `max` преобразуется в `xhigh`) и при
 глубоком мышлении `model_reasoning_summary="detailed"`. Неизвестные CLI-флаги
