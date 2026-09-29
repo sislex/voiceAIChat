@@ -23,9 +23,9 @@
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 405 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 44 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 40 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 17 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1673 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1674 коммит(ов) в areas после сверки: 3ed5c019 docs(kb): update after merge a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 78 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 33 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 30 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
@@ -55,10 +55,11 @@
 
 ## Журнал сессий
 
-Всего записей: 976. Последние:
+Всего записей: 977. Последние:
 
 - [2026-09-29-pc-radvilovich-chat-model-controls-kb.md](log/2026-09-29-pc-radvilovich-chat-model-controls-kb.md) — chat-model-controls-kb
 - [2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md](log/2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md) — s4-shared-contract-peers
+- [2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md](log/2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md) — Separate merge checks from release checks
 - [2026-09-29-alexeys-macbook-air-2-merge-feature-gate.md](log/2026-09-29-alexeys-macbook-air-2-merge-feature-gate.md) — merge-feature-gate
 - [2026-09-29-alexeys-macbook-air-2-conversation-groups-kb.md](log/2026-09-29-alexeys-macbook-air-2-conversation-groups-kb.md) — conversation-groups-kb
 - [2026-09-28-macbook-air-user-conversation-groups.md](log/2026-09-28-macbook-air-user-conversation-groups.md) — conversation-groups
@@ -66,7 +67,6 @@
 - [2026-09-28-macbook-air-user-chat-device-sync.md](log/2026-09-28-macbook-air-user-chat-device-sync.md) — chat-device-sync
 - [2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md](log/2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md) — s3-a07-owner-artifacts
 - [2026-09-28-alexeys-macbook-air-2-s3-a07-exact-composition.md](log/2026-09-28-alexeys-macbook-air-2-s3-a07-exact-composition.md) — s3-a07-exact-composition
-- [2026-09-28-alexeys-macbook-air-2-release-manager-source-images.md](log/2026-09-28-alexeys-macbook-air-2-release-manager-source-images.md) — release-manager-source-images
 
 ## Исторические планы
 
