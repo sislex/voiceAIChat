@@ -205,22 +205,22 @@
     },
     {
       "name": "@sislexa/core-ui",
-      "version": "1.4.4",
-      "filename": "sislexa-core-ui-1.4.4.tgz",
-      "asset": "sislexa-core-ui-1.4.4-29f9fbf79e29.tgz",
-      "sha256": "b2df8391b74c36542139634644646aafdbf8864b8b96cc1117bc46c24b256210",
-      "integrity": "sha512-C4Ttz8WFgT3bnte7+TkLwPAEtqs6IR0j3dGi9k4qq8Uj2zxAuEleRGPNlYiS313h5G7UE53BQkgH95Sw6fyTXQ==",
+      "version": "1.4.7",
+      "filename": "sislexa-core-ui-1.4.7.tgz",
+      "asset": "sislexa-core-ui-1.4.7-70d45ac42e57.tgz",
+      "sha256": "70d45ac42e57d0e56a179f4f955fb4970f7edba745359d6982c3cbde4ebadf46",
+      "integrity": "sha512-W42CvaJZtwUXJON9XFvQCiGRqccJpT1s1/mlq9yPGcC/8l5dPIJ5Ob9xAhrbxlR8pTtok90UTRbnU1dEgz81+A==",
       "repository": "https://github.com/sislex/sislexa-core-ui",
-      "commit": "29f9fbf79e29fea06576f3cbe6bf3a5437b61f92",
+      "commit": "1b8a8bb1cff24468c78cd383213647992c5f30e3",
       "provenance": {
         "repository": "https://github.com/sislex/sislexa-core-ui",
-        "version": "1.4.4",
-        "commit": "29f9fbf79e29fea06576f3cbe6bf3a5437b61f92",
+        "version": "1.4.7",
+        "commit": "1b8a8bb1cff24468c78cd383213647992c5f30e3",
         "dirty": false,
         "requires": {
           "coreApi": "^1.0.0",
           "desktopHost": "^1.0.0",
-          "shared": "0.1.10"
+          "shared": "0.1.12"
         }
       }
     },
@@ -236,34 +236,34 @@
     },
     {
       "name": "@sislexa/desktop",
-      "version": "1.0.7",
-      "filename": "sislexa-desktop-1.0.7.tgz",
-      "asset": "sislexa-desktop-1.0.7-f41eea3afbe6.tgz",
-      "sha256": "f41eea3afbe6285a9930136082f81d389d26c0071c242d06eaba631a4bb028aa",
-      "integrity": "sha512-ZjFK0hEIDon+ou+Uicyx4fY9co6LuDiKul1sBhwMNQETgk0hyfI589mJ3bMr/uJ4+9Uhphxw02uiQWTT3Hd86Q==",
+      "version": "1.0.10",
+      "filename": "sislexa-desktop-1.0.10.tgz",
+      "asset": "sislexa-desktop-1.0.10-f77627d3e363.tgz",
+      "sha256": "f77627d3e363deace23517077f0e28afd18c9d5ba8f06d3348fe8e2c6f145b64",
+      "integrity": "sha512-9SwyoNl/vz5t8jS6s1bR8tGbyuo5EDvU5qPbWBxc4f2JCrpvXiNVjxDlnntp4l/u2siBWqznOVMPIkjsFm98nw==",
       "repository": "https://github.com/sislex/desktop",
-      "commit": "6e18b8e4ee8f91a726ce4c5b9f343bc77ca5b665",
+      "commit": "8201c9b1c6faac9f6230e7011cc1578d94c71cdd",
       "provenance": {
         "repository": "https://github.com/sislex/desktop",
-        "commit": "6e18b8e4ee8f91a726ce4c5b9f343bc77ca5b665",
-        "version": "1.0.7",
+        "commit": "8201c9b1c6faac9f6230e7011cc1578d94c71cdd",
+        "version": "1.0.10",
         "apiVersion": "1.0.0",
         "requires": {
           "coreApi": "^1.0.0",
           "agent": "^0.20.0",
-          "coreUi": "^1.4.4",
+          "coreUi": "^1.4.7",
           "legacyChatContract": "1.0.1"
         },
         "dependencies": {
           "coreUi": {
             "repository": "https://github.com/sislex/sislexa-core-ui",
-            "version": "1.4.4",
-            "commit": "29f9fbf79e29fea06576f3cbe6bf3a5437b61f92",
+            "version": "1.4.7",
+            "commit": "1b8a8bb1cff24468c78cd383213647992c5f30e3",
             "dirty": false,
             "requires": {
               "coreApi": "^1.0.0",
               "desktopHost": "^1.0.0",
-              "shared": "0.1.10"
+              "shared": "0.1.12"
             }
           },
           "legacyChatContract": {

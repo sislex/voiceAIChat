@@ -25,7 +25,9 @@ function reportHtml(report) {
   const graph = Object.entries(report.resources).map(([id, resource]) => id + '\n  static: ' + resource.imports.join(', ') + '\n  dynamic: ' + resource.dynamicImports.join(', ')).join('\n')
   return '<!doctype html><html lang="en"><meta charset="utf-8"><title>Route measurements</title><style>body{font:14px system-ui;margin:24px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #bbb}th{overflow-wrap:anywhere;max-width:480px}.timeline{position:relative;min-width:180px}i{position:absolute;height:12px;background:#376bc7;top:10px}pre{white-space:pre-wrap;overflow-wrap:anywhere}section{margin-block:32px}</style><h1>Route measurements</h1><pre>' + esc(JSON.stringify({ commit: report.commit, conditions: report.conditions, tools: report.tools }, null, 2)) + '</pre>' + sections + '<details><summary>Complete chunk graph (static and dynamic edges)</summary><pre>' + esc(graph) + '</pre></details></html>'
 }
-export async function measure({ web, desktop, output }) {
+export async function measure({ web, desktop, output, clients = ['web', 'electron'] }) {
+  if (!Array.isArray(clients) || !clients.length || clients.some(client => !['web', 'electron'].includes(client)) || new Set(clients).size !== clients.length)
+    throw new Error('Expected distinct Web/Electron measurement clients')
   const data = mkdtempSync(join(tmpdir(), 'vc-route-measure-'))
   mkdirSync(output, { recursive: true })
   const measureSize = process.env.VC_MEASURE_COMPRESSION_CACHE === '0' ? sizes : createCachedSizer(resolve(root, 'artifacts/route-compression'))
@@ -61,10 +63,10 @@ export async function measure({ web, desktop, output }) {
     await api('/api/conversations/' + conversation.id + '/messages', { role: 'ai', text: 'Measurement fixture **ready**.\n\n\x60\x60\x60js\nconst answer = 42\n\x60\x60\x60', time: '2026-09-15T00:00:00.000Z', engine: 'claude' })
     const report = { schemaVersion: 1, commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
       dirty: Boolean(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()),
-      compression: COMPRESSION, conditions: { scenario: 'returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent', viewport: { width: 1440, height: 900 }, theme: 'light', settleMs: 5000, transport: 'localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource', node: process.version, zlib: process.versions.zlib, brotli: process.versions.brotli, cpu: 'unthrottled', network: 'unthrottled loopback; Google font stylesheet fetched and measured', cache: 'CDP clearBrowserCache for cold, same context reload for warm' },
+      compression: COMPRESSION, conditions: { scenario: 'returning admin, onboarded, existing chat with a fixed Markdown/code message; no optional-surface intent', viewport: { width: 1440, height: 900 }, theme: 'light', settleMs: 5000, transport: clients.includes('electron') ? 'localhost HTTP and Electron file; Electron signs in through UI on each navigation because the HTTP fixture cookie is cross-site from file origin; compression calculated per resource' : 'localhost HTTP; compression calculated per resource', node: process.version, zlib: process.versions.zlib, brotli: process.versions.brotli, cpu: 'unthrottled', network: 'unthrottled loopback; Google font stylesheet fetched and measured', cache: 'CDP clearBrowserCache for cold, same context reload for warm' },
       resources: {}, routes: {}, tools: {}, activations: {} }
     report.conditions.actualViewports = {}
-    for (const [client, directory] of [['web', web], ['electron', desktop]]) {
+    for (const [client, directory] of [['web', web], ['electron', desktop]].filter(([client]) => clients.includes(client))) {
       console.log('Inventory ' + client)
       const cachePath = join(output, client + '-inventory.json')
       const assets = inventory(directory, measureSize)
@@ -224,15 +226,11 @@ export async function measure({ web, desktop, output }) {
     return report
   } finally {
     await browser?.close(); await desktopApp?.close()
+    const exited = new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) })
     server.kill('SIGTERM')
-    await Promise.race([
-      new Promise(resolve => { if (server.exitCode !== null) resolve(); else server.once('exit', resolve) }),
-      delay(5000)
-    ])
-    if (server.exitCode === null) {
-      server.kill('SIGKILL')
-      await new Promise(resolve => server.once('exit', resolve))
-    }
+    const graceful = await Promise.race([exited.then(() => true), delay(5000).then(() => false)])
+    if (!graceful) server.kill('SIGKILL')
+    await exited
     log.end()
     await rm(data, { recursive: true, force: true })
   }

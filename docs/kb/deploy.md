@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-28
-checked: b1a5e170
+updated: 2026-09-30
+checked: e46cc55f
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -419,11 +419,13 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-(образ `voicechat-kanban`, стадия `kanban-runtime`, порт 8789, тот же код `apps/server`, точка входа
-`src/kanban/standalone/index.ts`). По умолчанию выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
+использует локальный образ `sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban`
+(переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
+По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
 **только Postgres** — файл SQLite из двух процессов не открыть), поднять
-`docker compose --profile postgres --profile kanban up -d --build`. У ядра `VC_KANBAN_URL=http://kanban:8789`
+после проверки и публикации образа — `docker compose --profile postgres --profile kanban up -d`.
+У ядра `VC_KANBAN_URL=http://kanban:8789`
 и `VC_KANBAN_MCP_PUBLIC_BASE` (адрес MCP канбана и CI-команд глазами исполнителя); у канбана —
 `VC_CORE_URL`, общие `VC_INTERNAL_TOKEN`/`VC_MCP_SECRET`, `VC_MCP_PUBLIC_BASE` = адрес ядра (MCP машин, KB
 и превью остаются у ядра), адреса раннеров LLM/браузера, SMTP и **тот же том** `vc-data` (скриншоты QA и
@@ -455,7 +457,7 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 | ядро (чат, БД-миграции, CLI-раннеры, WS клиентов) | `apps/server/src/index.ts`, `server-runtime` | — | `VC_DB_URL` (Postgres), `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` | — |
 | Make | `apps/make/src/standalone`, `make-runtime` | `VC_MAKE_MODE=remote`, `VC_MAKE_URL` | `VC_CORE_URL`, общие токен и секрет, свой `VC_DATA_DIR` (мастерские `/data/make`) | нужен, если Make раньше работал встроенным — мастерские лежат в `/data/make` ядра |
 | студия картинок | `apps/image-studio/src/standalone`, `image-studio-runtime` | `VC_IMAGE_STUDIO_MODE=remote`, `VC_IMAGE_STUDIO_URL` | `VC_CORE_URL`, общий токен, `VC_DATA_DIR` | для прежних галерей нужен доступ к `/data/image-studio`; после переноса каталога общий том не требуется |
-| канбан | `apps/server/src/kanban/standalone`, `kanban-runtime` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
+| канбан | `sislex/sislexa-kanban`, локальный `sislexa-kanban:<commit>` | `VC_KANBAN_MODE=remote`, `VC_KANBAN_URL`, `VC_KANBAN_MCP_PUBLIC_BASE` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MCP_PUBLIC_BASE` (адрес ядра), адреса раннеров LLM и браузера, `VC_MAKE_URL`, SMTP | нет: вложения читаются через порт ядра, скриншоты QA — свой каталог |
 | машины | `apps/server/src/machines/standalone`, `machines-runtime` | `VC_MACHINES_MODE=remote`, `VC_MACHINES_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, `VC_PUBLIC_URL` | нет: установщики — из образа, перенос хранилищ — свой файл |
 | админка | `apps/server/src/admin/standalone`, `admin-runtime` | `VC_ADMIN_MODE=remote`, `VC_ADMIN_URL` | `VC_CORE_URL`, `VC_DB_URL`, токен, секрет, `VC_MAKE_URL`, при вынесенных машинах `VC_MACHINES_URL`, SMTP | нет |
 | Web Reader (прокси, MCP и iframe-рекордер) | `apps/web-reader/src/standalone`, независимый `build:app -- web-reader` | `VC_READER_MODE=remote`, `VC_READER_URL`, `VC_READER_MCP_PUBLIC_BASE` (также канбану) | `VC_CORE_URL`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`, `VC_PLAYWRIGHT_READER_URL`; БД не нужна | нет: кадры и данные у ядра; cookie сайтов в памяти Reader |

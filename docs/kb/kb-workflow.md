@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-09-23
-checked: d59fcff6
+updated: 2026-09-29
+checked: 9c694e94
 areas:
   - scripts/kb.mjs
   - AGENTS.md
@@ -78,6 +78,8 @@ areas:                        # пути/каталоги, за которыми
   (`packages/shared/src/protocol.ts`). Дублирование гарантированно разъедется.
 - **Пиши абзацами по подтемам.** Один растущий список в конце файла — главный
   источник merge-конфликтов у параллельных агентов; разные абзацы правятся мирно.
+- After required checks, commit and push completed task changes in the task's
+  branch; use a reviewed PR for `main`. Preserve unrelated work in the checkout.
 - **Не трогай `docs/kb/README.md` руками** — это производный индекс. В ветке
   разработки его можно не коммитить: merge-ран безусловно перегенерирует файл по
   итоговому дереву после содержательной актуализации БЗ.
