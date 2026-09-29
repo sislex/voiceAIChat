@@ -173,6 +173,9 @@ describe('REST: conversations/messages/settings', () => {
     expect(await ids(one.id)).toEqual([first.id])
     expect(await ids(two.id)).toEqual([first.id])
     expect(await ids('archive')).toEqual([archived.id])
+    const searched = await inj({ method: 'GET', url: `/api/conversations/search?q=%D0%9F%D0%B5%D1%80%D0%B2%D0%B0%D1%8F&groupId=${two.id}` })
+    expect(searched.statusCode).toBe(200)
+    expect(searched.json().map((item: { id: string }) => item.id)).toEqual([first.id])
   })
 
   // @testCase TC-INT-03
@@ -198,6 +201,8 @@ describe('REST: conversations/messages/settings', () => {
     const outsider = signToken({ name: 'outsider', role: 'developer' }, SECRET)
     const headers = { authorization: `Bearer ${outsider}` }
     expect((await inj({ method: 'PATCH', url: `/api/conversation-groups/${group.id}`, headers, payload: { name: 'Украдено' } })).statusCode).toBe(404)
+    expect(await inj({ method: 'GET', url: `/api/conversations?groupId=${group.id}`, headers })).toMatchObject({ statusCode: 404 })
+    expect(await inj({ method: 'GET', url: '/api/conversations?groupId=missing-group' })).toMatchObject({ statusCode: 404 })
     expect((await inj({ method: 'PUT', url: `/api/conversations/${conversation.id}/membership`, headers, payload: { groupIds: [], archived: false } })).statusCode).toBe(404)
   })
 
