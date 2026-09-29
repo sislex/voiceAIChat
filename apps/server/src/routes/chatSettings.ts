@@ -9,6 +9,7 @@ export function registerChatSettingsRoutes(app: FastifyInstance, db: VoiceChatDb
   for (const path of [REST.chatSettings, '/api/conversations/:id/settings']) {
     app.get<{ Params: { id?: string } }>(path, async (req, reply) => {
       const result = await db.settings.getChatSettings(uid(req), req.params.id)
+      if (result && req.headers['x-sislexa-delegation']) return { ...result, account: {} }
       return result ?? reply.code(404).send({ error: 'not found' })
     })
     const write = async (req: import('fastify').FastifyRequest<{ Params: { id?: string }; Body: unknown }>, reply: import('fastify').FastifyReply) => {

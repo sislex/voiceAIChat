@@ -8,7 +8,7 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[], conflictFix:(ctx:MergeConflictFixContext)=>Promise<{ok:boolean;message:string}>=async()=>({ok:false,message:'Модель не исправила конфликты'}), testFix?:(ctx:MergeTestFixContext)=>Promise<{ok:boolean;message:string}>){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[], conflictFix:(ctx:MergeConflictFixContext)=>Promise<{ok:boolean;message:string}>=async()=>({ok:false,message:'Модель не исправила конфликты'}), testFix?:(ctx:MergeTestFixContext)=>Promise<{ok:boolean;message:string}>, mergeTestCommand?:string){
   const kbSha=kbFiles.length?'5'.repeat(40):merged
   let lastPushed:string|undefined
   let run=initial
@@ -32,7 +32,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
       listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
     },
     projects: {
-      getProject:()=>({gitUrl,testCommand}),
+      getProject:()=>({gitUrl,testCommand,mergeTestCommand}),
       activeProjectMemberNames:()=>['admin']
     },
     machines: {
@@ -104,6 +104,15 @@ describe('MergeRunManager',()=>{
     expect(calls[0][0]).toMatchObject({workdir:'/repo',script:expect.stringContaining('git ls-remote --exit-code')})
     expect(calls.find(call=>call[0].script.includes('git clone'))?.[0]).toMatchObject({workdir:'/repo',script:expect.stringContaining('git clone --no-checkout')})
     expect(calls.some(call=>call[0].workdir==='/repo/.merge')).toBe(true)
+  })
+  it('uses the merge-only gate against the pinned target without changing the release gate',async()=>{
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run gate:release','git@example/repo.git',undefined,undefined,[],undefined,undefined,'npm run gate:merge')
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(['success','failed']).toContain(s.run.status))
+    expect(s.run.status, `${s.run.error}\n${s.run.log}`).toBe('success')
+    const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
+    expect(scripts.some(script=>script.includes('npm run gate:merge -- --base')&&script.includes('refs/merge-runs/r1/target'))).toBe(true)
+    expect(scripts).not.toContain('npm run gate:release')
   })
   it('finishes instantly with success when the branch is already merged into main',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'MERGED\n',''])

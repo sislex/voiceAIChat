@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>External Core chat integration</title>
+<body>
+<h1>External Core chat</h1>
+<form id="login">
+  <label>Core origin <input name="core" type="url" required></label>
+  <label>User <input name="user" autocomplete="username" required></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <button>Sign in</button>
+</form>
+<form id="connect">
+  <label>Conversation <input name="conversation" required></label>
+  <button>Connect another view</button>
+</form>
+<p role="status" id="status">Sign in to Core to open a conversation.</p>
+<main id="views"></main>
+<script type="module" src="/client.mjs"></script>
+</body></html>

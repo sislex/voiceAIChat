@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { CLIENT_MESSAGE_TYPES, REST, SERVER_MESSAGE_TYPES } from './protocol'
 
 describe('контракт протокола', () => {
+  // @testCase TC-CONTRACT-01
+  // @testCase TC-REG-01
   it('списки типов сообщений уникальны и непусты', () => {
     expect(new Set(CLIENT_MESSAGE_TYPES).size).toBe(CLIENT_MESSAGE_TYPES.length)
     expect(new Set(SERVER_MESSAGE_TYPES).size).toBe(SERVER_MESSAGE_TYPES.length)
@@ -46,6 +48,7 @@ describe('контракт протокола', () => {
     expect(REST.conversationSettings('a/b')).toBe('/api/conversations/a%2Fb/settings')
   })
 
+  // @testCase TC-CONTRACT-01
   it('declares additive chat handshake, settings invalidation and reconnect frames', () => {
     expect(CLIENT_MESSAGE_TYPES).toContain('chat.connect')
     expect(SERVER_MESSAGE_TYPES).toContain('chat.ready')

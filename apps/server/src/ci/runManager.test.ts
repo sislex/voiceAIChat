@@ -36,6 +36,7 @@ let repoMissing = false
 let emptyModelWork = false
 /** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
 let dirtyWorkspace = false
+let nestedRepository = false
 let syncFailure: 'status' | 'fetch' | 'checkout' | 'reset' | null = null
 let onModelSend: (() => void) | null = null
 /** Снять состояние доски ровно в момент шага (после ответа ран может успеть закончиться). */
@@ -100,6 +101,7 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     if (req.script.includes('Недостаточно места для запуска рана') && lowDisk) { onChunk('Недостаточно места для запуска рана: свободно 400 МБ, нужно не меньше 1024 МБ. Освободите диск и повторите запуск.\n'); return { exitCode: 74, timedOut: false } }
     if (req.script.includes('MachineStorage недоступен') && failManagedBootstrap) return { exitCode: 73, timedOut: false }
+    if (req.script.includes('Вложенный Git-репозиторий запрещён') && nestedRepository) return { exitCode: 66, timedOut: false }
     if (req.script.includes('Рабочая копия содержит локальные изменения') && dirtyWorkspace) return { exitCode: 66, timedOut: false }
     if (syncFailure && req.script.includes('fetch origin "$BASE_BRANCH"')) return { exitCode: 1, timedOut: false }
     // Боевой шаг клонирования: существующая копия с правками → exit 66.
@@ -137,6 +139,7 @@ beforeEach(async () => {
   repoMissing = false
   emptyModelWork = false
   dirtyWorkspace = false
+  nestedRepository = false
   syncFailure = null
   onModelSend = null
   onExec = null
@@ -339,6 +342,7 @@ describe('ci run manager', () => {
     expect(executorEnvs[0]).toMatchObject({
       REPO_ROOT: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary`,
       WORKSPACE: `${expectedRepository}/P-1`,
+      OWNER_WORKSPACES_ROOT: `/storage/projects/${project.id}/tasks/${task.id}/owners`,
       NPM_CACHE_DIR: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/.npm-cache/P-1`,
       npm_config_cache: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/.npm-cache/P-1`
     })
@@ -398,6 +402,22 @@ describe('ci run manager', () => {
     expect(scripts[0].indexOf('Рабочая копия содержит локальные изменения')).toBeLessThan(scripts[0].indexOf('fetch origin "$BASE_BRANCH"'))
     expect(scripts[0]).not.toContain('git clean')
     expect(scripts).not.toContain('CLONE')
+    expect(modelRequests).toHaveLength(0)
+  })
+
+  it('nested owner repository блокирует ран с recovery-диагностикой до модели', async () => {
+    const { project, task, agent } = await setup()
+    await db.machines.saveMachineStorage('admin', agent.id, '/storage', 1)
+    nestedRepository = true
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('failed')
+    expect(scripts[0]).toContain('find "$nested_root" -mindepth 2 -name .git')
+    expect(scripts[0]).toContain('published=$nested_published')
+    expect(scripts[0]).toContain('$OWNER_WORKSPACES_ROOT/<owner>/repository')
+    expect(scripts[0].indexOf('check_nested_git')).toBeLessThan(scripts[0].indexOf('fetch origin "$BASE_BRANCH"'))
     expect(modelRequests).toHaveLength(0)
   })
 

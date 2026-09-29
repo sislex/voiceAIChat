@@ -38,7 +38,7 @@ describe('REST: аутентификация', () => {
       expect(response.headers['access-control-allow-origin']).toBe(origin)
       expect(response.headers['access-control-allow-credentials']).toBe('true')
       expect(response.headers['access-control-allow-methods']).toContain('POST')
-      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-request-id')
+      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id')
       const login = await app.inject({
         method: 'POST',
         url: '/api/session/login',
@@ -58,7 +58,7 @@ describe('REST: аутентификация', () => {
       url: '/api/session/login',
       headers: { origin: 'https://evil.example', 'access-control-request-method': 'POST' }
     })
-    expect(preflight.statusCode).toBe(204)
+    expect(preflight.statusCode).toBe(403)
     expect(preflight.headers['access-control-allow-origin']).toBeUndefined()
     expect(preflight.headers['access-control-allow-credentials']).toBeUndefined()
     const login = await app.inject({
@@ -67,6 +67,7 @@ describe('REST: аутентификация', () => {
       headers: { origin: 'https://evil.example' },
       payload: { name: 'nobody', password: 'wrong' }
     })
+    expect(login.statusCode).toBe(403)
     expect(login.headers['access-control-allow-origin']).toBeUndefined()
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
   })

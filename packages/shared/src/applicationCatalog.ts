@@ -458,7 +458,8 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
         "e2e/gitPane.e2e.test.ts",
         "e2e/universalSearch.e2e.test.ts",
         "e2e/routeResources.e2e.test.ts",
-        "e2e/toolIntegration.e2e.test.ts"
+        "e2e/toolIntegration.e2e.test.ts",
+        "e2e/externalChat.e2e.test.ts"
     ],
     "runtimeDependencies": [
         "core"
