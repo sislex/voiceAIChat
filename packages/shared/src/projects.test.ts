@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, completedVisibilityCutoff, DEFAULT_BOARD_VIEW, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, sanitizeBoardView, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
+import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, completedVisibilityCutoff, DEFAULT_BOARD_VIEW, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, sanitizeBoardView, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedOwnerWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
   sanitizeProjectTestUsers,
   designPromptLines, taskMakeSources, type TaskDesignLink, type Task, type TaskStatus
 } from './projects'
@@ -270,6 +270,22 @@ describe('machine storage root paths', () => {
       expect(paths.repository).toBe(expectedWorkspace.replace(/[\\\\/]P-1$/, ''))
       expect(paths.npmCacheDir).toContain('.npm-cache')
     }
+  })
+
+  it('keeps owner repositories outside the primary task checkout on every platform', () => {
+    const cases = [
+      ['/data/ChatAI', '/data/ChatAI/projects/p1/tasks/t1/owners/core-ui/repository'],
+      ['/Users/me/ChatAI', '/Users/me/ChatAI/projects/p1/tasks/t1/owners/core-ui/repository'],
+      ['C:\\Users\\me\\ChatAI', 'C:\\Users\\me\\ChatAI\\projects\\p1\\tasks\\t1\\owners\\core-ui\\repository'],
+      ['\\\\server\\share\\ChatAI', '\\\\server\\share\\ChatAI\\projects\\p1\\tasks\\t1\\owners\\core-ui\\repository']
+    ] as const
+    for (const [root, expected] of cases) {
+      const owner = managedOwnerWorkspacePaths(root, 'p1', 't1', 'core-ui')
+      const primary = managedCiWorkspacePaths(root, 'p1', 't1', 'P-1')
+      expect(owner.repository).toBe(expected)
+      expect(owner.repository.startsWith(primary.workspace + (root.includes('\\') ? '\\' : '/'))).toBe(false)
+    }
+    expect(() => managedOwnerWorkspacePaths('/data/ChatAI', 'p1', 't1', '../escape')).toThrow()
   })
 
   it('rejects roots, relative and non-normalized paths and enforces allowedDirs boundaries', () => {
