@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Plan conservative Core release retention for the installed deploy launcher."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import pathlib

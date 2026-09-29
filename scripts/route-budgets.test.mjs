@@ -71,6 +71,15 @@ test('accepts the exact limit and identifies a one-byte regression with resource
   budget.routes['web/chat/cold'].js.gzip--
   assert.throws(() => checkRoutes(budget, report), /web\/chat\/cold.*js.gzip.*actual.*120.*limit.*119.*delta.*1.*entry.js/)
 })
+test('Web-only gate retains strict Web budgets without requiring Electron provenance', () => {
+  const { report, budget } = fixture()
+  delete report.tools.electron
+  delete report.conditions.actualViewports.electron
+  assert.equal(checkRoutes(budget, report, ['web']).length, 6)
+  assert.throws(() => checkRoutes(budget, report), /missing build or runtime provenance/)
+  budget.routes['web/chat/cold'].css.raw--
+  assert.throws(() => checkRoutes(budget, report, ['web']), /web\/chat\/cold.*css.raw/)
+})
 // @testCase TC-BUDGET
 test('fails closed for incomplete measurements and malformed budgets', () => {
   for (const mutate of [

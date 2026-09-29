@@ -361,6 +361,10 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'user_id')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN user_id TEXT`)
     }
+    if (!convCols.some((c) => c.name === 'archived_at')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN archived_at INTEGER`)
+    }
+    await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_owner_archive ON conversations(tenant_id, user_id, archived_at, updated_at)`)
     // Кэш стоимости беседы: в старых БД колонок нет, а `cost_dirty = 1`
     // заставит пересчитать итог при первом же показе списка.
     for (const [column, ddl] of [
@@ -391,6 +395,12 @@ export class VoiceChatDb {
     }
     if (!convCols.some((c) => c.name === 'permission_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN permission_mode TEXT`)
+    }
+    if (!convCols.some((c) => c.name === 'reasoning_effort')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT 'medium'`)
+    }
+    if (!convCols.some((c) => c.name === 'deep_thinking')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN deep_thinking INTEGER NOT NULL DEFAULT 0`)
     }
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
@@ -738,6 +748,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN merge_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'component_qa_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN component_qa_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'integration_test_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN integration_test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) await this.sql.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
