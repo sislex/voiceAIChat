@@ -3,7 +3,7 @@ title: Разработка, тестирование, диагностика и
 updated: 2026-09-29
 checked:
 
-  acaa6106
+  2cce5e08
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -988,9 +988,10 @@ The 0.1.342 preparation measured the newer pinned Core UI artifact after the cha
 sidebar and model-control changes. Web Account measured 380,591 JS gzip / 311,742
 JS Brotli and 393,473 CSS raw / 68,815 CSS gzip / 55,264 CSS Brotli; shared
 Web Chat/Settings CSS measured 387,348 raw. A repeat run received a second
-Google Fonts CSS body, raising Account cold/warm raw CSS to 394,709 bytes. The
-subsequent budget revision covers both observed external responses with less
-than 0.2% headroom over the larger raw CSS body; all Web route metrics remain
+Google Fonts CSS body, raising Account cold/warm raw CSS to 394,709 bytes and
+Chat cold/warm gzip CSS to 67,254 bytes. The subsequent budget revision covers
+both observed external responses with less than 0.2% headroom over the larger
+raw CSS body and less than 0.3% for Chat gzip; all Web route metrics remain
 enforced.
 
 `npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a budget diff, and runs real Web route measurements. During the temporary opt-in period, Electron routes and the cross-client baseline comparison run only with `VC_ELECTRON_TESTS=1`. Shared-boundary and panel-loader browser fixtures belong to the UI owner. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Mutable external CSS is identified by both URL and actual body SHA-256. Different responses at one CDN URL remain distinct immutable observations; previous routes retain their original byte costs. Missing CSS bodies and budget overruns still fail. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after verifying owner-built assets; renderer and native preload are pinned owner artifacts.
