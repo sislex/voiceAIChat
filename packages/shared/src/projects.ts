@@ -383,6 +383,30 @@ export function managedCiWorkspacePaths(storageRoot: string, projectId: string, 
   return { environment, repoRoot, repository, workspace, npmCacheRoot, npmCacheDir: `${npmCacheRoot}${separator}${validateStorageRelativePath(taskKey)}` }
 }
 
+export interface ManagedOwnerWorkspacePaths {
+  root: string
+  repository: string
+}
+
+/**
+ * Canonical checkout for an independently owned repository used by one task.
+ * It is a sibling of task environments, never a child of the primary checkout,
+ * so Git status/stash/cleanup cannot mistake it for untracked task content.
+ */
+export function managedOwnerWorkspacesRoot(storageRoot: string, projectId: string, taskId: string): string {
+  const root = storageRoot.trim().replace(/[\\/]+$/, '')
+  if (!root) throw new Error('MachineStorage rootPath required')
+  const separator = /^(?:[A-Za-z]:\\|\\\\)/.test(root) || (root.includes('\\') && !root.includes('/')) ? '\\' : '/'
+  return [root, 'projects', validateStorageRelativePath(projectId), 'tasks', validateStorageRelativePath(taskId), 'owners'].join(separator)
+}
+
+export function managedOwnerWorkspacePaths(storageRoot: string, projectId: string, taskId: string, ownerId: string): ManagedOwnerWorkspacePaths {
+  const root = managedOwnerWorkspacesRoot(storageRoot, projectId, taskId)
+  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const ownerRoot = `${root}${separator}${validateStorageRelativePath(ownerId)}`
+  return { root: ownerRoot, repository: `${ownerRoot}${separator}repository` }
+}
+
 /** Постоянные каталоги окружения не пересекаются с восстанавливаемым checkout. */
 export const MANAGED_ENVIRONMENT_DIRECTORIES = ['app', 'config', 'logs', 'artifacts', 'temporary/repository'] as const
 
