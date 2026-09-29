@@ -148,3 +148,24 @@ it('exchanges a live delegated grant, keeps its resource boundary and observes r
     await closed
   } finally { socket?.terminate(); await app.close(); await db.close(); rmSync(directory, { recursive: true, force: true }) }
 })
+
+it('keeps same-origin mutations working at a direct address next to VC_PUBLIC_URL', async () => {
+  const directory = mkdtempSync(join(temp(), 'browser-chat-own-'))
+  const db = new VoiceChatDb(':memory:')
+  const app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: directory, VC_PUBLIC_URL: 'https://chat.example', VC_CORS_ORIGINS: origin }) })
+  try {
+    const direct = { host: '203.0.113.7:8787', origin: 'http://203.0.113.7:8787' }
+    const own = await app.inject({ method: 'PUT', url: '/api/settings', headers: direct, payload: {} })
+    expect(own.statusCode).not.toBe(403)
+    expect(own.json().error).not.toBe('origin_denied')
+    const canonical = await app.inject({ method: 'PUT', url: '/api/settings', headers: { host: '203.0.113.7:8787', origin: 'https://chat.example' }, payload: {} })
+    expect(canonical.json().error).not.toBe('origin_denied')
+    const foreign = await app.inject({ method: 'PUT', url: '/api/settings', headers: { host: '203.0.113.7:8787', origin: 'http://203.0.113.8:8787' }, payload: {} })
+    expect(foreign.statusCode).toBe(403)
+    expect(foreign.json().error).toBe('origin_denied')
+  } finally {
+    await app.close()
+    await db.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
