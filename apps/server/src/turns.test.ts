@@ -1550,6 +1550,8 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     expect(rec.last()?.makeMcpUrl).toMatch(/\/mcp\/make\?k=secret/)
     expect(rec.last()?.prompt).toContain('## Браузер Make')
     expect(rec.last()?.prompt).toContain('browser-runner')
+    expect(rec.last()?.prompt).toContain('browser_capabilities')
+    expect(rec.last()?.prompt).toContain('make_preview_link')
     expect(rec.last()?.prompt).toContain('https://example.com/')
     expect(tool.entries).toEqual([{ userId: U, conversationId: reader.id }])
     await turns.idle()
