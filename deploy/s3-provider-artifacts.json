@@ -47,10 +47,10 @@
       "name": "@sislex/llm-runner",
       "version": "0.3.5",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a",
-      "asset": "sislex-llm-runner-0.3.5-b498ff1dd395.tgz",
-      "sha256": "b498ff1dd395c1453ea844e5d768febcd93e442e0d5be533e76b5565a60b7b18",
-      "integrity": "sha512-M+rwDnMWQ4J9438MlTbs7Ak0XTaVj4XuVYDA2SGeYjhKob9Ny+yGexgz5LnCmOOlAbQ5k0SRlsyiYXv9QY8tBw==",
+      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a",
+      "asset": "sislex-llm-runner-0.3.5-1ccbdeb47b04.tgz",
+      "sha256": "4b68c1f1fa3c3c5842a13a753531db57655716eabd16b4cc94d6eac3912b5b82",
+      "integrity": "sha512-p1VMCISOOkZ14yIRuaJNVg6ZpqJw+LuOHORjQXOMVrbYGgVbqyouCTcCdT/C9pjhqNr9or9HnNAMi9vvgY/uxw==",
       "producerTask": "A03",
       "interfaces": [
         "verified application attribution in claims and receipts"
@@ -63,10 +63,10 @@
       "name": "@sislex/runner-contracts",
       "version": "0.1.1",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "097282f2418c245454fe963b10d9b61e0b4d814a",
-      "asset": "sislex-runner-contracts-0.1.1-3cd7f9015a8f.tgz",
-      "sha256": "3cd7f9015a8f68de9eacc573ec66300edfbeb382a8f7a09236be21f6d526fc21",
-      "integrity": "sha512-luqg4sJQ60NI805fy+/q+9pLGAf/wO3pgXvl1/D/btsKitQJHQhbMoBqJptwvbi7me4ZpR1NvQ1i3h6vZEcTNA==",
+      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a",
+      "asset": "sislex-runner-contracts-0.1.1-1ccbdeb47b04.tgz",
+      "sha256": "0f20107ecc3e893668c7927a0a0ac36f05b5b0653b8b73f3d8a114f2d996fb7c",
+      "integrity": "sha512-z60fc41JzN4xaGHF2t8SrVCnXd0UFX+km8Wr/c9mZ7fDHIPB7QoIDBFeVe17uL4sVtgutrVSzyBJcm5CyOSWhA==",
       "producerTask": "A03",
       "interfaces": [
         "runner attribution receipt contract"

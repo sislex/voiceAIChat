@@ -61,6 +61,7 @@ interface ProjectRow {
   agent_plan_approval_mode: string
   test_command: string
   component_qa_command: string
+  merge_test_command: string
   integration_test_command: string
   command_policy?: string | null
   production_deploy_command: string
@@ -652,6 +653,7 @@ export class ProjectsRepo extends BaseRepo {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      mergeTestCommand: r.merge_test_command || undefined,
       componentQaCommand: r.component_qa_command || undefined,
       integrationTestCommand: r.integration_test_command || undefined,
       automatedQaCommand: r.automated_qa_command || 'npm test',
@@ -877,6 +879,7 @@ export class ProjectsRepo extends BaseRepo {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      mergeTestCommand?: string
       componentQaCommand?: string
       integrationTestCommand?: string
       automatedQaCommand?: string
@@ -953,6 +956,7 @@ export class ProjectsRepo extends BaseRepo {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.mergeTestCommand !== undefined) { set.push('merge_test_command = ?'); vals.push(fields.mergeTestCommand) }
     if (fields.componentQaCommand !== undefined) { set.push('component_qa_command = ?'); vals.push(fields.componentQaCommand) }
     if (fields.integrationTestCommand !== undefined) { set.push('integration_test_command = ?'); vals.push(fields.integrationTestCommand) }
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }

@@ -829,11 +829,59 @@ export async function registerRest(
     return res.file
   })
 
+  app.get(REST.conversationGroups, async (req) => ({
+    groups: await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)
+  }))
+
+  app.post<{ Body: { name?: string } }>(REST.conversationGroups, async (req, reply) => {
+    if (typeof req.body?.name !== 'string' || !req.body.name.trim()) return reply.code(400).send({ error: 'group name is required' })
+    return await db.chat.createConversationGroup(uid(req), req.user!.account!.tenantId, req.body.name)
+  })
+
+  app.patch<{ Params: { id: string }; Body: { name?: string; position?: unknown; conversationIds?: unknown } }>('/api/conversation-groups/:id', async (req, reply) => {
+    if ((req.body?.name !== undefined && (typeof req.body.name !== 'string' || !req.body.name.trim()))
+      || (req.body?.position !== undefined && (!Number.isInteger(req.body.position) || Number(req.body.position) < 0))
+      || (req.body?.conversationIds !== undefined && (!Array.isArray(req.body.conversationIds) || req.body.conversationIds.some((id) => typeof id !== 'string')))) {
+      return reply.code(400).send({ error: 'invalid group update' })
+    }
+    try {
+      const group = await db.chat.updateConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id, {
+        ...(req.body?.name !== undefined ? { name: req.body.name } : {}),
+        ...(req.body?.position !== undefined ? { position: Number(req.body.position) } : {}),
+        ...(Array.isArray(req.body?.conversationIds) ? { conversationIds: req.body.conversationIds as string[] } : {})
+      })
+      return group ?? reply.code(404).send({ error: 'group not found' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return reply.code(message.includes('archived') ? 409 : message.includes('not found') ? 404 : 400).send({ error: message })
+    }
+  })
+
+  app.delete<{ Params: { id: string } }>('/api/conversation-groups/:id', async (req, reply) => {
+    if (!await db.chat.deleteConversationGroup(uid(req), req.user!.account!.tenantId, req.params.id)) return reply.code(404).send({ error: 'group not found' })
+    return { ok: true }
+  })
+
+  app.put<{ Params: { id: string }; Body: { groupIds?: unknown; archived?: unknown } }>('/api/conversations/:id/membership', async (req, reply) => {
+    if (!Array.isArray(req.body?.groupIds) || req.body.groupIds.some((id) => typeof id !== 'string') || typeof req.body?.archived !== 'boolean') {
+      return reply.code(400).send({ error: 'groupIds and archived are required' })
+    }
+    try {
+      const conversation = await db.chat.setConversationMembership(uid(req), req.user!.account!.tenantId, req.params.id, {
+        groupIds: req.body.groupIds as string[], archived: req.body.archived
+      })
+      return conversation ?? reply.code(404).send({ error: 'conversation not found' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return reply.code(message.includes('archived') ? 409 : message.includes('not found') ? 404 : 400).send({ error: message })
+    }
+  })
+
   // includeCompleted=1 — вместе с чатами задач, лежащих в колонке «Готово»
   // (по умолчанию их в списке нет, см. `listConversations`).
   // since — окно «свежие беседы» (сайдбар грузит текущую неделю), beforeAt+beforeId
   // с limit — курсорная догрузка секции «Более старые» порциями.
-  app.get<{ Querystring: { scope?: string; projectId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
+  app.get<{ Querystring: { scope?: string; projectId?: string; groupId?: string; includeCompleted?: string; since?: string; beforeAt?: string; beforeId?: string; limit?: string } }>(
     REST.conversations,
     async (req, reply) => {
       const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
@@ -843,10 +891,15 @@ export async function registerRest(
         return value !== undefined && Number.isFinite(parsed) ? parsed : undefined
       }
       const beforeAt = num(req.query.beforeAt)
+      const groupId = req.query.groupId ?? 'all'
+      if (groupId !== 'all' && groupId !== 'archive' && !(await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)).some((group) => group.id === groupId)) {
+        return reply.code(404).send({ error: 'group not found' })
+      }
       return await db.chat.listConversations(uid(req), {
         tenantId: req.user!.account!.tenantId,
         scope,
         projectId: req.query.projectId,
+        groupId,
         includeCompleted: queryFlag(req.query.includeCompleted),
         ...(num(req.query.since) !== undefined ? { since: num(req.query.since)! } : {}),
         ...(beforeAt !== undefined && req.query.beforeId ? { before: { updatedAt: beforeAt, id: req.query.beforeId } } : {}),
@@ -942,10 +995,12 @@ export async function registerRest(
     }
   })
 
-  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
+  app.get<{ Querystring: { q?: string; scope?: string; projectId?: string; groupId?: string; includeCompleted?: string } }>(REST.conversationsSearch, async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
-    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, includeCompleted: queryFlag(req.query.includeCompleted), tenantId: req.user!.account!.tenantId })
+    const groupId = req.query.groupId ?? 'all'
+    if (groupId !== 'all' && groupId !== 'archive' && !(await db.chat.listConversationGroups(uid(req), req.user!.account!.tenantId)).some((group) => group.id === groupId)) return reply.code(404).send({ error: 'group not found' })
+    return await db.chat.searchConversations(uid(req), req.query.q ?? '', { scope, projectId: req.query.projectId, groupId, includeCompleted: queryFlag(req.query.includeCompleted), tenantId: req.user!.account!.tenantId })
   })
 
   /**
@@ -1173,6 +1228,8 @@ export async function registerRest(
       llmEngineId?: string | null
       llmProvider?: string | null
       llmModel?: string | null
+      reasoningEffort?: string
+      deepThinking?: boolean
       permissionMode?: string | null
       kbContextMode?: string
     }
@@ -1192,7 +1249,7 @@ export async function registerRest(
       }
       if (typeof req.body.title === 'string') await db.chat.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') await db.chat.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
-      if (req.body.execTarget !== undefined) {
+      if (req.body.execTarget !== undefined || req.body.llmEngineId !== undefined || req.body.llmProvider !== undefined || req.body.llmModel !== undefined || req.body.permissionMode !== undefined || req.body.reasoningEffort !== undefined || req.body.deepThinking !== undefined) {
         const role = (await db.identity.getUser(uid(req)))?.role ?? 'developer'
         if (req.body.llmEngineId && !(await db.llm.listLlmEnginesForRole(role)).some((engine) => engine.id === req.body.llmEngineId)) {
           return reply.code(403).send({ error: 'llm engine is not available for role' })
@@ -1211,16 +1268,21 @@ export async function registerRest(
             : req.body.permissionMode === 'plan' || req.body.permissionMode === 'acceptEdits' || req.body.permissionMode === 'bypassPermissions'
               ? req.body.permissionMode
               : null
+        const reasoningEffort = req.body.reasoningEffort === 'low' || req.body.reasoningEffort === 'medium' || req.body.reasoningEffort === 'high' || req.body.reasoningEffort === 'xhigh' || req.body.reasoningEffort === 'max'
+          ? req.body.reasoningEffort
+          : undefined
         await db.chat.setConversationExecTarget(
           uid(req),
           req.params.id,
-          req.body.execTarget,
+          req.body.execTarget ?? current.execTarget,
           req.body.workdir,
           req.body.skillNames,
           llmProvider,
           req.body.llmModel,
           permissionMode,
-          req.body.llmEngineId
+          req.body.llmEngineId,
+          reasoningEffort,
+          typeof req.body.deepThinking === 'boolean' ? req.body.deepThinking : undefined
         )
       }
       const conversation = await db.chat.getConversation(uid(req), req.params.id)
@@ -1238,6 +1300,8 @@ export async function registerRest(
         ...(req.body.llmProvider !== undefined || req.body.llmModel !== undefined
           ? [['llm', conversation.llmProvider ? `${conversation.llmProvider}${conversation.llmModel ? ` · ${conversation.llmModel}` : ''}` : 'из общих настроек'] as [string, string]]
           : []),
+        ...(req.body.reasoningEffort !== undefined ? [['reasoning-effort', conversation.reasoningEffort] as [string, string]] : []),
+        ...(req.body.deepThinking !== undefined ? [['deep-thinking', conversation.deepThinking ? 'on' : 'off'] as [string, string]] : []),
         ...(req.body.execTarget !== undefined ? [['machine', conversation.execTarget ?? 'резолвер сервера'] as [string, string]] : [])
       ]
       for (const [itemId, value] of settingEvents) {

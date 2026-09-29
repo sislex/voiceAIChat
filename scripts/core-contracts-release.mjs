@@ -20,10 +20,18 @@ for (const path of git('ls-tree', '-r', '--name-only', commit, 'packages/shared/
   mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, git('show', `${commit}:${path}`))
 }
 const peerDependencies = {}
+// S4 adds compatible Identity and SDK APIs without changing the Shared contract.
+// Keep the accepted baseline in the lock and bound the newer consumer versions.
+const compatiblePeers = {
+  '@sislexa/identity': { locked: '1.4.2', range: '>=1.4.2 <1.5.0' },
+  '@sislexa/sdk': { locked: '1.2.0', range: '>=1.2.0 <1.4.0' }
+}
 for (const name of Object.keys(source.dependencies)) {
   const version = lock.packages['node_modules/' + name]?.version
   if (!version) throw Error('Missing immutable peer version: ' + name)
-  peerDependencies[name] = version
+  const compatible = compatiblePeers[name]
+  if (compatible && version !== compatible.locked) throw Error('Review changed peer baseline: ' + name)
+  peerDependencies[name] = compatible?.range ?? version
 }
 writeFileSync(join(output, 'package.json'), JSON.stringify({
   name: '@voicechat/shared', version, type: 'module', main: './src/index.ts', types: './src/index.ts',

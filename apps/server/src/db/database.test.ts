@@ -129,6 +129,17 @@ describe('VoiceChatDb — разговоры', () => {
     expect(fetched?.title).toBe('Поездка в Лиссабон')
   })
 
+  // @testCase TC-REG-01
+  it('uses compatible reasoning defaults for legacy and persists explicit conversation overrides', async () => {
+    const conversation = await db.chat.createConversation(U, 'Legacy')
+    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({ reasoningEffort: 'medium', deepThinking: false })
+
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'codex', 'gpt-5.6-sol', undefined, undefined, 'high', true)
+    expect(await db.chat.getConversation(U, conversation.id)).toMatchObject({
+      llmProvider: 'codex', llmModel: 'gpt-5.6-sol', reasoningEffort: 'high', deepThinking: true
+    })
+  })
+
   it('список отсортирован по updated_at убыванию', async () => {
     const a = await db.chat.createConversation(U, 'A')
     const b = await db.chat.createConversation(U, 'B')
@@ -599,7 +610,8 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it.skipIf(ON_POSTGRES)('ALTER добавляет engine/user_id и удаляет строки без владельца', async () => {
+  // @testCase TC-REG-01
+  it.skipIf(ON_POSTGRES)('ALTER adds reasoning defaults for legacy conversations and removes ownerless rows', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-mig-'))
     const file = join(dir, 'legacy.db')
     // Готовим «старую» однопользовательскую БД: без engine и без user_id.
@@ -629,6 +641,11 @@ describe('VoiceChatDb — миграция и очистка legacy', () => {
       .prepare(`PRAGMA table_info(messages)`)
       .all() as Array<{ name: string }>
     expect(cols.some((c) => c.name === 'engine')).toBe(true)
+    const conversationCols = (db as unknown as { db: Database.Database }).db
+      .prepare(`PRAGMA table_info(conversations)`)
+      .all() as Array<{ name: string; dflt_value: string | null }>
+    expect(conversationCols.find((c) => c.name === 'reasoning_effort')?.dflt_value).toBe("'medium'")
+    expect(conversationCols.find((c) => c.name === 'deep_thinking')?.dflt_value).toBe('0')
     // Legacy без владельца — удалены (чистый старт многопользовательского режима).
     expect(await db.chat.listConversations('admin')).toHaveLength(0)
     expect(await db.chat.listMessages('admin', 'c1')).toHaveLength(0)
@@ -724,6 +741,8 @@ describe('VoiceChatDb — настройки', () => {
       execTarget: 'agent-1',
       llmEngineId: null,
       llmProvider: 'claude',
+      reasoningEffort: 'medium',
+      deepThinking: false,
       codexModel: '',
       defaultAgentId: null,
       aiAssistProvider: 'claude',
@@ -1192,6 +1211,35 @@ describe('VoiceChatDb — хранилища машин', () => {
     expect(await db.machines.getChatStorageBinding(U, conversation.id)).not.toBeNull()
     expect(raw.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
     await db.close()
+  })
+})
+
+describe('VoiceChatDb — группы бесед', () => {
+  // @testCase TC-INT-07
+  it.skipIf(ON_POSTGRES)('сохраняет порядок, членство и архив после рестарта', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'voicechat-groups-'))
+    const file = join(dir, 'db.sqlite')
+    let db = new VoiceChatDb(file)
+    await db.identity.createUser(U, '', 'admin')
+    const tenantId = (await db.identity.getAccountAccess(U))!.tenant.id
+    const active = await db.chat.createConversation(U, 'active', null, null, 'chat', tenantId)
+    const archived = await db.chat.createConversation(U, 'archived', null, null, 'chat', tenantId)
+    const first = await db.chat.createConversationGroup(U, tenantId, 'First')
+    const second = await db.chat.createConversationGroup(U, tenantId, 'Second')
+    await db.chat.setConversationMembership(U, tenantId, active.id, { groupIds: [first.id, second.id], archived: false })
+    await db.chat.setConversationMembership(U, tenantId, archived.id, { groupIds: [], archived: true })
+    await db.close()
+
+    db = new VoiceChatDb(file)
+    await db.ready
+    expect(await db.chat.listConversationGroups(U, tenantId)).toMatchObject([
+      { id: first.id, position: 0, conversationCount: 1 },
+      { id: second.id, position: 1, conversationCount: 1 }
+    ])
+    expect(await db.chat.getConversation(U, active.id)).toMatchObject({ groupIds: [first.id, second.id], archivedAt: null })
+    expect(await db.chat.getConversation(U, archived.id)).toMatchObject({ groupIds: [], archivedAt: expect.any(Number) })
+    await db.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 
