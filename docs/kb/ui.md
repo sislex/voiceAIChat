@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-09-28
-checked: 23625b0c
+updated: 2026-09-29
+checked: 4242196b
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -50,15 +50,7 @@ verified during a Core image build.
 
 Core publishes `@voicechat/shared` contracts with `build:core-contracts -- --version <version> --commit <full SHA>`. This exporter reads committed files and locked peer versions, excludes internal tests and records the source SHA. UI installs the contract archive without a Core checkout. Legacy published `@shared/*` imports resolve to that installed contract, not sibling source.
 
-Conversation groups follow the same owner boundary. Core owns the public group and
-membership models, authenticated REST routes, tenant/user isolation, persistence,
-and system-filter semantics. The separate `sislexa-core-ui` repository owns the
-responsive group rail, Sidebar integration, store, DOM tests, and Component QA;
-Core must not recreate historical `packages/ui` or `packages/chat-app` workspaces.
-The system identifiers are `all` and `archive`; user groups are ordered persisted
-records, while membership is many-to-many and available only to non-archived
-conversations. Archiving atomically clears memberships, and unarchiving does not
-restore them.
+Conversation groups follow the same owner boundary: Core owns contracts, transport and persistence, while `sislexa-core-ui` owns the responsive rail, store and component QA. The complete server semantics are documented in [conversation-groups.md](conversation-groups.md).
 
 
 ## Story ownership after repository extraction
@@ -436,7 +428,7 @@ written to `.generated_images/chat468/before.json` and `after.json`.
 
 ### Общий Sidebar: разделы, controls и desktop resize
 
-Core предоставляет персистентную серверную модель групп бесед для owner-репозитория UI. `GET/POST /api/conversation-groups` и `PATCH/DELETE /api/conversation-groups/:id` управляют упорядоченными персональными группами в пределах текущих tenant/user; `PATCH` с целочисленным неотрицательным `position` переставляет группу на запрошенный индекс (с ограничением верхней границей списка) и атомарно нормализует позиции всех групп пользователя. `PUT /api/conversations/:id/membership` атомарно заменяет полный набор назначений либо архивирует беседу с очисткой всех связей. `GET /api/conversations?groupId=all` возвращает только неархивные беседы, `groupId=archive` — только архивные, а пользовательский id — только активных участников этой группы; поиск по заголовкам принимает тот же фильтр. Архивирование и изменение состава берут блокировку строки беседы в транзакции, разархивирование не восстанавливает прежние связи, удаление группы каскадно удаляет только связи. Публичные модели и REST-пути находятся в `packages/shared/src/types.ts`, `protocol.ts` и canonical chat artifact, а серверная реализация — в `apps/server/src/db/repos/chat.ts` и `routes/rest.ts`. React-колонка, store и responsive DOM-проверки по-прежнему принадлежат внешнему `sislex/sislexa-core-ui`, а не этому Core checkout.
+Серверная модель групп и архива, её REST-фильтры и транзакционные инварианты описаны в [conversation-groups.md](conversation-groups.md). В этом репозитории граница UI не меняется: React-колонка, store и responsive DOM-проверки принадлежат внешнему `sislex/sislexa-core-ui`.
 
 После переноса состояний Make «Проект 3» общий shell отдельно оформляет отсутствие данных. На обычном маршруте чата, только когда список бесед уже имеет статус `ready`, активной беседы нет и сам список пуст, `packages/ui/src/App.tsx` показывает страницу «Чаты» с версией приложения, общим `SidebarToggle` и действием «Добавить новый чат»; действие открывает уже существующее окно создания разговора. Загрузочная, ошибочная и непустая ветки остаются в прежнем chat layout, поэтому новое состояние не подменяет skeleton/error, поиск, фильтры или список.
 
