@@ -25,13 +25,13 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 41 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 1 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 17 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1675 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1676 коммит(ов) в areas после сверки: fb93e484 docs(agents): commit and push verified task work … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 78 коммит(ов) в areas после сверки: d29bb821 Merge main into CHAT-496 (task a6e6488b-8981-43e5-968a-c7395d39524d) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 33 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 31 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-09-17 | ⚠ 50 коммит(ов) в areas после сверки: 9c694e94 fix(merge): keep release gate out of kanban merges … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 418 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ✓ |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ⚠ 1 коммит(ов) в areas после сверки: fb93e484 docs(agents): commit and push verified task work |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -55,9 +55,10 @@
 
 ## Журнал сессий
 
-Всего записей: 978. Последние:
+Всего записей: 979. Последние:
 
 - [2026-09-29-pc-radvilovich-chat-model-controls-kb.md](log/2026-09-29-pc-radvilovich-chat-model-controls-kb.md) — chat-model-controls-kb
+- [2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md](log/2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md) — Temporary Web-only release gate
 - [2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md](log/2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md) — s4-shared-contract-peers
 - [2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md](log/2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md) — Separate merge checks from release checks
 - [2026-09-29-alexeys-macbook-air-2-merge-feature-gate.md](log/2026-09-29-alexeys-macbook-air-2-merge-feature-gate.md) — merge-feature-gate
@@ -66,7 +67,6 @@
 - [2026-09-28-macbook-air-user-conversation-groups.md](log/2026-09-28-macbook-air-user-conversation-groups.md) — conversation-groups
 - [2026-09-28-macbook-air-user-chat-model-reasoning.md](log/2026-09-28-macbook-air-user-chat-model-reasoning.md) — chat-model-reasoning
 - [2026-09-28-macbook-air-user-chat-device-sync.md](log/2026-09-28-macbook-air-user-chat-device-sync.md) — chat-device-sync
-- [2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md](log/2026-09-28-alexeys-macbook-air-2-s3-a07-owner-artifacts.md) — s3-a07-owner-artifacts
 
 ## Исторические планы
 

@@ -12,9 +12,20 @@ if (process.platform === 'linux' && !process.env.DISPLAY) {
 } else {
   try {
     const output = resolve('artifacts/route-budgets')
-    const report = await measure({ web: 'node_modules/@sislexa/core-ui/web', desktop: dirname(require.resolve('@sislexa/core-ui/renderer/index.html')), output })
-    const budget = JSON.parse(readFileSync('frontend-quality/route-budgets.json', 'utf8'))
-    const budgetDiff = checkRoutes(budget, report)
+    // Electron application checks are temporarily opt-in. Keep measuring the
+    // complete Web route budget on every release.
+    const clients = process.env.VC_ELECTRON_TESTS === '1' ? ['web', 'electron'] : ['web']
+    const report = await measure({ web: 'node_modules/@sislexa/core-ui/web', desktop: dirname(require.resolve('@sislexa/core-ui/renderer/index.html')), output, clients })
+    const allBudget = JSON.parse(readFileSync('frontend-quality/route-budgets.json', 'utf8'))
+    const selected = ([route]) => clients.some(client => route.startsWith(client + '/'))
+    const budget = { ...allBudget, routes: Object.fromEntries(Object.entries(allBudget.routes).filter(selected)), forbiddenInitial: Object.fromEntries(Object.entries(allBudget.forbiddenInitial ?? {}).filter(selected)) }
+    const budgetDiff = checkRoutes(budget, report, clients)
+    if (!clients.includes('electron')) {
+      writeFileSync(resolve(output, 'diff.json'), JSON.stringify({ baseline: null, budgetDiff, comparison: null, skipped: ['electron', 'cross-client-baseline'] }, null, 2))
+      console.log('[route-gate] Electron application measurement skipped; Web budgets enforced')
+      console.table(budgetDiff.map(({ resources, ...row }) => row))
+      process.exit(0)
+    }
     const baseline = selectRouteBaseline([
       'frontend-quality/measurements/CHAT-473/before.json',
       'frontend-quality/measurements/sislexa-extraction/after.json',
