@@ -5,7 +5,7 @@
 // До выноса CLI в отдельный контейнер это был локальный интерфейс сервера
 // (`apps/server/src/claude/types.ts` — теперь реэкспорт).
 
-import type { ClaudeInitInfo, ClaudeLogEntry, TurnMeta, TurnUsage } from './types'
+import type { ClaudeInitInfo, ClaudeLogEntry, ReasoningEffort, TurnMeta, TurnUsage } from './types'
 import type { LoginStatusMap } from './auth'
 import type { LlmAccountingContext } from './llmAccounting'
 
@@ -54,6 +54,10 @@ export interface LlmRequest {
   model: string
   /** Режим прав агента (`--permission-mode`); undefined — не передавать флаг. */
   permissionMode?: string
+  /** Provider-neutral reasoning effort; adapters must map it explicitly. */
+  reasoningEffort?: ReasoningEffort
+  /** Independent request for extended/deep thinking. */
+  deepThinking?: boolean
   /** Желаемый рабочий каталог процесса CLI; исполнитель сам решает, применим ли он. */
   cwd?: string
   /**
