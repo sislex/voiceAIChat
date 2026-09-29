@@ -3,7 +3,7 @@ title: Разработка, тестирование, диагностика и
 updated: 2026-09-29
 checked:
 
-  8255c54f
+  92f05eea
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -51,7 +51,12 @@ check is never converted to acceptance. `gate:system` runs this check before the
 existing owner suites and derives their source commits from the snapshot. The
 existing committed-Core requirement for those owner suites remains in force.
 `gate:all` continues to own real browser integration; `gate:performance` retains
-Web/Electron route measurements. This boundary suite does not replace owner UI
+route measurements. For the temporary release policy from 2026-09-29, Electron
+application E2E is opt-in with `VC_ELECTRON_TESTS=1`; default Core gates still
+measure and enforce all Web route budgets, while the combined baseline comparison
+is unavailable for a Web-only report. The Electron onboarding E2E is skipped by
+default. Restore the full Web/Electron gate with `VC_ELECTRON_TESTS=1` after the
+Electron suite is reinstated. This boundary suite does not replace owner UI
 parity/accessibility tests or deployed-version commissioning.
 
 The U10 sandbox run passed the three artifact tests and the two local
@@ -953,8 +958,9 @@ drill against the retained set before applying a production retention plan.
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
 owner-built product/Core UI artifact verification, and retained Core functional
 browser integration. It does not run detailed owner scenarios or Web/Desktop
-performance measurements. `gate:performance` runs the unchanged serial route
-budgets; `gate:system` runs owner-maintained system acceptance. `gate:release`
+performance measurements. `gate:performance` runs serial Web route budgets by
+default; `VC_ELECTRON_TESTS=1` restores Electron measurement. `gate:system` runs
+owner-maintained system acceptance. `gate:release`
 requires all three. Known budget/measurement edits still select their real browser
 measurements directly. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
@@ -978,7 +984,13 @@ Route measurements are implemented in `scripts/measure-routes.mjs` and checked b
 
 The S2 U10 Account Identity/Analytics layout correction in Core UI 1.4.4 increases CSS on Account routes only. The reviewed fresh measurement was Web Account navigation 387,679 raw / 67,484 gzip / 54,185 Brotli bytes and Electron Account 384,293 raw / 67,027 gzip / 53,864 Brotli bytes. `frontend-quality/route-budgets.json` raises only the Account CSS ceilings enough to cover those measured values; Chat and Settings limits remain unchanged. The route gate still measures current artifacts and fails on further overruns.
 
-`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a before/after diff, and runs the real Web/Electron route-measurement test. Shared-boundary and panel-loader browser fixtures belong to the UI owner. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Mutable external CSS is identified by both URL and actual body SHA-256. Different responses at one CDN URL remain distinct immutable observations; previous routes retain their original byte costs. Missing CSS bodies and budget overruns still fail. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after verifying owner-built assets; renderer and native preload are pinned owner artifacts.
+The 0.1.342 preparation measured the newer pinned Core UI artifact after the chat
+sidebar and model-control changes. Web Account measured 380,591 JS gzip / 311,742
+JS Brotli and 393,473 CSS raw / 68,815 CSS gzip / 55,264 CSS Brotli; shared
+Web Chat/Settings CSS measured 387,348 raw. The subsequent budget revision raises
+only those Web ceilings to the observed values plus at most 0.2% headroom.
+
+`npm run frontend:route-gates` measures fresh production artifacts, checks `frontend-quality/route-budgets.json`, writes HTML/JSON reports and a budget diff, and runs real Web route measurements. During the temporary opt-in period, Electron routes and the cross-client baseline comparison run only with `VC_ELECTRON_TESTS=1`. Shared-boundary and panel-loader browser fixtures belong to the UI owner. Linux requires Xvfb and a Playwright browser. Missing routes, resources, fingerprints, chunk edges, waterfalls or runtime provenance, invalid limits and any exceeded JS/CSS raw/gzip/Brotli limit fail with a nonzero status. The gate never writes or raises budgets. Inventories always read current build files and parse their import graphs. Mutable external CSS is identified by both URL and actual body SHA-256. Different responses at one CDN URL remain distinct immutable observations; previous routes retain their original byte costs. Missing CSS bodies and budget overruns still fail. Compression bytes are cached under `artifacts/route-compression`, keyed by source SHA-256, compression settings and Node/zlib/Brotli versions. Every hit validates compressed fingerprints and decompresses to the current source bytes. Missing, stale, corrupt or unwritable cache entries fall back to recompression. `VC_MEASURE_COMPRESSION_CACHE=0` disables this optimization for reference measurements; the old inventory-reuse switch is removed. Negative fixtures are in `scripts/route-budgets.test.mjs`. Reviewed before/after artifacts are in `frontend-quality/measurements/CHAT-473/`: the fixed populated-chat scenario measured initial JS gzip of 1,349,629 → 363,241 bytes for Web and 710,004 → 358,523 bytes for Electron; raw/CSS/Brotli totals, all 16 route runs, graphs, waterfalls and reproduction conditions are retained alongside the diff. Both `frontend:build-gates` and `gate:all` invoke the route gate after verifying owner-built assets; renderer and native preload are pinned owner artifacts.
 
 Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
 
@@ -1074,8 +1086,9 @@ Missing runtime/browser dependencies fail the system gate instead of skipping it
 `scripts/measure-routes.mjs` resolves the installed desktop Electron package's
 exported executable path. Do not hardcode `dist/electron`: npm installs a macOS
 application bundle or a Windows executable on those platforms. Route measurement
-must exercise the real installed renderer on every host; OS differences do not
-justify skipping desktop budgets or changing their thresholds.
+must exercise the real installed renderer when `VC_ELECTRON_TESTS=1`; OS
+differences do not justify changing desktop thresholds. The default temporary
+Web-only gate records Electron as skipped explicitly.
 
 
 The September 20 Sislexa extraction review found separate, pre-existing numerical

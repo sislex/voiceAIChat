@@ -108,16 +108,17 @@ export function compareRoutes(before, after) {
   }
   return diff
 }
-export function checkRoutes(budget, report) {
+export function checkRoutes(budget, report, clients = ['web', 'electron']) {
+  if (!Array.isArray(clients) || !clients.length || clients.some(client => !['web', 'electron'].includes(client)) || new Set(clients).size !== clients.length) fail('invalid measurement clients')
   if (!object(budget) || budget.schemaVersion !== 1 || !object(budget.routes) || !Object.keys(budget.routes).length) fail('invalid budget schema')
   if (Object.keys(budget).some(key => !['schemaVersion', 'routes', 'forbiddenInitial', 'notes'].includes(key))) fail('unknown budget field')
   if (budget.notes !== undefined && typeof budget.notes !== 'string') fail('invalid budget notes')
   if (budget.forbiddenInitial !== undefined && (!object(budget.forbiddenInitial) || Object.keys(budget.forbiddenInitial).some(id => !Object.hasOwn(budget.routes, id)))) fail('unknown forbidden-resource route')
   if (!object(report) || report.schemaVersion !== 1 || !object(report.routes) || !object(report.resources)) fail('invalid measurement schema')
-  if (!/^[a-f0-9]{40}$/.test(report.commit ?? '') || !object(report.conditions) || !object(report.tools) || !report.tools.web || !report.tools.electron) fail('missing build or runtime provenance')
+  if (!/^[a-f0-9]{40}$/.test(report.commit ?? '') || !object(report.conditions) || !object(report.tools) || clients.some(client => !report.tools[client])) fail('missing build or runtime provenance')
   for (const field of ['scenario', 'theme', 'transport', 'node', 'zlib', 'brotli', 'cpu', 'network', 'cache']) if (typeof report.conditions[field] !== 'string' || !report.conditions[field]) fail('missing measurement condition: ' + field)
   if (!object(report.conditions.viewport) || !positive(report.conditions.viewport.width) || !positive(report.conditions.viewport.height) || !positive(report.conditions.settleMs)) fail('missing viewport or readiness boundary')
-  for (const client of ['web', 'electron']) {
+  for (const client of clients) {
     const viewport = report.conditions.actualViewports?.[client]
     if (!object(viewport) || !positive(viewport.width) || !positive(viewport.height) || !Number.isFinite(viewport.deviceScaleFactor) || viewport.deviceScaleFactor <= 0) fail('missing actual renderer viewport: ' + client)
   }

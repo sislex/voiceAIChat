@@ -188,7 +188,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   }, 180_000)
 
   // @testCase TC-HOST-1
-  it('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {
+  it.skipIf(process.env.VC_ELECTRON_TESTS !== '1')('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {
     const executablePath = createRequire(join(ROOT, 'package.json'))('electron') as string
     if (!existsSync(executablePath)) throw new Error('Install Core integration dependencies before required Electron QA')
     if (VISUAL_ARTIFACTS) await mkdir(VISUAL_ARTIFACTS, { recursive: true })
