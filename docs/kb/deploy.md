@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-09-30
-checked: b19c1c99
+updated: 2026-10-01
+checked: 4843251d
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -419,7 +419,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует локальный образ `sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban`; текущий закреплённый SHA `e139f854c050d9caa1ddbea00aff8409190fbef8` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза и сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`)
+использует локальный образ `sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban`; текущий закреплённый SHA `29d66f4e0eb36d6ffe4d4e2240961ebb01d85183` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза и сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
