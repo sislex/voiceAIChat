@@ -419,7 +419,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует локальный образ `sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban`; текущий закреплённый SHA `8f8bd8d6da384f2d02f443b27a0c7a79b8bfebe0` включает сервер, переносимый пакет Projects и его тесты
+использует локальный образ `sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban`; текущий закреплённый SHA `1cdae5d36cacc8997272978a968905aa05cb8a5a` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA и передачу коммита production в регрессию релиза
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
