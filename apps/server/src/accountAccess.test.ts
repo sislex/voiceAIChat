@@ -56,23 +56,17 @@ it('keeps account/history accessible while refusing product creation, mutation a
   expect(capabilities.tts).toMatchObject({ available: false, reason: TARIFF_DENIED })
 })
 
-it('isolates projects and conversations by the selected team tenant and transfers owned projects explicitly', async () => {
+it('isolates conversations by the selected team tenant and moves project chats with the project', async () => {
   const { app, db, headers } = await fixture()
   await db.identity.assignUserTariff('alice', 'standard')
   const personalTenantId = (await db.identity.getAccountAccess('alice'))!.tenant.id
-  const personalProject = await app.inject({ method: 'POST', url: '/api/projects', headers, payload: { name: 'Move me' } })
-  expect(personalProject.statusCode).toBe(200)
-  const projectChat = await app.inject({ method: 'POST', url: '/api/conversations', headers, payload: { title: 'Project chat', projectId: personalProject.json().id } })
+  // Проекты и их перенос между тенантами — маршруты канбана; ядру важно, что чаты проекта едут за ним.
+  const personalProject = await db.projects.createProject('alice', { name: 'Move me', tenantId: personalTenantId, tenantKind: 'personal' })
+  const projectChat = await app.inject({ method: 'POST', url: '/api/conversations', headers, payload: { title: 'Project chat', projectId: personalProject.id } })
   expect(projectChat.statusCode).toBe(200)
   const team = await db.identity.createTeamTenant('alice', 'Product')
   const teamHeaders = { ...headers, 'x-sislexa-tenant-id': team.tenant.id }
-  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers: teamHeaders })).statusCode).toBe(404)
-  expect((await app.inject({ url: '/api/projects', headers: teamHeaders })).json()).toEqual([])
-  const transferred = await app.inject({ method: 'PUT', url: `/api/projects/${personalProject.json().id}/tenant`, headers, payload: { tenantId: team.tenant.id } })
-  expect(transferred.statusCode).toBe(200)
-  expect(transferred.json()).toMatchObject({ tenantId: team.tenant.id })
-  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers })).statusCode).toBe(404)
-  expect((await app.inject({ url: `/api/projects/${personalProject.json().id}`, headers: teamHeaders })).statusCode).toBe(200)
+  expect(await db.projects.transferTenant('alice', personalProject.id, personalTenantId, team.tenant.id, 'team')).toMatchObject({ tenantId: team.tenant.id })
   expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers })).statusCode).toBe(404)
   expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers: teamHeaders })).statusCode).toBe(200)
 

@@ -492,10 +492,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(await ids(`/api/conversations?${context}&includeCompleted=1`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations/search?${context}&q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
 
-    // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
+    // Прямая ссылка работает как раньше; кнопку «Открыть чат» на карточке обслуживает канбан.
     expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}?${context}` })).json().conversation.id).toBe(chat.id)
-    const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
-    expect(fromCard.json().id).toBe(chat.id)
   })
 
   it('cc:resume без slug/id → 400', async () => {

@@ -41,13 +41,13 @@ REST + WS, SQLite, Whisper, Piper/say, HTTP-клиент LLM-исполните�
 потоковый exec `execStream.ts`, пересылка авторизации `forwardedAuth.ts`), `chatStorage.ts` (хранилище разговора на машине),
 `mcp/remoteBashMcp.ts`, `anthropic/gateway.ts`, `system/` (ресурсы и возможности),
 `diarization/` (заглушка);
-`kanban/` (сборка канбан-кластера `createKanbanModule(deps)`; порты `core.ts` — что кластер берёт у процесса ядра
-(узкий фасад машин `KanbanMachines`, KB, вложения, виджет), `service.ts` — что ядро берёт у кластера (ленты ранов,
-доски, уведомлений); гейт границы `boundary.test.ts` с аллоулистом импортов; чистые функции подготовки — `preparation.ts`),
-`kanban/standalone/` (отдельный процесс канбана: `HttpKanbanCore` с зеркалом машин и потоковым exec через ядро,
-пересылка авторизации в `/internal/whoami`, сборка `buildKanbanServer`; контракт протокола — `kanban/internal.ts`),
+`kanban/` (только порты: код канбана — доска, CI/QA, мерж, релизы, оркестрация, превью, очистка — живёт в
+`sislexa-kanban`, встроенного режима нет; `core.ts` — что канбан берёт у процесса ядра (узкий фасад машин
+`KanbanMachines`, KB, вложения, виджет), `service.ts` — что ядро берёт у канбана (ленты ранов, доски, уведомлений),
+`internal.ts` — контракт протокола; гейт `boundary.test.ts` не пускает код кластера обратно в ядро),
 `kanbanBridge/` (сторона ядра: `localCore.ts` — `KanbanCore` поверх `AgentRegistry`, `remote.ts` — `KanbanService` для
-режима `VC_KANBAN_MODE=remote`, `proxy.ts` — прокси путей канбана, `internal.ts` — RPC-диспетчер порта),
+`VC_KANBAN_MODE=remote`, `offline.ts` — заглушка без канбана, `proxy.ts` — прокси путей канбана, `internal.ts` —
+RPC-диспетчер порта),
 `frameHub.ts` (шина кадров ядра для WS-сессий: команды машин, watchdog, снимки проверки),
 `reader/mcpBase.ts` (адрес MCP превью для ходов ядра и канбана),
 `readerBridge/` (локальный `ReaderCore`: данные/права, машины, WS relay, ключи Chromium,
