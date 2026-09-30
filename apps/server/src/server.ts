@@ -47,10 +47,8 @@ import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
 
 
-import { shellQuote } from './ci/executor.js'
+import { shellQuote } from './util/shell.js'
 
-import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
-import { sweepQaScreenshots } from './ci/qaScreenshots.js'
 import { sweepBrowserShots } from './browser/checkShots.js'
 
 import { syncProjectWithRetry } from './projectSync.js'
@@ -60,8 +58,6 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 
 
-import { CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
-import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { registerAuth, registerAuthGuard, type AuthenticateFn, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
@@ -105,18 +101,16 @@ import { LocalImageStudioCore } from './imageStudioBridge/localCore.js'
 import { createRemoteImageStudio } from './imageStudioBridge/remote.js'
 import { registerImageStudioProxy } from './imageStudioBridge/proxy.js'
 
-import { KANBAN_MCP_PATH } from './mcp/kanbanMcp.js'
 import { WidgetContextStore } from './mcp/widgetContext.js'
 import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 
-import { createKanbanModule } from './kanban/module.js'
+import { createOfflineKanban } from './kanbanBridge/offline.js'
 import { createLocalKanbanCore } from './kanbanBridge/localCore.js'
 import { createRemoteKanban } from './kanbanBridge/remote.js'
-import { registerKanbanProxy } from './kanbanBridge/proxy.js'
+import { KANBAN_MCP_PATH, registerKanbanProxy } from './kanbanBridge/proxy.js'
 import { machinesSnapshot } from './kanbanBridge/internal.js'
 import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
-export { parseQaPreparationResponse, taskPreparationModel, taskPreparationFailure } from './kanban/preparation.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
 import { createRemoteMake } from './makeBridge/remote.js'
@@ -213,10 +207,6 @@ export interface BuildOptions {
   geo?: GeoResolver
   /** Реестр машин (для маршрутных тестов с фейковыми fs-ответами). */
   agentRegistry?: AgentRegistry
-  /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
-  ciExecutor?: CommandExecutor
-  /** Хук шага «Актуализировать базу знаний» (в тестах — мок). По умолчанию — из createCiModelHooks. */
-  ciKbUpdate?: CiKbUpdateHook
   /** Запуск host-side деплоя (в тестах — мок). */
   deployTrigger?: DeployTrigger
   /** Relay действий веб-превью (в тестах — свой, чтобы дёргать request напрямую). */
@@ -827,16 +817,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Кадры браузерной проверки задач: файл на диске, в ленте рана — ссылка.
   const browserShotsRoot = join(opts.config.dataDir, 'ci-browser-shots')
   registerBrowserShotRoutes(app, { db, shotsRoot: browserShotsRoot })
-  // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
-  // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
-  const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
-  // Снимки не удалялись ни при удалении задачи (каскад чистит строку рана, но не
-  // файл), ни по возрасту. Уборка при старте и раз в сутки.
-  const sweepScreenshots = async (): Promise<void> => {
-    try { sweepQaScreenshots({ dir: automatedQaScreenshotDir, knownRunIds: await db.qa.qaStageRunIds(), maxAgeMs: 30 * 24 * 60 * 60_000 }) }
-    catch (error) { app.log.warn({ error }, 'qa screenshot sweep failed') }
-  }
-  await sweepScreenshots()
   // Кадры проверки живут короче снимков вердикта: их за ран много, а смысл
   // они имеют, пока лента этого рана кому-то интересна.
   const sweepBrowserCheckShots = async (): Promise<void> => {
@@ -847,28 +827,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const browserShotSweepTimer = setInterval(sweepBrowserCheckShots, 24 * 60 * 60_000)
   browserShotSweepTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(browserShotSweepTimer))
-  const screenshotSweepTimer = setInterval(sweepScreenshots, 24 * 60 * 60_000)
-  screenshotSweepTimer.unref?.()
-  app.addHook('onClose', async () => clearInterval(screenshotSweepTimer))
 
-  // Раннер сценариев нужен и этапу, и разовой проверке набора из настроек,
-  // поэтому создаётся рядом с каталогом снимков, до регистрации роутов.
-  const automatedQaScenarioRunner = browserRunner ? createAutomatedQaScenarioRunner({
-    browser: browserRunner,
-    screenshotDir: automatedQaScreenshotDir,
-    screenshotUrl: (runId) => `/api/qa/runs/${runId}/screenshot`
-  }) : undefined
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
-  // В remote MCP канбана и CI-команд слушает процесс канбана: исполнителю нужен его адрес, а не адрес ядра.
-  const kanbanMcpBase = (opts.config.kanbanMcpPublicBase ?? opts.config.kanbanUrl ?? '').replace(/\/+$/, '')
-  const ciCommandsMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${CI_COMMANDS_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
   const readerRemote = opts.config.readerMode === 'remote'
   if (readerRemote && !(opts.config.readerUrl && (managedReader || opts.config.internalToken) && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   const previewMcpBaseUrl = previewMcpBaseUrlOf(opts.config, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
-  const kanbanMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${KANBAN_MCP_PATH}?k=${mcpSecret}` : buildPublicMcpUrl(opts.config, KANBAN_MCP_PATH, mcpSecret)
+  // MCP канбана слушает процесс канбана: исполнителю нужен его адрес, а не адрес ядра.
+  const kanbanMcpBase = (opts.config.kanbanMcpPublicBase ?? opts.config.kanbanUrl ?? '').replace(/\/+$/, '')
+  const kanbanMcpBaseUrl = kanbanRemote ? `${kanbanMcpBase}${KANBAN_MCP_PATH}?k=${mcpSecret}` : undefined
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -1323,15 +1292,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
   })
 
-  // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
-  // ранов. Исполнитель команд — поверх потокового exec машины. Хуки модели/фикса
-  // подключаются здесь же (Срез 4).
-  // Канбан-кластер собирается отдельным модулем; ядро отдаёт ему зависимости явно (docs/plans/kanban-service.md).
+  // Канбан — отдельный сервис `sislexa-kanban`; ядро отдаёт ему свои зависимости портом (docs/plans/kanban-service.md).
   const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
   const remoteKanban = kanbanRemote
     ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
     : null
-  const kanban: { service: KanbanService } = remoteKanban ?? await createKanbanModule({ app, db, config: opts.config, core: kanbanCore, claude, codex, kbUsage, make, browserRunner, mailer, mcpSecret, ...(opts.ciExecutor ? { ciExecutor: opts.ciExecutor } : {}), automatedQaScenarioRunner, automatedQaScreenshotDir, remoteBashMcpBaseUrl, kbMcpBaseUrl, previewMcpBaseUrl, ciCommandsMcpBaseUrl, ciKbUpdate: opts.ciKbUpdate })
+  const kanban: { service: KanbanService } = remoteKanban ?? { service: createOfflineKanban() }
   if (remoteKanban) {
     registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
     // Зеркало машин у канбана: снимок после каждого изменения реестра (онлайн, политика, телеметрия);

@@ -86,8 +86,8 @@ describe('ядро (admin remote) + отдельный процесс админ
     const stats = await fetch(`${coreUrl}/api/admin/machines/stats`, { headers: adminAuth })
     expect(stats.status).toBe(200)
     expect(await stats.json()).toHaveProperty('generatedAt')
-    // Типы проектов — канбан, не админка: во встроенном канбане роут остаётся у ядра.
-    expect((await fetch(`${coreUrl}/api/admin/project-types`, { headers: adminAuth })).status).toBe(200)
+    // Типы проектов — канбан, не админка: прокси админки путь не забирает, а канбан в этом стенде не подключён.
+    expect((await fetch(`${coreUrl}/api/admin/project-types`, { headers: adminAuth })).status).toBe(404)
   })
 
   it('деплой из админки уходит в ядро по RPC (сокет host-side API живёт у ядра)', async () => {

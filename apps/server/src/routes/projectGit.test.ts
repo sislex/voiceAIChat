@@ -44,9 +44,8 @@ afterEach(async () => {
 })
 
 async function createProject(name = 'Панель кода'): Promise<ProjectDetail> {
-  const res = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name } })
-  expect(res.statusCode).toBe(200)
-  return res.json() as ProjectDetail
+  // Проект создаёт канбан; ядру нужна только строка в общей базе.
+  return await db.projects.createProject('admin', { name })
 }
 
 describe('REST панели кода', () => {

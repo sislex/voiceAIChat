@@ -121,12 +121,12 @@ test('narrow tooling scope never hides another changed critical file', () => {
   }
 })
 test('mixed application and browser edits retain the entire application suite', () => {
-  const plan = planApplicationChecks(['e2e/projects.e2e.test.ts', 'apps/server/src/routes/rest.ts'])
+  const plan = planApplicationChecks(['e2e/settings.e2e.test.ts', 'apps/server/src/routes/rest.ts'])
   assert.deepEqual(plan.applications.map(a => a.id), ['core'])
-  assert.deepEqual(plan.e2eFiles, ['e2e/projects.e2e.test.ts'])
+  assert.deepEqual(plan.e2eFiles, ['e2e/settings.e2e.test.ts'])
   const commands = applicationPlanCommands(plan)
   assert.ok(commands.some(([, args]) => args.join(' ') === 'run -w @voicechat/server test'))
-  assert.ok(commands.some(([, args]) => args.includes('e2e/projects.e2e.test.ts')))
+  assert.ok(commands.some(([, args]) => args.includes('e2e/settings.e2e.test.ts')))
 })
 test('contract consumers typecheck once and combine full declared contract suites', () => {
   const plan = { applications: [], contracts: [
@@ -140,7 +140,7 @@ test('contract consumers typecheck once and combine full declared contract suite
 })
 test('execution stops after a failing command rather than reporting later stages successful', () => {
   const calls = []
-  const plan = planApplicationChecks(['e2e/projects.e2e.test.ts'])
+  const plan = planApplicationChecks(['e2e/settings.e2e.test.ts'])
   assert.throws(() => executeApplicationPlan(plan, (command, args) => {
     calls.push(args); throw Object.assign(Error('fixture failure'), { exitCode: 19 })
   }, 'failure-fixture'), /fixture failure/)

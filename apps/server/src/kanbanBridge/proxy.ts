@@ -6,11 +6,15 @@
 import type { FastifyInstance } from 'fastify'
 import { registerServiceProxy } from '../makeBridge/proxy.js'
 
-/** Всё, что регистрируют роуты кластера и его MCP; полноту списка держит `proxy.test.ts` по исходникам кластера. */
+/** MCP канбана и CI-команд: оба слушает процесс канбана, исполнитель ходит к ним через ядро. */
+export const KANBAN_MCP_PATH = '/mcp/kanban'
+export const CI_COMMANDS_MCP_PATH = '/mcp/ci-commands'
+
+/** Всё, что регистрируют роуты кластера и его MCP. Исходники кластера живут в `sislexa-kanban`. */
 export const KANBAN_PROXY_PREFIXES = [
   '/api/projects', '/api/ci', '/api/qa', '/api/project-types', '/api/widget-tools', '/api/merge', '/api/invitations',
   '/api/improvements', '/api/orchestrations', '/api/task-preparation', '/api/session/invitation', '/api/admin/project-types',
-  '/mcp/kanban', '/mcp/ci-commands'
+  KANBAN_MCP_PATH, CI_COMMANDS_MCP_PATH
 ] as const
 
 export function registerKanbanProxy(app: FastifyInstance, opts: { kanbanUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): void {

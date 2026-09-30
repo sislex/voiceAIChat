@@ -89,22 +89,6 @@ describe('REST: хранилище машины', () => {
     expect(listed.json()[0]).toMatchObject({ id: first.json().id, status: 'ready', primary: true })
   })
 
-  it('материализует каталоги и project marker до сохранения машины проекта', async () => {
-    const machine = await db.machines.createAgent(U, 'Project machine')
-    const fs = await connectFs(machine.id)
-    const storageResponse = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })
-    const projectResponse = await inj({ method: 'POST', url: '/api/projects', payload: { name: 'Managed project' } })
-    const projectId = projectResponse.json().id as string
-    const linked = await inj({ method: 'POST', url: `/api/projects/${projectId}/machines`, payload: { agentId: machine.id, storageId: storageResponse.json().id } })
-    expect(linked.statusCode).toBe(200)
-    const configured = linked.json().machines.find((item: { agentId: string }) => item.agentId === machine.id)
-    expect(configured.path).toContain(`/projects/${projectId}/worktree`)
-    expect(configured.reposRoot).toContain(`/projects/${projectId}/repositories`)
-    expect(fs.directories).toContain(`/Users/me/ChatAI/projects/${projectId}/environments/production`)
-    const marker = Buffer.from(fs.files.get(`/Users/me/ChatAI/projects/${projectId}/project.json`) ?? '', 'base64').toString('utf8')
-    expect(JSON.parse(marker)).toMatchObject({ formatVersion: 1, projectId })
-  })
-
   it('показывает зарегистрированное хранилище только для чтения', async () => {
     const machine = await db.machines.createAgent(U, 'Read only')
     const fs = await connectFs(machine.id)
@@ -231,10 +215,8 @@ describe('REST: доступ участников к машине проекта
     const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
     const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
 
-    // владелец делится машиной в режиме «только чтение»
-    const shared = await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'read' } })
-    expect(shared.statusCode).toBe(200)
-    expect(shared.json().machines.find((m: { agentId: string }) => m.agentId === machine.id).shareAccess).toBe('read')
+    // владелец делится машиной в режиме «только чтение» (маршрут шаринга — у канбана, здесь пишем в базу)
+    await db.machines.setMachineSharedWithProject(U, project.id, machine.id, true, 'read')
 
     const q = `?projectId=${project.id}`
     expect((await asDev({ method: 'GET', url: `/api/agents/${machine.id}/fs${q}&path=/srv` })).statusCode).toBe(200)
@@ -253,12 +235,10 @@ describe('REST: доступ участников к машине проекта
     expect(listed.find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'project', access: 'read' })
 
     // владелец поднимает доступ до полного — команды снова разрешены
-    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'full' } })).statusCode).toBe(200)
+    await db.machines.setMachineSharedWithProject(U, project.id, machine.id, true, 'full')
     expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/exec${q}`, payload: { command: 'ls' } })).statusCode).toBe(200)
     // владельцу его собственная машина всегда доступна полностью
     expect((await inj({ method: 'GET', url: '/api/agents' })).json().find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'personal', access: 'owner' })
-    // некорректный уровень отклоняется
-    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'bogus' } })).statusCode).toBe(400)
   })
 })
 
@@ -290,21 +270,20 @@ describe('REST: групповая команда (п.15)', () => {
     // пустое тело и политика
     expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
     const project = await db.projects.createProject(U, { name: 'PB' })
-    await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } } })
+    await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } })
     const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
     expect(denied.statusCode).toBe(403)
   })
 })
 
 describe('REST: политика команд проекта и роли (п.10)', () => {
-  it('deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила', async () => {
+  it('deny проекта отклоняет команду консоли с 403 до exec; PUT ролей сохраняет правила', async () => {
     const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
     const socket = { close: vi.fn(), async send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') await agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 }) } }
     agentRegistry.register(created.id, 'M', socket, (await db.machines.listAgents(U)).find((a) => a.id === created.id)!.policy, '0.15.0')
     const project = await db.projects.createProject(U, { name: 'P' })
-    const patched = await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } } })
-    expect(patched.statusCode).toBe(200)
-    expect(patched.json().commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
+    // Политику проекта сохраняет канбан (PATCH проекта); ядро применяет её к консоли.
+    expect((await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } }))?.commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
     const denied = await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'docker ps' } })
     expect(denied.statusCode).toBe(403)
     expect(denied.json().error).toContain('политикой проекта')

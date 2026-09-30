@@ -1,7 +1,7 @@
 // Блоки системного промпта, которые сервер дописывает к каждому ходу, и их
 // предпросмотр в инспекторе контекста.
 //
-// Живёт отдельно по той же причине, что `projects/promptContext.ts`: текст
+// Живёт отдельно по той же причине, что `prompt/projectContext.ts`: текст
 // строят два места — ход модели (`turns.ts`) и снимок контекста
 // (`routes/rest.ts`). Пока это были копии, они расходились: панель писала «год
 // рождения 1990», а модель получала «Возраст пользователя: 36 лет». Инспектор
@@ -12,7 +12,7 @@ import type { ChatInstruction, ContextPromptBlock, UserPersonalization } from '@
 import { chatInstructionHintEntries, estimateCostUsd, instructionContextId } from '@voicechat/shared'
 import type { ModelPrice } from '@voicechat/shared'
 import type { ProjectSummary } from '@voicechat/shared'
-import { projectPromptBlock } from '../projects/promptContext.js'
+import { projectPromptBlock } from './projectContext.js'
 
 /** Грубая оценка токенов: 4 символа на токен. Точный счёт знает только движок. */
 export function approxTokens(chars: number): number {
