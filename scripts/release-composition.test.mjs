@@ -126,10 +126,11 @@ test('publishing creates the tag once and never reuses a version for another com
   const { core } = fixture()
   const { manifest, files } = manifestFromCore(REPO, core)
   const calls = []
-  let existing = null
+  let existing = null, tag = null
   const fetchImpl = async (url, init = {}) => {
     calls.push(`${init.method ?? 'GET'} ${String(url).replace(/\?.*/, '')}`)
     if (String(url).endsWith('/releases/tags/v1.0.0')) return existing ? Response.json(existing) : new Response('', { status: 404 })
+    if (String(url).endsWith('/git/ref/tags/v1.0.0')) return tag ? Response.json({ object: { type: 'commit', sha: tag } }) : new Response('', { status: 404 })
     if (String(url).endsWith('/releases') && init.method === 'POST') return Response.json({ html_url: 'https://github.com/sislex/make/releases/v1.0.0', upload_url: 'https://uploads.github.com/repos/sislex/make/releases/1/assets{?name,label}', assets: [] })
     if (String(url).startsWith('https://uploads.github.com/')) return Response.json({})
     if (String(url) === 'manifest-url') return Response.json({ ...manifest, commit: NEW })
@@ -137,8 +138,12 @@ test('publishing creates the tag once and never reuses a version for another com
   }
   const result = await publishGithubRelease({ manifest, files, token: 't', fetchImpl, log: () => {} })
   assert.equal(result.tag, 'v1.0.0')
-  assert.deepEqual(calls, ['GET https://api.github.com/repos/sislex/make/releases/tags/v1.0.0', 'POST https://api.github.com/repos/sislex/make/releases',
+  assert.deepEqual(calls, ['GET https://api.github.com/repos/sislex/make/releases/tags/v1.0.0', 'GET https://api.github.com/repos/sislex/make/git/ref/tags/v1.0.0', 'POST https://api.github.com/repos/sislex/make/releases',
     'POST https://uploads.github.com/repos/sislex/make/releases/1/assets', 'POST https://uploads.github.com/repos/sislex/make/releases/1/assets'])
+  // Тег версии уже стоит на другом коммите — релиз к нему не привязывается.
+  tag = NEW
+  await assert.rejects(publishGithubRelease({ manifest, files, token: 't', fetchImpl, log: () => {} }), /Тег v1.0.0 уже указывает на b{40}/)
+  tag = null
   existing = { upload_url: '', assets: [{ name: 'sislexa-release.json', url: 'manifest-url' }] }
   await assert.rejects(publishGithubRelease({ manifest, files, token: 't', fetchImpl, log: () => {} }), /уже опубликован из b{40}/)
   await assert.rejects(publishGithubRelease({ manifest, files, token: '', fetchImpl, log: () => {} }), /GITHUB_TOKEN/)

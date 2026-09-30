@@ -141,6 +141,14 @@ export async function publishGithubRelease({ manifest, files, token, fetchImpl =
       if (current.commit !== manifest.commit) throw new Error(`${tag} уже опубликован из ${current.commit}; новый коммит требует новой версии`)
     }
   } else {
+    // Существующий тег GitHub возьмёт как есть и проигнорирует target_commitish: релиз на чужом
+    // коммите разошёлся бы с манифестом, поэтому такой тег — отказ, а не молчаливая подмена.
+    const ref = await api(`/git/ref/tags/${tag}`)
+    if (ref) {
+      let object = ref.object
+      if (object.type === 'tag') object = (await api(`/git/tags/${object.sha}`)).object
+      if (object.sha !== manifest.commit) throw new Error(`Тег ${tag} уже указывает на ${object.sha}, а выпуск собран из ${manifest.commit}`)
+    }
     release = await api('/releases', { method: 'POST', body: JSON.stringify({ tag_name: tag, target_commitish: manifest.commit, name: `${basename(slug)} ${manifest.version}`, body: `Коммит ${manifest.commit}. Манифест выпуска: ${RELEASE_MANIFEST_ASSET}.`, draft: false, prerelease: false }) })
     log(`создан релиз ${slug} ${tag}`)
   }
