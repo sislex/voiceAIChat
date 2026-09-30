@@ -14,7 +14,8 @@ import type { RunnerFsClient } from '../llm/runnerFsClient.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
-import { MAKE_ONLY_DISALLOWED_TOOLS } from '../turns.js'
+import { MAKE_ONLY_DISALLOWED_TOOLS, makeBrowserSession } from '../turns.js'
+import { InvalidChatSettings } from '../chatSettingsValidation.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { registerChatSettingsRoutes } from './chatSettings.js'
 
@@ -1359,6 +1360,47 @@ export async function registerRest(
       const conversation = await db.chat.setConversationPreviewUrl(uid(req), req.params.id, previewUrl, previewEngine)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       return conversation
+    }
+  )
+
+  // Make: which browser the assistant uses. The session is one of the same user's Web
+  // Reader or Playwright Reader conversations; its engine decides where pages open.
+  app.get<{ Params: { id: string } }>(
+    '/api/conversations/:id/make-browser',
+    async (req, reply) => {
+      const userId = uid(req)
+      const conversation = await db.chat.getConversation(userId, req.params.id)
+      if (!conversation || conversation.assistantKind !== 'make') return reply.code(404).send({ error: 'not found' })
+      const access = await db.identity.getAccountAccess(userId, conversation.tenantId)
+      const readers = [
+        ...await db.chat.listConversations(userId, { scope: 'web-reader', ...(conversation.tenantId ? { tenantId: conversation.tenantId } : {}), limit: 50 }),
+        ...await db.chat.listConversations(userId, { scope: 'playwright-reader', ...(conversation.tenantId ? { tenantId: conversation.tenantId } : {}), limit: 50 })
+      ]
+      const sessions = await Promise.all(readers.map(async (item) => {
+        const session = await makeBrowserSession(db, userId, { ...conversation, makeBrowserSessionId: item.id }, access?.capabilities ?? [])
+        return session ? {
+          id: item.id, title: item.title, kind: item.assistantKind, engine: session.surface,
+          place: session.surface === 'chromium' ? 'browser_runner' : 'user_panel',
+          previewUrl: item.previewUrl ?? null, available: session.available, reason: session.reason, updatedAt: item.updatedAt
+        } : null
+      }))
+      return { sessionId: conversation.makeBrowserSessionId ?? null, sessions: sessions.filter(Boolean) }
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { sessionId?: string | null } }>(
+    '/api/conversations/:id/make-browser',
+    async (req, reply) => {
+      const sessionId = req.body?.sessionId ?? null
+      if (sessionId !== null && typeof sessionId !== 'string') return reply.code(400).send({ error: 'sessionId must be a string or null' })
+      try {
+        const conversation = await db.chat.setConversationMakeBrowserSession(uid(req), req.params.id, sessionId)
+        if (!conversation) return reply.code(404).send({ error: 'not found' })
+        return conversation
+      } catch (error) {
+        if (error instanceof InvalidChatSettings) return reply.code(error.message === 'Conversation not found' ? 404 : 400).send({ error: error.message })
+        throw error
+      }
     }
   )
 

@@ -30,6 +30,7 @@ interface ConversationRow {
   disabled_context_json: string | null
   project_id: string | null
   preview_engine: 'proxy' | 'chromium'
+  make_browser_session: string | null
   preview_url: string | null
   task_id: string | null
   assistant_kind: string | null
@@ -761,6 +762,25 @@ export class ChatRepo extends BaseRepo {
     return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1, ...(row.value === null ? {} : { value: row.value }) }))
   }
 
+  /**
+   * Bind a Make chat to the browser of one of the same user's Web Reader or Playwright
+   * Reader conversations. The target is looked up with the caller's user id, so another
+   * user's session can never be bound.
+   */
+  async setConversationMakeBrowserSession(userId: string, id: string, sessionId: string | null): Promise<Conversation | null> {
+    const current = await this.getConversation(userId, id)
+    if (!current) throw new InvalidChatSettings('Conversation not found')
+    if (current.assistantKind !== 'make') throw new InvalidChatSettings('Browser session belongs to a Make conversation')
+    if (sessionId !== null) {
+      if (typeof sessionId !== 'string' || !sessionId || sessionId === id) throw new InvalidChatSettings('Invalid browser session')
+      const target = await this.getConversation(userId, sessionId)
+      if (!target || (target.assistantKind !== 'web-recorder' && target.assistantKind !== 'playwright-reader')) {
+        throw new InvalidChatSettings('Browser session must be your Web Reader or Playwright Reader conversation')
+      }
+    }
+    await this.sql.run(`UPDATE conversations SET make_browser_session = ?, updated_at = ? WHERE id = ? AND user_id = ?`, [sessionId, this.now(), id, userId])
+    return this.getConversation(userId, id)
+  }
   async setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null, previewEngine?: 'proxy' | 'chromium'): Promise<Conversation | null> {
     await this.sql.run(`UPDATE conversations SET preview_url = ?, preview_engine = COALESCE(?, preview_engine), updated_at = ? WHERE id = ? AND user_id = ?`, [previewUrl, previewEngine ?? null, this.now(), id, userId])
     return await this.getConversation(userId, id)
@@ -1657,6 +1677,7 @@ export class ChatRepo extends BaseRepo {
       // Дефолт — полная автономия: ассистент задуман действующим, а не советующим.
       assistantAutonomy: row.assistant_autonomy === 'confirm' ? 'confirm' : 'auto',
       previewEngine: row.preview_engine === 'chromium' ? 'chromium' : 'proxy',
+      makeBrowserSessionId: row.make_browser_session ?? null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? (((await this.sql.get(`SELECT preview_url FROM projects WHERE id = ?`, [row.project_id])) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
