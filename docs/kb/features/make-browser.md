@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
 updated: 2026-09-30
-checked: 58829eba
+checked: 0c960b4e
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -45,8 +45,9 @@ Chromium, иначе `panel`. Движок меняется переключен
 
 Core закрепляет Web Reader 1.3.0 (`3a662223`, маршрут в каждом ответе и
 `browser_capabilities`), его контракты 1.3.0 из того же коммита, Make 1.3.1
-(`8aeae690`, `make_preview_link`, квоты 256 МБ на проект и 2 ГБ на пользователя), core-ui 1.4.8 и Desktop 1.0.11 (выбор браузера и
-строка маршрута). Образы по умолчанию в `docker-compose.yml`: `webreader-api` и
+(`e43736e6`, `make_preview_link`, квоты 256 МБ на проект и 2 ГБ на пользователя,
+поддержка длинного подписанного URL предпросмотра), core-ui 1.4.8 и Desktop 1.0.11
+(выбор браузера и строка маршрута). Образы по умолчанию в `docker-compose.yml`: `webreader-api` и
 `make-api` на этих коммитах, `llm-runner` на `849f1397` (0.3.6). Запись llm-runner в
 `deploy/tools.lock.json` остаётся на пакете, закреплённом манифестом S3.
 
