@@ -322,6 +322,8 @@ printf 'BASE_SHA=%s\\n' "$local_sha"`
 export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: false,
+    // Signed Make preview links exceed Fastify's 100-character route-parameter default.
+    routerOptions: { maxParamLength: 1024 },
     genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
   })
   const httpDiagnostics = registerHttpDiagnostics(app)

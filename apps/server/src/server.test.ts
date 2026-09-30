@@ -51,6 +51,14 @@ describe('QA preparation response contract', () => {
 })
 
 describe('server: HTTP', () => {
+  it('accepts a signed-preview-sized route parameter while bounding oversized paths', async () => {
+    const token = 'a'.repeat(180)
+    const preview = await app.inject({ method: 'GET', url: `/p/${token}/index.html` })
+    expect(preview.statusCode).toBe(404)
+    const oversized = await app.inject({ method: 'GET', url: `/p/${'a'.repeat(1025)}/index.html` })
+    expect(oversized.statusCode).toBe(414)
+  })
+
   it('GET /api/health → ok', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     expect(res.statusCode).toBe(200)

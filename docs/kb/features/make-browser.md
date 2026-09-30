@@ -1,11 +1,12 @@
 ---
 title: "Make: браузер ассистента"
 updated: 2026-09-30
-checked: b19c1c99
+checked: 58829eba
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
   - apps/server/src/db/repos/chat.ts
+  - apps/server/src/server.ts
 ---
 
 # Make: браузер ассистента
@@ -53,3 +54,11 @@ Core закрепляет Web Reader 1.3.0 (`3a662223`, маршрут в каж
 `reader`; прод-оверлей `deploy/compose.components.yml` задаёт «Prod 89.125.68.35» и
 `89.125.68.35`. Сквозная проверка — `remote.integration.test.ts`, сценарий Make в трёх
 режимах встраивания.
+
+## Signed preview URL routing
+
+`make_preview_link` signs a UUID conversation ID and expiry into the `/p/<token>/`
+path. The resulting token exceeds Fastify's 100-character route-parameter default.
+Core's `/p/*` proxy and the standalone Make `/p/:token/*` route both allow parameters
+up to 1024 characters; longer parameters still return HTTP 414. A release must update
+both services before browser engines can read a project's own preview.

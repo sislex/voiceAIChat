@@ -22,11 +22,11 @@
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 257 коммит(ов) в areas после сверки: c95850c7 feat(make): point the Make browser block at capabilities and preview links … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 408 коммит(ов) в areas после сверки: c95850c7 feat(make): point the Make browser block at capabilities and preview links … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 44 коммит(ов) в areas после сверки: 8ed7728f fix(merge): автоисправление упавших проверок задачи a6e6488b-8981-43e5-968a-c7395d39524d … |
-| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-09-30 | ⚠ 2 коммит(ов) в areas после сверки: c95850c7 feat(make): point the Make browser block at capabilities and preview links … |
+| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-09-30 | ✓ |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 42 коммит(ов) в areas после сверки: aab77dd8 feat(make): bind a Web Reader or Playwright browser session to Make chats … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 3 коммит(ов) в areas после сверки: c95850c7 feat(make): point the Make browser block at capabilities and preview links … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 19 коммит(ов) в areas после сверки: 59efb01b Pin Make browser releases: Web Reader 1.3.0, Make 1.3.0, Core UI 1.4.8, Desktop 1.0.11 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1693 коммит(ов) в areas после сверки: 59efb01b Pin Make browser releases: Web Reader 1.3.0, Make 1.3.0, Core UI 1.4.8, Desktop 1.0.11 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1694 коммит(ов) в areas после сверки: 09574e45 chore: double route budgets for Core UI 1.4.8 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 79 коммит(ов) в areas после сверки: aab77dd8 feat(make): bind a Web Reader or Playwright browser session to Make chats … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-09-23 | ⚠ 38 коммит(ов) в areas после сверки: 59efb01b Pin Make browser releases: Web Reader 1.3.0, Make 1.3.0, Core UI 1.4.8, Desktop 1.0.11 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 32 коммит(ов) в areas после сверки: aab77dd8 feat(make): bind a Web Reader or Playwright browser session to Make chats … |
@@ -56,8 +56,9 @@
 
 ## Журнал сессий
 
-Всего записей: 986. Последние:
+Всего записей: 987. Последние:
 
+- [2026-09-30-alexeys-macbook-air-2-make-preview-token-routing.md](log/2026-09-30-alexeys-macbook-air-2-make-preview-token-routing.md) — make-preview-token-routing
 - [2026-09-30-alexeys-macbook-air-2-kanban-owner-ui-pin.md](log/2026-09-30-alexeys-macbook-air-2-kanban-owner-ui-pin.md) — kanban-owner-ui-pin
 - [2026-09-30-alexeys-macbook-air-2-kanban-owner-image.md](log/2026-09-30-alexeys-macbook-air-2-kanban-owner-image.md) — kanban-owner-image
 - [2026-09-30-alexeys-macbook-air-2-core-ui-148-account-route-budget.md](log/2026-09-30-alexeys-macbook-air-2-core-ui-148-account-route-budget.md) — core-ui-148-account-route-budget
@@ -67,7 +68,6 @@
 - [2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md](log/2026-09-29-alexeys-macbook-air-2-temporary-web-only-release-gate.md) — Temporary Web-only release gate
 - [2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md](log/2026-09-29-alexeys-macbook-air-2-s4-shared-contract-peers.md) — s4-shared-contract-peers
 - [2026-09-29-alexeys-macbook-air-2-restore-core-ui-146.md](log/2026-09-29-alexeys-macbook-air-2-restore-core-ui-146.md) — restore-core-ui-146
-- [2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md](log/2026-09-29-alexeys-macbook-air-2-merge-release-gate-separation.md) — Separate merge checks from release checks
 
 ## Исторические планы
 
