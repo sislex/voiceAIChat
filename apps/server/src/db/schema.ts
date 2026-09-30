@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   project_id        TEXT,
   preview_url       TEXT,
   preview_engine    TEXT NOT NULL DEFAULT 'proxy',
+  -- Make: the Web Reader or Playwright Reader conversation whose browser this chat uses.
+  make_browser_session TEXT,
   task_id           TEXT,
   assistant_kind    TEXT,
   scope             TEXT NOT NULL DEFAULT 'chat' CHECK (scope IN ('chat','kanban','make','images','console','playwright-reader','web-reader')),
