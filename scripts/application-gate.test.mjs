@@ -161,3 +161,44 @@ test('performance edits still run real measurements, including mixed full-Core d
     }
   }
 })
+
+test('a proven owner-archive replacement selects its owner checks instead of the full Core gate', () => {
+  const core = APPLICATION_CATALOG.find(app => app.id === 'core')
+  const make = 'node_modules/@sislexa/make'
+  const lock = (integrity) => ({ lockfileVersion: 3, packages: {
+    '': { name: 'root', devDependencies: { '@sislexa/make': 'file:vendor/make-' + integrity + '.tgz' } },
+    [core.paths[0]]: { name: '@voicechat/server', dependencies: { '@sislexa/make': 'file:../../vendor/make-' + integrity + '.tgz' } },
+    [make]: { version: '1.3.1', resolved: 'file:vendor/make-' + integrity + '.tgz', integrity }
+  } })
+  const pins = { packages: ['@sislexa/make'], tools: ['make'], images: true, archives: ['make-a.tgz', 'make-b.tgz'] }
+  const plan = planApplicationChecks(['package.json', 'apps/server/package.json', 'package-lock.json', 'dependency-snapshots.json', 'vendor/owner-artifacts.json', 'vendor/make-a.tgz', 'vendor/make-b.tgz', 'deploy/tools.lock.json', 'docker-compose.yml'],
+    { pins, lockBefore: lock('a'), lockAfter: lock('b') })
+  assert.equal(plan.full, false)
+  assert.equal(plan.pinChecks, true)
+  assert.deepEqual(plan.pinnedPackages, ['@sislexa/make'])
+  assert.ok(plan.applications.some(app => app.id === 'core'), 'Core embeds Make and is typechecked against the new archive')
+  assert.ok(plan.e2eFiles.includes('e2e/toolIntegration.e2e.test.ts'))
+  const commands = applicationPlanCommands(plan).map(([command, args]) => [command.split('/').pop(), ...args].join(' '))
+  assert.ok(commands.some(command => command.includes('shared-chat-artifacts.test.mjs')))
+  assert.ok(!commands.includes('npm run gate:all'))
+})
+
+test('a Core UI replacement measures route budgets; an unproven replacement stays full', () => {
+  const plan = planApplicationChecks(['dependency-snapshots.json'], { pins: { packages: ['@sislexa/core-ui'], tools: [], images: false, archives: [] } })
+  assert.equal(plan.full, false)
+  assert.equal(plan.verifyArtifacts, true)
+  for (const suite of FRONTEND_E2E_FILES) assert.ok(plan.e2eFiles.includes(suite))
+  assert.equal(planApplicationChecks(['dependency-snapshots.json'], { pins: { unproven: 'x' } }).full, true)
+  assert.equal(planApplicationChecks(['dependency-snapshots.json'], {}).full, true)
+  assert.equal(plan.onlyPins, true)
+  // A Core source change next to a pin is narrowed for development but never for release.
+  assert.equal(planApplicationChecks(['dependency-snapshots.json', 'apps/server/src/turns.ts'], { pins: { packages: ['@sislexa/core-ui'], tools: [], images: false, archives: [] } }).onlyPins, false)
+})
+
+test('root lock changes are explained only by the pinned packages', () => {
+  const root = (spec, extra = {}) => ({ '': { name: 'r', devDependencies: { '@sislexa/core-ui': spec, ...extra } }, 'node_modules/@sislexa/core-ui': { version: '1', integrity: spec } })
+  const before = { lockfileVersion: 3, packages: root('a') }, after = { lockfileVersion: 3, packages: root('b') }
+  assert.equal(lockChangedApplications(before, after), null)
+  assert.deepEqual(lockChangedApplications(before, after, APPLICATION_CATALOG, ['@sislexa/core-ui']), [])
+  assert.equal(lockChangedApplications(before, { lockfileVersion: 3, packages: root('b', { other: '1' }) }, APPLICATION_CATALOG, ['@sislexa/core-ui']), null)
+})
