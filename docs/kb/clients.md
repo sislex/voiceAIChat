@@ -46,9 +46,9 @@ without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
 own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.4.7, owner commit `1b8a8bb1cff24468c78cd383213647992c5f30e3`, which
-fixes Release Center scrolling inside the project assistant frame. Desktop 1.0.10
-(owner commit `8201c9b1c6faac9f6230e7011cc1578d94c71cdd`) embeds the same renderer;
+from Core UI 1.4.8, owner commit `9916016199725563378cea57656571338f5404a7`, which
+adds the Make browser selector and browser route line. Desktop 1.0.11
+(owner commit `bf272004`) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
