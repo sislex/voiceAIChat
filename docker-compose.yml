@@ -236,7 +236,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-sislexa-kanban:1cdae5d36cacc8997272978a968905aa05cb8a5a}
+    image: ${SISLEXA_KANBAN_IMAGE:-sislexa-kanban:e139f854c050d9caa1ddbea00aff8409190fbef8}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -270,6 +270,8 @@ services:
       VC_MAIL_FROM: ${VC_MAIL_FROM:-}
       VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+      # Центр релизов читает GitHub-релизы владельцев (core-ui и выпуски приложений для состава релиза).
+      VC_GITHUB_TOKEN: ${VC_GITHUB_TOKEN:-}
     volumes:
       - vc-data:/data
     healthcheck:
