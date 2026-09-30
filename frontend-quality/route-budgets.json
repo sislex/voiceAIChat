@@ -1,197 +1,197 @@
 {
   "schemaVersion": 1,
-  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. See measurements/sislexa-extraction for the reviewed baseline. During the temporary Web-only release policy from 2026-09-29, user-approved CSS ceilings for each Web route are 1,000,000 bytes for raw, gzip and Brotli, avoiding release failures caused by mutable Google Fonts CSS. JS limits retain the reviewed Core UI 1.4.4 baseline, except Account raw JS is 1,261,100 bytes based on measured Core UI 1.4.6 (1,261,043 bytes); Electron ceilings remain recorded for the opt-in VC_ELECTRON_TESTS=1 gate. CI never rewrites limits.",
+  "notes": "CHAT-473 route scenarios and optional-module exclusions retained. See measurements/sislexa-extraction for the reviewed baseline. Per the 2026-09-30 user request, all Web and opt-in Electron JS/CSS raw, gzip and Brotli route ceilings are exactly doubled from their reviewed values. Web CSS ceilings are 2,000,000 bytes per route metric. The measured Core UI 1.4.8 Web Account JS (raw 1,264,211; gzip 382,098; Brotli 313,116 bytes) fits the doubled limits. CI never rewrites limits.",
   "routes": {
     "web/chat/cold": {
       "js": {
-        "raw": 1241600,
-        "gzip": 374200,
-        "brotli": 304600
+        "raw": 2483200,
+        "gzip": 748400,
+        "brotli": 609200
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/chat/warm": {
       "js": {
-        "raw": 1241600,
-        "gzip": 374200,
-        "brotli": 304600
+        "raw": 2483200,
+        "gzip": 748400,
+        "brotli": 609200
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/account/cold": {
       "js": {
-        "raw": 1261100,
-        "gzip": 381300,
-        "brotli": 312300
+        "raw": 2522200,
+        "gzip": 762600,
+        "brotli": 624600
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/account/warm": {
       "js": {
-        "raw": 1261100,
-        "gzip": 381300,
-        "brotli": 312300
+        "raw": 2522200,
+        "gzip": 762600,
+        "brotli": 624600
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/account/navigation": {
       "js": {
-        "raw": 1261100,
-        "gzip": 381300,
-        "brotli": 312300
+        "raw": 2522200,
+        "gzip": 762600,
+        "brotli": 624600
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/settings/cold": {
       "js": {
-        "raw": 1280100,
-        "gzip": 385600,
-        "brotli": 314400
+        "raw": 2560200,
+        "gzip": 771200,
+        "brotli": 628800
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/settings/warm": {
       "js": {
-        "raw": 1280100,
-        "gzip": 385600,
-        "brotli": 314400
+        "raw": 2560200,
+        "gzip": 771200,
+        "brotli": 628800
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "web/settings/navigation": {
       "js": {
-        "raw": 1280100,
-        "gzip": 385600,
-        "brotli": 314400
+        "raw": 2560200,
+        "gzip": 771200,
+        "brotli": 628800
       },
       "css": {
-        "raw": 1000000,
-        "gzip": 1000000,
-        "brotli": 1000000
+        "raw": 2000000,
+        "gzip": 2000000,
+        "brotli": 2000000
       }
     },
     "electron/chat/cold": {
       "js": {
-        "raw": 1225500,
-        "gzip": 369100,
-        "brotli": 300500
+        "raw": 2451000,
+        "gzip": 738200,
+        "brotli": 601000
       },
       "css": {
-        "raw": 385500,
-        "gzip": 66900,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 133800,
+        "brotli": 107800
       }
     },
     "electron/chat/warm": {
       "js": {
-        "raw": 1225500,
-        "gzip": 369100,
-        "brotli": 300500
+        "raw": 2451000,
+        "gzip": 738200,
+        "brotli": 601000
       },
       "css": {
-        "raw": 385500,
-        "gzip": 66900,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 133800,
+        "brotli": 107800
       }
     },
     "electron/account/cold": {
       "js": {
-        "raw": 1244300,
-        "gzip": 375300,
-        "brotli": 305700
+        "raw": 2488600,
+        "gzip": 750600,
+        "brotli": 611400
       },
       "css": {
-        "raw": 385500,
-        "gzip": 67050,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 134100,
+        "brotli": 107800
       }
     },
     "electron/account/warm": {
       "js": {
-        "raw": 1244300,
-        "gzip": 375300,
-        "brotli": 305700
+        "raw": 2488600,
+        "gzip": 750600,
+        "brotli": 611400
       },
       "css": {
-        "raw": 385500,
-        "gzip": 67050,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 134100,
+        "brotli": 107800
       }
     },
     "electron/account/navigation": {
       "js": {
-        "raw": 1244300,
-        "gzip": 375300,
-        "brotli": 305700
+        "raw": 2488600,
+        "gzip": 750600,
+        "brotli": 611400
       },
       "css": {
-        "raw": 385500,
-        "gzip": 67050,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 134100,
+        "brotli": 107800
       }
     },
     "electron/settings/cold": {
       "js": {
-        "raw": 1263700,
-        "gzip": 380400,
-        "brotli": 310100
+        "raw": 2527400,
+        "gzip": 760800,
+        "brotli": 620200
       },
       "css": {
-        "raw": 386900,
-        "gzip": 66900,
-        "brotli": 53900
+        "raw": 773800,
+        "gzip": 133800,
+        "brotli": 107800
       }
     },
     "electron/settings/warm": {
       "js": {
-        "raw": 1263700,
-        "gzip": 380400,
-        "brotli": 310100
+        "raw": 2527400,
+        "gzip": 760800,
+        "brotli": 620200
       },
       "css": {
-        "raw": 386900,
-        "gzip": 66900,
-        "brotli": 53900
+        "raw": 773800,
+        "gzip": 133800,
+        "brotli": 107800
       }
     },
     "electron/settings/navigation": {
       "js": {
-        "raw": 1263700,
-        "gzip": 380400,
-        "brotli": 310100
+        "raw": 2527400,
+        "gzip": 760800,
+        "brotli": 620200
       },
       "css": {
-        "raw": 385500,
-        "gzip": 66900,
-        "brotli": 53900
+        "raw": 771000,
+        "gzip": 133800,
+        "brotli": 107800
       }
     }
   },
