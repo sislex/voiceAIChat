@@ -10,6 +10,7 @@ import {
 } from '../packages/shared/src/applicationCatalog.ts'
 import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
 import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
+import { isOwnerPinFile, ownerPinChanges } from './owner-pins.mjs'
 const root = resolve(import.meta.dirname, '..')
 const git = (...args) =>
   execFileSync('git', args, {
@@ -17,6 +18,7 @@ const git = (...args) =>
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024
   })
+export const OWNER_PIN_TESTS = Object.freeze(['scripts/shared-chat-artifacts.test.mjs', 'scripts/s3-provider-artifacts.test.mjs', 'scripts/model-speed-artifacts.test.mjs', 'scripts/application-frontend.test.mjs'])
 const matches = (file, path) => file === path || file.startsWith(path + '/')
 const docs = (file) =>
   /^(docs|plans|artifacts|generated\/kb)\//.test(file) ||
@@ -60,7 +62,8 @@ export function validateApplicationDependencies(repository = root, catalog = APP
 export function lockChangedApplications(
   before,
   after,
-  catalog = APPLICATION_CATALOG
+  catalog = APPLICATION_CATALOG,
+  pinned = []
 ) {
   if (
     !before?.packages ||
@@ -75,7 +78,18 @@ export function lockChangedApplications(
         JSON.stringify(after.packages[key])
     )
   )
-  if (changed.has('')) return null
+  // The root entry changes when a proven pin replaces a root dependency archive.
+  if (changed.has('')) {
+    const strip = (entry) => {
+      const copy = structuredClone(entry ?? {})
+      for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'])
+        for (const name of pinned) if (copy[field]) delete copy[field][name]
+      return copy
+    }
+    if (JSON.stringify(strip(before.packages[''])) !== JSON.stringify(strip(after.packages['']))) return null
+    changed.delete('')
+  }
+  const pinnedKey = (key) => pinned.some((name) => key === 'node_modules/' + name || key.startsWith('node_modules/' + name + '/'))
   const owners = new Set(),
     visited = new Set()
   // Дерево зависимостей читается с обеих сторон: удалённая зависимость тоже влияет.
@@ -116,19 +130,20 @@ export function lockChangedApplications(
       }
     }
   // Неразрешимый lock diff нельзя объявлять безопасным.
-  if ([...changed].some((key) => !visited.has(key))) return null
+  // Pinned archives consumed only by the root build are covered by the pin checks.
+  if ([...changed].some((key) => !visited.has(key) && !pinnedKey(key))) return null
   return [...owners]
 }
 export function planApplicationChecks(
   files,
-  { catalog = APPLICATION_CATALOG, lockBefore, lockAfter } = {}
+  { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins } = {}
 ) {
   validateApplicationCatalog(catalog)
   const selected = new Map(),
     contracts = new Map(),
     reasons = [],
     e2eFiles = new Set()
-  let tooling = false, verifyArtifacts = false
+  let tooling = false, verifyArtifacts = false, pinChecks = false
   const browserSuites = new Set([...FRONTEND_E2E_FILES, ...catalog.flatMap(app => app.e2eFiles)])
   const performancePath = file => FRONTEND_E2E_FILES.includes(file) ||
     /^frontend-quality\/(?:route-budgets\.json|measurements\/.*\.json)$/.test(file) ||
@@ -180,8 +195,29 @@ export function planApplicationChecks(
       }
     }
   }
+  // Replacing pinned owner archives touches manifests, package specs, image tags and the
+  // lock. When the whole replacement is proven, select the replaced owners and the lock
+  // consumers instead of treating these files as unknown Core scope.
+  const pinFiles = files.filter(isOwnerPinFile)
+  if (pinFiles.length) {
+    if (!pins || pins.unproven) return full(`Не удалось доказать замену закреплённых архивов: ${pins?.unproven ?? pinFiles.join(', ')}`)
+    pinChecks = true
+    reasons.push(`Закреплённые архивы: ${pins.packages.join(', ') || 'нет'}${pins.tools.length ? `; tools.lock: ${pins.tools.join(', ')}` : ''}${pins.images ? '; теги образов' : ''}`)
+    for (const name of pins.packages) {
+      for (const app of catalog.filter((item) => item.external?.package === name)) {
+        reasons.push(`${app.id}: заменён архив ${name}`)
+        for (const test of app.e2eFiles) e2eFiles.add(test)
+        // Owner panels are served by Core from the archive; the published-panel suite loads them.
+        if (app.kind === 'frontend' || app.kind === 'service') verifyArtifacts = true
+        if (app.kind === 'frontend' && app.id !== 'web') e2eFiles.add('e2e/toolIntegration.e2e.test.ts')
+        if (app.id === 'web') for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite)
+      }
+      if (name === '@sislexa/desktop') { verifyArtifacts = true; for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite) }
+    }
+  }
   for (const file of files) {
     if (docs(file)) continue
+    if (file !== 'package-lock.json' && pinFiles.includes(file)) continue
     if (browserSuites.has(file)) {
       e2eFiles.add(file)
       reasons.push(`Browser suite: ${file}`)
@@ -210,7 +246,7 @@ export function planApplicationChecks(
       continue
     }
     if (file === 'package-lock.json') {
-      const affected = lockChangedApplications(lockBefore, lockAfter, catalog)
+      const affected = lockChangedApplications(lockBefore, lockAfter, catalog, pins && !pins.unproven ? pins.packages : [])
       if (affected === null)
         return full('Не удалось доказать область изменения lock-файла')
       for (const id of affected) {
@@ -241,7 +277,10 @@ export function planApplicationChecks(
     contracts: [...contracts.values()],
     reasons,
     e2eFiles: [...e2eFiles],
-    tooling, verifyArtifacts
+    tooling, verifyArtifacts, pinChecks,
+    pinnedPackages: pins?.packages ?? [],
+    // Release narrowing is allowed only for pure archive replacements plus documentation.
+    onlyPins: pinChecks && files.every((file) => docs(file) || file === 'package-lock.json' || isOwnerPinFile(file))
   }
 }
 function hasContractTests(path) {
@@ -315,6 +354,8 @@ export function applicationPlanCommands(plan) {
   const add = (command, args) => commands.push([command, args])
   if (plan.full) add('npm', ['run', 'gate:all'])
   if (plan.tooling && !plan.full) add('npm', ['run', 'test:tooling'])
+  // Pin integrity: archive bytes, provenance, lock entries and the Desktop renderer.
+  if (plan.pinChecks && !plan.full && !plan.tooling) add(process.execPath, ['--import', 'tsx', '--test', ...OWNER_PIN_TESTS])
   for (const app of plan.applications)
     for (const command of applicationCommands(app)) commands.push(command)
   const contracts = new Map()
@@ -396,7 +437,7 @@ export async function main(args = process.argv.slice(2)) {
             ? 'HEAD'
             : 'origin/main'
     if (!base || base.startsWith('-')) throw new Error('Нужна база сравнения')
-    let files, lockBefore
+    let files, lockBefore, pins
     try {
       const baseline = args.includes('--worktree')
         ? 'HEAD'
@@ -420,6 +461,11 @@ export async function main(args = process.argv.slice(2)) {
       ]
       if (files.includes('package-lock.json'))
         lockBefore = JSON.parse(git('show', `${baseline}:package-lock.json`))
+      if (files.some(isOwnerPinFile)) {
+        const readBefore = (file) => { try { return git('show', `${baseline}:${file}`) } catch { return null } }
+        const readAfter = (file) => existsSync(resolve(root, file)) ? readFileSync(resolve(root, file), 'utf8') : null
+        pins = ownerPinChanges(files, readBefore, readAfter)
+      }
     } catch (error) {
       plan = {
         full: true,
@@ -433,7 +479,7 @@ export async function main(args = process.argv.slice(2)) {
     }
     if (!plan)
       plan = planApplicationChecks(files, {
-        lockBefore,
+        lockBefore, pins,
         lockAfter: files.includes('package-lock.json')
           ? JSON.parse(readFileSync(resolve(root, 'package-lock.json'), 'utf8'))
           : undefined
