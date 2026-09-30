@@ -4,6 +4,7 @@ export * from './uiPerformance'
 // переиспользуемые desktop/server/web.
 
 export * from './universalSearch'
+export * from './releaseComposition'
 export * from './types'
 
 export * from './protocol'
