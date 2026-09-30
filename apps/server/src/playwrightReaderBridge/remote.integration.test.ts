@@ -162,4 +162,39 @@ describe.each([
     expect(shot.result.isError).not.toBe(true)
     expect(shot.result.content).toContainEqual(expect.objectContaining({ type: 'image', data: Buffer.from('png-bytes').toString('base64') }))
   })
+
+  // U01 of plan make-browser-v1: a Make chat reads through the bound Playwright session
+  // over the real Core, Web Reader and Playwright Reader boundaries.
+  it('Make-чат работает в привязанной сессии Playwright и видит маршрут и возможности', async () => {
+    const make = (await db.chat.createConversation('ann', 'Витрина', 'make')).id
+    const get = (path: string) => fetch(`${coreUrl}${path}`, { headers: auth })
+    expect((await post(coreUrl, `/api/conversations/${make}/make-browser`, { sessionId: foreignId })).status).toBe(400)
+    expect((await post(coreUrl, `/api/conversations/${make}/make-browser`, { sessionId: conversationId })).status).toBe(200)
+    const list = await (await get(`/api/conversations/${make}/make-browser`)).json() as { sessionId: string; sessions: Array<{ id: string; engine: string; place: string }> }
+    expect(list.sessionId).toBe(conversationId)
+    expect(list.sessions).toContainEqual(expect.objectContaining({ id: conversationId, engine: 'chromium', place: 'browser_runner' }))
+    expect(list.sessions.map(item => item.id)).not.toContain(foreignId)
+    // turns.ts issues the Browser MCP token for the bound reader conversation, not for the Make chat.
+    const turn = createPreviewTurnTokens(MCP).issue({ userId: 'ann', conversationId })
+    const call = async (name: string) => {
+      const res = await post(coreUrl, `/mcp/preview?k=${MCP}&turn=${encodeURIComponent(turn)}`, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} }
+      }, { accept: 'application/json, text/event-stream' })
+      expect(res.status).toBe(200)
+      return (await res.json()) as { result: { isError?: boolean; content: Array<{ type: string; text?: string }> } }
+    }
+    const routeOf = (content: Array<{ type: string; text?: string }>) => content
+      .flatMap(item => { try { return item.text ? [JSON.parse(item.text) as { route?: Record<string, unknown> }] : [] } catch { return [] } })
+      .find(item => item.route)?.route
+    const read = await call('read')
+    expect(read.result.isError).not.toBe(true)
+    expect(routeOf(read.result.content)).toMatchObject({ engine: 'playwright_chromium', place: 'browser_runner', sessionId: conversationId })
+    const capabilities = await call('browser_capabilities')
+    const report = capabilities.result.content.flatMap(item => { try { return item.text ? [JSON.parse(item.text)] : [] } catch { return [] } })
+      .find((item: { engines?: unknown }) => item.engines) as { sessionId: string; engines: Array<{ engine: string; available: boolean; actions: string[] }> }
+    expect(report.sessionId).toBe(conversationId)
+    const chromium = report.engines.find(item => item.engine === 'playwright_chromium')!
+    expect(chromium.available).toBe(true)
+    expect(chromium.actions).toEqual(expect.arrayContaining(['open', 'read', 'screenshot', 'console']))
+  })
 })
