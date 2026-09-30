@@ -15,6 +15,15 @@ const settled=(id:string)=>vi.waitFor(async()=>{const r=await db.releases.getPro
 beforeEach(async ()=>{let id=0;db=new VoiceChatDb(':memory:',{newId:()=>`id-${++id}`,now:()=>1000+id});await db.identity.createUser('owner','','developer');projectId=(await db.projects.createProject('owner',{name:'P'})).id})
 afterEach(()=>db.close())
 
+describe('regression relative to production', () => {
+  it('passes the production commit to regression stages only when it is a full SHA', () => {
+    const target = { path: '/w/repo' } as ReleaseProjectTarget
+    expect(releaseRegressionStageCommand(target, 'r1', 'npm run gate:release', 'a'.repeat(40))).toContain(`VOICECHAT_RELEASE_BASE_SHA=${'a'.repeat(40)} npm run gate:release`)
+    expect(releaseRegressionStageCommand(target, 'r1', 'npm run gate:release', 'main; rm -rf /')).not.toContain('VOICECHAT_RELEASE_BASE_SHA')
+    expect(releaseRegressionStageCommand(target, 'r1', 'npm run gate:release')).not.toContain('VOICECHAT_RELEASE_BASE_SHA')
+  })
+})
+
 describe('ReleaseManager separated preparation and deploy',()=>{
   it('supports staged release test commands while keeping strings backward compatible',()=>{
     expect(releaseTestCommands('["npm run typecheck","npm run test"]')).toEqual(['npm run typecheck','npm run test'])

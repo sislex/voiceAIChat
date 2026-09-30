@@ -31,7 +31,9 @@ test('Core gate verifies artifacts and consumer integration; performance is a re
 
 test('release command retains performance and owner system acceptance outside the Core gate', () => {
   const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts
-  assert.equal(scripts['gate:release'], 'npm run gate:all && npm run gate:performance && npm run gate:system')
+  // gate:release narrows proven owner-archive replacements; its fallback stays the full chain.
+  assert.equal(scripts['gate:release'], 'node --import tsx scripts/release-gate.mjs')
+  assert.equal(scripts['gate:release:full'], 'npm run gate:all && npm run gate:performance && npm run gate:system')
   assert.equal(scripts['gate:performance'], 'npm run frontend:route-gates')
   assert.equal(scripts['gate:system'], 'node scripts/system-gate.mjs')
   assert.ok(!FULL_GATE_STAGES.some(([, args]) => args.includes('frontend:route-gates') || args.includes('gate:system')))

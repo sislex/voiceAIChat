@@ -141,8 +141,13 @@ export function releaseTestCommands(value:string):string[] {
 const regressionWorktreePath=(target:ReleaseProjectTarget,releaseId:string):string=>`${target.path.replace(/[\\/]+$/,'')}.voicechat-regression-${releaseId}`
 export const releaseRegressionSetupCommand=(target:ReleaseProjectTarget,releaseId:string,sha:string):string=>
   at(target,`test ! -e ${quote(regressionWorktreePath(target,releaseId))} && git worktree add --detach ${quote(regressionWorktreePath(target,releaseId))} ${quote(sha)}`)
-export const releaseRegressionStageCommand=(target:ReleaseProjectTarget,releaseId:string,command:string):string=>
-  `cd ${quote(regressionWorktreePath(target,releaseId))} && (${command})`
+export const releaseRegressionStageCommand=(target:ReleaseProjectTarget,releaseId:string,command:string,productionSha?:string|null):string=>
+  `cd ${quote(regressionWorktreePath(target,releaseId))} && (${productionSha&&/^[0-9a-f]{40}$/.test(productionSha)?`VOICECHAT_RELEASE_BASE_SHA=${productionSha} `:''}${command})`
+/** Commit of the latest successful production deploy; the release gate narrows checks relative to it. */
+export async function productionReleaseSha(db:VoiceChatDb,actor:string,projectId:string):Promise<string|null> {
+  const released=(await db.releases.listProjectReleaseSummaries(actor,projectId,true)).find(item=>item.previousReleaseId&&item.status==='released'&&/^[0-9a-f]{40}$/.test(item.sha??''))
+  return released?.sha??null
+}
 export const releaseRegressionInstallCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
   releaseRegressionStageCommand(target,releaseId,'npm ci')
 export const releaseRegressionCleanupCommand=(target:ReleaseProjectTarget,releaseId:string):string=>
@@ -285,18 +290,19 @@ export class ReleaseManager {
       await this.setStep(target.projectId,release.id,'regression','running','',actor)
       const logs:string[]=[]
       const commands=releaseTestCommands(target.testCommand)
+      const productionSha=await productionReleaseSha(this.db,actor,target.projectId)
       const setup=await this.runtime.exec(target,releaseRegressionSetupCommand(target,release.id,found.sha),30_000)
       if(setup.timedOut||setup.exitCode!==0)throw new Error(setup.output||'Не удалось создать изолированный worktree для Regression')
       try{
         const limit=(await this.db.releases.getProjectRelease(actor,target.projectId,release.id))?.steps.find(step=>step.kind==='regression')?.limitMs??RELEASE_TEST_TIMEOUT_MS
-        const runRegressionCommand=async(command:string,label:string):Promise<void>=>{
+        const runRegressionCommand=async(command:string,label:string,base:string|null=null):Promise<void>=>{
           let stageOutput=''
           // Живой лог шага переписывается целиком, поэтому не чаще раза в секунду и не больше одной записи в
           // полёте: на каждый чанк это давало тысячи копий лога в памяти (потолок кучи ядра на проде 2026-09-08).
           const live=createChunkSink(async()=>{
             await this.setStep(target.projectId,release.id,'regression','running',[...logs,`$ ${command}\n${stageOutput}`].join('\n\n'),actor)
           },{intervalMs:1_000,maxBytes:Number.MAX_SAFE_INTEGER})
-          const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,command),limit,async (chunk)=>{
+          const regression=await this.runtime.exec(target,releaseRegressionStageCommand(target,release.id,command,base),limit,async (chunk)=>{
             stageOutput+=chunk
             live.push('.')
           })
@@ -309,7 +315,7 @@ export class ReleaseManager {
         await runRegressionCommand('npm ci','Установка зависимостей Regression')
         for(let index=0;index<commands.length;index+=1){
           // Группировка удерживает всю составную shell-стадию (включая `&`/`wait`) внутри временного worktree.
-          await runRegressionCommand(commands[index]!,`Regression, стадия ${index+1}/${commands.length}`)
+          await runRegressionCommand(commands[index]!,`Regression, стадия ${index+1}/${commands.length}`,productionSha)
         }
         // Repositories may keep cross-application acceptance outside their development gate.
         // Exact release/system commands already include it; custom commands retain an explicit final stage.
