@@ -165,7 +165,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:6e1eaa9cf133d075bdf5812e67fc053b16a84829}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:94eab4f507a6a50dbb3f9c1231d879d1c8d75d45}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -350,7 +350,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:ae1c6190cf106dadf34c2e7657e1683072ead287}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:3a662223ab173e37f0c9f4faa76d92667e0ba4fd}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -365,6 +365,9 @@ services:
       VC_PLAYWRIGHT_READER_MODE: remote
       VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
+      # Shown in the Make browser route; empty means «неизвестно».
+      SISLEXA_BROWSER_RUNNER_MACHINE: ${SISLEXA_BROWSER_RUNNER_MACHINE:-}
+      SISLEXA_BROWSER_RUNNER_IP: ${SISLEXA_BROWSER_RUNNER_IP:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8795/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -452,7 +455,7 @@ services:
     restart: unless-stopped
 
   runner-work:
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:8ec5100952c37e478177bc311cf5db2287d5bf63}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:849f1397930d68685855517f0fc791d010eb361d}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -470,7 +473,7 @@ services:
     restart: unless-stopped
 
   runner-personal:
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:8ec5100952c37e478177bc311cf5db2287d5bf63}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:849f1397930d68685855517f0fc791d010eb361d}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
