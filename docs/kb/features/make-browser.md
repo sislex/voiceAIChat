@@ -43,8 +43,8 @@ Chromium, иначе `panel`. Движок меняется переключен
 ## Выпуск (2026-09-30)
 
 Core закрепляет Web Reader 1.3.0 (`3a662223`, маршрут в каждом ответе и
-`browser_capabilities`), его контракты 1.3.0 из того же коммита, Make 1.3.0
-(`94eab4f5`, `make_preview_link`), core-ui 1.4.8 и Desktop 1.0.11 (выбор браузера и
+`browser_capabilities`), его контракты 1.3.0 из того же коммита, Make 1.3.1
+(`8aeae690`, `make_preview_link`, квоты 256 МБ на проект и 2 ГБ на пользователя), core-ui 1.4.8 и Desktop 1.0.11 (выбор браузера и
 строка маршрута). Образы по умолчанию в `docker-compose.yml`: `webreader-api` и
 `make-api` на этих коммитах, `llm-runner` на `849f1397` (0.3.6). Запись llm-runner в
 `deploy/tools.lock.json` остаётся на пакете, закреплённом манифестом S3.
