@@ -61,9 +61,8 @@ afterEach(async () => {
 })
 
 async function project(name = 'Секретный'): Promise<ProjectDetail> {
-  const res = await inj(adminTok, { method: 'POST', url: REST.projects, payload: { name, description: 'Проект админа' } })
-  expect(res.statusCode).toBe(200)
-  return res.json() as ProjectDetail
+  // Проект создаёт канбан; скелет раздела «Разработка» кладёт сама база при создании.
+  return await db.projects.createProject('admin', { name, description: 'Проект админа' })
 }
 
 describe('разделы базы знаний', () => {
@@ -108,7 +107,7 @@ describe('разделы базы знаний', () => {
 
   it('участник проекта видит его знания сразу после добавления', async () => {
     const p = await project('Общий')
-    await inj(adminTok, { method: 'POST', url: REST.projectMembers(p.id), payload: { username: 'bob' } })
+    await db.projects.addMember('admin', p.id, 'bob')
     const topics = (await inj(bobTok, { method: 'GET', url: `${REST.kbTopics}?scope=project&projectId=${p.id}` })).json() as KbDocumentSummary[]
     expect(topics.map((t) => t.title)).toEqual(['Разработка: Общий'])
   })

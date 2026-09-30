@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeProjectFeatures, projectPromptBlock, projectPromptLines } from './promptContext.js'
+import { describeProjectFeatures, projectPromptBlock, projectPromptLines } from './projectContext.js'
 import { builtinProjectTypeChain, BUILTIN_PROJECT_TYPE_IDS, type ProjectSummary } from '@voicechat/shared'
 
 const project = (over: Partial<ProjectSummary> = {}): ProjectSummary => ({

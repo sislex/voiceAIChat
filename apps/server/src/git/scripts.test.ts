@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { isDangerousCommand } from '@voicechat/shared'
 import { evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
-import { buildShellCommand } from '../ci/executor.js'
+import { buildShellCommand } from '../util/shell.js'
 import {
   branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
   fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript

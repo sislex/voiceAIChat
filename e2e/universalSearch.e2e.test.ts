@@ -209,9 +209,10 @@ it('navigates each source through the real palette and retains deep links after 
       await page.getByText('файл # 1.txt', { exact: true }).first().waitFor()
     } else if (source === 'kb') {
       await page.getByText('PaletteNeedle document body', { exact: false }).first().waitFor()
-    } else {
-      await page.getByText(source === 'tasks' ? 'PaletteNeedle task' : hit.title, { exact: false }).first().waitFor()
+    } else if (source !== 'projects' && source !== 'tasks') {
+      await page.getByText(hit.title, { exact: false }).first().waitFor()
     }
+    // Проект и задачу рисует сервис канбана, которого в стенде ядра нет: ядру здесь важна глубокая ссылка.
   }
 })
 
