@@ -73,11 +73,12 @@ export interface ServerConfig {
   /** База `/mcp/make` глазами исполнителя LLM в режиме `remote`; без неё — `makeUrl`. */
   makeMcpPublicBase?: string
   /**
-   * Канбан: `embedded` — кластер проектов/CI/QA/релизов в этом процессе; `remote` — отдельный процесс
-   * канбана по адресу `kanbanUrl` на той же базе (только Postgres), ядро переправляет ему пути канбана,
-   * отдаёт состояние машин/KB/виджета по `/internal/*` и принимает ленты событий. См. docs/plans/kanban-service.md.
+   * Канбан: `remote` — отдельный процесс канбана по адресу `kanbanUrl` на той же базе (только Postgres),
+   * ядро переправляет ему пути канбана, отдаёт состояние машин/KB/виджета по `/internal/*` и принимает
+   * ленты событий (docs/plans/kanban-service.md). `off` — канбан не подключён: доски, CI/QA и релизов
+   * нет. Встроенного режима больше нет, код канбана живёт только в `sislexa-kanban`.
    */
-  kanbanMode: 'embedded' | 'remote'
+  kanbanMode: 'remote' | 'off'
   kanbanUrl?: string
   /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
   kanbanMcpPublicBase?: string
@@ -273,7 +274,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
-    kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'embedded',
+    kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'off',
     kanbanUrl: env.VC_KANBAN_URL,
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
     machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',

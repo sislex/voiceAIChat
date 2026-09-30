@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { REST, type KbProjectUsageReport, type KbUsageReport } from '@voicechat/shared'
+import { REST, type KbUsageReport } from '@voicechat/shared'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
@@ -115,31 +115,5 @@ describe('GET /api/conversations/:id/kb-usage', () => {
       headers: { authorization: `Bearer ${adminTok}` }, payload: { lastSeq: -1 }
     })
     expect(bad.statusCode).toBe(400)
-  })
-})
-
-describe('GET /api/projects/:id/kb-usage', () => {
-  it('агрегирует обращения всех чатов проекта', async () => {
-    const project = await db.projects.createProject('admin', { name: 'P' })
-    const a = await db.chat.createConversation('admin', 'A')
-    const b = await db.chat.createConversation('admin', 'B')
-    for (const conv of [a, b]) {
-      await db.kb.addKbUsage({
-        userId: 'admin', conversationId: conv.id, projectId: project.id, source: 'auto', query: 'q', chars: 200,
-        sections: [{ documentId: 'ui', title: 'UI', heading: 'Панели', anchor: 'paneli', sourcePath: 'docs/kb/ui.md', chars: 200 }]
-      })
-    }
-    const res = await get(adminTok, REST.projectKbUsage(project.id))
-    expect(res.statusCode).toBe(200)
-    const report = res.json() as KbProjectUsageReport
-    expect(report.totals).toMatchObject({ queries: 2, chars: 400 })
-    expect(report.sections[0]).toMatchObject({ documentId: 'ui', times: 2, conversations: 2 })
-    expect(report.conversations).toHaveLength(2)
-    expect(report.recent).toHaveLength(2)
-  })
-
-  it('не участник проекта → 404', async () => {
-    const project = await db.projects.createProject('admin', { name: 'P' })
-    expect((await get(bobTok, REST.projectKbUsage(project.id))).statusCode).toBe(404)
   })
 })

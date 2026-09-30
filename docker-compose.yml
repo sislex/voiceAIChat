@@ -68,10 +68,11 @@ services:
       VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
       VC_MAKE_URL: http://make:8788
       VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
-      # Канбан отдельным процессом (docs/plans/kanban-service.md): по умолчанию кластер проектов/CI/QA
-      # встроен в ядро. Включение — VC_KANBAN_MODE=remote в .env вместе с VC_DB_URL (общая база
-      # Postgres) и профилями `--profile postgres --profile kanban`.
-      VC_KANBAN_MODE: ${VC_KANBAN_MODE:-embedded}
+      # Канбан (проекты, доска, CI/QA/релизы) — только отдельный сервис `sislexa-kanban`
+      # (docs/plans/kanban-service.md), встроенного в ядро больше нет. Включение — VC_KANBAN_MODE=remote
+      # в .env вместе с VC_DB_URL (общая база Postgres) и профилями `--profile postgres --profile kanban`;
+      # без него ядро работает без доски.
+      VC_KANBAN_MODE: ${VC_KANBAN_MODE:-off}
       VC_KANBAN_URL: http://kanban:8789
       VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
       # Машины отдельным процессом (docs/plans/machines-service.md): по умолчанию реестр и WebSocket агентов

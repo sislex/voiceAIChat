@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { browserWorkers, browserBatches, browserArgs, runBrowserBatches } from './browser-gate.mjs'
 
 test('performance and native input stay isolated while reviewed functional suites share two workers', () => {
-  const files = ['e2e/projects.e2e.test.ts', 'e2e/routeResources.e2e.test.ts', 'e2e/settings.e2e.test.ts', 'e2e/routeBudgets.e2e.test.ts', 'e2e/toolIntegration.e2e.test.ts']
+  const files = ['e2e/sessions.e2e.test.ts', 'e2e/routeResources.e2e.test.ts', 'e2e/settings.e2e.test.ts', 'e2e/routeBudgets.e2e.test.ts', 'e2e/toolIntegration.e2e.test.ts']
   const batches = browserBatches([...files, files[0]], 2)
   assert.deepEqual(batches.map(b => b.workers), [1, 1, 1, 2])
   assert.deepEqual(new Set(batches.flatMap(b => b.files)), new Set(files))
