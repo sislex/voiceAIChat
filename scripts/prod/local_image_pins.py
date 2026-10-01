@@ -1,4 +1,8 @@
-"""Pin existing non-Core services to verified local Docker image references."""
+"""Pin existing non-Core services to verified local Docker image references.
+
+A service the release itself moved to a new owner image (owner_image_switches.py) is pinned to
+that pre-pulled image instead of its running one; every other service keeps its running image.
+"""
 
 import json
 import re
@@ -10,7 +14,7 @@ IMAGE_ID = re.compile(r"sha256:[a-f0-9]{64}\Z")
 SERVICE_NAME = re.compile(r"[a-z][a-z0-9-]*\Z")
 
 
-def render_local_image_pins(services, running_image):
+def render_local_image_pins(services, running_image, switches=None, local_image=None):
     if not isinstance(services, dict) or "voicechat" not in services:
         raise ValueError("Core service is missing from Compose")
     lines = ["services:"]
@@ -19,7 +23,11 @@ def render_local_image_pins(services, running_image):
             continue
         if not SERVICE_NAME.fullmatch(name):
             raise ValueError("Invalid Compose service name")
-        reference, image_id = running_image(name)
+        if switches and name in switches:
+            reference = switches[name]
+            image_id = local_image(reference) if local_image else None
+        else:
+            reference, image_id = running_image(name)
         if (
             not isinstance(reference, str)
             or not reference
@@ -33,6 +41,11 @@ def render_local_image_pins(services, running_image):
             (f"  {name}:", "    build: !reset null", f"    image: {json.dumps(reference)}", "    pull_policy: never")
         )
     return "\n".join(lines) + "\n"
+
+
+def pulled_image(reference):
+    """Local ID of an image the deploy pulled before pinning; missing means the switch is refused."""
+    return subprocess.check_output(["docker", "image", "inspect", reference, "--format", "{{.Id}}"], text=True).strip()
 
 
 def current_image(name):
@@ -57,8 +70,12 @@ def current_image(name):
 
 if __name__ == "__main__":
     try:
+        switches = {}
+        if "--switches" in sys.argv:
+            with open(sys.argv[sys.argv.index("--switches") + 1], encoding="utf-8") as handle:
+                switches = json.load(handle)
         config = json.load(sys.stdin)
-        sys.stdout.write(render_local_image_pins(config["services"], current_image))
+        sys.stdout.write(render_local_image_pins(config["services"], current_image, switches, pulled_image))
     except (KeyError, ValueError, subprocess.CalledProcessError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(1) from None
