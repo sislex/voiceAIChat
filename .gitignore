@@ -1,5 +1,5 @@
 # Зависимости
-node_modules/
+node_modules
 
 # Сборка
 out/
