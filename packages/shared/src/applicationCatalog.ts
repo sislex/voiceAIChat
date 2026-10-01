@@ -454,6 +454,8 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
     "e2eFiles": [
         "e2e/sessions.e2e.test.ts",
         "e2e/settings.e2e.test.ts",
+        "e2e/projects.e2e.test.ts",
+        "e2e/gitPane.e2e.test.ts",
         "e2e/universalSearch.e2e.test.ts",
         "e2e/routeResources.e2e.test.ts",
         "e2e/toolIntegration.e2e.test.ts",
