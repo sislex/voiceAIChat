@@ -5,6 +5,7 @@
  {"id":"api-test","files":["apps/server/src/server.test.ts"]},
  {"id":"shared-contract","files":["packages/shared/src/types.ts"]},
  {"id":"component-runtime","files":["packages/component-runtime/src/index.ts"]},
+ {"id":"projects-e2e","files":["e2e/projects.e2e.test.ts"]},
  {"id":"settings-e2e","files":["e2e/settings.e2e.test.ts"]},
  {"id":"reader-e2e","files":["e2e/webReaderProject.e2e.test.ts"]},
  {"id":"tool-integration","files":["e2e/toolIntegration.e2e.test.ts"]},
