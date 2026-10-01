@@ -8,6 +8,10 @@ import { fileURLToPath } from 'node:url'
 import { buildGates, consumersOf, createCommandDiagnostics, dependenciesOf, fastCheckForPackage, fastPlanForPackage, packageArgs, parseOptions, PACKAGES, relatedArgs, runFastChecks, runPackageGates, selectAffected, validatePackageDependencies, workersPerJob } from './affected-check.mjs'
 import { gitHistoryPaths } from './kb.mjs'
 
+// Fixtures that must sit under protected (non-world-writable) ancestors. A
+// delivery attempt may write only inside its own root, so use its private tmp.
+const protectedTemporaryBase = () => process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : homedir()
+
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -647,7 +651,7 @@ test('controlled deployment pins a commit, persists detached completion and neve
     delete env.VC_DEPLOY_CHILD
     // The operator envelope is outside the candidate checkout, with protected
     // ancestors. A conventional /tmp ancestor is intentionally not accepted.
-    const protectedRoot = fence ? realpathSync(mkdtempSync(join(homedir(), '.delivery-fence-test-'))) : null
+    const protectedRoot = fence ? realpathSync(mkdtempSync(join(protectedTemporaryBase(), '.delivery-fence-test-'))) : null
     const fencePath = protectedRoot && join(protectedRoot, 'fence.json')
     const verifier = join(root, 'verifier.cjs')
     if (fence) {

@@ -11,6 +11,10 @@ import Fastify from 'fastify'
 import { registerBrowserUi } from '../apps/server/src/browserUi/routes.ts'
 import { main } from './browser-ui-release.mjs'
 
+// Fixtures that must sit under protected (non-world-writable) ancestors. A
+// delivery attempt may write only inside its own root, so use its private tmp.
+const protectedTemporaryBase = () => process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : homedir()
+
 function fixture(root) {
   const id = '1.0.0-' + 'a'.repeat(40), directory = join(root, 'candidate')
   mkdirSync(join(directory, 'assets'), { recursive: true })
@@ -67,7 +71,7 @@ test('production launcher only executes the running container, without rebuild/r
 test('controlled UI owner binds generation, live authority and immutable operation recovery', async (t) => {
   const execute = promisify(execFile)
   async function scenario(behavior, check) {
-    const root = realpathSync(mkdtempSync(join(homedir(), '.ui-delivery-test-'))), bin = join(root, 'bin')
+    const root = realpathSync(mkdtempSync(join(protectedTemporaryBase(), '.ui-delivery-test-'))), bin = join(root, 'bin')
     mkdirSync(bin, { mode: 0o700 })
     const node = realpathSync(process.execPath), candidate = fixture(root)
     const write = (name, value) => writeFileSync(join(root, name), JSON.stringify(value), { mode: 0o600 })
