@@ -84,7 +84,7 @@ test('Kanban Compose service consumes an owner image instead of building Core so
   const compose = readFileSync(new URL('../docker-compose.yml', import.meta.url), 'utf8')
   const kanban = compose.match(/^  kanban:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$)/m)?.[1]
   assert.ok(kanban)
-  assert.match(kanban, /^    image: \$\{SISLEXA_KANBAN_IMAGE:-sislexa-kanban:[a-f0-9]{40}\}$/m)
+  assert.match(kanban, /^    image: \$\{SISLEXA_KANBAN_IMAGE:-ghcr\.io\/sislex\/sislexa-kanban:[a-f0-9]{40}\}$/m)
   assert.doesNotMatch(kanban, /^    build:/m)
   const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')
   assert.doesNotMatch(dockerfile, /\bAS kanban-runtime\b/)
