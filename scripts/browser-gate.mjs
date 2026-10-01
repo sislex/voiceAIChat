@@ -3,11 +3,14 @@ import { availableParallelism } from 'node:os'
 import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { prepareKanbanStand } from './kanban-stand-prepare.mjs'
 
+/** Suites that need the Core + Kanban stand (e2e/kanbanStand.ts). */
+export const KANBAN_STAND_FILES = Object.freeze(['e2e/projects.e2e.test.ts', 'e2e/gitPane.e2e.test.ts'])
 // These suites use separate ephemeral ports, databases and browser contexts.
 // New suites stay serial until their isolation has been reviewed.
 const parallelFiles = new Set([
-  'sessions', 'universalSearch',
+  'sessions', 'projects', 'gitPane', 'universalSearch',
   'webReaderOwnProject', 'webReaderProject', 'toolIntegration'
 ].map(name => `e2e/${name}.e2e.test.ts`))
 
@@ -59,6 +62,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const files = args.length === 1 && args[0] === '--integration' ? integrationBrowserFiles(root) : args
     const batches = browserBatches(files)
     for (const file of files) if (!existsSync(resolve(root, file))) throw Error(`Missing browser suite: ${file}`)
+    // Сьюты страниц проекта идут на стенде «ядро + канбан»: чекаут закреплённого канбана готовится
+    // заранее. Отказ не валит гейт — сьюты пропускаются и называют причину.
+    if (files.some((file) => KANBAN_STAND_FILES.includes(file)) && !process.env.SISLEXA_KANBAN_SOURCE) {
+      try { console.log(`[browser-gate] kanban stand: ${prepareKanbanStand()}`) } catch (error) { console.warn(`[browser-gate] kanban stand not prepared: ${error.message}`) }
+    }
     const directory = resolve(root, 'artifacts/gate-timings'); mkdirSync(directory, { recursive: true })
     const startedAt = new Date().toISOString()
     runBrowserBatches(batches, (command, args) => spawnSync(command, args, { cwd: root, stdio: 'inherit' }), results => {
