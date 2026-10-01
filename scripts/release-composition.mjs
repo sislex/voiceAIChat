@@ -49,10 +49,12 @@ export function currentComposition(core) {
       byRepository.set(repository, entry)
     }
   }
+  // Сервис без npm-архивов (Kanban) закреплён только инструментом и образом.
+  for (const tool of Object.values(toolsLock.tools)) if (tool.repository && !byRepository.has(tool.repository)) byRepository.set(tool.repository, { repository: tool.repository, packages: new Map() })
   return [...byRepository.values()].map(({ repository, packages }) => {
     const tool = Object.values(toolsLock.tools).find((item) => item.repository === repository)
     const first = [...packages.values()][0]
-    return { repository, version: tool?.version ?? first.version, commit: tool?.commit ?? first.commit, packages: [...packages.values()] }
+    return { repository, version: tool?.version ?? first?.version, commit: tool?.commit ?? first?.commit, packages: [...packages.values()] }
   }).sort((a, b) => a.repository.localeCompare(b.repository))
 }
 
