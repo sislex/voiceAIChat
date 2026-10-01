@@ -1291,7 +1291,10 @@ container, running or stopped, uses it. Only those `.env` lines are read; other
 values, tokens included, never enter the plan. Local Kanban images cannot be
 pulled again, so a rollback source keeps its Kanban tag. If any old release
 directory had to stay (its Core image still in use), owner pruning is skipped
-for that run. `VC_RETENTION_DRY_RUN=1` in `production.env` logs the full plan
+for that run. Owner pruning is opt-in: without `VC_PRUNE_OWNER_IMAGES=1` in
+`production.env` the deploy only logs `plan only (VC_PRUNE_OWNER_IMAGES=1 removes):
+would remove unused owner image …`; enable it after reviewing that plan once in
+`/var/log/voicechat-deploy.log`. `VC_RETENTION_DRY_RUN=1` logs the full plan
 (`dry run: would remove …`) without removing directories, images or caches.
 
 Owner repositories run their complete release gates on the assigned local

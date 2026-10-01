@@ -29,6 +29,7 @@ cleanup_old_releases() {
   [[ $keep =~ ^(0|[1-9][0-9]*)$ ]] || { log "release cleanup skipped: invalid VC_KEEP_RELEASES=$keep"; return 0; }
   (( keep > 0 )) || { log 'release cleanup disabled by VC_KEEP_RELEASES=0'; return 0; }
   # VC_RETENTION_DRY_RUN=1 logs the plan without removing anything (first run on a new host).
+  # Owner images (GHCR, local Kanban) are removed only with VC_PRUNE_OWNER_IMAGES=1.
   local dry=${VC_RETENTION_DRY_RUN:-0}
   local root=/opt/voicechat/releases
   local before after plan directory images image image_ok in_use releases_ok=1
@@ -78,7 +79,8 @@ cleanup_old_releases() {
   if (( releases_ok )); then
     while IFS= read -r image; do
       [[ -n $image ]] || continue
-      if [[ $dry == 1 ]]; then log "dry run: would remove unused owner image $image"; continue; fi
+      # Opt-in: the plan is logged until the operator has reviewed it once (VC_PRUNE_OWNER_IMAGES=1).
+      if [[ $dry == 1 || ${VC_PRUNE_OWNER_IMAGES:-0} != 1 ]]; then log "plan only (VC_PRUNE_OWNER_IMAGES=1 removes): would remove unused owner image $image"; continue; fi
       if docker image rm "$image"; then log "removed unused owner image $image"; else log "kept owner image $image: still in use or removal failed"; fi
     done < <(python3 -c 'import json,sys; [print(x) for x in json.load(sys.stdin)["ownerImages"]]' <<<"$plan")
   else

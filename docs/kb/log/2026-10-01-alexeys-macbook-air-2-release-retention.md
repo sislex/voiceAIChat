@@ -26,3 +26,4 @@ author: alexeyrozhnov
 
 - Первый выкат на проде стоит провести с `VC_RETENTION_DRY_RUN=1` и посмотреть план в
   `/var/log/voicechat-deploy.log`.
+- Удаление образов владельцев включается только `VC_PRUNE_OWNER_IMAGES=1`; без неё выкат пишет план в лог.
