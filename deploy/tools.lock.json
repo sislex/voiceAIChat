@@ -70,6 +70,13 @@
       "repository": "https://github.com/sislex/analytics",
       "version": "1.3.0",
       "commit": "a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942"
+    },
+    "kanban": {
+      "package": "@sislexa/kanban",
+      "workspace": "apps/server",
+      "repository": "https://github.com/sislex/sislexa-kanban",
+      "version": "0.1.0",
+      "commit": "29d66f4e0eb36d6ffe4d4e2240961ebb01d85183"
     }
   }
 }
