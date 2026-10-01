@@ -1281,6 +1281,19 @@ step prunes the Docker build cache and dangling images and logs each removal
 and the resulting free space. Cleanup failure is logged without changing the
 successful deployment result. The pre-build disk-space check remains in place.
 
+Owner images are pruned in the same step (2026-10-01). A tag of
+`ghcr.io/sislex/*` or the local `sislexa-kanban` image is removed only when no
+kept checkout names it — the remaining release directories, the active and
+rollback checkouts, `production.env`'s checkout, every file of the
+`COMPOSE_FILE` chain (operator overrides in `/etc/voicechat/*.yml` included)
+and the `SISLEXA_*_IMAGE` lines of each kept checkout's `.env` — and no
+container, running or stopped, uses it. Only those `.env` lines are read; other
+values, tokens included, never enter the plan. Local Kanban images cannot be
+pulled again, so a rollback source keeps its Kanban tag. If any old release
+directory had to stay (its Core image still in use), owner pruning is skipped
+for that run. `VC_RETENTION_DRY_RUN=1` in `production.env` logs the full plan
+(`dry run: would remove …`) without removing directories, images or caches.
+
 Owner repositories run their complete release gates on the assigned local
 machines at the exact clean source commits. Build Linux AMD64 images with the
 owner Dockerfile's `APPLICATION_VERSION` and `APPLICATION_COMMIT` arguments,
