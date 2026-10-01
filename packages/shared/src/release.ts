@@ -1,4 +1,5 @@
 // Подготовленные release-ветки и неизменяемая история production deploy.
+import type { ReleaseCompositionEntry } from './releaseComposition'
 export const RELEASE_BRANCH_RE = /^release\/(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 export type ReleaseStatus = 'preparing' | 'checking' | 'ready' | 'queued' | 'switching' | 'building' | 'health_check' | 'failed' | 'released'
@@ -116,6 +117,8 @@ export interface ProjectReleaseSummary {
   /** Short cause of a failed step, so the list explains a red row without opening it. */
   failure?: string | null
   archivedAt?: number | null
+  /** Выпуски приложений, закреплённые при подготовке ветки; у deploy — от подготовленной ветки. */
+  composition?: ReleaseCompositionEntry[]
 }
 
 export interface ProjectRelease {
@@ -137,6 +140,7 @@ export interface ProjectRelease {
   deletedAt?: number | null
   archivedAt?: number | null
   steps: ReleaseStep[]
+  composition?: ReleaseCompositionEntry[]
 }
 export function releaseVersion(branch: string): string | null {
   return RELEASE_BRANCH_RE.test(branch) ? branch.slice('release/'.length) : null

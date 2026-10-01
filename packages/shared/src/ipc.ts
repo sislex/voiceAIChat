@@ -529,7 +529,10 @@ export interface IpcInvokeMap {
   'releases:browserUiAction': { arg: { projectId: string; input: import('./browserUiRelease').BrowserUiReleaseActionInput }; result: import('./browserUiRelease').BrowserUiReleaseOperation }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:machines': { arg: { projectId: string }; result: import('./release').ReleaseMachineCatalog }
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string }; result: import('./release').ProjectRelease }
+  /** Состав релиза из выпусков приложений: закреплённое в базовой ветке и опубликованные выпуски (Kanban). */
+  'releases:composition': { arg: { projectId: string; baseBranch?: string; agentId?: string }; result: import('./releaseComposition').ReleaseCompositionCatalog }
+  /** `composition` — выбранные выпуски; их закрепляет подготовка release-ветки. */
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string; composition?: import('./releaseComposition').ReleaseCompositionItem[] }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string; includeArchived?: boolean }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:changes': { arg: { projectId: string; releaseId: string; from?: string }; result: import('./release').ReleaseChangesResult }
@@ -1517,6 +1520,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projectTypes:unpublish',
   'releases:applicationCatalog', 'releases:applicationOverview', 'releases:applicationPrepare', 'releases:applicationObserve', 'releases:applicationDeploy', 'releases:applicationReconcile', 'releases:browserUiOverview', 'releases:browserUiAction',
   'releases:branches',
+  'releases:composition',
   'releases:machines',
   'releases:createBranch',
   'releases:list',
