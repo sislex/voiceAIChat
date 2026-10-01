@@ -202,3 +202,12 @@ test('root lock changes are explained only by the pinned packages', () => {
   assert.deepEqual(lockChangedApplications(before, after, APPLICATION_CATALOG, ['@sislexa/core-ui']), [])
   assert.equal(lockChangedApplications(before, { lockfileVersion: 3, packages: root('b', { other: '1' }) }, APPLICATION_CATALOG, ['@sislexa/core-ui']), null)
 })
+
+test('a full plan names the changed Core code first, then the technical trigger', () => {
+  const files = ['docs/kb/releases.md', 'packages/shared/src/a.ts', 'packages/shared/src/b.ts', 'scripts/prod/deploy.sh', 'deploy/tools.lock.json', 'vendor/owner-artifacts.json']
+  const plan = planApplicationChecks(files, { pins: { unproven: 'deploy/tools.lock.json: kanban меняет не только version/commit' } })
+  assert.equal(plan.full, true)
+  assert.deepEqual(plan.reasons, ['Изменён код Core: packages/shared (2), scripts/prod', 'Не удалось доказать замену закреплённых архивов: deploy/tools.lock.json: kanban меняет не только version/commit'])
+  // Only pins and documentation: there is no Core code to name.
+  assert.deepEqual(planApplicationChecks(['docs/kb/releases.md', 'vendor/owner-artifacts.json'], { pins: { unproven: 'x' } }).reasons, ['Не удалось доказать замену закреплённых архивов: x'])
+})
