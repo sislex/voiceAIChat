@@ -109,3 +109,38 @@ export function releaseTag(version: string): string {
   if (!VERSION.test(version)) throw new Error(`Неверная версия выпуска: ${version}`)
   return `v${version}`
 }
+
+/** Закреплённый в Core выпуск репозитория: версия и коммит (у инструмента или первого пакета). */
+export interface PinnedApplicationRelease {
+  version: string
+  commit: string
+}
+
+/** Опубликованный выпуск в списке выбора центра релизов. */
+export interface PublishedApplicationReleaseSummary {
+  version: string
+  commit: string
+  publishedAt: string
+}
+
+/** Строка страницы «Приложения»: что закреплено в базовой ветке и что можно выбрать. */
+export interface ReleaseCompositionApplication {
+  repository: string
+  name: string
+  applicationId: string | null
+  current: PinnedApplicationRelease | null
+  releases: PublishedApplicationReleaseSummary[]
+  /** Почему список выпусков не получен (нет токена, GitHub недоступен); выбор тогда невозможен. */
+  error?: string
+}
+
+export interface ReleaseCompositionCatalog {
+  baseBranch: string
+  applications: ReleaseCompositionApplication[]
+}
+
+/** Что вошло в релиз: выбранный выпуск и то, что было закреплено до него. */
+export interface ReleaseCompositionEntry extends ReleaseCompositionItem {
+  name: string
+  from: PinnedApplicationRelease | null
+}
