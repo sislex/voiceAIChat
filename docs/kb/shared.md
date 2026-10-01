@@ -200,6 +200,24 @@ that its concrete HTTP bridge implements the full pinned contract.
 
 **Чистые модули Make и auth, добавленные roadmap-4 / auth-roadmap (2026-08-27).** Все без зависимостей, с тестами рядом: `lineDiff` (построчный LCS для подсветки правок), `makeSelection` (мультивыбор в дереве), `makeSearch` (regex/предпросмотр замены), `makeLint` (эвристики JSX/TS/CSS), `makeAutoImport` (импорт компонентов кита в точку входа), `makeTextEdit` и `makeReorder` (запись правок из превью в исходник по уникальным фрагментам), `makeStoriesGen` (CSF по пропсам), `wcagContrast`, `figmaTokens`, `darkTheme`, `mockTable`, `makeMockPrompt`, `jsonSchemaLite` (валидация моков), `makeDeploy` (конфиги Netlify/Vercel), `passwordPolicy` (общая политика пароля сервера и форм). Контракты: `MakeCheckIssue.severity/rule`, `MakePublication.allowComments`, `MakeComment.status/guestName`, `MakePublicComment`, `SessionInfo`, `LoginChallenge`, `SecurityEvent`, `InviteInfo`, `AdminDiskStats`; в `REST` — сессии (`sessionList/logoutAll/revoke/cookie/2fa*/reset/password/notices`), инвайты, `adminSecurity`, `adminSessions`; в IPC — `admin:userSessions/revokeSession/securityEvents/invites*/resetCode/setUserLlmLimit`. `RendererSessionBridge` получил опциональные `sessions/logoutAll/revokeSession/login2fa/twoFactor/inviteInfo/register/resetPassword/changePassword/securityNotices` — desktop-мост их не реализует.
 
+## Один источник: выпуск 0.1.13 и копия в Kanban (2026-10-01)
+
+Источник контракта — `packages/shared` Core. Потребители получают его архивом
+`build:core-contracts -- --version <x.y.z> --commit <SHA>` (`release-source.json` с коммитом):
+core-ui, Make, Web Reader, Playwright Reader. Тег GitHub для этого выпуска не создаётся: `v0.1.x`
+в Core занят релизами самого Core.
+
+0.1.13 добавляет состав релиза из выпусков приложений: `releaseComposition.ts` (манифест
+`sislexa-release.json`, каталог выбора `ReleaseCompositionCatalog`, `ReleaseCompositionEntry`),
+`ProjectRelease.composition`/`ProjectReleaseSummary.composition`, IPC-канал
+`releases:composition` и `composition` в аргументе `releases:createBranch`. До этого core-ui
+держал эти типы у себя, а Kanban — в своей копии.
+
+`sislexa-kanban` пока держит свою копию `packages/shared`: её тесты и workspace-сборка завязаны
+на исходники. Копия обязана совпадать с закреплённым архивом Core, кроме явного списка
+исключений; это проверяет тест в Kanban. Правка контракта — сначала здесь, новый архив, затем
+перенос в копию Kanban.
+
 ## Формат дат
 
 `dateFormat.ts` — единый формат дат интерфейса (`ru-RU`): `formatDate`
