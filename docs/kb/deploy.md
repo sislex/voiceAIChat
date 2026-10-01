@@ -2185,3 +2185,18 @@ agree after the archive update.
 These are development dependencies for A04 and do not deploy the S3 services.
 The S2 browser/desktop release snapshot in `dependency-snapshots.json` remains
 unchanged; publish and verify S3 service images separately when releasing S3.
+
+## Окружения: наблюдение и переключение образов (environments-v1, C03)
+
+`scripts/prod/environment_observe.py` в чекауте окружения печатает, что запущено: сервис, образ,
+его ID, коммит и здоровье; ничего не меняет. Контейнер, запущенный по ID (`sha256:…` из
+`/etc/voicechat/local-owner-images.yml`), всё равно считается образом владельца, если этот ID
+помечен тегом `ghcr.io/sislex/<образ>:<коммит>`. `scripts/prod/environment-apply.sh --switches
+<file> --operation <id>` переключает только перечисленные сервисы на неизменяемые образы
+владельцев: сначала `docker pull` всех (отказ — exit 20, ничего не переключено), потом
+`/etc/voicechat/environment-overrides/<id>.yml` и ссылка `current.yml`, `up -d --no-build
+--no-deps`, ожидание здоровья; нездоровый сервис возвращается на прежние образы (exit 30).
+`release-manager-deploy.sh` подключает `current.yml` к цепочке compose и закрепляет остальные
+сервисы на запущенных образах, поэтому выкат Core переключений окружения не откатывает; сервис,
+образ которого изменил сам релиз (состав релиза), переключается на него
+(`owner_image_switches.py`, заранее явный `docker pull`).

@@ -23,5 +23,19 @@ class LocalImagePinsTest(unittest.TestCase):
             render_local_image_pins({"billing": {}}, lambda _: ("local/billing:stable", "sha256:" + "a" * 64))
 
 
+    def test_release_moved_service_uses_the_pulled_image(self):
+        services = {"voicechat": {}, "make": {}, "billing": {}}
+        rendered = render_local_image_pins(
+            services,
+            lambda name: ("local/" + name + ":stable", "sha256:" + "a" * 64),
+            {"make": "ghcr.io/sislex/make-api:" + "b" * 40},
+            lambda reference: "sha256:" + "c" * 64,
+        )
+        self.assertIn('make:\n    build: !reset null\n    image: "ghcr.io/sislex/make-api:' + "b" * 40 + '"', rendered)
+        self.assertIn('image: "local/billing:stable"', rendered)
+        with self.assertRaisesRegex(ValueError, "No verified local image for make"):
+            render_local_image_pins(services, lambda name: ("local/x", "sha256:" + "a" * 64), {"make": "ghcr.io/sislex/make-api:" + "b" * 40}, lambda reference: "")
+
+
 if __name__ == "__main__":
     unittest.main()
