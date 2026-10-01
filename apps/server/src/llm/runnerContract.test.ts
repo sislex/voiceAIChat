@@ -8,7 +8,10 @@
 // проверяются валидация тела, авторизация и адресация отмены.
 
 import { describe, it, expect } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { buildRunner } from '@sislex/llm-runner/server'
 import type { FastifyInstance } from 'fastify'
 import type { LlmRunBody } from '@voicechat/shared'
@@ -70,13 +73,14 @@ class FakeRuns {
 
 async function startRunner(): Promise<{ app: FastifyInstance; url: string; runs: FakeRuns }> {
   const runs = new FakeRuns()
+  const root = mkdtempSync(join(tmpdir(), 'voicechat-runner-contract-'))
   const app = await buildRunner({
     config: {
       host: '127.0.0.1',
       port: 0,
       token: TOKEN,
-      dataDir: '/tmp/voicechat-runner-contract',
-      home: '/tmp/voicechat-runner-contract/home',
+      dataDir: root,
+      home: join(root, 'home'),
       claudeBin: 'claude',
       codexBin: 'codex',
       orphanMs: 0
@@ -89,6 +93,7 @@ async function startRunner(): Promise<{ app: FastifyInstance; url: string; runs:
       runs: 0
     })
   })
+  app.addHook('onClose', () => rmSync(root, { recursive: true, force: true }))
   await app.listen({ port: 0, host: '127.0.0.1' })
   const { port } = app.server.address() as AddressInfo
   return { app, url: `http://127.0.0.1:${port}`, runs }
