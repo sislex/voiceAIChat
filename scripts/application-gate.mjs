@@ -134,6 +134,18 @@ export function lockChangedApplications(
   if ([...changed].some((key) => !visited.has(key) && !pinnedKey(key))) return null
   return [...owners]
 }
+/** Изменённый код по областям («packages/shared (5), scripts/prod (3)»): без документации и закреплений. */
+export function coreCodeSummary(files) {
+  const areas = new Map()
+  for (const file of files) {
+    if (docs(file) || isOwnerPinFile(file) || file === 'package-lock.json') continue
+    const parts = file.split('/')
+    const area = parts.length > 2 && ['apps', 'packages', 'scripts', 'deploy'].includes(parts[0]) ? `${parts[0]}/${parts[1]}` : parts.length > 1 ? parts[0] : file
+    areas.set(area, (areas.get(area) ?? 0) + 1)
+  }
+  return [...areas].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6).map(([area, count]) => count > 1 ? `${area} (${count})` : area).join(', ') + (areas.size > 6 ? ` и ещё ${areas.size - 6}` : '')
+}
+
 export function planApplicationChecks(
   files,
   { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins } = {}
@@ -149,9 +161,13 @@ export function planApplicationChecks(
     /^frontend-quality\/(?:route-budgets\.json|measurements\/.*\.json)$/.test(file) ||
     ['scripts/measure-routes.mjs', 'scripts/route-gate.mjs', 'scripts/route-budgets.mjs', 'scripts/route-compression.mjs'].includes(file)
   const explicitPerformance = files.some(performancePath)
+  // Решение «полный набор» принимается по первой найденной причине, а показывать нужно главную:
+  // какой код Core изменён. Иначе журнал регрессии называет мелочь (строку tools.lock) там, где
+  // полный набор нужен из-за правок контрактов и скриптов.
+  const code = coreCodeSummary(files)
   const full = (reason) => ({
     full: true,
-    reasons: [reason],
+    reasons: code ? [`Изменён код Core: ${code}`, reason] : [reason],
     applications: [],
     contracts: [],
     e2eFiles: [...new Set([...catalog.flatMap((app) => app.e2eFiles), ...(explicitPerformance ? FRONTEND_E2E_FILES : [])])]
