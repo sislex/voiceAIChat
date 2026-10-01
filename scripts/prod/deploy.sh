@@ -28,22 +28,32 @@ cleanup_old_releases() {
   local keep=${VC_KEEP_RELEASES:-3}
   [[ $keep =~ ^(0|[1-9][0-9]*)$ ]] || { log "release cleanup skipped: invalid VC_KEEP_RELEASES=$keep"; return 0; }
   (( keep > 0 )) || { log 'release cleanup disabled by VC_KEEP_RELEASES=0'; return 0; }
+  # VC_RETENTION_DRY_RUN=1 logs the plan without removing anything (first run on a new host).
+  # Owner images (GHCR, local Kanban) are removed only with VC_PRUNE_OWNER_IMAGES=1.
+  local dry=${VC_RETENTION_DRY_RUN:-0}
   local root=/opt/voicechat/releases
-  local before after plan directory images image image_ok
+  local before after plan directory images image image_ok in_use releases_ok=1
   before=$(df -Pk / | awk 'NR==2 {print $4}')
+  in_use=$(mktemp)
+  # Every container counts, stopped ones too: their images are rollback material.
+  docker ps -a --format '{{.Image}}' >"$in_use" || { log 'release cleanup skipped: container list failed'; rm -f "$in_use"; return 0; }
   if ! plan=$(docker image ls --format '{{.Repository}}:{{.Tag}}' |
     python3 "$REPO/scripts/prod/release_retention.py" \
       --root "$root" --keep "$keep" --current "$REPO" \
       --production-env /etc/voicechat/production.env \
       --operations "$OPERATION_ROOT" \
       --rollback "${VC_ROLLBACK_REPO_DIR:-}" \
-      --compose-file "${COMPOSE_FILE:-}"); then
+      --compose-file "${COMPOSE_FILE:-}" \
+      --in-use "$in_use"); then
+    rm -f "$in_use"
     log 'release cleanup skipped: retention plan failed'
     return 0
   fi
+  rm -f "$in_use"
   while IFS='|' read -r directory images; do
     [[ -n $directory ]] || continue
-    [[ $directory =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{8,40}$ ]] || { log 'release cleanup skipped invalid directory'; continue; }
+    [[ $directory =~ ^[0-9]+\.[0-9]+\.[0-9]+-[a-f0-9]{8,40}$ ]] || { log 'release cleanup skipped invalid directory'; releases_ok=0; continue; }
+    if [[ $dry == 1 ]]; then log "dry run: would remove release $root/$directory${images:+ and Core images $images}"; continue; fi
     image_ok=1
     for image in $images; do
       if docker image rm "$image"; then
@@ -54,15 +64,29 @@ cleanup_old_releases() {
         break
       fi
     done
-    (( image_ok )) || continue
+    (( image_ok )) || { releases_ok=0; continue; }
     if [[ -d $root/$directory && ! -L $root/$directory ]] && delivery_authority verify; then
       if rm -r -- "$root/$directory"; then
         log "removed old release directory $root/$directory"
       else
         log "could not remove old release directory $root/$directory"
+        releases_ok=0
       fi
     fi
-  done < <(python3 -c 'import json,sys; [print(x["directory"]+"|"+" ".join(x["images"])) for x in json.load(sys.stdin)]' <<<"$plan")
+  done < <(python3 -c 'import json,sys; [print(x["directory"]+"|"+" ".join(x["images"])) for x in json.load(sys.stdin)["releases"]]' <<<"$plan")
+  # Owner image tags (GHCR and local Kanban) that no kept checkout, Compose override or container
+  # names. The plan assumed the releases above are gone; if one stayed, its images stay too.
+  if (( releases_ok )); then
+    while IFS= read -r image; do
+      [[ -n $image ]] || continue
+      # Opt-in: the plan is logged until the operator has reviewed it once (VC_PRUNE_OWNER_IMAGES=1).
+      if [[ $dry == 1 || ${VC_PRUNE_OWNER_IMAGES:-0} != 1 ]]; then log "plan only (VC_PRUNE_OWNER_IMAGES=1 removes): would remove unused owner image $image"; continue; fi
+      if docker image rm "$image"; then log "removed unused owner image $image"; else log "kept owner image $image: still in use or removal failed"; fi
+    done < <(python3 -c 'import json,sys; [print(x) for x in json.load(sys.stdin)["ownerImages"]]' <<<"$plan")
+  else
+    log 'owner image cleanup skipped: an old release directory was kept'
+  fi
+  if [[ $dry == 1 ]]; then log 'dry run: build cache and dangling images left as is'; return 0; fi
   docker builder prune -f || log 'Docker build cache cleanup failed'
   docker image prune -f || log 'Docker dangling image cleanup failed'
   after=$(df -Pk / | awk 'NR==2 {print $4}')
