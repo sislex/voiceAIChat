@@ -15,6 +15,11 @@ describe('sislexa-release.json', () => {
     expect(releaseTag('1.3.1')).toBe('v1.3.1')
   })
 
+  it('сервис без npm-архивов выпускается одним образом', () => {
+    const kanban = { ...valid, repository: 'https://github.com/sislex/sislexa-kanban', packages: [], images: [{ name: 'ghcr.io/sislex/sislexa-kanban' }], tools: ['kanban'] }
+    expect(parsePublishedApplicationRelease(kanban)).toEqual(kanban)
+  })
+
   it.each([
     ['версия не semver', { version: '1.3' }],
     ['короткий коммит', { commit: 'e43736e' }],
@@ -22,7 +27,7 @@ describe('sislexa-release.json', () => {
     ['образ не из GHCR', { images: [{ name: 'docker.io/sislex/make-api' }] }],
     ['пакет дважды', { packages: [valid.packages[0], valid.packages[0]] }],
     ['архив другого пакета', { packages: [{ ...valid.packages[0], asset: 'sislexa-voice-1.3.1-ffffffffffff.tgz' }] }],
-    ['нет пакетов', { packages: [] }],
+    ['ни пакетов, ни образов', { packages: [], images: [] }],
     ['другая схема', { schemaVersion: 2 }]
   ])('отклоняет: %s', (_name, patch) => {
     expect(() => parsePublishedApplicationRelease({ ...valid, ...patch })).toThrow(/sislexa-release.json/)

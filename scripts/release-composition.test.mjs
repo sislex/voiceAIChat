@@ -148,3 +148,15 @@ test('publishing creates the tag once and never reuses a version for another com
   await assert.rejects(publishGithubRelease({ manifest, files, token: 't', fetchImpl, log: () => {} }), /уже опубликован из b{40}/)
   await assert.rejects(publishGithubRelease({ manifest, files, token: '', fetchImpl, log: () => {} }), /GITHUB_TOKEN/)
 })
+
+test('an image-only release (a service without npm archives) moves its tool and image pins only', () => {
+  const { core, pinned } = fixture()
+  const dir = mkdtempSync(join(tmpdir(), 'rc-image-'))
+  write(join(dir, 'make', 'sislexa-release.json'), { schemaVersion: 1, repository: REPO, version: '1.1.0', commit: NEW, packages: [], images: [{ name: 'ghcr.io/sislex/make-api' }], tools: ['make'] })
+  const [result] = applyComposition(core, dir)
+  assert.deepEqual(result.packages, [])
+  assert.deepEqual(read(join(core, 'deploy/tools.lock.json')).tools.make, { package: '@sislexa/make', repository: REPO, version: '1.1.0', commit: NEW })
+  assert.match(readFileSync(join(core, 'docker-compose.yml'), 'utf8'), new RegExp(`make-api:${NEW}`))
+  // Архив пакета не тронут: выпуск его не содержит.
+  assert.equal(read(join(core, 'vendor/owner-artifacts.json')).packages[0].asset, pinned.asset)
+})

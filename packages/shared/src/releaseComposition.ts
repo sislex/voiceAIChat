@@ -75,7 +75,7 @@ export function parsePublishedApplicationRelease(value: unknown): PublishedAppli
   const repository = text(source.repository, REPOSITORY, 'repository')
   const version = text(source.version, VERSION, 'version')
   const commit = text(source.commit, COMMIT, 'commit')
-  if (!Array.isArray(source.packages) || !source.packages.length) fail('нужен хотя бы один пакет')
+  if (!Array.isArray(source.packages)) fail('packages должен быть списком')
   const names = new Set<string>()
   const packages = source.packages.map((item, index): ReleasePackage => {
     const row = record(item, `packages[${index}]`)
@@ -97,6 +97,8 @@ export function parsePublishedApplicationRelease(value: unknown): PublishedAppli
   })
   if (!Array.isArray(source.images)) fail('images должен быть списком')
   const images = source.images.map((item, index): ReleaseImage => ({ name: text(record(item, `images[${index}]`).name, IMAGE, `images[${index}].name`) }))
+  // Сервис без npm-архивов (Kanban) выпускается одним образом; пустой выпуск ничего не закрепляет.
+  if (!packages.length && !images.length) fail('нужен хотя бы один пакет или образ')
   if (!Array.isArray(source.tools)) fail('tools должен быть списком')
   const tools = source.tools.map((item, index) => text(item, TOOL, `tools[${index}]`))
   return { schemaVersion: 1, repository, version, commit, packages, images, tools }

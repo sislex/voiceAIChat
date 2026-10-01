@@ -3,6 +3,8 @@
 // (packages/shared/src/releaseComposition.ts), поэтому публикация проверяет байты, а не верит им.
 //
 //   node --import tsx scripts/owner-release-publish.mjs --source <чекаут владельца> [--skip-pack] [--skip-images] [--dry-run]
+//
+// Репозиторий без `pack:release` (Kanban) выпускается одним образом.
 //   node --import tsx scripts/owner-release-publish.mjs --from-core <repository> [--dry-run]
 //
 // Первый вариант запускается на машине сборки в чистом чекауте владельца на коммите выпуска.
@@ -37,7 +39,8 @@ export const OWNER_IMAGES = Object.freeze({
   ],
   'https://github.com/sislex/identity': [{ name: 'ghcr.io/sislex/identity', target: '' }],
   'https://github.com/sislex/billing': [{ name: 'ghcr.io/sislex/billing', target: '' }],
-  'https://github.com/sislex/analytics': [{ name: 'ghcr.io/sislex/analytics', target: '' }]
+  'https://github.com/sislex/analytics': [{ name: 'ghcr.io/sislex/analytics', target: '' }],
+  'https://github.com/sislex/sislexa-kanban': [{ name: 'ghcr.io/sislex/sislexa-kanban', target: '' }]
 })
 
 export function archiveDigests(bytes) {
@@ -102,9 +105,9 @@ export function manifestFromCore(repository, core = root) {
   return { manifest: parsePublishedApplicationRelease({ schemaVersion: 1, repository, version, commit, packages, images, tools }), files }
 }
 
-/** Манифест и файлы выпуска из чекаута владельца после `npm run pack:release`. */
-export function manifestFromSource(source, { repository, commit, version }) {
-  const integrity = json(join(source, 'artifacts', 'integrity.json'))
+/** Манифест и файлы выпуска из чекаута владельца после `npm run pack:release`; без него — только образы. */
+export function manifestFromSource(source, { repository, commit, version, packaged = true }) {
+  const integrity = packaged ? json(join(source, 'artifacts', 'integrity.json')) : { packages: [] }
   const files = []
   const packages = integrity.packages.map((row) => {
     if (row.commit !== commit) throw new Error(`${row.name}: архив собран из ${row.commit}, а выпуск — ${commit}`)
@@ -183,9 +186,12 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     if (git('status', '--porcelain')) throw new Error('Выпуск публикуется только из чистого чекаута')
     const commit = git('rev-parse', 'HEAD')
     const repository = git('remote', 'get-url', 'origin').replace(/\.git$/, '').replace(/^git@github\.com:/, 'https://github.com/')
-    const version = json(join(source, 'package.json')).version
-    if (!args.includes('--skip-pack')) run('npm', ['run', 'pack:release'], source)
-    prepared = manifestFromSource(source, { repository, commit, version })
+    const pkg = json(join(source, 'package.json'))
+    const version = pkg.version
+    // Сервис без npm-архивов (Kanban) публикует только образ; его гейт идёт внутри docker build.
+    const packaged = Boolean(pkg.scripts?.['pack:release'])
+    if (packaged && !args.includes('--skip-pack')) run('npm', ['run', 'pack:release'], source)
+    prepared = manifestFromSource(source, { repository, commit, version, packaged })
     if (!args.includes('--skip-images') && !dryRun) for (const image of OWNER_IMAGES[repository] ?? []) {
       const reference = `${image.name}:${commit}`
       run('docker', ['build', '--platform', 'linux/amd64', ...(image.target ? ['--target', image.target] : []), '--build-arg', `APPLICATION_VERSION=${version}`, '--build-arg', `APPLICATION_COMMIT=${commit}`, '-t', reference, '.'], source)
