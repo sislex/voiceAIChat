@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-02
-checked: f5e9f82f
+updated: 2026-10-03
+checked: 7224475d
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -434,7 +434,7 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
 
-**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14; again for Core UI 1.4.12 / Desktop 1.0.15).**
+**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14; again for Core UI 1.4.12 / Desktop 1.0.15 and Core UI 1.4.13 / Desktop 1.0.16).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
 `{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI `pack:release`
 writes only `artifacts/sislexa-core-ui-<v>.tgz` (commit in the archive's `release-source.json`), and
@@ -446,7 +446,8 @@ the script recomputes and cross-checks sha256/integrity from the bytes. Core pin
 the asset name `<name>-<v>-<sha256[0:12]>.tgz`. Core UI `pack:release` runs `gate:release` itself, so
 running it on the release commit before merge yields both the required gate and the archive. To pin in
 Core, put each release's `sislexa-release.json` and archive into its own subdirectory and run
-`node --import tsx scripts/release-composition.mjs apply --dir <dir>`; `apply` rewrites the version,
+`node --import tsx scripts/release-composition.mjs apply --dir <dir>` (`<dir>` is the parent of those
+subdirectories); `apply` rewrites the version,
 commit, hashes and vendor files but not `provenance.requires`/`provenance.dependencies`, which must be
 copied from the archive's `release-source.json` (e.g. Desktop `requires.coreUi`, embedded Core UI commit).
 
