@@ -4,9 +4,10 @@ import { BaseRepo } from './base.js'
 interface DefinitionRow { id: string; project_id: string; name: string; machines_json: string; checkout_path: string; created_by: string; created_at: number; updated_at: number }
 interface ConfigurationRow { id: string; environment_id: string; revision: number; modules_json: string; note: string | null; created_by: string; created_at: number }
 interface OperationRow { id: string; environment_id: string; configuration_id: string; previous_configuration_id: string | null; status: EnvironmentOperation['status']; steps_json: string; started_by: string; started_at: number; finished_at: number | null; error: string | null }
-const definition = (r: DefinitionRow): EnvironmentDefinition => ({ id: r.id, projectId: r.project_id, name: r.name, machines: JSON.parse(r.machines_json), checkoutPath: r.checkout_path, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at })
-const configuration = (r: ConfigurationRow): EnvironmentConfiguration => ({ id: r.id, environmentId: r.environment_id, revision: r.revision, modules: JSON.parse(r.modules_json), note: r.note, createdBy: r.created_by, createdAt: r.created_at })
-const operation = (r: OperationRow): EnvironmentOperation => ({ id: r.id, environmentId: r.environment_id, configurationId: r.configuration_id, previousConfigurationId: r.previous_configuration_id, status: r.status, steps: JSON.parse(r.steps_json), startedBy: r.started_by, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error })
+// Stage-1 storage has no managed columns yet (B03): every row is an external, ready environment.
+const definition = (r: DefinitionRow): EnvironmentDefinition => ({ mode: 'external', storageId: null, state: 'ready', composeProject: null, port: null, id: r.id, projectId: r.project_id, name: r.name, machines: JSON.parse(r.machines_json), checkoutPath: r.checkout_path, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at })
+const configuration = (r: ConfigurationRow): EnvironmentConfiguration => ({ core: null, id: r.id, environmentId: r.environment_id, revision: r.revision, modules: JSON.parse(r.modules_json), note: r.note, createdBy: r.created_by, createdAt: r.created_at })
+const operation = (r: OperationRow): EnvironmentOperation => ({ kind: 'apply', id: r.id, environmentId: r.environment_id, configurationId: r.configuration_id, previousConfigurationId: r.previous_configuration_id, status: r.status, steps: JSON.parse(r.steps_json), startedBy: r.started_by, startedAt: r.started_at, finishedAt: r.finished_at, error: r.error })
 const active = "status IN ('pending', 'pulling', 'switching', 'health_check')"
 function pageSize(limit: number): number {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error('Invalid limit')
@@ -29,7 +30,7 @@ export class EnvironmentsRepo extends BaseRepo {
     return row ? definition(row) : null
   }
 
-  async upsertEnvironment(userId: string, projectId: string, input: Omit<EnvironmentDefinition, 'projectId' | 'createdBy' | 'createdAt' | 'updatedAt'>): Promise<EnvironmentDefinition> {
+  async upsertEnvironment(userId: string, projectId: string, input: Pick<EnvironmentDefinition, 'id' | 'name' | 'machines' | 'checkoutPath'>): Promise<EnvironmentDefinition> {
     await this.requireMember(userId, projectId)
     if (!await this.repos.projects.isProjectOwner(userId, projectId)) throw new Error('Project owner required')
     const id = parseEnvironmentId(input.id)
@@ -49,7 +50,7 @@ export class EnvironmentsRepo extends BaseRepo {
       const locked = await this.sql.run('UPDATE environments SET updated_at = updated_at WHERE project_id = ? AND id = ?', [projectId, environmentId])
       if (!locked.changes) throw new Error('Environment not found')
       const row = await this.sql.get('SELECT COALESCE(MAX(revision), 0) AS revision FROM environment_configurations WHERE project_id = ? AND environment_id = ?', [projectId, environmentId]) as { revision: number }
-      const result: EnvironmentConfiguration = { id: this.newId(), environmentId, revision: Number(row.revision) + 1, modules: parsed, note, createdBy: userId, createdAt: this.now() }
+      const result: EnvironmentConfiguration = { core: null, id: this.newId(), environmentId, revision: Number(row.revision) + 1, modules: parsed, note, createdBy: userId, createdAt: this.now() }
       await this.sql.run('INSERT INTO environment_configurations (id, project_id, environment_id, revision, modules_json, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [result.id, projectId, environmentId, result.revision, JSON.stringify(parsed), note, userId, result.createdAt])
       return result
     })
@@ -74,7 +75,7 @@ export class EnvironmentsRepo extends BaseRepo {
         const config = await this.getConfiguration(userId, projectId, id)
         if (!config || config.environmentId !== environmentId) throw new Error('Configuration does not belong to environment')
       }
-      const result: EnvironmentOperation = { id: this.newId(), environmentId, configurationId, previousConfigurationId, status: 'pending', steps: [], startedBy: userId, startedAt: this.now(), finishedAt: null, error: null }
+      const result: EnvironmentOperation = { kind: 'apply', id: this.newId(), environmentId, configurationId, previousConfigurationId, status: 'pending', steps: [], startedBy: userId, startedAt: this.now(), finishedAt: null, error: null }
       // The partial unique index arbitrates concurrent requests on either engine.
       await this.sql.run(`INSERT INTO environment_operations (id, project_id, environment_id, configuration_id, previous_configuration_id, status, steps_json, started_by, started_at) VALUES (?, ?, ?, ?, ?, 'pending', '[]', ?, ?)`, [result.id, projectId, environmentId, configurationId, previousConfigurationId, userId, result.startedAt])
       return result
