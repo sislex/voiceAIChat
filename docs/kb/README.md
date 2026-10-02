@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 27 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 32 коммит(ов) в areas после сверки: 402ce643 chore: pin Core UI 1.4.12 and Desktop 1.0.15 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 33 коммит(ов) в areas после сверки: d77fdcf1 chore: pin Core UI 1.4.13 and Desktop 1.0.16 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 7 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-02 | ⚠ 1 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-03 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 45 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 6 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 21 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1720 коммит(ов) в areas после сверки: 402ce643 chore: pin Core UI 1.4.12 and Desktop 1.0.15 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1721 коммит(ов) в areas после сверки: d77fdcf1 chore: pin Core UI 1.4.13 and Desktop 1.0.16 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 82 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -58,9 +58,10 @@
 
 ## Журнал сессий
 
-Всего записей: 999. Последние:
+Всего записей: 1000. Последние:
 
 - [2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md](log/2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md) — pin-core-ui-1.4.13-desktop-1.0.16
+- [2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md](log/2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md) — owner-pack-integrity-format
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md) — pin-core-ui-1.4.12-desktop-1.0.15
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md) — pin-core-ui-1.4.11-desktop-1.0.14-kanban-0.1.2
 - [2026-10-02-alexeys-macbook-air-2-environments-b01-review.md](log/2026-10-02-alexeys-macbook-air-2-environments-b01-review.md) — environments-b01-review
@@ -69,7 +70,6 @@
 - [2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md](log/2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md) — kanban-linux-image-pin
 - [2026-10-01-alexeys-macbook-air-2-kanban-e2e-stand.md](log/2026-10-01-alexeys-macbook-air-2-kanban-e2e-stand.md) — kanban-e2e-stand
 - [2026-09-30-alexeys-macbook-air-2-restore-core-owned-tests.md](log/2026-09-30-alexeys-macbook-air-2-restore-core-owned-tests.md) — restore-core-owned-tests
-- [2026-09-30-alexeys-macbook-air-2-remove-embedded-kanban.md](log/2026-09-30-alexeys-macbook-air-2-remove-embedded-kanban.md) — remove-embedded-kanban
 
 ## Исторические планы
 
