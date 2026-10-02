@@ -274,12 +274,621 @@ compose чекаута (`image: ${SISLEXA_*_IMAGE:-<имя>:…}`), а «вши�
   конфигурация, «Применить» для Kanban (переключение на тот же образ — пустая операция) и для
   тестовой смены версии, откат; затем раздел «Этап 2» этого документа с контрактами и новый ран.
 
+### Итоги U01 (2026-10-02, прод 0.1.366)
+
+Выпущены Core UI 1.4.11, Desktop 1.0.14 и Kanban 0.1.2, закреплены в Core (PR #298), выкат 0.1.366.
+Наблюдение прода работает: окружение `production` и ревизия 1 созданы при первом наблюдении, Kanban
+0.1.2 и Playwright Reader 1.2.3 — «выбрано = запущено». До выката исправлена цепочка compose в
+`environment-apply.sh` (PR #300): Kanban запускает его без `COMPOSE_FILE`, а цепочка прода лежит в
+`.env`. Найдено и вынесено в C12 этапа 2:
+
+- «Применить» ревизию 1 отклоняется: «Configuration contains modules that cannot be switched» — в неё
+  входят `unavailable`-модули (Identity, Billing, SDK, LLM Runner, UI Kit, сам Core);
+- вшитые модули (SDK, UI Kit) помечены `unavailable` вместо `needs_core_release`;
+- две опубликованные версии с образом есть только у Kanban, а переключение Kanban обрывает операцию,
+  которую ведёт он сам; поэтому смену версии и откат на проде проверить нечем — после C12 нужна вторая
+  опубликованная версия сервиса (например, Make) для U02.
+
 ### Готово, когда
 
 - на проде во вкладке «Приложения» есть окружение `production` с модулями и действиями;
 - сохранение конфигурации с другой версией Kanban и «Применить» переключают только Kanban, без
   сборки, с проверкой здоровья; «Откатить» возвращает прежний образ;
 - выкат релиза Core после этого не откатывает переключённый Kanban.
+
+## Этап 2 — окружение целиком на любой машине
+
+Ран `environments-v2`. Владелец проекта создаёт новое окружение («staging», «test-ivan») на любой
+машине проекта, к которой у него полный доступ, проверяет её готовность, задаёт настройки и
+секреты окружения и нажимает «Создать стенд»: на машине появляется отдельный чекаут Core
+выбранного релиза, отдельный проект compose со своей базой Postgres и своим томом данных,
+поднимаются сервисы, затем модули переключаются на выбранные выпуски механизмом этапа 1.
+Прод при этом не трогается.
+
+Границы этапа:
+
+- окружение по-прежнему живёт на **одной** машине (`machines.length === 1`); модули на разных
+  машинах — этап 3;
+- стенд слушает только `127.0.0.1:<порт>` машины и открывается через мост машины в Web Reader
+  (`<agentId>.machine.internal:<порт>`, как feature-preview); публичный адрес и Caddy стенда —
+  вопрос 3 к владельцу, этап 3;
+- стенд собирается из `docker-compose.yml` Core с профилями `postgres` и `kanban` и в legacy-режиме
+  компонентов (без `SISLEXA_COMPONENT_CONFIG`): Identity встроена в Core, отдельные сервисы
+  Identity, Billing и Analytics из `deploy/compose.{identity,billing,analytics}.yml` и
+  управляемая установка компонентов (`components:init`) в стенд этапа 2 не входят;
+- окружение `production` и окружения этапа 1 остаются «внешними» (`external`): их чекаут, `.env`
+  и `/etc/voicechat/*` ведёт оператор, этап 2 их настройки не показывает и не меняет.
+
+### Что уже есть в коде (на что опирается этап)
+
+- Машина достигается только через порт машин Kanban (`KanbanMachines`: `exec`, `execStream`,
+  `fsWrite`, `fsMkdir`, `fsDelete`, `isOnline`, `platformOf`, `policyOf`, `gitAccess`), агент
+  исполняет команду в shell; этап 1 так запускает `scripts/prod/environment_observe.py` и
+  `environment-apply.sh` в чекауте (`sislexa-kanban/apps/server/src/environments/machine.ts`).
+  Изменений в агенте этапу 2 не нужно.
+- Корни на машине — зарегистрированное хранилище (`machine_storages`, marker
+  `.voicechat/storage.json`), выбранное у машины проекта (`project_machines.storage_id`).
+  Production и staging уже раскладываются как
+  `<storage>/projects/<projectId>/environments/<kind>/{app,config,logs,artifacts,temporary/repository,environment.json}`
+  (`managedEnvironmentPaths`, `parseEnvironmentManifest` в shared; `ManagedEnvironmentResolver`
+  в Kanban проверяет marker, `allowedDirs`, запись и свободное место).
+- Отдельный проект compose на машине уже умеет feature-preview Kanban
+  (`apps/server/src/preview/manager.ts`): уникальное имя проекта, подбор свободного порта на
+  `127.0.0.1` (диапазон 18000–19999), проверки Docker с кодами 69/70, открытие через мост
+  машины в Web Reader (`FeaturePreviewSection.openInWebReader` в core-ui).
+- `docker-compose.yml`: Postgres — профиль `postgres` с томом `vc-postgres` (имя тома зависит от
+  проекта compose, значит у каждого проекта своя база); том `vc-data` назван жёстко
+  `voicechat-server-data` (общий для всех проектов на машине); наружу публикуются только
+  `voicechat` (`8787`) и `caddy` (`80`/`443`, `VC_PUBLIC_HOST:?` обязателен даже при
+  выключенном сервисе); у `voicechat` смонтирован сокет деплоя `/run/voicechat`; из чекаута
+  собираются `voicechat` и `automation-runner` (и выключенные профилями `machines`, `admin`).
+  `ports: !override` и `build: !reset null` уже используются (`docker-compose.parallel.yml`,
+  `environment-apply.sh`), значит нужен Compose ≥ 2.24.
+- Секреты сегодня: `.env` чекаута (`VC_PG_PASSWORD`, `VC_DB_URL`, `VC_INTERNAL_TOKEN`,
+  `VC_MCP_SECRET`, токены раннеров, SMTP, `VC_GITHUB_TOKEN`, upstream-ключи) и
+  `/etc/voicechat/production.env` (`VC_REPO_DIR`, `COMPOSE_FILE`); в базе зашифрованно хранится
+  только ключ Tailscale (`machine_vpn_networks.encrypted_secret`, AES-256-GCM с ключом
+  `VC_VPN_SECRET_KEY` и AAD, `apps/server/src/machines/vpn/tailscale.ts`). Это образец для
+  секретов окружения.
+- Выкат прода (`voicechat-deploy`, `release-manager-deploy.sh`) завязан на машинные синглтоны
+  (`/etc/voicechat/production.env`, `/var/lock/voicechat-deploy.lock`, том
+  `voicechat-server-data`, порт 8787) — для стенда он не годится, у стенда свой скрипт.
+- Релизы Core проекта — `project_releases` (`ready` — подготовлен и прошёл регрессию,
+  `released` — выкачен), ветка `release/x.y.z`, точный `commit_sha`; `/api/health` отдаёт
+  `{ok, application: {applicationId: 'core', commit}}` (проверка в `deploy.sh`).
+
+**Найдено при разборе этапа 1 (проверить в U01):** `environment-apply.sh` берёт цепочку compose
+только из переменной shell `COMPOSE_FILE` и экспортирует `COMPOSE_FILE=<прежнее>:current.yml`.
+Kanban запускает его как `cd <чекаут> && bash …` без переменных, а на проде цепочка лежит в
+`.env` чекаута (`docs/kb/deploy.md`, «External runner ownership»). Переменная shell сильнее
+`.env`, поэтому при пустой переменной compose увидит **только** `current.yml`. Тесты C03 этого
+не ловят: они задают `COMPOSE_FILE` явно. Исправление — задача C04 ниже, независимая от
+остального этапа.
+
+### Предусловия (до старта рана)
+
+- U01 завершён: этап 1 выкачен и проверен на проде.
+- Раздел написан, пока идёт U01; перед стартом рана интегратор сверяет его с итогами U01
+  (в частности, с находкой про цепочку compose выше).
+- B02 и C04 берутся в работу сразу; остальные задачи — от свежего `main` своего репозитория
+  после мержа зависимостей из таблицы. Задачи Kanban и core-ui начинаются только после выпуска
+  `@voicechat/shared` 0.1.15 (B02), Kanban — ещё и после B03 (копия слоя базы).
+
+### Предусловия (оператор, до выката этапа)
+
+- Ключ секретов окружений: `VC_ENVIRONMENT_SECRET_KEY` (64 hex, `openssl rand -hex 32`) в `.env`
+  чекаута прода, с резервной копией вне машины. Потеря ключа не ломает стенды, но сохранённые
+  секреты придётся ввести заново. Без ключа запись секретов отвечает `503`.
+- Целевая машина: машина проекта с хранилищем `ready`, полным доступом владельца и агентом с
+  мостом `http-proxy` (≥ 0.13.0); Docker и Compose ≥ 2.24 доступны пользователю агента без
+  `sudo`; доступ к git-репозиторию проекта настроен (`gitAccess`); машина может скачивать
+  `ghcr.io/sislex/*`. Linux x86_64 — основной вариант (образы владельцев собираются под
+  linux/amd64, `docs/kb/deploy.md`, «Local owner image delivery»).
+- Вход CLI раннеров (`claude auth login` в `runner-work`/`runner-personal` стенда) — ручной шаг
+  после создания стенда, как на проде (`docker-compose.yml`, шапка).
+
+### Решения этапа
+
+1. **Режим окружения.** `mode: 'external'` — всё, что было в этапе 1 (каталог задаёт человек,
+   настройки ведёт оператор). `mode: 'managed'` — стенд, который создаёт и удаляет Sislexa:
+   каталог, имя проекта compose, порт и `.env` вычисляет Kanban, пользователь их не вводит.
+   `production` всегда `external`.
+2. **Раскладка стенда.**
+   `<storage>/projects/<projectId>/environments/stands/<environmentId>/` с теми же `app`,
+   `config` (0700), `logs`, `artifacts`, `temporary/repository` (чекаут Core) и
+   `environment.json` (manifest `kind: 'stand'`). Подкаталог `stands/` не пересекается с
+   каноническими `production`, `staging` и `previews`. Windows не поддерживается.
+3. **Изоляция на машине.** Проект compose `sx-<environmentId>-<fnv1a32(projectId)>`, свой том
+   данных `<проект>-server-data`, своя база — сервис `postgres` профиля `postgres` с томом
+   `<проект>_vc-postgres`, `VC_DB_URL` на него. Core стенда публикуется только на
+   `127.0.0.1:<порт>` из диапазона 17800–17999 (не пересекается с feature-preview), Caddy стенда
+   выключен профилем `public`, сокет деплоя не монтируется. Оверлей —
+   `deploy/compose.stand.yml` в Core.
+4. **Настройки и секреты.** Каталог допустимых ключей — в shared (`ENVIRONMENT_SETTINGS`). Ключи,
+   которые определяют изоляцию (`COMPOSE_*`, `VC_DB_URL`, порт, том, версия релиза…),
+   зарезервированы и вычисляются. Секреты хранятся в базе зашифрованными (AES-256-GCM,
+   `VC_ENVIRONMENT_SECRET_KEY` у Kanban, по образцу `encryptVpnSecret`), API их значения не
+   возвращает никогда. Внутренние токены стенда генерируются (32 байта hex), пароль первого
+   администратора задаёт владелец. На машину всё доставляется одним файлом
+   `config/stand.env` (0600 в каталоге 0700), а `.env` чекаута — ссылка на него: так любой
+   `docker compose` в чекауте (наблюдение, применение этапа 1) видит проект, цепочку и профили
+   стенда без переменных shell.
+5. **Готовность машины** проверяет Kanban своей пробой (Python stdlib), которую пишет в
+   хранилище и запускает: до создания стенда чекаута Core на машине ещё нет, взять скрипт
+   из него нельзя. Проба ничего не меняет, кроме временного файла записи.
+6. **Создание стенда — операция** (`environment_operations.kind = 'provision'`) с этапами:
+   готовность → каталоги и manifest → чекаут релиза Core → файл настроек → проверка вшитых
+   модулей → `scripts/prod/environment-provision.sh` (сборка Core, загрузка образов, подъём,
+   здоровье) → переключение модулей механизмом этапа 1 (`environment-apply.sh`). Повторное
+   создание идемпотентно (тот же каталог, данные сохраняются). Удаление — операция
+   `kind = 'remove'` (`environment-remove.sh`, данные удаляются только по явному флагу).
+7. **Core в конфигурации.** Конфигурация получает необязательный выбор релиза Core
+   (`core: {version, commit}`), проверяемый по `project_releases` проекта (`ready`/`released`,
+   ветка `release/<version>`, точный коммит). Для стенда он обязателен; для `external` его смена
+   по-прежнему делается релизом Core.
+
+### Контракты
+
+#### Общие типы — `packages/shared/src/environment.ts` и `manifests.ts`, `@voicechat/shared` 0.1.15
+
+Добавления к этапу 1 (поля этапа 1 не меняются; новые поля в ответах — дополнительные):
+
+```ts
+/** environments-v2: who owns the environment checkout. */
+export type EnvironmentMode = 'external' | 'managed'
+/** Lifecycle of a managed stand. An external environment is always 'ready'. */
+export type EnvironmentState = 'draft' | 'provisioning' | 'ready' | 'failed' | 'removing' | 'removed'
+
+export interface EnvironmentDefinition {
+  // …all environments-v1 fields; for 'managed' checkoutPath = managedStandPaths(...).repository
+  mode: EnvironmentMode
+  storageId: string | null        // managed: storage of machines[0] at creation; external: null
+  state: EnvironmentState
+  composeProject: string | null   // managed: environmentComposeProject(projectId, id)
+  port: number | null             // managed: Core host port on 127.0.0.1, set by the first provision
+}
+
+/** Selected Core release; identity is the commit of release/<version>. */
+export interface CoreSelection { version: string; commit: string }   // x.y.z, 40 hex
+
+export interface EnvironmentConfiguration {
+  // …environments-v1 fields
+  core: CoreSelection | null      // required to provision a managed stand
+}
+
+export interface CoreDiff {
+  desired: CoreSelection | null
+  actual: { version: string | null; commit: string | null }     // observation.core
+  action: 'none' | 'needs_core_release' | 'needs_provision'     // external | managed
+}
+
+export type EnvironmentOperationKind = 'apply' | 'provision' | 'remove'
+export type EnvironmentOperationStatus =
+  | 'pending' | 'preparing' | 'pulling' | 'building' | 'starting' | 'switching' | 'health_check'
+  | 'removing' | 'succeeded' | 'failed' | 'rolled_back'
+export const ACTIVE_ENVIRONMENT_OPERATION_STATUSES: readonly EnvironmentOperationStatus[] =
+  ['pending', 'preparing', 'pulling', 'building', 'starting', 'switching', 'health_check', 'removing']
+
+/** Stage steps of provision/remove; apply steps stay per compose service. */
+export type EnvironmentStage =
+  | 'readiness' | 'directories' | 'checkout' | 'settings' | 'modules'
+  | 'config' | 'build' | 'pull' | 'start' | 'health' | 'switch' | 'down' | 'cleanup'
+
+export interface EnvironmentOperationStep {
+  // …environments-v1 fields; for kind 'stage': service = EnvironmentStage, from = null, to = short target
+  kind?: 'service' | 'stage'      // absent = 'service' (rows written by environments-v1)
+}
+
+export interface EnvironmentOperation {
+  // …environments-v1 fields
+  kind: EnvironmentOperationKind  // rows written by environments-v1 read as 'apply'
+}
+
+export type MachineReadinessCheckId =
+  | 'platform' | 'architecture' | 'policy' | 'storage' | 'root' | 'docker' | 'compose' | 'git'
+  | 'python' | 'repository' | 'disk' | 'memory' | 'port' | 'project'
+export interface MachineReadinessCheck { id: MachineReadinessCheckId; status: 'passed' | 'warning' | 'failed'; message: string }
+export interface MachineReadiness {
+  environmentId: string
+  machineId: string
+  checkedAt: number
+  ready: boolean                  // no check is 'failed'
+  port: number | null             // port the next provision will use
+  checks: MachineReadinessCheck[] // every id exactly once, in the order above
+}
+
+export const ENVIRONMENT_PORT_RANGE = { from: 17800, to: 17999 } as const
+export const ENVIRONMENT_MIN_FREE_BYTES = 20 * 1024 ** 3
+export const ENVIRONMENT_MIN_MEMORY_BYTES = 4 * 1024 ** 3          // below: failed
+export const ENVIRONMENT_RECOMMENDED_MEMORY_BYTES = 8 * 1024 ** 3  // below: warning
+export const ENVIRONMENT_MIN_COMPOSE_VERSION = '2.24.0'
+
+export interface EnvironmentSettingDefinition {
+  key: string                     // [A-Z][A-Z0-9_]{1,63}
+  label: string                   // Russian UI label
+  secret: boolean
+  required: boolean               // provision refuses while unset
+  generated: boolean              // provision generates 32 random bytes as hex when unset
+}
+export const ENVIRONMENT_SETTINGS: readonly EnvironmentSettingDefinition[]
+/** Computed by provisioning; never accepted from users. */
+export const RESERVED_ENVIRONMENT_SETTINGS: readonly string[]
+
+/** What the API returns; a secret value is never returned. */
+export interface EnvironmentSettingView {
+  key: string; label: string; secret: boolean; required: boolean; generated: boolean
+  set: boolean
+  value: string | null            // plain value of a non-secret setting; always null for secrets
+  source: 'user' | 'generated' | null
+  updatedBy: string | null
+  updatedAt: number | null
+}
+export interface EnvironmentSettingPatch { key: string; value: string | null }   // null deletes
+/** Storage row; for secrets value is ciphertext 'v1:<iv>:<tag>:<data>' (base64). Never sent to clients. */
+export interface StoredEnvironmentSetting {
+  key: string; secret: boolean; value: string; source: 'user' | 'generated'; updatedBy: string; updatedAt: number
+}
+
+export interface ManagedStandPaths {
+  root: string; app: string; config: string; logs: string; artifacts: string
+  temporary: string; repository: string; manifest: string
+  envFile: string                 // <config>/stand.env
+  overrides: string               // <config>/overrides (VC_ENVIRONMENT_OVERRIDES of the stand)
+}
+
+export function parseCoreSelection(value: unknown): CoreSelection | null
+  // undefined/null → null; otherwise exactly {version, commit}, x.y.z and 40 hex, else throws
+export function parseEnvironmentSettingsPatch(value: unknown): EnvironmentSettingPatch[]
+  // array of 1..50 items {key, value}; unique keys; key in ENVIRONMENT_SETTINGS (throws
+  // 'Unknown environment setting: K' / 'Reserved environment setting: K'); value null or a
+  // string of 1..4096 chars without ', CR, LF, NUL ('Invalid value for K');
+  // VC_ADMIN_PASSWORD at least 12 chars
+export function managedStandPaths(storageRoot: string, projectId: string, environmentId: string, platform: string): ManagedStandPaths
+  // <storageRoot>/projects/<projectId>/environments/stands/<environmentId>/…; throws for
+  // platform 'win32' ('Stands are not supported on Windows') and for environmentId 'production'
+export function environmentComposeProject(projectId: string, environmentId: string): string
+  // `sx-${environmentId}-${fnv1a32(projectId) as 8 lowercase hex}`; pure, no node:crypto
+export function environmentDataVolume(composeProject: string): string   // `${composeProject}-server-data`
+```
+
+Каталог `ENVIRONMENT_SETTINGS` (ключи взяты из `docker-compose.yml`):
+
+| Ключ | Секрет | Обязателен | Генерируется |
+| --- | --- | --- | --- |
+| `VC_ADMIN_PASSWORD` | да | да | нет |
+| `VC_PG_PASSWORD`, `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET`, `VC_LLM_RUNNER_TOKEN`, `VC_TTS_RUNNER_TOKEN`, `VC_STT_RUNNER_TOKEN`, `VC_BROWSER_RUNNER_TOKEN`, `VC_AUTOMATION_RUNNER_TOKEN` | да | нет | да |
+| `VC_SMTP_URL`, `VC_GITHUB_TOKEN`, `VC_CLAUDE_UPSTREAM_API_KEY` | да | нет | нет |
+| `VC_PUBLIC_URL`, `VC_MAIL_FROM`, `VC_BROWSER_HOST_ALIASES`, `VC_DELEGATED_CHAT_ENABLED`, `VC_CLAUDE_GATEWAY_BACKEND`, `VC_CLAUDE_UPSTREAM_URL`, `VC_CLAUDE_UPSTREAM_AUTH`, `VC_CLAUDE_MODEL_MAP` | нет | нет | нет |
+
+`RESERVED_ENVIRONMENT_SETTINGS` и их значения в `stand.env`:
+
+```
+VC_ENVIRONMENT_ID=<environmentId>
+COMPOSE_PROJECT_NAME=<composeProject>
+COMPOSE_FILE=docker-compose.yml:deploy/compose.stand.yml
+COMPOSE_PROFILES=postgres,kanban
+COMPOSE_PARALLEL_LIMIT=1
+COMPOSE_BAKE=false
+VC_STAND_PORT=<port>
+VC_DATA_VOLUME=<composeProject>-server-data
+VC_PUBLIC_HOST=127.0.0.1                      # satisfies caddy's ${VC_PUBLIC_HOST:?}; caddy is off
+VC_ENVIRONMENT_OVERRIDES=<root>/config/overrides
+VC_DB_URL=postgres://voicechat:<VC_PG_PASSWORD>@postgres:5432/voicechat
+VC_KANBAN_MODE=remote
+VC_RELEASE_VERSION=<core.version>
+VC_RELEASE_COMMIT=<core.commit[0:12]>
+```
+
+`VC_PUBLIC_URL` по умолчанию — `http://127.0.0.1:<port>`. Строки файла — `KEY='value'`, по одной,
+ключи по алфавиту; одинарные кавычки отключают подстановку `$` в compose, поэтому `'`, CR, LF и
+NUL в значениях запрещены.
+
+Manifest стенда (`parseEnvironmentManifest`): `kind` дополняется значением `'stand'`, поле
+`environmentId` обязательно для `stand` и запрещено для остальных видов, `taskId` для `stand`
+запрещён. Запись: `{formatVersion: 1, projectId, kind: 'stand', environmentId, machineId,
+storageId, createdAt: ISO(env.createdAt)}`.
+
+Шифрование секретов (Kanban, не shared): AES-256-GCM, ключ — `VC_ENVIRONMENT_SECRET_KEY`
+(64 hex), случайный IV 12 байт, AAD `environment-setting:<projectId>:<environmentId>:<key>`, формат
+`v1:<iv>:<tag>:<data>` в base64. Неверный или отсутствующий ключ — `503 Environment secret storage
+is not configured`. Генерация, расшифровка и запись файла не попадают ни в логи, ни в шаги
+операций.
+
+#### База — `apps/server/src/db/schema.ts` (Postgres — из той же схемы через `schemaPg.ts`), копия в Kanban
+
+Новые столбцы входят в `CREATE TABLE` для чистых баз и добавляются в `migrate()` для существующих
+тем же способом, что остальные столбцы (`PRAGMA table_info` + `ALTER TABLE … ADD COLUMN`;
+на Postgres проверить тестом `database.pgBootstrap.test.ts`):
+
+```sql
+ALTER TABLE environments ADD COLUMN mode TEXT NOT NULL DEFAULT 'external';
+ALTER TABLE environments ADD COLUMN storage_id TEXT;
+ALTER TABLE environments ADD COLUMN state TEXT NOT NULL DEFAULT 'ready';
+ALTER TABLE environments ADD COLUMN compose_project TEXT;
+ALTER TABLE environments ADD COLUMN port INTEGER;
+ALTER TABLE environment_configurations ADD COLUMN core_json TEXT;
+ALTER TABLE environment_operations ADD COLUMN kind TEXT NOT NULL DEFAULT 'apply';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_compose_project
+  ON environments(compose_project) WHERE compose_project IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS environment_settings (
+  project_id TEXT NOT NULL, environment_id TEXT NOT NULL, key TEXT NOT NULL,
+  secret INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, source TEXT NOT NULL,
+  updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, environment_id, key),
+  FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
+
+-- One active operation per environment now covers the new active statuses.
+DROP INDEX IF EXISTS idx_environment_active_operation;          -- in migrate(), both engines
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_active_operation_v2
+  ON environment_operations(project_id, environment_id)
+  WHERE status IN ('pending', 'preparing', 'pulling', 'building', 'starting', 'switching', 'health_check', 'removing');
+```
+
+`apps/server/src/db/ownership.ts`: `environment_settings` принадлежит домену `environments`,
+бюджет чужих чтений остаётся 0.
+
+#### Репозиторий `db.environments` (Core и копия Kanban)
+
+Методы этапа 1 сохраняются; `definition`/`configuration`/`operation` читают новые столбцы
+(`core_json` → `core`, отсутствующий `kind` → `'apply'`). `upsertEnvironment` отказывает, если
+окружение с этим id уже `managed` (`Managed environment cannot be changed`). Новое:
+
+```ts
+addConfiguration(userId, projectId, environmentId, modules, note, core?: CoreSelection | null): Promise<EnvironmentConfiguration>
+  // core проверяется parseCoreSelection; по умолчанию null
+createManagedEnvironment(userId, projectId, input: { id: string; name: string; machineId: string; storageId: string; checkoutPath: string; composeProject: string }): Promise<EnvironmentDefinition>
+  // владелец; id ≠ 'production'; новая строка mode 'managed', state 'draft', port null;
+  // существующий id: managed в state 'draft' | 'removed' — обновляет name/machine/storage/path/project и
+  // ставит 'draft'; иначе 'Environment already exists'
+setEnvironmentState(projectId, environmentId, patch: { state?: EnvironmentState; port?: number | null }): Promise<void>
+  // внутренний порт исполнителя; обновляет updated_at
+managedPorts(machineId: string): Promise<number[]>
+  // внутренний: порты managed-окружений этой машины во всех проектах, state ≠ 'removed'
+listSettings(userId, projectId, environmentId): Promise<StoredEnvironmentSetting[]>          // участник
+saveSettings(userId, projectId, environmentId, entries: Array<{ key: string; secret: boolean; value: string | null; source: 'user' | 'generated' }>): Promise<void>
+  // владелец; одна транзакция; value null удаляет строку; отказ при активной операции ('Environment is busy')
+readSettings(projectId, environmentId): Promise<StoredEnvironmentSetting[]>                 // внутренний, для исполнителя
+createOperation(userId, projectId, environmentId, configurationId, previousConfigurationId, kind: EnvironmentOperationKind = 'apply'): Promise<EnvironmentOperation>
+updateOperation(...)   // принимает новые статусы; activeOperation использует ACTIVE_ENVIRONMENT_OPERATION_STATUSES
+```
+
+#### Файлы и машинные скрипты — Core
+
+`deploy/compose.stand.yml` (оверлей стенда; требует всех зарезервированных ключей):
+
+```yaml
+services:
+  voicechat:
+    ports: !override
+      - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
+    volumes: !override
+      - vc-data:/data            # no host deploy socket in a stand
+  caddy:
+    profiles: ["public"]         # public address of a stand is environments-v3
+volumes:
+  vc-data:
+    name: ${VC_DATA_VOLUME:?Stand data volume is required}
+```
+
+`scripts/prod/compose_env.py` — разбор `.env` чекаута без побочных эффектов, общий для скриптов:
+
+```
+python3 scripts/prod/compose_env.py get <KEY> [--file .env]
+  → stdout: значение (кавычки '…' и "…" сняты) или пустая строка, если ключа нет; exit 0
+  exit 3 — файл есть, но строка не разбирается (KEY=value, # комментарии, пустые строки)
+python3 scripts/prod/compose_env.py chain [--file .env]
+  → stdout: действующая цепочка compose: $COMPOSE_FILE из окружения процесса, иначе COMPOSE_FILE
+    из .env, иначе docker-compose.yml (и docker-compose.override.yml, если он есть); exit 0
+```
+
+`scripts/prod/environment-apply.sh` (исправление C04): базовая цепочка — `compose_env.py chain`,
+каталог переключений — `$VC_ENVIRONMENT_OVERRIDES`, иначе `VC_ENVIRONMENT_OVERRIDES` из `.env`,
+иначе `/etc/voicechat/environment-overrides`. Экспортируемая цепочка — базовая плюс `current.yml`
+ровно один раз. CLI, stdout и коды выхода этапа 1 не меняются.
+
+```
+bash scripts/prod/environment-provision.sh --operation <id>
+  Запускается в чекауте стенда (<root>/temporary/repository), .env — ссылка на ../../config/stand.env.
+  1) config: проверяет .env (exit 10): все RESERVED_ENVIRONMENT_SETTINGS заданы; COMPOSE_FILE
+     начинается с docker-compose.yml:deploy/compose.stand.yml; COMPOSE_PROFILES содержит postgres
+     и kanban; VC_DATA_VOLUME = "$COMPOSE_PROJECT_NAME-server-data" и ≠ voicechat-server-data;
+     VC_STAND_PORT в 1024..65535; VC_RELEASE_COMMIT — префикс HEAD; чекаут ≠ VC_REPO_DIR из
+     /etc/voicechat/production.env (если файл читается). Цепочка = COMPOSE_FILE из .env +
+     $VC_ENVIRONMENT_OVERRIDES/current.yml, если он есть. `docker compose config --format json`
+     проходит, и build есть только у voicechat и automation-runner (exit 10).
+  2) build: VC_APPLICATION_VERSION=$VC_RELEASE_VERSION, VC_APPLICATION_COMMIT=$(git rev-parse HEAD),
+     VC_APPLICATION_API_VERSION / _DATA_VERSION из apps/server/release.json (как deploy.sh);
+     `docker compose build voicechat`, затем `docker compose build automation-runner`
+     последовательно (exit 25).
+  3) pull: `docker pull` каждого образа сервисов без build, которого нет локально (exit 20).
+  4) start: `docker compose up -d --no-build --pull never --remove-orphans` (exit 30).
+  5) health: до VC_ENVIRONMENT_START_TIMEOUT (по умолчанию 300 с) ждёт
+     `curl -fsS http://127.0.0.1:$VC_STAND_PORT/api/health` с ok=true и application.commit = HEAD
+     и healthy у всех контейнеров с healthcheck; иначе печатает `docker compose ps -a` и
+     `logs --tail 50 voicechat` строками лога и выходит с exit 30. Контейнеры не снимаются —
+     стенд новый, откатывать некуда; повтор операции идемпотентен.
+  stdout построчно: {"stage":"config|build|pull|start|health","status":"running|passed|failed","log":"…"}
+  exit: 0 — стенд здоров; 2 — аргументы; 10 — конфигурация стенда; 20 — pull; 25 — build; 30 — start/health.
+  Секретов не печатает (значения .env в лог не попадают).
+
+bash scripts/prod/environment-remove.sh --operation <id> [--delete-data]
+  Запускается в чекауте стенда; та же проверка .env, что у provision (exit 10).
+  1) down: `docker compose down --remove-orphans` (с --delete-data — ещё `--volumes`) (exit 30);
+  2) volumes (только --delete-data): `docker volume rm -f "$VC_DATA_VOLUME"` и тома проекта
+     `docker volume ls -q --filter label=com.docker.compose.project=$COMPOSE_PROJECT_NAME` (exit 30).
+  Файлы не удаляет — каталог стенда удаляет Kanban после сверки manifest.
+  stdout: {"stage":"down|volumes","status":"running|passed|failed","log":"…"}; exit 0 / 2 / 10 / 30.
+```
+
+#### Проба готовности — Kanban (`apps/server/src/environments/readinessProbe.ts`)
+
+Kanban хранит пробу строкой (Python 3.8+, только stdlib), пишет её `fsWrite` в
+`<storageRoot>/.voicechat/environment-readiness-<uuid>.py`, запускает и удаляет:
+
+```
+python3 <probe> --storage-root <abs> --storage-id <id> --environment-root <abs>
+  --manifest-json <json> --compose-project <name> --port-range 17800-17999
+  --exclude-ports <csv> [--port <current>] --git-url <url>
+  --min-free-bytes N --min-memory-bytes N --recommended-memory-bytes N --min-compose 2.24.0
+→ stdout: {"checks":[{"id","status","message"}],"port":<int|null>}
+  exit 0 — проверки выполнены (даже с failed); exit 2 — неверные аргументы.
+```
+
+| Проверка | Как | Итог |
+| --- | --- | --- |
+| `platform` | `platform.system()` | Linux/Darwin — passed, иначе failed |
+| `architecture` | `platform.machine()` | x86_64/amd64 — passed, иначе warning (образы linux/amd64) |
+| `policy` | в Kanban, не в пробе: `policyOf(agent)` | `allowWrite`, сеть разрешена, корень стенда внутри `allowedDirs` |
+| `storage` | marker содержит storage id, временный файл создаётся и удаляется | failed иначе |
+| `root` | корня нет, или `environment.json` равен `--manifest-json` | иначе failed «каталог занят» |
+| `docker` | `docker info` за 20 с | нет / нет прав / демон не запущен — failed с разным текстом |
+| `compose` | `docker compose version --short` ≥ минимума | failed иначе |
+| `git`, `python` | `git --version`; версия интерпретатора ≥ 3.8 | failed иначе |
+| `repository` | `GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code <url> HEAD` за 30 с | failed иначе |
+| `disk` | свободно на storage root ≥ минимума | failed иначе |
+| `memory` | `/proc/meminfo` или `sysctl -n hw.memsize` | < 4 ГиБ failed, < 8 ГиБ warning |
+| `port` | `--port`, если свободен или занят этим же проектом compose; иначе первый свободный (bind на 127.0.0.1) из диапазона без исключённых | нет свободного — failed |
+| `project` | `docker compose ls --all --format json` | проект с этим именем при занятом чужом корне — failed |
+
+`--exclude-ports` — `managedPorts(machineId)` без порта самого окружения.
+
+#### REST — Kanban (проксируется Core под `/api/projects`)
+
+```
+POST /api/projects/:id/environments  {id, name, mode: 'managed', machines: [agentId]}
+     → 200 EnvironmentDefinition (state 'draft'); владелец; без mode — поведение этапа 1.
+     Машина — машина проекта (getProjectMachine) с хранилищем; canWriteAgent; не win32.
+     400 Invalid environment target | 400 Stands are not supported on Windows | 403 Machine access required
+     409 Machine storage is not configured | 409 Environment already exists
+POST /api/projects/:id/environments/:env/readiness                      → 200 MachineReadiness
+     владелец; 400 Environment is not managed; 403 Machine access required; 409 Environment machine is offline
+GET  /api/projects/:id/environments/:env/settings                       → 200 EnvironmentSettingView[] (весь каталог, участник)
+POST /api/projects/:id/environments/:env/settings {settings: EnvironmentSettingPatch[]} → 200 EnvironmentSettingView[]
+     владелец; 400 Unknown/Reserved environment setting: K | Invalid value for K;
+     409 External environment settings are managed by the operator; 409 Environment is busy;
+     503 Environment secret storage is not configured
+POST /api/projects/:id/environments/:env/configurations {modules, note, core?}   → 200 EnvironmentConfiguration
+     core проверяется по project_releases проекта: не удалён, status ready|released,
+     branch release/<version>, commit_sha = commit; иначе 400 Core release is not available
+GET  /api/projects/:id/environments/:env/diff?configurationId=…         → {observation, modules, core: CoreDiff | null}
+POST /api/projects/:id/environments/:env/apply {configurationId}        → как в этапе 1, плюс
+     409 Configuration changes Core, если core.action ≠ 'none'; 409 Environment is not ready
+     для managed в state ≠ 'ready'
+POST /api/projects/:id/environments/:env/provision {configurationId}    → 202 EnvironmentOperation (kind 'provision')
+     владелец; managed в state draft|failed|removed|ready; 400 Environment is not managed;
+     400 Configuration has no Core release; 400 Required environment settings are missing: K,…;
+     403 Machine access required; 404 Configuration not found; 409 Environment is busy;
+     409 Environment machine is offline; 503 Environment secret storage is not configured
+POST /api/projects/:id/environments/:env/remove {deleteData: boolean, confirm: string} → 202 EnvironmentOperation (kind 'remove')
+     владелец; confirm = id окружения (400 Confirmation does not match); managed в state ready|failed
+     (409 Environment cannot be removed); 409 External environment cannot be removed; 409 Environment is busy
+POST /api/projects/:id/environments/:env/rollback                       → как в этапе 1; только kind 'apply'
+```
+
+Операция `remove` ссылается на последнюю конфигурацию окружения (`configuration_id` не NULL).
+
+#### Создание стенда: порядок этапов операции `provision`
+
+| Этап (`step.service`) | Статус операции | Что делает Kanban |
+| --- | --- | --- |
+| `readiness` | `preparing` | проба; failed — стоп; первый `port` сохраняется `setEnvironmentState` |
+| `directories` | `preparing` | `install -d -m 0700 config config/overrides`, остальные каталоги 0755; `environment.json` пишется или сверяется (расхождение — стоп) |
+| `checkout` | `preparing` | `git clone` gitUrl проекта в `temporary/repository`, если его нет (тот же скрипт, что `ensureCheckout` у ReleaseManager); `git fetch origin release/<v>`; fetched SHA = `core.commit`; `git checkout -B release/<v> <commit>`; дерево чистое |
+| `settings` | `preparing` | генерирует недостающие `generated`-секреты (сохраняет зашифрованными, source `generated`), пишет `config/stand.env` через временный файл и `mv`, `ln -sfn ../../config/stand.env .env` в чекауте |
+| `modules` | `preparing` | вшитые модули конфигурации совпадают с закреплёнными в чекауте (`pinnedApplications`); иначе стоп «Configuration needs a Core release for embedded modules» |
+| `config` … `health` | `preparing` → `building` → `pulling` → `starting` → `health_check` | `environment-provision.sh` построчно, таймаут 60 мин |
+| `switch` + шаги сервисов | `switching`, `health_check` | `diff` по конфигурации; переключения — `environment-apply.sh` этапа 1 (`kind: 'service'`) |
+
+Успех — операция `succeeded`, окружение `ready`, наблюдение сохраняется как обычно. Любая ошибка —
+операция `failed` с текстом, окружение `failed`, контейнеры остаются для разбора. Операция
+`remove`: `down`/`volumes` из скрипта; при `deleteData` — этап `cleanup` удаляет корень стенда
+после сверки `environment.json` (как remove у feature-preview); окружение `removed`, `port` →
+`null`, настройки сохраняются.
+
+#### Интерфейс — core-ui, блок «Окружения»
+
+- «Новое окружение» (владелец): id, название, машина из машин проекта с хранилищем `ready`;
+  создаёт `managed` в `draft`. У окружения — бейдж состояния (`Черновик`, `Создаётся`, `Готово`,
+  `Ошибка`, `Удаляется`, `Удалено`) и для `external` — пометка «ведёт оператор».
+- «Проверить машину»: список проверок с `passed/warning/failed`, порт стенда.
+- «Настройки и секреты»: таблица каталога; секрет показывается как «задан / не задан /
+  сгенерируется», значение секрета не отображается и не подставляется в поле; сохранение —
+  только изменённые ключи; подсказка «применится при следующем создании стенда». Для
+  `external` раздел скрыт.
+- Конфигурация получает строку «Core»: выбор из релизов проекта `ready`/`released`
+  (`releases:list`), в таблице модулей — строка Core с действием `CoreDiff`.
+- «Создать стенд» / «Пересоздать стенд» (владелец, managed): выбранная конфигурация с Core,
+  ход операции по этапам (`kind: 'stage'`) и по сервисам; «Удалить стенд» — подтверждение
+  вводом id и флаг «Удалить данные (база и файлы)».
+- «Открыть в Web Reader» для `managed` в `ready`: как `FeaturePreviewSection.openInWebReader` —
+  Reader-чат с `http://<agentId>.machine.internal:<port>/`.
+- Новые каналы мостика (`environmentsBridge.ts`): `environments:create`, `environments:readiness`,
+  `environments:settings`, `environments:saveSettings`, `environments:provision`,
+  `environments:remove`; при их отсутствии у хоста блок работает как в этапе 1.
+
+### Задачи этапа 2
+
+| B02 | Core | — | Shared contracts of environments-v2 per docs/plans/environments.md «Этап 2 → Контракты → Общие типы»: in packages/shared/src/environment.ts add EnvironmentMode, EnvironmentState, the new EnvironmentDefinition fields (mode, storageId, state, composeProject, port), CoreSelection and EnvironmentConfiguration.core, CoreDiff, EnvironmentOperationKind and EnvironmentOperation.kind, the extended EnvironmentOperationStatus with ACTIVE_ENVIRONMENT_OPERATION_STATUSES, EnvironmentStage and optional EnvironmentOperationStep.kind, MachineReadiness types and the readiness constants, ENVIRONMENT_SETTINGS and RESERVED_ENVIRONMENT_SETTINGS exactly as the two tables in the plan, EnvironmentSettingView/Patch, StoredEnvironmentSetting, ManagedStandPaths; pure functions parseCoreSelection, parseEnvironmentSettingsPatch (all listed error messages), managedStandPaths (environments/stands/<id> under the project, win32 and 'production' rejected), environmentComposeProject (pure FNV-1a 32-bit, no node:crypto) and environmentDataVolume; in manifests.ts add kind 'stand' with a required environmentId (forbidden for other kinds, taskId forbidden for stand); unit tests for every parser branch and path layout on POSIX and darwin; build the @voicechat/shared 0.1.15 archive with `build:core-contracts -- --version 0.1.15 --commit <SHA of the contracts commit>` and pin it in a follow-up commit of the same PR exactly like 0.1.14 (vendor/voicechat-shared-0.1.15-<sha12>.tgz with provenance and the dependency-snapshots.json entry); update docs/kb/shared.md with the KB workflow |
+| B03 | Core | B02 | Core storage of environments-v2 per docs/plans/environments.md «Этап 2 → База» and «Репозиторий db.environments»: add the environments, environment_configurations and environment_operations columns and the environment_settings table to apps/server/src/db/schema.ts and to migrate() for existing databases, replace idx_environment_active_operation by idx_environment_active_operation_v2 on both engines, add idx_environment_compose_project, register environment_settings in ownership.ts; extend apps/server/src/db/repos/environments.ts (row mapping of the new fields with 'apply' default for old operations, upsertEnvironment refusing managed rows, addConfiguration with core, createManagedEnvironment, setEnvironmentState, managedPorts, listSettings, saveSettings, readSettings, createOperation kind, new statuses in updateOperation and activeOperation) with repository tests on SQLite and Postgres (VC_TEST_DB_URL) including migration of a stage-1 database and the active-operation index across new statuses; pass VC_ENVIRONMENT_SECRET_KEY to the kanban service in docker-compose.yml (`${VC_ENVIRONMENT_SECRET_KEY:-}`) and document it in docs/kb/deploy.md with the KB workflow |
+| C04 | Core | — | Finish the compose chain handling of scripts/prod/environment-apply.sh per docs/plans/environments.md «Этап 2 → Файлы и машинные скрипты» (sislex/voiceAIChat PR #300 already resolves the base chain from the process, then the checkout .env, then default files, inside the script; move that logic into compose_env.py and keep its tests passing): add scripts/prod/compose_env.py with the `get` and `chain` commands and exit codes from the plan; environment-apply.sh must take its base chain from `compose_env.py chain` (process COMPOSE_FILE, else COMPOSE_FILE from the checkout .env, else docker-compose.yml plus docker-compose.override.yml when present) and its overrides directory from VC_ENVIRONMENT_OVERRIDES in the process, else in .env, else /etc/voicechat/environment-overrides, appending current.yml exactly once; keep its CLI, stdout lines and exit codes unchanged; extend scripts/prod/test_environment_scripts.py with a fake docker that records the effective COMPOSE_FILE for: chain only in .env (the production layout), chain in the process, no chain, overrides directory from .env, repeated apply; update the environments section of docs/kb/deploy.md with the KB workflow |
+| C05 | Core | C04 | Stand machine scripts per docs/plans/environments.md «Этап 2 → Файлы и машинные скрипты»: add deploy/compose.stand.yml exactly as in the plan; add scripts/prod/environment-provision.sh (stages config, build, pull, start, health; .env validation rules; refusal to touch the production checkout or the voicechat-server-data volume; Core build metadata like scripts/prod/deploy.sh; sequential builds of voicechat and automation-runner; JSON lines and exit codes 0/2/10/20/25/30) and scripts/prod/environment-remove.sh (down, optional volume removal, exit codes 0/2/10/30), both using compose_env.py; tests with a fake docker and fake curl in scripts/prod covering every exit code, the stage lines, that no secret value from .env appears in stdout, and that `docker compose config` of docker-compose.yml plus compose.stand.yml with a sample stand .env keeps only 127.0.0.1:<port> published, moves caddy to profile public, drops /run/voicechat and names vc-data after VC_DATA_VOLUME (skip that one check when docker is unavailable); add a stands section to docs/kb/deploy.md with the KB workflow |
+| C06 | Kanban | B02, B03, C12 | Kanban managed environments and settings per docs/plans/environments.md «Этап 2»: sync packages/shared copy to the @voicechat/shared 0.1.15 archive with an empty drift allowlist and the DB layer (schema, migrations, repository) to Core B03; POST /environments with mode 'managed' (project machine with storage, canWriteAgent, not win32, managedStandPaths and environmentComposeProject, createManagedEnvironment) with the listed status codes; GET/POST /environments/:env/settings returning EnvironmentSettingView for the whole catalog and never a secret value, validated by parseEnvironmentSettingsPatch, owner-only writes, 409 for external environments and active operations; an EnvironmentSecrets helper with AES-256-GCM, key VC_ENVIRONMENT_SECRET_KEY (64 hex), AAD environment-setting:<project>:<env>:<key> and the v1 format, 503 when the key is missing or invalid; configurations accept `core` validated against the project's non-deleted ready/released releases (branch release/<version>, exact commit); diff returns CoreDiff and apply refuses Core changes and managed environments that are not ready; tests with a fake machine for every route, permission and error message, encryption round trip and tamper rejection, and absence of secrets in responses; update docs/kb/environments-service.md |
+| C07 | Kanban | C06 | Machine readiness of managed environments per docs/plans/environments.md «Проба готовности»: readinessProbe.ts with the stdlib Python probe as a string constant implementing every check, argument and output of the plan; EnvironmentManager.readiness writes the probe with fsWrite under <storageRoot>/.voicechat, runs it with execStream or exec (timeout 120 s), deletes it, adds the policy check from policyOf (allowWrite, network allowed, stand root inside allowedDirs), excludes managedPorts of the machine and returns MachineReadiness with ready = no failed check; route POST /environments/:env/readiness (owner, managed only, machine access, online); tests run the real probe with python3 against fake docker, git and storage directories for passed, warning and failed variants of each check, plus manager tests with a fake machine; update docs/kb/environments-service.md |
+| C08 | Kanban | C07 | Stand provisioning per docs/plans/environments.md «Создание стенда: порядок этапов операции provision»: POST /environments/:env/provision with all listed preconditions and status codes; an EnvironmentProvisioner running one operation of kind 'provision' with stage steps (kind 'stage') readiness, directories (environment.json published or verified like the feature preview manifests), checkout (clone the project gitUrl if absent, fetch release/<version>, verify the fetched SHA equals core.commit, checkout -B, clean tree), settings (generate missing generated secrets as 32 random bytes hex stored encrypted with source 'generated', render stand.env with the reserved values and KEY='value' lines, write via a temporary file and mv inside the 0700 config directory, link .env), modules (embedded selections equal the checkout pins), the streamed scripts/prod/environment-provision.sh lines mapped to statuses preparing/building/pulling/starting/health_check with a 60 minute timeout, then the existing diff and environment-apply.sh switching inside the same operation; environment state provisioning → ready or failed and the allocated port persisted; secrets never appear in logs, steps, errors or responses; tests with a fake machine for the full success path, failure at every stage, re-provision of an existing stand, a configuration without core, missing required settings and a missing secret key; update docs/kb/environments-service.md |
+| C09 | Kanban | C08 | Stand removal per docs/plans/environments.md: POST /environments/:env/remove {deleteData, confirm} with the listed status codes; an operation of kind 'remove' (configuration_id = latest configuration) streaming scripts/prod/environment-remove.sh stages down and volumes (with --delete-data only when deleteData), then with deleteData a cleanup stage that deletes the stand root only after the environment.json identity matches (the feature preview remove rule); state removing → removed with port null, failed on error; settings are kept; rollback stays limited to kind 'apply'; tests with a fake machine for keep-data and delete-data paths, a mismatched manifest, external and busy environments and a wrong confirmation; update docs/kb/environments-service.md |
+| C10 | core-ui | B02 | Managed environment creation, readiness and settings in the Environments block per docs/plans/environments.md «Этап 2 → Интерфейс»: pin @voicechat/shared 0.1.15; add environments:create, environments:readiness, environments:settings and environments:saveSettings to environmentsBridge.ts (POST/GET paths of the plan, Russian error texts for every new English error message, block keeps the stage-1 behaviour when the host lacks the channels); «Новое окружение» form for owners with project machines whose storage is ready; state badge and «ведёт оператор» mark for external environments; «Проверить машину» checklist with port; «Настройки и секреты» table that never displays or prefills a secret value and saves only changed keys, hidden for external environments; DOM tests and stories; keep the ReleaseCenter chunk budget |
+| C11 | core-ui | C10 | Stand lifecycle in the Environments block per docs/plans/environments.md «Этап 2 → Интерфейс»: add environments:provision and environments:remove to environmentsBridge.ts; Core release selection in the configuration editor from releases:list (ready and released), Core row with CoreDiff in the module table; «Создать стенд»/«Пересоздать стенд» for owners of managed environments with live stage and service steps (step.kind 'stage' vs service, new operation statuses and labels); «Удалить стенд» confirmation by typing the environment id with a «Удалить данные» checkbox; «Открыть в Web Reader» for ready managed environments following FeaturePreviewSection.openInWebReader with http://<agentId>.machine.internal:<port>/; DOM tests and stories; keep the ReleaseCenter chunk budget |
+| C12 | Kanban | — | Stage-1 apply defects found on production during U01 (docs/plans/environments.md «Этап 1 → Итоги U01»), in the stage-1 EnvironmentManager, routes and tests: (1) apply must not refuse a configuration because some modules are not switchable — switch only modules whose action is 'switch', ignore 'none', 'needs_core_release', 'local_build' and 'unavailable' (report them in the operation), and answer 409 'Configuration is already applied' when nothing would switch, so the implicit production revision 1 created on first observation is appliable; (2) a module that has packages pinned in Core vendor/ and no services (SDK, UI Kit, Core UI, Desktop) gets 'needs_core_release' when the desired commit differs from the pinned one and 'none' otherwise, never 'unavailable'; the Core repository itself (sislex/voiceAIChat) is not listed as a module; (3) an operation that switches the kanban service itself must survive the Kanban restart: run scripts/prod/environment-apply.sh detached on the machine (setsid/nohup) with its JSON lines written to <overrides>/<operation>.log, follow that log instead of the exec stream, and on Kanban startup reconcile every active operation from its log (finish succeeded/failed/rolled_back, or fail it with a clear error when the log is missing); rollback uses the same path; tests with a fake machine for each case, including an operation interrupted by a simulated Kanban restart and completed by reconciliation; update docs/kb/environments-service.md |
+
+Задачи интегратора (Claude, вне манифеста):
+
+- **U02: сквозная проверка и выкат этапа**: мерж B02→B03→C04→C05 (Core), C12→C06→C07→C08→C09
+  (Kanban), C10→C11 (core-ui); выпуск образа Kanban и core-ui, закрепление в Core, релиз и выкат
+  прода с `VC_ENVIRONMENT_SECRET_KEY`; проверка: на проде окружение `production` по-прежнему
+  `external` и работает как в этапе 1, «Применить» её ревизии 1 отвечает «уже применено», а
+  переключение Kanban на проде на другой выпуск и обратно доводит операцию до конца через рестарт (C12); на второй машине проекта (Linux x86_64) создаётся
+  окружение `stage2-check`, готовность без `failed`, задан пароль администратора, «Создать
+  стенд» с конфигурацией (Core — текущий релиз прода, модули — как на проде) доводит его до
+  `ready`; стенд открывается в Web Reader и принимает вход; его база — свой контейнер Postgres
+  и свой том; «Применить» другой версии Kanban переключает Kanban только на стенде; «Удалить
+  стенд» с удалением данных убирает контейнеры, тома и каталог; затем раздел «Этап 3» этого
+  документа после ответов владельца на вопросы ниже.
+
+### Готово, когда
+
+- на машине, где прод не запущен, владелец проекта создаёт стенд с нуля из интерфейса: проверка
+  готовности, настройки и секреты, «Создать стенд» — без ssh и ручных команд, кроме входа CLI
+  раннеров;
+- стенд — отдельный проект compose со своей базой Postgres, своим томом данных и портом на
+  `127.0.0.1`; ни создание, ни удаление стенда не меняет контейнеры, тома и файлы прода
+  (`docker compose ps` прода, его `/api/health` и `voicechat-server-data` до и после совпадают);
+- значения секретов не возвращаются ни одним маршрутом и не встречаются в логах операций, а
+  `stand.env` на машине имеет права 0600;
+- «Применить» и «Откатить» этапа 1 работают на стенде так же, как на проде;
+- «Удалить стенд» с удалением данных оставляет машину без контейнеров, томов и каталога стенда.
+
+### Риски и открытые вопросы этапа 2
+
+- Агент обрывает команду по таймауту (`docs/kb/deploy.md`, «Почему нельзя звать `docker compose
+  up -d --build` напрямую»). Сборка Core идёт отдельным этапом и может быть убита без вреда, но
+  обрыв посреди `up -d` оставит контейнер в `Created`; у стенда нет сторожа прода. Лечение —
+  повторное «Пересоздать стенд». Операция, оборванная рестартом Kanban, остаётся активной, как в
+  этапе 1 (снимает оператор).
+- Образы владельцев публикуются под linux/amd64; на Apple Silicon стенд пойдёт только через
+  эмуляцию Docker Desktop, проба показывает `warning`.
+- Сборка Core на машине стенда требует памяти и места (8 ГиБ прода не хватало для параллельных
+  сборок); поэтому сборки последовательные и пороги пробы. Опубликованный образ Core в GHCR
+  убрал бы сборку — отдельное решение, в этапе 2 его нет.
+- Web Reader открывает стенд через HTTP-мост агента (5 МиБ, 10 с на запрос); WebSocket стенда
+  через мост не проходит, полноценная работа — через companion-туннель или публичный адрес
+  (вопрос 3, этап 3).
+- Стенд не воспроизводит управляемую установку компонентов прода (Identity, Billing, Analytics
+  отдельными сервисами, гранты `components:init`). Если стенд должен проверять именно её —
+  нужен отдельный этап с секретами каталога компонентов и их ротацией.
+- Бэкап базы стенда и ротация `VC_ENVIRONMENT_SECRET_KEY` не входят в этап.
 
 ## Вопросы к владельцу на этапы 3–4
 
