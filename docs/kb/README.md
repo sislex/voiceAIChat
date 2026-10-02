@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 45 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 6 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 21 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1718 коммит(ов) в areas после сверки: 1d9a7ac2 chore: pin Core UI 1.4.11, Desktop 1.0.14 and Kanban 0.1.2 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1719 коммит(ов) в areas после сверки: 9d0c2974 fix(deploy): environment-apply keeps the installed compose chain … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 82 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -58,8 +58,9 @@
 
 ## Журнал сессий
 
-Всего записей: 997. Последние:
+Всего записей: 998. Последние:
 
+- [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md) — pin-core-ui-1.4.12-desktop-1.0.15
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md) — pin-core-ui-1.4.11-desktop-1.0.14-kanban-0.1.2
 - [2026-10-02-alexeys-macbook-air-2-environments-b01-review.md](log/2026-10-02-alexeys-macbook-air-2-environments-b01-review.md) — environments-b01-review
 - [2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md](log/2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md) — environment-apply-compose-chain
@@ -69,7 +70,6 @@
 - [2026-09-30-alexeys-macbook-air-2-restore-core-owned-tests.md](log/2026-09-30-alexeys-macbook-air-2-restore-core-owned-tests.md) — restore-core-owned-tests
 - [2026-09-30-alexeys-macbook-air-2-remove-embedded-kanban.md](log/2026-09-30-alexeys-macbook-air-2-remove-embedded-kanban.md) — remove-embedded-kanban
 - [2026-09-30-alexeys-macbook-air-2-pin-combined-make-1-3-1.md](log/2026-09-30-alexeys-macbook-air-2-pin-combined-make-1-3-1.md) — pin-combined-make-1-3-1
-- [2026-09-30-alexeys-macbook-air-2-make-quotas-1-3-1.md](log/2026-09-30-alexeys-macbook-air-2-make-quotas-1-3-1.md) — make-quotas-1-3-1
 
 ## Исторические планы
 
