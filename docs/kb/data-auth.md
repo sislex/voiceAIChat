@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-09-28
-checked: 79d9f8d0
+updated: 2026-10-02
+checked: 24577612
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -18,6 +18,35 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Environment configurations
+
+Core owns `environments`, `environment_configurations` and `environment_operations`.
+`db.environments` uses the public Identity SQL adapters on SQLite and PostgreSQL;
+PostgreSQL DDL is generated from the shared `schema.ts` definitions. Environment
+slugs are unique within a project. All user-facing methods require project
+membership (denied access throws); definition upserts also require project ownership.
+`activeOperation` and `updateOperation` are internal worker methods without user auth.
+
+Configurations are immutable. A transaction locks the environment with an UPDATE
+before computing `MAX(revision) + 1`, so independent PostgreSQL connections cannot
+allocate the same revision. Operation creation checks both configuration references
+against the project and environment. A partial unique index enforces one operation
+in pending, pulling, switching or health_check state per environment.
+
+The B01 contract archive 0.1.14 is pinned in `dependency-snapshots.json`; Core uses
+the matching Shared source workspace. The workspace manifest stays at 0.1.10 to
+satisfy installed Chat owners' exact peer requirements, as in the existing
+independently versioned contract release workflow. `scripts/environment-contracts-snapshot.py`
+creates a deterministic local handoff archive whose provenance explicitly records
+an uncommitted worktree, its base commit and hashes of every payload file. It does
+not claim a committed or registry-published release. Integration can publish a
+committed release with `scripts/core-contracts-release.mjs` after review.
+
+`database.environments.test.ts` runs the same repository suite on SQLite and on
+PostgreSQL when `VC_TEST_DB_URL` points to the assigned test database. It includes
+a separate-connection PostgreSQL revision race. Service deployment, Kanban/UI
+integration and production commissioning belong to later environments-v1 tasks.
 
 ## Identity repository and request authentication
 

@@ -1976,6 +1976,33 @@ CREATE TABLE IF NOT EXISTS browser_ui_release_operations (
 CREATE INDEX IF NOT EXISTS idx_browser_ui_release_operations_project
   ON browser_ui_release_operations(project_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS environments (
+  id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL,
+  machines_json TEXT NOT NULL, checkout_path TEXT NOT NULL,
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS environment_configurations (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, environment_id TEXT NOT NULL,
+  revision INTEGER NOT NULL, modules_json TEXT NOT NULL, note TEXT,
+  created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
+  UNIQUE (project_id, environment_id, revision),
+  FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS environment_operations (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, environment_id TEXT NOT NULL,
+  configuration_id TEXT NOT NULL, previous_configuration_id TEXT,
+  status TEXT NOT NULL, steps_json TEXT NOT NULL DEFAULT '[]', error TEXT,
+  started_by TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
+  FOREIGN KEY (configuration_id) REFERENCES environment_configurations(id),
+  FOREIGN KEY (previous_configuration_id) REFERENCES environment_configurations(id),
+  FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_environment_operations ON environment_operations(project_id, environment_id, started_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_active_operation ON environment_operations(project_id, environment_id) WHERE status IN ('pending', 'pulling', 'switching', 'health_check');
+
 `
 
 /**
