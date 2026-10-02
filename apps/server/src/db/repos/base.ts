@@ -1,3 +1,4 @@
+import type { EnvironmentsRepo } from './environments.js'
 // Основа доменных репозиториев: общее соединение, генераторы id/времени и доступ к соседям.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
@@ -24,6 +25,7 @@ export interface Repos {
   readonly llm: LlmRepo
   readonly chat: ChatRepo
   readonly machines: MachinesRepo
+  readonly environments: EnvironmentsRepo
   readonly projects: ProjectsRepo
   readonly tasks: TasksRepo
   readonly ci: CiRepo

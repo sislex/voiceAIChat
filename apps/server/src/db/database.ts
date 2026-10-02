@@ -1,3 +1,4 @@
+import { EnvironmentsRepo } from './repos/environments.js'
 // Точка входа слоя данных: открывает SQLite, применяет схему и миграции и раздаёт доменные
 // репозитории (db.chat, db.tasks, …). Сами запросы живут в ./repos/<домен>.ts — по одному
 // владельцу на таблицу (./ownership.ts); правила разреза — docs/plans/db-repositories.md.
@@ -72,6 +73,7 @@ export class VoiceChatDb {
   readonly chat: AsyncPort<ChatRepo>
   readonly machines: AsyncPort<MachinesRepo>
   readonly projects: AsyncPort<ProjectsRepo>
+  readonly environments: AsyncPort<EnvironmentsRepo>
   readonly tasks: AsyncPort<TasksRepo>
   readonly ci: AsyncPort<CiRepo>
   readonly qa: AsyncPort<QaRepo>
@@ -116,6 +118,7 @@ export class VoiceChatDb {
       chat: new ChatRepo(this.ctx),
       machines: new MachinesRepo(this.ctx),
       projects: new ProjectsRepo(this.ctx),
+      environments: new EnvironmentsRepo(this.ctx),
       tasks: new TasksRepo(this.ctx),
       ci: new CiRepo(this.ctx),
       qa: new QaRepo(this.ctx),
@@ -135,7 +138,7 @@ export class VoiceChatDb {
     const gate = <K extends keyof Repos>(key: K): AsyncPort<Repos[K]> => asyncPort(this.ctx.repos[key], portOptions)
     const ports: Ports = {
       identity: gate('identity'), settings: gate('settings'), llm: gate('llm'), chat: gate('chat'), machines: gate('machines'),
-      projects: gate('projects'), tasks: gate('tasks'), ci: gate('ci'), qa: gate('qa'), releases: gate('releases'), kb: gate('kb')
+      projects: gate('projects'), environments: gate('environments'), tasks: gate('tasks'), ci: gate('ci'), qa: gate('qa'), releases: gate('releases'), kb: gate('kb')
     }
     for (const key of Object.keys(deps.ports ?? {}) as Array<keyof Ports>) {
       const factory = deps.ports?.[key]
@@ -152,6 +155,7 @@ export class VoiceChatDb {
     this.chat = ports.chat
     this.machines = ports.machines
     this.projects = ports.projects
+    this.environments = ports.environments
     this.tasks = ports.tasks
     this.ci = ports.ci
     this.qa = ports.qa
