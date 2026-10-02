@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-01
-checked: 4843251d
+updated: 2026-10-02
+checked: 92382276
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -419,7 +419,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.1, SHA `21dd56a1fe88ab7ef0322e17146279c00cb434ae` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза и сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.2, SHA `c48894724132106415d70498ae6bd3ce265fd127` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) и окружения с конфигурациями и операциями (environments-v1, этап 1)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
@@ -433,6 +433,17 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 `/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
+
+**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14).**
+`scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
+`{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI `pack:release`
+writes only `artifacts/sislexa-core-ui-<v>.tgz` (commit in the archive's `release-source.json`), and
+Desktop `pack:release` writes a single npm-pack object (`{ name, version, filename, commit, sha256, … }`)
+without `packages`. Both therefore fail (`ENOENT …integrity.json` / `Cannot read properties of
+undefined (reading 'map')`). Workaround used: after `pack:release`, write the `packages` form from the
+archive bytes (`artifacts/` is git-ignored, the checkout stays clean) and rerun with `--skip-pack`;
+the script recomputes and cross-checks sha256/integrity from the bytes. Core pins the same bytes under
+the asset name `<name>-<v>-<sha256[0:12]>.tgz`.
 
 **Машины отдельным сервисом (`docs/plans/machines-service.md`, 2026-09-07).** Профиль compose `machines`
 (образ `voicechat-machines`, стадия `machines-runtime`, порт 8793, точка входа
