@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-09-29
-checked: dc80c8b8
+updated: 2026-10-02
+checked: 92382276
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -46,9 +46,9 @@ without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
 own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.4.8, owner commit `9916016199725563378cea57656571338f5404a7`, which
-adds the Make browser selector and browser route line. Desktop 1.0.11
-(owner commit `bf272004`) embeds the same renderer;
+from Core UI 1.4.11, owner commit `e91cc2032139b508538e501780c10ccc7f45143e`, which
+adds the «Окружения» block on the Applications tab. Desktop 1.0.14
+(owner commit `a210c71b`) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
