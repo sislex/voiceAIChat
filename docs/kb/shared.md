@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-09-28
-checked: fb94d3d8
+updated: 2026-10-03
+checked: 59f2ddf5044b2901ebb674c871eb6fceaf9193ce
 areas:
   - packages/shared/src
 ---
@@ -45,6 +45,27 @@ shape validators. These definitions do not authenticate callers or reserve funds
 stable-subject fields for rolling upgrades; billing consumers must reject older
 providers that omit them rather than substitute a login name. Shared 0.1.3 is the
 contract foundation for the independent SDK and Billing repositories.
+
+### Managed environment contracts
+
+`environment.ts` defines the environments-v2 managed stand lifecycle, Core release
+selection, operation kinds/stages, readiness thresholds, and the user/reserved
+settings catalogs. Settings patches reject unknown and reserved keys, duplicates,
+unsafe dotenv characters, and short administrator passwords. Secret encryption
+and provisioning belong to consumers, not Shared.
+
+`managedStandPaths` builds the project-local `environments/stands/<id>` layout,
+including `temporary/repository`, `config/stand.env`, and `config/overrides`;
+Windows and the production identity are rejected. Compose project identities use
+pure FNV-1a over UTF-8 project-id bytes, and data volumes derive from that identity.
+`manifests.ts` requires `environmentId` for `stand`, forbids it for other kinds,
+and forbids `taskId` on stands. Parser and POSIX/macOS layout coverage lives in
+`environmentV2.test.ts`.
+
+Distribution requires a committed source: run `npm run build:core-contracts --
+--version 0.1.15 --commit <contracts-commit-sha>`, then vendor and pin the archive
+with its provenance in a follow-up commit, following the 0.1.14 snapshot. A dirty
+working tree cannot serve as the release commit.
 
 ### Existing modules
 
