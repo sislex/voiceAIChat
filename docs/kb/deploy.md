@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-02
-checked: 24c8916d
+checked: f5e9f82f
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -434,7 +434,7 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
 
-**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14).**
+**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14; again for Core UI 1.4.12 / Desktop 1.0.15).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
 `{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI `pack:release`
 writes only `artifacts/sislexa-core-ui-<v>.tgz` (commit in the archive's `release-source.json`), and
@@ -443,7 +443,12 @@ without `packages`. Both therefore fail (`ENOENT …integrity.json` / `Cannot re
 undefined (reading 'map')`). Workaround used: after `pack:release`, write the `packages` form from the
 archive bytes (`artifacts/` is git-ignored, the checkout stays clean) and rerun with `--skip-pack`;
 the script recomputes and cross-checks sha256/integrity from the bytes. Core pins the same bytes under
-the asset name `<name>-<v>-<sha256[0:12]>.tgz`.
+the asset name `<name>-<v>-<sha256[0:12]>.tgz`. Core UI `pack:release` runs `gate:release` itself, so
+running it on the release commit before merge yields both the required gate and the archive. To pin in
+Core, put each release's `sislexa-release.json` and archive into its own subdirectory and run
+`node --import tsx scripts/release-composition.mjs apply --dir <dir>`; `apply` rewrites the version,
+commit, hashes and vendor files but not `provenance.requires`/`provenance.dependencies`, which must be
+copied from the archive's `release-source.json` (e.g. Desktop `requires.coreUi`, embedded Core UI commit).
 
 **Машины отдельным сервисом (`docs/plans/machines-service.md`, 2026-09-07).** Профиль compose `machines`
 (образ `voicechat-machines`, стадия `machines-runtime`, порт 8793, точка входа
