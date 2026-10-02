@@ -6,7 +6,12 @@ export class ManifestError extends Error {
     super(`${code}: ${path}: ${message}`); this.name = 'ManifestError'
   }
 }
-export interface EnvironmentManifest { formatVersion: 1; projectId: string; taskId?: string; kind: 'production'|'staging'|'test'|'preview'; machineId: string; storageId: string; createdAt: string }
+export type EnvironmentManifest = {
+  formatVersion: 1; projectId: string; machineId: string; storageId: string; createdAt: string
+} & (
+  | { kind: 'stand'; environmentId: string; taskId?: never }
+  | { kind: 'production'|'staging'|'test'|'preview'; taskId?: string; environmentId?: never }
+)
 export type RunManifestType = 'development'|'qa'|'merge'|'preview'|'release'
 export interface RunManifest { formatVersion: 1; runId: string; runType: RunManifestType; initiator: string; machineId: string; workspace: string; branch: string; sourceCommit: string; createdAt: string; startedAt: string }
 export type RunReportStatus = 'success'|'failed'|'cancelled'|'interrupted'
@@ -26,8 +31,14 @@ const oneOf=<T extends string>(v:unknown,values:readonly T[],field:string,path:s
 const optional=(v:Record<string,unknown>,field:string,path:string)=>own(v,field)?text(v[field],field,path):undefined
 
 export function parseEnvironmentManifest(value:unknown,path='environment.json'):EnvironmentManifest{
-  const v=object(value,path);version(v,path);allow(v,['formatVersion','projectId','taskId','kind','machineId','storageId','createdAt'],path)
-  const result:EnvironmentManifest={formatVersion:1,projectId:text(v.projectId,'projectId',path),kind:oneOf(v.kind,['production','staging','test','preview'],'kind',path),machineId:text(v.machineId,'machineId',path),storageId:text(v.storageId,'storageId',path),createdAt:time(v.createdAt,'createdAt',path)}
+  const v=object(value,path);version(v,path);allow(v,['formatVersion','projectId','taskId','environmentId','kind','machineId','storageId','createdAt'],path)
+  const kind=oneOf(v.kind,['production','staging','test','preview','stand'],'kind',path)
+  const base={formatVersion:1 as const,projectId:text(v.projectId,'projectId',path),machineId:text(v.machineId,'machineId',path),storageId:text(v.storageId,'storageId',path),createdAt:time(v.createdAt,'createdAt',path)}
+  if(kind==='stand'){
+    if(own(v,'taskId'))throw new ManifestError('corrupt',path,'taskId is not allowed for stands')
+    return {...base,kind,environmentId:text(v.environmentId,'environmentId',path)}
+  }else if(own(v,'environmentId'))throw new ManifestError('corrupt',path,'environmentId is only allowed for stands')
+  const result:EnvironmentManifest={...base,kind}
   const taskId=optional(v,'taskId',path);if(taskId)result.taskId=taskId
   if((result.kind==='test'||result.kind==='preview')&&!taskId)throw new ManifestError('corrupt',path,'taskId is required for task environments')
   if((result.kind==='production'||result.kind==='staging')&&taskId)throw new ManifestError('corrupt',path,'taskId is not allowed for project environments')
