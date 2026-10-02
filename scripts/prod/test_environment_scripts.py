@@ -38,7 +38,7 @@ FAKE_DOCKER = r'''#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
 case "$1 $2" in
   "pull "*) [[ "$2" == *"$FAKE_MISSING"* && -n "$FAKE_MISSING" ]] && exit 1; exit 0 ;;
-  "compose up") exit 0 ;;
+  "compose up") echo "chain=$COMPOSE_FILE" >> "$FAKE_LOG"; exit 0 ;;
   "compose ps") echo "c-$4" ;;
   "inspect --format") echo "$FAKE_STATE" ;;
 esac
@@ -47,7 +47,7 @@ exit 0
 
 
 class ApplyTest(unittest.TestCase):
-    def run_apply(self, switches, state="running healthy", missing=""):
+    def run_apply(self, switches, state="running healthy", missing="", compose_file="docker-compose.yml", checkout_files=None):
         root = tempfile.mkdtemp()
         os.chmod(root, 0o700)
         fake = os.path.join(root, "docker")
@@ -59,9 +59,17 @@ class ApplyTest(unittest.TestCase):
             json.dump(switches, handle)
         log = os.path.join(root, "docker.log")
         env = {**os.environ, "DOCKER": fake, "FAKE_LOG": log, "FAKE_STATE": state, "FAKE_MISSING": missing,
-               "VC_ENVIRONMENT_OVERRIDES": os.path.join(root, "overrides"), "VC_ENVIRONMENT_HEALTH_TIMEOUT": "3", "COMPOSE_FILE": "docker-compose.yml"}
+               "VC_ENVIRONMENT_OVERRIDES": os.path.join(root, "overrides"), "VC_ENVIRONMENT_HEALTH_TIMEOUT": "3"}
+        env.pop("COMPOSE_FILE", None)
+        if compose_file is not None:
+            env["COMPOSE_FILE"] = compose_file
+        checkout = os.path.join(root, "checkout")
+        os.mkdir(checkout)
+        for name, content in (checkout_files or {}).items():
+            with open(os.path.join(checkout, name), "w") as handle:
+                handle.write(content)
         result = subprocess.run(["bash", os.path.join(HERE, "environment-apply.sh"), "--switches", switches_file, "--operation", "op1"],
-                                capture_output=True, text=True, env=env)
+                                capture_output=True, text=True, env=env, cwd=checkout)
         calls = open(log).read().splitlines() if os.path.exists(log) else []
         steps = [json.loads(line) for line in result.stdout.splitlines()]
         return result, calls, steps, os.path.join(root, "overrides")
@@ -71,9 +79,29 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("pull " + KANBAN, calls)
         self.assertIn("compose up -d --no-build --no-deps kanban", calls)
+        self.assertIn("chain=docker-compose.yml:" + os.path.join(overrides, "current.yml"), calls)
         self.assertEqual([s["status"] for s in steps], ["pulling", "switching", "healthy"])
         override = open(os.path.join(overrides, "current.yml")).read()
         self.assertIn('kanban:\n    build: !reset null\n    image: "' + KANBAN + '"\n    pull_policy: never', override)
+
+    def test_the_installed_env_chain_is_kept_when_the_process_has_none(self):
+        chain = "/srv/repo/docker-compose.yml:/etc/voicechat/local-owner-images.yml"
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None,
+                                                    checkout_files={".env": "COMPOSE_PROJECT_NAME=voiceaichat\nCOMPOSE_FILE=" + chain + "\n", "docker-compose.yml": "services: {}\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("chain=" + chain + ":" + os.path.join(overrides, "current.yml"), calls)
+
+    def test_compose_default_files_are_kept_without_any_chain(self):
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None,
+                                                    checkout_files={"docker-compose.yml": "services: {}\n", "docker-compose.override.yml": "services: {}\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("chain=docker-compose.yml:docker-compose.override.yml:" + os.path.join(overrides, "current.yml"), calls)
+
+    def test_no_chain_changes_nothing(self):
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(calls, [])
+        self.assertFalse(os.path.exists(overrides))
 
     def test_a_failed_pull_switches_nothing(self):
         result, calls, steps, overrides = self.run_apply({"kanban": KANBAN}, missing="sislexa-kanban")
