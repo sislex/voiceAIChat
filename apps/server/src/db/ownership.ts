@@ -6,9 +6,10 @@
 //
 // Меняешь схему — сначала впиши таблицу сюда, иначе гейт не пропустит.
 
-export type RepoDomain = 'identity' | 'settings' | 'llm' | 'chat' | 'machines' | 'projects' | 'tasks' | 'ci' | 'qa' | 'releases' | 'kb'
+export type RepoDomain = 'environments' | 'identity' | 'settings' | 'llm' | 'chat' | 'machines' | 'projects' | 'tasks' | 'ci' | 'qa' | 'releases' | 'kb'
 
 export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
+  environments: ['environments', 'environment_configurations', 'environment_operations'],
   identity: ['users', 'identity_subjects', 'sessions', 'session_revocations', 'security_events', 'invites', 'email_verifications', 'password_reset_tokens', 'login_device_emails', 'user_llm_access', 'tenants', 'tenant_memberships', 'tariff_plans', 'tenant_tariffs', 'team_tenants', 'team_tenant_memberships', 'team_tenant_tariffs', 'team_tenant_invitations', 'applications', 'application_grants', 'application_audit', 'public_client_access', 'public_client_codes', 'public_client_families', 'public_client_redirects', 'public_client_refresh'],
   settings: ['settings', 'app_config', 'schema_migrations'],
   llm: ['llm_engines', 'model_prices'],
@@ -29,6 +30,7 @@ export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
 
 /** Сколько чужих таблиц репозиторий читает напрямую. Верхняя планка; снижать можно, повышать — с обоснованием в PR. */
 export const CROSS_READ_BUDGET: Record<RepoDomain, number> = {
+  environments: 0,
   identity: 0,
   settings: 0,
   llm: 0,
