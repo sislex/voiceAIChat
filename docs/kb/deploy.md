@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 7224475d
+checked: 2caecd15
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -434,15 +434,12 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
 
-**Publishing owner releases with archives (verified 2026-10-02, Core UI 1.4.11 / Desktop 1.0.14; again for Core UI 1.4.12 / Desktop 1.0.15 and Core UI 1.4.13 / Desktop 1.0.16).**
+**Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
-`{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI `pack:release`
-writes only `artifacts/sislexa-core-ui-<v>.tgz` (commit in the archive's `release-source.json`), and
-Desktop `pack:release` writes a single npm-pack object (`{ name, version, filename, commit, sha256, … }`)
-without `packages`. Both therefore fail (`ENOENT …integrity.json` / `Cannot read properties of
-undefined (reading 'map')`). Workaround used: after `pack:release`, write the `packages` form from the
-archive bytes (`artifacts/` is git-ignored, the checkout stays clean) and rerun with `--skip-pack`;
-the script recomputes and cross-checks sha256/integrity from the bytes. Core pins the same bytes under
+`{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI (PR #34) and Desktop
+(PR #12) `scripts/pack.mjs` write exactly this form, so publication needs no hand-made file; the
+script still recomputes and cross-checks sha256/integrity from the archive bytes. Releases up to Core
+UI 1.4.13 / Desktop 1.0.16 were published with a regenerated file and `--skip-pack`. Core pins the same bytes under
 the asset name `<name>-<v>-<sha256[0:12]>.tgz`. Core UI `pack:release` runs `gate:release` itself, so
 running it on the release commit before merge yields both the required gate and the archive. To pin in
 Core, put each release's `sislexa-release.json` and archive into its own subdirectory and run
