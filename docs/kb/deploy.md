@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-02
-checked: 92382276
+checked: 24c8916d
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -2207,6 +2207,12 @@ unchanged; publish and verify S3 service images separately when releasing S3.
 владельцев: сначала `docker pull` всех (отказ — exit 20, ничего не переключено), потом
 `/etc/voicechat/environment-overrides/<id>.yml` и ссылка `current.yml`, `up -d --no-build
 --no-deps`, ожидание здоровья; нездоровый сервис возвращается на прежние образы (exit 30).
+Kanban запускает скрипт без `COMPOSE_FILE` в окружении, а на проде цепочка compose (12 файлов)
+лежит в `.env` чекаута. Docker Compose читает `.env` только когда переменная процесса не задана,
+поэтому скрипт до любых изменений сам определяет базовую цепочку — переменная процесса, затем
+`COMPOSE_FILE` из `.env` чекаута, затем стандартные файлы compose — и добавляет `current.yml`
+последним. Без цепочки он выходит с кодом 2, ничего не трогая. Раньше экспорт одного
+`current.yml` затенял цепочку из `.env`, и сервис поднимался без основного `docker-compose.yml`.
 `release-manager-deploy.sh` подключает `current.yml` к цепочке compose и закрепляет остальные
 сервисы на запущенных образах, поэтому выкат Core переключений окружения не откатывает; сервис,
 образ которого изменил сам релиз (состав релиза), переключается на него
