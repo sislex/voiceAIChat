@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 27 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-02 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 31 коммит(ов) в areas после сверки: 1d9a7ac2 chore: pin Core UI 1.4.11, Desktop 1.0.14 and Kanban 0.1.2 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 32 коммит(ов) в areas после сверки: 402ce643 chore: pin Core UI 1.4.12 and Desktop 1.0.15 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 7 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-02 | ⚠ 1 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-02 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 45 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 6 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 21 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1719 коммит(ов) в areas после сверки: 9d0c2974 fix(deploy): environment-apply keeps the installed compose chain … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1720 коммит(ов) в areas после сверки: 402ce643 chore: pin Core UI 1.4.12 and Desktop 1.0.15 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 82 коммит(ов) в areas после сверки: 18546cf6 Add Core environment contracts and storage … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
