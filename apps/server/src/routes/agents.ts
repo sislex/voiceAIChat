@@ -70,6 +70,16 @@ function reachableFromMachine(base: string): boolean {
 }
 
 /**
+ * The installer must outlive the agent that starts it (the agent's service manager kills its
+ * process group). `setsid` is absent on macOS, where perl's POSIX::setsid starts the new session.
+ */
+export function detachedUnixUpdate(command: string): string {
+  const run = `nohup bash -lc ${shellQuote(command)}`
+  return `(if command -v setsid >/dev/null 2>&1; then setsid ${run}; else perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' ${run}; fi` +
+    ` > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
+}
+
+/**
  * Обновление агента на машине: тот же установщик, что при первой установке, запущенный detached,
  * чтобы пережить смерть старого агента. Общий для владельца (`/api/agents/:id/update`) и админки
  * (`/api/admin/machines/:id/update`). Ошибки возвращаются как {status, error} — роут решает, как ответить.
@@ -103,7 +113,7 @@ export async function updateAgentOnMachine(registry: MachinesService, id: string
       ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
         `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
         `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
-      : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
+      : detachedUnixUpdate(installCommand(os, base))
   try {
     const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
     return { ok: true as const, os, output: res.output.slice(0, 2000) }
