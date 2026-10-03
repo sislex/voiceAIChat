@@ -1,0 +1,9 @@
+# Automatic public certificates; DNS and ingress are commissioned by the operator.
+{$VC_PUBLIC_HOST} {
+    handle /internal/* {
+        respond 404
+    }
+    handle {
+        reverse_proxy voicechat:8787
+    }
+}
