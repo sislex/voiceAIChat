@@ -54,6 +54,18 @@ describe('persistent environment links', () => {
     expect(sent.client.filter(m => m.t === 'tunnel.data')).toHaveLength(20)
   })
 
+  it('keeps tunnel frames in order when authorization of tunnel.open is slower than a cached data frame', async () => {
+    const link = await manager.ensureLink(input)
+    const original = db.environments.authorizeLink.bind(db.environments)
+    // tunnel.open always reads the database; make that read slow so a cached data frame could overtake it.
+    vi.spyOn(db.environments, 'authorizeLink').mockImplementation(async id => { await new Promise(resolve => setTimeout(resolve, 50)); return original(id) })
+    const open = agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'c1' })
+    const data = agents.handleMessage('client', { t: 'tunnel.data', tunnelId: link.id, connectionId: 'c1', data: 'R0VU' })
+    await Promise.all([open, data])
+    const toServer = sent.server.filter(m => m.connectionId === 'c1').map(m => m.t)
+    expect(toServer).toEqual(['tunnel.connect', 'tunnel.data'])
+  })
+
   it('relays agent backpressure frames to the other side of the link', async () => {
     const link = await manager.ensureLink(input)
     await agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'c1' })
