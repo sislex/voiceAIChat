@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Machine-side stand lifecycle; settings are data, never executable shell."""
 import argparse
+import io
 import json
 import os
 from pathlib import Path
@@ -196,7 +197,34 @@ class Stand:
                     return False
         return all(name in seen for name, service in self.model['services'].items() if self.active(service))
 
-    def provision(self):
+    def restore(self, snapshot):
+        self.begin('restore', 28)
+        self.compose('up', '-d', '--no-build', '--pull', 'never', 'postgres')
+        count = self.compose('exec', '-T', 'postgres', 'psql', '-U', 'voicechat', '-d', 'voicechat',
+                             '-Atqc', "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname='public'",
+                             timeout=60).stdout.strip()
+        if count != '0':
+            raise ValueError('snapshot target database is not empty')
+        with open(snapshot, 'rb') as source:
+            result = subprocess.run([self.docker, 'compose', 'exec', '-T', 'postgres', 'pg_restore',
+                '-U', 'voicechat', '-d', 'voicechat', '--no-owner', '--no-privileges'], env=self.env,
+                input=source.read(), capture_output=True, timeout=3600)
+        if result.returncode:
+            raise ValueError('restore failed')
+        password = self.values.get('VC_ADMIN_PASSWORD', '')
+        if not password:
+            raise ValueError('missing admin password')
+        escaped = password.replace("'", "''")
+        sql = ("\\set admin_password '" + escaped + "'\n").encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+        with io.BytesIO(sql) as source:
+            result = subprocess.run([self.docker, 'compose', 'exec', '-T', 'postgres', 'psql',
+                '-U', 'voicechat', '-d', 'voicechat'], env=self.env,
+                input=source.read(), capture_output=True, timeout=300)
+        if result.returncode:
+            raise ValueError('sanitize failed')
+        self.emit('passed')
+
+    def provision(self, snapshot=None):
         self.begin('build', 25)
         for name in (('voicechat', 'automation-runner') if self.role == 'primary' else ()):
             self.compose('build', name)
@@ -207,6 +235,8 @@ class Stand:
             if self.run(self.docker, 'image', 'inspect', image, check=False).returncode:
                 self.run(self.docker, 'pull', image)
         self.emit('passed')
+        if snapshot is not None:
+            self.restore(snapshot)
         self.begin('start', 30)
         self.compose('up', '-d', '--no-build', '--pull', 'never', '--remove-orphans')
         self.emit('passed')
@@ -249,8 +279,11 @@ def main():
     parser.add_argument('--operation', required=True)
     parser.add_argument('--role', choices=['primary', 'module'], default='primary')
     parser.add_argument('--delete-data', action='store_true')
+    parser.add_argument('--snapshot', type=Path)
     args = parser.parse_args()
-    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}', args.operation) or (args.delete_data and args.action != 'remove'):
+    if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}', args.operation) or (args.delete_data and args.action != 'remove') or (args.snapshot and args.action != 'provision'):
+        return 2
+    if args.snapshot and (not args.snapshot.is_file() or args.role != 'primary'):
         return 2
     stand = Stand(args.action, args.role)
     try:
@@ -259,7 +292,7 @@ def main():
         stand.config()
         if args.action == 'provision':
             stand.emit('passed')
-            stand.provision()
+            stand.provision(args.snapshot)
         else:
             stand.remove(args.delete_data)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):

@@ -37,6 +37,7 @@ elif args == ['compose', 'config', '--format', 'json']:
     print(pathlib.Path('model.json').read_text())
 elif args[:2] == ['image', 'inspect']: sys.exit(0 if os.environ.get('CACHED') else 1)
 elif args == ['compose', 'ps', '-a', '-q']: print('container1 container2 container3')
+elif 'psql' in args and '-Atqc' in args: print(os.environ.get('DB_TABLE_COUNT', '0'))
 elif args[0] == 'inspect':
     model = json.loads(pathlib.Path('model.json').read_text())
     print(json.dumps([{'Config': {'Labels': {'com.docker.compose.service': name},
@@ -99,6 +100,23 @@ class StandTest(unittest.TestCase):
         self.assertTrue(all(c['chain'] == self.values['COMPOSE_FILE'] for c in builds))
         self.assertIn(['compose', 'up', '-d', '--no-build', '--pull', 'never', '--remove-orphans'], [c['args'] for c in calls])
         self.assertNotIn(['pull', 'caddy:2'], [c['args'] for c in calls])
+
+    def test_snapshot_restore_precedes_start_and_refuses_nonempty_database(self):
+        snapshot = self.root / 'snapshot.dump'
+        snapshot.write_bytes(b'archive')
+        self.values['VC_ADMIN_PASSWORD'] = 'stand-only-password'
+        code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='0')
+        self.assertEqual(code, 0)
+        stages = [r['stage'] for r in rows]
+        self.assertLess(stages.index('restore'), stages.index('start'))
+        self.assertEqual(sum('pg_restore' in c['args'] for c in calls), 1)
+        self.assertEqual(sum('psql' in c['args'] and '-Atqc' not in c['args'] for c in calls), 1)
+        self.assertNotIn('stand-only-password', json.dumps(calls))
+
+        code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='1')
+        self.assertEqual(code, 28)
+        self.assertEqual(rows[-1]['stage'], 'restore')
+        self.assertFalse(any('pg_restore' in c['args'] for c in calls))
 
     def test_all_failure_codes_and_fail_fast(self):
         for failure, code, stage in [('compose config', 10, 'config'), ('compose build voicechat', 25, 'build'),
