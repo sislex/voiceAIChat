@@ -171,6 +171,10 @@ export type EnvironmentState = 'draft' | 'provisioning' | 'ready' | 'failed' | '
 export interface EnvironmentDefinition {
   mode: EnvironmentMode
   storageId: string | null
+  /** Stage 4: subdomain of a server environment; absent or null — no public address. */
+  publicHost?: string | null
+  /** Stage 4: publish the stand port on the machine's private LAN address. */
+  lanAccess?: boolean
   state: EnvironmentState
   composeProject: string | null
   port: number | null
@@ -191,6 +195,8 @@ export interface ModuleSelection {
   commit: string
   /** Omitted to run the module on the environment's primary machine. */
   machineId?: string
+  /** Explicit replicas; mutually exclusive with machineId. */
+  machineIds?: string[]
 }
 
 export type EnvironmentData = 'empty' | 'production-snapshot'
@@ -203,6 +209,10 @@ export interface EnvironmentLink {
   serverMachineId: string
   servicePort: number
   listenPort: number
+  /** Stage 4; links created before it are agent tunnels. */
+  transport?: 'vpn' | 'tunnel'
+  /** Address used by the client to reach the service. */
+  address?: string
   state: 'pending' | 'open' | 'down'
 }
 
@@ -289,8 +299,10 @@ export function parseModuleSelections(value: unknown): ModuleSelection[] {
   return Array.from(value, item => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid module selection')
     const keys = Object.keys(item)
-    if (keys.length < 3 || keys.length > 4 || keys.some(key => !['repository', 'version', 'commit', 'machineId'].includes(key))) throw new Error('Unexpected module selection fields')
-    const { repository, version, commit, machineId } = item as Record<string, unknown>
+    if (keys.length < 3 || keys.length > 5 || keys.some(key => !['repository', 'version', 'commit', 'machineId', 'machineIds'].includes(key))) throw new Error('Unexpected module selection fields')
+    const { repository, version, commit, machineId, machineIds } = item as Record<string, unknown>
+    if (keys.includes('machineId') && keys.includes('machineIds')) throw new Error('Specify either machineId or machineIds, not both')
+    const replicas = keys.includes('machineIds') ? parseModuleMachineIds(machineIds) : undefined
     if (typeof repository !== 'string' || !/^https:\/\/github\.com\/sislex\/[a-zA-Z0-9_-][a-zA-Z0-9._-]*(?![\s\S])/.test(repository) || repository.toLowerCase().endsWith('.git')) throw new Error('Invalid repository')
     if (typeof version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?![\s\S])/.test(version)) throw new Error('Invalid version')
     if (typeof commit !== 'string' || !/^[a-fA-F0-9]{40}(?![\s\S])/.test(commit)) throw new Error('Invalid commit')
@@ -298,6 +310,7 @@ export function parseModuleSelections(value: unknown): ModuleSelection[] {
     const identity = repository.toLowerCase()
     if (seen.has(identity)) throw new Error('Duplicate repository')
     seen.add(identity)
+    if (replicas) return { repository, version, commit, machineIds: replicas }
     return machineId === undefined ? { repository, version, commit } : { repository, version, commit, machineId }
   })
 }
@@ -311,13 +324,40 @@ function isEmbeddedModule(repository: string): boolean {
   return apps.length > 0 && apps.every(app => app.kind !== 'service')
 }
 
-/** Validate environments-v3 placement rules without mutating the configuration. */
+/** Validate explicit replicas; placement validates environment membership. */
+export function parseModuleMachineIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 10) throw new Error('Expected 1..10 module machine ids')
+  const ids = Array.from(value)
+  if (ids.some(id => typeof id !== 'string' || id.length === 0)) throw new Error('Invalid machine id')
+  if (new Set(ids).size !== ids.length) throw new Error('Duplicate machine id')
+  return ids
+}
+
+/** Accept a DNS host only, without implicit normalization. */
+export function parseEnvironmentPublicHost(value: unknown): string | null {
+  if (value === null) return null
+  if (typeof value !== 'string') throw new Error('Invalid publicHost: expected a lower-case DNS name or null')
+  if (value.length < 1 || value.length > 253) throw new Error('Invalid publicHost: DNS name must contain 1..253 characters')
+  if (value !== value.toLowerCase()) throw new Error('Invalid publicHost: DNS name must be lower-case')
+  const labels = value.split('.')
+  if (labels.length < 2 || labels.some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?![\s\S])/.test(label)) || /^[0-9.]+$/.test(value)) {
+    throw new Error('Invalid publicHost: expected a DNS name without scheme, port, path, wildcard, or IP address')
+  }
+  return value
+}
+
+export function parseEnvironmentLanAccess(value: unknown): boolean {
+  if (typeof value !== 'boolean') throw new Error('Invalid lanAccess: expected a boolean')
+  return value
+}
+
+/** Validate environments-v4 placement rules without mutating the configuration. */
 export function parseModulePlacement(config: EnvironmentConfiguration, env: EnvironmentDefinition): string | null {
-  const placed = config.modules.filter(module => module.machineId !== undefined)
+  const placed = config.modules.filter(module => module.machineId !== undefined || module.machineIds !== undefined)
   if (placed.length === 0) return null
   if (env.mode === 'external') return 'Placement requires a managed environment'
   if (placed.some(module => isEmbeddedModule(module.repository))) return 'Embedded modules run with Core'
-  if (placed.some(module => !env.machines.includes(module.machineId!))) return 'Placement machine is not in the environment'
+  if (placed.some(module => (module.machineIds ?? [module.machineId!]).some(id => !env.machines.includes(id)))) return 'Placement machine is not in the environment'
   return null
 }
 
@@ -390,7 +430,7 @@ export interface CoreDiff {
   action: 'none' | 'needs_core_release' | 'needs_provision'     // external | managed
 }
 
-export type EnvironmentOperationKind = 'apply' | 'provision' | 'remove'
+export type EnvironmentOperationKind = 'apply' | 'provision' | 'remove' | 'migrate' | 'cutover'
 export const ACTIVE_ENVIRONMENT_OPERATION_STATUSES: readonly EnvironmentOperationStatus[] =
   ['pending', 'preparing', 'pulling', 'building', 'starting', 'switching', 'health_check', 'removing']
 
@@ -399,6 +439,7 @@ export type EnvironmentStage =
   | 'readiness' | 'directories' | 'checkout' | 'settings' | 'modules'
   | 'config' | 'build' | 'pull' | 'links' | 'snapshot' | 'restore'
   | 'start' | 'health' | 'switch' | 'down' | 'cleanup'
+  | 'files' | 'freeze'
 
 export type MachineReadinessCheckId =
   | 'platform' | 'architecture' | 'policy' | 'storage' | 'root' | 'docker' | 'compose' | 'git'
