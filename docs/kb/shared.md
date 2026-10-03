@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-03
-checked: 2ea9e66e
+updated: 2026-10-04
+checked: 5e3968ef
 areas:
   - packages/shared/src
 ---
@@ -71,9 +71,24 @@ pure FNV-1a over UTF-8 project-id bytes, and data volumes derive from that ident
 and forbids `taskId` on stands. Parser and POSIX/macOS layout coverage lives in
 `environmentV2.test.ts`.
 
+Environments-v4 adds `ModuleSelection.machineIds` with 1..10 unique non-empty
+machine IDs. `machineId` remains accepted with single-replica semantics and its
+legacy output shape; supplying both fields is rejected. Placement checks every
+replica against the environment machines and retains the external/embedded rules.
+Project membership is established by consumers when assigning environment machines.
+`EnvironmentLink.transport` is `vpn` or `tunnel`; `address` is the client-facing
+service address. Definitions include required `publicHost` and `lanAccess` fields.
+`parseEnvironmentPublicHost` accepts null or a lower-case DNS name (up to 253
+characters, labels up to 63), rejecting URLs, IPs, ports, paths, wildcards and
+whitespace with explicit errors. `parseEnvironmentLanAccess` accepts booleans
+only. Consumers supply null/false defaults for pre-v4 records. Operations add
+`migrate`/`cutover`, and stages add `files`/`freeze`. Validation coverage lives in
+`environmentV4.test.ts`; runtime provisioning and operator commissioning belong
+to downstream tasks.
+
 Distribution requires a committed source: run `npm run build:core-contracts --
---version 0.1.16 --commit <contracts-commit-sha>`, then vendor and pin the archive
-with its provenance in a follow-up commit, following the 0.1.15 snapshot. A dirty
+--version 0.1.17 --commit <contracts-commit-sha>`, then vendor and pin the archive
+with its provenance in a follow-up commit, following the 0.1.16 snapshot. A dirty
 working tree cannot serve as the release commit.
 
 ### Existing modules
