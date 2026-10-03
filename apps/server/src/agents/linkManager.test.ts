@@ -54,6 +54,15 @@ describe('persistent environment links', () => {
     expect(sent.client.filter(m => m.t === 'tunnel.data')).toHaveLength(20)
   })
 
+  it('relays agent backpressure frames to the other side of the link', async () => {
+    const link = await manager.ensureLink(input)
+    await agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'c1' })
+    await agents.handleMessage('server', { t: 'tunnel.pause', tunnelId: link.id, connectionId: 'c1' } as never)
+    await agents.handleMessage('client', { t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' } as never)
+    expect(sent.client).toContainEqual({ t: 'tunnel.pause', tunnelId: link.id, connectionId: 'c1' })
+    expect(sent.server).toContainEqual({ t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' })
+  })
+
   it('opens a fixed docker listener, relays traffic, has no idle TTL and deletes', async () => {
     const link = await manager.ensureLink(input)
     expect(link.state).toBe('open')
