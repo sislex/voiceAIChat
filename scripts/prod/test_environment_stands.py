@@ -1,0 +1,231 @@
+"""Stand lifecycle contracts; no daemon or listener is started."""
+import json
+import os
+import secrets
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from environment_stand import Stand, RESERVED
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent.parent
+HEAD = 'a' * 40
+SECRET = secrets.token_hex(24)
+PROJECT = os.environ.get('COMPOSE_PROJECT_NAME', 'dc_133bc946698c4a70ae585365')
+PORT = os.environ.get('DELIVERY_PORTS', '23000').replace(',', ' ').split()[0]
+
+FAKE = r'''#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['FAKE_LOG'], 'a') as out:
+    out.write(json.dumps({'tool': pathlib.Path(sys.argv[0]).name, 'args': args,
+        'metadata': {k:v for k,v in os.environ.items() if k.startswith('VC_APPLICATION_')},
+        'chain': os.environ.get('COMPOSE_FILE')}) + '\n')
+fail = os.environ.get('FAIL', '')
+if fail and ' '.join(args).startswith(fail):
+    print(os.environ.get('SECRET', ''), file=sys.stderr)
+    sys.exit(1)
+if pathlib.Path(sys.argv[0]).name == 'git': print('a' * 40)
+elif pathlib.Path(sys.argv[0]).name == 'curl':
+    print(json.dumps({'ok': not os.environ.get('HEALTH_NOT_OK'), 'application': {'commit': os.environ.get('HEALTH_COMMIT', 'a'*40)}}))
+elif args == ['compose', 'config', '--format', 'json']:
+    print(pathlib.Path('model.json').read_text())
+elif args[:2] == ['image', 'inspect']: sys.exit(0 if os.environ.get('CACHED') else 1)
+elif args == ['compose', 'ps', '-a', '-q']: print('container1 container2 container3')
+elif args[0] == 'inspect':
+    model = json.loads(pathlib.Path('model.json').read_text())
+    print(json.dumps([{'Config': {'Labels': {'com.docker.compose.service': name},
+        'Healthcheck': {'Test': ['CMD', 'true']}}, 'State': {'Status': 'running',
+        'Health': {'Status': os.environ.get('HEALTH', 'healthy')}}}
+        for name in model['services'] if name != 'caddy' and name != os.environ.get('MISSING_SERVICE')]))
+elif args[:2] == ['volume', 'ls']: print(os.environ.get('VOLUMES', ''))
+elif args[:2] in (['compose', 'ps'], ['compose', 'logs']): print(os.environ['SECRET'])
+'''
+
+
+class StandTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.bin = self.root / 'bin'
+        self.bin.mkdir()
+        for name in ('docker', 'curl', 'git'):
+            script = self.bin / name
+            script.write_text(FAKE)
+            script.chmod(0o700)
+        (self.root / 'apps/server').mkdir(parents=True)
+        (self.root / 'apps/server/release.json').write_text('{"apiVersion":"1.2.0","dataVersion":3}')
+        self.values = dict(zip(RESERVED, ['stand', PROJECT, 'docker-compose.yml:deploy/compose.stand.yml',
+            'postgres,kanban', '1', 'false', PORT, PROJECT + '-server-data', '127.0.0.1',
+            str(self.root / 'overrides'), 'postgres://stand', 'remote', '1.2.3', HEAD[:12]]))
+        self.values['SECRET'] = SECRET
+        self.model = {'name': PROJECT, 'services': {'voicechat': {'build': {'context': '.'}},
+            'automation-runner': {'build': {'context': '.'}}, 'postgres': {'image': 'postgres:16'},
+            'caddy': {'profiles': ['public'], 'image': 'caddy:2'}},
+            'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
+        self.env = {**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'],
+            'DOCKER': str(self.bin / 'docker'), 'FAKE_LOG': str(self.root / 'calls'),
+            'VC_ENVIRONMENT_START_TIMEOUT': '0.05', 'SECRET': SECRET}
+
+    def invoke(self, action='provision', args=None, **env):
+        (self.root / '.env').write_text(''.join(k + "='" + v + "'\n" for k, v in self.values.items()))
+        (self.root / 'model.json').write_text(json.dumps(self.model))
+        (self.root / 'calls').write_text('')
+        result = subprocess.run(['bash', str(HERE / ('environment-' + action + '.sh')),
+            *(args if args is not None else ['--operation', 'op1'])], cwd=self.root,
+            env={**self.env, **env}, capture_output=True, text=True)
+        self.assertNotIn(SECRET, result.stdout + result.stderr)
+        rows = [json.loads(line) for line in result.stdout.splitlines()]
+        for row in rows:
+            self.assertEqual(set(row), {'stage', 'status', 'log'})
+        calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()]
+        return result.returncode, rows, calls
+
+    def test_success_stages_metadata_and_sequential_builds(self):
+        code, rows, calls = self.invoke(COMPOSE_FILE='production.yml', VC_DATA_VOLUME='voicechat-server-data')
+        self.assertEqual(code, 0)
+        self.assertEqual([(r['stage'], r['status']) for r in rows],
+            [(stage, status) for stage in ('config', 'build', 'pull', 'start', 'health') for status in ('running', 'passed')])
+        builds = [c for c in calls if c['args'][:2] == ['compose', 'build']]
+        self.assertEqual([c['args'][-1] for c in builds], ['voicechat', 'automation-runner'])
+        self.assertEqual(builds[0]['metadata'], {'VC_APPLICATION_VERSION': '1.2.3',
+            'VC_APPLICATION_COMMIT': HEAD, 'VC_APPLICATION_API_VERSION': '1.2.0', 'VC_APPLICATION_DATA_VERSION': '3'})
+        self.assertTrue(all(c['chain'] == self.values['COMPOSE_FILE'] for c in builds))
+        self.assertIn(['compose', 'up', '-d', '--no-build', '--pull', 'never', '--remove-orphans'], [c['args'] for c in calls])
+        self.assertNotIn(['pull', 'caddy:2'], [c['args'] for c in calls])
+
+    def test_all_failure_codes_and_fail_fast(self):
+        for failure, code, stage in [('compose config', 10, 'config'), ('compose build voicechat', 25, 'build'),
+                ('compose build automation-runner', 25, 'build'), ('pull', 20, 'pull'), ('compose up', 30, 'start')]:
+            with self.subTest(failure=failure):
+                actual, rows, _ = self.invoke(FAIL=failure)
+                self.assertEqual(actual, code)
+                self.assertEqual((rows[-1]['stage'], rows[-1]['status']), (stage, 'failed'))
+        for action in ('provision', 'remove'):
+            self.assertEqual(self.invoke(action, args=[])[0], 2)
+            self.assertEqual(self.invoke(action, args=['--operation', '../bad'])[0], 2)
+
+    def test_env_validation_for_both_commands(self):
+        original = dict(self.values)
+        invalid = [(key, '') for key in RESERVED] + [('VC_STAND_PORT', '1023'), ('VC_STAND_PORT', '65536'),
+            ('VC_RELEASE_COMMIT', 'badcommit'), ('VC_DATA_VOLUME', 'voicechat-server-data'),
+            ('COMPOSE_FILE', 'docker-compose.yml:deploy/compose.stand.yml-evil'), ('COMPOSE_PROFILES', 'kanban'),
+            ('COMPOSE_PROFILES', 'postgres,kanban,public')]
+        for action in ('provision', 'remove'):
+            for key, value in invalid:
+                with self.subTest(action=action, key=key, value=value):
+                    self.values = {**original, key: value}
+                    code, _, calls = self.invoke(action)
+                    self.assertEqual(code, 10)
+                    self.assertFalse(any(c['tool'] == 'docker' for c in calls))
+        self.values = original
+
+    def test_resolved_production_volume_and_unexpected_build_refused(self):
+        self.model['volumes']['other'] = {'name': 'voicechat-server-data'}
+        self.assertEqual(self.invoke()[0], 10)
+        del self.model['volumes']['other']
+        self.model['services']['postgres']['build'] = {'context': '.'}
+        self.assertEqual(self.invoke()[0], 10)
+
+    def test_resolved_ports_and_deploy_socket_are_refused(self):
+        service = self.model['services']['voicechat']
+        service['ports'] = [{'host_ip': '0.0.0.0', 'published': PORT, 'target': 8787}]
+        self.assertEqual(self.invoke()[0], 10)
+        del service['ports']
+        service['volumes'] = [{'type': 'bind', 'source': '/run/voicechat', 'target': '/run/voicechat'}]
+        self.assertEqual(self.invoke('remove')[0], 10)
+
+    def test_malformed_env_never_reaches_docker(self):
+        self.invoke()
+        (self.root / '.env').write_text('SECRET="unterminated\n')
+        (self.root / 'calls').write_text('')
+        result = subprocess.run(['bash', str(HERE / 'environment-provision.sh'), '--operation', 'op1'],
+            cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 10)
+        self.assertEqual((self.root / 'calls').read_text(), '')
+        self.assertNotIn('unterminated', result.stdout + result.stderr)
+
+    def test_production_checkout_is_refused(self):
+        self.invoke()
+        production = self.root / 'production.env'
+        production.write_text('VC_REPO_DIR=' + str(self.root))
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            with patch('environment_stand.PRODUCTION_ENV', production):
+                with self.assertRaisesRegex(ValueError, 'production checkout'):
+                    Stand('provision').config()
+        finally:
+            os.chdir(previous)
+
+    def test_health_failures_and_redacted_diagnostics(self):
+        for env in ({'HEALTH': 'unhealthy'}, {'HEALTH_COMMIT': 'b'*40}, {'FAIL': '-fsS'}, {'HEALTH_NOT_OK': '1'}, {'MISSING_SERVICE': 'postgres'}):
+            code, rows, calls = self.invoke(**env)
+            self.assertEqual(code, 30)
+            self.assertEqual(rows[-1]['stage'], 'health')
+            self.assertTrue(any('[redacted]' in r['log'] for r in rows))
+            self.assertIn(['compose', 'logs', '--tail', '50', 'voicechat'], [c['args'] for c in calls])
+            self.assertFalse(any(c['args'][:2] == ['compose', 'down'] for c in calls))
+
+    def test_cached_images_and_override_chain(self):
+        override = Path(self.values['VC_ENVIRONMENT_OVERRIDES'])
+        override.mkdir()
+        (override / 'current.yml').touch()
+        code, _, calls = self.invoke(CACHED='1')
+        self.assertEqual(code, 0)
+        self.assertFalse(any(c['args'][0] == 'pull' for c in calls))
+        self.assertTrue(any(c['chain'] == self.values['COMPOSE_FILE'] + ':' + str(override / 'current.yml') for c in calls))
+
+    def test_remove_keep_data_delete_data_and_errors(self):
+        code, rows, calls = self.invoke('remove')
+        self.assertEqual(code, 0)
+        self.assertEqual([r['stage'] for r in rows], ['down', 'down'])
+        self.assertIn(['compose', 'down', '--remove-orphans'], [c['args'] for c in calls])
+        self.assertFalse(any(c['args'][0] == 'volume' for c in calls))
+        args = ['--operation', 'op1', '--delete-data']
+        code, rows, calls = self.invoke('remove', args=args, VOLUMES=PROJECT + '_postgres')
+        self.assertEqual(code, 0)
+        self.assertEqual([r['stage'] for r in rows], ['down', 'down', 'volumes', 'volumes'])
+        self.assertIn(['compose', 'down', '--remove-orphans', '--volumes'], [c['args'] for c in calls])
+        self.assertIn(['volume', 'rm', '-f', PROJECT + '-server-data'], [c['args'] for c in calls])
+        self.assertIn(['volume', 'rm', '-f', PROJECT + '_postgres'], [c['args'] for c in calls])
+        for failure in ('compose down', 'volume ls', 'volume rm'):
+            self.assertEqual(self.invoke('remove', args=args, FAIL=failure)[0], 30)
+        code, _, calls = self.invoke('remove', args=args, VOLUMES='voicechat-server-data')
+        self.assertEqual(code, 30)
+        self.assertFalse(any(c['args'][:2] == ['volume', 'rm'] for c in calls))
+        self.assertTrue((self.root / '.env').exists())
+
+
+class StandComposeTest(unittest.TestCase):
+    def test_real_compose_overlay(self):
+        docker = shutil.which('docker')
+        if not docker:
+            self.skipTest('Docker unavailable')
+        available = subprocess.run([docker, 'compose', 'version'], capture_output=True, text=True)
+        if available.returncode:
+            self.skipTest('Docker Compose unavailable')
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / 'stand.env'
+            env_file.write_text('VC_STAND_PORT=' + PORT + '\nVC_DATA_VOLUME=' + PROJECT + '-server-data\nVC_PUBLIC_HOST=127.0.0.1\n')
+            env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+            result = subprocess.run([docker, 'compose', '--project-name', PROJECT, '--env-file', str(env_file),
+                '-f', 'docker-compose.yml', '-f', 'deploy/compose.stand.yml', '--profile', 'public',
+                'config', '--format', 'json'], cwd=ROOT, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            model = json.loads(result.stdout)
+            core = model['services']['voicechat']
+            self.assertEqual([(p['host_ip'], str(p['published']), p['target']) for p in core['ports']], [('127.0.0.1', PORT, 8787)])
+            self.assertEqual(model['services']['caddy']['profiles'], ['public'])
+            self.assertEqual([(v['type'], v['source'], v['target']) for v in core['volumes']], [('volume', 'vc-data', '/data')])
+            self.assertFalse(any(s.get('ports') for name, s in model['services'].items() if name not in ('voicechat', 'caddy')))
+            self.assertEqual(model['volumes']['vc-data']['name'], PROJECT + '-server-data')
+
+
+if __name__ == '__main__':
+    unittest.main()

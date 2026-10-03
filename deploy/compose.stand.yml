@@ -1,0 +1,11 @@
+services:
+  voicechat:
+    ports: !override
+      - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
+    volumes: !override
+      - vc-data:/data            # no host deploy socket in a stand
+  caddy:
+    profiles: ["public"]         # public address of a stand is environments-v3
+volumes:
+  vc-data:
+    name: ${VC_DATA_VOLUME:?Stand data volume is required}
