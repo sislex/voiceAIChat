@@ -1054,7 +1054,7 @@ export const EXTERNAL_TASK_COLUMN: Record<ExternalTaskState, ColumnSemanticType>
 | --- | --- | --- |
 | `GET /api/projects/:id/environments/:env/links` | участник проекта | `EnvironmentLink[]` |
 | `POST …/environments/:env/provision {configurationId, data?}` | владелец | этап 2 + `403 Production snapshot requires the project owner`, `409 Production environment is not available for snapshots` |
-| `PUT /api/projects/:id/external-tasks/:source/:externalId` | токен интеграции `tasks:external` этого проекта | `200`/`201` `Task`; `403` для пользователя и чужого проекта; `400` по полям |
+| `PUT /api/projects/:id/external-tasks/:source/:externalId` (Kanban; снаружи — только через вход Core `PUT /integrations/v1/projects/:id/external-tasks/:source/:externalId`, его вызывает C21) | токен интеграции `tasks:external` этого проекта | `200`/`201` `Task`; `403` для пользователя и чужого проекта; `400` по полям |
 | `GET/POST/DELETE /api/projects/:id/integration-tokens` (Core) | владелец | `IntegrationTokenView[]`, при создании `{token}` один раз |
 
 ### Задачи этапа 3

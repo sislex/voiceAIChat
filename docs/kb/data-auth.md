@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-03
-checked: a4a13bb9
+checked: fa00cc41
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -18,6 +18,50 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Project integration tokens
+
+Core owns `integration_tokens` through `db.projects` and the table ownership
+manifest. Bootstrap adds the table and project index to existing SQLite and
+PostgreSQL databases; PostgreSQL uses the DDL generated from `schema.ts`.
+Deleting a project cascades to its tokens. Records retain creator, creation,
+last-use and revocation timestamps; scopes are stored as JSON text.
+
+Only project owners can GET or POST `/api/projects/:id/integration-tokens`
+or DELETE it with `{id}` (also supported at `/:tokenId`). Membership or system
+administrator status alone does not grant access. POST accepts a nonempty name
+of at most 200 characters and nonempty, unique scopes limited to `tasks:external`.
+It returns the token view plus `token` once, with `Cache-Control: no-store`.
+GET lists active token views without credentials or hashes. DELETE revokes the
+record; it never deletes audit metadata. The random 256-bit `sit_` credential is
+stored only as a SHA-256 hash.
+
+The existing component/legacy-service authentication boundary on POST
+`/internal/whoami` is unchanged. The caller forwards the integration credential
+in the RPC body's `headers.authorization` as `Bearer <token>`. The response is
+`{ok: true, principal: {kind: 'integration', projectId, scopes}}`, without a user
+session. Resolution atomically checks revocation and updates `last_used_at`;
+unknown or revoked tokens return `{ok: false, status: 401, error: 'unauthorized'}`.
+Ordinary user responses retain the existing `user` shape. Consumers must handle
+the integration principal explicitly; it is never an ordinary user identity.
+
+The only non-internal entry for an integration is the ingress
+`PUT /integrations/v1/projects/:id/external-tasks/:source/:externalId`
+(`routes/integrationIngress.ts`), outside `/api/` because the session auth guard
+needs a user. Core resolves the token (401 unknown or revoked, 403 for another
+project or without `tasks:external`) and forwards the JSON body with the same
+credential to Kanban `PUT /api/projects/:id/external-tasks/...`, which re-checks
+it through `/internal/whoami`; 503 when Kanban is not remote, 502 when it is
+unreachable. Delivery Control board sync (environments-v3 C21) calls this path.
+
+A root request hook rejects integration credentials on every other non-internal Core
+route, including public, MCP and WebSocket routes, even alongside a user cookie.
+Internal RPCs still require their service grants; integration tokens alone cannot
+invoke them. Kanban's scoped external-task admission is a separate consumer task.
+`routes/integrationTokens.test.ts` exercises the same real-adapter suite on SQLite
+and PostgreSQL (the latter requires the assigned `VC_TEST_DB_URL`), covering
+migration, ownership, hashing, isolation, revocation, whoami and route denial.
+Deployment and operator commissioning are separate from this implementation.
 
 ## Environment configurations
 
