@@ -1,0 +1,17 @@
+agents
+conversation_turn_control
+conversation_turn_queue
+email_verifications
+environment_settings
+integration_tokens
+login_device_emails
+login_enrollments
+machine_commands
+machine_events
+machine_vpn_networks
+password_reset_tokens
+public_client_access
+public_client_codes
+public_client_refresh
+session_revocations
+sessions

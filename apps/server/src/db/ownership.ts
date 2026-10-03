@@ -23,6 +23,21 @@ export const TABLE_OWNER: Record<RepoDomain, readonly string[]> = {
   kb: ['kb_documents', 'kb_usage_queries', 'kb_usage_sections', 'kb_usage_views']
 }
 
+/** Data which must never be copied from production into an environment snapshot. */
+export const SNAPSHOT_SENSITIVE_TABLES = {
+  sessions: ['sessions', 'session_revocations'],
+  agentAndMachineTokens: ['agents', 'login_enrollments', 'machine_commands', 'machine_events'],
+  vpnSecrets: ['machine_vpn_networks'],
+  environmentSettings: ['environment_settings'],
+  integrationTokens: ['integration_tokens', 'public_client_access', 'public_client_refresh', 'public_client_codes'],
+  mailCodesAndQueues: ['email_verifications', 'password_reset_tokens', 'login_device_emails'],
+  conversationQueues: ['conversation_turn_queue', 'conversation_turn_control'],
+} as const
+
+export const SNAPSHOT_EXCLUDED_TABLES = Object.freeze(
+  [...new Set(Object.values(SNAPSHOT_SENSITIVE_TABLES).flat())].sort(),
+)
+
 /**
  * Записей в чужие таблицы нет — гейт ownership.test.ts требует ровно ноль. Появилась нужда
  * изменить чужую таблицу — добавь метод у владельца и позови его через this.repos.<домен>.
