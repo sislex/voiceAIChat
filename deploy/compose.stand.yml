@@ -3,7 +3,7 @@ services:
     extra_hosts: &stand-extra-hosts
       - "host.docker.internal:host-gateway"
     ports: !override
-      - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
+      - "${VC_STAND_LAN_ADDRESS:-127.0.0.1}:${VC_STAND_PORT:?Stand port is required}:8787"
     volumes: !override
       - vc-data:/data            # no host deploy socket in a stand
     # Modules run on this machine only when Kanban lists their profile; one placed on
@@ -45,7 +45,10 @@ services:
     profiles: ["playwright-reader"]
     extra_hosts: *stand-extra-hosts
   caddy:
-    profiles: ["public"]         # public address of a stand is environments-v3
+    profiles: ["public"]
+    volumes: !override
+      - ./deploy/Caddyfile.stand-public:/etc/caddy/Caddyfile:ro
+      - vc-caddy:/data
 volumes:
   vc-data:
     name: ${VC_DATA_VOLUME:?Stand data volume is required}
