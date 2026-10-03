@@ -1,3 +1,5 @@
+import type { LinkManager } from './linkManager.js'
+import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 // In-memory реестр подключённых машин-агентов и выполнение команд на них.
 // Не зависит от ws: сокет — минимальный интерфейс {send, close} (тестируемо).
 
@@ -122,8 +124,10 @@ interface TunnelSession {
   resolve?: (port: number) => void
   reject?: (error: Error) => void
   timer: NodeJS.Timeout
-  idleTimer: NodeJS.Timeout
-  authorize: () => Promise<boolean>
+  idleTimer?: NodeJS.Timeout
+  persistent?: boolean
+  /** Called for every tunnel frame with its type; callers may cache only data frames. */
+  authorize: (frame: string) => Promise<boolean>
   onClose?: () => void
 }
 const TUNNEL_START_TIMEOUT_MS = 10_000
@@ -783,7 +787,12 @@ export class AgentRegistry {
     return this.ptys.get(ptyId)?.context ?? null
   }
 
-  createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => Promise<boolean> = async () => true, onClose?: () => Promise<void>): Promise<number> {
+  linkManager?: LinkManager
+  ensureLink(input: EnvironmentLinkInput) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.ensureLink(input) }
+  deleteLink(projectId: string, environmentId: string, id: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.deleteLink(projectId, environmentId, id) }
+  listLinks(projectId: string, environmentId: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.listLinks(projectId, environmentId) }
+
+  createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: (frame: string) => Promise<boolean> = async () => true, onClose?: () => Promise<void>, listener?: { host: 'docker-host'; port: number }): Promise<number> {
     const existing = this.tunnels.get(id)
     if (existing?.localPort) return Promise.resolve(existing.localPort)
     if (!this.online.has(sourceAgentId)) return Promise.reject(new Error('Требуется локальный агент'))
@@ -792,9 +801,9 @@ export class AgentRegistry {
     if (versionError) return Promise.reject(versionError)
     return new Promise<number>((resolve, reject) => {
       const timer = setTimeout(() => { this.closeTunnel(id); reject(new Error('Туннель не создан: агент не ответил')) }, TUNNEL_START_TIMEOUT_MS)
-      const idleTimer = setTimeout(() => this.closeTunnel(id), TUNNEL_IDLE_TTL_MS); idleTimer.unref?.()
-      this.tunnels.set(id, { id, sourceAgentId, targetAgentId, targetPort, localPort: null, resolve, reject, timer, idleTimer, authorize, onClose })
-      this.send(sourceAgentId, { t: 'tunnel.listen', tunnelId: id })
+      const idleTimer = listener ? undefined : setTimeout(() => this.closeTunnel(id), TUNNEL_IDLE_TTL_MS); idleTimer?.unref?.()
+      this.tunnels.set(id, { id, sourceAgentId, targetAgentId, targetPort, localPort: null, resolve, reject, timer, idleTimer, persistent: !!listener, authorize, onClose })
+      this.send(sourceAgentId, { t: 'tunnel.listen', tunnelId: id, ...listener })
     })
   }
 
@@ -841,9 +850,11 @@ export class AgentRegistry {
     if ('tunnelId' in msg) {
       const tunnel = this.tunnels.get(msg.tunnelId)
       if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
-      if (!await tunnel.authorize()) { this.closeTunnel(tunnel.id); return }
+      const authorized = await tunnel.authorize(msg.t).catch(() => false)
+      if (this.tunnels.get(tunnel.id) !== tunnel) return
+      if (!authorized) { this.closeTunnel(tunnel.id); return }
       clearTimeout(tunnel.idleTimer)
-      tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer.unref?.()
+      if (!tunnel.persistent) tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer?.unref?.()
       if (msg.t === 'tunnel.listening' && agentId === tunnel.sourceAgentId) {
         tunnel.localPort = msg.port; clearTimeout(tunnel.timer); tunnel.resolve?.(msg.port); tunnel.resolve = undefined; tunnel.reject = undefined
       } else if (msg.t === 'tunnel.open' && agentId === tunnel.sourceAgentId) {
