@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 348d6ae3
+checked: 739d4c2b
 
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -2268,13 +2268,23 @@ stand containers can reach agent-managed links. This overlay requires Docker
 Compose with `!override` support.
 
 For a module placed on a secondary machine, use role `module` and the chain
-`docker-compose.yml:deploy/compose.stand-module.yml`. Exactly one of the `make`,
-`image-studio`, `reader`, or `playwright-reader` profiles selects that module's
-services. The module overlay publishes no ports and excludes Core, Postgres and
+`docker-compose.yml:deploy/compose.stand-module.yml`. One or more of the `make`,
+`image-studio`, `reader`, or `playwright-reader` profiles select the modules of
+that machine. The module overlay publishes no ports and excludes Core, Postgres and
 primary-only runners. Every active module service receives the same
 `host.docker.internal:host-gateway` mapping; its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
+
+Link targets. An agent link connects to `127.0.0.1:<port>` on its server machine, so a
+service called from another machine (Postgres on the primary, a module on a module
+machine) must be published on loopback there. The optional `stand.env` key
+`VC_STAND_LINK_PORTS=service:target:published,...` (written by Kanban; not a user
+setting) lists them: `environment_stand.py` generates
+`<VC_ENVIRONMENT_OVERRIDES>/stand-links.yml` with `127.0.0.1:<published>:<target>`
+ports, appends it before `current.yml`, and refuses any published port that is not
+the Core stand port or a listed loopback link port. Published ports lie in
+17000–17799 and are unique per machine; caddy cannot be listed.
 
 Run `bash scripts/prod/environment-provision.sh --operation <id> --role primary`
 in the primary stand checkout, or pass `--role module` in a module checkout.
