@@ -319,6 +319,18 @@ class StandComposeTest(unittest.TestCase):
             self.assertEqual([(v['type'], v['source'], v['target']) for v in core['volumes']], [('volume', 'vc-data', '/data')])
             self.assertFalse(any(s.get('ports') for name, s in model['services'].items() if name not in ('voicechat', 'caddy')))
             self.assertEqual(model['volumes']['vc-data']['name'], PROJECT + '-server-data')
+            # The primary runs only the modules whose profiles Kanban lists.
+            def services(*profiles):
+                args = [a for p in profiles for a in ('--profile', p)]
+                listed = subprocess.run([docker, 'compose', '--project-name', PROJECT, '--env-file', str(env_file),
+                    '-f', 'docker-compose.yml', '-f', 'deploy/compose.stand.yml', *args, 'config', '--services'],
+                    cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertEqual(listed.returncode, 0, listed.stderr)
+                return set(listed.stdout.split())
+            modules = {'make', 'image-studio', 'reader', 'playwright-reader', 'browser-runner'}
+            self.assertEqual(services('postgres', 'kanban') & modules, set())
+            self.assertEqual(services('postgres', 'kanban', 'reader') & modules, {'reader'})
+            self.assertEqual(services('postgres', 'kanban', 'make', 'playwright-reader') & modules, {'make', 'playwright-reader', 'browser-runner'})
 
 
 if __name__ == '__main__':

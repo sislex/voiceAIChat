@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 739d4c2b
+checked: 04a24a48
 
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -2275,6 +2275,14 @@ primary-only runners. Every active module service receives the same
 `host.docker.internal:host-gateway` mapping; its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
+
+Module profiles on the primary. `compose.stand.yml` puts `make`, `image-studio`,
+`playwright-reader` and `browser-runner` (with `reader`, already profiled) behind
+their module profiles, and turns the Core, Kanban and Web Reader `depends_on` on
+them into `required: false`. The primary runs a module only when `COMPOSE_PROFILES`
+in `stand.env` lists it; Kanban (environments-v3 C17) lists the modules placed on the
+primary. A Kanban that writes only `postgres,kanban` (0.1.5 and older) therefore starts
+a stand of this Core without modules.
 
 Link targets. An agent link connects to `127.0.0.1:<port>` on its server machine, so a
 service called from another machine (Postgres on the primary, a module on a module
