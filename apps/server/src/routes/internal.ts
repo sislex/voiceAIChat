@@ -1,4 +1,5 @@
 import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
+import { integrationBearer, type IntegrationPrincipal } from '../auth/integrationTokens.js'
 import type {VoiceChatDb} from '../db/database.js'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
 import { INTERNAL_IMAGE_STUDIO_CORE_PATH, INTERNAL_IMAGE_STUDIO_GENERATE_PATH } from '@voicechat/image-studio-contracts/imageStudioInternal'
@@ -124,8 +125,12 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
       })
     }
     // Аутентификация пересланного запроса: тот же код, что в preHandler `/api/*`, по методу, пути и заголовкам.
-    scope.post<{ Body: WhoamiRequest }>(INTERNAL_WHOAMI_PATH, async (req): Promise<WhoamiResponse> => {
+    scope.post<{ Body: WhoamiRequest }>(INTERNAL_WHOAMI_PATH, async (req): Promise<WhoamiResponse | { ok: true; principal: IntegrationPrincipal }> => {
       const forwarded = req.body
+      if (integrationBearer(forwarded?.headers?.authorization)) {
+        const principal = await deps.identityCore?.projects.resolveIntegrationToken(forwarded.headers.authorization)
+        return principal ? { ok: true, principal } : { ok: false, status: 401, error: 'unauthorized' }
+      }
       const verdict = await deps.authenticate({ method: forwarded.method, url: forwarded.url, headers: forwarded.headers })
       return verdict.ok ? { ok: true, user: verdict.user } : verdict
     })
