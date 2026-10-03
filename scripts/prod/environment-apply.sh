@@ -13,7 +13,6 @@
 set -Eeuo pipefail
 
 docker=${DOCKER:-docker}
-overrides=${VC_ENVIRONMENT_OVERRIDES:-/etc/voicechat/environment-overrides}
 timeout=${VC_ENVIRONMENT_HEALTH_TIMEOUT:-180}
 switches= operation=
 while (( $# )); do
@@ -26,35 +25,15 @@ done
 [[ -r $switches ]] || { echo 'switches file is required' >&2; exit 2; }
 [[ $operation =~ ^[A-Za-z0-9_-]{1,80}$ ]] || { echo 'operation id is required' >&2; exit 2; }
 
-# Docker Compose reads COMPOSE_FILE from the checkout's .env only when the process does not set
-# it. Exporting a chain here would shadow that installed chain (production keeps it in .env), so
-# resolve the base chain first: process value, then .env, then Compose's default file names.
-base_chain=${COMPOSE_FILE:-}
-if [[ -z $base_chain ]]; then
-  base_chain=$(python3 - <<'PY'
-import os, re
-value = None
-if os.path.isfile(".env"):
-    for line in open(".env", encoding="utf-8").read().splitlines():
-        match = re.match(r"^\s*(?:export\s+)?COMPOSE_FILE\s*=\s*(.*)$", line)
-        if match:
-            raw = match.group(1).strip()
-            if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
-                raw = raw[1:-1]
-            value = raw
-if value:
-    print(value)
-else:
-    for name in ("compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"):
-        if os.path.isfile(name):
-            stem = name.rsplit(".", 1)
-            files = [name] + [f"{stem[0]}.override.{ext}" for ext in ("yaml", "yml") if os.path.isfile(f"{stem[0]}.override.{ext}")][:1]
-            print(":".join(files))
-            break
-PY
-)
+# Resolve checkout settings before pulling or changing any service.
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+base_chain=$(python3 "$script_dir/compose_env.py" chain) || exit 2
+[[ -n $base_chain ]] || { echo "no compose chain in the environment, .env or checkout" >&2; exit 2; }
+overrides=${VC_ENVIRONMENT_OVERRIDES:-}
+if [[ -z $overrides ]]; then
+  overrides=$(python3 "$script_dir/compose_env.py" get VC_ENVIRONMENT_OVERRIDES) || exit 2
 fi
-[[ -n $base_chain ]] || { echo 'no compose chain in the environment, .env or checkout' >&2; exit 2; }
+overrides=${overrides:-/etc/voicechat/environment-overrides}
 step() { python3 -c 'import json,sys; print(json.dumps({"service":sys.argv[1],"status":sys.argv[2],"log":sys.argv[3]}), flush=True)' "$1" "$2" "${3:-}"; }
 
 # Only immutable published owner images; a typo must not become a mutable tag.
@@ -112,7 +91,14 @@ chmod 0600 "$override.tmp"
 mv -f "$override.tmp" "$override"
 ln -sfn "$override" "$current"
 
-case ":$base_chain:" in *":$current:"*) export COMPOSE_FILE=$base_chain ;; *) export COMPOSE_FILE="$base_chain:$current" ;; esac
+# Keep current.yml last and present exactly once, including on repeated apply.
+COMPOSE_FILE=$(python3 - "$base_chain" "$current" <<'PY'
+import sys
+files = [name for name in sys.argv[1].split(":") if name != sys.argv[2]]
+print(":".join(files + [sys.argv[2]]))
+PY
+)
+export COMPOSE_FILE
 services=()
 for pair in "${pairs[@]}"; do services+=("${pair%%$'\t'*}"); done
 
