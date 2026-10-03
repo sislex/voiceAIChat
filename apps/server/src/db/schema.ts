@@ -1979,13 +1979,15 @@ CREATE INDEX IF NOT EXISTS idx_browser_ui_release_operations_project
 CREATE TABLE IF NOT EXISTS environments (
   id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL,
   machines_json TEXT NOT NULL, checkout_path TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'external', storage_id TEXT,
+  state TEXT NOT NULL DEFAULT 'ready', compose_project TEXT, port INTEGER,
   created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (project_id, id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS environment_configurations (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, environment_id TEXT NOT NULL,
-  revision INTEGER NOT NULL, modules_json TEXT NOT NULL, note TEXT,
+  revision INTEGER NOT NULL, modules_json TEXT NOT NULL, note TEXT, core_json TEXT,
   created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
   UNIQUE (project_id, environment_id, revision),
   FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
@@ -1993,15 +1995,24 @@ CREATE TABLE IF NOT EXISTS environment_configurations (
 CREATE TABLE IF NOT EXISTS environment_operations (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, environment_id TEXT NOT NULL,
   configuration_id TEXT NOT NULL, previous_configuration_id TEXT,
+  kind TEXT NOT NULL DEFAULT 'apply',
   status TEXT NOT NULL, steps_json TEXT NOT NULL DEFAULT '[]', error TEXT,
   started_by TEXT NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER,
   FOREIGN KEY (configuration_id) REFERENCES environment_configurations(id),
   FOREIGN KEY (previous_configuration_id) REFERENCES environment_configurations(id),
   FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS environment_settings (
+  project_id TEXT NOT NULL, environment_id TEXT NOT NULL, key TEXT NOT NULL,
+  secret INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, source TEXT NOT NULL,
+  updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, environment_id, key),
+  FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
+-- The compose-project index is installed after column migration on existing SQLite databases.
 CREATE INDEX IF NOT EXISTS idx_environment_operations ON environment_operations(project_id, environment_id, started_at DESC);
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_active_operation ON environment_operations(project_id, environment_id) WHERE status IN ('pending', 'pulling', 'switching', 'health_check');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_active_operation_v2 ON environment_operations(project_id, environment_id) WHERE status IN ('pending', 'preparing', 'pulling', 'building', 'starting', 'switching', 'health_check', 'removing');
 
 `
 

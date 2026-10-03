@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-02
-checked: 24577612
+updated: 2026-10-03
+checked: a4a13bb9
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -21,18 +21,33 @@ areas:
 
 ## Environment configurations
 
-Core owns `environments`, `environment_configurations` and `environment_operations`.
+Core owns `environments`, `environment_configurations`, `environment_operations`
+and `environment_settings`.
 `db.environments` uses the public Identity SQL adapters on SQLite and PostgreSQL;
 PostgreSQL DDL is generated from the shared `schema.ts` definitions. Environment
 slugs are unique within a project. All user-facing methods require project
 membership (denied access throws); definition upserts also require project ownership.
-`activeOperation` and `updateOperation` are internal worker methods without user auth.
+Managed definitions are created by owners and cannot be overwritten through the
+external-definition upsert. Only draft or removed managed rows can be reused.
+`activeOperation`, `updateOperation`, `setEnvironmentState`, `managedPorts` and
+`readSettings` are internal worker methods without user auth.
 
 Configurations are immutable. A transaction locks the environment with an UPDATE
 before computing `MAX(revision) + 1`, so independent PostgreSQL connections cannot
 allocate the same revision. Operation creation checks both configuration references
 against the project and environment. A partial unique index enforces one operation
-in pending, pulling, switching or health_check state per environment.
+in any shared `ACTIVE_ENVIRONMENT_OPERATION_STATUSES` state per environment,
+including preparing, building, starting and removing. Bootstrap replaces the
+stage-1 index with `idx_environment_active_operation_v2` on both engines. Existing
+rows become external/ready, configurations default to no Core selection, and old
+operations default to apply. Non-null Compose project names are globally unique.
+
+Configurations optionally store a validated Core selection. Settings writes
+require ownership and use one transaction; null deletes a setting. Settings and
+operation creation lock the same environment row, preventing writes while an
+operation is active. The repository stores opaque ciphertext for secrets and
+returns storage records only to its callers; API redaction belongs to Kanban.
+Managed port lookup spans projects, filters by machine and excludes removed rows.
 
 The B01 contract archive 0.1.14 is pinned in `dependency-snapshots.json`; Core uses
 the matching Shared source workspace. The workspace manifest stays at 0.1.10 to
@@ -45,8 +60,9 @@ committed release with `scripts/core-contracts-release.mjs` after review.
 
 `database.environments.test.ts` runs the same repository suite on SQLite and on
 PostgreSQL when `VC_TEST_DB_URL` points to the assigned test database. It includes
-a separate-connection PostgreSQL revision race. Service deployment, Kanban/UI
-integration and production commissioning belong to later environments-v1 tasks.
+a separate-connection PostgreSQL revision race, stage-1 database migration and
+active-operation uniqueness across environments-v2 statuses. Service deployment,
+Kanban/UI integration and production commissioning remain separate tasks.
 
 ## Identity repository and request authentication
 
