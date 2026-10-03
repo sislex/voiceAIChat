@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-03
-checked: 3ec9e909
+updated: 2026-10-04
+checked: 96e017e5
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -187,6 +187,47 @@ the exact grants managed by ChatAI. Names are never identity proofs. Project
 sharing does not grant VPN management rights. Self-selection, dependent gateway
 changes and stale revisions are rejected. Explicit off can supersede an
 unresolved operation and does not call the administrative Tailscale API.
+
+### Environment machine-to-machine grants (C23)
+
+The machines port and internal RPC expose
+`ensureEnvironmentGrant(owner, { projectId, environmentId }, machines, ports)`,
+`removeEnvironmentGrant(owner, environment)` and
+`environmentGrantState(owner, environment)`. Kanban Core RPC exposes these with
+the `machines.` prefix. The caller supplies the project owner; every requested
+machine must belong to that owner and have a previously verified device binding
+in the owner's network. Sharing a machine does not confer VPN administration.
+
+One grant uses `tag:chatai-env-<sha256(projectId + ':' + environmentId)[:24]>`
+as both source and destination, with sorted, unique `tcp:<port>` permissions.
+The service creates the admin-owned tag and updates bound devices through
+Tailscale's device-tags API, preserving other tags. Updating membership removes
+the tag from devices outside the new selection; removal deletes the grant and
+device tags, retaining the tag-owner declaration. Unrelated local grants and
+exit-node grants survive. Unjournaled rules referencing environment tags are
+rejected by `managedPolicy`, as are broad foreign internet permissions.
+
+`machine_vpn_networks.state.environments[tag]` records the environment,
+machines, ports, phase (`applying/applied/removed/error`) and `appliedAt`.
+A generation CAS reserves the owner before remote mutations; the journal
+recognizes both old and new grants if a remote operation partially succeeds.
+Ordinary failures leave an error state and can be retried. A process crash during
+application leaves `applying` and blocks competing writes pending operator
+reconciliation; it never reports an unconfirmed grant as applied. Identical
+re-adds verify policy and tags and require no remote writes.
+
+Machine snapshots for machines RPC and Kanban include `vpn.addresses` and
+optional `vpn.hostName` from `telemetry.vpn`. `vpnAddressOf(machineId)` reads
+online telemetry, prefers a Tailscale IPv4 address, falls back to its IPv6
+address, and returns no address for missing or erroneous observations.
+Host names are informational and are never used as device identity.
+A consumer must check the applied grant state and membership as well as
+address availability before selecting VPN transport.
+
+Unit and injected-RPC tests use a fake Tailscale API; they do not commission a
+real tailnet. Operator commissioning still requires connected and bound nodes,
+administrative policy/tag permissions and a real cross-machine connectivity
+check. No credentials or network configuration are provisioned automatically.
 
 Administrative credentials use AES-256-GCM, random nonces and user-ID associated
 data. Set `VC_VPN_SECRET_KEY` to a 64-character hexadecimal key in the machines

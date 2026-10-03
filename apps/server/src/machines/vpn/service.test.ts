@@ -1,9 +1,19 @@
+import { randomBytes } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { registerVpnRoutes } from './routes.js'
 import { type VpnObservation, type VpnChange } from '@sislexa/agent-contracts'
 import { VpnService, type VpnRepository } from './service.js'
-import { TailscaleApi, type TailPolicy } from './tailscale.js'
+import { TailscaleApi, environmentTag, type TailPolicy } from './tailscale.js'
+
+const fixtureCredential1 = randomBytes(24).toString('hex')
+const fixtureCredential2 = randomBytes(24).toString('hex')
+const fixtureCredential3 = randomBytes(24).toString('hex')
+const fixtureCredential4 = randomBytes(24).toString('hex')
+const fixtureCredential5 = randomBytes(24).toString('hex')
+const fixtureCredential6 = randomBytes(24).toString('hex')
+const fixtureEncryptionKey = randomBytes(32).toString('hex')
+
 const command = (mode: 'off' | 'server' | 'client', revision = 0): VpnChange => ({
   mode, gatewayId: mode === 'client' ? 'gateway' : null, allowLan: false,
   operationId: 'operation-' + mode + '-' + revision, expectedRevision: revision
@@ -19,10 +29,11 @@ function setup() {
   }
   const devices = ['client', 'gateway'].map((id, i) => ({ id: 'api-' + id, nodeId: 'node-' + id, authorized: true, addresses: ['100.64.0.' + (i + 1)], tags: [] as string[], enabledRoutes: ['0.0.0.0/0', '::/0'] }))
   let policy: TailPolicy = { acls: [] }
-  const api = new TailscaleApi('test-secret', 'test.ts.net')
+  const api = new TailscaleApi(fixtureCredential3, 'test.ts.net')
   vi.spyOn(api, 'devices').mockImplementation(async () => devices)
   vi.spyOn(api, 'policy').mockImplementation(async () => ({ value: structuredClone(policy), etag: '"1"' }))
   vi.spyOn(api, 'setPolicy').mockImplementation(async value => { policy = structuredClone(value) })
+  vi.spyOn(api, 'setDeviceTags').mockImplementation(async (device, tags) => { devices.find(d => d.id === device.id)!.tags = tags })
   vi.spyOn(api, 'prepareExit').mockImplementation(async (device, tag) => { devices.find(d => d.id === device.id)!.tags.push(tag) })
   const states: Record<string, VpnObservation> = Object.fromEntries(devices.map(d => [d.id.slice(4), {
     observedAt: Date.now(), mode: 'off', deviceId: d.nodeId, addresses: d.addresses, tailnet: 'test.ts.net',
@@ -37,7 +48,7 @@ function setup() {
       return { ...states[id], observedAt: Date.now() }
     })
   }
-  const service = new VpnService(repo, agents, () => 'ab'.repeat(32), () => api)
+  const service = new VpnService(repo, agents, () => fixtureEncryptionKey, () => api)
   return { service, repo, agents, api, states, owners, ciphertext: () => row?.encryptedSecret, policy: () => policy }
 }
 describe('VPN owner boundary and persistent transitions', () => {
@@ -53,9 +64,9 @@ describe('VPN owner boundary and persistent transitions', () => {
       expect((await app.inject({ method: 'GET', url: '/api/agents/client/vpn' })).statusCode).toBe(401)
       expect((await app.inject({ method: 'GET', url: '/api/agents/client/vpn', headers: { authorization: 'Bearer bob' } })).statusCode).toBe(404)
       const connected = await app.inject({ method: 'POST', url: '/api/agents/vpn/network', headers: { authorization: 'Bearer alice' },
-        payload: { tailnet: 'test.ts.net', secret: 'tskey-http-test-secret' } })
+        payload: { tailnet: 'test.ts.net', secret: fixtureCredential1 } })
       expect(connected.statusCode).toBe(200)
-      expect(connected.body).not.toContain('secret')
+      expect(connected.body).not.toContain(fixtureCredential1)
       const response = await app.inject({ method: 'PUT', url: '/api/agents/client/vpn', headers: { authorization: 'Bearer alice' },
         payload: { ...command('client'), gatewayId: 'foreign' } })
       expect(response.statusCode).toBe(404)
@@ -65,7 +76,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-API
   it('rejects foreign, project-shared, unknown and self gateways before dispatch', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await expect(s.service.change('bob', 'client', command('server'))).rejects.toThrow('invalid')
     await expect(s.service.change('alice', 'client', { ...command('client'), gatewayId: 'foreign' })).rejects.toThrow('invalid')
     await expect(s.service.change('alice', 'client', { ...command('client'), gatewayId: 'missing' })).rejects.toThrow('invalid')
@@ -76,7 +87,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-STATE
   it('prepares its own gateway, limits routing with via, rejects cycles and protects dependent clients', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     expect((await s.service.change('alice', 'gateway', command('server'))).state.phase).toBe('idle')
     expect(s.api.prepareExit).toHaveBeenCalled()
     const view = await s.service.read('alice', 'client')
@@ -90,7 +101,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-STATE
   it('does not redispatch repeated operations and rejects stale revisions', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     const calls = s.agents.vpn.mock.calls.length
     await s.service.change('alice', 'gateway', command('server'))
@@ -100,7 +111,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-STATE
   it('serializes concurrent requests for both endpoints', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     const outcomes = await Promise.allSettled([s.service.change('alice', 'gateway', command('server')), s.service.change('alice', 'client', command('server'))])
     expect(outcomes.filter(o => o.status === 'fulfilled')).toHaveLength(1)
     expect(outcomes.filter(o => o.status === 'rejected')).toHaveLength(1)
@@ -108,7 +119,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-API
   it('revalidates device identity and ownership after gateway preparation', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     s.states.gateway.deviceId = 'foreign-node'
     await expect(s.service.change('alice', 'client', command('client'))).rejects.toThrow('gateway')
@@ -118,7 +129,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-STATE
   it('can explicitly disable after an unresolved operation even with revoked API access', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     await s.service.change('alice', 'client', command('client'))
     vi.mocked(s.api.devices).mockRejectedValue(new Error('revoked credential'))
@@ -130,7 +141,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-API
   it.each(['client', 'off'] as const)('does not acknowledge %s from an expired apply result', async mode => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     if (mode === 'off') await s.service.change('alice', 'client', command('client'))
     const dispatch = s.agents.vpn.getMockImplementation()!
@@ -146,7 +157,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-API
   it('blocks activation when client readiness is stale', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     s.agents.vpn.mockImplementation(async id => ({ ...s.states[id], observedAt: Date.now() - 100_000 }))
     s.agents.vpn.mockClear()
@@ -156,7 +167,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-ISOLATION
   it('rejects a gateway whose ownership changes without dispatching any client configuration', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     s.owners.gateway = 'bob'
     s.agents.vpn.mockClear()
@@ -167,13 +178,13 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-MIGRATION
   it('preserves the active legacy network when replacement is attempted', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     await s.service.change('alice', 'client', command('client'))
     const before = await s.repo.readVpnNetwork('alice')
     s.agents.vpn.mockClear()
     vi.mocked(s.api.setPolicy).mockClear()
-    await expect(s.service.connect('alice', 'different.ts.net', 'tskey-replacement-secret')).rejects.toThrow('conflict')
+    await expect(s.service.connect('alice', 'different.ts.net', fixtureCredential5)).rejects.toThrow('conflict')
     expect(await s.repo.readVpnNetwork('alice')).toEqual(before)
     expect(s.agents.vpn).not.toHaveBeenCalled()
     expect(s.api.setPolicy).not.toHaveBeenCalled()
@@ -182,7 +193,7 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-ISOLATION
   it('rejects foreign HTTP writes without changing stored state or upstream policy', async () => {
     const s = setup(), app = Fastify()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     const before = await s.repo.readVpnNetwork('alice')
     vi.mocked(s.api.setPolicy).mockClear()
     app.addHook('onRequest', async request => { Object.assign(request, { user: { name: 'bob' } }) })
@@ -198,13 +209,13 @@ describe('VPN owner boundary and persistent transitions', () => {
   // @testCase TC-MIGRATION
   it('preserves active state and bindings when renewing credentials for the same network', async () => {
     const s = setup()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-test-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
     await s.service.change('alice', 'gateway', command('server'))
     await s.service.change('alice', 'client', command('client'))
     const before = (await s.repo.readVpnNetwork('alice'))!
     const policy = structuredClone(s.policy())
     s.agents.vpn.mockClear()
-    await s.service.connect('alice', 'test.ts.net', 'tskey-renewed-secret-123')
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential6)
     const after = (await s.repo.readVpnNetwork('alice'))!
     expect(JSON.parse(after.state)).toMatchObject({
       states: JSON.parse(before.state).states,
@@ -213,16 +224,103 @@ describe('VPN owner boundary and persistent transitions', () => {
     })
     expect(after.generation).toBe(before.generation + 1)
     expect(after.encryptedSecret).not.toBe(before.encryptedSecret)
-    expect(after.encryptedSecret).not.toContain('tskey-renewed-secret-123')
+    expect(after.encryptedSecret).not.toContain(fixtureCredential6)
     expect(s.policy()).toEqual(policy)
     expect(s.agents.vpn).not.toHaveBeenCalled()
   })
   // @testCase TC-SECRETS
   it('never returns a credential in successful DTOs or failed observations', async () => {
-    const s = setup(), secret = 'tskey-secret-never-in-dto'
+    const s = setup(), secret = fixtureCredential2
     await s.service.connect('alice', 'test.ts.net', secret)
     expect(s.ciphertext()).not.toContain(secret)
     s.agents.vpn.mockRejectedValueOnce(new Error(secret))
     expect(JSON.stringify(await s.service.read('alice', 'client'))).not.toContain(secret)
+  })
+})
+
+describe('environment VPN grants', () => {
+  const environment = { projectId: 'project', environmentId: 'staging' }
+  async function bound() {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
+    await s.service.read('alice', 'client')
+    await s.service.read('alice', 'gateway')
+    vi.mocked(s.api.setPolicy).mockClear()
+    return s
+  }
+  it('adds exactly one TCP grant, tags bound devices, re-adds and removes without losing other rules', async () => {
+    const s = await bound(), tag = environmentTag(environment)
+    const other = { projectId: 'project', environmentId: 'other' }
+    await s.service.ensureEnvironmentGrant('alice', other, ['gateway'], [443])
+    const applied = await s.service.ensureEnvironmentGrant('alice', environment, ['client', 'gateway', 'client'], [8080, 443, 8080])
+    expect(applied).toMatchObject({ tag, phase: 'applied', machines: ['client', 'gateway'], ports: [443, 8080] })
+    expect(s.policy().grants).toContainEqual({ src: [tag], dst: [tag], ip: ['tcp:443', 'tcp:8080'] })
+    expect((await s.api.devices()).every(d => d.tags?.includes(tag))).toBe(true)
+    const policy = structuredClone(s.policy())
+    vi.mocked(s.api.setDeviceTags).mockClear()
+    vi.mocked(s.api.setPolicy).mockClear()
+    await s.service.ensureEnvironmentGrant('alice', environment, ['gateway', 'client'], [443, 8080])
+    expect(s.policy()).toEqual(policy)
+    expect(s.api.setDeviceTags).not.toHaveBeenCalled()
+    expect(s.api.setPolicy).not.toHaveBeenCalled()
+    expect(await s.service.environmentGrantState('alice', environment)).toMatchObject({ phase: 'applied' })
+    await s.service.removeEnvironmentGrant('alice', environment)
+    await s.service.removeEnvironmentGrant('alice', environment)
+    expect(s.policy().grants).toEqual([{ src: [environmentTag(other)], dst: [environmentTag(other)], ip: ['tcp:443'] }])
+    expect((await s.api.devices()).every(d => !d.tags?.includes(tag))).toBe(true)
+    expect(await s.service.environmentGrantState('alice', environment)).toMatchObject({ phase: 'removed' })
+  })
+  it('updates membership and ports and preserves environment rules when enabling an exit node', async () => {
+    const s = await bound(), tag = environmentTag(environment)
+    await s.service.ensureEnvironmentGrant('alice', environment, ['client', 'gateway'], [80])
+    await s.service.ensureEnvironmentGrant('alice', environment, ['gateway'], [443])
+    expect(s.policy().grants).toEqual([{ src: [tag], dst: [tag], ip: ['tcp:443'] }])
+    const devices = await s.api.devices()
+    expect(devices[0].tags).not.toContain(tag)
+    expect(devices[1].tags).toContain(tag)
+    await s.service.change('alice', 'gateway', command('server'))
+    await s.service.change('alice', 'client', command('client'))
+    expect(s.policy().grants).toContainEqual({ src: [tag], dst: [tag], ip: ['tcp:443'] })
+    await s.service.removeEnvironmentGrant('alice', environment)
+    expect(s.policy().grants).toHaveLength(1)
+    expect(s.policy().grants?.[0]).toMatchObject({ dst: ['autogroup:internet'] })
+  })
+  it('rejects an unbound machine and a foreign owner before remote mutation', async () => {
+    const s = setup()
+    await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
+    vi.mocked(s.api.setPolicy).mockClear()
+    await expect(s.service.ensureEnvironmentGrant('alice', environment, ['client'], [80])).rejects.toThrow('binding')
+    await expect(s.service.ensureEnvironmentGrant('alice', environment, ['foreign'], [80])).rejects.toThrow('invalid')
+    expect(s.api.setPolicy).not.toHaveBeenCalled()
+    expect(s.api.setDeviceTags).not.toHaveBeenCalled()
+  })
+  it('loses a concurrent generation reservation without applying remote changes', async () => {
+    const s = await bound()
+    const read = s.repo.readVpnNetwork
+    vi.spyOn(s.api, 'policy').mockImplementationOnce(async () => {
+      const row = (await read('alice'))!
+      await s.repo.saveVpnNetwork('alice', { ...row, generation: row.generation + 1 }, row.generation)
+      return { value: s.policy(), etag: '"1"' }
+    })
+    await expect(s.service.ensureEnvironmentGrant('alice', environment, ['client'], [80])).rejects.toThrow('conflict')
+    expect(s.api.setPolicy).not.toHaveBeenCalled()
+    expect(s.api.setDeviceTags).not.toHaveBeenCalled()
+    expect(await s.service.environmentGrantState('alice', environment)).toBeNull()
+  })
+  it('does not accept foreign grants that happen to use the environment tag', async () => {
+    const s = await bound(), tag = environmentTag(environment)
+    await s.api.setPolicy({ grants: [{ src: [tag], dst: [tag], ip: ['*'] }] }, '"1"')
+    vi.mocked(s.api.setPolicy).mockClear()
+    await expect(s.service.ensureEnvironmentGrant('alice', environment, ['client'], [80])).rejects.toThrow('policy')
+    expect(s.api.setPolicy).not.toHaveBeenCalled()
+  })
+  it('journals partial failures and retries them without claiming applied state', async () => {
+    const s = await bound()
+    vi.mocked(s.api.setDeviceTags).mockRejectedValueOnce(new Error('unavailable'))
+    await expect(s.service.ensureEnvironmentGrant('alice', environment, ['client'], [80])).rejects.toThrow('unavailable')
+    expect(await s.service.environmentGrantState('alice', environment)).toMatchObject({ phase: 'error', appliedAt: null })
+    await s.service.ensureEnvironmentGrant('alice', environment, ['client'], [80])
+    expect(s.policy().grants).toHaveLength(1)
+    expect(await s.service.environmentGrantState('alice', environment)).toMatchObject({ phase: 'applied' })
   })
 })

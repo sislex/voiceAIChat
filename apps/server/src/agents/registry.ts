@@ -1,3 +1,5 @@
+import type { VpnService, VpnEnvironment } from '../machines/vpn/service.js'
+import { vpnAddress } from '../machines/vpn/telemetry.js'
 import type { LinkManager } from './linkManager.js'
 import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 // In-memory реестр подключённых машин-агентов и выполнение команд на них.
@@ -787,6 +789,20 @@ export class AgentRegistry {
     return this.ptys.get(ptyId)?.context ?? null
   }
 
+  vpnService?: VpnService
+  vpnAddressOf(id: string) { return this.isOnline(id) ? vpnAddress(this.telemetryOf(id)) : undefined }
+  ensureEnvironmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[]) {
+    if (!this.vpnService) throw new Error('VPN service unavailable')
+    return this.vpnService.ensureEnvironmentGrant(owner, environment, machines, ports)
+  }
+  removeEnvironmentGrant(owner: string, environment: VpnEnvironment) {
+    if (!this.vpnService) throw new Error('VPN service unavailable')
+    return this.vpnService.removeEnvironmentGrant(owner, environment)
+  }
+  environmentGrantState(owner: string, environment: VpnEnvironment) {
+    if (!this.vpnService) throw new Error('VPN service unavailable')
+    return this.vpnService.environmentGrantState(owner, environment)
+  }
   linkManager?: LinkManager
   ensureLink(input: EnvironmentLinkInput) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.ensureLink(input) }
   deleteLink(projectId: string, environmentId: string, id: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.deleteLink(projectId, environmentId, id) }
