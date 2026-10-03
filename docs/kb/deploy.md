@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: a4a13bb9
+checked:
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -2225,12 +2225,25 @@ unchanged; publish and verify S3 service images separately when releasing S3.
 владельцев: сначала `docker pull` всех (отказ — exit 20, ничего не переключено), потом
 `/etc/voicechat/environment-overrides/<id>.yml` и ссылка `current.yml`, `up -d --no-build
 --no-deps`, ожидание здоровья; нездоровый сервис возвращается на прежние образы (exit 30).
-Kanban запускает скрипт без `COMPOSE_FILE` в окружении, а на проде цепочка compose (12 файлов)
-лежит в `.env` чекаута. Docker Compose читает `.env` только когда переменная процесса не задана,
-поэтому скрипт до любых изменений сам определяет базовую цепочку — переменная процесса, затем
-`COMPOSE_FILE` из `.env` чекаута, затем стандартные файлы compose — и добавляет `current.yml`
-последним. Без цепочки он выходит с кодом 2, ничего не трогая. Раньше экспорт одного
-`current.yml` затенял цепочку из `.env`, и сервис поднимался без основного `docker-compose.yml`.
+Kanban invokes the script without a process `COMPOSE_FILE`; production keeps its Compose
+chain in the checkout `.env`. Before any pull or mutation, `environment-apply.sh` calls
+`python3 scripts/prod/compose_env.py chain`: a non-empty process `COMPOSE_FILE` wins, then
+the checkout `.env` value, then default Compose files (including `docker-compose.yml` and
+`docker-compose.override.yml` when present). Existing discovery of `compose.yaml`,
+`compose.yml` and `docker-compose.yaml` is retained. An absent chain exits 2 without changes.
+The overrides directory comes from non-empty process `VC_ENVIRONMENT_OVERRIDES`, then the
+checkout `.env`, then `/etc/voicechat/environment-overrides`. Its `current.yml` is placed
+last, exactly once, even when the incoming chain already repeats it.
+
+`compose_env.py get <KEY> [--file .env]` reads literal values without executing shell code
+or expanding variables. It accepts assignments, optional `export`, blank lines and comments,
+strips surrounding single/double quotes, and uses the last assignment for duplicate keys.
+Missing keys/files print an empty line with exit 0; malformed files exit 3 without a value.
+`chain [--file .env]` uses the same parser when it needs the file. Apply maps configuration
+errors to its existing exit 2; its CLI, JSON progress lines, pull failure exit 20 and rollback
+exit 30 remain unchanged. `scripts/prod/test_environment_scripts.py` records effective
+`COMPOSE_FILE` with fake Docker for production `.env`, process precedence, defaults, overrides
+and repeated apply. These checks do not commission or deploy an environment.
 `release-manager-deploy.sh` подключает `current.yml` к цепочке compose и закрепляет остальные
 сервисы на запущенных образах, поэтому выкат Core переключений окружения не откатывает; сервис,
 образ которого изменил сам релиз (состав релиза), переключается на него
