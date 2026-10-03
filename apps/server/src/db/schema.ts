@@ -496,6 +496,20 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 
 
+-- Additive migration applied at bootstrap on both SQLite and PostgreSQL.
+CREATE TABLE IF NOT EXISTS integration_tokens (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_integration_tokens_project ON integration_tokens(project_id);
+
 CREATE TABLE IF NOT EXISTS project_members (
   project_id TEXT NOT NULL,
   username   TEXT NOT NULL,
