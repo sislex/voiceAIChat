@@ -1,8 +1,8 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 766e41a6
-areas:
+checked: 348d6ae3
+
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
   - scripts/prod/environment-provision.sh
@@ -2263,10 +2263,23 @@ and repeated apply. These checks do not commission or deploy an environment.
 `deploy/compose.stand.yml` layers over `docker-compose.yml`: Core publishes only
 `127.0.0.1:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses
 `${VC_DATA_VOLUME}` for `vc-data`. Caddy belongs to the inactive `public` profile.
-This overlay requires Docker Compose with `!override` support.
+It also exposes `host.docker.internal` through Docker's `host-gateway`, so primary
+stand containers can reach agent-managed links. This overlay requires Docker
+Compose with `!override` support.
 
-Run `bash scripts/prod/environment-provision.sh --operation <id>` in the stand
-checkout. Its `.env` normally links to `../../config/stand.env`; the parser in
+For a module placed on a secondary machine, use role `module` and the chain
+`docker-compose.yml:deploy/compose.stand-module.yml`. Exactly one of the `make`,
+`image-studio`, `reader`, or `playwright-reader` profiles selects that module's
+services. The module overlay publishes no ports and excludes Core, Postgres and
+primary-only runners. Every active module service receives the same
+`host.docker.internal:host-gateway` mapping; its service and database URLs come
+from reserved values in `stand.env` and point to stable agent tunnel ports. The
+primary chain retains the compose-name defaults, so production output is unchanged.
+
+Run `bash scripts/prod/environment-provision.sh --operation <id> --role primary`
+in the primary stand checkout, or pass `--role module` in a module checkout.
+`primary` remains the default for compatibility. Its `.env` normally links to
+`../../config/stand.env`; the parser in
 `compose_env.py` reads settings without executing shell code. All reserved
 settings from the environments plan must be nonempty. The scripts validate the
 stand Compose chain, postgres/kanban profiles, port, release commit prefix,
@@ -2281,8 +2294,9 @@ Provision emits JSON lines with `stage`, `status` and `log`: `config`, `build`,
 from the selected release version, Git HEAD and `apps/server/release.json`.
 `voicechat` and `automation-runner` build sequentially; missing images of active
 services without builds are pulled. Start uses `--no-build --pull never`.
-Health requires Core's `ok=true` and exact HEAD, all active services running,
-and healthy containers wherever a healthcheck exists. The timeout is
+Primary health requires Core's `ok=true` and exact HEAD; module health has no
+local Core endpoint. Both roles require all active services running and healthy
+containers wherever a healthcheck exists. The timeout is
 `VC_ENVIRONMENT_START_TIMEOUT` (default 300 seconds). Failure leaves containers
 for inspection and emits redacted `ps -a` and Core log diagnostics. Raw command
 errors are suppressed, and every nonempty `.env` value is redacted in log text.

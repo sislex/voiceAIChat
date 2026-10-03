@@ -1,0 +1,50 @@
+# A secondary stand machine runs only the selected module profile. Service URLs
+# in stand.env point across agent-managed tunnels through the Docker host.
+services:
+  voicechat:
+    profiles: ["primary"]
+  postgres:
+    profiles: ["primary"]
+  kanban:
+    profiles: ["primary"]
+  machines:
+    profiles: ["primary"]
+  admin:
+    profiles: ["primary"]
+  automation-runner:
+    profiles: ["primary"]
+  runner-work:
+    profiles: ["primary"]
+  runner-personal:
+    profiles: ["primary"]
+  tts-runner:
+    profiles: ["primary"]
+  stt-runner:
+    profiles: ["primary"]
+  caddy:
+    profiles: ["primary"]
+
+  make:
+    profiles: ["make"]
+    depends_on: !reset []
+    extra_hosts: &module-extra-hosts
+      - "host.docker.internal:host-gateway"
+  image-studio:
+    profiles: ["image-studio"]
+    depends_on: !reset []
+    extra_hosts: *module-extra-hosts
+  reader:
+    profiles: ["reader"]
+    depends_on: !reset []
+    extra_hosts: *module-extra-hosts
+  playwright-reader:
+    profiles: ["playwright-reader"]
+    depends_on: !reset []
+    extra_hosts: *module-extra-hosts
+  browser-runner:
+    profiles: ["playwright-reader"]
+    extra_hosts: *module-extra-hosts
+
+volumes:
+  vc-data:
+    name: ${VC_DATA_VOLUME:?Stand data volume is required}
