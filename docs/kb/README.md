@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 46 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 7 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1725 коммит(ов) в areas после сверки: 96f1916c feat(deploy): compose_env.py owns the environment compose chain (C04) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1726 коммит(ов) в areas после сверки: 1d19497e feat(deploy): stand compose overlay and provision/remove scripts (C05) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 83 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -58,8 +58,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1004. Последние:
+Всего записей: 1005. Последние:
 
+- [2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-3-core-ui-1-4-14-desktop-1-0-17.md](log/2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-3-core-ui-1-4-14-desktop-1-0-17.md) — pin-kanban-0.1.3-core-ui-1.4.14-desktop-1.0.17
 - [2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md](log/2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md) — pin-core-ui-1.4.13-desktop-1.0.16
 - [2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md](log/2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md) — owner-pack-integrity-format
 - [2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md](log/2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md) — environments-v2-storage
@@ -69,7 +70,6 @@
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md) — pin-core-ui-1.4.12-desktop-1.0.15
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md) — pin-core-ui-1.4.11-desktop-1.0.14-kanban-0.1.2
 - [2026-10-02-alexeys-macbook-air-2-environments-b01-review.md](log/2026-10-02-alexeys-macbook-air-2-environments-b01-review.md) — environments-b01-review
-- [2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md](log/2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md) — environment-apply-compose-chain
 
 ## Исторические планы
 
