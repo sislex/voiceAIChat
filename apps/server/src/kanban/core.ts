@@ -22,7 +22,7 @@ import type { WidgetUiRelay } from '../mcp/widgetUiRelay.js'
  * `isOnline` 21, `policyOf` 5, `fsRead` 6, `gitAccess` 5, …). `AgentRegistry` удовлетворяет ему структурно
  * (проверка типом в `boundary.test.ts`); PTY, тоннели чата, `onChange` и прочее ядро не отдаёт.
  */
-export interface KanbanMachines extends Pick<MachinesService, 'ensureLink' | 'deleteLink' | 'listLinks'> {
+export interface KanbanMachines extends Pick<MachinesService, 'ensureLink' | 'deleteLink' | 'listLinks' | 'vpnAddressOf' | 'ensureEnvironmentGrant' | 'removeEnvironmentGrant' | 'environmentGrantState'> {
   isOnline(agentId: string): boolean
   nameOf(agentId: string): string | undefined
   platformOf(agentId: string): string | undefined

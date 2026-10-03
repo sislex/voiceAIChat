@@ -1,3 +1,4 @@
+import { vpnMachineView } from '../machines/vpn/telemetry.js'
 // Сторона ядра для внутреннего протокола «ядро ↔ канбан» (`kanban/internal.ts`): RPC-диспетчер над
 // локальной реализацией `KanbanCore` и снимок машин из реестра для зеркала канбана.
 import type { WidgetSurfaceSnapshot } from '@voicechat/shared'
@@ -21,6 +22,10 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
     if (!Array.isArray(args) || !(KANBAN_CORE_RPC_METHODS as readonly string[]).includes(method)) throw new RpcError(400, `неизвестный метод ${method}`)
     const a = args as never[]
     switch (method as KanbanCoreRpcMethod) {
+      case 'machines.ensureEnvironmentGrant': return core.machines.ensureEnvironmentGrant(a[0], a[1], a[2], a[3])
+      case 'machines.removeEnvironmentGrant': return core.machines.removeEnvironmentGrant(a[0], a[1])
+      case 'machines.environmentGrantState': return core.machines.environmentGrantState(a[0], a[1])
+      case 'machines.vpnAddressOf': return core.machines.vpnAddressOf(a[0]) ?? null
       case 'machines.ensureLink': return core.machines.ensureLink(a[0])
       case 'machines.deleteLink': return core.machines.deleteLink(a[0], a[1], a[2])
       case 'machines.listLinks': return core.machines.listLinks(a[0], a[1])
@@ -66,6 +71,7 @@ export function machinesSnapshot(registry: {
     const platform = registry.platformOf(id); if (platform !== undefined) snapshot.platform = platform
     const policy = registry.policyOf(id); if (policy !== undefined) snapshot.policy = policy
     const telemetry = registry.telemetryOf(id); if (telemetry !== undefined) snapshot.telemetry = telemetry
+    snapshot.vpn = vpnMachineView(telemetry)
     return snapshot
   })
 }
