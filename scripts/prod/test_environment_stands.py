@@ -1,6 +1,7 @@
 """Stand lifecycle contracts; no daemon or listener is started."""
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 import shutil
@@ -72,12 +73,12 @@ class StandTest(unittest.TestCase):
             'DOCKER': str(self.bin / 'docker'), 'FAKE_LOG': str(self.root / 'calls'),
             'VC_ENVIRONMENT_START_TIMEOUT': '0.05', 'SECRET': SECRET}
 
-    def invoke(self, action='provision', args=None, **env):
+    def invoke(self, action='provision', args=None, role='primary', **env):
         (self.root / '.env').write_text(''.join(k + "='" + v + "'\n" for k, v in self.values.items()))
         (self.root / 'model.json').write_text(json.dumps(self.model))
         (self.root / 'calls').write_text('')
         result = subprocess.run(['bash', str(HERE / ('environment-' + action + '.sh')),
-            *(args if args is not None else ['--operation', 'op1'])], cwd=self.root,
+            *(args if args is not None else ['--operation', 'op1', '--role', role])], cwd=self.root,
             env={**self.env, **env}, capture_output=True, text=True)
         self.assertNotIn(SECRET, result.stdout + result.stderr)
         rows = [json.loads(line) for line in result.stdout.splitlines()]
@@ -181,6 +182,40 @@ class StandTest(unittest.TestCase):
         self.assertFalse(any(c['args'][0] == 'pull' for c in calls))
         self.assertTrue(any(c['chain'] == self.values['COMPOSE_FILE'] + ':' + str(override / 'current.yml') for c in calls))
 
+    def test_module_role_has_no_build_or_core_health(self):
+        self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
+        self.values['COMPOSE_PROFILES'] = 'make'
+        self.model = {'name': PROJECT, 'services': {'make': {
+            'image': 'example/make:1', 'extra_hosts': {'host.docker.internal': 'host-gateway'}}},
+            'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
+        code, rows, calls = self.invoke(role='module')
+        self.assertEqual(code, 0)
+        self.assertEqual([(r['stage'], r['status']) for r in rows],
+            [(stage, status) for stage in ('config', 'build', 'pull', 'start', 'health') for status in ('running', 'passed')])
+        self.assertFalse(any(c['args'][:2] == ['compose', 'build'] for c in calls))
+        self.assertFalse(any(c['tool'] == 'curl' for c in calls))
+
+    def test_module_role_rejects_unsafe_models_and_settings(self):
+        self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
+        self.values['COMPOSE_PROFILES'] = 'make'
+        safe = {'image': 'example/make:1', 'extra_hosts': {'host.docker.internal': 'host-gateway'}}
+        self.model = {'name': PROJECT, 'services': {'make': safe},
+            'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
+        for mutation in ('core', 'postgres', 'extra', 'port', 'build', 'gateway', 'profiles', 'chain'):
+            with self.subTest(mutation=mutation):
+                self.model['services'] = {'make': dict(safe)}
+                self.values['COMPOSE_PROFILES'] = 'make'
+                self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
+                if mutation in ('core', 'postgres'):
+                    self.model['services'][mutation if mutation == 'postgres' else 'voicechat'] = dict(safe)
+                elif mutation == 'extra': self.model['services']['reader'] = dict(safe)
+                elif mutation == 'port': self.model['services']['make']['ports'] = [{'published': 8788, 'target': 8788}]
+                elif mutation == 'build': self.model['services']['make']['build'] = {'context': '.'}
+                elif mutation == 'gateway': self.model['services']['make'].pop('extra_hosts')
+                elif mutation == 'profiles': self.values['COMPOSE_PROFILES'] = 'make,reader'
+                else: self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand.yml'
+                self.assertEqual(self.invoke(role='module')[0], 10)
+
     def test_remove_keep_data_delete_data_and_errors(self):
         code, rows, calls = self.invoke('remove')
         self.assertEqual(code, 0)
@@ -203,6 +238,34 @@ class StandTest(unittest.TestCase):
 
 
 class StandComposeTest(unittest.TestCase):
+    def test_production_defaults_match_literal_urls(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        source = (ROOT / 'docker-compose.yml').read_text()
+        variables = ('VC_CORE_URL', 'VC_KANBAN_URL', 'VC_MAKE_URL', 'VC_READER_URL',
+            'VC_PLAYWRIGHT_READER_URL', 'VC_IMAGE_STUDIO_URL', 'VC_LLM_RUNNER_CLAUDE_URL',
+            'VC_LLM_RUNNER_CODEX_URL', 'VC_LLM_RUNNER_HEALTH_URL', 'VC_TTS_RUNNER_URL',
+            'VC_STT_RUNNER_URL', 'VC_BROWSER_RUNNER_URL', 'VC_MCP_PUBLIC_BASE',
+            'VC_KANBAN_MCP_PUBLIC_BASE', 'VC_MAKE_MCP_PUBLIC_BASE', 'VC_READER_MCP_PUBLIC_BASE')
+        legacy = source
+        for variable in variables:
+            legacy = re.sub(r'\$\{' + variable + r':-([^}]+)\}', r'\1', legacy)
+        with tempfile.TemporaryDirectory() as directory:
+            current = Path(directory) / 'current.yml'
+            literal = Path(directory) / 'literal.yml'
+            current.write_text(source)
+            literal.write_text(legacy)
+            env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+            # Caddy requires a public host even when its profile is off; any value works for both files.
+            env['VC_PUBLIC_HOST'] = 'stand.test'
+            def config(path):
+                result = subprocess.run([docker, 'compose', '-f', str(path), 'config', '--format', 'json'],
+                    cwd=ROOT, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return json.loads(result.stdout)
+            self.assertEqual(config(current), config(literal))
+
     def test_real_compose_overlay(self):
         docker = shutil.which('docker')
         if not docker:
