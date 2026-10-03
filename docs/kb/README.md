@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 28 коммит(ов) в areas после сверки: 2ec9724a feat(server): project integration tokens and integration ingress (B05) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 35 коммит(ов) в areas после сверки: aa6b503c chore: pin environments-v3 releases (Kanban 0.1.6, Core UI 1.4.15, Desktop 1.0.18, agent 0.21.0) … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ⚠ 36 коммит(ов) в areas после сверки: 1c810f43 fix(deps): force pinned agent-contracts for exact 1.0.0 peers … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 3 коммит(ов) в areas после сверки: c70d5ca1 feat(deploy): production snapshot and stand restore (environments-v3 C16) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-03 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 49 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1737 коммит(ов) в areas после сверки: aa6b503c chore: pin environments-v3 releases (Kanban 0.1.6, Core UI 1.4.15, Desktop 1.0.18, agent 0.21.0) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1738 коммит(ов) в areas после сверки: 1c810f43 fix(deps): force pinned agent-contracts for exact 1.0.0 peers … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 85 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
