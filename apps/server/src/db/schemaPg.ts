@@ -3,6 +3,7 @@ import {postgresSchemaFrom as convert} from '@sislexa/identity/storage-sql/schem
 export {postgresColumnUpgradePlan} from '@sislexa/identity/storage-sql/schema'
 export type {PostgresColumn,PostgresSchema} from '@sislexa/identity/storage-sql/schema'
 export const PG_EXTRA_SQL = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_compose_project ON environments(compose_project) WHERE compose_project IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_conversations_owner_archive ON conversations(tenant_id, user_id, archived_at, updated_at);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS text_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED;
 CREATE INDEX IF NOT EXISTS idx_messages_text_tsv ON messages USING GIN (text_tsv);
