@@ -21,6 +21,9 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
     if (!Array.isArray(args) || !(KANBAN_CORE_RPC_METHODS as readonly string[]).includes(method)) throw new RpcError(400, `неизвестный метод ${method}`)
     const a = args as never[]
     switch (method as KanbanCoreRpcMethod) {
+      case 'machines.ensureLink': return core.machines.ensureLink(a[0])
+      case 'machines.deleteLink': return core.machines.deleteLink(a[0], a[1], a[2])
+      case 'machines.listLinks': return core.machines.listLinks(a[0], a[1])
       case 'machines.snapshot': return deps.machinesSnapshot()
       case 'machines.fsRead': return core.machines.fsRead(a[0], a[1])
       case 'machines.fsWrite': return core.machines.fsWrite(a[0], a[1], a[2])

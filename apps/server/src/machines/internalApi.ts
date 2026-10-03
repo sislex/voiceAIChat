@@ -63,6 +63,10 @@ export function registerMachinesInternalApi(app: FastifyInstance, deps: Machines
     if (!Array.isArray(args) || !(MACHINES_RPC_METHODS as readonly string[]).includes(method)) throw new RpcError(400, `неизвестный метод ${method}`)
     const a = args as never[]
     switch (method as MachinesRpcMethod) {
+      // Persistent links keep authorization and lifetime in the machines process.
+      case 'ensureLink': return registry.ensureLink(a[0])
+      case 'deleteLink': return registry.deleteLink(a[0], a[1], a[2])
+      case 'listLinks': return registry.listLinks(a[0], a[1])
       case 'snapshot': return snapshot()
       case 'ptyStart': registry.ptyStart(a[0], a[1], a[2], a[3], a[4], (event) => push({ kind: 'pty', event })); return null
       case 'createTunnel': {
@@ -71,7 +75,7 @@ export function registerMachinesInternalApi(app: FastifyInstance, deps: Machines
       }
       case 'closeTunnel': return registry.closeTunnel(a[0])
       default: {
-        const fn = registry[method as Exclude<MachinesRpcMethod, 'snapshot' | 'ptyStart' | 'createTunnel' | 'closeTunnel'>] as (...x: never[]) => unknown
+        const fn = registry[method as Exclude<MachinesRpcMethod, 'ensureLink' | 'deleteLink' | 'listLinks' | 'snapshot' | 'ptyStart' | 'createTunnel' | 'closeTunnel'>] as (...x: never[]) => unknown
         return (await fn.apply(registry, a)) ?? null
       }
     }

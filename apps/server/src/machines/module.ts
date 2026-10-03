@@ -1,3 +1,4 @@
+import { LinkManager } from '../agents/linkManager.js'
 // Сборка модуля машин: реестр онлайн-подключений, WebSocket компаньон-агентов `/agent`, REST машин и
 // установщиков, политика команд, каталог ChatAI по умолчанию, журнал команд, watchdog и перенос
 // хранилищ (docs/plans/machines-service.md, круг 1). Раньше всё это лежало в `buildServer`; теперь
@@ -49,6 +50,10 @@ export function createDbCommandGate(db: VoiceChatDb): CommandGate {
 export async function createMachinesModule(deps: MachinesDeps): Promise<MachinesModule> {
   const { app, db, config, publish } = deps
   const registry = deps.registry ?? new AgentRegistry({ offlineGraceMs: config.agentOfflineGraceMs })
+  const links = new LinkManager(db.environments, registry, error => app.log.warn({ error }, 'environment link failed'))
+  registry.linkManager = links
+  await links.start()
+  app.addHook('onClose', async () => { await links.stop() })
   const log = (m: string, extra?: Record<string, unknown>): void => app.log.info(extra ?? {}, m)
   // Полный лог долгой команды из чата — в artifacts привязанного хранилища разговора.
   const chatStorage = createManagedChatStorage({ db, machines: registry, log })
