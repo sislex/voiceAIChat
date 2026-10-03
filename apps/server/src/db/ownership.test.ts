@@ -4,7 +4,7 @@ import {SCHEMA_SQL,MESSAGES_FTS_SQL} from './schema.js'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CROSS_READ_BUDGET, TABLE_OWNER, type RepoDomain } from './ownership.js'
+import { CROSS_READ_BUDGET, SNAPSHOT_EXCLUDED_TABLES, SNAPSHOT_SENSITIVE_TABLES, TABLE_OWNER, type RepoDomain } from './ownership.js'
 
 const dbDir = __dirname
 const reposDir = join(dbDir, 'repos')
@@ -23,6 +23,14 @@ function tablesFromSchema(): Set<string> {
 }
 
 describe('владение таблицами (db/ownership.ts)', () => {
+  it('snapshot exclude file is generated from the sensitive classification', () => {
+    const classified = [...new Set(Object.values(SNAPSHOT_SENSITIVE_TABLES).flat())].sort()
+    expect(SNAPSHOT_EXCLUDED_TABLES).toEqual(classified)
+    const file = readFileSync(join(dbDir, '../../../../scripts/prod/snapshot-exclude.txt'), 'utf8')
+      .split(/\r?\n/).filter(Boolean).sort()
+    expect(file).toEqual(classified)
+    for (const table of classified) expect(ownerOf.has(table), table).toBe(true)
+  })
   it('у каждой таблицы схемы ровно один владелец, и в манифесте нет мёртвых таблиц', () => {
     const schema = tablesFromSchema()
     const seen = new Map<string, RepoDomain[]>()
