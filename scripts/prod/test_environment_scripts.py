@@ -211,5 +211,9 @@ class ComposeEnvTest(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout), (0, "docker-compose.yml:docker-compose.override.yml\n"))
 
 
+# Include stand lifecycle contracts in the existing tooling gate.
+from test_environment_stands import StandTest, StandComposeTest
+
+
 if __name__ == "__main__":
     unittest.main()
