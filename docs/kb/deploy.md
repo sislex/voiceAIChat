@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: ce2075c8
+checked: 766e41a6
 areas:
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -438,7 +438,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.4, SHA `18e17cec695a8eb4539ce5ab3be6fedeed55ba05` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.5, SHA `a9ec1a3dc86a8e2d23556918d20fe6acc06abe57` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
