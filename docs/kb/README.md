@@ -58,18 +58,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1002. Последние:
+Всего записей: 1003. Последние:
 
 - [2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md](log/2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md) — pin-core-ui-1.4.13-desktop-1.0.16
 - [2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md](log/2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md) — owner-pack-integrity-format
 - [2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md](log/2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md) — environments-v2-storage
 - [2026-10-03-alexeys-macbook-air-2-environments-v2-shared.md](log/2026-10-03-alexeys-macbook-air-2-environments-v2-shared.md) — environments-v2-shared
+- [2026-10-03-alexeys-macbook-air-2-c04-compose-env.md](log/2026-10-03-alexeys-macbook-air-2-c04-compose-env.md) — c04-compose-env
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md) — pin-core-ui-1.4.12-desktop-1.0.15
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md) — pin-core-ui-1.4.11-desktop-1.0.14-kanban-0.1.2
 - [2026-10-02-alexeys-macbook-air-2-environments-b01-review.md](log/2026-10-02-alexeys-macbook-air-2-environments-b01-review.md) — environments-b01-review
 - [2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md](log/2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md) — environment-apply-compose-chain
 - [2026-10-01-alexeys-macbook-air-2-release-retention.md](log/2026-10-01-alexeys-macbook-air-2-release-retention.md) — release-retention
-- [2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md](log/2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md) — kanban-linux-image-pin
 
 ## Исторические планы
 
