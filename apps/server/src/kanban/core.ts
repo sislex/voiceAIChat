@@ -1,3 +1,4 @@
+import type { MachinesService } from '../machines/service.js'
 // Порт `KanbanCore` — всё, что канбан-кластер берёт у процесса ядра (docs/plans/kanban-service.md,
 // круг 2). Это только состояние процесса: живые WebSocket машин, файловый индекс базы знаний,
 // вложения на диске ядра, git-копии проектов и снимок «что открыто» у виджета. Доменные данные
@@ -21,7 +22,7 @@ import type { WidgetUiRelay } from '../mcp/widgetUiRelay.js'
  * `isOnline` 21, `policyOf` 5, `fsRead` 6, `gitAccess` 5, …). `AgentRegistry` удовлетворяет ему структурно
  * (проверка типом в `boundary.test.ts`); PTY, тоннели чата, `onChange` и прочее ядро не отдаёт.
  */
-export interface KanbanMachines {
+export interface KanbanMachines extends Pick<MachinesService, 'ensureLink' | 'deleteLink' | 'listLinks'> {
   isOnline(agentId: string): boolean
   nameOf(agentId: string): string | undefined
   platformOf(agentId: string): string | undefined

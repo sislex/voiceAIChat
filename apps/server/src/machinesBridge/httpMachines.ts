@@ -1,3 +1,4 @@
+import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environments.js'
 // `MachinesService` для ядра в режиме `VC_MACHINES_MODE=remote`: реестр живёт в отдельном процессе машин.
 // Синхронные чтения (`isOnline`, `nameOf`, `policyOf`, `telemetryOf`, `ptyLive`, …) отвечает зеркало,
 // которое процесс машин наполняет по постоянному WebSocket событий; вызовы — RPC и потоковый exec;
@@ -212,6 +213,10 @@ export class HttpMachines implements MachinesService {
   /** Полный кольцевой буфер сессии — у процесса машин; неизвестную сессию не спрашиваем. */
   ptyBufferText(ptyId: string): Promise<string | null> { return this.ptys.has(ptyId) ? this.rpc<string | null>('ptyBufferText', [ptyId]) : Promise.resolve(null) }
   ptyContextOf(ptyId: string) { return this.ptys.get(ptyId)?.context ?? null }
+
+  ensureLink(input: EnvironmentLinkInput): Promise<EnvironmentLink> { return this.rpc('ensureLink', [input], 30_000) }
+  deleteLink(projectId: string, environmentId: string, id: string): Promise<void> { return this.rpc('deleteLink', [projectId, environmentId, id]) }
+  listLinks(projectId: string, environmentId: string): Promise<EnvironmentLink[]> { return this.rpc('listLinks', [projectId, environmentId]) }
 
   // --- тоннели ---
   async createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize?: () => Promise<boolean>, onClose?: () => Promise<void>): Promise<number> {

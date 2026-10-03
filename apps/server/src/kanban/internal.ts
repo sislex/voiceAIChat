@@ -52,7 +52,7 @@ export type KanbanServiceRpcMethod = (typeof KANBAN_SERVICE_RPC_METHODS)[number]
 /** Методы `KanbanCore`, доступные канбану по RPC у ядра. `exec`/`execStream` — отдельным потоковым эндпоинтом. */
 export const KANBAN_CORE_RPC_METHODS = [
   'machines.snapshot', 'machines.fsRead', 'machines.fsWrite', 'machines.fsMkdir', 'machines.fsDelete', 'machines.fsRename',
-  'machines.gitAccess', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
+  'machines.gitAccess', 'machines.ensureLink', 'machines.deleteLink', 'machines.listLinks', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
   'kb.status', 'kb.topics', 'kb.document', 'kb.search', 'kb.context',
   'uploads.get', 'uploads.read', 'widgets.surface', 'widgets.updateSurface', 'widgets.uiRequest', 'ensureProjectMainCurrent'
 ] as const

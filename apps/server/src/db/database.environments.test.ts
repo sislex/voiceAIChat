@@ -35,6 +35,26 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       await db?.close()
       if (dir) rmSync(dir, { recursive: true, force: true })
     })
+    it('persists environment-owned links, scopes deletion, reserves listener ports and revokes authorization', async () => {
+      const request = { projectId, environmentId: input.id, clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 }
+      const link = await db.environments.ensureLink(request)
+      expect(await db.environments.ensureLink(request)).toEqual(link)
+      expect(await db.environments.authorizeLink(link.id)).toBe(true)
+      await expect(db.environments.ensureLink({ ...request, listenerPort: 17002 })).rejects.toThrow('cannot change')
+      await expect(db.environments.ensureLink({ ...request, servicePort: 5433 })).rejects.toThrow()
+      await expect(db.environments.ensureLink({ ...request, listenerPort: -1 })).rejects.toThrow()
+      await db.environments.deleteLink(otherProjectId, input.id, link.id)
+      expect(await db.environments.listLinks(projectId, input.id)).toEqual([link])
+      await db.environments.setEnvironmentState(projectId, input.id, { state: 'provisioning' })
+      expect(await db.environments.authorizeLink(link.id)).toBe(true)
+      await db.environments.setEnvironmentState(projectId, input.id, { state: 'removed' })
+      expect(await db.environments.authorizeLink(link.id)).toBe(false)
+      await expect(db.environments.ensureLink(request)).rejects.toThrow('not active')
+      const sql = (db as unknown as { sql: Sql }).sql
+      await sql.run('DELETE FROM environments WHERE project_id = ? AND id = ?', [projectId, input.id])
+      expect(await db.environments.listLinks(projectId, input.id)).toEqual([])
+      expect(await db.environments.authorizeLink(link.id)).toBe(false)
+    })
     it('scopes definitions by project and preserves creation metadata on update', async () => {
       const before = await db.environments.getEnvironment('member', projectId, input.id)
       expect(before).toMatchObject({ ...input, projectId, createdBy: 'owner' })
@@ -161,6 +181,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       const config = await db.environments.addConfiguration('owner', projectId, input.id, [], null)
       const operation = await db.environments.createOperation('owner', projectId, input.id, config.id, null)
       const sql = (db as unknown as { sql: Sql }).sql
+      await sql.exec('DROP TABLE environment_links')
       await sql.exec('DROP TABLE environment_settings')
       await sql.exec('DROP INDEX idx_environment_compose_project')
       await sql.exec('DROP INDEX idx_environment_active_operation_v2')
@@ -186,6 +207,8 @@ for (const engine of ['sqlite', 'postgres'] as const) {
         expect(indexes.map(index => index.name)).toContain('idx_environment_active_operation_v2')
         expect(indexes.map(index => index.name)).not.toContain('idx_environment_active_operation')
         expect(await peer.environments.readSettings(projectId, input.id)).toEqual([])
+        const link = await peer.environments.ensureLink({ projectId, environmentId: input.id, clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 })
+        expect(await peer.environments.listLinks(projectId, input.id)).toEqual([link])
         await peer.close(); peer = undefined
       }
     }, 120_000)
@@ -201,7 +224,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
 }
 
 it('includes environment tables, composite foreign keys and active-operation uniqueness in PostgreSQL DDL', () => {
-  for (const table of ['environments', 'environment_configurations', 'environment_operations', 'environment_settings']) expect(PG_SCHEMA.tables.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`))).toBe(true)
+  for (const table of ['environments', 'environment_configurations', 'environment_operations', 'environment_settings', 'environment_links']) expect(PG_SCHEMA.tables.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`))).toBe(true)
   expect(PG_SCHEMA.foreignKeys.join('\n')).toMatch(/FOREIGN KEY \(project_id, environment_id\) REFERENCES environments/)
   expect(PG_SCHEMA.indexes.join('\n')).toContain('idx_environment_active_operation')
 })

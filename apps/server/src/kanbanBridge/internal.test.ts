@@ -11,6 +11,7 @@ function fakeCore(): KanbanCore & { tunnelArgs: unknown[] } {
     machines: {
       isOnline: () => true, nameOf: () => 'm', platformOf: () => 'linux', policyOf: () => undefined, telemetryOf: () => undefined,
       exec: vi.fn(), execStream: vi.fn(),
+      ensureLink: vi.fn(async input => ({ ...input, id: 'link', state: 'open' })), deleteLink: vi.fn(async () => {}), listLinks: vi.fn(async () => []),
       fsRead: vi.fn(async (agentId: string, path: string) => ({ ok: true, agentId, path })),
       fsWrite: vi.fn(), fsMkdir: vi.fn(), fsDelete: vi.fn(), fsRename: vi.fn(), gitAccess: vi.fn(),
       createTunnel: vi.fn(async (...args: unknown[]) => { core.tunnelArgs = args; return 4242 }),
@@ -42,6 +43,19 @@ describe('createKanbanCoreRpcDispatcher', () => {
     expect(await dispatch({ method: 'machines.closeTunnelsForTarget', args: ['m1'] })).toBeNull()
     expect(core.machines.closeTunnelsForTarget).toHaveBeenCalledWith('m1')
     expect(await dispatch({ method: 'ensureProjectMainCurrent', args: [{ projectId: 'p' }] })).toEqual({ baseSha: 'abc' })
+  })
+
+  it('dispatches persistent links without Kanban authorization callbacks', async () => {
+    const core = fakeCore()
+    const authorize = vi.fn()
+    const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize, closed: vi.fn() } })
+    const input = { projectId: 'p', environmentId: 'stage', clientMachineId: 'a', serverMachineId: 'b', servicePort: 5432, listenerPort: 17001 }
+    expect(await dispatch({ method: 'machines.ensureLink', args: [input] })).toMatchObject({ id: 'link', state: 'open' })
+    expect(core.machines.ensureLink).toHaveBeenCalledWith(input)
+    expect(await dispatch({ method: 'machines.listLinks', args: ['p', 'stage'] })).toEqual([])
+    await dispatch({ method: 'machines.deleteLink', args: ['p', 'stage', 'link'] })
+    expect(core.machines.deleteLink).toHaveBeenCalledWith('p', 'stage', 'link')
+    expect(authorize).not.toHaveBeenCalled()
   })
 
   it('createTunnel: авторизация и закрытие тоннеля спрашиваются у канбана по id', async () => {
