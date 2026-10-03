@@ -17,12 +17,13 @@ PRODUCTION_ENV = Path('/etc/voicechat/production.env')
 
 
 class Stand:
-    def __init__(self, action):
+    def __init__(self, action, role='primary'):
         self.stage = 'config' if action == 'provision' else 'down'
         self.code = 10
         self.values = {}
         self.env = dict(os.environ)
         self.docker = os.environ.get('DOCKER', 'docker')
+        self.role = role
 
     def emit(self, status, message=''):
         for value in sorted(set(self.values.values()), key=len, reverse=True):
@@ -49,13 +50,16 @@ class Stand:
             raise ValueError('unsafe project')
         if v['VC_DATA_VOLUME'] != project + '-server-data' or v['VC_DATA_VOLUME'] == 'voicechat-server-data':
             raise ValueError('unsafe volume')
-        if not v['VC_STAND_PORT'].isdigit() or not 1024 <= int(v['VC_STAND_PORT']) <= 65535:
+        if self.role == 'primary' and (not v['VC_STAND_PORT'].isdigit() or not 1024 <= int(v['VC_STAND_PORT']) <= 65535):
             raise ValueError('invalid port')
         files = v['COMPOSE_FILE'].split(':')
-        if files[:2] != ['docker-compose.yml', 'deploy/compose.stand.yml'] or not all(files):
+        overlay = 'deploy/compose.stand.yml' if self.role == 'primary' else 'deploy/compose.stand-module.yml'
+        if files[:2] != ['docker-compose.yml', overlay] or not all(files):
             raise ValueError('invalid chain')
         profiles = set(v['COMPOSE_PROFILES'].split(','))
-        if not {'postgres', 'kanban'} <= profiles or profiles & {'public', '*'}:
+        module_profiles = {'make', 'image-studio', 'reader', 'playwright-reader'}
+        if (self.role == 'primary' and (not {'postgres', 'kanban'} <= profiles or profiles & {'public', '*'})) or \
+                (self.role == 'module' and (len(profiles) != 1 or not profiles <= module_profiles)):
             raise ValueError('invalid profiles')
         if v['COMPOSE_PARALLEL_LIMIT'] != '1' or v['COMPOSE_BAKE'] != 'false':
             raise ValueError('unsafe build settings')
@@ -80,15 +84,25 @@ class Stand:
                         VC_APPLICATION_DATA_VERSION=str(release['dataVersion']))
         self.model = json.loads(self.compose('config', '--format', 'json').stdout)
         services = self.model['services']
-        if {name for name, service in services.items() if service.get('build')} != {'voicechat', 'automation-runner'}:
+        expected_builds = {'voicechat', 'automation-runner'} if self.role == 'primary' else set()
+        if {name for name, service in services.items() if service.get('build')} != expected_builds:
             raise ValueError('unexpected build services')
         if self.model.get('name') != project:
             raise ValueError('project mismatch')
         for volume in self.model.get('volumes', {}).values():
             if volume.get('name') == 'voicechat-server-data':
                 raise ValueError('production volume')
-        if self.model['volumes']['vc-data']['name'] != v['VC_DATA_VOLUME']:
+        if self.model.get('volumes', {}).get('vc-data', {}).get('name') != v['VC_DATA_VOLUME']:
             raise ValueError('volume mismatch')
+        if self.role == 'module':
+            expected_services = {
+                'make': {'make'},
+                'image-studio': {'image-studio'},
+                'reader': {'reader'},
+                'playwright-reader': {'playwright-reader', 'browser-runner'},
+            }[next(iter(profiles))]
+            if set(services) != expected_services:
+                raise ValueError('invalid module services')
         for name, service in services.items():
             if service.get('container_name') or service.get('network_mode') == 'host':
                 raise ValueError('non-isolated service')
@@ -97,11 +111,16 @@ class Stand:
                     raise ValueError('public proxy enabled')
                 continue
             for port in service.get('ports', []):
-                if name != 'voicechat' or port.get('host_ip') != '127.0.0.1' or str(port.get('published')) != v['VC_STAND_PORT'] or port.get('target') != 8787:
+                if self.role == 'module' or name != 'voicechat' or port.get('host_ip') != '127.0.0.1' or str(port.get('published')) != v['VC_STAND_PORT'] or port.get('target') != 8787:
                     raise ValueError('unsafe published port')
             for mount in service.get('volumes', []):
                 if mount.get('type') == 'bind' and any(mount.get(k, '').startswith('/run/voicechat') for k in ('source', 'target')):
                     raise ValueError('production socket')
+            if self.role == 'module':
+                hosts = service.get('extra_hosts', {})
+                if not (hosts.get('host.docker.internal') == 'host-gateway' if isinstance(hosts, dict)
+                        else 'host.docker.internal:host-gateway' in hosts):
+                    raise ValueError('missing Docker host gateway')
         self.timeout = float(v.get('VC_ENVIRONMENT_START_TIMEOUT', os.environ.get('VC_ENVIRONMENT_START_TIMEOUT', '300')))
         if not 0 < self.timeout <= 3600:
             raise ValueError('invalid health timeout')
@@ -114,11 +133,12 @@ class Stand:
         return not service.get('profiles') or bool(set(service['profiles']) & set(self.values['COMPOSE_PROFILES'].split(',')))
 
     def healthy(self, timeout):
-        response = self.run('curl', '-fsS', '--max-time', str(max(0.1, min(5, timeout))),
-                            'http://127.0.0.1:' + self.values['VC_STAND_PORT'] + '/api/health', timeout=max(1, timeout))
-        health = json.loads(response.stdout)
-        if health.get('ok') is not True or health.get('application', {}).get('commit') != self.head:
-            return False
+        if self.role == 'primary':
+            response = self.run('curl', '-fsS', '--max-time', str(max(0.1, min(5, timeout))),
+                                'http://127.0.0.1:' + self.values['VC_STAND_PORT'] + '/api/health', timeout=max(1, timeout))
+            health = json.loads(response.stdout)
+            if health.get('ok') is not True or health.get('application', {}).get('commit') != self.head:
+                return False
         ids = self.compose('ps', '-a', '-q', timeout=10).stdout.split()
         if not ids:
             return False
@@ -138,7 +158,7 @@ class Stand:
 
     def provision(self):
         self.begin('build', 25)
-        for name in ('voicechat', 'automation-runner'):
+        for name in (('voicechat', 'automation-runner') if self.role == 'primary' else ()):
             self.compose('build', name)
         self.emit('passed')
         self.begin('pull', 20)
@@ -160,7 +180,8 @@ class Stand:
             except (ValueError, OSError, subprocess.SubprocessError):
                 pass
             time.sleep(min(2, max(0, deadline - time.monotonic())))
-        for args in (('ps', '-a'), ('logs', '--tail', '50', 'voicechat')):
+        diagnostics = (('ps', '-a'), ('logs', '--tail', '50', 'voicechat')) if self.role == 'primary' else (('ps', '-a'), ('logs', '--tail', '50'))
+        for args in diagnostics:
             result = self.compose(*args, check=False, timeout=15)
             for line in (result.stdout + result.stderr).splitlines():
                 self.emit('running', line)
@@ -186,11 +207,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['provision', 'remove'])
     parser.add_argument('--operation', required=True)
+    parser.add_argument('--role', choices=['primary', 'module'], default='primary')
     parser.add_argument('--delete-data', action='store_true')
     args = parser.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}', args.operation) or (args.delete_data and args.action != 'remove'):
         return 2
-    stand = Stand(args.action)
+    stand = Stand(args.action, args.role)
     try:
         if args.action == 'provision':
             stand.emit('running')

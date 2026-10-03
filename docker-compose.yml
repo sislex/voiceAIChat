@@ -62,19 +62,19 @@ services:
       # Пусто — SQLite в /data/voicechat.db, как раньше.
       VC_DB_URL: ${VC_DB_URL:-}
       VC_IMAGE_STUDIO_MODE: remote
-      VC_IMAGE_STUDIO_URL: http://image-studio:8796
+      VC_IMAGE_STUDIO_URL: ${VC_IMAGE_STUDIO_URL:-http://image-studio:8796}
       VC_MAKE_MODE: remote
       VC_PLAYWRIGHT_READER_MODE: remote
-      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
-      VC_MAKE_URL: http://make:8788
-      VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
+      VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}
+      VC_MAKE_URL: ${VC_MAKE_URL:-http://make:8788}
+      VC_MAKE_MCP_PUBLIC_BASE: ${VC_MAKE_MCP_PUBLIC_BASE:-http://make:8788}
       # Канбан (проекты, доска, CI/QA/релизы) — только отдельный сервис `sislexa-kanban`
       # (docs/plans/kanban-service.md), встроенного в ядро больше нет. Включение — VC_KANBAN_MODE=remote
       # в .env вместе с VC_DB_URL (общая база Postgres) и профилями `--profile postgres --profile kanban`;
       # без него ядро работает без доски.
       VC_KANBAN_MODE: ${VC_KANBAN_MODE:-off}
-      VC_KANBAN_URL: http://kanban:8789
-      VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
+      VC_KANBAN_URL: ${VC_KANBAN_URL:-http://kanban:8789}
+      VC_KANBAN_MCP_PUBLIC_BASE: ${VC_KANBAN_MCP_PUBLIC_BASE:-http://kanban:8789}
       # Машины отдельным процессом (docs/plans/machines-service.md): по умолчанию реестр и WebSocket агентов
       # в ядре. Включение — VC_MACHINES_MODE=remote в .env вместе с VC_DB_URL и `--profile machines`.
       VC_MACHINES_MODE: ${VC_MACHINES_MODE:-embedded}
@@ -84,8 +84,8 @@ services:
       VC_ADMIN_URL: http://admin:8794
       # Web Reader отдельным процессом (docs/plans/web-reader-service.md): VC_READER_MODE=remote + `--profile reader`.
       VC_READER_MODE: ${VC_READER_MODE:-embedded}
-      VC_READER_URL: http://reader:8795
-      VC_READER_MCP_PUBLIC_BASE: http://reader:8795
+      VC_READER_URL: ${VC_READER_URL:-http://reader:8795}
+      VC_READER_MCP_PUBLIC_BASE: ${VC_READER_MCP_PUBLIC_BASE:-http://reader:8795}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       # Метаданные релиза: номер приходит от публикации или строгого Git-тега;
@@ -94,16 +94,16 @@ services:
       VC_RELEASED_AT: ${VC_RELEASED_AT:-}
       VC_RELEASE_COMMIT: ${VC_RELEASE_COMMIT:-}
       VC_RELEASE_TASK: ${VC_RELEASE_TASK:-}
-      VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
-      VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
+      VC_LLM_RUNNER_CLAUDE_URL: ${VC_LLM_RUNNER_CLAUDE_URL:-http://runner-work:8790}
+      VC_LLM_RUNNER_CODEX_URL: ${VC_LLM_RUNNER_CODEX_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
-      VC_TTS_RUNNER_URL: http://tts-runner:8791
+      VC_TTS_RUNNER_URL: ${VC_TTS_RUNNER_URL:-http://tts-runner:8791}
       VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
-      VC_STT_RUNNER_URL: http://stt-runner:8791
+      VC_STT_RUNNER_URL: ${VC_STT_RUNNER_URL:-http://stt-runner:8791}
       VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Playwright Reader и этап автотестов: без этих переменных сервер отвечает
       # 501, а панель показывает «изолированный Chromium недоступен».
-      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_URL: ${VC_BROWSER_RUNNER_URL:-http://browser-runner:8792}
       VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       # Host-side deploy API доступен только через примонтированный Unix-сокет.
       VC_DEPLOY_API_SOCKET: /run/voicechat/deploy-api.sock
@@ -172,7 +172,7 @@ services:
       HOST: 0.0.0.0
       PORT: "8788"
       VC_DATA_DIR: /data
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
@@ -196,10 +196,10 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: "8797"
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_BROWSER_PREVIEW_BASE: ${VC_BROWSER_PREVIEW_BASE:-http://voicechat:8787}
-      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_URL: ${VC_BROWSER_RUNNER_URL:-http://browser-runner:8792}
       VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
     healthcheck:
@@ -218,7 +218,7 @@ services:
       HOST: 0.0.0.0
       PORT: "8796"
       VC_DATA_DIR: /data
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
@@ -248,24 +248,24 @@ services:
       HOST: 0.0.0.0
       PORT: "8789"
       VC_DATA_DIR: /data
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Без `:?` по той же причине, что у postgres; без базы процесс канбана сам завершится с понятной ошибкой.
       VC_DB_URL: ${VC_DB_URL:-}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       # MCP ядра (машины, KB, превью) глазами исполнителя — адрес ядра; MCP канбана и CI-команд — этот процесс.
       VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
-      VC_KANBAN_MCP_PUBLIC_BASE: http://kanban:8789
+      VC_KANBAN_MCP_PUBLIC_BASE: ${VC_KANBAN_MCP_PUBLIC_BASE:-http://kanban:8789}
       # MCP «browser» ходов рана: при вынесенном ридере — его адрес (те же переменные, что у ядра).
       VC_READER_MODE: ${VC_READER_MODE:-embedded}
-      VC_READER_URL: http://reader:8795
-      VC_READER_MCP_PUBLIC_BASE: http://reader:8795
-      VC_MAKE_URL: http://make:8788
-      VC_MAKE_MCP_PUBLIC_BASE: http://make:8788
-      VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
-      VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
+      VC_READER_URL: ${VC_READER_URL:-http://reader:8795}
+      VC_READER_MCP_PUBLIC_BASE: ${VC_READER_MCP_PUBLIC_BASE:-http://reader:8795}
+      VC_MAKE_URL: ${VC_MAKE_URL:-http://make:8788}
+      VC_MAKE_MCP_PUBLIC_BASE: ${VC_MAKE_MCP_PUBLIC_BASE:-http://make:8788}
+      VC_LLM_RUNNER_CLAUDE_URL: ${VC_LLM_RUNNER_CLAUDE_URL:-http://runner-work:8790}
+      VC_LLM_RUNNER_CODEX_URL: ${VC_LLM_RUNNER_CODEX_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
-      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_URL: ${VC_BROWSER_RUNNER_URL:-http://browser-runner:8792}
       VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       VC_SMTP_URL: ${VC_SMTP_URL:-}
       VC_MAIL_FROM: ${VC_MAIL_FROM:-}
@@ -298,7 +298,7 @@ services:
       HOST: 0.0.0.0
       PORT: "8793"
       VC_DATA_DIR: /data
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Без `:?`: compose подставляет переменные всех сервисов независимо от профилей; без базы процесс сам завершится с понятной ошибкой.
       VC_DB_URL: ${VC_DB_URL:-}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
@@ -328,10 +328,10 @@ services:
       HOST: 0.0.0.0
       PORT: "8794"
       VC_DATA_DIR: /data
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Задать VC_MACHINES_URL=http://machines:8793, если машины тоже вынесены; пусто — машины у ядра.
       VC_MACHINES_URL: ${VC_ADMIN_MACHINES_URL:-}
-      VC_MAKE_URL: http://make:8788
+      VC_MAKE_URL: ${VC_MAKE_URL:-http://make:8788}
       VC_DB_URL: ${VC_DB_URL:-}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
@@ -363,11 +363,11 @@ services:
       HOST: 0.0.0.0
       PORT: "8795"
       VC_BROWSER_HOST_ALIASES: ${VC_BROWSER_HOST_ALIASES:-}
-      VC_CORE_URL: http://voicechat:8787
+      VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
       VC_PLAYWRIGHT_READER_MODE: remote
-      VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797
+      VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
       # Shown in the Make browser route; empty means «неизвестно».
       SISLEXA_BROWSER_RUNNER_MACHINE: ${SISLEXA_BROWSER_RUNNER_MACHINE:-}
@@ -447,7 +447,7 @@ services:
       PORT: "8800"
       VC_AUTOMATION_DATA_DIR: /data
       VC_AUTOMATION_RUNNER_TOKEN: ${VC_AUTOMATION_RUNNER_TOKEN:-voicechat-automation-local-token}
-      VC_LLM_RUNNER_HEALTH_URL: http://runner-work:8790/v1/health
+      VC_LLM_RUNNER_HEALTH_URL: ${VC_LLM_RUNNER_HEALTH_URL:-http://runner-work:8790/v1/health}
     volumes:
       - vc-automation-data:/data
     healthcheck:

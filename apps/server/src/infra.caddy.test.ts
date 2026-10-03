@@ -62,6 +62,7 @@ describe('Caddyfile', () => {
     expect(caddyfile.match(/@playwright_reader path \/api\/browser \/api\/browser\/\*/g)).toHaveLength(2)
     expect(compose).toMatch(/^  playwright-reader:\n/m)
     expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: remote')
-    expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: http://playwright-reader:8797')
+    // Stands may override the address (environments-v3 placement); production keeps the default.
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}')
   })
 })
