@@ -25,7 +25,9 @@ args = sys.argv[1:]
 with open(os.environ['FAKE_LOG'], 'a') as out:
     out.write(json.dumps({'tool': pathlib.Path(sys.argv[0]).name, 'args': args,
         'metadata': {k:v for k,v in os.environ.items() if k.startswith('VC_APPLICATION_')},
-        'chain': os.environ.get('COMPOSE_FILE')}) + '\n')
+        'chain': os.environ.get('COMPOSE_FILE'),
+        'profiles': os.environ.get('COMPOSE_PROFILES'),
+        'make_url': os.environ.get('VC_MAKE_URL')}) + '\n')
 if os.environ.get('NO_NATIVE') and args[:1] == ['pull'] and '--platform' not in args:
     print('no matching manifest for linux/arm64/v8 in the manifest list entries', file=sys.stderr)
     sys.exit(1)
@@ -46,7 +48,7 @@ elif args[0] == 'inspect':
     print(json.dumps([{'Config': {'Labels': {'com.docker.compose.service': name},
         'Healthcheck': {'Test': ['CMD', 'true']}}, 'State': {'Status': 'running',
         'Health': {'Status': os.environ.get('HEALTH', 'healthy')}}}
-        for name in model['services'] if name != 'caddy' and name != os.environ.get('MISSING_SERVICE')]))
+        for name in model['services'] if (name != 'caddy' or 'public' in os.environ.get('COMPOSE_PROFILES', '').split(',')) and name != os.environ.get('MISSING_SERVICE')]))
 elif args[:2] == ['volume', 'ls']: print(os.environ.get('VOLUMES', ''))
 elif args[:2] in (['compose', 'ps'], ['compose', 'logs']): print(os.environ['SECRET'])
 '''
@@ -273,6 +275,91 @@ class StandTest(unittest.TestCase):
             'reader': {**safe, 'ports': [{'host_ip': '127.0.0.1', 'published': '17201', 'target': 8790}]}},
             'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
         self.assertEqual(self.invoke(role='module')[0], 0)
+
+    def test_stage4_vpn_and_lan_bindings(self):
+        self.values.update(VC_STAND_VPN_ADDRESS='100.64.1.2', VC_STAND_LAN_ADDRESS='192.168.1.2',
+                           VC_STAND_LINK_PORTS='postgres:5432:17100')
+        self.model['services']['postgres']['ports'] = [{'host_ip': '100.64.1.2', 'published': '17100', 'target': 5432}]
+        self.model['services']['voicechat']['ports'] = [{'host_ip': '192.168.1.2', 'published': PORT, 'target': 8787}]
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertIn('100.64.1.2:17100:5432', (self.root / 'overrides/stand-links.yml').read_text())
+        self.assertTrue(any(c['args'][-1] == 'http://192.168.1.2:' + PORT + '/api/health' for c in calls))
+        self.model['services']['postgres']['ports'][0]['host_ip'] = '192.168.1.2'
+        self.assertEqual(self.invoke()[0], 10)
+
+    def test_stage4_upstreams_generate_proxy_and_route_consumers(self):
+        self.values['VC_STAND_UPSTREAMS'] = 'make=100.64.1.2:17100|host.docker.internal:17101;reader=10.0.0.2:17102'
+        self.values['VC_MAKE_URL'] = 'http://old:8788'
+        self.model['services']['module-lb'] = {'image': 'caddy:2-alpine'}
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        config = (self.root / 'deploy/Caddyfile.stand-lb').read_text()
+        self.assertIn(':8788 {', config)
+        self.assertIn(':8795 {', config)
+        self.assertIn('reverse_proxy 100.64.1.2:17100 host.docker.internal:17101', config)
+        for directive in ('lb_policy round_robin', 'health_uri /v1/health', 'fail_duration 30s', 'max_fails 1', 'unhealthy_status 5xx'):
+            self.assertEqual(config.count(directive), 2)
+        overlay = json.loads((self.root / 'deploy/compose.stand-lb.yml').read_text())
+        self.assertNotIn('ports', overlay['services']['module-lb'])
+        call = next(c for c in calls if c['args'][:2] == ['compose', 'config'])
+        self.assertIn('deploy/compose.stand-lb.yml', call['chain'])
+        self.assertEqual(call['make_url'], 'http://module-lb:8788')
+
+    def test_stage4_public_requires_opt_in_and_primary(self):
+        self.values.update(VC_STAND_PUBLIC='1', VC_PUBLIC_HOST='stand.example.com')
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertTrue(any(c['profiles'] == 'kanban,postgres,public' for c in calls))
+        self.assertIn(['pull', 'caddy:2'], [c['args'] for c in calls])
+        config = (ROOT / 'deploy/Caddyfile.stand-public').read_text()
+        self.assertNotIn('tls internal', config)
+        self.assertIn('reverse_proxy voicechat:8787', config)
+        self.assertEqual(self.invoke(role='module')[0], 10)
+
+    def test_stage4_module_vpn_and_remote_dependency(self):
+        self.values.update(COMPOSE_FILE='docker-compose.yml:deploy/compose.stand-module.yml',
+                           COMPOSE_PROFILES='reader', VC_STAND_VPN_ADDRESS='100.64.1.2',
+                           VC_STAND_LINK_PORTS='reader:8795:17100',
+                           VC_STAND_UPSTREAMS='playwright-reader=100.64.1.3:17101|100.64.1.4:17101')
+        safe = {'image': 'example/module:1', 'extra_hosts': {'host.docker.internal': 'host-gateway'}}
+        self.model['services'] = {'reader': {**safe, 'ports': [
+            {'host_ip': '100.64.1.2', 'published': '17100', 'target': 8795}]}, 'module-lb': safe}
+        self.assertEqual(self.invoke(role='module')[0], 0)
+        self.assertIn(':8797 {', (self.root / 'deploy/Caddyfile.stand-lb').read_text())
+        self.assertEqual(self.invoke('remove', role='module')[0], 0)
+        self.values['VC_STAND_LAN_ADDRESS'] = '10.0.0.2'
+        self.assertEqual(self.invoke(role='module')[0], 10)
+
+    def test_stage4_invalid_options_fail_before_docker(self):
+        original = dict(self.values)
+        cases = [('VC_STAND_LAN_ADDRESS', value) for value in ('8.8.8.8', '100.64.0.1', '127.0.0.1', '169.254.1.2', '0.0.0.0', '::1', 'host', '192.168.1.2:80')]
+        cases += [('VC_STAND_VPN_ADDRESS', value) for value in ('0.0.0.0', '224.1.1.1', 'host', '100.64.1.2\nports:')]
+        cases += [('VC_STAND_UPSTREAMS', value) for value in ('core=host:80', 'make=', 'make=host:0', 'make=host:65536', 'make=http://host:80', 'make=host:80|', 'make=host:80;make=other:80', 'make=host:80|host:80', 'make=host:80\n}')]
+        cases += [('VC_STAND_PUBLIC', 'true')]
+        for key, value in cases:
+            with self.subTest(key=key, value=value):
+                self.values = {**original, key: value}
+                code, _, calls = self.invoke()
+                self.assertEqual(code, 10)
+                self.assertFalse(any(c['tool'] == 'docker' for c in calls))
+        for host in ('127.0.0.1', 'https://stand.example.com', '*.example.com', 'bad host', 'example.com/path'):
+            self.values = {**original, 'VC_STAND_PUBLIC': '1', 'VC_PUBLIC_HOST': host}
+            self.assertEqual(self.invoke()[0], 10)
+
+    def test_stage4_options_preserve_production_refusals(self):
+        self.values.update(VC_STAND_PUBLIC='1', VC_PUBLIC_HOST='stand.example.com',
+                           VC_STAND_VPN_ADDRESS='100.64.1.2', VC_STAND_LAN_ADDRESS='10.0.0.2',
+                           VC_STAND_UPSTREAMS='make=100.64.1.3:17100')
+        for service in ('voicechat', 'caddy'):
+            self.model['services'][service]['volumes'] = [{'type': 'bind', 'source': '/run/voicechat/deploy.sock', 'target': '/socket'}]
+            self.assertEqual(self.invoke()[0], 10)
+            del self.model['services'][service]['volumes']
+        self.model['volumes']['other'] = {'name': 'voicechat-server-data'}
+        self.assertEqual(self.invoke()[0], 10)
+        del self.model['volumes']['other']
+        self.values['COMPOSE_PROJECT_NAME'] = 'voicechat'
+        self.assertEqual(self.invoke()[0], 10)
 
     def test_remove_keep_data_delete_data_and_errors(self):
         code, rows, calls = self.invoke('remove')
