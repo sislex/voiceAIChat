@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 49 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1739 коммит(ов) в areas после сверки: b3f4bd39 fix(machines): agent update starts its own session on macOS … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1740 коммит(ов) в areas после сверки: bcd2ae21 fix(deploy): stand pull falls back to linux/amd64 on arm64 machines … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 85 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -58,18 +58,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1015. Последние:
+Всего записей: 1016. Последние:
 
 - [2026-10-03-pc-radvilovich-tailae39a6-ts-net-environments-v3-shared-contracts.md](log/2026-10-03-pc-radvilovich-tailae39a6-ts-net-environments-v3-shared-contracts.md) — environments-v3-shared-contracts
 - [2026-10-03-delivery-c15-placement-aware-compose.md](log/2026-10-03-delivery-c15-placement-aware-compose.md) — placement-aware-compose
 - [2026-10-03-alexeys-macbook-air-2-stand-module-profiles.md](log/2026-10-03-alexeys-macbook-air-2-stand-module-profiles.md) — stand-module-profiles
 - [2026-10-03-alexeys-macbook-air-2-stand-link-ports.md](log/2026-10-03-alexeys-macbook-air-2-stand-link-ports.md) — stand-link-ports
+- [2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-7.md](log/2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-7.md) — pin-kanban-0.1.7
 - [2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-5.md](log/2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-5.md) — pin-kanban-0.1.5
 - [2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-4.md](log/2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-4.md) — pin-kanban-0.1.4
 - [2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-3-core-ui-1-4-14-desktop-1-0-17.md](log/2026-10-03-alexeys-macbook-air-2-pin-kanban-0-1-3-core-ui-1-4-14-desktop-1-0-17.md) — pin-kanban-0.1.3-core-ui-1.4.14-desktop-1.0.17
 - [2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md](log/2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md) — pin-core-ui-1.4.13-desktop-1.0.16
 - [2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md](log/2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md) — owner-pack-integrity-format
-- [2026-10-03-alexeys-macbook-air-2-environments-v3-pins.md](log/2026-10-03-alexeys-macbook-air-2-environments-v3-pins.md) — environments-v3-pins
 
 ## Исторические планы
 
