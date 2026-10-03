@@ -32,6 +32,23 @@ checked: 04a24a48
 
 # Деплой: Docker, HTTPS, прод-сервер, env
 
+## Production database snapshots for stands
+
+`scripts/prod/environment-snapshot.sh <directory>` runs only in the production checkout and
+creates a mode `0600` PostgreSQL custom archive in the explicitly supplied directory. It emits
+JSON lines and reports the archive path, byte size, and SHA-256. Table data excluded from the
+archive is listed in `scripts/prod/snapshot-exclude.txt`; the ownership test requires that file
+to exactly match `SNAPSHOT_SENSITIVE_TABLES` in `apps/server/src/db/ownership.ts`.
+
+A primary stand provision may receive `--snapshot <archive>`. After images are prepared and
+before the application start, `environment_stand.py` starts only the stand PostgreSQL service,
+refuses restoration unless its public schema is empty, restores with `pg_restore`, and applies
+`environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
+sets the first account as administrator with `VC_ADMIN_PASSWORD`, and disables stored SMTP and
+external-integration settings. Snapshot archives are transport artifacts: the caller owns their
+one-time transfer and deletion; these scripts never inspect or modify any other checkout or
+directory.
+
 ## Managed environment secret storage
 
 The `kanban` Compose service receives `VC_ENVIRONMENT_SECRET_KEY` through
