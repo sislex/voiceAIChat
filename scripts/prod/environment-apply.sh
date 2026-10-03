@@ -56,7 +56,9 @@ while IFS= read -r line; do [[ -n $line ]] && pairs+=("$line"); done <<< "$listi
 for pair in "${pairs[@]}"; do
   service=${pair%%$'\t'*} reference=${pair#*$'\t'}
   step "$service" pulling "$reference"
-  if ! "$docker" pull "$reference" >/dev/null 2>&1; then
+  # Owner images are amd64-only; an arm64 machine (Apple Silicon) pulls them for emulation.
+  if ! pull_error=$("$docker" pull "$reference" 2>&1 >/dev/null) &&
+     ! { [[ $pull_error == *"no matching manifest"* ]] && "$docker" pull --platform linux/amd64 "$reference" >/dev/null 2>&1; }; then
     step "$service" failed "pull failed: $reference"
     exit 20
   fi

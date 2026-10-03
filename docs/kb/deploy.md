@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 1f8bcaa7
+checked: a216bf40
 
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -2303,7 +2303,7 @@ a stand of this Core without modules.
 
 Apple Silicon. Owner images are published for linux/amd64 only. When `docker pull` reports
 `no matching manifest` (an arm64 machine), the pull stage retries with
-`--platform linux/amd64`; Docker Desktop then runs those services under emulation, and the
+`--platform linux/amd64` (so does `environment-apply.sh` for switched images); Docker Desktop then runs those services under emulation, and the
 readiness probe already warns about the architecture.
 
 Link targets. An agent link connects to `127.0.0.1:<port>` on its server machine, so a
