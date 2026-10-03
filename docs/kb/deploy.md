@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 2caecd15
+checked: a4a13bb9
 areas:
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
@@ -27,6 +27,21 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Managed environment secret storage
+
+The `kanban` Compose service receives `VC_ENVIRONMENT_SECRET_KEY` through
+`${VC_ENVIRONMENT_SECRET_KEY:-}`. Operators must configure a persistent 64-hex
+AES-256-GCM key before commissioning managed environments. An empty default does
+not generate or rotate a key. Kanban owns encryption and decryption; Core stores
+the supplied ciphertext in `environment_settings` and never needs the key.
+Keep the key with the database recovery material: losing or replacing it makes
+existing encrypted settings unreadable. Do not put it in logs or operation steps.
+Kanban's environments-v2 secret service rejects missing or invalid configuration
+with `503 Environment secret storage is not configured`.
+
+The Core storage migration and Compose variable forwarding do not commission a
+stand or deploy the matching Kanban worker. Those are subsequent operator steps.
 
 ## Delivery-control release tooling (S0 B05)
 

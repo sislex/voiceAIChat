@@ -1,3 +1,5 @@
+import { ACTIVE_ENVIRONMENT_OPERATION_STATUSES } from '@voicechat/shared'
+import type { Sql } from '@sislexa/identity/storage-sql/types'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -87,6 +89,106 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       await db.environments.updateOperation(next.id, { status: 'rolled_back', error: 'health check failed' })
       expect(await db.environments.activeOperation(projectId, input.id)).toBeNull()
     })
+
+    const managed = { id: 'stand', name: 'Stand', machineId: 'agent', storageId: 'storage', checkoutPath: '/srv/stand', composeProject: 'stand-project' }
+    it('creates managed stands, reserves compose projects and permits only draft/removed reuse', async () => {
+      await expect(db.environments.createManagedEnvironment('member', projectId, managed)).rejects.toThrow('owner')
+      await expect(db.environments.createManagedEnvironment('outsider', projectId, managed)).rejects.toThrow('membership')
+      await expect(db.environments.createManagedEnvironment('owner', projectId, { ...managed, id: 'production' })).rejects.toThrow()
+      await db.environments.upsertEnvironment('owner', projectId, { ...input, id: 'external' })
+      await expect(db.environments.createManagedEnvironment('owner', projectId, { ...managed, id: 'external' })).rejects.toThrow('Environment already exists')
+      const first = await db.environments.createManagedEnvironment('owner', projectId, managed)
+      expect(first).toMatchObject({ mode: 'managed', state: 'draft', machines: ['agent'], storageId: 'storage', composeProject: managed.composeProject, port: null })
+      await expect(db.environments.upsertEnvironment('owner', projectId, { ...input, id: managed.id })).rejects.toThrow('Managed environment cannot be changed')
+      await expect(db.environments.createManagedEnvironment('owner', otherProjectId, managed)).rejects.toThrow()
+      const updated = await db.environments.createManagedEnvironment('owner', projectId, { ...managed, name: 'Renamed' })
+      expect(updated).toMatchObject({ createdAt: first.createdAt, name: 'Renamed' })
+      await db.environments.setEnvironmentState(projectId, managed.id, { state: 'ready', port: 17801 })
+      await expect(db.environments.createManagedEnvironment('owner', projectId, managed)).rejects.toThrow('Environment already exists')
+      await db.environments.createManagedEnvironment('owner', otherProjectId, { ...managed, composeProject: 'second-project' })
+      await db.environments.setEnvironmentState(otherProjectId, managed.id, { port: 17802 })
+      expect(await db.environments.managedPorts('agent')).toEqual([17801, 17802])
+      expect(await db.environments.managedPorts('other-agent')).toEqual([])
+      await db.environments.setEnvironmentState(projectId, managed.id, { state: 'removed' })
+      expect(await db.environments.managedPorts('agent')).toEqual([17802])
+      expect(await db.environments.createManagedEnvironment('owner', projectId, managed)).toMatchObject({ state: 'draft', port: null, createdAt: first.createdAt })
+    })
+    it('persists validated core selections without changing old configuration defaults', async () => {
+      const core = { version: '1.2.3', commit: 'b'.repeat(40) }
+      const config = await db.environments.addConfiguration('owner', projectId, input.id, modules, null, core)
+      expect((await db.environments.getConfiguration('member', projectId, config.id))?.core).toEqual(core)
+      expect((await db.environments.listConfigurations('owner', projectId, input.id))[0]?.core).toEqual(core)
+      expect((await db.environments.addConfiguration('owner', projectId, input.id, [], null)).core).toBeNull()
+      await expect(db.environments.addConfiguration('owner', projectId, input.id, [], null, { ...core, commit: 'bad' })).rejects.toThrow('Invalid commit')
+    })
+    it('stores settings atomically, checks ownership and isolates projects', async () => {
+      const fixtureValue1 = randomUUID()
+      const fixtureValue2 = randomUUID()
+      const fixtureValue3 = randomUUID()
+      const entry = { key: 'VC_ADMIN_PASSWORD', secret: true, value: fixtureValue1, source: 'generated' as const }
+      await expect(db.environments.saveSettings('member', projectId, input.id, [entry])).rejects.toThrow('owner')
+      await expect(db.environments.listSettings('outsider', projectId, input.id)).rejects.toThrow('membership')
+      await expect(db.environments.saveSettings('owner', projectId, 'missing', [entry])).rejects.toThrow('Environment not found')
+      await db.environments.saveSettings('owner', projectId, input.id, [entry])
+      expect(await db.environments.listSettings('member', projectId, input.id)).toEqual([{ ...entry, updatedBy: 'owner', updatedAt: expect.any(Number) }])
+      expect(await db.environments.readSettings(otherProjectId, input.id)).toEqual([])
+      await expect(db.environments.saveSettings('owner', projectId, input.id, [{ ...entry, value: fixtureValue2 }, { ...entry, key: 'bad' }])).rejects.toThrow()
+      expect((await db.environments.readSettings(projectId, input.id))[0]?.value).toBe(entry.value)
+      await db.environments.saveSettings('owner', projectId, input.id, [{ ...entry, secret: false, value: fixtureValue3, source: 'user' }])
+      expect((await db.environments.readSettings(projectId, input.id))[0]).toMatchObject({ value: fixtureValue3, secret: false, source: 'user' })
+      await db.environments.saveSettings('owner', projectId, input.id, [{ ...entry, value: null }])
+      expect(await db.environments.readSettings(projectId, input.id)).toEqual([])
+    })
+    it('keeps all active statuses exclusive and blocks settings until a terminal status', async () => {
+      const config = await db.environments.addConfiguration('owner', projectId, input.id, [], null)
+      const operation = await db.environments.createOperation('owner', projectId, input.id, config.id, null, 'provision')
+      for (const status of ACTIVE_ENVIRONMENT_OPERATION_STATUSES) {
+        await db.environments.updateOperation(operation.id, { status })
+        expect(await db.environments.activeOperation(projectId, input.id)).toMatchObject({ status, kind: 'provision' })
+        await expect(db.environments.createOperation('owner', projectId, input.id, config.id, null, 'remove')).rejects.toThrow()
+        await expect(db.environments.saveSettings('owner', projectId, input.id, [])).rejects.toThrow('Environment is busy')
+      }
+      for (const status of ['failed', 'succeeded', 'rolled_back'] as const) {
+        await db.environments.updateOperation(operation.id, { status })
+        expect(await db.environments.activeOperation(projectId, input.id)).toBeNull()
+        await db.environments.saveSettings('owner', projectId, input.id, [])
+        const next = await db.environments.createOperation('owner', projectId, input.id, config.id, null, 'remove')
+        expect(next.kind).toBe('remove')
+        await db.environments.updateOperation(next.id, { status: 'succeeded' })
+      }
+    })
+    it('upgrades populated stage-1 tables and replaces the active index idempotently', async () => {
+      const config = await db.environments.addConfiguration('owner', projectId, input.id, [], null)
+      const operation = await db.environments.createOperation('owner', projectId, input.id, config.id, null)
+      const sql = (db as unknown as { sql: Sql }).sql
+      await sql.exec('DROP TABLE environment_settings')
+      await sql.exec('DROP INDEX idx_environment_compose_project')
+      await sql.exec('DROP INDEX idx_environment_active_operation_v2')
+      for (const [table, columns] of [
+        ['environments', ['mode', 'storage_id', 'state', 'compose_project', 'port']],
+        ['environment_configurations', ['core_json']], ['environment_operations', ['kind']],
+      ] as const) for (const column of columns) await sql.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`)
+      await sql.exec("CREATE UNIQUE INDEX idx_environment_active_operation ON environment_operations(project_id, environment_id) WHERE status IN ('pending', 'pulling', 'switching', 'health_check')")
+      for (let attempt = 0; attempt < 2; attempt++) {
+        peer = new VoiceChatDb(join(dir, 'db.sqlite'), engine === 'postgres' ? { postgres: { url: process.env.VC_TEST_DB_URL!, schema } } : {})
+        await peer.ready
+        expect(await peer.environments.getEnvironment('owner', projectId, input.id)).toMatchObject({ mode: 'external', state: 'ready', storageId: null, composeProject: null, port: null })
+        expect((await peer.environments.getConfiguration('owner', projectId, config.id))?.core).toBeNull()
+        expect(await peer.environments.activeOperation(projectId, input.id)).toMatchObject({ kind: 'apply' })
+        for (const status of ['preparing', 'building', 'starting', 'removing'] as const) {
+          await peer.environments.updateOperation(operation.id, { status })
+          await expect(peer.environments.createOperation('owner', projectId, input.id, config.id, null)).rejects.toThrow()
+        }
+        const peerSql = (peer as unknown as { sql: Sql }).sql
+        const indexes = engine === 'postgres'
+          ? await peerSql.all<{ name: string }>('SELECT indexname AS name FROM pg_indexes WHERE schemaname = current_schema()')
+          : await peerSql.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index'")
+        expect(indexes.map(index => index.name)).toContain('idx_environment_active_operation_v2')
+        expect(indexes.map(index => index.name)).not.toContain('idx_environment_active_operation')
+        expect(await peer.environments.readSettings(projectId, input.id)).toEqual([])
+        await peer.close(); peer = undefined
+      }
+    }, 120_000)
     it.skipIf(engine !== 'postgres')('serializes revisions across independent Postgres connections', async () => {
       peer = new VoiceChatDb(':memory:', { postgres: { url: process.env.VC_TEST_DB_URL!, schema } })
       await peer.ready
@@ -99,7 +201,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
 }
 
 it('includes environment tables, composite foreign keys and active-operation uniqueness in PostgreSQL DDL', () => {
-  for (const table of ['environments', 'environment_configurations', 'environment_operations']) expect(PG_SCHEMA.tables.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`))).toBe(true)
+  for (const table of ['environments', 'environment_configurations', 'environment_operations', 'environment_settings']) expect(PG_SCHEMA.tables.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`))).toBe(true)
   expect(PG_SCHEMA.foreignKeys.join('\n')).toMatch(/FOREIGN KEY \(project_id, environment_id\) REFERENCES environments/)
   expect(PG_SCHEMA.indexes.join('\n')).toContain('idx_environment_active_operation')
 })

@@ -14,7 +14,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-09-23 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-02 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-03 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ✓ |
@@ -58,10 +58,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1001. Последние:
+Всего записей: 1002. Последние:
 
 - [2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md](log/2026-10-03-alexeys-macbook-air-2-pin-core-ui-1-4-13-desktop-1-0-16.md) — pin-core-ui-1.4.13-desktop-1.0.16
 - [2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md](log/2026-10-03-alexeys-macbook-air-2-owner-pack-integrity-format.md) — owner-pack-integrity-format
+- [2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md](log/2026-10-03-alexeys-macbook-air-2-environments-v2-storage.md) — environments-v2-storage
 - [2026-10-03-alexeys-macbook-air-2-environments-v2-shared.md](log/2026-10-03-alexeys-macbook-air-2-environments-v2-shared.md) — environments-v2-shared
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-12-desktop-1-0-15.md) — pin-core-ui-1.4.12-desktop-1.0.15
 - [2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md](log/2026-10-02-alexeys-macbook-air-2-pin-core-ui-1-4-11-desktop-1-0-14-kanban-0-1-2.md) — pin-core-ui-1.4.11-desktop-1.0.14-kanban-0.1.2
@@ -69,7 +70,6 @@
 - [2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md](log/2026-10-02-alexeys-macbook-air-2-environment-apply-compose-chain.md) — environment-apply-compose-chain
 - [2026-10-01-alexeys-macbook-air-2-release-retention.md](log/2026-10-01-alexeys-macbook-air-2-release-retention.md) — release-retention
 - [2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md](log/2026-10-01-alexeys-macbook-air-2-kanban-linux-image-pin.md) — kanban-linux-image-pin
-- [2026-10-01-alexeys-macbook-air-2-kanban-e2e-stand.md](log/2026-10-01-alexeys-macbook-air-2-kanban-e2e-stand.md) — kanban-e2e-stand
 
 ## Исторические планы
 
