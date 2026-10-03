@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-03
-checked: 59f2ddf5044b2901ebb674c871eb6fceaf9193ce
+checked: 2ea9e66e
 areas:
   - packages/shared/src
 ---
@@ -48,11 +48,20 @@ contract foundation for the independent SDK and Billing repositories.
 
 ### Managed environment contracts
 
-`environment.ts` defines the environments-v2 managed stand lifecycle, Core release
-selection, operation kinds/stages, readiness thresholds, and the user/reserved
-settings catalogs. Settings patches reject unknown and reserved keys, duplicates,
-unsafe dotenv characters, and short administrator passwords. Secret encryption
-and provisioning belong to consumers, not Shared.
+`environment.ts` defines the managed stand lifecycle, Core release selection,
+operation kinds/stages, readiness thresholds, and the user/reserved settings
+catalogs. Environments-v3 adds optional per-module machine placement, durable
+environment-link views and their reserved port range, plus empty versus production
+snapshot provisioning data. `parseModulePlacement` keeps external environments and
+embedded Core modules on the primary machine and rejects machines outside the
+environment. Settings patches reject unknown and reserved keys, duplicates, unsafe
+dotenv characters, and short administrator passwords. Secret encryption and
+provisioning belong to consumers, not Shared.
+
+`projects.ts` owns the Delivery Control external-task upsert/reference contracts and
+the exhaustive external-state to board-column mapping. `integrationTokens.ts`
+contains the project integration-token view and the `tasks:external` scope; token
+secrets are deliberately absent because consumers return them only at creation.
 
 `managedStandPaths` builds the project-local `environments/stands/<id>` layout,
 including `temporary/repository`, `config/stand.env`, and `config/overrides`;
@@ -63,8 +72,8 @@ and forbids `taskId` on stands. Parser and POSIX/macOS layout coverage lives in
 `environmentV2.test.ts`.
 
 Distribution requires a committed source: run `npm run build:core-contracts --
---version 0.1.15 --commit <contracts-commit-sha>`, then vendor and pin the archive
-with its provenance in a follow-up commit, following the 0.1.14 snapshot. A dirty
+--version 0.1.16 --commit <contracts-commit-sha>`, then vendor and pin the archive
+with its provenance in a follow-up commit, following the 0.1.15 snapshot. A dirty
 working tree cannot serve as the release commit.
 
 ### Existing modules

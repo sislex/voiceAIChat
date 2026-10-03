@@ -105,3 +105,4 @@ export * from '@sislexa/agent-contracts/pty'
 export * from './browserUiRelease'
 
 export * from './environment'
+export * from './integrationTokens'
