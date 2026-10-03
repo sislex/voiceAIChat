@@ -1,8 +1,12 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked:
+checked: 47dc67ca
 areas:
+  - deploy/compose.stand.yml
+  - scripts/prod/environment_stand.py
+  - scripts/prod/environment-provision.sh
+  - scripts/prod/environment-remove.sh
   - scripts/delivery-release.mjs
   - scripts/delivery-release-lock.py
   - scripts/delivery-release-command.py
@@ -2248,3 +2252,47 @@ and repeated apply. These checks do not commission or deploy an environment.
 сервисы на запущенных образах, поэтому выкат Core переключений окружения не откатывает; сервис,
 образ которого изменил сам релиз (состав релиза), переключается на него
 (`owner_image_switches.py`, заранее явный `docker pull`).
+
+## Managed stands
+
+`deploy/compose.stand.yml` layers over `docker-compose.yml`: Core publishes only
+`127.0.0.1:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses
+`${VC_DATA_VOLUME}` for `vc-data`. Caddy belongs to the inactive `public` profile.
+This overlay requires Docker Compose with `!override` support.
+
+Run `bash scripts/prod/environment-provision.sh --operation <id>` in the stand
+checkout. Its `.env` normally links to `../../config/stand.env`; the parser in
+`compose_env.py` reads settings without executing shell code. All reserved
+settings from the environments plan must be nonempty. The scripts validate the
+stand Compose chain, postgres/kanban profiles, port, release commit prefix,
+project-specific data volume, serial build settings and resolved Compose model.
+They refuse the production checkout identified by readable
+`/etc/voicechat/production.env`, the production data volume and public profiles.
+The checkout settings take precedence over ambient Compose/VC settings; an
+existing `VC_ENVIRONMENT_OVERRIDES/current.yml` is appended once.
+
+Provision emits JSON lines with `stage`, `status` and `log`: `config`, `build`,
+`pull`, `start`, `health`, each running then passed or failed. Core metadata comes
+from the selected release version, Git HEAD and `apps/server/release.json`.
+`voicechat` and `automation-runner` build sequentially; missing images of active
+services without builds are pulled. Start uses `--no-build --pull never`.
+Health requires Core's `ok=true` and exact HEAD, all active services running,
+and healthy containers wherever a healthcheck exists. The timeout is
+`VC_ENVIRONMENT_START_TIMEOUT` (default 300 seconds). Failure leaves containers
+for inspection and emits redacted `ps -a` and Core log diagnostics. Raw command
+errors are suppressed, and every nonempty `.env` value is redacted in log text.
+Exit codes are 0 success, 2 arguments, 10 configuration, 20 pull, 25 build and
+30 start/health.
+
+`bash scripts/prod/environment-remove.sh --operation <id> [--delete-data]`
+uses the same validation and emits `down`, plus `volumes` when deleting data.
+It runs Compose down with `--remove-orphans`, optionally `--volumes`, and removes
+the named stand data volume and remaining volumes labelled with its project.
+Exit codes are 0, 2, 10 and 30. Neither command removes checkout files; the
+controller owns manifest verification and directory cleanup.
+
+The fake Docker/curl tests in `scripts/prod/test_environment_stands.py` are
+included by `test_environment_scripts.py`. The real Compose config-only test
+skips when Docker Compose is unavailable; it never starts services. Machine
+commissioning (Docker access, owner images, runner authentication, resources
+and end-to-end creation/removal) remains an operator/integration step.
