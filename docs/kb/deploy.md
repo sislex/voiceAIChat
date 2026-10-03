@@ -1,8 +1,8 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-03
-checked: 8831c643
-
+updated: 2026-10-04
+checked: 96e017e5
+areas:
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
   - scripts/prod/environment-provision.sh
@@ -2278,7 +2278,7 @@ and repeated apply. These checks do not commission or deploy an environment.
 ## Managed stands
 
 `deploy/compose.stand.yml` layers over `docker-compose.yml`: Core publishes only
-`127.0.0.1:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses
+`${VC_STAND_LAN_ADDRESS:-127.0.0.1}:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses
 `${VC_DATA_VOLUME}` for `vc-data`. Caddy belongs to the inactive `public` profile.
 It also exposes `host.docker.internal` through Docker's `host-gateway`, so primary
 stand containers can reach agent-managed links. This overlay requires Docker
@@ -2316,6 +2316,34 @@ ports, appends it before `current.yml`, and refuses any published port that is n
 the Core stand port or a listed loopback link port. Published ports lie in
 17000–17799 and are unique per machine; caddy cannot be listed.
 
+Stage 4 address options are read from the checkout `.env`, never ambient settings.
+`VC_STAND_VPN_ADDRESS` publishes only the listed link ports on that IPv4 address
+instead of loopback; unspecified, loopback, multicast, reserved and link-local
+addresses are rejected. Tailscale's 100.64.0.0/10 addresses are accepted. VPN
+membership and grants are commissioned separately by the owner and link manager.
+`VC_STAND_LAN_ADDRESS` changes only the primary Core port and its health probe;
+it must belong to RFC 1918 (10/8, 172.16/12 or 192.168/16).
+
+`VC_STAND_UPSTREAMS=make=100.64.1.2:17100|100.64.1.3:17100;reader=host.docker.internal:17101`
+generates `deploy/compose.stand-lb.yml` and `deploy/Caddyfile.stand-lb` in the stand
+checkout. The internal-only `module-lb` Caddy service uses a separate listener per
+module, round-robin selection, `/v1/health` active checks and passive removal for
+30 seconds after a failed request or 5xx response. Supported names and listener
+ports are declared in `environment_stand.py:MODULES`. Corresponding `VC_*_URL`
+values are replaced with `http://module-lb:<module-port>` before Compose resolves
+all consumers. Endpoint syntax is a hostname or IPv4 address and a port; URLs,
+paths, duplicate modules/endpoints and unknown modules are rejected. The generated
+overlay precedes link overrides and `current.yml`.
+
+`VC_STAND_PUBLIC=1` with a DNS name in `VC_PUBLIC_HOST` enables profile `public`
+only for role `primary`. Without this opt-in, explicitly selecting `public` is
+rejected. `deploy/Caddyfile.stand-public` obtains automatic public TLS certificates
+and forwards public requests through Core, including its configured module URLs;
+`/internal/*` remains hidden. Module stands cannot request public or LAN access.
+The operator must arrange DNS and inbound HTTP/HTTPS on the primary server before
+commissioning; these scripts do not configure DNS, VPN membership or firewalls.
+All options retain production project/volume/socket and container isolation checks.
+
 Run `bash scripts/prod/environment-provision.sh --operation <id> --role primary`
 in the primary stand checkout, or pass `--role module` in a module checkout.
 `primary` remains the default for compatibility. Its `.env` normally links to
@@ -2325,7 +2353,7 @@ settings from the environments plan must be nonempty. The scripts validate the
 stand Compose chain, postgres/kanban profiles, port, release commit prefix,
 project-specific data volume, serial build settings and resolved Compose model.
 They refuse the production checkout identified by readable
-`/etc/voicechat/production.env`, the production data volume and public profiles.
+`/etc/voicechat/production.env`, the production data volume and public profiles without opt-in.
 The checkout settings take precedence over ambient Compose/VC settings; an
 existing `VC_ENVIRONMENT_OVERRIDES/current.yml` is appended once.
 
