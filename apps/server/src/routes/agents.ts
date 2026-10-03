@@ -1,3 +1,4 @@
+import { vpnMachineView } from '../machines/vpn/telemetry.js'
 // REST для машин-агентов: список (с онлайн-статусом), создание (одноразовый
 // токен), удаление (отзыв токена + разрыв соединения).
 
@@ -135,7 +136,8 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
-  registerVpnRoutes(app, new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY))
+  registry.vpnService = new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY)
+  registerVpnRoutes(app, registry.vpnService)
   const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentInfo[]> => {
     const online = registry.onlineIds()
     return await Promise.all(agents.map(async (a) => ({
@@ -145,6 +147,7 @@ export async function registerAgentRoutes(
       online: online.has(a.id),
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
+      vpn: vpnMachineView(registry.telemetryOf(a.id)),
       imageHost: registry.imageHostOf(a.id)
     })))
   }

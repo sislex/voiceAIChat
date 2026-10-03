@@ -1,3 +1,4 @@
+import type { VpnService } from './vpn/service.js'
 import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environments.js'
 // Порт `MachinesService` — поверхность реестра машин, которой пользуются потребители в ядре, канбане,
 // Make и админке (docs/plans/machines-service.md, круг 1). Это ровно публичные методы `AgentRegistry`
@@ -16,7 +17,8 @@ export type { ExecMeta, ExecResult, PtyEvent }
 /** Запись журнала команд, как её отдаёт реестр подписчикам `onCommand`. */
 export type MachineCommandReport = Omit<MachineCommandRecord, 'id'> & { output: string }
 
-export interface MachinesService {
+export interface MachinesService extends Pick<VpnService, 'ensureEnvironmentGrant' | 'removeEnvironmentGrant' | 'environmentGrantState'> {
+  vpnAddressOf(machineId: string): string | undefined
   ensureLink(input: EnvironmentLinkInput): Promise<EnvironmentLink>
   deleteLink(projectId: string, environmentId: string, id: string): Promise<void>
   listLinks(projectId: string, environmentId: string): Promise<EnvironmentLink[]>
