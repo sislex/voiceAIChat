@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 47dc67ca
+checked: 3bcba084
 areas:
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -438,7 +438,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.2, SHA `c48894724132106415d70498ae6bd3ce265fd127` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) и окружения с конфигурациями и операциями (environments-v1, этап 1)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.1.3, SHA `87499525c622689d32767d437196b3d1590c3f69` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
@@ -458,7 +458,12 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 `{ packages: [{ name, version, filename, commit, sha256, integrity }] }`. Core UI (PR #34) and Desktop
 (PR #12) `scripts/pack.mjs` write exactly this form, so publication needs no hand-made file; the
 script still recomputes and cross-checks sha256/integrity from the archive bytes. Releases up to Core
-UI 1.4.13 / Desktop 1.0.16 were published with a regenerated file and `--skip-pack`. Core pins the same bytes under
+UI 1.4.13 / Desktop 1.0.16 were published with a regenerated file and `--skip-pack`; Core UI 1.4.14 /
+Desktop 1.0.17 used the files written by `pack:release` unchanged. A single `apply --dir` may also
+include an image-only release (Kanban): it rewrites `deploy/tools.lock.json` and the compose image.
+Pushing an owner image needs a GHCR login with `write:packages`; a GitHub token with only
+`repo`/`workflow` scopes logs in but `docker push` is rejected ("does not match expected scopes").
+Core pins the same bytes under
 the asset name `<name>-<v>-<sha256[0:12]>.tgz`. Core UI `pack:release` runs `gate:release` itself, so
 running it on the release commit before merge yields both the required gate and the archive. To pin in
 Core, put each release's `sislexa-release.json` and archive into its own subdirectory and run
