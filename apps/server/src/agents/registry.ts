@@ -13,6 +13,8 @@ import { evaluateAgentCommand, isToolAllowed, requiredVersion, AGENT_VERSION, DE
 export interface AgentSocket {
   send(data: string): void
   close(): void
+  /** Bytes queued for sending (ws.WebSocket); drives tunnel relay backpressure. */
+  readonly bufferedAmount?: number
 }
 
 export interface ExecResult {
@@ -130,12 +132,25 @@ interface TunnelSession {
   persistent?: boolean
   /** Serializes frame handling of this tunnel (see handleMessage). */
   queue?: Promise<void>
+  /** Connections whose producer Core paused because the receiving agent socket is backlogged. */
+  relayPaused?: Map<string, { producer: string; consumer: string }>
+  /** Connections whose producer the receiving agent paused (relayed tunnel.pause). */
+  peerPaused?: Set<string>
+  relayTimer?: NodeJS.Timeout
   /** Called for every tunnel frame with its type; callers may cache only data frames. */
   authorize: (frame: string) => Promise<boolean>
   onClose?: () => void
 }
 const TUNNEL_START_TIMEOUT_MS = 10_000
 const TUNNEL_IDLE_TTL_MS = 30 * 60_000
+/**
+ * Core relays tunnel data between two agent sockets. A fast producer (a LAN snapshot server) and a
+ * slow consumer link would otherwise queue the whole stream in Core memory, so Core pauses the
+ * producer above the high-water mark and resumes it once the consumer socket drains.
+ */
+export const TUNNEL_RELAY_HIGH_WATER_MARK = 8 * 1024 * 1024
+export const TUNNEL_RELAY_LOW_WATER_MARK = 2 * 1024 * 1024
+const TUNNEL_RELAY_POLL_MS = 25
 
 /** Кто и откуда запустил команду — попадает в журнал команд машины. */
 export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
@@ -830,7 +845,7 @@ export class AgentRegistry {
   closeTunnel(id: string): boolean {
     const tunnel = this.tunnels.get(id)
     if (!tunnel) return false
-    this.tunnels.delete(id); clearTimeout(tunnel.timer); clearTimeout(tunnel.idleTimer)
+    this.tunnels.delete(id); clearTimeout(tunnel.timer); clearTimeout(tunnel.idleTimer); clearInterval(tunnel.relayTimer)
     this.send(tunnel.sourceAgentId, { t: 'tunnel.close', tunnelId: id })
     this.send(tunnel.targetAgentId, { t: 'tunnel.close', tunnelId: id })
     tunnel.reject?.(new Error('Туннель закрыт'))
@@ -853,6 +868,34 @@ export class AgentRegistry {
     }
   }
 
+  private sendFlow(agentId: string, tunnelId: string, connectionId: string, t: 'tunnel.pause' | 'tunnel.resume'): void {
+    this.send(agentId, { t, tunnelId, connectionId } as never)
+  }
+
+  private bufferedAmount(agentId: string): number {
+    return this.online.get(agentId)?.socket.bufferedAmount ?? 0
+  }
+
+  /** Pauses the producer of a relayed connection while the consumer socket is backlogged. */
+  private throttleRelay(tunnel: TunnelSession, producer: string, consumer: string, connectionId: string): void {
+    const key = `${producer}:${connectionId}`
+    if (tunnel.relayPaused?.has(key) || this.bufferedAmount(consumer) < TUNNEL_RELAY_HIGH_WATER_MARK) return
+    tunnel.relayPaused ??= new Map()
+    tunnel.relayPaused.set(key, { producer, consumer })
+    this.sendFlow(producer, tunnel.id, connectionId, 'tunnel.pause')
+    tunnel.relayTimer ??= setInterval(() => this.releaseRelay(tunnel), TUNNEL_RELAY_POLL_MS)
+    tunnel.relayTimer.unref?.()
+  }
+
+  private releaseRelay(tunnel: TunnelSession): void {
+    for (const [key, { producer, consumer }] of tunnel.relayPaused ?? []) {
+      if (this.bufferedAmount(consumer) > TUNNEL_RELAY_LOW_WATER_MARK) continue
+      tunnel.relayPaused!.delete(key)
+      if (!tunnel.peerPaused?.has(key)) this.sendFlow(producer, tunnel.id, key.slice(producer.length + 1), 'tunnel.resume')
+    }
+    if (!tunnel.relayPaused?.size) { clearInterval(tunnel.relayTimer); tunnel.relayTimer = undefined }
+  }
+
   /** One tunnel frame, after the frames received before it (see handleMessage). */
   private async handleTunnelFrame(agentId: string, tunnel: TunnelSession, msg: Extract<AgentToServer, { tunnelId: string }>): Promise<void> {
     const authorized = await tunnel.authorize(msg.t).catch(() => false)
@@ -867,12 +910,21 @@ export class AgentRegistry {
     } else if (msg.t === 'tunnel.connected' && agentId === tunnel.targetAgentId) {
       // TCP accept on the source is already waiting; data can flow now.
     } else if (msg.t === 'tunnel.data') {
-      this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, msg)
+      const consumer = agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId
+      this.send(consumer, msg)
+      this.throttleRelay(tunnel, agentId, consumer, msg.connectionId)
     } else if ((msg as { t: string }).t === 'tunnel.pause' || (msg as { t: string }).t === 'tunnel.resume') {
       // Agent 0.21.0 backpressure: the slow side asks its peer to stop or resume reading.
       const flow = msg as unknown as { t: 'tunnel.pause' | 'tunnel.resume'; connectionId: string }
-      this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: flow.t, tunnelId: tunnel.id, connectionId: flow.connectionId } as never)
+      const producer = agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId
+      const key = `${producer}:${flow.connectionId}`
+      tunnel.peerPaused ??= new Set()
+      if (flow.t === 'tunnel.pause') tunnel.peerPaused.add(key)
+      else tunnel.peerPaused.delete(key)
+      // A peer resume must not release a producer Core still holds for its own backlog.
+      if (flow.t === 'tunnel.pause' || !tunnel.relayPaused?.has(key)) this.sendFlow(producer, tunnel.id, flow.connectionId, flow.t)
     } else if (msg.t === 'tunnel.end' || msg.t === 'tunnel.connectionError') {
+      tunnel.relayPaused?.delete(`${agentId}:${msg.connectionId}`)
       this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: 'tunnel.end', tunnelId: tunnel.id, connectionId: msg.connectionId })
     } else if (msg.t === 'tunnel.error') {
       tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
