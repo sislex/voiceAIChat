@@ -1,9 +1,27 @@
 services:
   voicechat:
+    extra_hosts: &stand-extra-hosts
+      - "host.docker.internal:host-gateway"
     ports: !override
       - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
     volumes: !override
       - vc-data:/data            # no host deploy socket in a stand
+  make:
+    extra_hosts: *stand-extra-hosts
+  playwright-reader:
+    extra_hosts: *stand-extra-hosts
+  image-studio:
+    extra_hosts: *stand-extra-hosts
+  kanban:
+    extra_hosts: *stand-extra-hosts
+  machines:
+    extra_hosts: *stand-extra-hosts
+  admin:
+    extra_hosts: *stand-extra-hosts
+  reader:
+    extra_hosts: *stand-extra-hosts
+  browser-runner:
+    extra_hosts: *stand-extra-hosts
   caddy:
     profiles: ["public"]         # public address of a stand is environments-v3
 volumes:
