@@ -102,5 +102,8 @@
     "@xterm/addon-fit": "0.10.0",
     "@xterm/xterm": "5.5.0",
     "@sislex/llm-runner": "file:vendor/sislex-llm-runner-0.3.5-1ccbdeb47b04.tgz"
+  },
+  "overrides": {
+    "@sislexa/agent-contracts": "$@sislexa/agent-contracts"
   }
 }

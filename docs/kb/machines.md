@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-03
-checked: 09c68678
+checked: 5775b782
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -555,6 +555,9 @@ Android-установщик best-effort ставит CLI-пакет `termux-api
 
 `@sislexa/agent-contracts` owns `AGENT_VERSION`, reported by the companion and
 served publicly by Core at `/api/agents/version`. The pinned release is 0.21.0 (environment links: `tunnel.listen` host/port, `tunnel.pause`/`tunnel.resume`, capability `environment-link`);
+agent-contracts 1.1.0 is forced for the owner archives that still declare an exact `1.0.0` peer
+(`chat-app`, `chat-ui`, Make, Web Reader) by the root `overrides` entry `$@sislexa/agent-contracts`;
+without it a clean `npm ci` tries the public registry and fails with E404;
 its existing 0.19.x wire protocol remains compatible. Feature minimum versions
 remain explicit, so releasing Core does not require upgrading every installed agent.
 
