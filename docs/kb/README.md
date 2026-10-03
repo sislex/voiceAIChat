@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 49 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1738 коммит(ов) в areas после сверки: 1c810f43 fix(deps): force pinned agent-contracts for exact 1.0.0 peers … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1739 коммит(ов) в areas после сверки: b3f4bd39 fix(machines): agent update starts its own session on macOS … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 85 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -36,11 +36,11 @@
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 423 коммит(ов) в areas после сверки: 2ec9724a feat(server): project integration tokens and integration ingress (B05) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ⚠ 2 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ⚠ 3 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-03 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-03 | ⚠ 1 коммит(ов) в areas после сверки: b3f4bd39 fix(machines): agent update starts its own session on macOS |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 9 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 2ec9724a feat(server): project integration tokens and integration ingress (B05) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-03 | ⚠ 4 коммит(ов) в areas после сверки: c70d5ca1 feat(deploy): production snapshot and stand restore (environments-v3 C16) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-09-30 | ⚠ 5 коммит(ов) в areas после сверки: b3f4bd39 fix(machines): agent update starts its own session on macOS … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-03 | ⚠ 5 коммит(ов) в areas после сверки: b3f4bd39 fix(machines): agent update starts its own session on macOS … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-03 | ⚠ 1 коммит(ов) в areas после сверки: b5149bc3 feat(shared): environments-v3 contracts |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 259 коммит(ов) в areas после сверки: aa6b503c chore: pin environments-v3 releases (Kanban 0.1.6, Core UI 1.4.15, Desktop 1.0.18, agent 0.21.0) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |

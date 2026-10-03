@@ -233,7 +233,13 @@ class Stand:
         images = {s['image'] for s in self.model['services'].values() if self.active(s) and not s.get('build')}
         for image in sorted(images):
             if self.run(self.docker, 'image', 'inspect', image, check=False).returncode:
-                self.run(self.docker, 'pull', image)
+                pulled = self.run(self.docker, 'pull', image, check=False)
+                # Owner images are published for linux/amd64 only; an arm64 machine (Apple Silicon)
+                # runs them under emulation, which docker pull needs to be told explicitly.
+                if pulled.returncode and 'no matching manifest' in pulled.stderr:
+                    pulled = self.run(self.docker, 'pull', '--platform', 'linux/amd64', image, check=False)
+                if pulled.returncode:
+                    raise ValueError('command failed')
         self.emit('passed')
         if snapshot is not None:
             self.restore(snapshot)

@@ -26,6 +26,9 @@ with open(os.environ['FAKE_LOG'], 'a') as out:
     out.write(json.dumps({'tool': pathlib.Path(sys.argv[0]).name, 'args': args,
         'metadata': {k:v for k,v in os.environ.items() if k.startswith('VC_APPLICATION_')},
         'chain': os.environ.get('COMPOSE_FILE')}) + '\n')
+if os.environ.get('NO_NATIVE') and args[:1] == ['pull'] and '--platform' not in args:
+    print('no matching manifest for linux/arm64/v8 in the manifest list entries', file=sys.stderr)
+    sys.exit(1)
 fail = os.environ.get('FAIL', '')
 if fail and ' '.join(args).startswith(fail):
     print(os.environ.get('SECRET', ''), file=sys.stderr)
@@ -199,6 +202,12 @@ class StandTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(any(c['args'][0] == 'pull' for c in calls))
         self.assertTrue(any(c['chain'] == self.values['COMPOSE_FILE'] + ':' + str(override / 'current.yml') for c in calls))
+
+    def test_amd64_only_images_are_pulled_for_emulation(self):
+        code, _, calls = self.invoke(NO_NATIVE='1')
+        self.assertEqual(code, 0)
+        pulls = [c['args'] for c in calls if c['args'][:1] == ['pull']]
+        self.assertEqual(pulls, [['pull', 'postgres:16'], ['pull', '--platform', 'linux/amd64', 'postgres:16']])
 
     def test_module_role_has_no_build_or_core_health(self):
         self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
