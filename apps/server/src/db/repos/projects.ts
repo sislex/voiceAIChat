@@ -1,3 +1,5 @@
+import type { IntegrationTokenScope, IntegrationTokenView } from '@voicechat/shared'
+import { integrationBearer, type IntegrationPrincipal } from '../../auth/integrationTokens.js'
 // Домен «projects»: таблицы projects, project_members, project_member_role_audit, project_invitations, project_types, project_type_review_audit, kanban_columns, board_views.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
@@ -95,6 +97,46 @@ interface ProjectMemberRow {
 }
 
 export class ProjectsRepo extends BaseRepo {
+  async listIntegrationTokens(userId: string, projectId: string): Promise<IntegrationTokenView[] | null> {
+    if (!await this.isProjectOwner(userId, projectId)) return null
+    const rows = await this.sql.all(`SELECT id, project_id, name, scopes, created_at, last_used_at
+      FROM integration_tokens WHERE project_id = ? AND revoked_at IS NULL ORDER BY created_at, id`, [projectId])
+    return rows.map(row => ({
+      id: String(row.id), projectId: String(row.project_id), name: String(row.name),
+      scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[],
+      createdAt: Number(row.created_at), lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at)
+    }))
+  }
+
+  async createIntegrationToken(userId: string, projectId: string, name: string, scopes: IntegrationTokenScope[]): Promise<(IntegrationTokenView & { token: string }) | null> {
+    if (!await this.isProjectOwner(userId, projectId)) return null
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 200
+      || !Array.isArray(scopes) || !scopes.length || scopes.some(scope => scope !== 'tasks:external')
+      || new Set(scopes).size !== scopes.length) throw new Error('invalid_integration_token')
+    const token = 'sit_' + randomBytes(32).toString('base64url')
+    const view: IntegrationTokenView = { id: this.newId(), projectId, name: name.trim(), scopes, createdAt: this.now(), lastUsedAt: null }
+    await this.sql.run(`INSERT INTO integration_tokens
+      (id, project_id, name, scopes, token_hash, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [view.id, projectId, view.name, JSON.stringify(scopes), createHash('sha256').update(token).digest('hex'), userId, view.createdAt])
+    return { ...view, token }
+  }
+
+  async revokeIntegrationToken(userId: string, projectId: string, id: string): Promise<boolean> {
+    if (!await this.isProjectOwner(userId, projectId)) return false
+    const result = await this.sql.run(`UPDATE integration_tokens SET revoked_at = ?
+      WHERE id = ? AND project_id = ? AND revoked_at IS NULL`, [this.now(), id, projectId])
+    return result.changes > 0
+  }
+
+  async resolveIntegrationToken(authorization: string | undefined): Promise<IntegrationPrincipal | null> {
+    const token = integrationBearer(authorization)
+    if (!token) return null
+    // Conditional UPDATE atomically checks revocation and records use.
+    const row = await this.sql.get(`UPDATE integration_tokens SET last_used_at = ?
+      WHERE token_hash = ? AND revoked_at IS NULL RETURNING project_id, scopes`,
+      [this.now(), createHash('sha256').update(token).digest('hex')])
+    return row ? { kind: 'integration', projectId: String(row.project_id), scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[] } : null
+  }
   /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
   async getBoardView(userId: string, projectId: string): Promise<BoardView> {
     const row = (await this.sql.get(`SELECT value FROM board_views WHERE username = ? AND project_id = ?`, [userId, projectId])) as { value: string } | undefined

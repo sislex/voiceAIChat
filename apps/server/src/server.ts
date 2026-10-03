@@ -1,4 +1,7 @@
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
+import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
+import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
+import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS } from '@voicechat/shared'
 import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
 import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/index'
@@ -345,6 +348,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     component.close()
     throw new Error('Managed remote tools require declared component dependencies')
   }
+  registerIntegrationTokenGuard(app)
   const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
   const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id'
@@ -469,6 +473,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
   const authenticate: AuthenticateFn = async req => {
+    if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
       if (req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
@@ -1365,6 +1370,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     gate: commandGate
   })
+  registerIntegrationTokenRoutes(app, db)
+  registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
   // Сессии живут в памяти процесса — перезапуск сервера оставляет dev-сервер сиротой,
