@@ -1,9 +1,11 @@
 import json
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from environment_observe import describe_container, observe
 
@@ -47,8 +49,10 @@ exit 0
 
 
 class ApplyTest(unittest.TestCase):
-    def run_apply(self, switches, state="running healthy", missing="", compose_file="docker-compose.yml", checkout_files=None):
+    def run_apply(self, switches, state="running healthy", missing="", compose_file="docker-compose.yml", checkout_files=None,
+                  overrides_from_env=False, repeat=False):
         root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
         os.chmod(root, 0o700)
         fake = os.path.join(root, "docker")
         with open(fake, "w") as handle:
@@ -62,15 +66,21 @@ class ApplyTest(unittest.TestCase):
                "VC_ENVIRONMENT_OVERRIDES": os.path.join(root, "overrides"), "VC_ENVIRONMENT_HEALTH_TIMEOUT": "3"}
         env.pop("COMPOSE_FILE", None)
         if compose_file is not None:
-            env["COMPOSE_FILE"] = compose_file
+            env["COMPOSE_FILE"] = compose_file.replace("{root}", root)
+        if overrides_from_env:
+            env.pop("VC_ENVIRONMENT_OVERRIDES")
         checkout = os.path.join(root, "checkout")
         os.mkdir(checkout)
         for name, content in (checkout_files or {}).items():
             with open(os.path.join(checkout, name), "w") as handle:
-                handle.write(content)
+                handle.write(content.replace("{root}", root))
         result = subprocess.run(["bash", os.path.join(HERE, "environment-apply.sh"), "--switches", switches_file, "--operation", "op1"],
                                 capture_output=True, text=True, env=env, cwd=checkout)
-        calls = open(log).read().splitlines() if os.path.exists(log) else []
+        if repeat and result.returncode == 0:
+            env["COMPOSE_FILE"] = next(line[6:] for line in Path(log).read_text().splitlines() if line.startswith("chain="))
+            result = subprocess.run(["bash", os.path.join(HERE, "environment-apply.sh"), "--switches", switches_file, "--operation", "op2"],
+                                    capture_output=True, text=True, env=env, cwd=checkout)
+        calls = Path(log).read_text().splitlines() if os.path.exists(log) else []
         steps = [json.loads(line) for line in result.stdout.splitlines()]
         return result, calls, steps, os.path.join(root, "overrides")
 
@@ -81,7 +91,7 @@ class ApplyTest(unittest.TestCase):
         self.assertIn("compose up -d --no-build --no-deps kanban", calls)
         self.assertIn("chain=docker-compose.yml:" + os.path.join(overrides, "current.yml"), calls)
         self.assertEqual([s["status"] for s in steps], ["pulling", "switching", "healthy"])
-        override = open(os.path.join(overrides, "current.yml")).read()
+        override = Path(overrides, "current.yml").read_text()
         self.assertIn('kanban:\n    build: !reset null\n    image: "' + KANBAN + '"\n    pull_policy: never', override)
 
     def test_the_installed_env_chain_is_kept_when_the_process_has_none(self):
@@ -96,6 +106,36 @@ class ApplyTest(unittest.TestCase):
                                                     checkout_files={"docker-compose.yml": "services: {}\n", "docker-compose.override.yml": "services: {}\n"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("chain=docker-compose.yml:docker-compose.override.yml:" + os.path.join(overrides, "current.yml"), calls)
+
+    def test_process_chain_and_overrides_win_over_dotenv(self):
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file="base.yml:process.yml",
+            checkout_files={".env": "COMPOSE_FILE=ignored.yml\nVC_ENVIRONMENT_OVERRIDES={root}/ignored\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("chain=base.yml:process.yml:" + os.path.join(overrides, "current.yml"), calls)
+        self.assertFalse(Path(overrides).with_name("ignored").exists())
+
+    def test_overrides_directory_from_dotenv(self):
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, overrides_from_env=True,
+            checkout_files={".env": 'VC_ENVIRONMENT_OVERRIDES="{root}/overrides"\n'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("chain=docker-compose.yml:" + os.path.join(overrides, "current.yml"), calls)
+        self.assertTrue(os.path.islink(os.path.join(overrides, "current.yml")))
+
+    def test_repeated_apply_keeps_current_once_and_last(self):
+        result, calls, steps, overrides = self.run_apply({"kanban": KANBAN}, repeat=True,
+            compose_file="docker-compose.yml:{root}/overrides/current.yml:owner.yml:{root}/overrides/current.yml")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = "chain=docker-compose.yml:owner.yml:" + os.path.join(overrides, "current.yml")
+        self.assertEqual([line for line in calls if line.startswith("chain=")], [expected, expected])
+        self.assertEqual(os.readlink(os.path.join(overrides, "current.yml")), os.path.join(overrides, "op2.yml"))
+        self.assertEqual([s["status"] for s in steps], ["pulling", "switching", "healthy"])
+
+    def test_invalid_dotenv_changes_nothing(self):
+        result, calls, steps, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None,
+            checkout_files={".env": "broken assignment\n"})
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual((calls, steps), ([], []))
+        self.assertFalse(os.path.exists(overrides))
 
     def test_no_chain_changes_nothing(self):
         result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None)
@@ -120,6 +160,55 @@ class ApplyTest(unittest.TestCase):
             result, calls, _, _ = self.run_apply(switches)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(calls, [])
+
+
+class ComposeEnvTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        self.env = dict(os.environ)
+        self.env.pop("COMPOSE_FILE", None)
+
+    def run_command(self, *args):
+        return subprocess.run(["python3", os.path.join(HERE, "compose_env.py"), *args],
+                              cwd=self.root, env=self.env, capture_output=True, text=True)
+
+    def test_get_quotes_comments_duplicates_and_literal_shell(self):
+        (self.root / "settings.env").write_text("# comment\n\nexport KEY=old\nKEY='a # b' # comment\nDOUBLE=\"c=d\"\nRAW=a#b # comment\nLITERAL=$(touch marker)\n")
+        for key, value in (("KEY", "a # b"), ("DOUBLE", "c=d"), ("RAW", "a#b"),
+                           ("LITERAL", "$(touch marker)"), ("MISSING", "")):
+            result = self.run_command("get", key, "--file", "settings.env")
+            self.assertEqual((result.returncode, result.stdout), (0, value + "\n"), result.stderr)
+        self.assertFalse((self.root / "marker").exists())
+
+    def test_missing_file_and_empty_chain(self):
+        for args in (("get", "KEY"), ("chain",)):
+            result = self.run_command(*args)
+            self.assertEqual((result.returncode, result.stdout), (0, "\n"))
+
+    def test_invalid_file_returns_three_without_stdout(self):
+        for content in ("invalid", "KEY='unterminated", 'KEY="value" trailing', "1KEY=value"):
+            (self.root / ".env").write_text(content)
+            for args in (("get", "MISSING"), ("chain",)):
+                result = self.run_command(*args)
+                self.assertEqual((result.returncode, result.stdout), (3, ""), result.stderr)
+
+    def test_chain_precedence_and_custom_file(self):
+        (self.root / "settings.env").write_text('COMPOSE_FILE="base.yml:owner.yml"\n')
+        result = self.run_command("chain", "--file", "settings.env")
+        self.assertEqual((result.returncode, result.stdout), (0, "base.yml:owner.yml\n"))
+        self.env["COMPOSE_FILE"] = "process.yml"
+        result = self.run_command("chain", "--file", "settings.env")
+        self.assertEqual((result.returncode, result.stdout), (0, "process.yml\n"))
+
+    def test_default_base_with_optional_override(self):
+        (self.root / "docker-compose.yml").touch()
+        result = self.run_command("chain")
+        self.assertEqual((result.returncode, result.stdout), (0, "docker-compose.yml\n"))
+        (self.root / "docker-compose.override.yml").touch()
+        result = self.run_command("chain")
+        self.assertEqual((result.returncode, result.stdout), (0, "docker-compose.yml:docker-compose.override.yml\n"))
 
 
 if __name__ == "__main__":
