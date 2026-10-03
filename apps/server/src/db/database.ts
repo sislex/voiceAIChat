@@ -190,6 +190,7 @@ export class VoiceChatDb {
         if (upgrade.keys.has('tasks.auto_pilot_requires_manual_qa')) {
           await this.sql.exec(`UPDATE tasks SET auto_pilot_requires_manual_qa = COALESCE((SELECT autopilot_requires_manual_qa FROM projects WHERE projects.id = tasks.project_id), 0)`)
         }
+        await this.sql.exec('DROP INDEX IF EXISTS idx_environment_active_operation')
         await this.sql.exec(PG_SCHEMA.afterColumnsSql)
         await initializePersonalTenants(this.sql, this.now, this.newId)
       })
@@ -239,6 +240,23 @@ export class VoiceChatDb {
   }
 
   private async migrate(): Promise<void> {
+    for (const [table, definitions] of [
+      ['environments', ["mode TEXT NOT NULL DEFAULT 'external'", 'storage_id TEXT', "state TEXT NOT NULL DEFAULT 'ready'", 'compose_project TEXT', 'port INTEGER']],
+      ['environment_configurations', ['core_json TEXT']],
+      ['environment_operations', ["kind TEXT NOT NULL DEFAULT 'apply'"]],
+    ] as const) {
+      const columns = await this.sql.all<{ name: string }>(`PRAGMA table_info(${table})`)
+      for (const definition of definitions) {
+        if (!columns.some(column => column.name === definition.split(' ')[0])) {
+          await this.sql.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`)
+        }
+      }
+    }
+    await this.sql.exec('DROP INDEX IF EXISTS idx_environment_active_operation')
+    await this.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_active_operation_v2 ON environment_operations(project_id, environment_id)
+      WHERE status IN ('pending', 'preparing', 'pulling', 'building', 'starting', 'switching', 'health_check', 'removing')`)
+    await this.sql.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_environment_compose_project ON environments(compose_project) WHERE compose_project IS NOT NULL')
+
     // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
     // accounts are elevated. Future accounts are never promoted implicitly.
     await this.sql.run(`UPDATE users SET role = 'developer' WHERE role = 'user'`)
