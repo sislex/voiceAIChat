@@ -1,4 +1,5 @@
 import { normalizeMachineStoragePath, validateStorageRelativePath } from './projects.js'
+import { APPLICATION_CATALOG } from './applicationCatalog.js'
 
 export const ENVIRONMENT_SETTINGS: readonly EnvironmentSettingDefinition[] = [
   {
@@ -188,6 +189,21 @@ export interface ModuleSelection {
   repository: string
   version: string
   commit: string
+  /** Omitted to run the module on the environment's primary machine. */
+  machineId?: string
+}
+
+export type EnvironmentData = 'empty' | 'production-snapshot'
+
+export interface EnvironmentLink {
+  id: string
+  environmentId: string
+  service: string
+  clientMachineId: string
+  serverMachineId: string
+  servicePort: number
+  listenPort: number
+  state: 'pending' | 'open' | 'down'
 }
 
 
@@ -273,16 +289,36 @@ export function parseModuleSelections(value: unknown): ModuleSelection[] {
   return Array.from(value, item => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error('Invalid module selection')
     const keys = Object.keys(item)
-    if (keys.length !== 3 || keys.some(key => !['repository', 'version', 'commit'].includes(key))) throw new Error('Unexpected module selection fields')
-    const { repository, version, commit } = item as Record<string, unknown>
+    if (keys.length < 3 || keys.length > 4 || keys.some(key => !['repository', 'version', 'commit', 'machineId'].includes(key))) throw new Error('Unexpected module selection fields')
+    const { repository, version, commit, machineId } = item as Record<string, unknown>
     if (typeof repository !== 'string' || !/^https:\/\/github\.com\/sislex\/[a-zA-Z0-9_-][a-zA-Z0-9._-]*(?![\s\S])/.test(repository) || repository.toLowerCase().endsWith('.git')) throw new Error('Invalid repository')
     if (typeof version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?![\s\S])/.test(version)) throw new Error('Invalid version')
     if (typeof commit !== 'string' || !/^[a-fA-F0-9]{40}(?![\s\S])/.test(commit)) throw new Error('Invalid commit')
+    if (machineId !== undefined && (typeof machineId !== 'string' || machineId.length < 1)) throw new Error('Invalid machine id')
     const identity = repository.toLowerCase()
     if (seen.has(identity)) throw new Error('Duplicate repository')
     seen.add(identity)
-    return { repository, version, commit }
+    return machineId === undefined ? { repository, version, commit } : { repository, version, commit, machineId }
   })
+}
+
+const repositoryKey = (url: string): string => url.trim().toLowerCase().replace(/\.git$/, '').replace(/\/+$/, '')
+/** Core itself and repositories whose catalog applications have no service (SDK, UI Kit, Core UI, Desktop) ship inside the Core build. */
+function isEmbeddedModule(repository: string): boolean {
+  const key = repositoryKey(repository)
+  if (key === 'https://github.com/sislex/voiceaichat') return true
+  const apps = APPLICATION_CATALOG.filter(app => app.external && repositoryKey(app.external.repository) === key)
+  return apps.length > 0 && apps.every(app => app.kind !== 'service')
+}
+
+/** Validate environments-v3 placement rules without mutating the configuration. */
+export function parseModulePlacement(config: EnvironmentConfiguration, env: EnvironmentDefinition): string | null {
+  const placed = config.modules.filter(module => module.machineId !== undefined)
+  if (placed.length === 0) return null
+  if (env.mode === 'external') return 'Placement requires a managed environment'
+  if (placed.some(module => isEmbeddedModule(module.repository))) return 'Embedded modules run with Core'
+  if (placed.some(module => !env.machines.includes(module.machineId!))) return 'Placement machine is not in the environment'
+  return null
 }
 
 export function parseEnvironmentId(value: unknown): string {
@@ -361,7 +397,8 @@ export const ACTIVE_ENVIRONMENT_OPERATION_STATUSES: readonly EnvironmentOperatio
 /** Stage steps of provision/remove; apply steps stay per compose service. */
 export type EnvironmentStage =
   | 'readiness' | 'directories' | 'checkout' | 'settings' | 'modules'
-  | 'config' | 'build' | 'pull' | 'start' | 'health' | 'switch' | 'down' | 'cleanup'
+  | 'config' | 'build' | 'pull' | 'links' | 'snapshot' | 'restore'
+  | 'start' | 'health' | 'switch' | 'down' | 'cleanup'
 
 export type MachineReadinessCheckId =
   | 'platform' | 'architecture' | 'policy' | 'storage' | 'root' | 'docker' | 'compose' | 'git'
@@ -377,6 +414,7 @@ export interface MachineReadiness {
 }
 
 export const ENVIRONMENT_PORT_RANGE = { from: 17800, to: 17999 } as const
+export const ENVIRONMENT_LINK_PORT_RANGE = { min: 17000, max: 17799 } as const
 export const ENVIRONMENT_MIN_FREE_BYTES = 20 * 1024 ** 3
 export const ENVIRONMENT_MIN_MEMORY_BYTES = 4 * 1024 ** 3          // below: failed
 export const ENVIRONMENT_RECOMMENDED_MEMORY_BYTES = 8 * 1024 ** 3  // below: warning
@@ -410,4 +448,9 @@ export interface ManagedStandPaths {
   temporary: string; repository: string; manifest: string
   envFile: string                 // <config>/stand.env
   overrides: string               // <config>/overrides (VC_ENVIRONMENT_OVERRIDES of the stand)
+}
+
+export interface ProvisionInput {
+  configurationId: string
+  data?: EnvironmentData
 }

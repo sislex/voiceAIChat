@@ -473,11 +473,40 @@ export type KanbanColumnSemanticType =
   | 'cancelled'
   | 'custom'
 
+/** Short public name used by integrations that do not depend on Kanban terminology. */
+export type ColumnSemanticType = KanbanColumnSemanticType
+
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
   'backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests',
   'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge',
   'decision_required', 'done', 'cancelled', 'custom'
 ]
+
+export type ExternalTaskState = 'blocked' | 'ready' | 'running' | 'submitted' | 'done' | 'failed'
+
+export interface ExternalTaskUpsert {
+  title: string
+  description?: string
+  state: ExternalTaskState
+  url?: string
+  labels?: string[]
+}
+
+export interface TaskExternalRef {
+  source: string
+  externalId: string
+  url: string | null
+  managed: true
+}
+
+export const EXTERNAL_TASK_COLUMN: Record<ExternalTaskState, ColumnSemanticType> = {
+  blocked: 'backlog',
+  ready: 'backlog',
+  running: 'development',
+  submitted: 'manual_qa',
+  done: 'done',
+  failed: 'decision_required'
+}
 
 /** Canonical machine workflow. Display names are deliberately absent. */
 export const QA_WORKFLOW: readonly KanbanColumnSemanticType[] = [
@@ -1023,6 +1052,7 @@ export interface CreateTaskReworkCycleInput {
 export interface Task {
   id: string
   projectId: string
+  external?: TaskExternalRef
   columnId: string
   type: WorkItemType
   parentId: string | null
