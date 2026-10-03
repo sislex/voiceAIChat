@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-09-28
-checked: fb94d3d8
+updated: 2026-10-03
+checked: 348d6ae3
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -803,3 +803,31 @@ list and shell initialization. Individual user-list probes missed its database
 queue delay; the response timing logs and a PostgreSQL activity sample identified
 the expensive summary. Public Core/Identity health continued responding quickly
 during that queue, so this was not an event-loop or general network stall.
+
+## Persistent environment links
+
+Core owns environment service tunnels in `apps/server/src/agents/linkManager.ts`.
+The `environments` repository owns `environment_links`: a composite environment
+foreign key cascades deletion, a service tuple is idempotent, and listener ports
+are unique per client machine. Startup schema installation adds the table to
+existing SQLite databases and the generated PostgreSQL schema under its migration
+lock. Link identity and listener port survive restarts; runtime state is
+`open` or `down`.
+
+The machines module starts and stops LinkManager in both embedded and standalone
+modes. Startup and machine connection changes reconcile persisted links; either
+endpoint reconnecting reopens its tunnel. The listener uses
+`host: 'docker-host'` and the saved port, without an idle TTL. Both connected
+agents must report version 0.21.0 or newer; incompatible versions produce
+`Agent 0.21.0 or newer is required`. Installing agents and commissioning Docker
+network connectivity remain operator work.
+
+Each tunnel frame is authorized locally against the persisted link and its
+environment state (`provisioning` or `ready`). Missing, removed, or inactive
+environments fail closed. Deleting a link closes both endpoints. The machines
+RPC and HttpMachines expose `ensureLink(input)`,
+`deleteLink(projectId, environmentId, id)`, and
+`listLinks(projectId, environmentId)`; the Kanban Core dispatcher exposes the
+same methods with the `machines.` prefix. These are trusted internal worker
+ports, not user-facing APIs; no Kanban authorization callback or connected
+RPC event client is required to keep a link alive.

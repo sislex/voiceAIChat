@@ -2016,6 +2016,16 @@ CREATE TABLE IF NOT EXISTS environment_operations (
   FOREIGN KEY (previous_configuration_id) REFERENCES environment_configurations(id),
   FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS environment_links (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL, environment_id TEXT NOT NULL,
+  client_machine_id TEXT NOT NULL, server_machine_id TEXT NOT NULL,
+  service_port INTEGER NOT NULL CHECK(service_port BETWEEN 1 AND 65535),
+  listener_port INTEGER NOT NULL CHECK(listener_port BETWEEN 1 AND 65535),
+  state TEXT NOT NULL DEFAULT 'down' CHECK(state IN ('open', 'down')),
+  UNIQUE(project_id, environment_id, client_machine_id, server_machine_id, service_port),
+  UNIQUE(client_machine_id, listener_port),
+  FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS environment_settings (
   project_id TEXT NOT NULL, environment_id TEXT NOT NULL, key TEXT NOT NULL,
   secret INTEGER NOT NULL DEFAULT 0, value TEXT NOT NULL, source TEXT NOT NULL,
