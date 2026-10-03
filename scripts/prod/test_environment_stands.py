@@ -216,6 +216,37 @@ class StandTest(unittest.TestCase):
                 else: self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand.yml'
                 self.assertEqual(self.invoke(role='module')[0], 10)
 
+    def test_link_ports_publish_only_listed_loopback_targets(self):
+        self.values['VC_STAND_LINK_PORTS'] = 'postgres:5432:17100'
+        self.model['services']['postgres']['ports'] = [{'host_ip': '127.0.0.1', 'published': '17100', 'target': 5432}]
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        links = self.root / 'overrides' / 'stand-links.yml'
+        self.assertIn('      - "127.0.0.1:17100:5432"', links.read_text())
+        chain = next(c['chain'] for c in calls if c['args'][:2] == ['compose', 'config'])
+        self.assertTrue(chain.endswith(str(links)))
+        for mutation in ('unlisted', 'public', 'range', 'malformed', 'duplicate'):
+            with self.subTest(mutation=mutation):
+                self.values['VC_STAND_LINK_PORTS'] = 'postgres:5432:17100'
+                self.model['services']['postgres']['ports'] = [{'host_ip': '127.0.0.1', 'published': '17100', 'target': 5432}]
+                if mutation == 'unlisted': self.model['services']['postgres']['ports'][0]['published'] = '17101'
+                elif mutation == 'public': self.model['services']['postgres']['ports'][0]['host_ip'] = '0.0.0.0'
+                elif mutation == 'range': self.values['VC_STAND_LINK_PORTS'] = 'postgres:5432:17900'
+                elif mutation == 'malformed': self.values['VC_STAND_LINK_PORTS'] = 'postgres:5432'
+                else: self.values['VC_STAND_LINK_PORTS'] = 'postgres:5432:17100,make:8788:17100'
+                self.assertEqual(self.invoke()[0], 10)
+
+    def test_module_machine_runs_several_modules(self):
+        self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
+        self.values['COMPOSE_PROFILES'] = 'make,reader'
+        self.values['VC_STAND_LINK_PORTS'] = 'make:8788:17200,reader:8790:17201'
+        safe = {'image': 'example/module:1', 'extra_hosts': {'host.docker.internal': 'host-gateway'}}
+        self.model = {'name': PROJECT, 'services': {
+            'make': {**safe, 'ports': [{'host_ip': '127.0.0.1', 'published': '17200', 'target': 8788}]},
+            'reader': {**safe, 'ports': [{'host_ip': '127.0.0.1', 'published': '17201', 'target': 8790}]}},
+            'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
+        self.assertEqual(self.invoke(role='module')[0], 0)
+
     def test_remove_keep_data_delete_data_and_errors(self):
         code, rows, calls = self.invoke('remove')
         self.assertEqual(code, 0)
