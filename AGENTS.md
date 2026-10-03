@@ -55,17 +55,15 @@ when execution is necessary, ask the user or use another port such as `8799`.
 
 ## Required gate
 
-A step is complete only after the selected packages pass typecheck and tests;
-UI/build changes also require their selected build. Add tests in the same step as
-the implementation.
-
-Use the gate planner rather than assembling commands manually. `gate:fast` selects
-complete owner suites from the worktree diff; `gate` uses the whole branch diff.
-Public contracts add consumer checks, browser changes add owned E2E, and unknown
-root/config/lock changes fall back to `gate:all`. Run product-internal gates in
-their owner repositories. Never replace an application suite with `vitest related`.
-Trust the command exit code, not filtered output. Full details and long-run support:
-[testing conventions](docs/kb/conventions.md) and
+A task is complete after its **quick gate** passes: typecheck and build of the changed
+applications plus the tests of the changed files and of the code they touch
+(`npm run gate:quick -- --base <sha>`; `test:files -- <files>` reruns failed test files first).
+The **full gate** (`npm run gate` / `gate:all`) runs in the background on fresh `main` and in the
+release regression; a failure there becomes a priority fix task. Add tests in the same step as the
+implementation. Unknown root/config/lock changes make the quick gate a full gate. Trust the
+command exit code, not filtered output. Until `gate:quick` exists in a repository, use its
+planner (`gate:fast` / `gate`). Plan: [delivery-fast-gate](docs/plans/delivery-fast-gate.md);
+details: [testing conventions](docs/kb/conventions.md) and
 [testing operations](docs/kb/testing-operations.md#development-gate-npm-run-gatefast).
 
 ## Core invariants
