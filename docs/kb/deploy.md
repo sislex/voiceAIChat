@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-03
-checked: 09c68678
+checked: c69a9ec9
 
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -2300,6 +2300,11 @@ them into `required: false`. The primary runs a module only when `COMPOSE_PROFIL
 in `stand.env` lists it; Kanban (environments-v3 C17) lists the modules placed on the
 primary. A Kanban that writes only `postgres,kanban` (0.1.5 and older) therefore starts
 a stand of this Core without modules.
+
+Apple Silicon. Owner images are published for linux/amd64 only. When `docker pull` reports
+`no matching manifest` (an arm64 machine), the pull stage retries with
+`--platform linux/amd64`; Docker Desktop then runs those services under emulation, and the
+readiness probe already warns about the architecture.
 
 Link targets. An agent link connects to `127.0.0.1:<port>` on its server machine, so a
 service called from another machine (Postgres on the primary, a module on a module
