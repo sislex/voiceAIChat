@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import websocket from '@fastify/websocket'
 import { VoiceChatDb } from '../db/database.js'
-import { AgentRegistry, type AgentSocket } from './registry.js'
+import { AgentRegistry, TUNNEL_RELAY_HIGH_WATER_MARK, TUNNEL_RELAY_LOW_WATER_MARK, type AgentSocket } from './registry.js'
 import { LinkManager } from './linkManager.js'
 import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 import { registerMachinesInternalApi } from '../machines/internalApi.js'
@@ -15,9 +15,11 @@ describe('persistent environment links', () => {
   let manager: LinkManager
   let input: EnvironmentLinkInput
   const sent: Record<string, Array<Record<string, unknown>>> = {}
+  const buffered: Record<string, number> = {}
   function connect(id: string, version = '0.21.0') {
     sent[id] ??= []
     const socket: AgentSocket = {
+      get bufferedAmount() { return buffered[id] ?? 0 },
       close() {},
       send(raw) {
         const message = JSON.parse(raw)
@@ -36,7 +38,7 @@ describe('persistent environment links', () => {
     const project = await db.projects.createProject('owner', { name: 'Links' })
     await db.environments.upsertEnvironment('owner', project.id, { id: 'stage', name: 'Stage', machines: ['server'], checkoutPath: '/stage' })
     input = { projectId: project.id, environmentId: 'stage', clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 }
-    sent.client = []; sent.server = []
+    sent.client = []; sent.server = []; buffered.client = 0; buffered.server = 0
     agents = new AgentRegistry()
     connect('client'); connect('server')
     manager = new LinkManager(db.environments, agents)
@@ -73,6 +75,44 @@ describe('persistent environment links', () => {
     await agents.handleMessage('client', { t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' } as never)
     expect(sent.client).toContainEqual({ t: 'tunnel.pause', tunnelId: link.id, connectionId: 'c1' })
     expect(sent.server).toContainEqual({ t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' })
+  })
+
+  it('pauses a fast producer while the consumer socket is backlogged and resumes it after drain', async () => {
+    const link = await manager.ensureLink(input)
+    await agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'c1' })
+    vi.useFakeTimers()
+    const flow = (side: 'client' | 'server') => sent[side]!.filter(m => m.t === 'tunnel.pause' || m.t === 'tunnel.resume').map(m => m.t)
+    await agents.handleMessage('server', { t: 'tunnel.data', tunnelId: link.id, connectionId: 'c1', data: 'YWJj' })
+    expect(flow('server')).toEqual([])
+    buffered.client = TUNNEL_RELAY_HIGH_WATER_MARK
+    await agents.handleMessage('server', { t: 'tunnel.data', tunnelId: link.id, connectionId: 'c1', data: 'YWJj' })
+    await agents.handleMessage('server', { t: 'tunnel.data', tunnelId: link.id, connectionId: 'c1', data: 'YWJj' })
+    expect(sent.client.filter(m => m.t === 'tunnel.data')).toHaveLength(3)
+    expect(flow('server')).toEqual(['tunnel.pause'])
+    // A resume relayed from the consumer agent must not release the producer while Core's backlog stays high.
+    await agents.handleMessage('client', { t: 'tunnel.pause', tunnelId: link.id, connectionId: 'c1' } as never)
+    await agents.handleMessage('client', { t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' } as never)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(flow('server')).toEqual(['tunnel.pause', 'tunnel.pause'])
+    buffered.client = TUNNEL_RELAY_LOW_WATER_MARK
+    await vi.advanceTimersByTimeAsync(50)
+    expect(flow('server')).toEqual(['tunnel.pause', 'tunnel.pause', 'tunnel.resume'])
+    await vi.advanceTimersByTimeAsync(200)
+    expect(flow('server')).toHaveLength(3)
+  })
+
+  it('keeps a producer paused by the consumer agent when Core drains its own backlog', async () => {
+    const link = await manager.ensureLink(input)
+    await agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'c1' })
+    vi.useFakeTimers()
+    buffered.client = TUNNEL_RELAY_HIGH_WATER_MARK
+    await agents.handleMessage('server', { t: 'tunnel.data', tunnelId: link.id, connectionId: 'c1', data: 'YWJj' })
+    await agents.handleMessage('client', { t: 'tunnel.pause', tunnelId: link.id, connectionId: 'c1' } as never)
+    buffered.client = 0
+    await vi.advanceTimersByTimeAsync(100)
+    expect(sent.server.filter(m => m.t === 'tunnel.resume')).toEqual([])
+    await agents.handleMessage('client', { t: 'tunnel.resume', tunnelId: link.id, connectionId: 'c1' } as never)
+    expect(sent.server.filter(m => m.t === 'tunnel.resume')).toHaveLength(1)
   })
 
   it('opens a fixed docker listener, relays traffic, has no idle TTL and deletes', async () => {

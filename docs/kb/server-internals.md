@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-04
-checked: 66a401c0
+checked: 66fc88e8
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -818,6 +818,15 @@ Tunnel frames of one tunnel are handled strictly in arrival order (`TunnelSessio
 authorization is asynchronous and cached for data frames, and without the queue an HTTP request
 sent right after `tunnel.open` overtook `tunnel.connect`, so the target agent dropped it and the
 transfer hung (environments-v3 U03: the production snapshot download timed out).
+
+Core also applies relay backpressure. Agents pause their TCP reads only while their own WebSocket
+send is pending, so a producer on a fast link (the production snapshot server next to Core) outran
+a consumer on a slow link and Core queued the whole stream: the production Core ran out of its
+524 MB heap during the U03 snapshot transfer. After relaying `tunnel.data`, Core checks the
+consumer socket `bufferedAmount`; at 8 MiB it sends `tunnel.pause` to the producer for that
+connection and polls every 25 ms, sending `tunnel.resume` once the backlog is at most 2 MiB.
+Agent-initiated `tunnel.pause`/`tunnel.resume` are still relayed, but a relayed resume is held
+while Core's own pause is active, and Core does not resume a producer the consuming agent paused.
 
 The machines module starts and stops LinkManager in both embedded and standalone
 modes. Startup and machine connection changes reconcile persisted links; either
