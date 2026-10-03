@@ -1,5 +1,5 @@
 import { initialVpnState, isVpnFresh, type VpnAgentRequest, type VpnChange, type VpnObservation, type VpnState, type VpnView } from '@sislexa/agent-contracts'
-import { decryptVpnSecret, encryptVpnSecret, managedPolicy, TailscaleApi, vpnTag, VpnError, type TailDevice } from './tailscale.js'
+import { environmentTag, decryptVpnSecret, encryptVpnSecret, managedPolicy, TailscaleApi, vpnTag, VpnError, type TailDevice } from './tailscale.js'
 
 type Row = { tailnet: string; encryptedSecret: string; generation: number; state: string }
 export interface VpnRepository {
@@ -9,7 +9,12 @@ export interface VpnRepository {
   saveVpnNetwork(userId: string, row: Row, expected: number | null): Promise<boolean>
 }
 interface Binding { deviceId: string; apiId: string; addresses: string[]; approved: boolean }
-interface NetworkData { verifiedAt: number; states: Record<string, VpnState>; bindings: Record<string, Binding>; grants: unknown[] }
+export interface VpnEnvironment { projectId: string; environmentId: string }
+export interface EnvironmentGrantState {
+  environment: VpnEnvironment; tag: string; machines: string[]; ports: number[]
+  phase: 'applying' | 'applied' | 'removed' | 'error'; appliedAt: number | null
+}
+interface NetworkData { environments?: Record<string, EnvironmentGrantState>; verifiedAt: number; states: Record<string, VpnState>; bindings: Record<string, Binding>; grants: unknown[] }
 export interface VpnAgentPort {
   isOnline(id: string): boolean
   vpn(id: string, request: VpnAgentRequest): Promise<VpnObservation>
@@ -35,12 +40,95 @@ export class VpnService {
     if (!await this.repo.saveVpnNetwork(user, next, row.generation)) throw new VpnError('conflict')
     return next
   }
+  private available(data: NetworkData): void {
+    if (Object.values(data.environments ?? {}).some(s => s.phase === 'applying') ||
+        Object.values(data.states).some(s => s.phase === 'applying')) throw new VpnError('conflict')
+  }
+  private environmentKey(environment: VpnEnvironment): string {
+    if (!environment || ![environment.projectId, environment.environmentId].every(v => typeof v === 'string' && v.length > 0 && v.length <= 256 && !v.includes(':'))) throw new VpnError('invalid')
+    return environmentTag(environment)
+  }
+  async environmentGrantState(owner: string, environment: VpnEnvironment): Promise<EnvironmentGrantState | null> {
+    const tag = this.environmentKey(environment)
+    const row = await this.repo.readVpnNetwork(owner)
+    return row ? this.data(row).environments?.[tag] ?? null : null
+  }
+  ensureEnvironmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[]): Promise<EnvironmentGrantState> {
+    return this.environmentGrant(owner, environment, machines, ports, false)
+  }
+  removeEnvironmentGrant(owner: string, environment: VpnEnvironment): Promise<EnvironmentGrantState> {
+    return this.environmentGrant(owner, environment, [], [], true)
+  }
+  private async environmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[], remove: boolean): Promise<EnvironmentGrantState> {
+    return this.exclusive(owner, async () => {
+      const tag = this.environmentKey(environment)
+      if (!Array.isArray(machines) || !Array.isArray(ports) || (!remove && (!machines.length || !ports.length)) ||
+          machines.some(id => typeof id !== 'string' || !id) || ports.some(p => !Number.isInteger(p) || p < 1 || p > 65535)) throw new VpnError('invalid')
+      machines = [...new Set(machines)].sort()
+      ports = [...new Set(ports)].sort((a, b) => a - b)
+      let row = await this.repo.readVpnNetwork(owner)
+      if (!row) throw new VpnError('network')
+      const data = this.data(row)
+      this.available(data)
+      for (const id of machines) {
+        await this.owned(owner, id)
+        if (!data.bindings[id]) throw new VpnError('binding')
+      }
+      const api = this.api(owner, row)
+      const devices = await api.devices()
+      for (const id of machines) {
+        const binding = data.bindings[id]
+        if (!devices.some(d => d.id === binding.apiId && d.nodeId === binding.deviceId && binding.addresses.every(a => d.addresses.includes(a)))) throw new VpnError('binding')
+      }
+      const policy = await api.policy()
+      const updated = managedPolicy(policy.value, data.bindings, data.grants)
+      if (updated.tagOwners?.[tag] && JSON.stringify(updated.tagOwners[tag]) !== JSON.stringify(['autogroup:admin'])) throw new VpnError('policy')
+      // Only exact journaled rules may be replaced; never adopt foreign grants.
+      if ((updated.grants ?? []).some(g => JSON.stringify(g).includes(tag))) throw new VpnError('policy')
+      if (!remove) updated.tagOwners = { ...updated.tagOwners, [tag]: ['autogroup:admin'] }
+      const oldRule = (g: unknown): boolean => !!g && typeof g === 'object' && (g as { src?: string[] }).src?.includes(tag) === true
+      const grants = data.grants.filter(g => !oldRule(g))
+      if (!remove) grants.push({ src: [tag], dst: [tag], ip: ports.map(p => 'tcp:' + p) })
+      updated.grants = [...(updated.grants ?? []), ...grants]
+      const previous = data.environments?.[tag]
+      const tagsMatch = devices.every(device => (device.tags ?? []).includes(tag) === machines.some(id => data.bindings[id].apiId === device.id))
+      if (previous?.phase === (remove ? 'removed' : 'applied') &&
+          JSON.stringify(previous.machines) === JSON.stringify(machines) && JSON.stringify(previous.ports) === JSON.stringify(ports) &&
+          JSON.stringify(policy.value.tagOwners ?? {}) === JSON.stringify(updated.tagOwners) &&
+          JSON.stringify(policy.value.grants ?? []) === JSON.stringify(updated.grants) && tagsMatch) return previous
+      const state: EnvironmentGrantState = { environment, tag, machines, ports, phase: 'applying', appliedAt: null }
+      data.environments ??= {}
+      data.environments[tag] = state
+      // Reserve the generation and journal both policy versions before remote writes.
+      data.grants = [...data.grants, ...grants.filter(g => !data.grants.some(old => JSON.stringify(old) === JSON.stringify(g)))]
+      row = await this.save(owner, row, data)
+      try {
+        await api.setPolicy(updated, policy.etag)
+        for (const device of devices) {
+          const selected = machines.some(id => data.bindings[id].apiId === device.id)
+          const tags = [...new Set([...(device.tags ?? []).filter(t => t !== tag), ...(selected ? [tag] : [])])]
+          if (JSON.stringify(tags) !== JSON.stringify(device.tags ?? [])) await api.setDeviceTags(device, tags)
+        }
+        data.grants = grants
+        state.phase = remove ? 'removed' : 'applied'
+        state.appliedAt = this.now()
+        await this.save(owner, row, data)
+        return state
+      } catch (error) {
+        state.phase = 'error'
+        await this.save(owner, row, data)
+        throw error
+      }
+    })
+  }
   async connect(user: string, tailnet: string, secret: string): Promise<void> {
     return this.exclusive(user, async () => {
       if (!/^[a-zA-Z0-9][a-zA-Z0-9.@-]{1,252}$/.test(tailnet) || secret.length < 16 || secret.length > 4096 || /[\r\n]/.test(secret)) throw new VpnError('invalid')
       const existing = await this.repo.readVpnNetwork(user)
       const data: NetworkData = existing ? this.data(existing) : { verifiedAt: 0, states: {}, bindings: {}, grants: [] }
       if (existing && existing.tailnet !== tailnet && Object.values(data.states).some(s => s.desired.mode !== 'off' || s.phase === 'applying' || (s.observed && s.observed.mode !== 'off'))) throw new VpnError('conflict')
+      this.available(data)
+      if (existing && existing.tailnet !== tailnet && Object.values(data.environments ?? {}).some(s => s.phase !== 'removed')) throw new VpnError('conflict')
       const encryptedSecret = encryptVpnSecret(secret, this.key(), user)
       const api = this.apiFactory(secret, tailnet)
       await api.devices()
@@ -101,6 +189,7 @@ export class VpnService {
       let row = await this.repo.readVpnNetwork(user)
       if (!row) return this.view(user, id, null)
       const data = this.data(row)
+      if (Object.values(data.environments ?? {}).some(s => s.phase === 'applying')) throw new VpnError('conflict')
       try {
         const devices = await this.api(user, row).devices()
         await this.inspect(user, id, row, data, devices)
@@ -125,6 +214,7 @@ export class VpnService {
       let row = await this.repo.readVpnNetwork(user)
       if (!row) throw new VpnError('network')
       const data = this.data(row)
+      if (Object.values(data.environments ?? {}).some(s => s.phase === 'applying')) throw new VpnError('conflict')
       const current = data.states[id] ??= initialVpnState()
       if (current.operationId === change.operationId) {
         if (JSON.stringify(current.desired) !== JSON.stringify({ mode: change.mode, gatewayId: change.gatewayId, allowLan: change.allowLan })) throw new VpnError('conflict')
@@ -163,8 +253,9 @@ export class VpnService {
         if (change.mode !== 'off') {
           const policy = await api!.policy()
           const updated = managedPolicy(policy.value, data.bindings, data.grants)
-          const grants = Object.entries(data.states).filter(([, s]) => s.desired.mode === 'client')
+          const grants: unknown[] = Object.entries(data.states).filter(([, s]) => s.desired.mode === 'client')
             .map(([client, s]) => ({ src: data.bindings[client]!.addresses, dst: ['autogroup:internet'], ip: ['*'], via: [vpnTag(s.desired.gatewayId!)] }))
+          grants.push(...data.grants.filter(g => (g as { src?: string[] }).src?.some(src => src.startsWith('tag:chatai-env-'))))
           updated.grants = [...(updated.grants ?? []), ...grants]
           // Journal both versions before the remote write to recognize either outcome after a crash.
           data.grants = [...data.grants, ...grants]

@@ -1,3 +1,4 @@
+import type { MachineVpnView } from '../machines/vpn/telemetry.js'
 // Внутренний протокол «ядро ↔ канбан» для режима двух процессов (docs/plans/kanban-service.md, круг 3).
 // Контракт лежит на стороне кластера (как `internal.ts` у Make): ядро импортирует его, а не наоборот.
 // Оба конца — Fastify под общим Bearer `VC_INTERNAL_TOKEN`; наружу Caddy эти пути не проксирует.
@@ -38,6 +39,7 @@ export interface MachineSnapshot {
   name?: string
   platform?: string
   policy?: AgentPolicy
+  vpn?: MachineVpnView
   telemetry?: AgentTelemetry
 }
 export interface MachinesSnapshotRequest { machines: MachineSnapshot[] }
@@ -51,6 +53,7 @@ export type KanbanServiceRpcMethod = (typeof KANBAN_SERVICE_RPC_METHODS)[number]
 
 /** Методы `KanbanCore`, доступные канбану по RPC у ядра. `exec`/`execStream` — отдельным потоковым эндпоинтом. */
 export const KANBAN_CORE_RPC_METHODS = [
+  'machines.ensureEnvironmentGrant', 'machines.removeEnvironmentGrant', 'machines.environmentGrantState', 'machines.vpnAddressOf',
   'machines.snapshot', 'machines.fsRead', 'machines.fsWrite', 'machines.fsMkdir', 'machines.fsDelete', 'machines.fsRename',
   'machines.gitAccess', 'machines.ensureLink', 'machines.deleteLink', 'machines.listLinks', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
   'kb.status', 'kb.topics', 'kb.document', 'kb.search', 'kb.context',

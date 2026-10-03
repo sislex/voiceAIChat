@@ -8,6 +8,8 @@ export class VpnError extends Error {
 export interface TailDevice { id: string; nodeId: string; addresses: string[]; authorized: boolean; tags?: string[]; isExternal?: boolean; enabledRoutes?: string[] }
 export interface TailPolicy { [key: string]: unknown; acls?: unknown[]; grants?: unknown[]; tagOwners?: Record<string, string[]> }
 export const vpnTag = (machineId: string): string => 'tag:chatai-vpn-' + createHash('sha256').update(machineId).digest('hex').slice(0, 24)
+export const environmentTag = (environment: { projectId: string; environmentId: string }): string =>
+  'tag:chatai-env-' + createHash('sha256').update(environment.projectId + ':' + environment.environmentId).digest('hex').slice(0, 24)
 export const isTailAddress = (address: string): boolean =>
   (isIP(address) === 4 && address.startsWith('100.') && Number(address.split('.')[1]) >= 64 && Number(address.split('.')[1]) <= 127) ||
   (isIP(address) === 6 && address.toLowerCase().startsWith('fd7a:115c:a1e0:'))
@@ -20,6 +22,8 @@ export function managedPolicy(policy: TailPolicy, bindings: Record<string, { add
     v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, value]) => [k, canonical(value)])) : v
   const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
   const retained = (policy.grants ?? []).filter(g => !previous.some(p => same(p, g)))
+  if (retained.some(g => JSON.stringify(g)?.includes('tag:chatai-env-'))) throw new VpnError('policy')
+  if ((policy.acls ?? []).some(a => JSON.stringify(a)?.includes('tag:chatai-env-'))) throw new VpnError('policy')
   if (retained.some(g => !g || typeof g !== 'object' || !Array.isArray((g as { dst?: unknown }).dst) ||
     !(g as { dst: unknown[] }).dst.every(isLocal))) throw new VpnError('policy')
   if ((policy.acls ?? []).some(a => !a || typeof a !== 'object' || !Array.isArray((a as { dst?: unknown }).dst) ||
@@ -85,6 +89,9 @@ export class TailscaleApi {
     if (!etag || etag === '*' || /[\r\n]/.test(etag)) throw new VpnError('policy')
     etag = etag.startsWith('"') ? etag : JSON.stringify(etag)
     await this.call('tailnet/' + encodeURIComponent(this.tailnet) + '/acl', 'POST', value, etag)
+  }
+  async setDeviceTags(device: TailDevice, tags: string[]): Promise<void> {
+    await this.call('device/' + encodeURIComponent(device.id) + '/tags', 'POST', { tags })
   }
   async prepareExit(device: TailDevice, tag: string): Promise<void> {
     await this.call('device/' + encodeURIComponent(device.id) + '/tags', 'POST', { tags: [...new Set([...(device.tags ?? []), tag])] })

@@ -1,3 +1,5 @@
+import type { VpnEnvironment, EnvironmentGrantState } from '../machines/vpn/service.js'
+import { vpnAddress } from '../machines/vpn/telemetry.js'
 import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environments.js'
 // `MachinesService` для ядра в режиме `VC_MACHINES_MODE=remote`: реестр живёт в отдельном процессе машин.
 // Синхронные чтения (`isOnline`, `nameOf`, `policyOf`, `telemetryOf`, `ptyLive`, …) отвечает зеркало,
@@ -214,6 +216,16 @@ export class HttpMachines implements MachinesService {
   ptyBufferText(ptyId: string): Promise<string | null> { return this.ptys.has(ptyId) ? this.rpc<string | null>('ptyBufferText', [ptyId]) : Promise.resolve(null) }
   ptyContextOf(ptyId: string) { return this.ptys.get(ptyId)?.context ?? null }
 
+  vpnAddressOf(id: string) { return vpnAddress(this.telemetryOf(id)) }
+  ensureEnvironmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[]): Promise<EnvironmentGrantState> {
+    return this.rpc('ensureEnvironmentGrant', [owner, environment, machines, ports], 120_000)
+  }
+  removeEnvironmentGrant(owner: string, environment: VpnEnvironment): Promise<EnvironmentGrantState> {
+    return this.rpc('removeEnvironmentGrant', [owner, environment], 120_000)
+  }
+  environmentGrantState(owner: string, environment: VpnEnvironment): Promise<EnvironmentGrantState | null> {
+    return this.rpc('environmentGrantState', [owner, environment])
+  }
   ensureLink(input: EnvironmentLinkInput): Promise<EnvironmentLink> { return this.rpc('ensureLink', [input], 30_000) }
   deleteLink(projectId: string, environmentId: string, id: string): Promise<void> { return this.rpc('deleteLink', [projectId, environmentId, id]) }
   listLinks(projectId: string, environmentId: string): Promise<EnvironmentLink[]> { return this.rpc('listLinks', [projectId, environmentId]) }

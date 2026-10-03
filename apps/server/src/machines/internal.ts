@@ -1,3 +1,4 @@
+import { vpnMachineView, type MachineVpnView } from './vpn/telemetry.js'
 // Внутренний протокол «ядро ↔ процесс машин» для режима `VC_MACHINES_MODE=remote`
 // (docs/plans/machines-service.md, круг 2). Направление обратное канбану: процесс машин — провайдер, ядро
 // (а через его порты — канбан и Make) — потребитель. Вызовы идут RPC и потоковым exec к процессу машин;
@@ -21,6 +22,7 @@ export interface MachineState {
   platform?: string
   policy: AgentPolicy
   telemetry?: AgentTelemetry
+  vpn?: MachineVpnView
   imageHost?: AgentImageHost
 }
 /** Живая PTY-сессия глазами зеркала. */
@@ -42,6 +44,7 @@ export type MachinesClientMessage = { kind: 'tunnelAuthorizeResult'; requestId: 
 
 /** Методы порта по RPC; `exec`/`execStream` — потоковым эндпоинтом, синхронные чтения — из зеркала. */
 export const MACHINES_RPC_METHODS = [
+  'ensureEnvironmentGrant', 'removeEnvironmentGrant', 'environmentGrantState', 'vpnAddressOf',
   'waitForOnline', 'updatePolicy', 'disconnect', 'cancelAll', 'gitAccess',
   'fsList', 'fsRead', 'fsWrite', 'fsMkdir', 'fsDelete', 'fsDeleteFileSafe', 'fsTrash', 'fsRename', 'http',
   'ptyStart', 'ptyInput', 'ptyResize', 'ptyDetach', 'ptyKill', 'ptyBufferText',
@@ -58,6 +61,7 @@ export function machineStates(machines: Pick<MachinesService, 'onlineIds' | 'nam
     const state: MachineState = { id, name: machines.nameOf(id) ?? id, version: machines.versionOf(id) ?? '0.1.0', policy: machines.policyOf(id) ?? ({} as AgentPolicy) }
     const platform = machines.platformOf(id); if (platform !== undefined) state.platform = platform
     const telemetry = machines.telemetryOf(id); if (telemetry !== undefined) state.telemetry = telemetry
+    state.vpn = vpnMachineView(telemetry)
     const imageHost = machines.imageHostOf(id); if (imageHost !== undefined) state.imageHost = imageHost
     return state
   })
