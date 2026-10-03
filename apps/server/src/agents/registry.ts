@@ -863,6 +863,10 @@ export class AgentRegistry {
         // TCP accept on the source is already waiting; data can flow now.
       } else if (msg.t === 'tunnel.data') {
         this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, msg)
+      } else if ((msg as { t: string }).t === 'tunnel.pause' || (msg as { t: string }).t === 'tunnel.resume') {
+        // Agent 0.21.0 backpressure: the slow side asks its peer to stop or resume reading.
+        const flow = msg as unknown as { t: 'tunnel.pause' | 'tunnel.resume'; connectionId: string }
+        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: flow.t, tunnelId: tunnel.id, connectionId: flow.connectionId } as never)
       } else if (msg.t === 'tunnel.end' || msg.t === 'tunnel.connectionError') {
         this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: 'tunnel.end', tunnelId: tunnel.id, connectionId: msg.connectionId })
       } else if (msg.t === 'tunnel.error') {
