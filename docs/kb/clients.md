@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-03
-checked: 3bcba084
+checked: 09c68678
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -46,13 +46,15 @@ without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
 own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.4.14, owner commit `703c40a8fecb46102b1c953128e795ddb0903566`. Since 1.4.12
+from Core UI 1.4.15, owner commit `e7bc518b9973e25764edb4ca8d874a97055120e5`. Since 1.4.12
 it recovers the project list when the browser read cache supersedes the startup request
 (retry once, then an error state with retry instead of an endless load); 1.4.13 also
 never strands detail-only project tabs (Release Center, settings, code) behind their
 skeleton when the detail load is dropped; 1.4.14 adds managed environment controls and the
-stand lifecycle to the Environments block (environments-v2 C10/C11, `@voicechat/shared` 0.1.15).
-Desktop 1.0.17 (owner commit `6d810038`) embeds the same renderer;
+stand lifecycle to the Environments block (environments-v2 C10/C11, `@voicechat/shared` 0.1.15);
+1.4.15 adds module machines, links, the stand data source, read-only external task cards and
+project integration tokens (environments-v3 C20, `@voicechat/shared` 0.1.16).
+Desktop 1.0.18 (owner commit `b9fcc3e5`, agent 0.21.0) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
