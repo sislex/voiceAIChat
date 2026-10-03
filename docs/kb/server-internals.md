@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-03
-checked: 348d6ae3
+updated: 2026-10-04
+checked: 66a401c0
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -813,6 +813,11 @@ are unique per client machine. Startup schema installation adds the table to
 existing SQLite databases and the generated PostgreSQL schema under its migration
 lock. Link identity and listener port survive restarts; runtime state is
 `open` or `down`.
+
+Tunnel frames of one tunnel are handled strictly in arrival order (`TunnelSession.queue`):
+authorization is asynchronous and cached for data frames, and without the queue an HTTP request
+sent right after `tunnel.open` overtook `tunnel.connect`, so the target agent dropped it and the
+transfer hung (environments-v3 U03: the production snapshot download timed out).
 
 The machines module starts and stops LinkManager in both embedded and standalone
 modes. Startup and machine connection changes reconcile persisted links; either

@@ -128,6 +128,8 @@ interface TunnelSession {
   timer: NodeJS.Timeout
   idleTimer?: NodeJS.Timeout
   persistent?: boolean
+  /** Serializes frame handling of this tunnel (see handleMessage). */
+  queue?: Promise<void>
   /** Called for every tunnel frame with its type; callers may cache only data frames. */
   authorize: (frame: string) => Promise<boolean>
   onClose?: () => void
@@ -851,6 +853,32 @@ export class AgentRegistry {
     }
   }
 
+  /** One tunnel frame, after the frames received before it (see handleMessage). */
+  private async handleTunnelFrame(agentId: string, tunnel: TunnelSession, msg: Extract<AgentToServer, { tunnelId: string }>): Promise<void> {
+    const authorized = await tunnel.authorize(msg.t).catch(() => false)
+    if (this.tunnels.get(tunnel.id) !== tunnel) return
+    if (!authorized) { this.closeTunnel(tunnel.id); return }
+    clearTimeout(tunnel.idleTimer)
+    if (!tunnel.persistent) tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer?.unref?.()
+    if (msg.t === 'tunnel.listening' && agentId === tunnel.sourceAgentId) {
+      tunnel.localPort = msg.port; clearTimeout(tunnel.timer); tunnel.resolve?.(msg.port); tunnel.resolve = undefined; tunnel.reject = undefined
+    } else if (msg.t === 'tunnel.open' && agentId === tunnel.sourceAgentId) {
+      this.send(tunnel.targetAgentId, { t: 'tunnel.connect', tunnelId: tunnel.id, connectionId: msg.connectionId, port: tunnel.targetPort })
+    } else if (msg.t === 'tunnel.connected' && agentId === tunnel.targetAgentId) {
+      // TCP accept on the source is already waiting; data can flow now.
+    } else if (msg.t === 'tunnel.data') {
+      this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, msg)
+    } else if ((msg as { t: string }).t === 'tunnel.pause' || (msg as { t: string }).t === 'tunnel.resume') {
+      // Agent 0.21.0 backpressure: the slow side asks its peer to stop or resume reading.
+      const flow = msg as unknown as { t: 'tunnel.pause' | 'tunnel.resume'; connectionId: string }
+      this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: flow.t, tunnelId: tunnel.id, connectionId: flow.connectionId } as never)
+    } else if (msg.t === 'tunnel.end' || msg.t === 'tunnel.connectionError') {
+      this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: 'tunnel.end', tunnelId: tunnel.id, connectionId: msg.connectionId })
+    } else if (msg.t === 'tunnel.error') {
+      tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
+    }
+  }
+
   /** Обрабатывает сообщение от агента (exec.* и fs.result/fs.error). */
   async handleMessage(agentId: string, msg: AgentToServer): Promise<void> {
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
@@ -866,29 +894,11 @@ export class AgentRegistry {
     if ('tunnelId' in msg) {
       const tunnel = this.tunnels.get(msg.tunnelId)
       if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
-      const authorized = await tunnel.authorize(msg.t).catch(() => false)
-      if (this.tunnels.get(tunnel.id) !== tunnel) return
-      if (!authorized) { this.closeTunnel(tunnel.id); return }
-      clearTimeout(tunnel.idleTimer)
-      if (!tunnel.persistent) tunnel.idleTimer = setTimeout(() => this.closeTunnel(tunnel.id), TUNNEL_IDLE_TTL_MS); tunnel.idleTimer?.unref?.()
-      if (msg.t === 'tunnel.listening' && agentId === tunnel.sourceAgentId) {
-        tunnel.localPort = msg.port; clearTimeout(tunnel.timer); tunnel.resolve?.(msg.port); tunnel.resolve = undefined; tunnel.reject = undefined
-      } else if (msg.t === 'tunnel.open' && agentId === tunnel.sourceAgentId) {
-        this.send(tunnel.targetAgentId, { t: 'tunnel.connect', tunnelId: tunnel.id, connectionId: msg.connectionId, port: tunnel.targetPort })
-      } else if (msg.t === 'tunnel.connected' && agentId === tunnel.targetAgentId) {
-        // TCP accept on the source is already waiting; data can flow now.
-      } else if (msg.t === 'tunnel.data') {
-        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, msg)
-      } else if ((msg as { t: string }).t === 'tunnel.pause' || (msg as { t: string }).t === 'tunnel.resume') {
-        // Agent 0.21.0 backpressure: the slow side asks its peer to stop or resume reading.
-        const flow = msg as unknown as { t: 'tunnel.pause' | 'tunnel.resume'; connectionId: string }
-        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: flow.t, tunnelId: tunnel.id, connectionId: flow.connectionId } as never)
-      } else if (msg.t === 'tunnel.end' || msg.t === 'tunnel.connectionError') {
-        this.send(agentId === tunnel.sourceAgentId ? tunnel.targetAgentId : tunnel.sourceAgentId, { t: 'tunnel.end', tunnelId: tunnel.id, connectionId: msg.connectionId })
-      } else if (msg.t === 'tunnel.error') {
-        tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
-      }
-      return
+      // Frames of one tunnel are handled strictly in arrival order: authorization is async and
+      // can be cached for data frames, so without the queue a fast data frame (an HTTP request)
+      // overtook tunnel.open and reached the target before tunnel.connect, which dropped it.
+      tunnel.queue = (tunnel.queue ?? Promise.resolve()).then(() => this.handleTunnelFrame(agentId, tunnel, msg)).catch(() => undefined)
+      return tunnel.queue
     }
     if (msg.t === 'vpn.result') {
       const pending = this.pendingVpn.get(msg.requestId)
