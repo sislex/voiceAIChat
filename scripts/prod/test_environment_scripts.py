@@ -39,7 +39,9 @@ class ObserveTest(unittest.TestCase):
 FAKE_DOCKER = r'''#!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
 case "$1 $2" in
-  "pull "*) [[ "$2" == *"$FAKE_MISSING"* && -n "$FAKE_MISSING" ]] && exit 1; exit 0 ;;
+  "pull "*) [[ "$*" == *"$FAKE_MISSING"* && -n "$FAKE_MISSING" ]] && exit 1
+    [[ -n "$FAKE_NO_NATIVE" && "$2" != --platform ]] && { echo "no matching manifest for linux/arm64/v8" >&2; exit 1; }
+    exit 0 ;;
   "compose up") echo "chain=$COMPOSE_FILE" >> "$FAKE_LOG"; exit 0 ;;
   "compose ps") echo "c-$4" ;;
   "inspect --format") echo "$FAKE_STATE" ;;
@@ -50,7 +52,7 @@ exit 0
 
 class ApplyTest(unittest.TestCase):
     def run_apply(self, switches, state="running healthy", missing="", compose_file="docker-compose.yml", checkout_files=None,
-                  overrides_from_env=False, repeat=False):
+                  overrides_from_env=False, repeat=False, no_native=False):
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
         os.chmod(root, 0o700)
@@ -63,7 +65,8 @@ class ApplyTest(unittest.TestCase):
             json.dump(switches, handle)
         log = os.path.join(root, "docker.log")
         env = {**os.environ, "DOCKER": fake, "FAKE_LOG": log, "FAKE_STATE": state, "FAKE_MISSING": missing,
-               "VC_ENVIRONMENT_OVERRIDES": os.path.join(root, "overrides"), "VC_ENVIRONMENT_HEALTH_TIMEOUT": "3"}
+               "VC_ENVIRONMENT_OVERRIDES": os.path.join(root, "overrides"), "VC_ENVIRONMENT_HEALTH_TIMEOUT": "3",
+               **({"FAKE_NO_NATIVE": "1"} if no_native else {})}
         env.pop("COMPOSE_FILE", None)
         if compose_file is not None:
             env["COMPOSE_FILE"] = compose_file.replace("{root}", root)
@@ -142,6 +145,12 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(calls, [])
         self.assertFalse(os.path.exists(overrides))
+
+    def test_amd64_only_images_are_pulled_for_emulation(self):
+        result, calls, steps, _ = self.run_apply({"kanban": KANBAN}, no_native=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("pull --platform linux/amd64 " + KANBAN, calls)
+        self.assertEqual([s["status"] for s in steps], ["pulling", "switching", "healthy"])
 
     def test_a_failed_pull_switches_nothing(self):
         result, calls, steps, overrides = self.run_apply({"kanban": KANBAN}, missing="sislexa-kanban")
