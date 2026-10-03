@@ -6,21 +6,43 @@ services:
       - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
     volumes: !override
       - vc-data:/data            # no host deploy socket in a stand
+    # Modules run on this machine only when Kanban lists their profile; one placed on
+    # another machine is reached through an agent link (environments-v3).
+    depends_on: !override
+      runner-work: {condition: service_started}
+      runner-personal: {condition: service_started}
+      tts-runner: {condition: service_started}
+      stt-runner: {condition: service_started}
+      automation-runner: {condition: service_started}
+      make: {condition: service_started, required: false}
+      playwright-reader: {condition: service_started, required: false}
+      image-studio: {condition: service_started, required: false}
+      browser-runner: {condition: service_started, required: false}
   make:
+    profiles: ["make"]
     extra_hosts: *stand-extra-hosts
   playwright-reader:
+    profiles: ["playwright-reader"]
     extra_hosts: *stand-extra-hosts
   image-studio:
+    profiles: ["image-studio"]
     extra_hosts: *stand-extra-hosts
   kanban:
+    depends_on: !override
+      runner-work: {condition: service_started}
+      runner-personal: {condition: service_started}
+      browser-runner: {condition: service_started, required: false}
     extra_hosts: *stand-extra-hosts
   machines:
     extra_hosts: *stand-extra-hosts
   admin:
     extra_hosts: *stand-extra-hosts
   reader:
+    depends_on: !override
+      playwright-reader: {condition: service_started, required: false}
     extra_hosts: *stand-extra-hosts
   browser-runner:
+    profiles: ["playwright-reader"]
     extra_hosts: *stand-extra-hosts
   caddy:
     profiles: ["public"]         # public address of a stand is environments-v3
