@@ -50,6 +50,7 @@ elif args == ['compose', 'config', '--format', 'json']:
     print(pathlib.Path('model.json').read_text())
 elif args[:2] == ['image', 'inspect']: sys.exit(0 if os.environ.get('CACHED') else 1)
 elif args == ['compose', 'ps', '-a', '-q']: print('container1 container2 container3')
+elif args == ['compose', 'ps', '-a', '--status', 'created', '-q']: print('stuck1')
 elif 'pg_isready' in args:
     counter = pathlib.Path(os.environ['FAKE_LOG'] + '.pg')
     seen = int(counter.read_text()) if counter.exists() else 0
@@ -165,6 +166,10 @@ class StandTest(unittest.TestCase):
         code, rows, calls = self.invoke(BUSY_ONCE='compose up', VC_STAND_START_RETRY_SECONDS='0')
         self.assertEqual(code, 0)
         self.assertEqual(sum(c['args'][:2] == ['compose', 'up'] and '--remove-orphans' in c['args'] for c in calls), 2)
+        # The container left 'created' by the failed attempt is removed before the retry.
+        self.assertIn(['rm', '-f', 'stuck1'], [c['args'] for c in calls])
+        retry = [i for i, c in enumerate(calls) if c['args'][:2] == ['compose', 'up'] and '--remove-orphans' in c['args']][1]
+        self.assertLess([c['args'] for c in calls].index(['rm', '-f', 'stuck1']), retry)
         (self.root / 'calls.busy').unlink(missing_ok=True)
         code, rows, calls = self.invoke(BUSY_ONCE='compose up', BUSY_TIMES='5', VC_STAND_START_RETRY_SECONDS='0')
         self.assertEqual((code, rows[-1]['stage'], rows[-1]['status']), (30, 'start', 'failed'))
