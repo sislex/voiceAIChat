@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-04
-checked: 5e3968ef
+updated: 2026-10-05
+checked: 8e5dc447
 areas:
   - packages/shared/src
 ---
@@ -90,6 +90,13 @@ Distribution requires a committed source: run `npm run build:core-contracts --
 --version 0.1.17 --commit <contracts-commit-sha>`, then vendor and pin the archive
 with its provenance in a follow-up commit, following the 0.1.16 snapshot. A dirty
 working tree cannot serve as the release commit.
+
+0.1.18 (`voicechat-shared-0.1.18-182c0773a2ae.tgz`, contracts commit `7aaea110`) adds chat
+service data: the conversation setting `loadServiceData` (default false), `TurnMeta.serviceData`
+size summary, the pure `stripServiceData(meta)` helper (drops `meta.activity`, reduces
+`meta.request` to model, permission mode, prompt size and KB context) and
+`REST.messageServiceData(conversationId, messageId)` with `MessageServiceData`
+(make-chat-service-data-v1 B01).
 
 ### Existing modules
 
