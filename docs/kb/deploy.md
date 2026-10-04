@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-04
-checked: 43989449
+updated: 2026-10-05
+checked: a8feb138
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2383,8 +2383,12 @@ Stage 4 address options are read from the checkout `.env`, never ambient setting
 instead of loopback; unspecified, loopback, multicast, reserved and link-local
 addresses are rejected. Tailscale's 100.64.0.0/10 addresses are accepted. VPN
 membership and grants are commissioned separately by the owner and link manager.
-`VC_STAND_LAN_ADDRESS` changes only the primary Core port and its health probe;
-it must belong to RFC 1918 (10/8, 172.16/12 or 192.168/16).
+`VC_STAND_LAN_ADDRESS` publishes the primary Core on that address through the generated
+`stand-lan` proxy (`deploy/compose.stand-lan.yml`, Caddy on container port 8780 forwarding to
+`voicechat:8787`); Core itself stays on `127.0.0.1:<VC_STAND_PORT>` and the health probe uses
+the LAN address. Docker Desktop cannot publish one container port on two non-loopback
+addresses (LAN and a VPN link): such a container is not created (U04 on M1, Docker 29.8.1).
+The address must belong to RFC 1918 (10/8, 172.16/12 or 192.168/16).
 
 Docker Desktop on macOS publishes a specific host address through a helper port in its
 VM and releases the helper of a replaced container asynchronously, so recreating a

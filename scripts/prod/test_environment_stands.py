@@ -331,11 +331,22 @@ class StandTest(unittest.TestCase):
         self.values.update(VC_STAND_VPN_ADDRESS='100.64.1.2', VC_STAND_LAN_ADDRESS='192.168.1.2',
                            VC_STAND_LINK_PORTS='postgres:5432:17100')
         self.model['services']['postgres']['ports'] = [{'host_ip': '100.64.1.2', 'published': '17100', 'target': 5432}]
-        self.model['services']['voicechat']['ports'] = [{'host_ip': '192.168.1.2', 'published': PORT, 'target': 8787}]
+        # Core stays on loopback; LAN access is a separate proxy because Docker Desktop cannot
+        # publish one container port on both the LAN and the VPN address (U04).
+        self.model['services']['voicechat']['ports'] = [{'host_ip': '127.0.0.1', 'published': PORT, 'target': 8787}]
+        self.model['services']['stand-lan'] = {'image': 'caddy:2-alpine', 'ports': [{'host_ip': '192.168.1.2', 'published': PORT, 'target': 8780}]}
         code, _, calls = self.invoke()
         self.assertEqual(code, 0)
         self.assertIn('100.64.1.2:17100:5432', (self.root / 'overrides/stand-links.yml').read_text())
         self.assertTrue(any(c['args'][-1] == 'http://192.168.1.2:' + PORT + '/api/health' for c in calls))
+        overlay = json.loads((self.root / 'deploy/compose.stand-lan.yml').read_text())
+        self.assertEqual(overlay['services']['stand-lan']['ports'], ['192.168.1.2:' + PORT + ':8780'])
+        self.assertIn('reverse_proxy voicechat:8787', (self.root / 'deploy/Caddyfile.stand-lan').read_text())
+        self.assertTrue(any(c['chain'] and c['chain'].endswith('deploy/compose.stand-lan.yml') or 'deploy/compose.stand-lan.yml:' in (c['chain'] or '') for c in calls))
+        # Core published directly on the LAN address, or a VPN-only port on LAN, is refused.
+        self.model['services']['voicechat']['ports'][0]['host_ip'] = '192.168.1.2'
+        self.assertEqual(self.invoke()[0], 10)
+        self.model['services']['voicechat']['ports'][0]['host_ip'] = '127.0.0.1'
         self.model['services']['postgres']['ports'][0]['host_ip'] = '192.168.1.2'
         self.assertEqual(self.invoke()[0], 10)
 
