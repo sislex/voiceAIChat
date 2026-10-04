@@ -20,7 +20,7 @@ class FilesTest(unittest.TestCase):
                 root = Path(directory)
                 docker = root / 'docker'
                 log = root / 'calls'
-                docker.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['ARG_LOG'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nif sys.argv[1]=='run': sys.stdout.buffer.write(b'archive-bytes')\n")
+                docker.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['ARG_LOG'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nif sys.argv[1]=='run' and 'du' in sys.argv: print(os.environ.get('DU_KB','1')+'\\t/data')\nelif sys.argv[1]=='run': sys.stdout.buffer.write(b'archive-bytes')\n")
                 docker.chmod(0o700)
                 result = subprocess.run(['bash', str(HERE / 'environment-files-snapshot.sh'),
                     *(['--since', since] if since else []), str(root)],
@@ -33,9 +33,28 @@ class FilesTest(unittest.TestCase):
                 self.assertEqual(final['sha256'], hashlib.sha256(b'archive-bytes').hexdigest())
                 calls = [json.loads(line) for line in log.read_text().splitlines()]
                 self.assertEqual(calls[0], ['volume', 'inspect', 'voicechat-server-data'])
-                self.assertIn('type=volume,src=voicechat-server-data,dst=/data,readonly', calls[1])
-                self.assertIn('--rm', calls[1])
-                self.assertEqual([a for a in calls[1] if a.startswith('--newer=')], ['--newer=' + since] if since else [])
+                tar = calls[-1]
+                self.assertIn('du', calls[1])
+                self.assertIn('type=volume,src=voicechat-server-data,dst=/data,readonly', tar)
+                self.assertIn('--rm', tar)
+                self.assertEqual([a for a in tar if a.startswith('--newer=')], ['--newer=' + since] if since else [])
+
+    def test_archive_skips_docker_log_and_refuses_without_space(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root / 'out'; out.mkdir(); log = root / 'args'
+            docker = root / 'docker'
+            docker.write_text("#!/usr/bin/env python3\nimport json,os,sys\nwith open(os.environ['ARG_LOG'],'a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')\nif 'du' in sys.argv: print(os.environ['DU_KB']+'\\t/data')\nelif sys.argv[1]=='run': sys.stdout.buffer.write(b'archive-bytes')\n")
+            docker.chmod(0o700)
+            ok = subprocess.run(['bash', str(HERE / 'environment-files-snapshot.sh'), str(out)], env={**os.environ, 'DOCKER': str(docker), 'ARG_LOG': str(log), 'DU_KB': '1'}, capture_output=True, text=True)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            runs = [json.loads(line) for line in log.read_text().splitlines() if json.loads(line)[0] == 'run']
+            self.assertTrue(runs and all(r[r.index('--log-driver') + 1] == 'none' for r in runs))
+            log.write_text('')
+            full = subprocess.run(['bash', str(HERE / 'environment-files-snapshot.sh'), str(out)], env={**os.environ, 'DOCKER': str(docker), 'ARG_LOG': str(log), 'DU_KB': str(10 ** 12)}, capture_output=True, text=True)
+            self.assertEqual(full.returncode, 3)
+            self.assertIn('insufficient disk space', full.stdout)
+            self.assertFalse(any('tar' in json.loads(line) for line in log.read_text().splitlines()))
+            self.assertEqual([p.name for p in out.iterdir() if p.name.startswith('environment-files.')], [p.name for p in out.iterdir() if p.name.startswith('environment-files.') and p.stat().st_size])
 
     def test_failure_removes_partial_archive(self):
         with tempfile.TemporaryDirectory() as directory:
