@@ -806,7 +806,7 @@ during that queue, so this was not an event-loop or general network stall.
 
 ## Persistent environment links
 
-Core owns environment service tunnels in `apps/server/src/agents/linkManager.ts`.
+Core owns environment service links in `apps/server/src/agents/linkManager.ts`.
 The `environments` repository owns `environment_links`: a composite environment
 foreign key cascades deletion, a service tuple is idempotent, and listener ports
 are unique per client machine. Startup schema installation adds the table to
@@ -835,6 +835,24 @@ endpoint reconnecting reopens its tunnel. The listener uses
 agents must report version 0.21.0 or newer; incompatible versions produce
 `Agent 0.21.0 or newer is required`. Installing agents and commissioning Docker
 network connectivity remain operator work.
+
+Links persist `transport` (`vpn` or `tunnel`) and `address`. Both SQLite
+column migrations and the generated PostgreSQL upgrade plan backfill existing
+links as `tunnel`, `host.docker.internal:<listenerPort>`. VPN selection uses
+the project's creator as network owner, requires both machines to belong to that
+owner, fresh telemetry matching the owner's tailnet and verified device bindings,
+and an applied environment grant covering both machines and the service port.
+The returned VPN address is the server's bound VPN IPv4 plus the published
+`servicePort`; no tunnel is opened. IPv6-only, stale, missing or mismatched
+observations and unavailable grants fall back to the stage-3 tunnel.
+
+Agent connection/telemetry changes and persisted VPN service changes trigger
+reconciliation in embedded and standalone modes. Reconciliation switches both
+ways, closes obsolete tunnels, and keeps delayed tunnel-close callbacks from
+marking a VPN link down. Removed environments fail authorization for either
+transport. Applying/removing Tailscale grants belongs to VpnService; joining nodes,
+publishing the service on its VPN address and commissioning real connectivity
+remain operator work.
 
 Each tunnel frame is authorized locally against the persisted link and its
 environment state (`provisioning` or `ready`). Missing, removed, or inactive

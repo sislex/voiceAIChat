@@ -203,6 +203,7 @@ export class VoiceChatDb {
       await this.migrate()
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
+    await this.sql.exec("UPDATE environment_links SET address = 'host.docker.internal:' || listener_port WHERE address = ''")
     const personalTenant = async (userName: string): Promise<string | null> =>
       (await this.ctx.repos.identity.getAccountAccess(userName))?.tenant.id ?? null
     await this.ctx.repos.projects.backfillTenantIds(personalTenant)
@@ -242,6 +243,7 @@ export class VoiceChatDb {
   private async migrate(): Promise<void> {
     for (const [table, definitions] of [
       ['environments', ["mode TEXT NOT NULL DEFAULT 'external'", 'storage_id TEXT', "state TEXT NOT NULL DEFAULT 'ready'", 'compose_project TEXT', 'port INTEGER']],
+      ['environment_links', ["transport TEXT NOT NULL DEFAULT 'tunnel'", "address TEXT NOT NULL DEFAULT ''"]],
       ['environment_configurations', ['core_json TEXT']],
       ['environment_operations', ["kind TEXT NOT NULL DEFAULT 'apply'"]],
     ] as const) {

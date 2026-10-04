@@ -1,3 +1,5 @@
+import { isIP } from 'node:net'
+import type { AgentTelemetry } from '@sislexa/agent-contracts'
 import { initialVpnState, isVpnFresh, type VpnAgentRequest, type VpnChange, type VpnObservation, type VpnState, type VpnView } from '@sislexa/agent-contracts'
 import { environmentTag, decryptVpnSecret, encryptVpnSecret, managedPolicy, TailscaleApi, vpnTag, VpnError, type TailDevice } from './tailscale.js'
 
@@ -16,10 +18,35 @@ export interface EnvironmentGrantState {
 }
 interface NetworkData { environments?: Record<string, EnvironmentGrantState>; verifiedAt: number; states: Record<string, VpnState>; bindings: Record<string, Binding>; grants: unknown[] }
 export interface VpnAgentPort {
+  telemetryOf?(id: string): AgentTelemetry | undefined
   isOnline(id: string): boolean
   vpn(id: string, request: VpnAgentRequest): Promise<VpnObservation>
 }
 export class VpnService {
+  private readonly listeners = new Set<() => void>()
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+  /** Only verified owner bindings and a fully applied environment grant authorize VPN links. */
+  async linkAddress(owner: string, environment: VpnEnvironment, client: string, server: string, port: number): Promise<string | null> {
+    const row = await this.repo.readVpnNetwork(owner)
+    if (!row) return null
+    const data = this.data(row)
+    const grant = data.environments?.[this.environmentKey(environment)]
+    if (grant?.phase !== 'applied' || !grant.ports.includes(port)) return null
+    let address: string | undefined
+    for (const id of [client, server]) {
+      if (!grant.machines.includes(id) || !this.agents.isOnline(id) || await this.repo.agentOwnerId(id) !== owner) return null
+      const binding = data.bindings[id]
+      const observed = this.agents.telemetryOf?.(id)?.vpn
+      if (!binding || !observed || observed.error || observed.tailnet !== row.tailnet || observed.deviceId !== binding.deviceId || !isVpnFresh(observed, this.now())) return null
+      const ipv4 = observed.addresses.find(a => isIP(a) === 4 && binding.addresses.includes(a))
+      if (!ipv4) return null
+      if (id === server) address = ipv4
+    }
+    return address ? `${address}:${port}` : null
+  }
   private readonly busy = new Set<string>()
   constructor(private readonly repo: VpnRepository, private readonly agents: VpnAgentPort,
     private readonly key: () => string | undefined,
@@ -38,6 +65,7 @@ export class VpnService {
   private async save(user: string, row: Row, data: NetworkData): Promise<Row> {
     const next = { ...row, generation: row.generation + 1, state: JSON.stringify(data) }
     if (!await this.repo.saveVpnNetwork(user, next, row.generation)) throw new VpnError('conflict')
+    for (const listener of this.listeners) listener()
     return next
   }
   private available(data: NetworkData): void {

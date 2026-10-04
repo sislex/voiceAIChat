@@ -2021,6 +2021,8 @@ CREATE TABLE IF NOT EXISTS environment_links (
   client_machine_id TEXT NOT NULL, server_machine_id TEXT NOT NULL,
   service_port INTEGER NOT NULL CHECK(service_port BETWEEN 1 AND 65535),
   listener_port INTEGER NOT NULL CHECK(listener_port BETWEEN 1 AND 65535),
+  transport TEXT NOT NULL DEFAULT 'tunnel' CHECK(transport IN ('vpn', 'tunnel')),
+  address TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL DEFAULT 'down' CHECK(state IN ('open', 'down')),
   UNIQUE(project_id, environment_id, client_machine_id, server_machine_id, service_port),
   UNIQUE(client_machine_id, listener_port),
