@@ -3,7 +3,9 @@ services:
     extra_hosts: &stand-extra-hosts
       - "host.docker.internal:host-gateway"
     ports: !override
-      - "${VC_STAND_LAN_ADDRESS:-127.0.0.1}:${VC_STAND_PORT:?Stand port is required}:8787"
+      # LAN access goes through the generated stand-lan proxy: Docker Desktop cannot publish
+      # one container port on two non-loopback addresses (LAN and VPN link).
+      - "127.0.0.1:${VC_STAND_PORT:?Stand port is required}:8787"
     volumes: !override
       - vc-data:/data            # no host deploy socket in a stand
     # Modules run on this machine only when Kanban lists their profile; one placed on
