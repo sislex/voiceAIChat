@@ -75,8 +75,8 @@
       "package": "@sislexa/kanban",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/sislexa-kanban",
-      "version": "0.2.2",
-      "commit": "853fcf2488547a42e4d4473588a71e9348590a59"
+      "version": "0.2.3",
+      "commit": "a6ab42f2f453e1d5ab775bca50ac1da4267cea66"
     }
   }
 }
