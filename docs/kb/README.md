@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-03 | ⚠ 1 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 2 коммит(ов) в areas после сверки: abe4e547 chore: pin agent 0.22.0 (contracts 1.2.0) and pass VC_VPN_SECRET_KEY to Core … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 11 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 4 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-04 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 51 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 23 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1761 коммит(ов) в areas после сверки: abe4e547 chore: pin agent 0.22.0 (contracts 1.2.0) and pass VC_VPN_SECRET_KEY to Core … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1762 коммит(ов) в areas после сверки: c27bf2a9 chore: pin agent 0.22.1 (operator settings in agent.env survive updates) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 87 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -58,8 +58,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1035. Последние:
+Всего записей: 1036. Последние:
 
+- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md) — worker-environment-fixes
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md) — u03-results
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md) — tunnel-relay-backpressure
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md) — tunnel-frame-order
@@ -69,7 +70,6 @@
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md) — plan-archive-split
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-0.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-0.md) — pin-kanban-0-2-0
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-1.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-1.md) — pin-agent-0-22-1
-- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-0.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-0.md) — pin-agent-0-22-0
 
 ## Исторические планы
 
