@@ -111,6 +111,10 @@ def write_link_override(path, links, address='127.0.0.1'):
     tmp.replace(path)
 
 
+START_ATTEMPTS = 3
+START_RETRY_SECONDS = float(os.environ.get('VC_STAND_START_RETRY_SECONDS', '5'))
+
+
 class Stand:
     def __init__(self, action, role='primary'):
         self.stage = 'config' if action == 'provision' else 'down'
@@ -119,6 +123,7 @@ class Stand:
         self.env = dict(os.environ)
         self.docker = os.environ.get('DOCKER', 'docker')
         self.role = role
+        self.failure = ''
 
     def emit(self, status, message=''):
         for value in sorted(set(self.values.values()), key=len, reverse=True):
@@ -129,6 +134,9 @@ class Stand:
     def run(self, *args, check=True, timeout=3600):
         result = subprocess.run(args, env=self.env, capture_output=True, text=True, timeout=timeout)
         if check and result.returncode:
+            # The tail of the failed command explains the stage; emit() redacts setting values.
+            lines = [line.strip() for line in (result.stdout + '\n' + result.stderr).splitlines() if line.strip()]
+            self.failure = ' | '.join(lines[-4:])[-600:]
             raise ValueError('command failed')
         return result
 
@@ -361,6 +369,7 @@ class Stand:
                 if pulled.returncode and 'no matching manifest' in pulled.stderr:
                     pulled = self.run(self.docker, 'pull', '--platform', 'linux/amd64', image, check=False)
                 if pulled.returncode:
+                    self.failure = pulled.stderr.strip().splitlines()[-1][-600:] if pulled.stderr.strip() else ''
                     raise ValueError('command failed')
         self.emit('passed')
         if snapshot is not None:
@@ -368,7 +377,17 @@ class Stand:
         if files_archives:
             self.restore_files(files_archives)
         self.begin('start', 30)
-        self.compose('up', '-d', '--no-build', '--pull', 'never', '--remove-orphans')
+        # Docker Desktop releases the helper port of a replaced container asynchronously;
+        # recreating a service published on a specific host address can race with it.
+        for attempt in range(START_ATTEMPTS):
+            result = self.compose('up', '-d', '--no-build', '--pull', 'never', '--remove-orphans', check=False)
+            if not result.returncode:
+                break
+            if attempt + 1 == START_ATTEMPTS or 'address already in use' not in result.stderr:
+                lines = [line.strip() for line in (result.stdout + '\n' + result.stderr).splitlines() if line.strip()]
+                self.failure = ' | '.join(lines[-4:])[-600:]
+                raise ValueError('command failed')
+            time.sleep(START_RETRY_SECONDS)
         self.emit('passed')
         self.begin('health', 30)
         deadline = time.monotonic() + self.timeout
@@ -429,7 +448,7 @@ def main():
         else:
             stand.remove(args.delete_data)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
-        stand.emit('failed', 'Stand operation failed')
+        stand.emit('failed', 'Stand operation failed' + (': ' + stand.failure if stand.failure else ''))
         return stand.code
     return 0
 
