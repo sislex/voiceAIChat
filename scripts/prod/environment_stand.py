@@ -388,6 +388,11 @@ class Stand:
                 self.failure = ' | '.join(lines[-4:])[-600:]
                 raise ValueError('command failed')
             time.sleep(START_RETRY_SECONDS)
+            # A container whose networking failed stays 'created' without its networks;
+            # starting it again would leave it detached, so it is removed and recreated.
+            stale = self.compose('ps', '-a', '--status', 'created', '-q', check=False).stdout.split()
+            if stale:
+                self.run(self.docker, 'rm', '-f', *stale, check=False)
         self.emit('passed')
         self.begin('health', 30)
         deadline = time.monotonic() + self.timeout
