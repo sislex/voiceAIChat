@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-04
-checked: 96e017e5
+checked: 54bc2ad5
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -219,7 +219,9 @@ re-adds verify policy and tags and require no remote writes.
 Machine snapshots for machines RPC and Kanban include `vpn.addresses` and
 optional `vpn.hostName` from `telemetry.vpn`. `vpnAddressOf(machineId)` reads
 online telemetry, prefers a Tailscale IPv4 address, falls back to its IPv6
-address, and returns no address for missing or erroneous observations.
+address, and returns no address for missing observations or errors that invalidate them; exit-node
+errors (`guard`, `forwarding`, `conflict`) keep the tailnet address, since they concern the internet
+route (a Mac using an exit node without the privileged guard reports `guard`).
 Host names are informational and are never used as device identity.
 A consumer must check the applied grant state and membership as well as
 address availability before selecting VPN transport.
