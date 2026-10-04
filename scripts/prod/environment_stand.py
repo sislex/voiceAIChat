@@ -317,7 +317,28 @@ class Stand:
             raise ValueError('sanitize failed')
         self.emit('passed')
 
-    def provision(self, snapshot=None):
+    def restore_files(self, archives):
+        self.begin('restore', 28)
+        volume = self.values['VC_DATA_VOLUME']
+        project = self.values['COMPOSE_PROJECT_NAME']
+        if volume != project + '-server-data' or volume == 'voicechat-server-data':
+            raise ValueError('unsafe files volume')
+        # Never overwrite files while any application is using the target volume.
+        if self.run(self.docker, 'ps', '-q', '--filter', 'volume=' + volume).stdout.strip():
+            raise ValueError('files target volume is in use')
+        self.run(self.docker, 'volume', 'create', '--label', 'com.docker.compose.project=' + project, volume)
+        for archive in archives:
+            with open(archive, 'rb') as source:
+                result = subprocess.run([self.docker, 'run', '--rm', '-i', '--network', 'none',
+                    '--read-only', '--mount', 'type=volume,src=' + volume + ',dst=/data',
+                    'debian:bookworm-slim', 'tar', '--extract', '--file=-', '--directory=/data',
+                    '--numeric-owner', '--delay-directory-restore'], env=self.env,
+                    stdin=source, capture_output=True, timeout=3600)
+            if result.returncode:
+                raise ValueError('files restore failed')
+        self.emit('passed')
+
+    def provision(self, snapshot=None, files_archives=None):
         self.begin('build', 25)
         for name in (('voicechat', 'automation-runner') if self.role == 'primary' else ()):
             self.compose('build', name)
@@ -336,6 +357,8 @@ class Stand:
         self.emit('passed')
         if snapshot is not None:
             self.restore(snapshot)
+        if files_archives:
+            self.restore_files(files_archives)
         self.begin('start', 30)
         self.compose('up', '-d', '--no-build', '--pull', 'never', '--remove-orphans')
         self.emit('passed')
@@ -379,10 +402,13 @@ def main():
     parser.add_argument('--role', choices=['primary', 'module'], default='primary')
     parser.add_argument('--delete-data', action='store_true')
     parser.add_argument('--snapshot', type=Path)
+    parser.add_argument('--files-archive', type=Path, action='append', default=[])
     args = parser.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}', args.operation) or (args.delete_data and args.action != 'remove') or (args.snapshot and args.action != 'provision'):
         return 2
     if args.snapshot and (not args.snapshot.is_file() or args.role != 'primary'):
+        return 2
+    if args.files_archive and (args.action != 'provision' or args.role != 'primary' or any(not path.is_file() for path in args.files_archive)):
         return 2
     stand = Stand(args.action, args.role)
     try:
@@ -391,7 +417,7 @@ def main():
         stand.config()
         if args.action == 'provision':
             stand.emit('passed')
-            stand.provision(args.snapshot)
+            stand.provision(args.snapshot, args.files_archive)
         else:
             stand.remove(args.delete_data)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
