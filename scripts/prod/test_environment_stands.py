@@ -118,6 +118,14 @@ class StandTest(unittest.TestCase):
         self.assertEqual(sum('psql' in c['args'] and '-Atqc' not in c['args'] for c in calls), 1)
         self.assertNotIn('stand-only-password', json.dumps(calls))
 
+        code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='0',
+                                        FAIL='compose exec -T postgres pg_restore')
+        self.assertEqual(code, 28)
+        self.assertEqual((rows[-1]['stage'], rows[-1]['status']), ('restore', 'failed'))
+        log = self.root / 'restore.log'
+        self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+        self.assertIn(SECRET, log.read_text())
+
         code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='1')
         self.assertEqual(code, 28)
         self.assertEqual(rows[-1]['stage'], 'restore')
