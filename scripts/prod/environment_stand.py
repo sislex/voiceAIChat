@@ -245,8 +245,9 @@ class Stand:
                     raise ValueError('production socket')
             if self.role == 'module':
                 hosts = service.get('extra_hosts', {})
+                # Compose renders list entries as `host:ip` or, in newer releases, `host=ip`.
                 if not (hosts.get('host.docker.internal') == 'host-gateway' if isinstance(hosts, dict)
-                        else 'host.docker.internal:host-gateway' in hosts):
+                        else any(re.fullmatch(r'host\.docker\.internal[:=]host-gateway', entry) for entry in hosts)):
                     raise ValueError('missing Docker host gateway')
         self.timeout = float(v.get('VC_ENVIRONMENT_START_TIMEOUT', os.environ.get('VC_ENVIRONMENT_START_TIMEOUT', '300')))
         if not 0 < self.timeout <= 3600:

@@ -231,6 +231,15 @@ class StandTest(unittest.TestCase):
             [(stage, status) for stage in ('config', 'build', 'pull', 'start', 'health') for status in ('running', 'passed')])
         self.assertFalse(any(c['args'][:2] == ['compose', 'build'] for c in calls))
         self.assertFalse(any(c['tool'] == 'curl' for c in calls))
+        # Compose renders a list entry with `:` or, in newer releases, with `=`.
+        for entry in ('host.docker.internal:host-gateway', 'host.docker.internal=host-gateway'):
+            with self.subTest(entry=entry):
+                self.model['services']['make']['extra_hosts'] = [entry]
+                code, rows, calls = self.invoke(role='module')
+                self.assertEqual(code, 0)
+        self.model['services']['make']['extra_hosts'] = ['host.docker.internal=10.0.0.1']
+        code, rows, calls = self.invoke(role='module')
+        self.assertNotEqual(code, 0)
 
     def test_module_role_rejects_unsafe_models_and_settings(self):
         self.values['COMPOSE_FILE'] = 'docker-compose.yml:deploy/compose.stand-module.yml'
