@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-04
-checked: 54bc2ad5
+checked: 36c0a9a2
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -205,7 +205,11 @@ Tailscale's device-tags API, preserving other tags. Updating membership removes
 the tag from devices outside the new selection; removal deletes the grant and
 device tags, retaining the tag-owner declaration. Unrelated local grants and
 exit-node grants survive. Unjournaled rules referencing environment tags are
-rejected by `managedPolicy`, as are broad foreign internet permissions.
+rejected by `managedPolicy`, as are broad foreign internet permissions. Destinations inside the
+tailnet are tags, `autogroup:member`, `autogroup:tagged` and tailnet addresses (environment machines
+become tagged devices and leave `autogroup:member`). The owner's exit-node use stays as one explicit
+grant whose only destination is `autogroup:internet`; allow-all (`"dst": ["*"]`) is split into
+`{"src": ["*"], "dst": ["autogroup:member", "autogroup:tagged"], "ip": ["*"]}` plus that grant.
 
 `machine_vpn_networks.state.environments[tag]` records the environment,
 machines, ports, phase (`applying/applied/removed/error`) and `appliedAt`.

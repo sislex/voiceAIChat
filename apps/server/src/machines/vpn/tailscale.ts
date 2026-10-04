@@ -17,15 +17,19 @@ export const isTailAddress = (address: string): boolean =>
 /** Reject ambiguous internet grants; never silently narrow somebody else's rules. */
 export function managedPolicy(policy: TailPolicy, bindings: Record<string, { addresses: string[] }>, previous: unknown[]): TailPolicy {
   const isLocal = (selector: unknown): boolean => typeof selector === 'string' &&
-    (/^tag:[a-zA-Z0-9-]+$/.test(selector) || selector === 'autogroup:member' || isTailAddress(selector))
+    (/^tag:[a-zA-Z0-9-]+$/.test(selector) || selector === 'autogroup:member' || selector === 'autogroup:tagged' || isTailAddress(selector))
+  // The owner's own exit-node permission stays as an explicit, separate grant: its only
+  // destination is the internet, so it neither widens nor shadows environment grants.
+  const ownerExit = (g: unknown): boolean => !!g && typeof g === 'object' &&
+    JSON.stringify((g as { dst?: unknown }).dst) === JSON.stringify(['autogroup:internet'])
   const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical) :
     v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, value]) => [k, canonical(value)])) : v
   const same = (a: unknown, b: unknown): boolean => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
   const retained = (policy.grants ?? []).filter(g => !previous.some(p => same(p, g)))
   if (retained.some(g => JSON.stringify(g)?.includes('tag:chatai-env-'))) throw new VpnError('policy')
   if ((policy.acls ?? []).some(a => JSON.stringify(a)?.includes('tag:chatai-env-'))) throw new VpnError('policy')
-  if (retained.some(g => !g || typeof g !== 'object' || !Array.isArray((g as { dst?: unknown }).dst) ||
-    !(g as { dst: unknown[] }).dst.every(isLocal))) throw new VpnError('policy')
+  if (retained.some(g => !ownerExit(g) && (!g || typeof g !== 'object' || !Array.isArray((g as { dst?: unknown }).dst) ||
+    !(g as { dst: unknown[] }).dst.every(isLocal)))) throw new VpnError('policy')
   if ((policy.acls ?? []).some(a => !a || typeof a !== 'object' || !Array.isArray((a as { dst?: unknown }).dst) ||
     !(a as { dst: unknown[] }).dst.every(d => typeof d === 'string' && isLocal(d.replace(/:[^:]+$/, ''))))) throw new VpnError('policy')
   const owners = { ...policy.tagOwners }
