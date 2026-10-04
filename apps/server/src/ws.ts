@@ -1,3 +1,4 @@
+import { READ_ONLY_WS_COMMANDS, type Maintenance } from './maintenance.js'
 // WebSocket-соединение: разбор кадров (JSON + бинарные аудио-чанки) и маршрутизация.
 // Обработчики по типам сообщений подключают фазы STT/Claude/TTS (Ф4–Ф6).
 
@@ -30,6 +31,7 @@ export interface WsContext {
 export const WS_MAX_BUFFERED_BYTES = 8 * 1024 * 1024
 
 export interface AttachWsOptions {
+  maintenance?: Maintenance
   /** Recheck delegated resource authority before delivering each event. */
   authorizeOutput?: (message: ServerMessage) => Promise<boolean>
   /** Recheck the user before accepting an authenticated command. */
@@ -87,7 +89,15 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
       .then(async () => {
         if (openingFailed || socket.readyState !== socket.OPEN) return
         if ((!isBinary || options.authorizeOutput) && options.authorizeMessage && !await options.authorizeMessage()) {socket.close(options.unauthorizedCloseCode ?? 4001, 'Session expired');return}
+        const rejectWrite = (): boolean => {
+          const error = options.maintenance?.rejection()
+          if (!error) return false
+          socket.send(JSON.stringify({ status: 503, ...error }))
+          guard()
+          return true
+        }
         if (isBinary) {
+          if (rejectWrite()) return
           if (options.authorizeOutput) return
           handlers.onBinary?.(data, ctx)
           return
@@ -99,7 +109,9 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
           return // игнорируем не-JSON
         }
         if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return
+        if (!READ_ONLY_WS_COMMANDS.has(msg.t) && rejectWrite()) return
         if (options.authorizeCommand && !await options.authorizeCommand(msg, ctx)) return
+        if (!READ_ONLY_WS_COMMANDS.has(msg.t) && rejectWrite()) return
         await handlers.onMessage?.(msg, ctx)
       })
       .catch((err) => console.error('[ws] обработчик сообщения упал:', err instanceof Error ? err.message : err))

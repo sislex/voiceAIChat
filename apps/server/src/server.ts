@@ -1,3 +1,4 @@
+import { Maintenance } from './maintenance.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
@@ -319,6 +320,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     routerOptions: { maxParamLength: 1024 },
     genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
   })
+  const maintenance = new Maintenance()
+  maintenance.register(app)
   const httpDiagnostics = registerHttpDiagnostics(app)
   opts = { ...opts, config: { ...opts.config } }
   const component = opts.config.componentConfigPath ? await createComponentRuntime({
@@ -551,7 +554,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       .send(httpDiagnostics.prometheus())
   )
 
-  app.get(REST.health, async (): Promise<HealthResponse> => ({
+  app.get(REST.health, async (): Promise<HealthResponse & { readOnly: boolean; reason: string }> => ({
+    ...maintenance.snapshot(),
     application: applicationRuntimeMetadata('core', process.env),
     ok: true,
     version: VERSION,
@@ -1346,7 +1350,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Register internal RPC only when a managed provider or legacy migration credential is configured.
   if (opts.config.internalToken || component) {
     registerInternalRoutes(app, {
-      token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore,
+      maintenance, token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore,
       ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
       identityCore: db,
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
@@ -1497,7 +1501,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     scoped.get('/ws', { websocket: true }, async (socket, request) => {
       // Тестовый оверрайд обработчиков — без аутентификации.
       if (opts.createWsHandlers) {
-        await attachWs(socket, opts.createWsHandlers())
+        await attachWs(socket, opts.createWsHandlers(), { maintenance })
         return
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
@@ -1567,6 +1571,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       socket.off('message', buffer)
       let browserReady = false
       await attachWs(socket, makeHandlers(user, sid, token!, delegated, !!browserSession), {
+        maintenance,
         unauthorizedCloseCode: browserSession ? 4403 : 4001,
         initialFrames: early,
         authorizeMessage: async () => {

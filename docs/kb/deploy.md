@@ -3,6 +3,7 @@ title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
 checked: 281b7096
 areas:
+  - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
   - scripts/prod/environment-provision.sh
@@ -31,6 +32,43 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Production file migration and cutover
+
+`scripts/prod/environment-files-snapshot.sh [--since <timestamp>] <directory>`
+archives the existing `voicechat-server-data` volume through a disposable
+`debian:bookworm-slim` container running GNU tar. The source mount and container
+root are read-only; networking is disabled. The script never starts Core. It
+creates a private (`0600`) archive and emits JSON lines with stage/status plus
+`path`, byte `size`, `sha256` and `since` on success. Failure removes the partial
+archive. `DOCKER` can select a Docker executable (also used by adapter tests).
+
+Record a UTC timestamp **before** the initial snapshot. `--since` passes this
+boundary as a single GNU tar `--newer` argument, selecting files whose mtime or
+ctime changed, including metadata changes. This delta overlays additions and
+updates; it does not encode deleted paths. If files were deleted during the copy
+window, use a fresh full archive into a clean target volume for exact parity.
+Check transferred size and SHA-256 before provisioning. The helper image must be
+available on both machines (or downloadable before maintenance begins).
+
+`environment-provision.sh --operation <id> --snapshot <db-archive>
+--files-archive <base.tar> --files-archive <delta.tar>` restores the database and
+sanitizes it, then extracts file archives in argument order into the validated
+stand `VC_DATA_VOLUME`, before the application `start` stage. Files-only restore
+is also supported. Archive input is streamed into tar; extraction errors stop
+provisioning at `restore` (exit 28). A volume mounted by a running container or
+the production volume is rejected. Use a clean target for the initial restore;
+restoring over a stopped existing stand is intended for ordered deltas.
+
+For cutover, an operator calls `POST /internal/maintenance` on old Core with
+`{ "readOnly": true, "reason": "production migration" }` using the Core
+`admin.rpc` service grant (or `VC_INTERNAL_TOKEN` in legacy mode). Verify
+`/api/health.readOnly`, let existing jobs finish, take final database/files
+snapshots, restore, and verify the new environment before switching DNS/address.
+Cancel cutover with `{ "readOnly": false, "reason": "" }`. The gate blocks new
+REST/WS writes; it does not drain already running jobs or external writers and
+resets on Core restart. These scripts prepare migration artifacts; they do not
+perform DNS changes or commission production automatically.
 
 ## Production database snapshots for stands
 
