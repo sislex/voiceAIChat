@@ -25,6 +25,29 @@ request ID with the validated Core value.
 
 Порядок регистрации: auth/public guard, REST, admin/projects/agents/KB, gateway/MCP, websocket plugin и статические файлы. `/api/*` по умолчанию требует bearer token; исключения перечислены централизованно в `isPublic`. Нельзя делать новый публичный route побочным эффектом порядка plugins.
 
+## In-memory maintenance gate
+
+Each `buildServer()` owns a `Maintenance` instance. `POST /internal/maintenance`
+accepts `{readOnly: boolean, reason: string}` (reason at most 1024 characters).
+It uses the internal route's existing `admin.rpc` service grant in managed mode;
+legacy mode requires `VC_INTERNAL_TOKEN`. User credentials alone cannot toggle
+it. Disabling clears the reason. Nothing is persisted, so restart starts writable.
+
+The global `onRequest` hook returns HTTP 503 `{error: "read_only", reason}` for
+non-GET/HEAD/OPTIONS requests to `/api` and `/api/*`, before route handlers,
+authentication or proxy forwarding. Reads and `/api/health` stay available;
+health adds top-level `readOnly` and `reason`. Internal maintenance remains
+reachable for rollback.
+
+`attachWs` checks the same live state on existing and new chat connections,
+including queued and binary audio frames. Write frames receive JSON
+`{status: 503, error: "read_only", reason}` (an established WebSocket cannot send
+an HTTP status). The connection and outgoing updates stay open. An explicit
+allowlist preserves chat handshake and board/CI/session-tail read subscriptions;
+unknown commands fail closed. The gate stops new client commands, not jobs
+already executing, agent callbacks, or writes through internal module RPC.
+Operators must quiesce those writers before the final migration snapshot.
+
 ## HTTP-поверхность
 
 Группы маршрутов:

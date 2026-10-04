@@ -1,3 +1,4 @@
+import type { Maintenance } from '../maintenance.js'
 import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
 import { integrationBearer, type IntegrationPrincipal } from '../auth/integrationTokens.js'
 import type {VoiceChatDb} from '../db/database.js'
@@ -34,6 +35,7 @@ import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIM
 
 /** Exact route mapping prevents a new internal endpoint inheriting a broad service grant. */
 export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
+  '/internal/maintenance': 'admin.rpc',
   [INTERNAL_WHOAMI_PATH]: 'identity.verify',
   [IDENTITY_PATHS.core]: 'identity.core',
   [INTERNAL_MAKE_CORE_PATH]: 'make.core',
@@ -51,6 +53,7 @@ export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
 }
 
 export interface InternalRoutesDeps {
+  maintenance?: Maintenance
   identityCore?: VoiceChatDb
   component?: ComponentRuntime
   token: string
@@ -92,6 +95,14 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
         return reply.code(verdict.status).send({ error: 'component_access_denied' })
       }
       if (!deps.token || req.headers.authorization !== `Bearer ${deps.token}`) return reply.code(401).send({ error: 'unauthorized' })
+    })
+    if (deps.maintenance) scope.post('/internal/maintenance', async (req, reply) => {
+      const body = req.body as { readOnly?: unknown; reason?: unknown } | null
+      if (!body || typeof body.readOnly !== 'boolean' || typeof body.reason !== 'string' || body.reason.length > 1024) {
+        return reply.code(400).send({ error: 'invalid_maintenance' })
+      }
+      deps.maintenance!.set(body.readOnly, body.reason)
+      return deps.maintenance!.snapshot()
     })
     if (deps.identityCore) {
       const core = deps.identityCore
