@@ -476,8 +476,11 @@ describe('WS: Claude-стрим', () => {
     expect((await db.chat.getConversation(U, conv.id))?.claudeSessionId).toBe('claude:sess-xyz')
     // без verbose активность НЕ шлётся в глобальную консоль (событие claude.log)…
     expect(events.some((e) => (e as { t: string }).t === 'claude.log')).toBe(false)
-    // …но собирается всегда и персистится в meta сохранённого сообщения (для подробного вида)
-    expect(doneMsg.message?.meta?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
+    // Service data is hidden on the wire by default, but still persisted for later use.
+    expect(doneMsg.message).toBeDefined()
+    expect(doneMsg.message?.meta?.activity).toBeUndefined()
+    const persisted = (await db.chat.listMessages(U, conv.id)).find((message) => message.role === 'ai')
+    expect(persisted?.meta?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {
