@@ -21,9 +21,9 @@ export interface EnvironmentLinkInput {
   servicePort: number
   listenerPort: number
 }
-export interface EnvironmentLink extends EnvironmentLinkInput { id: string; state: 'open' | 'down' }
-interface LinkRow { id: string; project_id: string; environment_id: string; client_machine_id: string; server_machine_id: string; service_port: number; listener_port: number; state: 'open' | 'down' }
-const link = (r: LinkRow): EnvironmentLink => ({ id: r.id, projectId: r.project_id, environmentId: r.environment_id, clientMachineId: r.client_machine_id, serverMachineId: r.server_machine_id, servicePort: r.service_port, listenerPort: r.listener_port, state: r.state })
+export interface EnvironmentLink extends EnvironmentLinkInput { id: string; state: 'open' | 'down'; transport: 'vpn' | 'tunnel'; address: string }
+interface LinkRow { id: string; project_id: string; environment_id: string; client_machine_id: string; server_machine_id: string; service_port: number; listener_port: number; transport: 'vpn' | 'tunnel'; address: string; state: 'open' | 'down' }
+const link = (r: LinkRow): EnvironmentLink => ({ id: r.id, projectId: r.project_id, environmentId: r.environment_id, clientMachineId: r.client_machine_id, serverMachineId: r.server_machine_id, servicePort: r.service_port, listenerPort: r.listener_port, state: r.state, transport: r.transport, address: r.address })
 
 export class EnvironmentsRepo extends BaseRepo {
   /** Trusted machines worker port; links are owned by the environment. */
@@ -34,9 +34,9 @@ export class EnvironmentsRepo extends BaseRepo {
       await this.lockEnvironment(input.projectId, input.environmentId)
       const env = await this.sql.get<{ state: string }>('SELECT state FROM environments WHERE project_id = ? AND id = ?', [input.projectId, input.environmentId])
       if (!env || !['provisioning', 'ready'].includes(env.state)) throw new Error('Environment is not active')
-      await this.sql.run(`INSERT INTO environment_links (id, project_id, environment_id, client_machine_id, server_machine_id, service_port, listener_port)
-        VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id, environment_id, client_machine_id, server_machine_id, service_port) DO NOTHING`,
-        [this.newId(), input.projectId, input.environmentId, input.clientMachineId, input.serverMachineId, input.servicePort, input.listenerPort])
+      await this.sql.run(`INSERT INTO environment_links (id, project_id, environment_id, client_machine_id, server_machine_id, service_port, listener_port, address)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id, environment_id, client_machine_id, server_machine_id, service_port) DO NOTHING`,
+        [this.newId(), input.projectId, input.environmentId, input.clientMachineId, input.serverMachineId, input.servicePort, input.listenerPort, `host.docker.internal:${input.listenerPort}`])
       const result = (await this.listLinks(input.projectId, input.environmentId)).find(r => r.clientMachineId === input.clientMachineId && r.serverMachineId === input.serverMachineId && r.servicePort === input.servicePort)!
       if (result.listenerPort !== input.listenerPort) throw new Error('Environment link listener port cannot change')
       return result
@@ -48,6 +48,12 @@ export class EnvironmentsRepo extends BaseRepo {
   }
   async authorizeLink(id: string): Promise<boolean> {
     return !!await this.sql.get(`SELECT l.id FROM environment_links l JOIN environments e ON e.project_id = l.project_id AND e.id = l.environment_id WHERE l.id = ? AND e.state IN ('provisioning', 'ready')`, [id])
+  }
+  async linkOwner(projectId: string): Promise<string | null> {
+    return this.repos.projects.projectCreator(projectId)
+  }
+  async setLinkTransport(id: string, transport: 'vpn' | 'tunnel', address: string): Promise<void> {
+    await this.sql.run('UPDATE environment_links SET transport = ?, address = ? WHERE id = ?', [transport, address, id])
   }
   async setLinkState(id: string, state: 'open' | 'down'): Promise<void> {
     await this.sql.run('UPDATE environment_links SET state = ? WHERE id = ?', [state, id])
