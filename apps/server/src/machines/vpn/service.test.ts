@@ -36,7 +36,7 @@ function setup() {
   vi.spyOn(api, 'setDeviceTags').mockImplementation(async (device, tags) => { devices.find(d => d.id === device.id)!.tags = tags })
   vi.spyOn(api, 'prepareExit').mockImplementation(async (device, tag) => { devices.find(d => d.id === device.id)!.tags.push(tag) })
   const states: Record<string, VpnObservation> = Object.fromEntries(devices.map(d => [d.id.slice(4), {
-    observedAt: Date.now(), mode: 'off', deviceId: d.nodeId, addresses: d.addresses, tailnet: 'test.ts.net',
+    observedAt: Date.now(), mode: 'off', deviceId: d.nodeId, addresses: d.addresses, hostName: null, tailnet: 'test.ts.net',
     gatewayDeviceId: null, gatewayOnline: null, allowLan: false, externalIp: null,
     protected: false, recoveryReady: true, error: null
   }]))

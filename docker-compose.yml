@@ -79,6 +79,9 @@ services:
       # в ядре. Включение — VC_MACHINES_MODE=remote в .env вместе с VC_DB_URL и `--profile machines`.
       VC_MACHINES_MODE: ${VC_MACHINES_MODE:-embedded}
       VC_MACHINES_URL: http://machines:8793
+      # Ключ шифрования административного секрета Tailscale (VPN машин, environments этапа 4):
+      # 64 hex-символа в .env прода, копию хранить вне машины. Без него VPN недоступен.
+      VC_VPN_SECRET_KEY: ${VC_VPN_SECRET_KEY:-}
       # Админка отдельным процессом (docs/plans/machines-service.md, круг 3): VC_ADMIN_MODE=remote + `--profile admin`.
       VC_ADMIN_MODE: ${VC_ADMIN_MODE:-embedded}
       VC_ADMIN_URL: http://admin:8794
@@ -301,6 +304,7 @@ services:
       VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Без `:?`: compose подставляет переменные всех сервисов независимо от профилей; без базы процесс сам завершится с понятной ошибкой.
       VC_DB_URL: ${VC_DB_URL:-}
+      VC_VPN_SECRET_KEY: ${VC_VPN_SECRET_KEY:-}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
