@@ -296,6 +296,12 @@ class Stand:
                 '-U', 'voicechat', '-d', 'voicechat', '--no-owner', '--no-privileges'], env=self.env,
                 input=source.read(), capture_output=True, timeout=3600)
         if result.returncode:
+            # pg_restore errors name tables and constraints; keep them for the operator in the
+            # private stand config directory instead of the shared operation log.
+            log = Path(self.values['VC_ENVIRONMENT_OVERRIDES']).parent / 'restore.log'
+            descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, 'wb') as out:
+                out.write(result.stderr[-65536:])
             raise ValueError('restore failed')
         password = self.values.get('VC_ADMIN_PASSWORD', '')
         if not password:
