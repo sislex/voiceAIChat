@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 28a0ff16
+checked: 43989449
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2390,7 +2390,10 @@ Docker Desktop on macOS publishes a specific host address through a helper port 
 VM and releases the helper of a replaced container asynchronously, so recreating a
 service published on a VPN address can fail with `address already in use`
 (U04: `127.0.0.1:55040` on M1). The `start` stage retries `compose up` up to three
-times, five seconds apart (`VC_STAND_START_RETRY_SECONDS`), only for that error. A
+times, five seconds apart (`VC_STAND_START_RETRY_SECONDS`), only for that error. Before a
+retry it removes the project's containers left in `created` state: such a container lost
+its networks when port setup failed and would otherwise start detached (U04: `voicechat`
+looping on `getaddrinfo EAI_AGAIN postgres`). A
 failed command's last output lines (setting values redacted) follow
 `Stand operation failed:` in the failed event's `log`.
 
