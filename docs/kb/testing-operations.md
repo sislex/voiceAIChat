@@ -1,9 +1,8 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-09-30
-checked:
-
-  90fb1a9d
+updated: 2026-10-04
+checked: a5eaef73
+areas:
   - scripts
   - apps/server/vitest.config.ts
   - apps/server/src/server.test.ts
@@ -637,6 +636,27 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 
 ### Development gate: `npm run gate:fast`
 
+Task acceptance uses `npm run gate:quick -- --base <sha>`. It reuses
+`application-gate.mjs` ownership, diff (including untracked files), and contract
+planning. Selected local workspaces run typecheck and build when present,
+changed test files run explicitly, and changed source files are passed to
+`vitest related --run` from their workspace directory. Declared consumer
+contract suites remain selected even when the consumer is also an application.
+Known tooling changes select changed node:test files and transitive static
+import consumers. Unknown paths, gate/build/deploy scripts and configuration or
+manifest/lock changes retain `npm run gate:all`. `--dry-run` prints the plan
+and commands without running checks.
+
+`npm run test:files -- <repository-relative-test> ...` validates ownership and
+groups files into workspace Vitest, root node:test, or retained E2E Vitest
+runners. Both entrypoints stop at the first failing runner and print
+`GATE-FAILED-TESTS: <json>` with failed repository-relative test files.
+Vitest JSON results and node:test failure events provide the paths; infrastructure,
+typecheck/build, or full-fallback failures without a test report produce an empty
+array, requiring the whole gate to be retried. Reports use unique temporary
+directories under `artifacts/gate-quick` and are removed after each runner.
+Full repository and release gates remain supervisor responsibilities.
+
 The current command is `node --import tsx scripts/application-gate.mjs --worktree`.
 It selects complete application typecheck/test suites from the diff against HEAD,
 including untracked files. `gate` uses the branch diff against origin/main.
@@ -662,7 +682,8 @@ record `changed.json`, full stages record `full.json`, and browser batches recor
 `browser.json`. Reports include failures and must not be treated as successful
 when the command exited nonzero. No previous test result is reused to skip tests. The selection audit reduced full fallbacks from 12 to 4 of 20 scenarios. Measured scoped checks took 8.08 seconds for a Projects E2E edit and 10.62 seconds for the artifact verifier; the full development gate passed in 341 seconds, including 135.25 seconds for retained browser integration. The mandatory branch gate repeated successfully in 350 seconds with 134.73 seconds of browser integration. Detailed evidence and the unchanged UI-owner selection review are in `docs/plans/test-gate-scope.md`.
 
-Do not replace the selected complete suites with `vitest related`. The older
+The legacy `gate:fast` and `gate` commands retain complete suites;
+`gate:quick` is the separate related-test task gate. The older
 `affected-check.mjs --fast` implementation and its historical 28-second UI
 measurement describe the predecessor, not current gate:fast behavior. The public
 `affected-check` npm alias now invokes the application planner too.

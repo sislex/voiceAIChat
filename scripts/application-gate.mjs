@@ -424,7 +424,7 @@ export function executeApplicationPlan(plan, execute = run, output = 'changed') 
   return results
 }
 
-export async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { execute = (plan) => executeApplicationPlan(plan) } = {}) {
   // Package tests do not run the root graph tests; reject drift before choosing a gate.
   validatePackageDependencies(root)
   validateApplicationDependencies()
@@ -432,7 +432,7 @@ export async function main(args = process.argv.slice(2)) {
     args = [...args, '--worktree']
   const dry = args.includes('--dry-run'),
     explicit = args[0] && !args[0].startsWith('--') ? args[0] : null
-  let plan
+  let plan, changedFiles = []
   if (explicit) {
     const app = APPLICATION_CATALOG.find((app) => app.id === explicit)
     if (!app) throw new Error(`Неизвестное приложение: ${explicit}`)
@@ -493,6 +493,7 @@ export async function main(args = process.argv.slice(2)) {
         reasons: [`Не удалось получить diff: ${error.message}`]
       }
     }
+    changedFiles = files ?? []
     if (!plan)
       plan = planApplicationChecks(files, {
         lockBefore, pins,
@@ -509,7 +510,7 @@ export async function main(args = process.argv.slice(2)) {
     )
   )
   if (dry) return plan
-  executeApplicationPlan(plan)
+  execute(plan, changedFiles)
 
   return plan
 }

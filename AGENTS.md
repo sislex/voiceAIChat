@@ -40,6 +40,8 @@ authorization, transport and browser integration checks. See
 ```bash
 npm install                  # Core workspaces only
 npm run dev:web              # Core :8787 and published UI proxy :5273
+npm run gate:quick -- --base <sha> # task typecheck/build and affected tests
+npm run test:files -- <files> # rerun failed repository-relative test files
 npm run gate:fast            # changed worktree since HEAD; use during a step
 npm run gate                 # branch diff from origin/main; use before commit/PR
 npm run gate:app -- core     # complete Core application gate
@@ -61,8 +63,7 @@ applications plus the tests of the changed files and of the code they touch
 The **full gate** (`npm run gate` / `gate:all`) runs in the background on fresh `main` and in the
 release regression; a failure there becomes a priority fix task. Add tests in the same step as the
 implementation. Unknown root/config/lock changes make the quick gate a full gate. Trust the
-command exit code, not filtered output. Until `gate:quick` exists in a repository, use its
-planner (`gate:fast` / `gate`). Plan: [delivery-fast-gate](docs/plans/delivery-fast-gate.md);
+command exit code, not filtered output. Plan: [delivery-fast-gate](docs/plans/delivery-fast-gate.md);
 details: [testing conventions](docs/kb/conventions.md) and
 [testing operations](docs/kb/testing-operations.md#development-gate-npm-run-gatefast).
 
