@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 4cbe9562
+checked: 0bb32473
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2338,6 +2338,15 @@ too: Docker Desktop on macOS prints `host.docker.internal=host-gateway`, which f
 U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
+
+On macOS the agent runs under launchd, where Docker Desktop's `credsStore: desktop` hangs on
+`docker-credential-desktop get` (no keychain access), so private GHCR images never download. The
+agent therefore uses its own Docker configuration: `DOCKER_CONFIG=~/.config/sislexa/agent-docker`
+in `EnvironmentVariables` of `~/Library/LaunchAgents/com.voicechat.agent.plist`. That directory
+(0700) holds `config.json` (0600) with `currentContext: desktop-linux`, `cliPluginsExtraDirs`
+pointing at `~/.docker/cli-plugins`, no `credsStore`, and a GHCR login made with a classic token
+limited to `read:packages`; `contexts` is a symlink to `~/.docker/contexts`. The owner logs in once:
+`pbpaste | DOCKER_CONFIG=~/.config/sislexa/agent-docker docker login ghcr.io -u sislex --password-stdin`.
 
 Module profiles on the primary. `compose.stand.yml` puts `make`, `image-studio`,
 `playwright-reader` and `browser-runner` (with `reader`, already profiled) behind
