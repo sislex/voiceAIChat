@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 4c3e126a
+checked: 281b7096
 areas:
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -2294,7 +2294,9 @@ For a module placed on a secondary machine, use role `module` and the chain
 `image-studio`, `reader`, or `playwright-reader` profiles select the modules of
 that machine. The module overlay publishes no ports and excludes Core, Postgres and
 primary-only runners. Every active module service receives the same
-`host.docker.internal:host-gateway` mapping; its service and database URLs come
+`host.docker.internal:host-gateway` mapping (the check accepts Compose's `host=ip` rendering
+too: Docker Desktop on macOS prints `host.docker.internal=host-gateway`, which failed the
+U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
