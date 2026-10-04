@@ -6,6 +6,7 @@ export * from './uiPerformance'
 export * from './universalSearch'
 export * from './releaseComposition'
 export * from './types'
+export * from './serviceData'
 
 export * from './protocol'
 export * from './chatContract'

@@ -5,6 +5,7 @@ import {
   CHAT_CONTRACT_ARTIFACT_SHA256,
   applyChatSettingsPatch,
   canonicalChatContractArtifact,
+  createChatSettingsSnapshot,
   createVerifiedChatApplicationContext,
   decideChatAccess,
   resolveChatReconnect
@@ -74,8 +75,17 @@ describe('chat reconnect contract', () => {
 })
 
 describe('chat settings adapter', () => {
+  it('defaults loadServiceData to false and accepts only a boolean conversation value', () => {
+    const parsed = createChatSettingsSnapshot({ version: 1, revision: 0, account: {}, conversation: {}, device: {} })
+    expect(parsed.conversation.loadServiceData).toBe(false)
+    expect(applyChatSettingsPatch(parsed, { version: 1, expectedRevision: 0, owner: 'conversation',
+      values: { loadServiceData: true } })).toMatchObject({ conversation: { loadServiceData: true } })
+    expect(() => applyChatSettingsPatch(parsed, { version: 1, expectedRevision: 0, owner: 'conversation',
+      values: { loadServiceData: 'yes' } } as never)).toThrow('must be boolean')
+  })
+
   it('rejects device owners and malformed values received over an untyped transport', () => {
-    const current = { version: 1 as const, revision: 0, account: {}, conversation: {}, device: {} }
+    const current = createChatSettingsSnapshot({ version: 1, revision: 0, account: {}, conversation: {}, device: {} })
     for (const invalid of [
       { owner: 'device', values: { micDeviceId: 'local' } },
       { owner: 'unknown', values: {} },
@@ -86,8 +96,8 @@ describe('chat settings adapter', () => {
     }
   })
   it('applies the owning scope atomically and returns the current snapshot on conflict', () => {
-    const current = { version: 1 as const, revision: 4, account: { theme: 'dark' },
-      conversation: { model: 'default' }, device: { micDeviceId: null } }
+    const current = createChatSettingsSnapshot({ version: 1, revision: 4, account: { theme: 'dark' },
+      conversation: { model: 'default' }, device: { micDeviceId: null } })
     expect(applyChatSettingsPatch(current, { version: 1, expectedRevision: 4, owner: 'conversation',
       values: { model: 'fast' } })).toMatchObject({ revision: 5, account: { theme: 'dark' }, conversation: { model: 'fast' } })
     expect(applyChatSettingsPatch(current, { version: 1, expectedRevision: 3, owner: 'account',
