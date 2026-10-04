@@ -287,6 +287,14 @@ class Stand:
     def restore(self, snapshot):
         self.begin('restore', 28)
         self.compose('up', '-d', '--no-build', '--pull', 'never', 'postgres')
+        # A freshly created database container accepts connections only after initdb;
+        # querying it at once failed the restore of a new stand (environments U03).
+        deadline = time.monotonic() + 120
+        while self.compose('exec', '-T', 'postgres', 'pg_isready', '-U', 'voicechat', '-d', 'voicechat',
+                           check=False, timeout=15).returncode:
+            if time.monotonic() >= deadline:
+                raise ValueError('database readiness timeout')
+            time.sleep(1)
         count = self.compose('exec', '-T', 'postgres', 'psql', '-U', 'voicechat', '-d', 'voicechat',
                              '-Atqc', "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname='public'",
                              timeout=60).stdout.strip()
