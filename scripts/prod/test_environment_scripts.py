@@ -52,7 +52,7 @@ exit 0
 
 class ApplyTest(unittest.TestCase):
     def run_apply(self, switches, state="running healthy", missing="", compose_file="docker-compose.yml", checkout_files=None,
-                  overrides_from_env=False, repeat=False, no_native=False):
+                  overrides_from_env=False, repeat=False, no_native=False, stand_chain=None):
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root)
         os.chmod(root, 0o700)
@@ -72,6 +72,10 @@ class ApplyTest(unittest.TestCase):
             env["COMPOSE_FILE"] = compose_file.replace("{root}", root)
         if overrides_from_env:
             env.pop("VC_ENVIRONMENT_OVERRIDES")
+        if stand_chain is not None:
+            os.makedirs(os.path.join(root, "overrides"), mode=0o700)
+            with open(os.path.join(root, "overrides", "stand-chain"), "w") as handle:
+                handle.write(stand_chain.replace("{root}", root))
         checkout = os.path.join(root, "checkout")
         os.mkdir(checkout)
         for name, content in (checkout_files or {}).items():
@@ -132,6 +136,16 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual([line for line in calls if line.startswith("chain=")], [expected, expected])
         self.assertEqual(os.readlink(os.path.join(overrides, "current.yml")), os.path.join(overrides, "op2.yml"))
         self.assertEqual([s["status"] for s in steps], ["pulling", "switching", "healthy"])
+
+    def test_managed_stand_chain_keeps_generated_overlays(self):
+        # U04: without stand-links.yml a switched replica lost its published link ports.
+        stand = "docker-compose.yml:deploy/compose.stand-module.yml:deploy/compose.stand-lb.yml:{root}/overrides/stand-links.yml"
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None, stand_chain=stand,
+            checkout_files={".env": "COMPOSE_FILE=docker-compose.yml:deploy/compose.stand-module.yml\n"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("chain=" + stand.replace("{root}", os.path.dirname(overrides)) + ":" + os.path.join(overrides, "current.yml"), calls)
+        result, calls, _, overrides = self.run_apply({"kanban": KANBAN}, compose_file="process.yml", stand_chain=stand)
+        self.assertIn("chain=process.yml:" + os.path.join(overrides, "current.yml"), calls)
 
     def test_invalid_dotenv_changes_nothing(self):
         result, calls, steps, overrides = self.run_apply({"kanban": KANBAN}, compose_file=None,

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-05
-checked: a8feb138
+checked: 9e5d164c
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2411,6 +2411,12 @@ values are replaced with `http://module-lb:<module-port>` before Compose resolve
 all consumers. Endpoint syntax is a hostname or IPv4 address and a port; URLs,
 paths, duplicate modules/endpoints and unknown modules are rejected. The generated
 overlay precedes link overrides and `current.yml`.
+
+The stand script records its final Compose chain (without `current.yml`) in
+`<VC_ENVIRONMENT_OVERRIDES>/stand-chain`; `environment-apply.sh` uses it when the process has no
+`COMPOSE_FILE`, so a switched service keeps the generated link, LAN and balancer overlays (U04: a
+Make replica switched with only the `.env` chain lost its published link port and the environment
+had no reachable Make).
 
 `VC_STAND_PUBLIC=1` with a DNS name in `VC_PUBLIC_HOST` enables profile `public`
 only for role `primary`. Without this opt-in, explicitly selecting `public` is

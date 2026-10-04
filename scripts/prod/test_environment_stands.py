@@ -342,6 +342,10 @@ class StandTest(unittest.TestCase):
         overlay = json.loads((self.root / 'deploy/compose.stand-lan.yml').read_text())
         self.assertEqual(overlay['services']['stand-lan']['ports'], ['192.168.1.2:' + PORT + ':8780'])
         self.assertIn('reverse_proxy voicechat:8787', (self.root / 'deploy/Caddyfile.stand-lan').read_text())
+        recorded = (self.root / 'overrides/stand-chain').read_text().split(':')
+        self.assertIn('deploy/compose.stand-lan.yml', recorded)
+        self.assertTrue(any(name.endswith('stand-links.yml') for name in recorded))
+        self.assertFalse(any(name.endswith('current.yml') for name in recorded))
         self.assertTrue(any(c['chain'] and c['chain'].endswith('deploy/compose.stand-lan.yml') or 'deploy/compose.stand-lan.yml:' in (c['chain'] or '') for c in calls))
         # Core published directly on the LAN address, or a VPN-only port on LAN, is refused.
         self.model['services']['voicechat']['ports'][0]['host_ip'] = '192.168.1.2'

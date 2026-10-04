@@ -221,6 +221,13 @@ class Stand:
         current = Path(v['VC_ENVIRONMENT_OVERRIDES']) / 'current.yml'
         if current.exists():
             files = [f for f in files if Path(f).resolve() != current.resolve()] + [str(current)]
+        # environment-apply.sh switches services with this exact chain (without current.yml).
+        recorded = Path(v['VC_ENVIRONMENT_OVERRIDES']) / 'stand-chain'
+        recorded.parent.mkdir(parents=True, exist_ok=True)
+        pending = recorded.with_suffix('.tmp')
+        pending.write_text(':'.join(f for f in files if Path(f).resolve() != current.resolve()))
+        pending.chmod(0o600)
+        pending.replace(recorded)
         # Ambient Compose/VC settings cannot redirect the validated checkout.
         self.env = {k: val for k, val in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
         self.env.update(v)
