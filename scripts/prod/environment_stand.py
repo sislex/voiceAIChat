@@ -84,6 +84,25 @@ def write_load_balancer(upstreams, values):
     return str(overlay)
 
 
+LAN_PROXY_PORT = 8780
+
+
+def write_lan_proxy(address, port):
+    """Publishes the primary Core on a private LAN address through a separate proxy (U04)."""
+    config = Path('deploy/Caddyfile.stand-lan')
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('{\n    auto_https off\n    admin off\n}\n\n'
+                      f':{LAN_PROXY_PORT} {{\n    reverse_proxy voicechat:8787\n}}\n')
+    overlay = Path('deploy/compose.stand-lan.yml')
+    overlay.write_text(json.dumps({'services': {'stand-lan': {
+        'image': 'caddy:2-alpine', 'restart': 'unless-stopped',
+        'ports': [f'{address}:{port}:{LAN_PROXY_PORT}'],
+        'volumes': ['./deploy/Caddyfile.stand-lan:/etc/caddy/Caddyfile:ro'],
+        'depends_on': ['voicechat'],
+    }}}, indent=2) + '\n')
+    return str(overlay)
+
+
 def parse_link_ports(text):
     """`service:target:published,...` — loopback ports agent links connect to (environments-v3)."""
     links = set()
@@ -191,6 +210,9 @@ class Stand:
         if upstreams:
             lb = write_load_balancer(upstreams, v)
             files = [f for f in files if Path(f).resolve() != Path(lb).resolve()] + [lb]
+        if self.role == 'primary' and v.get('VC_STAND_LAN_ADDRESS'):
+            lan = write_lan_proxy(self.lan_address, v['VC_STAND_PORT'])
+            files = [f for f in files if Path(f).resolve() != Path(lan).resolve()] + [lan]
         self.link_ports = parse_link_ports(v.get('VC_STAND_LINK_PORTS', ''))
         if self.link_ports:
             links = Path(v['VC_ENVIRONMENT_OVERRIDES']) / 'stand-links.yml'
@@ -244,9 +266,11 @@ class Stand:
                         raise ValueError('unsafe proxy port')
                     continue
                 link = (name, port.get('target'), int(str(port.get('published', '0')) or 0))
-                stand = self.role == 'primary' and name == 'voicechat' and str(port.get('published')) == v['VC_STAND_PORT'] and port.get('target') == 8787
-                expected_address = self.lan_address if stand else self.vpn_address
-                if port.get('host_ip') != expected_address or (not stand and link not in self.link_ports):
+                published = str(port.get('published')) == v['VC_STAND_PORT'] and self.role == 'primary'
+                stand = published and name == 'voicechat' and port.get('target') == 8787
+                lan = published and name == 'stand-lan' and port.get('target') == LAN_PROXY_PORT and self.lan_address != '127.0.0.1'
+                expected_address = '127.0.0.1' if stand else self.lan_address if lan else self.vpn_address
+                if port.get('host_ip') != expected_address or (not stand and not lan and link not in self.link_ports):
                     raise ValueError('unsafe published port')
             for mount in service.get('volumes', []):
                 if mount.get('type') == 'bind' and any(mount.get(k, '').startswith('/run/voicechat') for k in ('source', 'target')):
