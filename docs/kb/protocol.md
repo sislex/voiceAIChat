@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-09-30
-checked: 575e6f1c
+updated: 2026-10-05
+checked: 447a2818
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -156,6 +156,13 @@ The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `
 
 Новый REST-путь **всегда** добавляется в объект `REST` — клиенты не пишут строки
 URL руками. Параметризованные пути — функции: `REST.conversation(id)`.
+
+Служебные данные завершённого ответа (`TurnMeta.activity` и полный `TurnMeta.request`)
+по умолчанию исключаются из сообщений функцией `stripServiceData`: в сообщении остаются
+размеры в `meta.serviceData` и краткие поля запроса, включая записи `kbContext` без тел
+текста. Настройка разговора `loadServiceData` по умолчанию равна `false`; при включении
+клиент загружает полные `{ activity, request }` одного сообщения через
+`GET REST.messageServiceData(conversationId, messageId)`.
 
 Для форм сообщений и загрузок есть намеренное дублирование: REST-версия `AddMessageArgs` и `UploadInfo` описана в `packages/shared/src/protocol.ts`, а bridge-версия в `packages/shared/src/ipc.ts` добавляет `conversationId` к сообщению и задаёт `IpcInvokeMap`. Поэтому новое поле вложения или загрузки меняется синхронно в обоих файлах, затем прокидывается серверным route и `packages/ui/src/remote/httpApi.ts`; иначе web и desktop разойдутся по типам или телу запроса.
 

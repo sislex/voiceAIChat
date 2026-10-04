@@ -1230,6 +1230,12 @@ export interface SessionUsage extends TurnUsage {
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
+  /** Size summary for service data omitted from a client-facing message. */
+  serviceData?: {
+    activityEntries: number
+    activityBytes: number
+    requestBytes: number
+  }
   /** DOM-область, выбранная пользователем в веб-превью для этой реплики. */
   previewElement?: PreviewElementPayload
   /** Контекст редактора Make: какой файл открыт и что выделено (п.21). */
