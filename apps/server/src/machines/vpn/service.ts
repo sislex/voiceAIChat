@@ -1,6 +1,7 @@
 import { isIP } from 'node:net'
 import type { AgentTelemetry } from '@sislexa/agent-contracts'
 import { initialVpnState, isVpnFresh, type VpnAgentRequest, type VpnChange, type VpnObservation, type VpnState, type VpnView } from '@sislexa/agent-contracts'
+import { vpnErrorKeepsAddress } from './telemetry.js'
 import { environmentTag, decryptVpnSecret, encryptVpnSecret, managedPolicy, TailscaleApi, vpnTag, VpnError, type TailDevice } from './tailscale.js'
 
 type Row = { tailnet: string; encryptedSecret: string; generation: number; state: string }
@@ -40,7 +41,7 @@ export class VpnService {
       if (!grant.machines.includes(id) || !this.agents.isOnline(id) || await this.repo.agentOwnerId(id) !== owner) return null
       const binding = data.bindings[id]
       const observed = this.agents.telemetryOf?.(id)?.vpn
-      if (!binding || !observed || observed.error || observed.tailnet !== row.tailnet || observed.deviceId !== binding.deviceId || !isVpnFresh(observed, this.now())) return null
+      if (!binding || !observed || !vpnErrorKeepsAddress(observed.error) || observed.tailnet !== row.tailnet || observed.deviceId !== binding.deviceId || !isVpnFresh(observed, this.now())) return null
       const ipv4 = observed.addresses.find(a => isIP(a) === 4 && binding.addresses.includes(a))
       if (!ipv4) return null
       if (id === server) address = ipv4

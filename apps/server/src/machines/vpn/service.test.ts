@@ -285,6 +285,16 @@ describe('environment VPN grants', () => {
     expect(s.policy().grants).toHaveLength(1)
     expect(s.policy().grants?.[0]).toMatchObject({ dst: ['autogroup:internet'] })
   })
+  it('opens VPN links between machines whose exit node lacks the guard, but not after address-invalidating errors', async () => {
+    const s = await bound()
+    await s.service.ensureEnvironmentGrant('alice', environment, ['client', 'gateway'], [17000])
+    Object.assign(s.agents, { telemetryOf: (id: string) => ({ vpn: { ...s.states[id], observedAt: Date.now() } }) })
+    s.states.client = { ...s.states.client, mode: 'client', error: 'guard' }
+    expect(await s.service.linkAddress('alice', environment, 'client', 'gateway', 17000)).toBe('100.64.0.2:17000')
+    expect(await s.service.linkAddress('alice', environment, 'client', 'gateway', 17001)).toBeNull()
+    s.states.gateway = { ...s.states.gateway, error: 'binding' }
+    expect(await s.service.linkAddress('alice', environment, 'client', 'gateway', 17000)).toBeNull()
+  })
   it('rejects an unbound machine and a foreign owner before remote mutation', async () => {
     const s = setup()
     await s.service.connect('alice', 'test.ts.net', fixtureCredential4)
