@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 06658f72
+checked: e5e708b4
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2347,7 +2347,9 @@ primary chain retains the compose-name defaults, so production output is unchang
 On macOS the agent runs under launchd, where Docker Desktop's `credsStore: desktop` hangs on
 `docker-credential-desktop get` (no keychain access), so private GHCR images never download. The
 agent therefore uses its own Docker configuration: `DOCKER_CONFIG=~/.config/sislexa/agent-docker`
-in `EnvironmentVariables` of `~/Library/LaunchAgents/com.voicechat.agent.plist`. That directory
+in `~/.voicechat-agent/agent.env` (0600), which `run.sh` sources since agent 0.22.1; installs and
+updates rewrite `run.sh` and the launchd plist but never `agent.env` (an update to 0.22.0 dropped a
+plist `EnvironmentVariables` entry). That directory
 (0700) holds `config.json` (0600) with `currentContext: desktop-linux`, `cliPluginsExtraDirs`
 pointing at `~/.docker/cli-plugins`, no `credsStore`, and a GHCR login made with a classic token
 limited to `read:packages`; `contexts` is a symlink to `~/.docker/contexts`. The owner logs in once:
