@@ -181,16 +181,21 @@ export interface ChatSettingsSnapshot {
   version: 1
   revision: number
   account: Readonly<Record<string, ChatSettingValue>>
-  conversation: Readonly<Record<string, ChatSettingValue>>
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
   /** Device values are echoed by a local adapter and are never persisted by Core. */
   device: Readonly<Record<string, ChatSettingValue>>
 }
 
-export interface ChatSettingsPatch {
+export type ChatSettingsPatch = {
   version: 1
   expectedRevision: number
-  owner: Exclude<ChatSettingOwner, 'device'>
+  owner: 'account'
   values: Readonly<Record<string, ChatSettingValue>>
+} | {
+  version: 1
+  expectedRevision: number
+  owner: 'conversation'
+  values: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
 }
 
 export interface ChatSettingsConflict {
@@ -208,7 +213,7 @@ export const CHAT_SETTING_OWNERS = immutable({
   conversation: [
     'title', 'projectId', 'execTarget', 'workdir', 'skills', 'llmEngineId', 'llmProvider',
     'model', 'codexModel', 'permissionMode', 'contextPresetId', 'kbMode', 'disabledContext',
-    'previewUrl', 'previewEngine'
+    'previewUrl', 'previewEngine', 'loadServiceData'
   ],
   device: ['micDeviceId', 'outputDeviceId', 'compactView', 'panelWidth', 'mobileTab']
 } as const)
@@ -219,6 +224,7 @@ function validateSettingValues(owner: ChatSettingOwner, values: Readonly<Record<
   const allowed = CHAT_SETTING_OWNERS[owner] as readonly string[]
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.includes(key)) throw Error(`Setting ${key} does not belong to ${owner}`)
+    if (key === 'loadServiceData' && typeof value !== 'boolean') throw Error('Setting loadServiceData must be boolean')
     if (!validSettingValue(value)) throw Error(`Invalid setting ${key}`)
   }
 }
@@ -246,13 +252,16 @@ function cloneSettingRecord(values: Readonly<Record<string, ChatSettingValue>>):
 }
 
 /** Concrete adapter that combines persisted account/conversation state with local device state. */
-export function createChatSettingsSnapshot(input: ChatSettingsSnapshot): ChatSettingsSnapshot {
+export function createChatSettingsSnapshot(input: Omit<ChatSettingsSnapshot, 'conversation'> & {
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
+}): ChatSettingsSnapshot {
   if (input.version !== 1 || !Number.isSafeInteger(input.revision) || input.revision < 0) throw Error('Invalid settings revision')
   validateSettingValues('account', input.account)
   validateSettingValues('conversation', input.conversation)
   validateSettingValues('device', input.device)
   return immutable({ version: 1, revision: input.revision, account: cloneSettingRecord(input.account),
-    conversation: cloneSettingRecord(input.conversation), device: cloneSettingRecord(input.device) })
+    conversation: { loadServiceData: false, ...cloneSettingRecord(input.conversation) },
+    device: cloneSettingRecord(input.device) })
 }
 
 export function applyChatSettingsPatch(current: ChatSettingsSnapshot, patch: ChatSettingsPatch): ChatSettingsSnapshot | ChatSettingsConflict {
@@ -322,7 +331,7 @@ const artifactPayload = {
 
 /** Canonical, deeply frozen handoff artifact. Its canonical JSON has the exported SHA-256. */
 export const CHAT_CONTRACT_ARTIFACT = immutable(artifactPayload)
-export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'ef081621be040c94e2b94cb076bec08f0780fed7aeb71be149919d6cbeb99c6f'
+export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'a7b143b2a7c28506857a2b1f52d6937a1ae148de32883d76a3ccb0056c4defd9'
 
 export function canonicalChatContractArtifact(): string {
   return JSON.stringify(CHAT_CONTRACT_ARTIFACT)
