@@ -12,6 +12,11 @@ describe('machine VPN telemetry views', () => {
     expect(vpnMachineView(telemetry)).toEqual({ addresses: ['fd7a:115c:a1e0::1', '100.64.0.1'], hostName: 'worker.tailnet.ts.net' })
     expect(vpnAddress(undefined)).toBeUndefined()
     expect(vpnAddress({ vpn: { addresses: ['192.168.1.1'] } } as AgentTelemetry)).toBeUndefined()
+    // Exit-node errors keep the tailnet address; errors without a valid observation drop it.
+    for (const error of ['guard', 'forwarding', 'conflict'])
+      expect(vpnAddress({ vpn: { addresses: ['100.64.0.2'], error } } as unknown as AgentTelemetry)).toBe('100.64.0.2')
+    for (const error of ['not_installed', 'apply', 'unknown'])
+      expect(vpnAddress({ vpn: { addresses: ['100.64.0.2'], error } } as unknown as AgentTelemetry)).toBeUndefined()
   })
   it('includes the view in machines and Kanban snapshots', () => {
     const machines = { onlineIds: () => new Set(['worker']), nameOf: () => 'worker', versionOf: () => '1',
