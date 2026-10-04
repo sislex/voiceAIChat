@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 5 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 0f4a0ba0 fix(environments): apply switches services with the recorded stand chain |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 54 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 37 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 52 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 13 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 24 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1776 коммит(ов) в areas после сверки: b10def97 chore(shared): pin Shared 0.1.18 archive from committed Core source … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1777 коммит(ов) в areas после сверки: 0f4a0ba0 fix(environments): apply switches services with the recorded stand chain … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 87 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -40,11 +40,11 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 11 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-04 | ⚠ 7 коммит(ов) в areas после сверки: 855f363c fix(machines): open VPN environment links between exit-node machines … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-04 | ⚠ 8 коммит(ов) в areas после сверки: fff30753 fix(server): accept the loadServiceData conversation chat setting … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-05 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 269 коммит(ов) в areas после сверки: dfc75d76 chore: pin Kanban 0.2.5 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-04 | ⚠ 12 коммит(ов) в areas после сверки: 303de7b6 fix(environments): serve stand LAN access through a separate proxy … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-04 | ⚠ 13 коммит(ов) в areas после сверки: 0f4a0ba0 fix(environments): apply switches services with the recorded stand chain … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 221 коммит(ов) в areas после сверки: dfc75d76 chore: pin Kanban 0.2.5 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-29 | ⚠ 17 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
