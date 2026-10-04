@@ -31,6 +31,14 @@ with open(os.environ['FAKE_LOG'], 'a') as out:
 if os.environ.get('NO_NATIVE') and args[:1] == ['pull'] and '--platform' not in args:
     print('no matching manifest for linux/arm64/v8 in the manifest list entries', file=sys.stderr)
     sys.exit(1)
+busy = os.environ.get('BUSY_ONCE', '')
+if busy and ' '.join(args).startswith(busy):
+    marker = pathlib.Path(os.environ['FAKE_LOG'] + '.busy')
+    seen = int(marker.read_text()) if marker.exists() else 0
+    marker.write_text(str(seen + 1))
+    if seen < int(os.environ.get('BUSY_TIMES', '1')):
+        print('failed to bind host port 127.0.0.1:55040/tcp: address already in use', file=sys.stderr)
+        sys.exit(1)
 fail = os.environ.get('FAIL', '')
 if fail and ' '.join(args).startswith(fail):
     print(os.environ.get('SECRET', ''), file=sys.stderr)
@@ -147,9 +155,21 @@ class StandTest(unittest.TestCase):
                 actual, rows, _ = self.invoke(FAIL=failure)
                 self.assertEqual(actual, code)
                 self.assertEqual((rows[-1]['stage'], rows[-1]['status']), (stage, 'failed'))
+                # The failed command's output reaches the operation log with setting values redacted.
+                self.assertEqual(rows[-1]['log'], 'Stand operation failed: [redacted]')
         for action in ('provision', 'remove'):
             self.assertEqual(self.invoke(action, args=[])[0], 2)
             self.assertEqual(self.invoke(action, args=['--operation', '../bad'])[0], 2)
+
+    def test_start_retries_a_busy_docker_desktop_port(self):
+        code, rows, calls = self.invoke(BUSY_ONCE='compose up', VC_STAND_START_RETRY_SECONDS='0')
+        self.assertEqual(code, 0)
+        self.assertEqual(sum(c['args'][:2] == ['compose', 'up'] and '--remove-orphans' in c['args'] for c in calls), 2)
+        (self.root / 'calls.busy').unlink(missing_ok=True)
+        code, rows, calls = self.invoke(BUSY_ONCE='compose up', BUSY_TIMES='5', VC_STAND_START_RETRY_SECONDS='0')
+        self.assertEqual((code, rows[-1]['stage'], rows[-1]['status']), (30, 'start', 'failed'))
+        self.assertIn('address already in use', rows[-1]['log'])
+        self.assertEqual(sum(c['args'][:2] == ['compose', 'up'] and '--remove-orphans' in c['args'] for c in calls), 3)
 
     def test_env_validation_for_both_commands(self):
         original = dict(self.values)
