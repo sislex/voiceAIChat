@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 49 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 10 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 22 коммит(ов) в areas после сверки: a70fe2cd feat(server): environments-v2 storage (B03) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1749 коммит(ов) в areas после сверки: 49599c22 fix(agents): pause a fast tunnel producer while the consumer socket is backlogged … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1750 коммит(ов) в areas после сверки: 7cfc3eac feat(stands): VPN, LAN, module load balancer and public stand options (environments-v4 C25) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 85 коммит(ов) в areas после сверки: 87edbfa7 feat(server): persistent environment links (environments-v3 C14) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 3 коммит(ов) в areas после сверки: 539581e9 fix(gate): lead full-plan reasons with the changed Core code … |
@@ -58,10 +58,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1023. Последние:
+Всего записей: 1024. Последние:
 
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md) — tunnel-relay-backpressure
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md) — tunnel-frame-order
+- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-snapshot-fk-closure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-snapshot-fk-closure.md) — snapshot-fk-closure
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md) — plan-archive-split
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-environments-v4-shared.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-environments-v4-shared.md) — environments-v4-shared
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-delivery-fast-gate.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-delivery-fast-gate.md) — delivery-fast-gate
@@ -69,7 +70,6 @@
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-c23-environment-vpn.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-c23-environment-vpn.md) — c23-environment-vpn
 - [2026-10-03-pc-radvilovich-tailae39a6-ts-net-environments-v3-shared-contracts.md](log/2026-10-03-pc-radvilovich-tailae39a6-ts-net-environments-v3-shared-contracts.md) — environments-v3-shared-contracts
 - [2026-10-03-delivery-c15-placement-aware-compose.md](log/2026-10-03-delivery-c15-placement-aware-compose.md) — placement-aware-compose
-- [2026-10-03-alexeys-macbook-air-2-stand-module-profiles.md](log/2026-10-03-alexeys-macbook-air-2-stand-module-profiles.md) — stand-module-profiles
 
 ## Исторические планы
 
