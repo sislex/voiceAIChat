@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 5 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 303de7b6 fix(environments): serve stand LAN access through a separate proxy |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 54 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 37 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 52 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 13 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 24 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1775 коммит(ов) в areas после сверки: 7aaea110 feat(shared): chat service data setting, summary and stripping helper (make-chat-service-data-v1 B01) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1776 коммит(ов) в areas после сверки: b10def97 chore(shared): pin Shared 0.1.18 archive from committed Core source … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 87 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -58,10 +58,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1048. Последние:
+Всего записей: 1049. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-18.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-18.md) — pin-shared-0-1-18
+- [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-apply-keeps-stand-chain.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-apply-keeps-stand-chain.md) — apply-keeps-stand-chain
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md) — worker-environment-fixes
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-policy-owner-exit.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-policy-owner-exit.md) — vpn-policy-owner-exit
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-link-exit-node-guard.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-link-exit-node-guard.md) — vpn-link-exit-node-guard
@@ -69,7 +70,6 @@
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md) — u03-results
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md) — tunnel-relay-backpressure
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-frame-order.md) — tunnel-frame-order
-- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-stand-start-retry.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-stand-start-retry.md) — stand-start-retry
 
 ## Исторические планы
 

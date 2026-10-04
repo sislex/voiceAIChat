@@ -28,12 +28,17 @@ done
 # Resolve checkout settings before pulling or changing any service.
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 base_chain=$(python3 "$script_dir/compose_env.py" chain) || exit 2
-[[ -n $base_chain ]] || { echo "no compose chain in the environment, .env or checkout" >&2; exit 2; }
 overrides=${VC_ENVIRONMENT_OVERRIDES:-}
 if [[ -z $overrides ]]; then
   overrides=$(python3 "$script_dir/compose_env.py" get VC_ENVIRONMENT_OVERRIDES) || exit 2
 fi
 overrides=${overrides:-/etc/voicechat/environment-overrides}
+# A managed stand records its full chain, including the generated link, LAN and balancer
+# overlays that are not in .env; without them a switched service loses its published ports.
+if [[ -z ${COMPOSE_FILE:-} && -r $overrides/stand-chain ]]; then
+  base_chain=$(<"$overrides/stand-chain")
+fi
+[[ -n $base_chain ]] || { echo "no compose chain in the environment, .env or checkout" >&2; exit 2; }
 step() { python3 -c 'import json,sys; print(json.dumps({"service":sys.argv[1],"status":sys.argv[2],"log":sys.argv[3]}), flush=True)' "$1" "$2" "${3:-}"; }
 
 # Only immutable published owner images; a typo must not become a mutable tag.
