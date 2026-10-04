@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 51 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 23 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1770 коммит(ов) в areas после сверки: 855f363c fix(machines): open VPN environment links between exit-node machines … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1771 коммит(ов) в areas после сверки: 2232eb25 fix(environments): retry stand start on a busy Docker Desktop port; report failure output … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 87 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -44,7 +44,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-04 | ⚠ 1 коммит(ов) в areas после сверки: f11e2c9a feat(shared): environments-v4 contracts |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 268 коммит(ов) в areas после сверки: ee372f7f chore: pin Kanban 0.2.4 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-04 | ⚠ 8 коммит(ов) в areas после сверки: ee372f7f chore: pin Kanban 0.2.4 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-04 | ⚠ 9 коммит(ов) в areas после сверки: 2232eb25 fix(environments): retry stand start on a busy Docker Desktop port; report failure output … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 220 коммит(ов) в areas после сверки: ee372f7f chore: pin Kanban 0.2.4 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-09-29 | ⚠ 16 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1044. Последние:
+Всего записей: 1045. Последние:
 
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-worker-environment-fixes.md) — worker-environment-fixes
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-policy-owner-exit.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-vpn-policy-owner-exit.md) — vpn-policy-owner-exit
