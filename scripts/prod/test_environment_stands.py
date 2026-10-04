@@ -42,6 +42,11 @@ elif args == ['compose', 'config', '--format', 'json']:
     print(pathlib.Path('model.json').read_text())
 elif args[:2] == ['image', 'inspect']: sys.exit(0 if os.environ.get('CACHED') else 1)
 elif args == ['compose', 'ps', '-a', '-q']: print('container1 container2 container3')
+elif 'pg_isready' in args:
+    counter = pathlib.Path(os.environ['FAKE_LOG'] + '.pg')
+    seen = int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(seen + 1))
+    sys.exit(1 if seen < int(os.environ.get('PG_NOT_READY', '0')) else 0)
 elif 'psql' in args and '-Atqc' in args: print(os.environ.get('DB_TABLE_COUNT', '0'))
 elif args[0] == 'inspect':
     model = json.loads(pathlib.Path('model.json').read_text())
@@ -110,8 +115,12 @@ class StandTest(unittest.TestCase):
         snapshot = self.root / 'snapshot.dump'
         snapshot.write_bytes(b'archive')
         self.values['VC_ADMIN_PASSWORD'] = 'stand-only-password'
-        code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='0')
+        # A new database container is not ready at once: restore waits for pg_isready first.
+        code, rows, calls = self.invoke(args=['--operation', 'op1', '--snapshot', str(snapshot)], DB_TABLE_COUNT='0', PG_NOT_READY='2')
         self.assertEqual(code, 0)
+        ready = [i for i, c in enumerate(calls) if 'pg_isready' in c['args']]
+        self.assertEqual(len(ready), 3)
+        self.assertLess(ready[-1], next(i for i, c in enumerate(calls) if 'psql' in c['args'] and '-Atqc' in c['args']))
         stages = [r['stage'] for r in rows]
         self.assertLess(stages.index('restore'), stages.index('start'))
         self.assertEqual(sum('pg_restore' in c['args'] for c in calls), 1)

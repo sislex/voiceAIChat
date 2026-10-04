@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 272b5c9c
+checked: 4cbe9562
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -84,6 +84,7 @@ made `pg_restore` fail on 7 foreign keys, so every snapshot restore exited 1 (en
 
 A primary stand provision may receive `--snapshot <archive>`. After images are prepared and
 before the application start, `environment_stand.py` starts only the stand PostgreSQL service,
+waits up to 120 s for `pg_isready` (a new container accepts connections only after initdb),
 refuses restoration unless its public schema is empty, restores with `pg_restore` (on failure
 its stderr tail goes to the private `restore.log` next to `VC_ENVIRONMENT_OVERRIDES`), and applies
 `environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
