@@ -42,6 +42,7 @@ describe('контракт протокола', () => {
     expect(REST.conversations).toBe('/api/conversations')
     expect(REST.conversation('abc')).toBe('/api/conversations/abc')
     expect(REST.messages('x')).toBe('/api/conversations/x/messages')
+    expect(REST.messageServiceData('a/b', 'm 1')).toBe('/api/conversations/a%2Fb/messages/m%201/service-data')
     expect(REST.ttsVoiceDownload('ru_RU-irina-medium')).toContain('ru_RU-irina-medium')
     expect(REST.chatContext).toBe('/api/chat/context')
     expect(REST.chatSettings).toBe('/api/chat/settings')

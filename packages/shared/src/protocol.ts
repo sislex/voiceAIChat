@@ -85,6 +85,12 @@ export interface ConversationWithMessages {
   messages: Message[]
 }
 
+/** Full service data loaded for one message on demand. */
+export interface MessageServiceData {
+  activity?: ClaudeLogEntry[]
+  request?: TurnMeta['request']
+}
+
 export interface AddMessageArgs {
   /** Заранее назначенный клиентом id; ключ идемпотентности повторного POST. */
   messageId?: string
@@ -271,6 +277,8 @@ export const REST = {
   messages: (id: string) => `/api/conversations/${id}/messages`,
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
+  messageServiceData: (conversationId: string, messageId: string) =>
+    `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/service-data`,
   uploads: '/api/uploads',
   /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
   imageRetouch: '/api/images/retouch',
