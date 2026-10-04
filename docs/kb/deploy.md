@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 96e017e5
+checked: 4c3e126a
 areas:
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -39,10 +39,15 @@ creates a mode `0600` PostgreSQL custom archive in the explicitly supplied direc
 JSON lines and reports the archive path, byte size, and SHA-256. Table data excluded from the
 archive is listed in `scripts/prod/snapshot-exclude.txt`; the ownership test requires that file
 to exactly match `SNAPSHOT_SENSITIVE_TABLES` in `apps/server/src/db/ownership.ts`.
+Before dumping, the script asks PostgreSQL for the foreign-key closure of those tables and
+excludes the data of every table that references them, recursively: rows pointing at excluded
+`agents` rows (`project_machines`, `machine_storages`, `conversation_workspaces` and others)
+made `pg_restore` fail on 7 foreign keys, so every snapshot restore exited 1 (environments U03).
 
 A primary stand provision may receive `--snapshot <archive>`. After images are prepared and
 before the application start, `environment_stand.py` starts only the stand PostgreSQL service,
-refuses restoration unless its public schema is empty, restores with `pg_restore`, and applies
+refuses restoration unless its public schema is empty, restores with `pg_restore` (on failure
+its stderr tail goes to the private `restore.log` next to `VC_ENVIRONMENT_OVERRIDES`), and applies
 `environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
 sets the first account as administrator with `VC_ADMIN_PASSWORD`, and disables stored SMTP and
 external-integration settings. Snapshot archives are transport artifacts: the caller owns their

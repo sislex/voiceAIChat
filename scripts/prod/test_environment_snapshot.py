@@ -16,10 +16,18 @@ class SnapshotTest(unittest.TestCase):
             root = Path(directory)
             fake = root / 'docker'
             log = root / 'args.json'
-            fake.write_text("#!/usr/bin/env python3\nimport json,os,sys\nopen(os.environ['ARG_LOG'],'w').write(json.dumps(sys.argv[1:]))\nprint('fake-custom-archive', end='')\n")
+            # psql answers the foreign-key closure: the listed tables plus one dependent table.
+            fake.write_text("#!/usr/bin/env python3\nimport json,os,sys\nargs=sys.argv[1:]\n"
+                            "if 'psql' in args:\n"
+                            "    sql=args[-1]\n"
+                            "    open(os.environ['ARG_LOG']+'.sql','w').write(sql)\n"
+                            "    print('\\n'.join(sorted(os.environ['LISTED'].split(',')+['project_machines'])))\n"
+                            "    sys.exit(0)\n"
+                            "open(os.environ['ARG_LOG'],'w').write(json.dumps(args))\nprint('fake-custom-archive', end='')\n")
             fake.chmod(0o700)
+            listed = [line for line in (HERE / 'snapshot-exclude.txt').read_text().splitlines() if line]
             result = subprocess.run(['bash', str(HERE / 'environment-snapshot.sh'), str(root)],
-                env={**os.environ, 'PATH': str(root) + ':' + os.environ['PATH'], 'ARG_LOG': str(log)},
+                env={**os.environ, 'PATH': str(root) + ':' + os.environ['PATH'], 'ARG_LOG': str(log), 'LISTED': ','.join(listed)},
                 capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
             rows = [json.loads(line) for line in result.stdout.splitlines()]
@@ -30,8 +38,11 @@ class SnapshotTest(unittest.TestCase):
             self.assertRegex(final['sha256'], r'^[a-f0-9]{64}$')
             args = json.loads(log.read_text())
             excluded = {a.removeprefix('--exclude-table-data=public.') for a in args if a.startswith('--exclude-table-data=')}
-            expected = {line for line in (HERE / 'snapshot-exclude.txt').read_text().splitlines() if line}
-            self.assertEqual(excluded, expected)
+            self.assertEqual(excluded, set(listed) | {'project_machines'})
+            sql = Path(str(log) + '.sql').read_text()
+            for name in listed:
+                self.assertIn("'" + name + "'", sql)
+            self.assertIn('confrelid', sql)
             self.assertEqual(args[:3], ['compose', 'exec', '-T'])
             self.assertIn('-Fc', args)
 
