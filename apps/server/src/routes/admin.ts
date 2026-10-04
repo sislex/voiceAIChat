@@ -1,3 +1,4 @@
+import { clientMessages } from '../serviceData.js'
 // Админ-роуты (только для роли admin): управление пользователями, отчёты по
 // токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
@@ -624,7 +625,7 @@ export function registerAdminRoutes(
   app.get<{ Params: { name: string }; Querystring: { conversationId?: string } }>(
     REST.adminUserMessages(':name').replace('%3Aname', ':name'),
     guard,
-    async (req) => await db.chat.listMessages(req.params.name, req.query.conversationId ?? '')
+    async (req) => await clientMessages(db, req.params.name, req.query.conversationId ?? '')
   )
 
   app.get<{ Params: { name: string } }>(REST.adminUserLlmAccess(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {

@@ -12,6 +12,7 @@ export function accountValues(settings: object): Values {
 /** Adapt legacy names at the persistence boundary, never in individual hosts. */
 export function conversationValues(c: Conversation, previous: Values = {}): Values {
   return {
+    loadServiceData: previous.loadServiceData === true,
     title: c.title, projectId: c.projectId ?? null, execTarget: c.execTarget, workdir: c.workdir,
     skills: c.skillNames, llmEngineId: c.llmEngineId ?? null, llmProvider: c.llmProvider,
     model: c.llmProvider === 'codex' ? previous.model ?? null : c.llmModel,
