@@ -1,5 +1,6 @@
 import { clientEvent } from './serviceData.js'
 import { Maintenance } from './maintenance.js'
+import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
@@ -321,6 +322,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     routerOptions: { maxParamLength: 1024 },
     genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
   })
+  await registerHttpCompression(app)
   const maintenance = new Maintenance()
   maintenance.register(app)
   const httpDiagnostics = registerHttpDiagnostics(app)
