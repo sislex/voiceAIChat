@@ -239,7 +239,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:bce35a5614ead17cac28e4ee5623d88cb3a97312}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:853fcf2488547a42e4d4473588a71e9348590a59}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
