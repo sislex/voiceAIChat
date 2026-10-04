@@ -1,3 +1,4 @@
+import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
@@ -790,7 +791,7 @@ export async function registerRest(
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
     /** Publish a persisted message to every authenticated connection of its owner. */
-    publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void
+    publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -951,7 +952,7 @@ export async function registerRest(
       : project.model
     return {
       conversation,
-      messages: await db.chat.listMessages(userId, conversation.id),
+      messages: await clientMessages(db, userId, conversation.id),
       effectiveLlm: {
         llmEngineId: conversation.llmEngineId ?? project.llmEngineId ?? settings.llmEngineId,
         provider,
@@ -986,11 +987,11 @@ export async function registerRest(
       const userId = uid(req)
       const result = await db.chat.createConversationDraft(userId, idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId, assistantKind ?? null)
       const persisted = result.messages[0]
-      if (persisted) opts.publishChatMessage?.(userId, result.conversation.id, persisted)
+      if (persisted) await opts.publishChatMessage?.(userId, result.conversation.id, persisted)
       if (result.created && assistantKind === 'make' && result.conversation.projectId) {
         opts.refreshProjectMain?.(uid(req), result.conversation.projectId)
       }
-      return result
+      return { ...result, messages: await clientMessages(db, userId, result.conversation.id, result.messages) }
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -1027,8 +1028,21 @@ export async function registerRest(
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     const conversation = await db.chat.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    return { conversation, messages: await db.chat.listMessages(uid(req), req.params.id) }
+    return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
+
+  app.get<{ Params: { id: string; messageId: string }; Querystring: { scope?: string; projectId?: string } }>(
+    REST.messageServiceData(':id', ':messageId').replace('%3Aid', ':id').replace('%3AmessageId', ':messageId'), async (req, reply) => {
+      const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
+      if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
+      const userId = uid(req)
+      const conversation = await db.chat.getConversation(userId, req.params.id, { scope, projectId: req.query.projectId })
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      if (!await loadsServiceData(db, userId, conversation.id)) return reply.code(409).send({ error: 'service_data_disabled' })
+      const data = await db.chat.messageServiceData(userId, conversation.id, req.params.messageId)
+      return data ?? reply.code(404).send({ error: 'not found' })
+    }
+  )
 
   /**
    * Владелец разговора для чтения снимка. Свой чат — сам пользователь. Чужой
@@ -1450,8 +1464,8 @@ export async function registerRest(
         }
       }
       const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
-      opts.publishChatMessage?.(userId, req.params.id, message)
-      return message
+      await opts.publishChatMessage?.(userId, req.params.id, message)
+      return (await clientMessages(db, userId, req.params.id, [message]))[0]
     }
   )
 
@@ -1462,8 +1476,8 @@ export async function registerRest(
       try {
         const userId = uid(req)
         const message = await db.chat.updateMessageMeta(userId, req.params.id, req.params.messageId, req.body.meta)
-        opts.publishChatMessage?.(userId, req.params.id, message)
-        return message
+        await opts.publishChatMessage?.(userId, req.params.id, message)
+        return (await clientMessages(db, userId, req.params.id, [message]))[0]
       } catch {
         return reply.code(404).send({ error: 'not found' })
       }
@@ -1546,7 +1560,7 @@ export async function registerRest(
     }
     // Привязка к session-id CC → следующий ход пойдёт через `claude --resume <id>`.
     await db.chat.setClaudeSession(u, conv.id, id)
-    return { conversation: await db.chat.getConversation(u, conv.id), messages: await db.chat.listMessages(u, conv.id) }
+    return { conversation: await db.chat.getConversation(u, conv.id), messages: await clientMessages(db, u, conv.id) }
   })
 
   // --- Проводник Codex ---------------------------------------------------
@@ -1594,7 +1608,7 @@ export async function registerRest(
     // Привязка к session-id Codex (префикс провайдера) → следующий ход пойдёт
     // через `codex exec resume <id>` (см. resumeIdFor в session.ts).
     await db.chat.setClaudeSession(u, conv.id, `codex:${id}`)
-    return { conversation: await db.chat.getConversation(u, conv.id), messages: await db.chat.listMessages(u, conv.id) }
+    return { conversation: await db.chat.getConversation(u, conv.id), messages: await clientMessages(db, u, conv.id) }
   })
 
   app.get(REST.llmEngines, async (req) => await db.llm.listLlmEnginesForRole((await db.identity.getUser(uid(req)))?.role ?? 'developer'))

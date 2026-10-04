@@ -1145,14 +1145,34 @@ export class ChatRepo extends BaseRepo {
     return updated
   }
 
-  /** Заменяет метаданные сообщения и возвращает актуальную запись. */
+  /** Read one message's diagnostics without materializing the conversation history. */
+  async messageServiceData(userId: string, conversationId: string, messageId: string): Promise<import('@voicechat/shared').MessageServiceData | null> {
+    if (!await this.ownsConversation(userId, conversationId)) return null
+    const row = await this.sql.get<{ meta: string | null }>(
+      "SELECT meta FROM messages WHERE id = ? AND conversation_id = ? AND state = 'published'", [messageId, conversationId])
+    if (!row) return null
+    const meta = row.meta ? parseMeta(row.meta) : undefined
+    return { activity: meta?.activity, request: meta?.request }
+  }
+
+  /** Merge top-level metadata under a row lock so partial client patches preserve diagnostics. */
   async updateMessageMeta(userId: string, conversationId: string, messageId: string, meta: TurnMeta): Promise<Message> {
-    if (!(await this.ownsConversation(userId, conversationId))) throw new Error('message not found')
-    const result = await this.sql.run(`UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?`, [Object.keys(meta).length ? JSON.stringify(meta) : null, messageId, conversationId])
-    if (!result.changes) throw new Error('message not found')
-    const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === messageId)
-    if (!message) throw new Error('message not found')
-    return message
+    return this.sql.transaction(async () => {
+      if (!(await this.ownsConversation(userId, conversationId))) throw new Error('message not found')
+      const locked = await this.sql.run('UPDATE messages SET id = id WHERE id = ? AND conversation_id = ?', [messageId, conversationId])
+      if (!locked.changes) throw new Error('message not found')
+      const row = await this.sql.get<{ meta: string | null }>('SELECT meta FROM messages WHERE id = ? AND conversation_id = ?', [messageId, conversationId])
+      const { serviceData, ...patch } = meta
+      // A client may echo a projected message. Its request is only a summary,
+      // and serviceData is derived transport metadata, never persisted state.
+      if (serviceData) { delete patch.request; delete patch.activity }
+      const merged = { ...(row?.meta ? parseMeta(row.meta) : {}), ...patch }
+      delete merged.serviceData
+      await this.sql.run('UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?', [JSON.stringify(merged), messageId, conversationId])
+      const message = (await this.listMessages(userId, conversationId)).find(item => item.id === messageId)
+      if (!message) throw new Error('message not found')
+      return message
+    })
   }
 
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-04
-checked: 66fc88e8
+updated: 2026-10-05
+checked: 8e5dc447
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -49,6 +49,26 @@ already executing, agent callbacks, or writes through internal module RPC.
 Operators must quiesce those writers before the final migration snapshot.
 
 ## HTTP-поверхность
+
+### Chat message service data
+
+Conversation setting `loadServiceData` defaults to false and is persisted in
+canonical chat settings. `serviceData.ts` applies the shared `stripServiceData`
+helper at REST and event boundaries: conversation and kanban-assistant history,
+draft creation/replay, CC/Codex resume, admin message inspection, message writes,
+`chat.message`, and both metadata fields of `claude.done` (completion, cancellation,
+and shutdown recovery). Enabling the setting returns full metadata. Live active
+turn activity, database readers, context snapshots, and prompt construction retain
+their full data regardless of the setting.
+
+`GET /api/conversations/:id/messages/:messageId/service-data` returns the stored
+`activity` and `request` for one published message. It applies the same owner and
+scope/project checks as the conversation GET; disabled loading returns 409,
+inaccessible conversations and missing messages return 404. The repository reads
+only that message's metadata rather than loading the complete conversation.
+Metadata PATCH merges top-level fields under a database row lock, preserving
+stored activity/request when a client updates only `taskLaunches`. An echoed
+projection's `serviceData` marker and reduced request never replace stored diagnostics.
 
 Группы маршрутов:
 

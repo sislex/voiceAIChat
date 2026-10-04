@@ -1,3 +1,4 @@
+import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
 // Процесс-глобальный реестр ходов LLM. Ход привязан к разговору, а не к
@@ -1167,16 +1168,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           if (!req.delegation && conv?.assistantKind === 'images' && deps.captureStudioImages) {
             void deps.captureStudioImages(userId, conversationId, taskLaunch.text)
           }
-          const emitDone = (finalText: string, message?: Message): void => {
+          const emitDone = async (finalText: string, message?: Message): Promise<void> => {
             broadcast(
-              {
+              await clientEvent(deps.db, userId, {
                 t: 'claude.done',
                 conversationId,
                 text: finalText,
                 meta: merged,
                 engine: provider,
                 ...(message ? { message } : {})
-              },
+              }),
               userId
             )
           }
@@ -1185,7 +1186,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // без перекладки (картинки останутся серверными, но покажутся).
           async function finalize(): Promise<void> {
             if (saved) return
-            emitDone(taskLaunch.text, await persist(taskLaunch.text))
+            await emitDone(taskLaunch.text, await persist(taskLaunch.text))
           }
           pendingSaves.add(finalize)
 
@@ -1231,7 +1232,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           track(prepared.then(async (finalText) => {
             if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
-            emitDone(finalText, await persist(finalText))
+            await emitDone(finalText, await persist(finalText))
             await dispatchNext(userId, conversationId)
           }))
         },
@@ -1321,7 +1322,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const message = turn.partial.trim()
       ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
-    if (notify) broadcast({ t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }, turn.userId)
+    if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn
   }
@@ -1481,7 +1482,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         turnInputTokens: turnInputTokens(meta)
       })
       broadcast(
-        { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, message },
+        await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, message }),
         turn.userId
       )
     }
