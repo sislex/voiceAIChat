@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-05
-checked: 8e5dc447
+checked: 30cbb49d
 areas:
   - apps/server/src
   - apps/image-studio/src
@@ -18,6 +18,24 @@ after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
 
 ## Запуск и dependency injection
+
+### HTTP response compression
+
+`server.ts` registers `httpCompression.ts` before Core routes. The
+`@fastify/compress` response hook negotiates Brotli (`br`) or gzip using
+`Accept-Encoding` for buffered JSON (including `application/*+json`) and text
+responses under `/api` and `/internal`, strictly above 1024 bytes. Existing
+route hooks still run; `compress: false` remains an explicit route opt-out.
+Request decompression is disabled.
+
+Compression skips WebSocket upgrades, Range requests and partial responses,
+already encoded responses, media and archive MIME types, SSE, and all Node/Web
+stream payloads. Exec-stream, tunnel, preview and recorder paths and logs with
+a `follow` query parameter are also excluded even if their payload is buffered.
+Only compressed responses lose `Content-Length`; identity responses retain
+their normal headers. Streams are never buffered to determine their size.
+`httpCompression.test.ts` checks encoding negotiation, decompression round-trips,
+the byte threshold, exclusions and header preservation without listening on a port.
 
 `index.ts` загружает `ServerConfig`, создаёт каталоги/SQLite, CLI-клиенты, STT/TTS engines и вызывает `buildServer()`, затем `listen()`. `server.ts` не слушает порт и подходит для тестов.
 
