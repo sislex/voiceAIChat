@@ -35,8 +35,8 @@
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-a06c73deaca8.tgz",
     "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
     "@voicechat/voice-contracts": "file:../../vendor/voicechat-voice-contracts-1.0.0-7e51e57ebf3b.tgz",
-    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.1.0-a1619342b21d.tgz",
-    "@sislexa/agent": "file:../../vendor/sislexa-agent-0.21.0-1a5ab73d7363.tgz"
+    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.2.0-0e68ef345952.tgz",
+    "@sislexa/agent": "file:../../vendor/sislexa-agent-0.22.0-5e914378a898.tgz"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 51 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 23 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1759 коммит(ов) в areas после сверки: 6a2baead docs(plans): delivery-fast-gate run results … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1760 коммит(ов) в areas после сверки: 276edd1f docs(kb): own Docker config for the macOS agent to pull private GHCR images … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 87 коммит(ов) в areas после сверки: f1b4e5e2 feat(environments): production files snapshot, stand file restore and Core maintenance mode (environments-v4 C26) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1033. Последние:
+Всего записей: 1034. Последние:
 
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-u03-results.md) — u03-results
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-tunnel-relay-backpressure.md) — tunnel-relay-backpressure
@@ -68,8 +68,8 @@
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-snapshot-fk-closure.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-snapshot-fk-closure.md) — snapshot-fk-closure
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-plan-archive-split.md) — plan-archive-split
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-0.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-0.md) — pin-kanban-0-2-0
+- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-0.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-22-0.md) — pin-agent-0-22-0
 - [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-fast-gate-results.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-fast-gate-results.md) — fast-gate-results
-- [2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-environments-v4-shared.md](log/2026-10-04-alexeys-macbook-air-tailae39a6-ts-net-environments-v4-shared.md) — environments-v4-shared
 
 ## Исторические планы
 
