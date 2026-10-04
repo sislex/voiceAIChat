@@ -36,6 +36,13 @@ describe('Tailscale policy and credentials', () => {
     expect(() => managedPolicy({ grants: [{ src: ['*'], dst: ['*'], ip: ['*'] }] }, {}, [])).toThrow('policy')
     expect(() => managedPolicy({ acls: [{ action: 'accept', src: ['*'], dst: ['tag:chatai-env-foreign:*'] }] }, {}, [])).toThrow('policy')
   })
+  it('accepts the owner split of allow-all: devices among themselves plus an explicit exit-node grant', () => {
+    const grants = [{ src: ['*'], dst: ['autogroup:member', 'autogroup:tagged'], ip: ['*'] }, { src: ['*'], dst: ['autogroup:internet'], ip: ['*'] }]
+    expect(managedPolicy({ grants }, {}, []).grants).toEqual(grants)
+    // The internet stays acceptable only as the sole destination of its own grant.
+    expect(() => managedPolicy({ grants: [{ src: ['*'], dst: ['autogroup:member', 'autogroup:internet'], ip: ['*'] }] }, {}, [])).toThrow('policy')
+    expect(() => managedPolicy({ grants: [{ src: ['*'], dst: ['0.0.0.0/0'], ip: ['*'] }] }, {}, [])).toThrow('policy')
+  })
   // @testCase TC-API
   // @testCase TC-SECRETS
   it('uses optimistic policy versioning and excludes upstream errors from diagnostics', async () => {
