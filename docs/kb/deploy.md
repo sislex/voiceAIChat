@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-05
-checked: 9e5d164c
+checked: b7a1ecce
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2411,6 +2411,12 @@ values are replaced with `http://module-lb:<module-port>` before Compose resolve
 all consumers. Endpoint syntax is a hostname or IPv4 address and a port; URLs,
 paths, duplicate modules/endpoints and unknown modules are rejected. The generated
 overlay precedes link overrides and `current.yml`.
+
+`environment-files-snapshot.sh` streams the production data volume through `docker run
+--log-driver none` (the default JSON log would store the whole archive a second time) and
+refuses with exit 3 when the output directory lacks the volume's apparent size plus a margin of
+1 GiB or 10 %. U04 `migrate` filled the production disk without both: Postgres reported one
+`could not extend file … No space left on device` and Kanban restarted.
 
 The stand script records its final Compose chain (without `current.yml`) in
 `<VC_ENVIRONMENT_OVERRIDES>/stand-chain`; `environment-apply.sh` uses it when the process has no
