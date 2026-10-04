@@ -175,6 +175,11 @@ export class ProjectsRepo extends BaseRepo {
     )
   }
 
+  /** Internal worker lookup; the creator supplies the environment link machine scope. */
+  async projectCreator(projectId: string): Promise<string | null> {
+    return (await this.sql.get<{ created_by: string }>('SELECT created_by FROM projects WHERE id = ?', [projectId]))?.created_by ?? null
+  }
+
   /** Единый серверный источник проектного права владельца. */
   async isProjectOwner(userId: string, projectId: string): Promise<boolean> {
     return (

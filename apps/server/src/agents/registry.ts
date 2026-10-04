@@ -806,7 +806,15 @@ export class AgentRegistry {
     return this.ptys.get(ptyId)?.context ?? null
   }
 
-  vpnService?: VpnService
+  private currentVpnService?: VpnService
+  private unsubscribeVpn?: () => void
+  get vpnService(): VpnService | undefined { return this.currentVpnService }
+  set vpnService(service: VpnService | undefined) {
+    this.unsubscribeVpn?.()
+    this.currentVpnService = service
+    this.unsubscribeVpn = service?.onChange?.(() => this.emitChange())
+    this.emitChange()
+  }
   vpnAddressOf(id: string) { return this.isOnline(id) ? vpnAddress(this.telemetryOf(id)) : undefined }
   ensureEnvironmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[]) {
     if (!this.vpnService) throw new Error('VPN service unavailable')
