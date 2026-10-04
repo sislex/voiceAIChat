@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: a0a1e526
+checked: f8022773
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2385,6 +2385,14 @@ addresses are rejected. Tailscale's 100.64.0.0/10 addresses are accepted. VPN
 membership and grants are commissioned separately by the owner and link manager.
 `VC_STAND_LAN_ADDRESS` changes only the primary Core port and its health probe;
 it must belong to RFC 1918 (10/8, 172.16/12 or 192.168/16).
+
+Docker Desktop on macOS publishes a specific host address through a helper port in its
+VM and releases the helper of a replaced container asynchronously, so recreating a
+service published on a VPN address can fail with `address already in use`
+(U04: `127.0.0.1:55040` on M1). The `start` stage retries `compose up` up to three
+times, five seconds apart (`VC_STAND_START_RETRY_SECONDS`), only for that error. A
+failed command's last output lines (setting values redacted) follow
+`Stand operation failed:` in the failed event's `log`.
 
 `VC_STAND_UPSTREAMS=make=100.64.1.2:17100|100.64.1.3:17100;reader=host.docker.internal:17101`
 generates `deploy/compose.stand-lb.yml` and `deploy/Caddyfile.stand-lb` in the stand
