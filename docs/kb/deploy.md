@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-04
-checked: 0bb32473
+checked: 06658f72
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -102,6 +102,11 @@ not generate or rotate a key. Kanban owns encryption and decryption; Core stores
 the supplied ciphertext in `environment_settings` and never needs the key.
 Keep the key with the database recovery material: losing or replacing it makes
 existing encrypted settings unreadable. Do not put it in logs or operation steps.
+
+`VC_VPN_SECRET_KEY` (64 hex) reaches the `voicechat` service (embedded machines) and the `machines`
+service the same way, from the production `.env`; it encrypts the owner's administrative Tailscale
+credential (docs/kb/machines.md). Without it VPN routes fail and environment links stay on agent
+tunnels. Generate it on the production host and keep a copy with the recovery material.
 Kanban's environments-v2 secret service rejects missing or invalid configuration
 with `503 Environment secret storage is not configured`.
 

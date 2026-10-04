@@ -25,6 +25,6 @@
     "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
     "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-0207bffe45ba.tgz",
     "@sislexa/voice": "file:../../vendor/sislexa-voice-1.1.0-7e51e57ebf3b.tgz",
-    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.1.0-a1619342b21d.tgz"
+    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.2.0-0e68ef345952.tgz"
   }
 }
