@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from './database.js'
-import { PG_SCHEMA } from './schemaPg.js'
+import { PG_SCHEMA, postgresColumnUpgradePlan } from './schemaPg.js'
 
 const modules = [{ repository: 'https://github.com/sislex/core', version: '1.2.3', commit: 'a'.repeat(40) }]
 const input = { id: 'production', name: 'Production', machines: ['agent'], checkoutPath: '/srv/compose' }
@@ -34,6 +34,12 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       await peer?.close(); peer = undefined
       await db?.close()
       if (dir) rmSync(dir, { recursive: true, force: true })
+    })
+    it('resolves link owners through the project creator and returns null for missing projects', async () => {
+      const other = await db.projects.createProject('member', { name: 'Member project' })
+      expect(await db.environments.linkOwner(projectId)).toBe('owner')
+      expect(await db.environments.linkOwner(other.id)).toBe('member')
+      expect(await db.environments.linkOwner('missing')).toBeNull()
     })
     it('persists environment-owned links, scopes deletion, reserves listener ports and revokes authorization', async () => {
       const request = { projectId, environmentId: input.id, clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 }
@@ -177,6 +183,21 @@ for (const engine of ['sqlite', 'postgres'] as const) {
         await db.environments.updateOperation(next.id, { status: 'succeeded' })
       }
     })
+    it('backfills stage-3 link addresses and preserves VPN transport across reopen', async () => {
+      const link = await db.environments.ensureLink({ projectId, environmentId: input.id, clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 })
+      const sql = (db as unknown as { sql: Sql }).sql
+      await sql.exec('ALTER TABLE environment_links DROP COLUMN transport')
+      await sql.exec('ALTER TABLE environment_links DROP COLUMN address')
+      for (let attempt = 0; attempt < 2; attempt++) {
+        peer = new VoiceChatDb(join(dir, 'db.sqlite'), engine === 'postgres' ? { postgres: { url: process.env.VC_TEST_DB_URL!, schema } } : {})
+        await peer.ready
+        expect((await peer.environments.listLinks(projectId, input.id))[0]).toMatchObject(attempt === 0
+          ? { id: link.id, transport: 'tunnel', address: 'host.docker.internal:17001' }
+          : { id: link.id, transport: 'vpn', address: '100.64.0.2:5432' })
+        await peer.environments.setLinkTransport(link.id, 'vpn', '100.64.0.2:5432')
+        await peer.close(); peer = undefined
+      }
+    })
     it('upgrades populated stage-1 tables and replaces the active index idempotently', async () => {
       const config = await db.environments.addConfiguration('owner', projectId, input.id, [], null)
       const operation = await db.environments.createOperation('owner', projectId, input.id, config.id, null)
@@ -227,4 +248,14 @@ it('includes environment tables, composite foreign keys and active-operation uni
   for (const table of ['environments', 'environment_configurations', 'environment_operations', 'environment_settings', 'environment_links']) expect(PG_SCHEMA.tables.some(sql => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`))).toBe(true)
   expect(PG_SCHEMA.foreignKeys.join('\n')).toMatch(/FOREIGN KEY \(project_id, environment_id\) REFERENCES environments/)
   expect(PG_SCHEMA.indexes.join('\n')).toContain('idx_environment_active_operation')
+})
+
+it('adds transport and address to existing PostgreSQL links before startup backfill', () => {
+  const existing = PG_SCHEMA.columns
+    .filter(column => column.table !== 'environment_links' || !['transport', 'address'].includes(column.name))
+    .map(column => ({ table_name: column.table, column_name: column.name }))
+  const plan = postgresColumnUpgradePlan(PG_SCHEMA.columns, existing)
+  expect([...plan.keys]).toEqual(['environment_links.transport', 'environment_links.address'])
+  expect(plan.sql).toContain("transport TEXT NOT NULL DEFAULT 'tunnel'")
+  expect(plan.sql).toContain("address TEXT NOT NULL DEFAULT ''")
 })

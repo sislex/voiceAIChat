@@ -1,3 +1,6 @@
+import { VpnService, type VpnRepository } from '../machines/vpn/service.js'
+import { encryptVpnSecret, TailscaleApi, environmentTag } from '../machines/vpn/tailscale.js'
+import type { AgentTelemetry, VpnObservation } from '@sislexa/agent-contracts'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
@@ -46,6 +49,100 @@ describe('persistent environment links', () => {
     await manager.start()
   })
   afterEach(async () => { vi.useRealTimers(); await manager?.stop(); await db?.close() })
+
+  function vpnFixture() {
+    const tag = environmentTag(input)
+    const observations = Object.fromEntries(['client', 'server'].map((id, i) => [id, {
+      observedAt: Date.now(), mode: 'off', deviceId: id, tailnet: 'owner.ts.net',
+      addresses: ['100.64.0.' + (i + 1)], error: null
+    } as VpnObservation]))
+    const data = {
+      states: {}, grants: [], verifiedAt: Date.now(),
+      bindings: Object.fromEntries(Object.entries(observations).map(([id, o]) => [id, { deviceId: id, apiId: id, addresses: o.addresses, approved: false }])),
+      environments: { [tag]: { environment: input, tag, machines: ['client', 'server'], ports: [5432], phase: 'applied', appliedAt: Date.now() } }
+    }
+    const key = 'a'.repeat(64)
+    const encryptedSecret = encryptVpnSecret(randomUUID(), key, 'owner')
+    const repo: VpnRepository = {
+      agentOwnerId: async () => 'owner', listAgents: async () => [],
+      readVpnNetwork: async owner => owner === 'owner' ? { tailnet: 'owner.ts.net', encryptedSecret, generation: 1, state: JSON.stringify(data) } : null,
+      saveVpnNetwork: async (_owner, row) => { Object.assign(data, JSON.parse(row.state)); return true }
+    }
+    const api = new TailscaleApi(randomUUID(), 'owner.ts.net')
+    vi.spyOn(api, 'devices').mockResolvedValue(Object.entries(observations).map(([id, o]) => ({ id, nodeId: id, authorized: true, addresses: o.addresses, tags: [tag] })))
+    vi.spyOn(api, 'policy').mockResolvedValue({ value: { grants: [] }, etag: '1' })
+    vi.spyOn(api, 'setPolicy').mockResolvedValue(undefined)
+    vi.spyOn(api, 'setDeviceTags').mockResolvedValue(undefined)
+    agents.vpnService = new VpnService(repo, agents, () => key, () => api)
+    const publish = async () => {
+      for (const id of ['client', 'server']) await agents.handleMessage(id, { t: 'agent.telemetry', telemetry: { vpn: observations[id] } as AgentTelemetry })
+      await manager.reconcile()
+    }
+    return { data, observations, publish, repo }
+  }
+
+  it('selects a persisted VPN address without opening a tunnel and removes the link', async () => {
+    const vpn = vpnFixture()
+    await vpn.publish()
+    const link = await manager.ensureLink(input)
+    expect(link).toMatchObject({ transport: 'vpn', address: '100.64.0.2:5432', state: 'open' })
+    expect(sent.client.some(m => m.t === 'tunnel.listen')).toBe(false)
+    await db.environments.setEnvironmentState(input.projectId, input.environmentId, { state: 'removed' })
+    await manager.reconcile()
+    expect((await manager.listLinks(input.projectId, input.environmentId))[0]?.state).toBe('down')
+    await manager.deleteLink(input.projectId, input.environmentId, link.id)
+    expect(await manager.listLinks(input.projectId, input.environmentId)).toEqual([])
+  })
+
+  it.each(['client', 'server'])('switches both ways when %s reconnects with or without VPN', async machine => {
+    const vpn = vpnFixture()
+    await vpn.publish()
+    const link = await manager.ensureLink(input)
+    agents.unregister(machine)
+    connect(machine)
+    await manager.reconcile()
+    expect((await manager.listLinks(input.projectId, input.environmentId))[0]).toMatchObject({ transport: 'tunnel', address: 'host.docker.internal:17001', state: 'open' })
+    expect(agents.tunnelPort(link.id)).toBe(17001)
+    await vpn.publish()
+    await manager.reconcile()
+    expect((await manager.listLinks(input.projectId, input.environmentId))[0]).toMatchObject({ transport: 'vpn', state: 'open' })
+    expect(agents.tunnelPort(link.id)).toBeNull()
+  })
+
+  it('reconciles grant removal and application automatically through the VPN service', async () => {
+    const vpn = vpnFixture()
+    await vpn.publish()
+    const link = await manager.ensureLink(input)
+    await agents.removeEnvironmentGrant('owner', input)
+    await vi.waitFor(async () => {
+      expect((await manager.listLinks(input.projectId, input.environmentId))[0]?.transport).toBe('tunnel')
+    })
+    await agents.ensureEnvironmentGrant('owner', input, ['client', 'server'], [5432])
+    await vi.waitFor(async () => {
+      expect((await manager.listLinks(input.projectId, input.environmentId))[0]).toMatchObject({ transport: 'vpn', state: 'open' })
+    })
+    expect(agents.tunnelPort(link.id)).toBeNull()
+  })
+
+  it('rejects a machine owned outside the project owner network', async () => {
+    const vpn = vpnFixture()
+    vpn.repo.agentOwnerId = async id => id === 'client' ? 'foreign' : 'owner'
+    await vpn.publish()
+    expect((await manager.ensureLink(input)).transport).toBe('tunnel')
+  })
+
+  it.each(['port', 'grant', 'tailnet', 'binding', 'stale', 'ipv6'])('falls back when VPN eligibility fails: %s', async reason => {
+    const vpn = vpnFixture()
+    const grant = vpn.data.environments[environmentTag(input)]
+    if (reason === 'port') grant.ports = [80]
+    if (reason === 'grant') grant.phase = 'error'
+    if (reason === 'tailnet') vpn.observations.client.tailnet = 'foreign.ts.net'
+    if (reason === 'binding') vpn.observations.client.deviceId = 'foreign'
+    if (reason === 'stale') vpn.observations.client.observedAt = 1
+    if (reason === 'ipv6') vpn.observations.server.addresses = ['fd7a:115c:a1e0::1']
+    await vpn.publish()
+    expect(await manager.ensureLink(input)).toMatchObject({ transport: 'tunnel', address: 'host.docker.internal:17001' })
+  })
 
   it('authorizes data frames from a short cache instead of reading the database per frame', async () => {
     const link = await manager.ensureLink(input)

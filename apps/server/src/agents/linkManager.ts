@@ -4,7 +4,7 @@ import type { AgentRegistry } from './registry.js'
 
 const LINK_AUTHORIZATION_TTL_MS = 5_000
 
-/** Persistent server-owned tunnels. The database, never an RPC client, authorizes traffic. */
+/** Persistent server-owned links. The database, never an RPC client, authorizes traffic. */
 export class LinkManager {
   private tail: Promise<unknown> = Promise.resolve()
   private unsubscribe?: () => void
@@ -109,6 +109,20 @@ export class LinkManager {
       await this.repo.setLinkState(link.id, 'down')
       return
     }
+    const owner = await this.repo.linkOwner(link.projectId)
+    const address = owner ? await this.agents.vpnService?.linkAddress(owner, link, link.clientMachineId, link.serverMachineId, link.servicePort).catch(error => {
+      this.report(error)
+      return null
+    }) : null
+    if (this.stopped) return
+    if (address) {
+      this.agents.closeTunnel(link.id)
+      this.owned.add(link.id)
+      await this.repo.setLinkTransport(link.id, 'vpn', address)
+      await this.repo.setLinkState(link.id, 'open')
+      return
+    }
+    await this.repo.setLinkTransport(link.id, 'tunnel', `host.docker.internal:${link.listenerPort}`)
     if (this.agents.tunnelPort(link.id) !== null) { await this.repo.setLinkState(link.id, 'open'); return }
     await this.repo.setLinkState(link.id, 'down')
     if (this.stopped) return
@@ -120,7 +134,7 @@ export class LinkManager {
         async () => {
           await this.serialize(async () => {
             // A delayed close callback must not overwrite a reopened link.
-            if (this.agents.tunnelPort(link.id) === null) await this.repo.setLinkState(link.id, 'down')
+            if (this.agents.tunnelPort(link.id) === null && (await this.repo.listLinks(link.projectId, link.environmentId)).find(row => row.id === link.id)?.transport === 'tunnel') await this.repo.setLinkState(link.id, 'down')
           }).catch(this.report)
         },
         { host: 'docker-host', port: link.listenerPort })
