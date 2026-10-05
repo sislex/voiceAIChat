@@ -1,6 +1,6 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-09-17
+updated: 2026-10-05
 checked: 8f820f9c
 
 areas:
@@ -44,6 +44,17 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+For schema version 2, `DevelopmentReadiness.knowledgeBase` explicitly declares
+`connected` or `absent`; omitted values preserve the legacy `connected` behavior.
+An absent KB does not require a knowledge source. The `knowledge_sources` gate
+result records that the project has no connected KB, with references to any
+available knowledge sources. Available `knowledge` sources always count; for an
+absent KB, available `code` sources referencing repository `docs/**` or `README`
+files (including README.md) count as well. Connected projects still fail with
+`missing_knowledge_source` without an available `knowledge` source. Code research and critical-source availability remain
+mandatory regardless of KB configuration. Callers must supply `absent` from the
+project configuration; the pure gate does not infer it from missing sources.
 
 CHAT-475 makes the prompt's no-progress-message rule explicit and states that
 normalization cannot repair response framing. TC-BRIEF-01/02 in

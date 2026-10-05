@@ -1,5 +1,5 @@
 import { VpnService, type VpnRepository } from '../machines/vpn/service.js'
-import { encryptVpnSecret, TailscaleApi, environmentTag } from '../machines/vpn/tailscale.js'
+import { encryptVpnSecret, TailscaleApi, environmentTag, vpnTag } from '../machines/vpn/tailscale.js'
 import type { AgentTelemetry, VpnObservation } from '@sislexa/agent-contracts'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -70,7 +70,10 @@ describe('persistent environment links', () => {
     }
     const api = new TailscaleApi(randomUUID(), 'owner.ts.net')
     vi.spyOn(api, 'devices').mockResolvedValue(Object.entries(observations).map(([id, o]) => ({ id, nodeId: id, authorized: true, addresses: o.addresses, tags: [tag] })))
-    vi.spyOn(api, 'policy').mockResolvedValue({ value: { grants: [] }, etag: '1' })
+    vi.spyOn(api, 'policy').mockResolvedValue({ value: {
+      grants: [],
+      tagOwners: Object.fromEntries([tag, ...Object.keys(observations).map(vpnTag)].map(t => [t, ['autogroup:admin']]))
+    }, etag: '1' })
     vi.spyOn(api, 'setPolicy').mockResolvedValue(undefined)
     vi.spyOn(api, 'setDeviceTags').mockResolvedValue(undefined)
     agents.vpnService = new VpnService(repo, agents, () => key, () => api)
@@ -78,7 +81,7 @@ describe('persistent environment links', () => {
       for (const id of ['client', 'server']) await agents.handleMessage(id, { t: 'agent.telemetry', telemetry: { vpn: observations[id] } as AgentTelemetry })
       await manager.reconcile()
     }
-    return { data, observations, publish, repo }
+    return { data, observations, publish, repo, api }
   }
 
   it('selects a persisted VPN address without opening a tunnel and removes the link', async () => {
@@ -114,6 +117,9 @@ describe('persistent environment links', () => {
     await vpn.publish()
     const link = await manager.ensureLink(input)
     await agents.removeEnvironmentGrant('owner', input)
+    for (const id of ['client', 'server']) {
+      expect(vpn.api.setDeviceTags).toHaveBeenCalledWith(expect.objectContaining({ id }), [vpnTag(id)])
+    }
     await vi.waitFor(async () => {
       expect((await manager.listLinks(input.projectId, input.environmentId))[0]?.transport).toBe('tunnel')
     })

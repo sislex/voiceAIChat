@@ -8,6 +8,10 @@ const fixtureCredential3 = randomBytes(24).toString('hex')
 const fixtureEncryptionKey = randomBytes(32).toString('hex')
 
 describe('Tailscale policy and credentials', () => {
+  it.each([[400, 'policy'], [401, 'network'], [403, 'network'], [409, 'policy'], [412, 'policy'], [422, 'policy'], [429, 'network'], [500, 'network']])('maps HTTP %s and sanitizes API diagnostics', async (status, code) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ message: `rejected\n${fixtureCredential1} ${Buffer.from(fixtureCredential1 + ':').toString('base64')}` }, { status: Number(status) }))
+    await expect(new TailscaleApi(fixtureCredential1, 'test.ts.net', fetcher).devices()).rejects.toMatchObject({ code, message: `${code}: rejected [redacted] [redacted]` })
+  })
   it('writes device tags through the concrete Tailscale endpoint', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'))
     await new TailscaleApi(fixtureCredential2, 'test.ts.net', fetcher).setDeviceTags(
