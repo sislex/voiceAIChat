@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 63 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 22 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 8 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 10 коммит(ов) в areas после сверки: 98b60af3 test(kb): wait for module indexing instead of a 1 s poll … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 96 коммит(ов) в areas после сверки: 7f397ace Merge origin/main into dc/kb-service-v1-u03 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -41,7 +41,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 18 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-05 | ⚠ 8 коммит(ов) в areas после сверки: 7f397ace Merge origin/main into dc/kb-service-v1-u03 … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-05 | ⚠ 9 коммит(ов) в areas после сверки: 98b60af3 test(kb): wait for module indexing instead of a 1 s poll … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-05 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 279 коммит(ов) в areas после сверки: 7f397ace Merge origin/main into dc/kb-service-v1-u03 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ⚠ 6 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
