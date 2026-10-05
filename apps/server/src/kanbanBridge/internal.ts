@@ -36,6 +36,7 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
       case 'machines.fsDelete': return core.machines.fsDelete(a[0], a[1])
       case 'machines.fsRename': return core.machines.fsRename(a[0], a[1], a[2])
       case 'machines.gitAccess': return core.machines.gitAccess(a[0], a[1])
+      case 'machines.devProcess': return core.machines.devProcess(a[0], a[1], a[2])
       case 'machines.createTunnel': {
         const id = a[0] as string
         return core.machines.createTunnel(id, a[1], a[2], a[3], () => deps.tunnels.authorize(id), () => deps.tunnels.closed(id))

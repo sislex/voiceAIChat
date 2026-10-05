@@ -43,6 +43,7 @@ export interface MachinesService extends Pick<VpnService, 'ensureEnvironmentGran
   execStream(agentId: string, command: string, timeoutMs: number, onChunk: (data: string) => void, signal?: AbortSignal): Promise<ExecResult>
   cancelAll(agentId: string): void
   gitAccess(agentId: string, request: GitAccessRequest): Promise<GitAccessResult>
+  devProcess<M extends import('@voicechat/shared').DevProcessMethod>(agentId: string, method: M, request: import('@voicechat/shared').DevProcessRpc[M]['request']): Promise<import('@voicechat/shared').DevProcessRpc[M]['result']>
   fsList(agentId: string, path: string): Promise<FsResult>
   fsRead(agentId: string, path: string, mode?: 'prefix'): Promise<FsResult>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
