@@ -7,6 +7,7 @@ import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { buildGates, consumersOf, createCommandDiagnostics, dependenciesOf, fastCheckForPackage, fastPlanForPackage, packageArgs, parseOptions, PACKAGES, relatedArgs, runFastChecks, runPackageGates, selectAffected, validatePackageDependencies, workersPerJob } from './affected-check.mjs'
 import { gitHistoryPaths } from './kb.mjs'
+import { workspaceEntries } from './test-files.mjs'
 
 // Fixtures that must sit under protected (non-world-writable) ancestors. A
 // delivery attempt may write only inside its own root, so use its private tmp.
@@ -99,12 +100,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
 // файловой системой, а dependsOn — с манифестами.
 test('PACKAGES перечисляет каждый воркспейс репозитория', () => {
   const repository = dirname(dirname(fileURLToPath(import.meta.url)))
-  const found = []
-  for (const root of ['packages', 'apps']) {
-    for (const entry of readdirSync(join(repository, root))) {
-      if (existsSync(join(repository, root, entry, 'package.json'))) found.push(`${root}/${entry}`)
-    }
-  }
+  const found = workspaceEntries(repository).map(workspace => workspace.path)
   const known = new Set(PACKAGES.map((pkg) => pkg.path))
   assert.deepEqual(found.filter((path) => !known.has(path)), [], 'путь есть в репозитории, но не в PACKAGES')
   assert.deepEqual(PACKAGES.map((pkg) => pkg.path).filter((path) => !found.includes(path)), [], 'путь есть в PACKAGES, но не в репозитории')
