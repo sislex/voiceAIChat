@@ -12,10 +12,10 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 31 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-05 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 1 коммит(ов) в areas после сверки: e1534178 chore: pin Core UI 1.5.0 (environments v4 UI, chat service data) |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 2 коммит(ов) в areas после сверки: ca4fd5b0 chore: pin Desktop 1.0.19 (Core UI 1.5.0 renderer, agent 0.22.1) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 13 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 6 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 45745f01 fix(environments): keep the files snapshot out of the Docker log and check disk space |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 56 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 37 коммит(ов) в areas после сверки: aa936e48 feat(environments): VPN or tunnel transport for environment links (environments-v4 C24) … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 54 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 15 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 25 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1782 коммит(ов) в areas после сверки: e1534178 chore: pin Core UI 1.5.0 (environments v4 UI, chat service data) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1783 коммит(ов) в areas после сверки: ca4fd5b0 chore: pin Desktop 1.0.19 (Core UI 1.5.0 renderer, agent 0.22.1) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 89 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
