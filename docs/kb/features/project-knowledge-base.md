@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-05
-checked: b3769c47
+checked: 41027c4e
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -114,6 +114,10 @@ the source like the file configuration, persists the list atomically to
 `<VC_DATA_DIR>/kb-modules.json` and starts indexing in the background. When
 `VC_KB_MODULES` is set, the list is managed by the environment and registration
 fails with `kb_modules_managed_by_env`; module `core` cannot be removed.
+
+The server image installs `git` for module fetches. Private repositories need
+`VC_GITHUB_TOKEN` (read access to the module repositories) in the Core environment;
+without it a module stays `failed` with `KB source fetch failed`.
 
 ## Назначение
 

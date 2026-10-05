@@ -31,6 +31,10 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 FROM runtime-base AS server-runtime
+# The knowledge base indexes module repositories with a shallow sparse git fetch.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
 ARG VC_APPLICATION_METADATA=null
 ARG VC_APPLICATION_VERSION
 ARG VC_APPLICATION_API_VERSION
