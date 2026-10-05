@@ -19,6 +19,7 @@ function fakeCore(): KanbanCore & { tunnelArgs: unknown[] } {
       closeTunnelsForTarget: vi.fn()
     },
     kb: { status: vi.fn(async () => ({ ok: true })), topics: vi.fn(async () => []), document: vi.fn(async () => null), search: vi.fn(async () => []), context: vi.fn(async () => ({ text: '' })) },
+    kbModules: { modules: vi.fn(async () => []), ensureModule: vi.fn(async (input: { repository: string }) => ({ id: 'make', title: 'make', repository: input.repository, ref: 'main', path: 'docs/kb', status: 'indexing', indexedSha: null, indexedAt: null })), removeModule: vi.fn(async () => true) },
     uploads: { get: vi.fn(() => undefined) },
     widgets: { contexts: { surface: vi.fn(() => null), updateSurface: vi.fn() }, ui: { request: vi.fn(async () => ({ ok: true })) } },
     ensureProjectMainCurrent: vi.fn(async () => ({ baseSha: 'abc' }))
@@ -43,6 +44,15 @@ describe('createKanbanCoreRpcDispatcher', () => {
     expect(await dispatch({ method: 'machines.closeTunnelsForTarget', args: ['m1'] })).toBeNull()
     expect(core.machines.closeTunnelsForTarget).toHaveBeenCalledWith('m1')
     expect(await dispatch({ method: 'ensureProjectMainCurrent', args: [{ projectId: 'p' }] })).toEqual({ baseSha: 'abc' })
+  })
+
+  it('dispatches KB module registration to the Core module port', async () => {
+    const core = fakeCore()
+    const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize: async () => true, closed: async () => {} } })
+    expect(await dispatch({ method: 'kb.ensureModule', args: [{ repository: 'https://github.com/sislex/make.git' }] })).toMatchObject({ id: 'make', status: 'indexing' })
+    expect(core.kbModules.ensureModule).toHaveBeenCalledWith({ repository: 'https://github.com/sislex/make.git' })
+    expect(await dispatch({ method: 'kb.modules', args: [] })).toEqual([])
+    expect(await dispatch({ method: 'kb.removeModule', args: ['make'] })).toBe(true)
   })
 
   it('dispatches persistent links without Kanban authorization callbacks', async () => {

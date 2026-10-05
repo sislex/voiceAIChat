@@ -47,6 +47,9 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
       case 'kb.document': return core.kb.document(a[0], a[1])
       case 'kb.search': return core.kb.search(a[0], a[1])
       case 'kb.context': return core.kb.context(a[0], a[1], a[2])
+      case 'kb.modules': return core.kbModules.modules()
+      case 'kb.ensureModule': return core.kbModules.ensureModule(a[0])
+      case 'kb.removeModule': return core.kbModules.removeModule(a[0])
       case 'uploads.get': return (await core.uploads.get(a[0])) ?? null
       case 'uploads.read': { const bytes = await core.uploads.read(a[0]); return bytes ? bytes.toString('base64') : null }
       case 'widgets.surface': return (await core.widgets.contexts.surface(a[0])) ?? null
