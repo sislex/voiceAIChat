@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { isKbModuleId, type KbModule } from '@voicechat/shared'
 import { FileKnowledgeBaseService, loadFileDocuments } from './service.js'
@@ -80,6 +80,8 @@ export class ModuleKnowledgeBaseService extends FileKnowledgeBaseService {
 
   constructor(private readonly options: {
     root: string; dataDir: string; sources?: KbSource[]; credentials?: KbCredentials; refreshMs?: number
+    /** Sources come from VC_KB_MODULES: runtime registration is refused instead of being silently lost. */
+    managedByEnv?: boolean
   }, reranker?: KbSemanticReranker) {
     super(options.root, reranker)
     this.snapshots.set('core', this.documents)
@@ -103,6 +105,53 @@ export class ModuleKnowledgeBaseService extends FileKnowledgeBaseService {
     await Promise.all(this.pending.values())
   }
   async modules(): Promise<ModuleState[]> { return [...this.states.values()].map(state => ({ ...state })) }
+
+  /**
+   * Register a repository knowledge base or return the module already serving it.
+   * The source list is persisted to `<dataDir>/kb-modules.json`; indexing starts in the background.
+   */
+  async ensureSource(input: { repository: string; ref?: string; path?: string; title?: string }): Promise<ModuleState> {
+    const ref = input.ref ?? 'main', path = input.path ?? 'docs/kb'
+    const key = repositoryKey(input.repository)
+    const existing = [...this.states.values()].find(state => state.repository && repositoryKey(state.repository) === key && state.ref === ref && state.path === path)
+    if (existing) return { ...existing }
+    if (this.options.managedByEnv) throw new Error('kb_modules_managed_by_env')
+    const base = (key.split('/').pop() ?? 'module').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'module'
+    let id = base
+    for (let n = 2; this.states.has(id); n++) id = `${base}-${n}`
+    const source: KbSource = { id, title: input.title?.trim() || key.split('/').pop() || id, repository: input.repository, ref, path }
+    // Validate exactly like file configuration before anything is stored.
+    readKbSources(this.options.dataDir, JSON.stringify([...this.sources(), source]))
+    this.states.set(id, { ...source, indexedSha: null, indexedAt: null, status: 'indexing' })
+    this.persist()
+    void this.refreshModule(id)
+    return { ...this.states.get(id)! }
+  }
+
+  /** Remove a registered module and its documents; the Core module cannot be removed. */
+  async removeSource(id: string): Promise<boolean> {
+    if (id === 'core' || !this.states.has(id)) return false
+    if (this.options.managedByEnv) throw new Error('kb_modules_managed_by_env')
+    await this.pending.get(id)
+    this.states.delete(id)
+    this.snapshots.delete(id)
+    this.documents = [...this.snapshots.values()].flat()
+    this.byId = new Map(this.documents.map(item => [item.document.id, item]))
+    this.persist()
+    return true
+  }
+
+  private sources(): KbSource[] {
+    return [...this.states.values()].filter(state => state.id !== 'core')
+      .map(({ id, title, repository, ref, path }) => ({ id, title, repository, ref, path }))
+  }
+
+  private persist(): void {
+    const file = join(this.options.dataDir, 'kb-modules.json')
+    mkdirSync(this.options.dataDir, { recursive: true })
+    writeFileSync(file + '.tmp', JSON.stringify(this.sources(), null, 2) + '\n')
+    renameSync(file + '.tmp', file)
+  }
   private async refreshAll(): Promise<void> {
     await Promise.all([...this.states.keys()].filter(id => id !== 'core').map(id => this.refreshModule(id)))
   }
