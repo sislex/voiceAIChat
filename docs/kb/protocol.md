@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-05
-checked: 8e052b52
+checked: a7838661
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -11,6 +11,8 @@ areas:
   - packages/shared/src/kb.ts
   - packages/shared/src/kbService.ts
   - packages/shared/src/agentProtocol.ts
+  - packages/shared/src/devStand.ts
+  - packages/shared/src/devProcess.ts
   - packages/shared/src/llm.ts
   - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
@@ -19,6 +21,77 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Dev stands (dev-lane-v1 B01)
+
+`packages/shared/src/devStand.ts` owns the schema-1 `DevStandManifest`,
+`DevComponentId`, `DEV_COMPONENT_REGISTRY`, build ID helpers and REST payloads.
+The registry uses canonical `owner/repository` names. Ports are local defaults,
+not allocations: Core 8787, Core UI 5273, Make 8788, Kanban 8789,
+Playwright Reader 8797 and Image Studio 8796. The allocator supplies actual ports.
+Readiness is `/api/health`, except Core UI (`/`, HTML).
+
+Gateway consumers match the longest route prefix, with path-segment boundaries
+for prefixes without a trailing slash. Core UI `/` is the UI fallback; Core owns
+`/api` and `/ws`; product prefixes take precedence. Kanban has no public prefix:
+Core connects to it through `VC_KANBAN_URL`. Routing and process execution are
+implemented by the subsequent gateway, Kanban and Agent tasks, not by Shared.
+
+`isDevStandManifest(unknown)` is a type guard;
+`validateDevStandManifest(unknown)` returns the validated input or throws
+`invalid_dev_stand_manifest`. Neither fills defaults nor mutates input. All six
+components and their full lowercase 40-character hex SHAs are mandatory.
+Unknown fields, unknown components, missing own fields and invalid sources are
+rejected. IDs use ASCII letters/digits plus dot, underscore and hyphen, up to
+128 characters, starting with a letter/digit. Repository values use
+`owner/repository` (forks are allowed by the schema; authorization is the owner's
+responsibility). Optional URLs must be absolute HTTP(S), without credentials or
+fragments. `startedAt` is a nonnegative safe integer in Unix milliseconds.
+`devBuildId` is permitted only for `source: 'dev'` and must match the SHA prefix.
+
+`formatDevBuildId(version, sha)` accepts a release `major.minor.patch` and a full
+lowercase SHA; it emits `<version>-dev.<sha12>`. Prerelease/build metadata inputs
+and leading-zero version parts are rejected. `parseDevBuildId` returns
+`{ version, sha12 }` or `null`; `isDevBuildVersion` recognizes exactly this wire
+format. Release consumers must reject these versions (enforcement is C02).
+
+| Method and path | Request | Success response |
+| --- | --- | --- |
+| GET `/api/projects/:id/dev-stands` | No body | `ListDevStandsResponse` (manifest array), 200 |
+| POST `/api/projects/:id/dev-stands` | `CreateDevStandRequest` (`machineId`, `baseEnvironmentId`) | `CreateDevStandResponse` (manifest), 201 |
+| GET `/api/projects/:id/dev-stands/:standId` | No body | `GetDevStandResponse` (manifest), 200 |
+| POST `…/:standId/components/:component` | `StartDevStandComponentRequest` (`repository` and exactly one of `sha`, `branch`) | `StartDevStandComponentResponse` (manifest), 200 |
+| DELETE `…/:standId/components/:component` | No body | `ResetDevStandComponentResponse` (manifest), 200 |
+
+`REST.projectDevStands`, `REST.projectDevStand` and
+`REST.projectDevStandComponent` encode dynamic segments. Create/start request
+type guards reject unknown fields. The owner resolves a branch to a full SHA
+before calling the Agent; responses always contain resolved SHAs. Reset stops
+the override and restores the base component entry. The owner publishes the new
+manifest only after success; failed starts preserve the previous manifest.
+Errors use `DevStandErrorResponse` (`error`: stable code, `message`: diagnostic).
+`DEV_STAND_ERROR_STATUS` is the authoritative code-to-HTTP mapping, including
+invalid input, access errors, missing stand/base/repository/ref, conflicts,
+unavailable machines/ports, dependency/process failures and readiness timeout.
+
+`packages/shared/src/devProcess.ts` defines the additive Agent RPC extension.
+Requests use existing Agent envelopes (`t`, `requestId`), with payload fields at
+the top level. `devProcess.start` carries `standId`, `component`, `repository`,
+resolved `sha`, `command` (nonempty executable/argument array), `env` and allocated
+`port`. Stop/status carry `standId` and `component`; logs additionally accepts
+`limit` (default 200, range 1–1000). Start returns only after readiness, with
+`state: 'ready'`, repository, SHA, URL and `startedAt`; stop returns after cleanup
+with `state: 'stopped'`. Status describes the current lifecycle; logs returns
+redacted timestamped stdout/stderr lines and a truncation flag.
+
+Success envelopes use `t: '<method>.result'`, `requestId` and `result`; failures
+use `t: 'devProcess.error'`, `requestId`, `method`, stable `code` and diagnostic
+`message`. `DevProcessRpc` binds methods to request/result types, and the
+`DEV_PROCESS_REQUEST_TYPES` / `DEV_PROCESS_RESPONSE_TYPES` registries derive from
+the same exhaustive method map. Shared's `agentProtocol.ts` and barrel extend
+`ServerToAgent` / `AgentToServer`; the published Agent owner package remains
+unchanged until the integrator distributes this contract. These are Agent wire
+messages, not browser `ClientMessage` / `ServerMessage` events.
 
 ## Knowledge modules and service RPC (B01)
 
