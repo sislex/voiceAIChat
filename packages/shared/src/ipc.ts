@@ -80,7 +80,7 @@ import type {
   ProjectMachineDirectoryKind
 } from './projects'
 
-import type { KbContextBundle, KbContextRequest, KbTopicsRequest, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
+import type { KbContextBundle, KbContextRequest, KbTopicsRequest, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 import type { TaskPreparationRun } from './qa'
 
 /** Статус локальной модели Whisper. */
