@@ -3,9 +3,13 @@ import { isIP } from 'node:net'
 import type { VpnErrorCode } from '@sislexa/agent-contracts'
 
 export class VpnError extends Error {
-  constructor(readonly code: VpnErrorCode) { super(code) }
+  constructor(readonly code: VpnErrorCode | 'vpn_untag_requires_reauth', detail?: string) {
+    super(detail ? code + ': ' + detail : code)
+  }
+  get agentCode(): VpnErrorCode { return this.code === 'vpn_untag_requires_reauth' ? 'binding' : this.code }
+  readonly status = 409
 }
-export interface TailDevice { id: string; nodeId: string; addresses: string[]; authorized: boolean; tags?: string[]; isExternal?: boolean; enabledRoutes?: string[] }
+export interface TailDevice { id: string; nodeId: string; name?: string; hostname?: string; addresses: string[]; authorized: boolean; tags?: string[]; isExternal?: boolean; enabledRoutes?: string[] }
 export interface TailPolicy { [key: string]: unknown; acls?: unknown[]; grants?: unknown[]; tagOwners?: Record<string, string[]> }
 export const vpnTag = (machineId: string): string => 'tag:chatai-vpn-' + createHash('sha256').update(machineId).digest('hex').slice(0, 24)
 export const environmentTag = (environment: { projectId: string; environmentId: string }): string =>
@@ -68,7 +72,21 @@ export class TailscaleApi {
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(etag ? { 'If-Match': etag } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) })
       })
-      if (!response.ok) throw new VpnError(response.status === 412 || response.status === 409 ? 'policy' : 'network')
+      if (!response.ok) {
+        // Upstream responses can echo credentials. Redact before retaining any diagnostic.
+        const raw = await response.text()
+        let message = ''
+        try {
+          const value = JSON.parse(raw) as { message?: unknown; error?: unknown }
+          const detail = value.message ?? value.error
+          if (typeof detail === 'string') message = detail
+        } catch { /* Omit non-JSON proxy diagnostics. */ }
+        for (const secret of [this.secret, Buffer.from(this.secret + ':').toString('base64'), encodeURIComponent(this.secret)]) {
+          message = message.split(secret).join('[redacted]')
+        }
+        message = message.replace(/tskey-[a-zA-Z0-9-]+/g, '[redacted]').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 500)
+        throw new VpnError([400, 409, 412, 422].includes(response.status) ? 'policy' : 'network', message || undefined)
+      }
       return response
     } catch (error) { throw error instanceof VpnError ? error : new VpnError('network') }
   }

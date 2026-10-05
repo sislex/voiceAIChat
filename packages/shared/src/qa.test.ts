@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { developmentReadinessGateResults } from './qa'
 import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, gateSignature, integrationTestGate, integrationTestSemanticVersion, parseAutomationMarkers, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
@@ -68,6 +69,49 @@ describe('development readiness gate', () => {
       'missing_code_source', 'critical_source_unavailable:code'
     ]))
   })
+  const readyV2 = (): DevelopmentReadiness => ({
+    ...ready(), schemaVersion: 2, goal: 'Goal', scope: ['Scope'], outOfScope: ['Out'],
+    acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Criterion', precondition: 'Given', action: 'When', observableResult: 'Then' }],
+    sources: [{ id: 'code', kind: 'code', status: 'available', summary: 'Read implementation', refs: ['src/main.ts'], critical: true }]
+  })
+
+  it('allows an explicitly absent KB and records it in gate results', () => {
+    const input = { ...readyV2(), knowledgeBase: 'absent' as const }
+    expect(canConfirmDevelopmentReadiness(input)).toEqual({ allowed: true, reasons: [] })
+    expect(developmentReadinessGateResults(input).every((gate) => gate.status === 'pass')).toBe(true)
+    expect(developmentReadinessGateResults(input)).toContainEqual({
+      code: 'knowledge_sources', status: 'pass',
+      explanation: 'У проекта нет подключённой базы знаний; источник из неё не требуется.', refs: []
+    })
+    input.sources = []
+    expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(['missing_researched_sources', 'missing_code_source'])
+  })
+
+  it.each(['connected', undefined] as const)('requires knowledge when KB is %s', (knowledgeBase) => {
+    const input = { ...readyV2(), knowledgeBase }
+    expect(canConfirmDevelopmentReadiness(input)).toEqual({ allowed: false, reasons: ['missing_knowledge_source'] })
+    expect(developmentReadinessGateResults(input)).toContainEqual({
+      code: 'knowledge_sources', status: 'fail', explanation: 'missing_knowledge_source', refs: []
+    })
+  })
+
+  it.each(['docs/preparation.md', 'README', 'README.md', './docs/guide.md', 'packages/shared/README.md'])('counts available repository documentation %s as knowledge', (ref) => {
+    const input = readyV2()
+    input.sources!.push({ id: 'docs', kind: 'code', status: 'available', summary: 'Read documentation', refs: [ref], critical: false })
+    input.knowledgeBase = 'absent'
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    expect(developmentReadinessGateResults(input)).toContainEqual(expect.objectContaining({ code: 'knowledge_sources', status: 'pass', refs: [ref] }))
+    // A connected knowledge base keeps requiring its own source.
+    input.knowledgeBase = 'connected'
+    expect(canConfirmDevelopmentReadiness(input).reasons).toContain('missing_knowledge_source')
+  })
+
+  it('does not waive unavailable critical sources for an absent KB', () => {
+    const input = { ...readyV2(), knowledgeBase: 'absent' as const }
+    input.sources!.push({ id: 'design', kind: 'knowledge', status: 'unavailable', summary: 'Required design', refs: [], critical: true })
+    expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(['critical_source_unavailable:design'])
+  })
+
   // Расхождение гейтов: подготовка выпускала бриф без UI-сценария, а Component
   // QA без него не запускался вовсе — задача застревала после разработки.
   // @testCase TC-13
