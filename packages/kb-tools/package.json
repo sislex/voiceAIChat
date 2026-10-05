@@ -1,0 +1,23 @@
+{
+  "name": "@sislexa/kb-tools",
+  "version": "0.1.0",
+  "description": "Repository-independent Markdown knowledge base tooling",
+  "type": "module",
+  "bin": {
+    "sislexa-kb": "./cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "config.mjs",
+    "kb.mjs",
+    "search.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "typecheck": "tsc --noEmit --allowJs --checkJs --target es2022 --module nodenext --skipLibCheck cli.mjs config.mjs kb.mjs search.mjs"
+  }
+}
