@@ -260,7 +260,8 @@ export interface IpcInvokeMap {
   'widget:query': { arg: import('./widgetAssistant').WidgetToolQueryRequest; result: import('./widgetAssistant').WidgetToolQueryResult }
   'widget:get': { arg: import('./widgetAssistant').WidgetToolGetRequest; result: import('./widgetAssistant').WidgetToolGetResult }
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
-  'conversations:get': { arg: { id: string; scope?: ConversationScope; projectId?: string }; result: ConversationWithMessages | null }
+  /** With `limit` (1..200) returns the latest page older than `before` plus `history`; without it, the full history. */
+  'conversations:get': { arg: { id: string; scope?: ConversationScope; projectId?: string; limit?: number; before?: string }; result: ConversationWithMessages | null }
   'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
   /** Чем контекст этого разговора отличается от другого (только чтение). */
