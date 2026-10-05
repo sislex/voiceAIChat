@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 57 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 16 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 26 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1797 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1798 коммит(ов) в areas после сверки: 65883d66 chore(shared): pin Shared 0.1.20 archive (paged conversation history) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 92 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -39,7 +39,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ⚠ 3 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 15 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 3 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-05 | ⚠ 4 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-05 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 273 коммит(ов) в areas после сверки: 1ddaf2e7 chore: pin Playwright Reader 1.2.4 (independent system tests) … |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1063. Последние:
+Всего записей: 1064. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy

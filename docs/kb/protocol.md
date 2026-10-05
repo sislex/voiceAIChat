@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-05
-checked: c6dedcd5
+checked: 5f973e31
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -47,6 +47,8 @@ separate indexed ranges preserving the complete history's existing order.
 The existing `loadServiceData` setting and
 `stripServiceData` projection apply equally to paged and complete responses;
 stored diagnostics and WebSocket message events are unchanged.
+The renderer IPC channel `conversations:get` accepts the same optional `limit` and
+`before`; web and desktop hosts map them to the REST query.
 
 ## Versioned chat/application boundary
 
