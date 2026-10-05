@@ -21,7 +21,8 @@ import { pathToFileURL } from 'node:url'
 export const PACKAGES = [
   { id: 'component-runtime', path: 'packages/component-runtime', workspace: '@sislexa/component-runtime', dependsOn: ['shared'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: [] },
-  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['component-runtime', 'shared'] },
+  { id: 'knowledge', path: 'packages/knowledge', workspace: '@voicechat/knowledge', dependsOn: ['shared'] },
+  { id: 'server', path: 'apps/server', workspace: '@voicechat/server', dependsOn: ['component-runtime', 'shared', 'knowledge'] },
   { id: 'automation-runner', path: 'apps/automation-runner', workspace: '@voicechat/automation-runner', dependsOn: ['shared'] },
   // `ui` тут не из package.json, а из tsconfig `paths` и alias в vite.config.ts.
   // Extracted clients run their internal gates in the owner repositories.

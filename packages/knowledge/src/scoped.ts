@@ -1,0 +1,144 @@
+// База знаний с разделами и контролем доступа.
+//
+// Источников два: файлы репозитория (раздел «Использование» — общий для всех,
+// приходит из FileKnowledgeBaseService) и статьи из БД (разделы «Настройки
+// пользователя» и «Разработка проекта»). Этот класс — единственное место, где
+// решается, что пользователю видно: статью проекта отдаём, только если проект
+// есть в `view.projectIds` (их собирает вызывающий через db.projects.getProject/
+// listProjects), персональную — только владельцу.
+//
+// Фильтры `scope`/`projectId` в запросе СУЖАЮТ выдачу и никогда её не расширяют:
+// проверка доступа идёт после них и по тем же полям вида.
+
+import type { KbModule, KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
+import type { KbStoredDocument, KbScopedStore } from './ports.js'
+import { buildContext, documentChunkText, indexBody, searchDocuments, summaryOf, type IndexedDocument } from './engine.js'
+import { repositoryKey } from './sources.js'
+import { PUBLIC_KB_VIEW, type KbSemanticReranker, type KbView, type KnowledgeBaseService } from './types.js'
+
+/** Строка БД → документ индекса. sourcePath синтетический: файла у статьи нет. */
+export function indexStored(row: KbStoredDocument): IndexedDocument {
+  const sourcePath = row.scope === 'project' ? `проект/${row.projectId ?? ''}/${row.id}` : row.scope === 'user' ? `мои знания/${row.id}` : `использование/${row.id}`
+  return indexBody({
+    id: row.id,
+    title: row.title,
+    kind: row.kind,
+    scope: row.scope,
+    projectId: row.projectId,
+    sourcePath,
+    tags: row.tags,
+    areas: row.areas,
+    editable: true,
+    ...(row.checkedOn ? { updated: row.checkedOn } : {})
+  }, row.body)
+}
+
+/** Видна ли статья из БД этому виду (доступ, а не фильтр). */
+export function canSee(row: { scope: string; ownerId: string | null; projectId: string | null }, view: KbView): boolean {
+  if (row.scope === 'usage') return true
+  if (row.scope === 'user') return view.userId !== null && row.ownerId === view.userId
+  return row.projectId !== null && view.projectIds.includes(row.projectId)
+}
+
+export class ScopedKnowledgeBase implements KnowledgeBaseService {
+  /** Кэш индекса статей БД: пересобирается, когда меняется версия набора. */
+  private cache: { version: string; rows: KbStoredDocument[]; indexed: Map<string, IndexedDocument> } | null = null
+
+  constructor(
+    private readonly base: KnowledgeBaseService,
+    private readonly store: KbScopedStore,
+    private readonly reranker?: KbSemanticReranker
+  ) {}
+
+  private async stored(): Promise<{ rows: KbStoredDocument[]; indexed: Map<string, IndexedDocument> }> {
+    const version = await this.store.version()
+    if (!this.cache || this.cache.version !== version) {
+      const rows = await this.store.documents()
+      this.cache = { version, rows, indexed: new Map(rows.map((row) => [row.id, indexStored(row)])) }
+    }
+    return this.cache
+  }
+
+  /** Статьи БД, видимые виду и прошедшие его фильтры. */
+  private async visibleStored(view: KbView): Promise<Array<{ row: KbStoredDocument; indexed: IndexedDocument }>> {
+    const { rows, indexed } = await this.stored()
+    if (view.module) return []
+    return rows
+      .filter((row) => canSee(row, view))
+      .filter((row) => (view.scope ? row.scope === view.scope : true))
+      // Фильтр проекта режет только проектные статьи: в ходе модели он сужает
+      // «Разработку» до проекта чата, но не прячет общее и персональное.
+      .filter((row) => (view.projectId && row.scope === 'project' ? row.projectId === view.projectId : true))
+      .map((row) => ({ row, indexed: indexed.get(row.id) as IndexedDocument }))
+  }
+
+  /** Раздел «Использование» участвует, пока вкладка не сузила выдачу до другого раздела. */
+  private usageIncluded(view: KbView): boolean {
+    return !view.scope || view.scope === 'usage'
+  }
+
+  async modules(): Promise<KbModule[]> { return this.base.modules?.() ?? [] }
+  async refreshModule(id: string): Promise<KbModule | null> { return this.base.refreshModule?.(id) ?? null }
+  async preferredModule(view: KbView): Promise<string | undefined> {
+    if (view.module) return view.module
+    const projectRepository = view.userId && view.projectId && view.projectIds.includes(view.projectId)
+      ? await this.store.projectRepository(view.userId, view.projectId) : null
+    const repository = view.repository ?? projectRepository
+    if (!repository) return undefined
+    return (await this.modules()).find(item => item.repository && repositoryKey(item.repository) === repositoryKey(repository))?.id
+  }
+
+  async status(): Promise<KbStatus> {
+    const base = await this.base.status()
+    const stored = (await this.stored()).rows.length
+    return { ...base, available: base.available || stored > 0, documents: base.documents + stored }
+  }
+
+  async topics(view: KbView = PUBLIC_KB_VIEW): Promise<KbDocumentSummary[]> {
+    const usage = this.usageIncluded(view) ? (await this.base.topics(view)).map((topic) => ({ ...topic, scope: topic.scope ?? 'usage' })) : []
+    return [...usage, ...(await this.visibleStored(view)).map(({ indexed }) => summaryOf(indexed.document))]
+  }
+
+  async document(id: string, view: KbView = PUBLIC_KB_VIEW): Promise<KbDocument | null> {
+    const { rows, indexed } = await this.stored()
+    const row = rows.find((item) => item.id === id)
+    // Чужая статья — как отсутствующая: наличие id тоже не должно утекать.
+    if (row) return canSee(row, view) ? indexed.get(row.id)?.document ?? null : null
+    return this.base.document(id)
+  }
+
+  async search(request: KbSearchRequest, view: KbView = PUBLIC_KB_VIEW): Promise<KbSearchResult[]> {
+    const scope = request.scope ?? view.scope
+    const projectId = request.projectId ?? view.projectId ?? null
+    // Проект не свой — выдача пустая (гейт маршрута отвечает 403 раньше, но
+    // сервис не должен зависеть от того, что кто-то проверил доступ за него).
+    if (projectId && !view.projectIds.includes(projectId)) return []
+    const effective: KbView = { ...view, module: request.module ?? view.module, ...(scope ? { scope } : {}), projectId }
+    const limit = Math.min(Math.max(request.limit ?? 20, 1), 50)
+    const stored = await this.visibleStored(effective)
+    const [usage, own] = await Promise.all([
+      this.usageIncluded(effective) ? this.base.search({ ...request, module: effective.module, limit }) : Promise.resolve([]),
+      stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }, this.reranker) : Promise.resolve([])
+    ])
+    // Оценки из двух индексов сравниваем напрямую: BM25 в них считается по одной
+    // формуле, а разница в df на десятках статей меньше разрыва между попаданием
+    // в символ/путь и обычным лексическим совпадением.
+    return [...usage.map((item) => ({ ...item, scope: item.scope ?? ('usage' as const) })), ...own]
+      .sort((a, b) => b.score - a.score || a.chunkId.localeCompare(b.chunkId))
+      .slice(0, limit)
+  }
+
+  async context(query: string, budget = 3500, view: KbView = PUBLIC_KB_VIEW): Promise<KbContextBundle> {
+    void budget
+    const stored = await this.visibleStored(view)
+    const texts = new Map(stored.flatMap((item) => item.indexed.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
+    return buildContext(query, await this.search({ query, limit: 8 }, view), async (result) => {
+      const storedText = texts.get(result.chunkId)
+      if (storedText !== undefined) return storedText
+      const document = await this.base.document(result.documentId)
+      // Старые/внешние реализации KnowledgeBaseService могли не отдавать документ:
+      // не роняем ход, но реальные File/Scoped-сервисы всегда проходят ветку выше.
+      return document ? documentChunkText(document, result.chunkId) : result.excerpt
+    })
+  }
+}
