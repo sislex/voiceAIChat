@@ -37,6 +37,7 @@ export interface DocumentMeta {
   id: string; title: string; kind: KbDocumentKind; scope: KbScope; projectId?: string | null
   sourcePath: string; tags?: string[]; packages?: string[]; symbols?: string[]; protocols?: string[]
   areas?: string[]; related?: string[]; aliases?: string[]; updated?: string; freshness?: KbFreshness
+  module?: string
   editable?: boolean
 }
 
@@ -47,7 +48,7 @@ export function indexBody(meta: DocumentMeta, body: string): IndexedDocument {
   const flush = (): void => { const text = lines.join('\n').trim(); if (text) chunks.push({ id: `${meta.id}#${anchor || 'overview'}`, documentId: meta.id, heading, anchor, text, tokens: tokenize(`${heading} ${text}`) }); lines = [] }
   for (const line of body.split(/\r?\n/)) { const h = /^(#{1,4})\s+(.+)$/.exec(line); if (h) { flush(); heading = h[2].trim(); anchor = slug(heading); headings.push({ title: heading, anchor, level: h[1].length }) } else lines.push(line) } flush()
   const document: KbDocument = {
-    id: meta.id, title: meta.title, kind: meta.kind, scope: meta.scope, projectId: meta.projectId ?? null,
+    ...(meta.module ? { module: meta.module } : {}), id: meta.id, title: meta.title, kind: meta.kind, scope: meta.scope, projectId: meta.projectId ?? null,
     tags: meta.tags ?? [], packages: meta.packages ?? [], freshness: meta.freshness ?? (meta.updated ? 'current' : 'unknown'),
     sourcePath: meta.sourcePath, ...(meta.updated ? { updated: meta.updated } : {}), body,
     symbols: meta.symbols ?? [], protocols: meta.protocols ?? [], areas: meta.areas ?? [], related: meta.related ?? [],
@@ -57,23 +58,24 @@ export function indexBody(meta: DocumentMeta, body: string): IndexedDocument {
 }
 
 /** Файловая тема docs/kb/*.md. Такие статьи — раздел «Использование»: общие для всех. */
-export function loadDocument(root: string, path: string): IndexedDocument {
+export function loadDocument(root: string, path: string, module = 'core', sourceRoot = 'docs/kb'): IndexedDocument {
   const raw = readFileSync(path, 'utf8'); const { data, body } = frontmatter(raw)
-  const sourcePath = `docs/kb/${relative(root, path).replaceAll('\\', '/')}`
-  const id = String(data.id ?? relative(root, path).replace(/\.md$/, '').replaceAll('\\', '/'))
+  const sourcePath = `${sourceRoot}/${relative(root, path).replaceAll('\\', '/')}`
+  const legacyId = String(data.id ?? relative(root, path).replace(/\.md$/, '').replaceAll('\\', '/'))
+  const id = `${module}:${relative(root, path).replaceAll('\\', '/')}`
   const title = String(data.title ?? /^#\s+(.+)$/m.exec(body)?.[1] ?? basename(path, '.md'))
   const rawKind = String(data.kind ?? (sourcePath.includes('/features/') ? 'feature' : 'subsystem')) as KbDocumentKind
   const kind = KINDS.has(rawKind) ? rawKind : 'subsystem'
   return indexBody({
-    id, title, kind, scope: 'usage', sourcePath, tags: array(data,'tags'), packages: array(data,'packages'),
+    id, module, title, kind, scope: 'usage', sourcePath, tags: array(data,'tags'), packages: array(data,'packages'),
     symbols: array(data,'symbols'), protocols: array(data,'protocols'), areas: array(data,'areas'),
-    related: array(data,'related'), aliases: array(data,'aliases'),
+    related: array(data,'related'), aliases: [legacyId, ...array(data,'aliases')],
     ...(typeof data.updated === 'string' ? { updated: data.updated } : {})
   }, body)
 }
 
 export function summaryOf(d: KbDocument): KbDocumentSummary {
-  return { id: d.id, title: d.title, kind: d.kind, tags: d.tags, packages: d.packages, freshness: d.freshness, sourcePath: d.sourcePath, scope: d.scope, projectId: d.projectId ?? null, ...(d.editable ? { editable: true } : {}) }
+  return { ...(d.module ? { module: d.module } : {}), id: d.id, title: d.title, kind: d.kind, tags: d.tags, packages: d.packages, freshness: d.freshness, sourcePath: d.sourcePath, scope: d.scope, projectId: d.projectId ?? null, ...(d.editable ? { editable: true } : {}) }
 }
 
 /** Найти полный текст chunk через публичный KbDocument, не требуя доступа к индексу сервиса. */
@@ -122,8 +124,9 @@ function exactBoost(item: IndexedDocument, query: string, queryTokens: string[])
  * бы от чужих статей (и косвенно их выдавали).
  */
 export async function searchDocuments(documents: IndexedDocument[], request: KbSearchRequest, reranker?: KbSemanticReranker): Promise<KbSearchResult[]> {
+  documents = documents.filter(item => !request.module || item.document.module === request.module)
   const query=request.query.trim(); if(!query) return []; const queryTokens=[...new Set(tokenize(query))]; const all=documents.flatMap(item=>item.chunks.map(chunk=>({item,chunk}))); const df=new Map<string,number>(); for(const term of queryTokens) df.set(term,all.filter(({chunk})=>chunk.tokens.includes(term)).length); const avg=all.reduce((n,{chunk})=>n+chunk.tokens.length,0)/Math.max(1,all.length); const q=query.toLocaleLowerCase('ru'); const boosts=new Map<IndexedDocument,{score:number;matchTypes:KbMatchType[]}>(); const scored: KbSearchResult[]=[]
-  for(const {item,chunk} of all){ const d=item.document; if(request.kinds?.length&&!request.kinds.includes(d.kind))continue; if(request.tags?.length&&!request.tags.some(tag=>d.tags.includes(tag)))continue; let boost=boosts.get(item); if(!boost){boost=exactBoost(item,q,queryTokens);boosts.set(item,boost)} const matchTypes:KbMatchType[]=[...boost.matchTypes]; let score=boost.score; const counts=new Map<string,number>(); for(const token of chunk.tokens)counts.set(token,(counts.get(token)??0)+1); for(const term of queryTokens){const tf=counts.get(term)??0;if(!tf)continue;const freq=df.get(term)??0;const idf=Math.log(1+(all.length-freq+.5)/(freq+.5));score+=idf*(tf*2.2)/(tf+1.2*(.25+.75*chunk.tokens.length/Math.max(1,avg)))} if(score<=0)continue; if(!matchTypes.length)matchTypes.push('lexical'); const primary=matchTypes[0]; scored.push({documentId:d.id,chunkId:chunk.id,title:d.title,heading:chunk.heading,excerpt:excerpt(chunk.text,queryTokens),score:Number(score.toFixed(4)),matchTypes,explanation:primary==='symbol'?'Точное совпадение символа':primary==='path'?'Совпадение пути':primary==='protocol'?'Совпадение протокола':primary==='alias'?'Совпадение названия или псевдонима':'Полнотекстовое совпадение',freshness:d.freshness,sourcePath:d.sourcePath,anchor:chunk.anchor,symbols:d.symbols,relatedFiles:d.areas,scope:d.scope,projectId:d.projectId??null}) }
+  for(const {item,chunk} of all){ const d=item.document; if(request.kinds?.length&&!request.kinds.includes(d.kind))continue; if(request.tags?.length&&!request.tags.some(tag=>d.tags.includes(tag)))continue; let boost=boosts.get(item); if(!boost){boost=exactBoost(item,q,queryTokens);boosts.set(item,boost)} const matchTypes:KbMatchType[]=[...boost.matchTypes]; let score=boost.score; const counts=new Map<string,number>(); for(const token of chunk.tokens)counts.set(token,(counts.get(token)??0)+1); for(const term of queryTokens){const tf=counts.get(term)??0;if(!tf)continue;const freq=df.get(term)??0;const idf=Math.log(1+(all.length-freq+.5)/(freq+.5));score+=idf*(tf*2.2)/(tf+1.2*(.25+.75*chunk.tokens.length/Math.max(1,avg)))} if(score<=0)continue; if(!matchTypes.length)matchTypes.push('lexical'); const primary=matchTypes[0]; scored.push({...(d.module ? { module: d.module } : {}),documentId:d.id,chunkId:chunk.id,title:d.title,heading:chunk.heading,excerpt:excerpt(chunk.text,queryTokens),score:Number(score.toFixed(4)),matchTypes,explanation:primary==='symbol'?'Точное совпадение символа':primary==='path'?'Совпадение пути':primary==='protocol'?'Совпадение протокола':primary==='alias'?'Совпадение названия или псевдонима':'Полнотекстовое совпадение',freshness:d.freshness,sourcePath:d.sourcePath,anchor:chunk.anchor,symbols:d.symbols,relatedFiles:d.areas,scope:d.scope,projectId:d.projectId??null}) }
   scored.sort((a,b)=>b.score-a.score||a.chunkId.localeCompare(b.chunkId)); const limit=Math.min(Math.max(request.limit??20,1),50); const candidates=scored.slice(0,Math.max(limit,15)); if(!reranker||candidates.length<2||candidates[0].score>=9)return candidates.slice(0,limit)
   try { const ids=await reranker.rerank(query,candidates.slice(0,15).map(r=>({chunkId:r.chunkId,title:r.title,heading:r.heading,excerpt:r.excerpt})),limit); const rank=new Map(ids.map((id,i)=>[id,i])); return candidates.sort((a,b)=>(rank.get(a.chunkId)??999)-(rank.get(b.chunkId)??999)||b.score-a.score).slice(0,limit).map(result=>rank.has(result.chunkId)?{...result,matchTypes:[...result.matchTypes,'semantic'],explanation:`${result.explanation}; подтверждено LLM-reranking`}:result) } catch { return candidates.slice(0,limit) }
 }

@@ -10,9 +10,10 @@
 // Фильтры `scope`/`projectId` в запросе СУЖАЮТ выдачу и никогда её не расширяют:
 // проверка доступа идёт после них и по тем же полям вида.
 
-import type { KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
+import type { KbModule, KbContextBundle, KbDocument, KbDocumentSummary, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
 import type { KbStoredDocument, VoiceChatDb } from '../db/database.js'
 import { buildContext, documentChunkText, indexBody, searchDocuments, summaryOf, type IndexedDocument } from './engine.js'
+import { repositoryKey } from './sources.js'
 import { PUBLIC_KB_VIEW, type KbSemanticReranker, type KbView, type KnowledgeBaseService } from './types.js'
 
 /** Строка БД → документ индекса. sourcePath синтетический: файла у статьи нет. */
@@ -61,6 +62,7 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
   /** Статьи БД, видимые виду и прошедшие его фильтры. */
   private async visibleStored(view: KbView): Promise<Array<{ row: KbStoredDocument; indexed: IndexedDocument }>> {
     const { rows, indexed } = await this.stored()
+    if (view.module) return []
     return rows
       .filter((row) => canSee(row, view))
       .filter((row) => (view.scope ? row.scope === view.scope : true))
@@ -75,6 +77,17 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     return !view.scope || view.scope === 'usage'
   }
 
+  async modules(): Promise<KbModule[]> { return this.base.modules?.() ?? [] }
+  async refreshModule(id: string): Promise<KbModule | null> { return this.base.refreshModule?.(id) ?? null }
+  async preferredModule(view: KbView): Promise<string | undefined> {
+    if (view.module) return view.module
+    const project = view.userId && view.projectId && view.projectIds.includes(view.projectId)
+      ? await this.db.projects.getProject(view.userId, view.projectId) : null
+    const repository = view.repository ?? project?.gitUrl
+    if (!repository) return undefined
+    return (await this.modules()).find(item => item.repository && repositoryKey(item.repository) === repositoryKey(repository))?.id
+  }
+
   async status(): Promise<KbStatus> {
     const base = await this.base.status()
     const stored = (await this.stored()).rows.length
@@ -82,7 +95,7 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
   }
 
   async topics(view: KbView = PUBLIC_KB_VIEW): Promise<KbDocumentSummary[]> {
-    const usage = this.usageIncluded(view) ? (await this.base.topics()).map((topic) => ({ ...topic, scope: topic.scope ?? 'usage' })) : []
+    const usage = this.usageIncluded(view) ? (await this.base.topics(view)).map((topic) => ({ ...topic, scope: topic.scope ?? 'usage' })) : []
     return [...usage, ...(await this.visibleStored(view)).map(({ indexed }) => summaryOf(indexed.document))]
   }
 
@@ -100,11 +113,11 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     // Проект не свой — выдача пустая (гейт маршрута отвечает 403 раньше, но
     // сервис не должен зависеть от того, что кто-то проверил доступ за него).
     if (projectId && !view.projectIds.includes(projectId)) return []
-    const effective: KbView = { ...view, ...(scope ? { scope } : {}), projectId }
+    const effective: KbView = { ...view, module: request.module ?? view.module, ...(scope ? { scope } : {}), projectId }
     const limit = Math.min(Math.max(request.limit ?? 20, 1), 50)
     const stored = await this.visibleStored(effective)
     const [usage, own] = await Promise.all([
-      this.usageIncluded(effective) ? this.base.search({ ...request, limit }) : Promise.resolve([]),
+      this.usageIncluded(effective) ? this.base.search({ ...request, module: effective.module, limit }) : Promise.resolve([]),
       stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }, this.reranker) : Promise.resolve([])
     ])
     // Оценки из двух индексов сравниваем напрямую: BM25 в них считается по одной

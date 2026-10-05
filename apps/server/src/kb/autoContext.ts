@@ -111,6 +111,11 @@ export async function buildKbAutoContext(
   view: KbView,
   budget: number = KB_AUTO_CONTEXT_BUDGET
 ): Promise<KbAutoContext> {
+  const preferred = await kb.preferredModule?.(view)
+  if (preferred && !view.module) {
+    const scoped = await buildKbAutoContext(kb, query, { ...view, module: preferred }, budget)
+    if (scoped.text) return scoped
+  }
   const parts = typeof query === 'string' ? prepareKbQuery(query) : query
   const lexical = parts.text ? await kb.context(parts.text, budget, view) : null
   let bundle = lexical

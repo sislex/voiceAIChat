@@ -146,7 +146,7 @@ import { registerAnthropicGateway } from './anthropic/gateway.js'
 import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
-import { FileKnowledgeBaseService } from './kb/service.js'
+import { ModuleKnowledgeBaseService, gitStoreCredentials, readKbSources, type KbCredentials } from './kb/sources.js'
 import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
 import { registerUniversalSearch } from './routes/universalSearch.js'
 import { ScopedKnowledgeBase } from './kb/scoped.js'
@@ -188,6 +188,7 @@ export interface BuildOptions {
   db?: VoiceChatDb
   /** Read-only база знаний (для тестов — мок). */
   kbService?: KnowledgeBaseService
+  kbCredentials?: KbCredentials
   /** Телеметрия обращений к БЗ (для тестов — мок/выключено). */
   kbUsage?: KbUsageTracker
   /**
@@ -694,7 +695,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
   // ScopedKnowledgeBase добавляет статьи из БД (персональные и проектные) и
   // решает, что кому видно.
-  const fileKb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  const fileKb = opts.kbService ?? new ModuleKnowledgeBaseService({
+    root: opts.config.kbRoot, dataDir: opts.config.dataDir,
+    sources: readKbSources(opts.config.dataDir, opts.config.kbModules),
+    credentials: opts.kbCredentials ?? gitStoreCredentials(opts.config.githubToken),
+    refreshMs: opts.config.kbRefreshMs
+  }, reranker)
+  if (fileKb instanceof ModuleKnowledgeBaseService) {
+    fileKb.start()
+    app.addHook('onClose', async () => fileKb.close())
+  }
   const kb = new ScopedKnowledgeBase(fileKb, db, reranker)
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
