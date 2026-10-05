@@ -1,8 +1,11 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-05
-checked: c15cc209
+checked: 41027c4e
 areas:
+  - scripts/dev-gateway.mjs
+  - scripts/dev-component.mjs
+  - scripts/release-version.mjs
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -32,6 +35,48 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Dev stand gateway and Core component (C02)
+
+Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined in
+`packages/shared/src/devStand.ts`. Core delegates the B01 collection, single-stand
+(manifest), delete and component start/reset routes under
+`/api/projects/:id/dev-stands` through its existing authenticated Kanban proxy.
+Kanban remains responsible for project access checks, request validation and
+the lifecycle; Core does not allocate environments or write manifests.
+
+`npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
+`SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
+(the base stand's Caddy entry) and an allocated `SISLEXA_GATEWAY_PORT`.
+`SISLEXA_GATEWAY_HOST` defaults to `0.0.0.0`, listening on both the host's LAN
+and Tailscale IPv4 addresses. Operators must commission DNS, reachability and
+access controls for those addresses; the launcher does not modify the host.
+
+Routing uses the longest matching, segment-bounded prefix in
+`DEV_COMPONENT_REGISTRY`. A matching component with `source: dev` and a URL
+receives the original path and query; otherwise the request goes to base Caddy.
+This includes components with more specific prefixes than Core's `/api` even
+when Core is overridden. HTTP bodies and SSE responses stream with backpressure;
+WebSocket upgrades tunnel bidirectionally. Every new request/upgrade rereads and
+validates the manifest, including atomic file replacement. Existing streams stay
+on their original upstream. Invalid/unreadable manifests return 503; unavailable
+HTTP upstreams return 502. There is no stale manifest cache.
+
+`npm run dev:component` runs `tsx watch apps/server/src/index.ts`. It requires
+explicit `VC_DATA_DIR`, `VC_DB_URL`, `VC_PORT` and `SISLEXA_STAND_URL` from the
+stand allocation, preserving the copied stand's data/database settings. It maps
+`VC_PORT`/`VC_HOST` to Core's `PORT`/`HOST` (default host `0.0.0.0`), selects remote
+component modes and points external component/runner URLs at `SISLEXA_STAND_URL`.
+That URL must be the base stand's Caddy entry, not the overriding gateway, to
+avoid forwarding Core's own delegated requests back into itself. No data copy,
+database provisioning, credential setup or persistent service installation is
+performed by these commands. The owner supplies those resources before launch.
+
+Release composition rejects B01 `isDevBuildVersion` versions before parsing or
+writing pins, including package/archive versions. Owner pin checks also reject
+dev versions in manifests, tools and lock entries. Desktop renderer provenance
+rejects dev versions even when the embedded renderer and Core UI versions match.
+These builds are valid only within a dev stand, never release inputs.
 
 ## Production file migration and cutover
 
