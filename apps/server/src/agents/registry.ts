@@ -986,8 +986,8 @@ export class AgentRegistry {
       tunnel.queue = (tunnel.queue ?? Promise.resolve()).then(() => this.handleTunnelFrame(agentId, tunnel, msg)).catch(() => undefined)
       return tunnel.queue
     }
-    const dev = msg as unknown as DevProcessResponseMessage
-    if (typeof dev.t === 'string' && dev.t.startsWith('devProcess.') && 'requestId' in dev) {
+    if (isDevProcessResponse(msg)) {
+      const dev = msg
       const pending = this.pendingDev.get(dev.requestId)
       if (!pending || pending.agentId !== agentId) return
       this.pendingDev.delete(dev.requestId); clearTimeout(pending.timer)
@@ -1106,4 +1106,10 @@ export class AgentRegistry {
       /* сокет умер — дисконнект придёт своим чередом */
     }
   }
+}
+
+// Agent contracts 1.3.0 include dev process responses in the agent message union; the guard
+// narrows them out so the exec handling below keeps its `execId` messages.
+function isDevProcessResponse(msg: { t: string }): msg is DevProcessResponseMessage {
+  return msg.t.startsWith('devProcess.') && 'requestId' in msg
 }
