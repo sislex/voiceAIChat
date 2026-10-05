@@ -157,6 +157,7 @@ export const REST = {
   uiPerformanceReport: '/api/ui-performance/report',
   health: '/api/health',
   kbStatus: '/api/kb/status',
+  kbModules: '/api/kb/modules',
   kbTopics: '/api/kb/topics',
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
