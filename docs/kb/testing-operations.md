@@ -1,6 +1,6 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-04
+updated: 2026-10-05
 checked: a5eaef73
 areas:
   - scripts
@@ -15,6 +15,34 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+## Task gate for the dev lane
+
+`npm run gate:task -- --base <sha>` compares the merge base with the current
+worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
+only changed workspace packages are typechecked, and Vitest runs changed test
+files or the workspace-local related import graph. Changed tests included in a
+related run are not scheduled a second time. Related script tests use Node's
+test runner. No builds, browser E2E, system suites, owner suites or artifact
+verification are added. Root, lockfile and configuration changes never escalate
+this mode to the full gate; promotion owns that coverage. A docs-only or empty
+diff runs `npm run kb:check` only. Failure to read the diff fails closed.
+
+The task budget is 100 test cases and 60 seconds of total wall time, including
+planning and typecheck. Each command receives the remaining timeout. Reports
+count actual cases (not files); a breach exits 2 and lists measured tests sorted
+by duration plus unfinished files/commands. Ordinary failures exit 1. Every
+execution ends with `GATE-TASK: tests=<n> seconds=<s>`. Vitest reports are available
+after its run finishes; on timeout, unfinished file names identify the work for
+promotion even when no result report was written. Node reports are persisted
+after each result. Temporary reports live under `artifacts/gate-task` and are
+removed after reading. Missing successful-run reports fail the gate.
+
+Focused regression coverage: `node --import tsx --test
+scripts/task-gate.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.mjs`.
+It covers selection, docs-only execution, count/time breaches, failure handling
+and real Node/Vitest report adapters. This gate does not commission a stand or
+replace full repository and release checks at promotion.
 
 ## Core UI test ownership
 
