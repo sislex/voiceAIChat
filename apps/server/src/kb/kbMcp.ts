@@ -221,13 +221,13 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
           description:
             'Поиск по базе знаний проекта voiceAIChat (фичи, подсистемы, протоколы, подходы). ' +
             'Возвращает разделы с id вида documentId#anchor — их читают инструментом document.',
-          inputSchema: { query: z.string().describe('Тема, символ, путь или протокол'), limit: z.number().optional().describe('Сколько разделов вернуть (по умолчанию 8)') }
+          inputSchema: { module: z.string().optional(), query: z.string().describe('Тема, символ, путь или протокол'), limit: z.number().optional().describe('Сколько разделов вернуть (по умолчанию 8)') }
         },
-        async ({ query, limit }) => {
+        async ({ query, limit, module }) => {
           if (!entry) return noContext
           const handle = await open('tool_search', query)
           try {
-            const found = await kb.search({ query, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 }, view)
+            const found = await kb.search({ query, module, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 }, view)
             if (!found.length) {
               handle?.empty('no-match')
               return { content: [{ type: 'text', text: 'В базе знаний ничего не нашлось. Дальше — по коду.' }] }
@@ -269,15 +269,15 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
           description:
             'Раздел базы знаний целиком. documentId — из search или topics; anchor — раздел внутри документа ' +
             `(без anchor вернётся весь документ). Длинный текст обрезается на ${KB_DOCUMENT_CHAR_CAP} символах.`,
-          inputSchema: { documentId: z.string().describe('id документа базы знаний'), anchor: z.string().optional().describe('anchor раздела (часть после #)') }
+          inputSchema: { module: z.string().optional(), documentId: z.string().describe('id документа базы знаний'), anchor: z.string().optional().describe('anchor раздела (часть после #)') }
         },
-        async ({ documentId, anchor }) => {
+        async ({ documentId, anchor, module }) => {
           if (!entry) return noContext
           const label = `${documentId}${anchor ? `#${anchor}` : ''}`
           const handle = await open('tool_document', label)
           try {
-            const doc = await kb.document(documentId, view)
-            const slice = doc ? sectionOf(doc, anchor) : null
+            const doc = await kb.document(module && !documentId.includes(':') ? `${module}:${documentId}` : documentId, view)
+            const slice = doc && (!module || doc.module === module) ? sectionOf(doc, anchor) : null
             if (!doc || !slice) {
               handle?.empty('no-match')
               return { content: [{ type: 'text', text: `Раздел ${label} в базе знаний не найден.` }], isError: true }
@@ -307,12 +307,12 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
 
       server.registerTool(
         'topics',
-        { description: 'Оглавление базы знаний: все документы с типом, тегами и путём к источнику.', inputSchema: {} },
-        async () => {
+        { description: 'Оглавление базы знаний: все документы с типом, тегами и путём к источнику.', inputSchema: { module: z.string().optional() } },
+        async ({ module }) => {
           if (!entry) return noContext
           const handle = await open('tool_topics', 'оглавление')
           try {
-            const topics = await kb.topics(view)
+            const topics = await kb.topics({ ...view, module })
             if (!topics.length) {
               handle?.empty('no-match')
               return { content: [{ type: 'text', text: 'База знаний пуста.' }] }
