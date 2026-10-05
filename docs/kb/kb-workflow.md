@@ -1,9 +1,12 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-09-29
-checked: 9c694e94
+updated: 2026-10-05
+checked: 8e052b52
 areas:
   - scripts/kb.mjs
+  - scripts/kb-search.mjs
+  - packages/kb-tools
+  - scripts/kb-tools-release.mjs
   - AGENTS.md
   - .claude/commands/kb-update.md
   - apps/server/src/kb/codeUpdate.ts
@@ -199,3 +202,82 @@ node scripts/kb.mjs touch protocol   # поставить сегодняшнюю
 
 Исключение — генерируемый `docs/kb/README.md`: его конфликт разрешать руками не
 нужно, берётся любая версия и прогоняется `npm run kb:index`.
+
+## Подключение в репозитории модуля
+
+The release owner builds the dependency-free CLI in Core with
+`npm run pack:kb-tools -- artifacts/kb-tools`. This produces
+`sislexa-kb-tools-0.1.0.tgz` and `integrity.json` (commit, SHA-256 and npm
+integrity). Publishing the archive is a separate operator action. The package
+is independently packed, outside Core's application workspaces.
+
+1. Copy the reviewed release archive to the module's
+   `vendor/sislexa-kb-tools-0.1.0.tgz`, verify its SHA-256 against the release
+   integrity manifest, and commit the archive with the dependency pin.
+2. Add this dev dependency and these scripts to the module's `package.json`:
+
+   ```json
+   {
+     "devDependencies": {
+       "@sislexa/kb-tools": "file:vendor/sislexa-kb-tools-0.1.0.tgz"
+     },
+     "scripts": {
+       "kb": "sislexa-kb",
+       "kb:check": "sislexa-kb check",
+       "kb:index": "sislexa-kb index",
+       "kb:log": "sislexa-kb log",
+       "kb:touch": "sislexa-kb touch",
+       "kb:prepare": "sislexa-kb prepare",
+       "kb:verify-prepared": "sislexa-kb verify",
+       "kb:search": "sislexa-kb search",
+       "kb:context": "sislexa-kb context",
+       "kb:impact": "sislexa-kb impact"
+     }
+   }
+   ```
+
+   Run `npm install` in the consumer to update its lockfile, then commit both
+   manifests. The CLI requires Node.js 20+ and has no runtime dependencies.
+3. Create `kb.config.json` at the module repository root:
+
+   ```json
+   {
+     "kbDir": "docs/kb",
+     "packageGlobs": [],
+     "indexTitle": "Module knowledge base",
+     "logDir": "docs/kb/log",
+     "indexPath": "docs/kb/README.md",
+     "generatedIndexPath": "generated/kb"
+   }
+   ```
+
+   All paths are repository-relative. `indexPath` names the generated Markdown
+   index; `generatedIndexPath` names the replaceable prepared JSON directory.
+   Keep the latter separate from source files. `packageGlobs` accepts directory
+   patterns such as `packages/*` and `modules/**`; matching directories with
+   `package.json` require `AGENTS.md`. An empty list disables package coverage.
+   Root `AGENTS.md` and `CLAUDE.md` are checked only when present. The log and
+   generated index are excluded from topics and search. Without config, Core
+   retains its paths, package patterns and index title. With only `kbDir`
+   configured, logDir and indexPath default beneath that directory.
+4. Create a topic, for example `docs/kb/architecture.md`, with `title`,
+   `updated` and an `areas` list in YAML frontmatter (see above). Add these
+   exact instructions to root `AGENTS.md`:
+
+   ```text
+   Before code research, run npm run kb:context -- "<task>" and read the returned topics.
+   If code research fills a KB gap, update the existing relevant topic.
+   After behavior or KB changes, run npm run kb:touch -- <topic>, npm run kb:log -- <slug>, and npm run kb:index.
+   Do not hand-edit docs/kb/README.md; it is generated.
+   Run npm run kb:check -- --strict before completing the task.
+   ```
+
+5. Run `npm run kb:touch -- architecture`, `npm run kb:index`,
+   `npm run kb:check -- --strict`, `npm run kb:prepare`,
+   `npm run kb:verify-prepared`, and `npm run kb:context -- architecture`.
+   Ignore `generated/kb/` in Git; commit topics and journal entries. `impact`
+   compares against `origin/main` where available and always includes tracked
+   and untracked working-tree changes.
+
+Core keeps `scripts/kb.mjs` and `scripts/kb-search.mjs` as compatibility
+adapters; its npm commands delegate directly to `packages/kb-tools/cli.mjs`.
