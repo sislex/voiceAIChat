@@ -181,7 +181,8 @@ describe('KB module registration', () => {
     expect(created).toMatchObject({ id: 'remote', title: 'Remote repo', ref: 'main', path: 'docs/kb' })
     expect(await kb.ensureSource({ repository: bare })).toMatchObject({ id: 'remote' })
     expect(JSON.parse(readFileSync(join(dir, 'data/kb-modules.json'), 'utf8'))).toEqual([{ id: 'remote', title: 'Remote repo', repository: bare, ref: 'main', path: 'docs/kb' }])
-    await vi.waitFor(async () => expect((await kb.modules()).find(m => m.id === 'remote')?.status).toBe('ready'))
+    // Wait for the background indexing itself: git fetch can exceed a fixed poll timeout under load.
+    expect(await kb.refreshModule('remote')).toMatchObject({ status: 'ready' })
     expect(await kb.document('remote:topic.md')).toMatchObject({ module: 'remote' })
     // A restart reads the persisted list.
     const restarted = new ModuleKnowledgeBaseService({ root, dataDir: join(dir, 'data') }); services.push(restarted)
