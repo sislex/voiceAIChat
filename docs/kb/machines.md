@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-04
-checked: 8f153604
+updated: 2026-10-05
+checked: c6dedcd5
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -202,8 +202,13 @@ One grant uses `tag:chatai-env-<sha256(projectId + ':' + environmentId)[:24]>`
 as both source and destination, with sorted, unique `tcp:<port>` permissions.
 The service creates the admin-owned tag and updates bound devices through
 Tailscale's device-tags API, preserving other tags. Updating membership removes
-the tag from devices outside the new selection; removal deletes the grant and
-device tags, retaining the tag-owner declaration. Unrelated local grants and
+the tag from devices outside the new selection. Addition writes policy before
+device tags. Removal first detaches every device carrying the environment tag,
+then removes both its grant and tag-owner declaration. If detachment would leave
+a device with no tags, it retains the binding's base `vpnTag(machineId)` only if
+that tag already has owners in the network policy. Otherwise it returns
+`vpn_untag_requires_reauth` with the device name; an operator must reauthenticate
+the device or restore its base tag before retrying. Unrelated local grants and
 exit-node grants survive. Unjournaled rules referencing environment tags are
 rejected by `managedPolicy`, as are broad foreign internet permissions. Destinations inside the
 tailnet are tags, `autogroup:member`, `autogroup:tagged` and tailnet addresses (environment machines
@@ -212,13 +217,22 @@ grant whose only destination is `autogroup:internet`; allow-all (`"dst": ["*"]`)
 `{"src": ["*"], "dst": ["autogroup:member", "autogroup:tagged"], "ip": ["*"]}` plus that grant.
 
 `machine_vpn_networks.state.environments[tag]` records the environment,
-machines, ports, phase (`applying/applied/removed/error`) and `appliedAt`.
+machines, ports, phase (`applying/applied/removing/removed/error`) and `appliedAt`.
+`environmentGrantState` reads current Tailscale devices and includes
+`remainingDevices` (API IDs and names still carrying the environment tag).
+The bounded `operationLog` retains failure codes and sanitized API messages.
+Tailscale validation/conflict responses map to `policy`, other API failures to
+`network`; API credentials and their Basic-auth encoding are redacted. VPN
+errors cross both internal RPC adapters as HTTP 409 with a stable code and
+message rather than HTTP 500.
 A generation CAS reserves the owner before remote mutations; the journal
 recognizes both old and new grants if a remote operation partially succeeds.
-Ordinary failures leave an error state and can be retried. A process crash during
+Removal failures keep `removing`, preserve the grant journal, and can be
+retried after partial success or restart. Competing writes are blocked while
+removal is unresolved. Addition failures leave an error state and can be retried. A process crash during
 application leaves `applying` and blocks competing writes pending operator
 reconciliation; it never reports an unconfirmed grant as applied. Identical
-re-adds verify policy and tags and require no remote writes.
+re-adds and repeated removals verify policy and tags and require no remote writes.
 
 Machine snapshots for machines RPC and Kanban include `vpn.addresses` and
 optional `vpn.hostName` from `telemetry.vpn`. `vpnAddressOf(machineId)` reads

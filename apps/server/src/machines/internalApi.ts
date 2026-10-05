@@ -2,6 +2,7 @@
 // шина событий на постоянном WebSocket. Его поднимает и отдельный процесс машин, и само ядро во встроенном
 // режиме (при заданном `VC_INTERNAL_TOKEN`) — так админка и другие соседи берут машины у того процесса, где
 // живёт реестр, одним и тем же клиентом `HttpMachines`. Требует зарегистрированного `@fastify/websocket`.
+import { VpnError } from './vpn/tailscale.js'
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
@@ -87,8 +88,8 @@ export function registerMachinesInternalApi(app: FastifyInstance, deps: Machines
     })
     scope.post<{ Body: RpcRequest }>(MACHINES_INTERNAL_RPC_PATH, async (req, reply) => {
       try { return { result: await dispatch(req.body ?? { method: '', args: [] }) } } catch (error) {
-        const body: MachinesRpcErrorBody = { error: error instanceof Error ? error.message : String(error), ...(error instanceof AgentFsError && error.code ? { code: error.code } : {}) }
-        return reply.code(error instanceof RpcError ? error.status : 500).send(body)
+        const body: MachinesRpcErrorBody = { error: error instanceof Error ? error.message : String(error), ...((error instanceof AgentFsError || error instanceof VpnError) && error.code ? { code: error.code } : {}) }
+        return reply.code(error instanceof RpcError || error instanceof VpnError ? error.status : 500).send(body)
       }
     })
     scope.post<{ Body: ExecStreamRequest }>(MACHINES_INTERNAL_EXEC_STREAM_PATH, async (req, reply) => {

@@ -15,7 +15,9 @@ interface Binding { deviceId: string; apiId: string; addresses: string[]; approv
 export interface VpnEnvironment { projectId: string; environmentId: string }
 export interface EnvironmentGrantState {
   environment: VpnEnvironment; tag: string; machines: string[]; ports: number[]
-  phase: 'applying' | 'applied' | 'removed' | 'error'; appliedAt: number | null
+  phase: 'applying' | 'applied' | 'removing' | 'removed' | 'error'; appliedAt: number | null
+  remainingDevices?: Array<{ id: string; name: string }>
+  operationLog?: Array<{ at: number; code: string; message: string }>
 }
 interface NetworkData { environments?: Record<string, EnvironmentGrantState>; verifiedAt: number; states: Record<string, VpnState>; bindings: Record<string, Binding>; grants: unknown[] }
 export interface VpnAgentPort {
@@ -69,6 +71,8 @@ export class VpnService {
     for (const listener of this.listeners) listener()
     return next
   }
+  // Only an in-flight apply locks the network. A failed removal stays 'removing'
+  // so it can be retried, but it must not block VPN changes of other machines.
   private available(data: NetworkData): void {
     if (Object.values(data.environments ?? {}).some(s => s.phase === 'applying') ||
         Object.values(data.states).some(s => s.phase === 'applying')) throw new VpnError('conflict')
@@ -80,7 +84,19 @@ export class VpnService {
   async environmentGrantState(owner: string, environment: VpnEnvironment): Promise<EnvironmentGrantState | null> {
     const tag = this.environmentKey(environment)
     const row = await this.repo.readVpnNetwork(owner)
-    return row ? this.data(row).environments?.[tag] ?? null : null
+    if (!row) return null
+    const state = this.data(row).environments?.[tag]
+    if (!state) return null
+    // The journaled state stays readable when the Tailscale API is unavailable.
+    try {
+      const devices = await this.api(owner, row).devices()
+      return { ...state, remainingDevices: this.remainingDevices(devices, tag) }
+    } catch {
+      return state
+    }
+  }
+  private remainingDevices(devices: TailDevice[], tag: string): Array<{ id: string; name: string }> {
+    return devices.filter(d => d.tags?.includes(tag)).map(d => ({ id: d.id, name: d.name ?? d.hostname ?? d.id }))
   }
   ensureEnvironmentGrant(owner: string, environment: VpnEnvironment, machines: string[], ports: number[]): Promise<EnvironmentGrantState> {
     return this.environmentGrant(owner, environment, machines, ports, false)
@@ -99,6 +115,8 @@ export class VpnService {
       if (!row) throw new VpnError('network')
       const data = this.data(row)
       this.available(data)
+      // A pending removal of this environment must finish before it is granted again.
+      if (!remove && data.environments?.[tag]?.phase === 'removing') throw new VpnError('conflict')
       for (const id of machines) {
         await this.owned(owner, id)
         if (!data.bindings[id]) throw new VpnError('binding')
@@ -114,6 +132,7 @@ export class VpnService {
       if (updated.tagOwners?.[tag] && JSON.stringify(updated.tagOwners[tag]) !== JSON.stringify(['autogroup:admin'])) throw new VpnError('policy')
       // Only exact journaled rules may be replaced; never adopt foreign grants.
       if ((updated.grants ?? []).some(g => JSON.stringify(g).includes(tag))) throw new VpnError('policy')
+      if (remove) delete updated.tagOwners?.[tag]
       if (!remove) updated.tagOwners = { ...updated.tagOwners, [tag]: ['autogroup:admin'] }
       const oldRule = (g: unknown): boolean => !!g && typeof g === 'object' && (g as { src?: string[] }).src?.includes(tag) === true
       const grants = data.grants.filter(g => !oldRule(g))
@@ -125,26 +144,42 @@ export class VpnService {
           JSON.stringify(previous.machines) === JSON.stringify(machines) && JSON.stringify(previous.ports) === JSON.stringify(ports) &&
           JSON.stringify(policy.value.tagOwners ?? {}) === JSON.stringify(updated.tagOwners) &&
           JSON.stringify(policy.value.grants ?? []) === JSON.stringify(updated.grants) && tagsMatch) return previous
-      const state: EnvironmentGrantState = { environment, tag, machines, ports, phase: 'applying', appliedAt: null }
+      const state: EnvironmentGrantState = { environment, tag, machines, ports, phase: remove ? 'removing' : 'applying', appliedAt: null, remainingDevices: this.remainingDevices(devices, tag), operationLog: previous?.operationLog ?? [] }
       data.environments ??= {}
       data.environments[tag] = state
       // Reserve the generation and journal both policy versions before remote writes.
       data.grants = [...data.grants, ...grants.filter(g => !data.grants.some(old => JSON.stringify(old) === JSON.stringify(g)))]
       row = await this.save(owner, row, data)
       try {
-        await api.setPolicy(updated, policy.etag)
+        if (!remove) await api.setPolicy(updated, policy.etag)
         for (const device of devices) {
           const selected = machines.some(id => data.bindings[id].apiId === device.id)
           const tags = [...new Set([...(device.tags ?? []).filter(t => t !== tag), ...(selected ? [tag] : [])])]
-          if (JSON.stringify(tags) !== JSON.stringify(device.tags ?? [])) await api.setDeviceTags(device, tags)
+          if (!tags.length && device.tags?.includes(tag)) {
+            const binding = Object.entries(data.bindings).find(([, b]) => b.apiId === device.id && b.deviceId === device.nodeId)
+            const baseTag = binding && vpnTag(binding[0])
+            // Removal must not create a tag owner before detaching devices.
+            const owners = remove ? policy.value.tagOwners : updated.tagOwners
+            if (baseTag && owners?.[baseTag]?.length) tags.push(baseTag)
+            else throw new VpnError('vpn_untag_requires_reauth', device.name ?? device.hostname ?? device.id)
+          }
+          if (JSON.stringify(tags) !== JSON.stringify(device.tags ?? [])) {
+            await api.setDeviceTags(device, tags)
+            device.tags = tags
+            state.remainingDevices = this.remainingDevices(devices, tag)
+            row = await this.save(owner, row, data)
+          }
         }
+        if (remove) await api.setPolicy(updated, policy.etag)
         data.grants = grants
         state.phase = remove ? 'removed' : 'applied'
         state.appliedAt = this.now()
         await this.save(owner, row, data)
         return state
       } catch (error) {
-        state.phase = 'error'
+        state.phase = remove ? 'removing' : 'error'
+        const failure = error instanceof VpnError ? error : new VpnError('network')
+        state.operationLog = [...(state.operationLog ?? []), { at: this.now(), code: failure.code, message: failure.message }].slice(-20)
         await this.save(owner, row, data)
         throw error
       }
@@ -229,7 +264,7 @@ export class VpnService {
         }))
       } catch (e) {
         const state = data.states[id] ??= initialVpnState()
-        state.error = e instanceof VpnError ? e.code : 'apply'
+        state.error = e instanceof VpnError ? e.agentCode : 'apply'
       }
       row = await this.save(user, row, data)
       return this.view(user, id, row, data)
@@ -308,7 +343,7 @@ export class VpnService {
         current.phase = 'idle'
       } catch (e) {
         current.phase = 'error'
-        current.error = e instanceof VpnError ? e.code : 'apply'
+        current.error = e instanceof VpnError ? e.agentCode : 'apply'
       }
       row = await this.save(user, row, data)
       return this.view(user, id, row, data)
