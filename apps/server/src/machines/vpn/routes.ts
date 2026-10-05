@@ -9,7 +9,7 @@ export function registerVpnRoutes(app: FastifyInstance, service: VpnService): vo
     try { return await run() }
     catch (error) {
       const code = error instanceof VpnError ? error.code : 'apply'
-      return reply.code(code === 'invalid' ? 404 : 409).send({ code, error: VPN_ERRORS[code] })
+      return reply.code(code === 'invalid' ? 404 : 409).send({ code, error: code === 'vpn_untag_requires_reauth' ? (error as VpnError).message : VPN_ERRORS[code] })
     }
   }
   app.post(VPN_REST.network, { bodyLimit: 8192 }, async (req, reply) => safe(async () => {

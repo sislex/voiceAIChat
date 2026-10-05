@@ -1,3 +1,4 @@
+import { VpnError } from '../machines/vpn/tailscale.js'
 import type { VpnEnvironment, EnvironmentGrantState } from '../machines/vpn/service.js'
 import { vpnAddress } from '../machines/vpn/telemetry.js'
 import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environments.js'
@@ -147,6 +148,10 @@ export class HttpMachines implements MachinesService {
     const body = (await res.json().catch(() => ({ error: `HTTP ${res.status}` }))) as { result: unknown } | MachinesRpcErrorBody
     if (!res.ok || 'error' in body) {
       const err = 'error' in body ? body : { error: `HTTP ${res.status}` }
+      if (['ensureEnvironmentGrant', 'removeEnvironmentGrant', 'environmentGrantState'].includes(method) && err.code) {
+        const code = err.code as VpnError['code']
+        throw new VpnError(code, err.error.startsWith(code + ': ') ? err.error.slice(code.length + 2) : undefined)
+      }
       throw err.code ? new AgentFsError(err.error, err.code) : new Error(err.error)
     }
     return body.result as T

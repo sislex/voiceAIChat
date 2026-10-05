@@ -1,3 +1,4 @@
+import { VpnError } from '../machines/vpn/tailscale.js'
 import type { Maintenance } from '../maintenance.js'
 import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
 import { integrationBearer, type IntegrationPrincipal } from '../auth/integrationTokens.js'
@@ -82,7 +83,7 @@ export interface InternalRoutesDeps {
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoutesDeps): void {
   const dispatch = createCoreRpcDispatcher(deps.makeCore)
   const sendRpcError = (reply: { code(status: number): { send(body: unknown): unknown } }, error: unknown): unknown =>
-    reply.code(error instanceof RpcError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error) })
+    reply.code(error instanceof RpcError || error instanceof VpnError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error), ...(error instanceof VpnError ? { code: error.code } : {}) })
   app.register(async (scope) => {
     scope.addHook('onRequest', async (req, reply) => {
       const path = req.url.split('?')[0]
