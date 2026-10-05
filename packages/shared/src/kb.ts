@@ -1,4 +1,4 @@
-/** Контракт read-only базы знаний проекта voiceAIChat. */
+/** Knowledge base contracts shared by Core and knowledge service clients. */
 import { KB_GAP_RULE } from './kbGaps'
 import type { KbContextMode } from './types'
 
@@ -29,6 +29,30 @@ export type KbDocumentKind = 'feature' | 'subsystem' | 'protocol' | 'decision' |
 export type KbFreshness = 'current' | 'stale' | 'unknown'
 export type KbMatchType = 'symbol' | 'alias' | 'path' | 'protocol' | 'lexical' | 'semantic'
 
+export interface KbModule {
+  /** Lowercase slug, for example `core` or `playwright-reader`. */
+  id: string
+  title: string
+  repository: string | null
+  ref: string
+  path: string
+  indexedSha: string | null
+  indexedAt: number | null
+  status: 'ready' | 'indexing' | 'failed' | 'disabled'
+}
+
+export interface KbTopicsRequest {
+  scope?: KbScope
+  projectId?: string | null
+  /** Absent means all modules visible to the authenticated viewer. */
+  module?: string
+}
+
+export interface KbContextRequest extends KbTopicsRequest {
+  query: string
+  budget?: number
+}
+
 export interface KbStatus {
   available: boolean
   mode: 'source' | 'generated' | 'disabled'
@@ -41,6 +65,7 @@ export interface KbStatus {
   error?: string
 }
 export interface KbDocumentSummary {
+  module?: string
   id: string; title: string; kind: KbDocumentKind; tags: string[]; packages: string[]
   freshness: KbFreshness; sourcePath: string
   /** Раздел базы знаний (видимость документа). */
@@ -55,6 +80,7 @@ export interface KbDocument extends KbDocumentSummary {
   headings: Array<{ title: string; anchor: string; level: number }>
 }
 export interface KbSearchResult {
+  module?: string
   documentId: string; chunkId: string; title: string; heading: string; excerpt: string; score: number
   matchTypes: KbMatchType[]; explanation: string; freshness: KbFreshness; sourcePath: string; anchor: string
   symbols: string[]; relatedFiles: string[]
@@ -69,7 +95,7 @@ export interface KbSearchResult {
 export interface KbContextSection extends KbSearchResult {
   text: string
 }
-export interface KbSearchRequest {
+export interface KbSearchRequest extends KbTopicsRequest {
   query: string; kinds?: KbDocumentKind[]; tags?: string[]; limit?: number
   /** Ограничить раздел; пусто — все доступные пользователю разделы. */
   scope?: KbScope
