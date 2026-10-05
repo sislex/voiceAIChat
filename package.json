@@ -6,6 +6,7 @@
   "//": "Electron applications are released by sislex/agent and sislex/desktop; Core consumes pinned artifacts.",
   "workspaces": [
     "packages/shared",
+    "packages/knowledge",
     "packages/component-runtime",
     "apps/automation-runner",
     "apps/server"

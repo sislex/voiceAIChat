@@ -36,9 +36,10 @@ const definition = (id: string, name: string, paths: string[], options: Partial<
 });
 function createApplicationCatalog(): readonly ApplicationDefinition[] {
   return [
-  definition("core", "Ядро", ["apps/server"], {
+  definition("core", "Ядро", ["apps/server", "packages/knowledge"], {
     "workspaces": [
-      "@voicechat/server"
+      "@voicechat/server",
+      "@voicechat/knowledge"
     ],
     "buildDependencies": [
       "platform-sdk",

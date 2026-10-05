@@ -59,7 +59,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -69,14 +69,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -90,7 +90,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 })
 
@@ -121,6 +121,10 @@ test('consumersOf даёт транзитивное замыкание и не �
   for (const id of ['ui', 'web']) assert.equal(appShell.has(id), false)
   assert.equal(appShell.has('desktop'), false)
   assert.equal(consumersOf('shared').has('agent-tray'), false)
+})
+
+test('knowledge edits select the extracted package and Core consumer', () => {
+  assert.deepEqual(ids(selectAffected(['packages/knowledge/src/scoped.ts'])), ['knowledge', 'server'])
 })
 
 test('e2e, frontend-quality и настройки агентов не включают полный гейт', () => {
