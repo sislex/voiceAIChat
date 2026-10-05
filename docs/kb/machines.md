@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-05
-checked: c6dedcd5
+checked: 31355508
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -1635,3 +1635,11 @@ rename и перечитывается для проверки размера и
 сверяется с исходными размером и checksum; изменившийся источник остаётся на месте с
 событием `delete-skipped`. Все подтверждения, пропуски, проверки, сбои, возобновления
 и удаления фиксируются в audit log плана.
+
+## Dev stand processes
+
+`AgentRegistry.devProcess(agentId, method, request)` forwards `devProcess.start/stop/status/logs`
+(dev-lane-v1) to the agent and correlates the answer by `requestId` and agent. Start waits up to
+10 minutes (dependencies and readiness), other methods 60 s; a disconnect rejects pending requests.
+Errors keep the dev stand code as a `<code>: <message>` prefix. Kanban reaches it through the Core
+RPC `machines.devProcess` (and the machines process RPC `devProcess` in remote mode).

@@ -15,6 +15,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease } from '../packages/shared/src/releaseComposition.ts'
 import { archiveDigests, rowCommit, rowRepository } from './owner-release-publish.mjs'
+import { assertReleaseVersions } from './release-version.mjs'
 
 const MANIFESTS = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -38,10 +39,12 @@ function packageJsonFiles(core) {
 /** Закреплённые выпуски по репозиториям: версия и коммит — у инструмента или первого пакета. */
 export function currentComposition(core) {
   const toolsLock = readJson(join(core, 'deploy/tools.lock.json'))
+  assertReleaseVersions(toolsLock, 'Current release tools')
   const byRepository = new Map()
   for (const file of MANIFESTS) {
     if (!existsSync(join(core, file))) continue
     for (const row of readJson(join(core, file)).packages) {
+      assertReleaseVersions(row, `Current release ${file}`)
       const repository = rowRepository(row)
       if (!repository) continue
       const entry = byRepository.get(repository) ?? { repository, packages: new Map() }
@@ -60,9 +63,11 @@ export function currentComposition(core) {
 
 /** Проверка архива против манифеста и содержимого: имя, версия и коммит внутри пакета. */
 export function verifyArchive(bytes, pkg, commit, inspect = inspectArchive) {
+  assertReleaseVersions(pkg, 'Release archive')
   const digests = archiveDigests(bytes)
   if (digests.size !== pkg.size || digests.sha256 !== pkg.sha256 || digests.integrity !== pkg.integrity) throw new Error(`${pkg.asset}: байты не совпадают с манифестом`)
   const inside = inspect(bytes)
+  assertReleaseVersions(inside, 'Release archive contents')
   if (inside.name !== pkg.name || inside.version !== pkg.version) throw new Error(`${pkg.asset}: внутри ${inside.name}@${inside.version}, ожидался ${pkg.name}@${pkg.version}`)
   if (inside.commit && inside.commit !== commit) throw new Error(`${pkg.asset}: собран из ${inside.commit}, выпуск — ${commit}`)
 }
@@ -81,6 +86,7 @@ const imagePattern = (name) => new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g,
 
 /** Всё, что может отказать, проверяется до первой записи: чекаут не остаётся наполовину переписанным. */
 export function checkRelease(core, manifest, dir, { inspect = inspectArchive } = {}) {
+  assertReleaseVersions(manifest, 'Release composition')
   const rows = MANIFESTS.filter((file) => existsSync(join(core, file))).flatMap((file) => readJson(join(core, file)).packages.map((row) => ({ file, row })))
   for (const pkg of manifest.packages) {
     verifyArchive(readFileSync(join(dir, pkg.asset)), pkg, manifest.commit, inspect)
@@ -101,6 +107,7 @@ export function checkRelease(core, manifest, dir, { inspect = inspectArchive } =
 
 /** Закрепить один проверенный выпуск; файлы архивов лежат в `dir`. Возвращает, что поменялось. */
 export function applyRelease(core, manifest, dir) {
+  assertReleaseVersions(manifest, 'Release composition')
   const changes = []
   for (const pkg of manifest.packages) {
     let previous = null
@@ -176,7 +183,11 @@ function stillReferenced(core, asset) {
 /** Все выпуски из каталога: по подкаталогу на выпуск. Один репозиторий — один выпуск. */
 export function applyComposition(core, dir, options) {
   const releases = readdirSync(dir).filter((name) => statSync(join(dir, name)).isDirectory() && existsSync(join(dir, name, RELEASE_MANIFEST_ASSET)))
-    .map((name) => ({ dir: join(dir, name), manifest: parsePublishedApplicationRelease(readJson(join(dir, name, RELEASE_MANIFEST_ASSET))) }))
+    .map((name) => {
+      const raw = readJson(join(dir, name, RELEASE_MANIFEST_ASSET))
+      assertReleaseVersions(raw, 'Release composition')
+      return { dir: join(dir, name), manifest: parsePublishedApplicationRelease(raw) }
+    })
   if (!releases.length) throw new Error(`В ${dir} нет ни одного ${RELEASE_MANIFEST_ASSET}`)
   const repositories = new Set()
   for (const { manifest } of releases) {

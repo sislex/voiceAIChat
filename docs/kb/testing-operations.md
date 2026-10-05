@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-05
-checked: a5eaef73
+updated: 2026-10-06
+checked: c3a02158
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -30,8 +30,8 @@ diff runs `npm run kb:check` only. Failure to read the diff fails closed.
 
 The task budget is 100 test cases and 60 seconds of total wall time, including
 planning and typecheck. Each command receives the remaining timeout. Reports
-count actual cases (not files); a breach exits 2 and lists measured tests sorted
-by duration plus unfinished files/commands. Ordinary failures exit 1. Every
+count actual cases (not files); a breach exits 2, prints `GATE-TASK-SLOW:` and then the
+test files sorted by duration plus unfinished files/commands, one per line. Ordinary failures exit 1. Every
 execution ends with `GATE-TASK: tests=<n> seconds=<s>`. Vitest reports are available
 after its run finishes; on timeout, unfinished file names identify the work for
 promotion even when no result report was written. Node reports are persisted
@@ -43,6 +43,33 @@ scripts/task-gate.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.m
 It covers selection, docs-only execution, count/time breaches, failure handling
 and real Node/Vitest report adapters. This gate does not commission a stand or
 replace full repository and release checks at promotion.
+
+## Dev stand focused checks (C02)
+
+Run `npm run test:files -- scripts/dev-stand.test.mjs scripts/owner-pins.test.mjs
+scripts/release-composition.test.mjs scripts/shared-chat-artifacts.test.mjs
+apps/server/src/kanbanBridge/proxy.test.ts` as one command. The gateway integration
+test uses the first three `DELIVERY_PORTS` (24000–24002 when unassigned), writes
+only a temporary manifest under `DELIVERY_ATTEMPT_ROOT/tmp` when supplied, and
+closes its servers. It verifies base fallback, live SSE delivery before response
+completion, WebSocket frame echo, atomic manifest reload, reset and invalid
+manifest rejection. Pure tests cover prefix precedence, Core's stand environment
+and dev-version rejection at release, pin and Desktop provenance boundaries.
+Core proxy injection tests cover the B01 REST methods and session forwarding.
+
+Typecheck Core with `npm run -w @voicechat/server typecheck`. Check the new Node
+entrypoints with `node node_modules/typescript/bin/tsc --noEmit --allowJs --checkJs
+--target es2022 --module nodenext --skipLibCheck --allowImportingTsExtensions
+scripts/dev-gateway.mjs scripts/dev-component.mjs scripts/release-version.mjs`.
+Use `gate:quick -- --base <sha> --dry-run` to inspect affected-test selection.
+Root package-script changes can select the full gate; in supervised delivery,
+leave that gate to the supervisor. Sandbox `listen EPERM` prevents the real
+transport check; `spawnSync tar EPERM` prevents existing release archive fixture
+tests. Report these as requiring supervisor execution, not passing checks.
+
+Code checks do not commission a dev stand: the environment owner/operator still
+allocates a copied database/data directory, writes the manifest and checks LAN
+and Tailscale reachability on the assigned gateway port.
 
 ## Core UI test ownership
 
