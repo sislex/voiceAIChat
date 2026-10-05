@@ -29,25 +29,30 @@ export function relatedTooling(files, repository = root) {
   return walk(resolve(repository, 'scripts')).filter(file => isTest(file) && touches(file))
     .map(file => relative(repository, file))
 }
-export function quickPlanCommands(plan, files, repository = root) {
+export function quickPlanCommands(plan, files, repository = root, { task = false } = {}) {
   // Configuration cannot be narrowed by the source import graph.
-  if (plan.full || files.some(file => /(^|\/)(package(?:-lock)?\.json|tsconfig[^/]*\.json|vitest[^/]*\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s)$/.test(file)))
+  if (!task && (plan.full || files.some(file => /(^|\/)(package(?:-lock)?\.json|tsconfig[^/]*\.json|vitest[^/]*\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s)$/.test(file))))
     return [{ command: 'npm', args: ['run', 'gate:all'] }]
   const workspaces = workspaceEntries(repository), steps = [], tests = new Set()
-  const selected = new Set(plan.applications.flatMap(app => app.workspaces))
-  for (const check of plan.contracts) selected.add(check.workspace)
+  const selected = new Set(task
+    ? workspaces.filter(workspace => files.some(file => file.startsWith(workspace.path + '/'))).map(workspace => workspace.name)
+    : plan.applications.flatMap(app => app.workspaces))
+  for (const check of task ? [] : plan.contracts) selected.add(check.workspace)
   for (const name of selected) {
     const workspace = workspaces.find(item => item.name === name)
     if (!workspace) throw Error(`Missing workspace: ${name}`)
     if (!workspace.scripts?.typecheck) throw Error(`Missing typecheck: ${name}`)
-    for (const script of ['typecheck', ...(workspace.scripts.build ? ['build'] : [])])
+    for (const script of ['typecheck', ...(!task && workspace.scripts.build ? ['build'] : [])])
       steps.push({ command: 'npm', args: ['run', '-w', name, script] })
     const changed = files.filter(file => file.startsWith(workspace.path + '/'))
     for (const file of changed.filter(isTest)) if (existsSync(resolve(repository, file))) tests.add(file)
     const sources = changed.filter(file => !isTest(file) && /\.[cm]?[jt]sx?$/.test(file))
+    if (task && sources.length) {
+      for (const file of changed.filter(isTest)) if (tests.delete(file)) sources.push(file)
+    }
     if (sources.length) steps.push({ path: workspace.path, runner: 'vitest', related: true, files: sources })
   }
-  for (const check of plan.contracts) {
+  for (const check of task ? [] : plan.contracts) {
     const workspace = workspaces.find(item => item.name === check.workspace)
     for (const path of check.files.length ? check.files : ['src']) {
       const absolute = resolve(repository, workspace.path, path)
@@ -55,10 +60,10 @@ export function quickPlanCommands(plan, files, repository = root) {
       for (const file of walk(absolute).filter(isTest)) tests.add(relative(repository, file))
     }
   }
-  if (plan.tooling) for (const file of relatedTooling(files, repository)) tests.add(file)
-  if (plan.pinChecks) for (const file of OWNER_PIN_TESTS) tests.add(file)
-  for (const file of plan.e2eFiles ?? []) tests.add(file)
-  if (plan.verifyArtifacts) steps.push({ command: 'npm', args: ['run', 'verify:core-ui'] })
+  if (task || plan.tooling) for (const file of relatedTooling(files, repository)) tests.add(file)
+  if (!task && plan.pinChecks) for (const file of OWNER_PIN_TESTS) tests.add(file)
+  for (const file of task ? [] : plan.e2eFiles ?? []) tests.add(file)
+  if (!task && plan.verifyArtifacts) steps.push({ command: 'npm', args: ['run', 'verify:core-ui'] })
   if (tests.size) steps.push(...mapTestFiles([...tests], repository))
   return steps
 }
