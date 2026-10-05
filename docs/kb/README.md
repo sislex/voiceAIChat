@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 18 коммит(ов) в areas после сверки: e35499be feat(shared): release composition contract for @voicechat/shared 0.1.13 … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 31 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-05 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 5 коммит(ов) в areas после сверки: 26abdf98 chore: pin Core UI 1.5.1 (composer typing keeps the timeline still) … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 6 коммит(ов) в areas после сверки: c131e6c3 chore: pin Desktop 1.0.20 (Core UI 1.5.1 renderer) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 13 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 6 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 54 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 15 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 25 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1788 коммит(ов) в areas после сверки: 26abdf98 chore: pin Core UI 1.5.1 (composer typing keeps the timeline still) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1789 коммит(ов) в areas после сверки: c131e6c3 chore: pin Desktop 1.0.20 (Core UI 1.5.1 renderer) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 89 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -36,7 +36,7 @@
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 427 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ⚠ 5 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-04 | ⚠ 3 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 2 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1057. Последние:
+Всего записей: 1058. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy
