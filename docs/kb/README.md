@@ -11,11 +11,11 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 21 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 32 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-05 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 9 коммит(ов) в areas после сверки: 7a27aef9 feat(kb): repository-independent KB tooling package (kb-service-v1 B02) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 15 коммит(ов) в areas после сверки: 7153cd72 feat(shared): knowledge base module contracts (kb-service-v1 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 7 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ⚠ 5 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 62 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 38 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 59 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 18 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 1808 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 02cbb132 docs(kb): module ownership map (kb-service-v1 U02, partial) |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 93 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -34,7 +34,7 @@
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 40 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-05 | ⚠ 69 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 432 коммит(ов) в areas после сверки: 738b8b5b feat(kb): index knowledge bases of several repositories (kb-service-v1 C01) … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 7a27aef9 feat(kb): repository-independent KB tooling package (kb-service-v1 B02) |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ⚠ 2 коммит(ов) в areas после сверки: 02cbb132 docs(kb): module ownership map (kb-service-v1 U02, partial) … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ⚠ 7 коммит(ов) в areas после сверки: 7153cd72 feat(shared): knowledge base module contracts (kb-service-v1 B01) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ⚠ 6 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
 | [modules.md](modules.md) | Module ownership map | 2026-10-05 | ✓ |
@@ -60,7 +60,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1073. Последние:
+Всего записей: 1076. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy
@@ -70,8 +70,8 @@
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-20.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-20.md) — pin-shared-0-1-20
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-19.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-19.md) — pin-shared-0-1-19
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-18.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-18.md) — pin-shared-0-1-18
+- [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-8.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-8.md) — pin-kanban-0-2-8
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-7.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-7.md) — pin-kanban-0-2-7
-- [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-6.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-6.md) — pin-kanban-0-2-6
 
 ## Исторические планы
 

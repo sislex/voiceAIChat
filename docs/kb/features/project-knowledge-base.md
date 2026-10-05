@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-05
-checked: 259877e
+checked: b3769c47
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -105,6 +105,15 @@ SSH-style and HTTPS project URLs match the same configured repository.
 Implementation and operator commissioning are separate: deploying the code
 does not register production sources or provision tokens. Operators supply the
 source list and existing Git access, then verify module status after startup.
+
+Kanban registers repository knowledge bases through the Core RPC methods
+`kb.ensureModule({ repository, ref?, path?, title? })` (defaults `main`, `docs/kb`;
+returns the existing module when the same repository, ref and path is already
+registered), `kb.removeModule(id)` and `kb.modules()`. Registration validates
+the source like the file configuration, persists the list atomically to
+`<VC_DATA_DIR>/kb-modules.json` and starts indexing in the background. When
+`VC_KB_MODULES` is set, the list is managed by the environment and registration
+fails with `kb_modules_managed_by_env`; module `core` cannot be removed.
 
 ## Назначение
 
