@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-05
-checked: cfaf8522
+checked: 1ddaf2e7
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2343,6 +2343,12 @@ too: Docker Desktop on macOS prints `host.docker.internal=host-gateway`, which f
 U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
+
+Core pins agent 0.22.2 (contracts 1.2.2): a WebSocket heartbeat (ping every 15 s, reconnect after
+30 s without any inbound frame — a route change such as turning off an exit node left agent 0.22.1
+connected to nothing), the project Git write check in a temporary repository (0.22.1 reported
+«insufficient permissions» for any token) and the Docker bridge address when `docker0` has no
+carrier. Core UI and Desktop keep agent contracts 1.2.1 until their next release.
 
 On macOS the agent runs under launchd, where Docker Desktop's `credsStore: desktop` hangs on
 `docker-credential-desktop get` (no keychain access), so private GHCR images never download. The
