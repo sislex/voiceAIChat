@@ -1,3 +1,4 @@
+import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
@@ -1023,11 +1024,21 @@ export async function registerRest(
     })
   })
 
-  app.get<{ Params: { id: string }; Querystring: { scope?: string; projectId?: string } }>('/api/conversations/:id', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { scope?: string; projectId?: string; limit?: string; before?: string } }>('/api/conversations/:id', async (req, reply) => {
     const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
     if (!scope || (scope === 'kanban' && !req.query.projectId)) return reply.code(400).send({ error: 'valid scope and kanban projectId are required' })
     const conversation = await db.chat.getConversation(uid(req), req.params.id, { scope, projectId: req.query.projectId })
     if (!conversation) return reply.code(404).send({ error: 'not found' })
+    if (req.query.limit !== undefined) {
+      const { limit, before } = req.query
+      if (typeof limit !== 'string' || !/^[0-9]+$/.test(limit) || Number(limit) < 1 || Number(limit) > 200 ||
+          (before !== undefined && (typeof before !== 'string' || !before.length))) {
+        return reply.code(400).send({ code: 'invalid_history_query', error: 'limit must be an integer in 1..200 and before a message id' })
+      }
+      const page = await db.chat.pageMessages(uid(req), conversation.id, Number(limit), before)
+      if (!page) return reply.code(400).send({ code: INVALID_HISTORY_CURSOR, error: 'Unknown history cursor' })
+      return { conversation, messages: await clientMessages(db, uid(req), conversation.id, page.messages), history: page.history }
+    }
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 

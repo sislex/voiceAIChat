@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { CLIENT_MESSAGE_TYPES, REST, SERVER_MESSAGE_TYPES } from './protocol'
 
 describe('контракт протокола', () => {
+  it('keeps the legacy conversation URL and encodes history cursors', () => {
+    expect(REST.conversation('c')).toBe('/api/conversations/c')
+    expect(REST.conversation('c', { limit: 50, before: 'a&b?#' })).toBe('/api/conversations/c?limit=50&before=a%26b%3F%23')
+  })
   // @testCase TC-CONTRACT-01
   // @testCase TC-REG-01
   it('списки типов сообщений уникальны и непусты', () => {

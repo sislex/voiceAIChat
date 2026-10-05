@@ -80,9 +80,27 @@ export interface SystemCapabilities {
 // GET    /api/tts/voices                     -> TtsVoiceInfo[]
 // GET    /api/tts/catalog                    -> TtsVoiceCatalog
 
+/** Optional paging; before is applied only when limit is supplied. */
+export interface ConversationHistoryQuery {
+  /** Integer in 1..200. Omit for the legacy full history. */
+  limit?: number
+  before?: string
+}
+
+export interface ConversationHistory {
+  hasMore: boolean
+  oldestId: string | null
+  /** Total published messages, independent of before. */
+  total: number
+}
+
+export const INVALID_HISTORY_CURSOR = 'invalid_history_cursor' as const
+
 export interface ConversationWithMessages {
   conversation: Conversation
   messages: Message[]
+  /** Present only when limit was supplied. */
+  history?: ConversationHistory
 }
 
 /** Full service data loaded for one message on demand. */
@@ -251,7 +269,12 @@ export const REST = {
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
   universalSearch: '/api/universal-search',
   messagesSearch: '/api/search',
-  conversation: (id: string) => `/api/conversations/${id}`,
+  conversation: (id: string, query?: ConversationHistoryQuery) => {
+    const params: string[] = []
+    if (query?.limit !== undefined) params.push(`limit=${query.limit}`)
+    if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
+    return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
+  },
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
