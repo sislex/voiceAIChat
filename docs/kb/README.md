@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 19 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 31 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-05 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 7 коммит(ов) в areas после сверки: 47e501be chore: pin Core UI 1.5.2 and Desktop 1.0.21 (long chats open with the latest messages) … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 8 коммит(ов) в areas после сверки: 1f70cd50 chore: pin Core UI 1.5.3 and Desktop 1.0.22 (paged history, virtualized timeline) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 14 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 7 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 7f33b6ef chore: pin Kanban 0.2.7 |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 57 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 16 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 27 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1801 коммит(ов) в areas после сверки: 7f33b6ef chore: pin Kanban 0.2.7 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1802 коммит(ов) в areas после сверки: 1f70cd50 chore: pin Core UI 1.5.3 and Desktop 1.0.22 (paged history, virtualized timeline) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 92 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -39,7 +39,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ⚠ 4 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 16 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 1 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-05 | ⚠ 4 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-05 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 274 коммит(ов) в areas после сверки: 7f33b6ef chore: pin Kanban 0.2.7 … |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1067. Последние:
+Всего записей: 1068. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy
