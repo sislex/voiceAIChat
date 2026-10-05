@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-04
-checked: a5eaef73
+updated: 2026-10-05
+checked: 41027c4e
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -15,6 +15,33 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+## Dev stand focused checks (C02)
+
+Run `npm run test:files -- scripts/dev-stand.test.mjs scripts/owner-pins.test.mjs
+scripts/release-composition.test.mjs scripts/shared-chat-artifacts.test.mjs
+apps/server/src/kanbanBridge/proxy.test.ts` as one command. The gateway integration
+test uses the first three `DELIVERY_PORTS` (24000–24002 when unassigned), writes
+only a temporary manifest under `DELIVERY_ATTEMPT_ROOT/tmp` when supplied, and
+closes its servers. It verifies base fallback, live SSE delivery before response
+completion, WebSocket frame echo, atomic manifest reload, reset and invalid
+manifest rejection. Pure tests cover prefix precedence, Core's stand environment
+and dev-version rejection at release, pin and Desktop provenance boundaries.
+Core proxy injection tests cover the B01 REST methods and session forwarding.
+
+Typecheck Core with `npm run -w @voicechat/server typecheck`. Check the new Node
+entrypoints with `node node_modules/typescript/bin/tsc --noEmit --allowJs --checkJs
+--target es2022 --module nodenext --skipLibCheck --allowImportingTsExtensions
+scripts/dev-gateway.mjs scripts/dev-component.mjs scripts/release-version.mjs`.
+Use `gate:quick -- --base <sha> --dry-run` to inspect affected-test selection.
+Root package-script changes can select the full gate; in supervised delivery,
+leave that gate to the supervisor. Sandbox `listen EPERM` prevents the real
+transport check; `spawnSync tar EPERM` prevents existing release archive fixture
+tests. Report these as requiring supervisor execution, not passing checks.
+
+Code checks do not commission a dev stand: the environment owner/operator still
+allocates a copied database/data directory, writes the manifest and checks LAN
+and Tailscale reachability on the assigned gateway port.
 
 ## Core UI test ownership
 
