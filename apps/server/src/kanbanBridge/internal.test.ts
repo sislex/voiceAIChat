@@ -13,7 +13,7 @@ function fakeCore(): KanbanCore & { tunnelArgs: unknown[] } {
       exec: vi.fn(), execStream: vi.fn(),
       ensureLink: vi.fn(async input => ({ ...input, id: 'link', state: 'open' })), deleteLink: vi.fn(async () => {}), listLinks: vi.fn(async () => []),
       fsRead: vi.fn(async (agentId: string, path: string) => ({ ok: true, agentId, path })),
-      fsWrite: vi.fn(), fsMkdir: vi.fn(), fsDelete: vi.fn(), fsRename: vi.fn(), gitAccess: vi.fn(),
+      fsWrite: vi.fn(), fsMkdir: vi.fn(), fsDelete: vi.fn(), fsRename: vi.fn(), gitAccess: vi.fn(), devProcess: vi.fn(async (agentId: string, method: string) => ({ agentId, method })),
       createTunnel: vi.fn(async (...args: unknown[]) => { core.tunnelArgs = args; return 4242 }),
       closeTunnel: vi.fn(() => true),
       closeTunnelsForTarget: vi.fn()
@@ -44,6 +44,13 @@ describe('createKanbanCoreRpcDispatcher', () => {
     expect(await dispatch({ method: 'machines.closeTunnelsForTarget', args: ['m1'] })).toBeNull()
     expect(core.machines.closeTunnelsForTarget).toHaveBeenCalledWith('m1')
     expect(await dispatch({ method: 'ensureProjectMainCurrent', args: [{ projectId: 'p' }] })).toEqual({ baseSha: 'abc' })
+  })
+
+  it('forwards dev process requests to the machines port', async () => {
+    const core = fakeCore()
+    const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize: async () => true, closed: async () => {} } })
+    expect(await dispatch({ method: 'machines.devProcess', args: ['m1', 'devProcess.status', { standId: 's', component: 'make' }] })).toEqual({ agentId: 'm1', method: 'devProcess.status' })
+    expect(core.machines.devProcess).toHaveBeenCalledWith('m1', 'devProcess.status', { standId: 's', component: 'make' })
   })
 
   it('dispatches KB module registration to the Core module port', async () => {

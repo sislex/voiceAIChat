@@ -45,7 +45,7 @@ export type MachinesClientMessage = { kind: 'tunnelAuthorizeResult'; requestId: 
 /** Методы порта по RPC; `exec`/`execStream` — потоковым эндпоинтом, синхронные чтения — из зеркала. */
 export const MACHINES_RPC_METHODS = [
   'ensureEnvironmentGrant', 'removeEnvironmentGrant', 'environmentGrantState', 'vpnAddressOf',
-  'waitForOnline', 'updatePolicy', 'disconnect', 'cancelAll', 'gitAccess',
+  'waitForOnline', 'updatePolicy', 'disconnect', 'cancelAll', 'gitAccess', 'devProcess',
   'fsList', 'fsRead', 'fsWrite', 'fsMkdir', 'fsDelete', 'fsDeleteFileSafe', 'fsTrash', 'fsRename', 'http',
   'ptyStart', 'ptyInput', 'ptyResize', 'ptyDetach', 'ptyKill', 'ptyBufferText',
   'ensureLink', 'deleteLink', 'listLinks', 'createTunnel', 'closeTunnel', 'closeTunnelsForTarget', 'snapshot'
