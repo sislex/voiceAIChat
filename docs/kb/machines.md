@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-05
-checked: 31355508
+updated: 2026-10-06
+checked: e9247051
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
