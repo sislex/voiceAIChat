@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ModuleKnowledgeBaseService as Engine, readKbSources as readSources, type KbSource } from '../../../../packages/knowledge/src/sources.js'
 import type { KbGit } from '../../../../packages/knowledge/src/ports.js'
@@ -72,7 +72,13 @@ export function createKbGit(dataDir: string, credentials?: KbCredentials): KbGit
   } }
 }
 export class ModuleKnowledgeBaseService extends Engine {
-  constructor(options: { root: string; dataDir: string; sources?: KbSource[]; credentials?: KbCredentials; refreshMs?: number }, reranker?: KbSemanticReranker) {
-    super({ ...options, sources: options.sources ?? readKbSources(options.dataDir), files: kbFiles, git: createKbGit(options.dataDir, options.credentials) }, reranker)
+  constructor(options: { root: string; dataDir: string; sources?: KbSource[]; credentials?: KbCredentials; refreshMs?: number; managedByEnv?: boolean }, reranker?: KbSemanticReranker) {
+    super({ ...options, sources: options.sources ?? readKbSources(options.dataDir), files: kbFiles, git: createKbGit(options.dataDir, options.credentials),
+      writeSources: (sources) => {
+        const file = join(options.dataDir, 'kb-modules.json')
+        mkdirSync(options.dataDir, { recursive: true })
+        writeFileSync(file + '.tmp', JSON.stringify(sources, null, 2) + '\n')
+        renameSync(file + '.tmp', file)
+      } }, reranker)
   }
 }

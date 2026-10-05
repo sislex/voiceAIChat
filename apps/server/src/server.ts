@@ -112,6 +112,7 @@ import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 
 import { createOfflineKanban } from './kanbanBridge/offline.js'
 import { createLocalKanbanCore } from './kanbanBridge/localCore.js'
+import type { KanbanCore } from './kanban/core.js'
 import { createRemoteKanban } from './kanbanBridge/remote.js'
 import { KANBAN_MCP_PATH, registerKanbanProxy } from './kanbanBridge/proxy.js'
 import { machinesSnapshot } from './kanbanBridge/internal.js'
@@ -700,7 +701,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     root: opts.config.kbRoot, dataDir: opts.config.dataDir,
     sources: readKbSources(opts.config.dataDir, opts.config.kbModules),
     credentials: opts.kbCredentials ?? gitStoreCredentials(opts.config.githubToken),
-    refreshMs: opts.config.kbRefreshMs
+    refreshMs: opts.config.kbRefreshMs,
+    managedByEnv: opts.config.kbModules !== undefined
   }, reranker)
   if (fileKb instanceof ModuleKnowledgeBaseService) {
     fileKb.start()
@@ -1317,7 +1319,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   // Канбан — отдельный сервис `sislexa-kanban`; ядро отдаёт ему свои зависимости портом (docs/plans/kanban-service.md).
-  const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
+  // Module registration needs the multi-repository engine; injected test services refuse it.
+  const kbModules: KanbanCore['kbModules'] = fileKb instanceof ModuleKnowledgeBaseService
+    ? { modules: () => fileKb.modules(), ensureModule: (input) => fileKb.ensureSource(input), removeModule: (id) => fileKb.removeSource(id) }
+    : { modules: async () => [], ensureModule: async () => { throw new Error('kb_modules_unavailable') }, removeModule: async () => false }
+  const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, kbModules, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
   const remoteKanban = kanbanRemote
     ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
     : null

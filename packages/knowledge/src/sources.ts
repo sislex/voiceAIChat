@@ -51,6 +51,10 @@ export class ModuleKnowledgeBaseService extends FileKnowledgeBaseService {
 
   constructor(private readonly options: {
     root: string; dataDir: string; sources?: KbSource[]; files: KbFiles; git: KbGit; refreshMs?: number
+    /** Persists runtime-registered sources; absent means registration is unavailable. */
+    writeSources?: (sources: KbSource[]) => void
+    /** Sources come from VC_KB_MODULES: runtime registration is refused instead of being silently lost. */
+    managedByEnv?: boolean
   }, reranker?: KbSemanticReranker) {
     super(options.root, reranker, options.files)
     this.snapshots.set('core', this.documents)
@@ -74,6 +78,44 @@ export class ModuleKnowledgeBaseService extends FileKnowledgeBaseService {
     await Promise.all(this.pending.values())
   }
   async modules(): Promise<ModuleState[]> { return [...this.states.values()].map(state => ({ ...state })) }
+
+  /** Register a repository knowledge base or return the module already serving it; indexing starts in the background. */
+  async ensureSource(input: { repository: string; ref?: string; path?: string; title?: string }): Promise<ModuleState> {
+    const ref = input.ref ?? 'main', path = input.path ?? 'docs/kb'
+    const key = repositoryKey(input.repository)
+    const existing = [...this.states.values()].find(state => state.repository && repositoryKey(state.repository) === key && state.ref === ref && state.path === path)
+    if (existing) return { ...existing }
+    if (this.options.managedByEnv) throw new Error('kb_modules_managed_by_env')
+    if (!this.options.writeSources) throw new Error('kb_modules_unavailable')
+    const base = (key.split('/').pop() ?? 'module').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'module'
+    let id = base
+    for (let n = 2; this.states.has(id); n++) id = `${base}-${n}`
+    const source: KbSource = { id, title: input.title?.trim() || key.split('/').pop() || id, repository: input.repository, ref, path }
+    // Validate exactly like file configuration before anything is stored.
+    readKbSources(this.options.dataDir, this.options.files, JSON.stringify([...this.sources(), source]))
+    this.states.set(id, { ...source, indexedSha: null, indexedAt: null, status: 'indexing' })
+    this.options.writeSources(this.sources())
+    void this.refreshModule(id)
+    return { ...this.states.get(id)! }
+  }
+
+  /** Remove a registered module and its documents; the Core module cannot be removed. */
+  async removeSource(id: string): Promise<boolean> {
+    if (id === 'core' || !this.states.has(id)) return false
+    if (this.options.managedByEnv) throw new Error('kb_modules_managed_by_env')
+    await this.pending.get(id)
+    this.states.delete(id)
+    this.snapshots.delete(id)
+    this.documents = [...this.snapshots.values()].flat()
+    this.byId = new Map(this.documents.map(item => [item.document.id, item]))
+    this.options.writeSources?.(this.sources())
+    return true
+  }
+
+  private sources(): KbSource[] {
+    return [...this.states.values()].filter(state => state.id !== 'core')
+      .map(({ id, title, repository, ref, path }) => ({ id, title, repository: repository!, ref, path }))
+  }
   private async refreshAll(): Promise<void> {
     await Promise.all([...this.states.keys()].filter(id => id !== 'core').map(id => this.refreshModule(id)))
   }
