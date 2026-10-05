@@ -34,7 +34,7 @@
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 40 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-05 | ⚠ 66 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 429 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ⚠ 6 коммит(ов) в areas после сверки: c1677631 feat(chat): paged conversation history (reliability-v2 B01) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ⚠ 4 коммит(ов) в areas после сверки: 7d4696a0 feat(shared): paged history in the conversations:get IPC contract … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
@@ -54,6 +54,7 @@
 
 - [apps/server](../../apps/server/AGENTS.md)
 - [packages/component-runtime](../../packages/component-runtime/AGENTS.md)
+- [packages/kb-tools](../../packages/kb-tools/AGENTS.md)
 - [packages/shared](../../packages/shared/AGENTS.md)
 
 ## Журнал сессий
