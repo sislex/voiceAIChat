@@ -96,7 +96,7 @@
     "@sislexa/agent": "file:vendor/sislexa-agent-0.22.2-eff9f2b81386.tgz",
     "electron": "33.4.11",
     "@sislexa/desktop": "file:vendor/sislexa-desktop-1.0.19-99810500c8ef.tgz",
-    "@sislexa/core-ui": "file:vendor/sislexa-core-ui-1.5.0-51a8c29b8f1b.tgz",
+    "@sislexa/core-ui": "file:vendor/sislexa-core-ui-1.5.1-045645eb7c0e.tgz",
     "@sislexa/analytics": "file:vendor/sislexa-analytics-1.3.0-058c5ebed59f.tgz",
     "tar-stream": "2.2.0",
     "@sislexa/chat-ui": "file:vendor/sislexa-chat-ui-0.2.0-29f9fbf79e29.tgz",
