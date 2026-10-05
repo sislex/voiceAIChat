@@ -5,10 +5,17 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, symlinkSync, readd
 import { resolve, join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { assertReleaseVersions } from './release-version.mjs'
 
 export const root = resolve(import.meta.dirname, '..')
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 export const requiredPackages = Object.freeze(['@sislexa/make', '@sislexa/web-reader', '@sislexa/playwright-reader', '@sislexa/core-ui', '@sislexa/desktop', '@sislexa/chat-ui', '@voicechat/chat-app', '@voicechat/ui-foundation', '@voicechat/shared', '@voicechat/make-contracts', '@voicechat/web-reader-contracts', '@voicechat/playwright-reader-contracts', '@voicechat/browser-contracts'])
+
+export function verifyDesktopRendererProvenance(desktop, ui) {
+  assertReleaseVersions(desktop, 'Desktop renderer provenance')
+  assertReleaseVersions(ui, 'Core UI provenance')
+  if (desktop.dependencies.coreUi.commit !== ui.commit || desktop.dependencies.coreUi.version !== ui.version) throw Error('Desktop renderer provenance mismatch')
+}
 
 export async function archiveFiles(bytes) {
   const files = new Map(), stream = extract()
@@ -27,6 +34,7 @@ export async function archiveFiles(bytes) {
 }
 
 export async function verifySnapshot(snapshot, directory = root) {
+  assertReleaseVersions(snapshot, 'Owner snapshot')
   if (snapshot.schemaVersion !== 1 || snapshot.packages?.length !== requiredPackages.length || new Set(snapshot.packages.map(row => row.name)).size !== requiredPackages.length || requiredPackages.some(name => !snapshot.packages.some(row => row.name === name))) throw Error('Incomplete owner artifact set')
   const lock = JSON.parse(readFileSync(join(directory, 'package-lock.json')))
   const archives = new Map()
@@ -36,6 +44,8 @@ export async function verifySnapshot(snapshot, directory = root) {
     if (digest(bytes) !== row.sha256 || 'sha512-' + createHash('sha512').update(bytes).digest('base64') !== row.integrity) throw Error('Artifact digest mismatch: ' + row.name)
     const files = await archiveFiles(bytes)
     const pkg = JSON.parse(files.get('package.json')), source = JSON.parse(files.get('release-source.json'))
+    assertReleaseVersions(pkg, row.name)
+    assertReleaseVersions(source, `${row.name} provenance`)
     if (pkg.name !== row.name || pkg.version !== row.version || source.version !== row.version || source.commit !== row.commit || source.repository !== row.repository) throw Error('Artifact provenance mismatch: ' + row.name)
     const installed = lock.packages['node_modules/' + row.name]
     if (installed && !installed.link && (installed.resolved !== 'file:vendor/' + row.asset || installed.integrity !== row.integrity || installed.version !== row.version)) throw Error('Lockfile artifact mismatch: ' + row.name)
@@ -43,7 +53,7 @@ export async function verifySnapshot(snapshot, directory = root) {
   }
   const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
   const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
-  if (desktop.dependencies.coreUi.commit !== ui.commit || desktop.dependencies.coreUi.version !== ui.version) throw Error('Desktop renderer provenance mismatch')
+  verifyDesktopRendererProvenance(desktop, ui)
   const manifest = JSON.parse(archives.get('@sislexa/core-ui').get('manifest.json'))
   for (const [name, hash] of Object.entries(manifest.files)) {
     if (digest(archives.get('@sislexa/core-ui').get(name)) !== hash) throw Error('Core UI asset mismatch')
