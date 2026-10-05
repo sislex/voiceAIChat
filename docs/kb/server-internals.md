@@ -19,6 +19,31 @@ request ID with the validated Core value.
 
 ## Запуск и dependency injection
 
+### Knowledge module lifecycle
+
+`server.ts` builds `ModuleKnowledgeBaseService` from `config.kbRoot`,
+`config.dataDir`, optional `config.kbModules` (`VC_KB_MODULES`) and
+`config.kbRefreshMs` (`VC_KB_REFRESH_MS`, default 600000). The source-file fallback
+is `kb-modules.json` under the data directory. `ScopedKnowledgeBase` wraps the
+file modules and retains the existing database visibility checks. It forwards
+module status/refresh and resolves the current authorized project's repository
+for auto-context preference.
+
+The concrete Git adapter in `kb/sources.ts` uses depth-one fetch, non-cone
+sparse checkout and the existing Git credential helper or GitHub integration
+token. `BuildOptions.kbCredentials` injects credential lookup for deployments
+and tests; `BuildOptions.kbService` still replaces the complete file source.
+Per-module refresh promises serialize updates, and complete in-memory snapshots
+are swapped only after successful indexing. Failures preserve the previous
+snapshot and expose only constant failure reasons. The timer is unreferenced;
+Fastify's `onClose` clears it and waits for bounded in-flight operations.
+
+`kb/routes.ts` serves `/api/kb/modules` and admin-only
+`POST /api/kb/modules/:id/refresh`. Module filters flow through REST, MCP and
+the scoped engine without changing `kb/access.ts`. File IDs are namespaced by
+module and relative Markdown path; legacy Core IDs remain read aliases.
+See [repository module configuration](features/project-knowledge-base.md#repository-modules).
+
 ### HTTP response compression
 
 `server.ts` registers `httpCompression.ts` before Core routes. The

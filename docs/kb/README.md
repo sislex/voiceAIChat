@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 58 коммит(ов) в areas после сверки: 7153cd72 feat(shared): knowledge base module contracts (kb-service-v1 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 17 коммит(ов) в areas после сверки: 7153cd72 feat(shared): knowledge base module contracts (kb-service-v1 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 1806 коммит(ов) в areas после сверки: 2e04601a chore(shared): pin Shared 0.1.22 archive … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 1807 коммит(ов) в areas после сверки: 323bbe46 chore(shared): pin Shared 0.1.23 archive … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 92 коммит(ов) в areas после сверки: c143f684 Merge origin/main into dc/reliability-v2-b01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
@@ -59,7 +59,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1071. Последние:
+Всего записей: 1072. Последние:
 
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy

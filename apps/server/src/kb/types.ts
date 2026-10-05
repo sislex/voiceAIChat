@@ -1,4 +1,4 @@
-import type { KbContextBundle, KbDocument, KbDocumentSummary, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
+import type { KbModule, KbContextBundle, KbDocument, KbDocumentSummary, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from '@voicechat/shared'
 
 /**
  * Кто и на что смотрит. Видимость считается ТОЛЬКО по этим полям, а не по
@@ -7,6 +7,8 @@ import type { KbContextBundle, KbDocument, KbDocumentSummary, KbScope, KbSearchR
  * «Использование».
  */
 export interface KbView {
+  module?: string
+  repository?: string
   userId: string | null
   /** Проекты, в которых пользователь состоит (заполняет вызывающий из БД). */
   projectIds: string[]
@@ -20,6 +22,9 @@ export interface KbView {
 export const PUBLIC_KB_VIEW: KbView = { userId: null, projectIds: [] }
 
 export interface KnowledgeBaseService {
+  modules?(): Promise<KbModule[]>
+  refreshModule?(id: string): Promise<KbModule | null>
+  preferredModule?(view: KbView): Promise<string | undefined>
   status(): Promise<KbStatus>
   topics(view?: KbView): Promise<KbDocumentSummary[]>
   document(id: string, view?: KbView): Promise<KbDocument | null>

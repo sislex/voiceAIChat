@@ -162,6 +162,20 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(report.recent[0].sections[0]).toMatchObject({ documentId: 'protocol', anchor: 'websocket' })
   })
 
+  it('passes module filters to search/topics and resolves module-qualified document IDs', async () => {
+    const search = vi.fn(async () => [])
+    const topics = vi.fn(async () => [])
+    const document = vi.fn(async () => ({ ...doc, id: 'make:protocol.md', module: 'make' }))
+    await makeApp(stubKb({ search, topics, document }))
+    await call('search', { query: 'websocket', module: 'make' })
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ module: 'make' }), expect.any(Object))
+    await call('topics', { module: 'make' })
+    expect(topics).toHaveBeenCalledWith(expect.objectContaining({ module: 'make' }))
+    expect((await call('document', { documentId: 'protocol.md', module: 'make' })).isError).not.toBe(true)
+    expect(document).toHaveBeenCalledWith('make:protocol.md', expect.any(Object))
+    expect((await call('document', { documentId: 'make:protocol.md', module: 'core' })).isError).toBe(true)
+  })
+
   it('document отдаёт раздел и пишет его точную длину', async () => {
     await makeApp()
     const { text } = await call('document', { documentId: 'protocol', anchor: 'websocket' })

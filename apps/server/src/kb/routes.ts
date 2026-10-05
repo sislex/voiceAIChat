@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { REST, isKbScope, type KbDocument, type KbDocumentKind, type KbScope, type KbUsageReport } from '@voicechat/shared'
+import { PUBLIC_KB_VIEW } from './types.js'
 import type { KnowledgeBaseService } from './types.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from "@sislexa/identity/server/users/auth"
@@ -37,16 +38,23 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
   const db = usage?.db
   const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
   app.get(REST.kbStatus, async () => kb.status())
-
-  app.get<{ Querystring: { scope?: string; projectId?: string } }>(REST.kbTopics, async (req, reply) => {
-    if (!db) return kb.topics()
-    if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
-    return kb.topics(await kbViewOfRequest(db, req, req.query))
+  app.get(REST.kbModules, async () => kb.modules?.() ?? [])
+  app.post<{ Params: { id: string } }>('/api/kb/modules/:id/refresh', async (req, reply) => {
+    if ((req.user as { role?: string } | undefined)?.role !== 'admin') return reply.code(403).send({ error: 'admin required' })
+    const result = await kb.refreshModule?.(req.params.id)
+    return result ?? reply.code(404).send({ error: 'KB module not found' })
   })
 
-  app.get<{ Querystring: { q?: string; kind?: string; tags?: string; limit?: string; scope?: string; projectId?: string } }>(REST.kbSearch, async (req, reply) => {
+  app.get<{ Querystring: { scope?: string; projectId?: string; module?: string } }>(REST.kbTopics, async (req, reply) => {
+    if (!db) return kb.topics({ ...PUBLIC_KB_VIEW, module: req.query.module })
+    if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
+    return kb.topics({ ...await kbViewOfRequest(db, req, req.query), module: req.query.module })
+  })
+
+  app.get<{ Querystring: { q?: string; kind?: string; tags?: string; limit?: string; scope?: string; projectId?: string; module?: string } }>(REST.kbSearch, async (req, reply) => {
     const request = {
       query: req.query.q ?? '',
+      module: req.query.module,
       kinds: req.query.kind ? (req.query.kind.split(',') as KbDocumentKind[]) : undefined,
       tags: req.query.tags ? req.query.tags.split(',') : undefined,
       limit: Number(req.query.limit) || undefined,
@@ -58,11 +66,11 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
     return kb.search(request, await kbViewOfRequest(db, req, req.query))
   })
 
-  app.get<{ Querystring: { q?: string; budget?: string; projectId?: string } }>(REST.kbContext, async (req, reply) => {
+  app.get<{ Querystring: { q?: string; budget?: string; projectId?: string; module?: string } }>(REST.kbContext, async (req, reply) => {
     const budget = Number(req.query.budget) || undefined
-    if (!db) return kb.context(req.query.q ?? '', budget)
+    if (!db) return kb.context(req.query.q ?? '', budget, { ...PUBLIC_KB_VIEW, module: req.query.module })
     if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
-    return kb.context(req.query.q ?? '', budget, await kbViewOfRequest(db, req, req.query))
+    return kb.context(req.query.q ?? '', budget, { ...await kbViewOfRequest(db, req, req.query), module: req.query.module })
   })
 
   // Документ: чужая проектная/персональная статья неотличима от отсутствующей.

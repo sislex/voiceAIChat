@@ -55,6 +55,8 @@ export interface ServerConfig {
   /** Отображение имён моделей Claude Code в имена upstream. */
   claudeGatewayModelMap: Record<string, string>
   /** Корень read-only базы знаний Markdown. */
+  kbRefreshMs?: number
+  kbModules?: string
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
@@ -265,6 +267,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         ? env.VC_CLAUDE_UPSTREAM_AUTH
         : 'x-api-key',
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
+    kbRefreshMs: Number(env.VC_KB_REFRESH_MS) > 0 ? Number(env.VC_KB_REFRESH_MS) : 600_000,
+    kbModules: env.VC_KB_MODULES,
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
