@@ -58,7 +58,7 @@ project integration tokens (environments-v3 C20, `@voicechat/shared` 0.1.16).
 1.2.1, and chat service data loaded only on the «Загружать служебные данные ответов» conversation
 setting with an on-demand «загружено X из Y МБ» progress bar and one conversation request
 (make-chat-service-data-v1 C03).
-Desktop 1.0.18 (owner commit `b9fcc3e5`, agent 0.21.0) embeds the same renderer;
+Desktop 1.0.19 (owner commit `b61d4f01`, agent 0.22.1, agent contracts 1.2.1) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
