@@ -55,7 +55,7 @@ export type KanbanServiceRpcMethod = (typeof KANBAN_SERVICE_RPC_METHODS)[number]
 export const KANBAN_CORE_RPC_METHODS = [
   'machines.ensureEnvironmentGrant', 'machines.removeEnvironmentGrant', 'machines.environmentGrantState', 'machines.vpnAddressOf',
   'machines.snapshot', 'machines.fsRead', 'machines.fsWrite', 'machines.fsMkdir', 'machines.fsDelete', 'machines.fsRename',
-  'machines.gitAccess', 'machines.ensureLink', 'machines.deleteLink', 'machines.listLinks', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
+  'machines.gitAccess', 'machines.devProcess', 'machines.ensureLink', 'machines.deleteLink', 'machines.listLinks', 'machines.createTunnel', 'machines.closeTunnel', 'machines.closeTunnelsForTarget',
   'kb.status', 'kb.topics', 'kb.document', 'kb.search', 'kb.context', 'kb.modules', 'kb.ensureModule', 'kb.removeModule',
   'uploads.get', 'uploads.read', 'widgets.surface', 'widgets.updateSurface', 'widgets.uiRequest', 'ensureProjectMainCurrent'
 ] as const
