@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-05
-checked: 447a2818
+checked: c6dedcd5
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -17,6 +17,36 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Paged conversation history
+
+`@voicechat/shared` 0.1.11 adds optional `limit` (integer 1..200) and `before`
+(exclusive message ID cursor) to `GET /api/conversations/:id` and the
+`REST.conversation(id, query?)` URL helper. With `limit`, the response retains
+`conversation` and `messages` and adds `history: { hasMore, oldestId, total }`.
+The first page contains the latest published messages; subsequent pages use
+`before=history.oldestId`. Each page is returned in chronological publication
+order (`history_position`, then `id`). `hasMore` indicates older messages;
+`oldestId` is null for an empty page. `total` counts all currently published
+messages in the conversation, independent of the cursor, and can change between
+requests. New replies appended between pages do not shift older pages.
+
+Without `limit`, the response remains the complete legacy history with no
+`history` field; `before` is ignored. Existing scope and project authorization
+still applies, including `scope=make` and Kanban's required `projectId`.
+Unknown, deleted, queued, or other-conversation cursors return HTTP 400 with
+`code: 'invalid_history_cursor'`. Invalid paging parameters return HTTP 400 with
+`code: 'invalid_history_query'`; inaccessible conversations still return 404.
+Clients should restart pagination after an invalid cursor.
+
+Both SQLite and Postgres use bounded keyset queries and the
+`idx_messages_history_page` index on `(conversation_id, state, history_position,
+id)`, fetching at most `limit + 1` message rows. Queued messages are excluded
+from pages and totals. Legacy desktop imports with null history positions use
+separate indexed ranges preserving the complete history's existing order.
+The existing `loadServiceData` setting and
+`stripServiceData` projection apply equally to paged and complete responses;
+stored diagnostics and WebSocket message events are unchanged.
 
 ## Versioned chat/application boundary
 
