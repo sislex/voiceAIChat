@@ -151,6 +151,7 @@ import { ModuleKnowledgeBaseService, gitStoreCredentials, readKbSources, type Kb
 import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
 import { registerUniversalSearch } from './routes/universalSearch.js'
 import { ScopedKnowledgeBase } from './kb/scoped.js'
+import { createLocalKbRpc } from './kb/rpc.js'
 import { kbViewOf } from './kb/access.js'
 import { KbResearchManager } from './kb/research.js'
 import type { KnowledgeBaseService } from './kb/types.js'
@@ -708,6 +709,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     app.addHook('onClose', async () => fileKb.close())
   }
   const kb = new ScopedKnowledgeBase(fileKb, db, reranker)
+  app.decorate('kbRpc', createLocalKbRpc(kb, db, opts.config.kbToolEnabled))
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })

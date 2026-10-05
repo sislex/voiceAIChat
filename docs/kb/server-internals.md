@@ -4,6 +4,7 @@ updated: 2026-10-05
 checked: 30cbb49d
 areas:
   - apps/server/src
+  - packages/knowledge/src
   - apps/image-studio/src
 ---
 
@@ -20,6 +21,37 @@ request ID with the validated Core value.
 ## Запуск и dependency injection
 
 ### Knowledge module lifecycle
+
+`packages/knowledge` (`@voicechat/knowledge`) owns Markdown indexing, search,
+scoped visibility, source snapshot lifecycle, auto-context and the KB MCP
+definitions (`search`, `document`, `topics`). It has no imports from Core and
+does not open files, databases, Git processes or model connections itself.
+Core's `kb/` entry points retain source-compatible wrappers around the package;
+REST routes, MCP HTTP transport, operational tools and research orchestration
+remain in Core. The source wrappers use relative workspace imports so the
+existing `tsx` launch does not depend on a generated JavaScript build.
+
+The explicit host ports are:
+
+| Port | Core implementation | Responsibility |
+| --- | --- | --- |
+| `KbFiles` | `kb/files.ts`: `kbFiles` | Markdown listing, configuration/document reads and existence checks |
+| `KbGit` | `kb/sources.ts`: `createKbGit` | Credential lookup, sparse checkout, bounded fetch and docs-path validation |
+| `KbScopedStore` | `kb/scoped.ts`: `createKbScopedStore` | Stored document generation/rows and authorized project repository lookup |
+| `KbSemanticReranker` | `kb/reranker.ts`: `LlmKbReranker` | Model execution; package search retains its lexical fallback |
+| `KbView` / `KbAccess<Viewer>` | `kb/access.ts`, `kb/rpc.ts` | Host identity, current membership and write permissions; request filters only narrow visibility |
+| `KbDocumentStore` | `kb/rpc.ts` | Persistent document lookup, save and delete through `db.kb` |
+| `KbRpcPorts.usage` | `kb/rpc.ts` | Authorized conversation/project/run/task usage reports |
+| `KbUsageTracker` | `kb/usage.ts` | MCP delivery telemetry and Core event publication |
+
+`createInProcessKbRpc` implements every method in Shared's B01
+`KB_SERVICE_RPC` registry. `createLocalKbRpc` binds concrete database/access
+adapters and `server.ts` exposes it as the `kbRpc` Fastify decorator. The host
+supplies the authenticated user ID separately from the decoded request; live
+identity and membership checks protect writes and scoped reads. The contract
+test in `kb/rpc.test.ts` runs the registry against the package with real
+in-memory SQL storage, including all usage targets and denied access.
+This extraction adds no remote listener or deployment requirement.
 
 `server.ts` builds `ModuleKnowledgeBaseService` from `config.kbRoot`,
 `config.dataDir`, optional `config.kbModules` (`VC_KB_MODULES`) and
