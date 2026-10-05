@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-05
-checked: 7b3cc1d3
+checked: 22eb01a9
 areas:
   - packages/shared/src
 ---
@@ -109,6 +109,8 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 `INVALID_HISTORY_CURSOR` (reliability-v2 B01).
 
 0.1.21 (`voicechat-shared-0.1.21-fcf5f27bcc29.tgz`, contracts commit `7b3cc1d3`) adds optional `limit` and `before` to the `conversations:get` IPC contract (paged history for the renderer).
+
+0.1.22 (`voicechat-shared-0.1.22-2374d42bebbf.tgz`, contracts commit `22eb01a9`) adds knowledge base modules: `KbModule`, `REST.kbModules`, the `module` filter and `<module>:<path>` file topic ids, and the typed knowledge service RPC registry (kb-service-v1 B01).
 
 ### Existing modules
 
