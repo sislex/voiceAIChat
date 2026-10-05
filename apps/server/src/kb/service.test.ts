@@ -73,11 +73,11 @@ updated: 2026-07-27
 }
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 describe('FileKnowledgeBaseService', () => {
-  it('точный символ получает приоритет и разрешает auto context', async () => { const kb = new FileKnowledgeBaseService(fixture()); const found = await kb.search({ query: 'createTurnManager' }); expect(found[0]).toMatchObject({ documentId: 'model-turns', matchTypes: ['symbol'] }); const context = await kb.context('createTurnManager'); expect(context).toMatchObject({ confidence: 'high', autoInjectAllowed: true }) })
+  it('точный символ получает приоритет и разрешает auto context', async () => { const kb = new FileKnowledgeBaseService(fixture()); const found = await kb.search({ query: 'createTurnManager' }); expect(found[0]).toMatchObject({ documentId: 'core:features/turns.md', matchTypes: ['symbol'] }); const context = await kb.context('createTurnManager'); expect(context).toMatchObject({ confidence: 'high', autoInjectAllowed: true }) })
   it('поиск оставляет excerpt, а context добавляет полный текст раздела', async () => {
     const kb = new FileKnowledgeBaseService(fixture())
     const found = await kb.search({ query: 'обрыв websocket сохраняет ответ' })
-    expect(found[0]).toMatchObject({ documentId: 'model-turns', matchTypes: ['lexical'] })
+    expect(found[0]).toMatchObject({ documentId: 'core:features/turns.md', matchTypes: ['lexical'] })
     expect(found[0]).not.toHaveProperty('text')
     const context = await kb.context('createTurnManager')
     expect(context.sections[0].text).toBe('TurnManager хранит ход после обрыва WebSocket и сохраняет ответ в SQLite.')
@@ -85,14 +85,14 @@ describe('FileKnowledgeBaseService', () => {
   it('токены фразового запроса: путь внутри area и имя символа ставят раздел первым', async () => {
     const kb = new FileKnowledgeBaseService(fixture())
     const found = await kb.search({ query: 'карточка задачи: модалка описания `packages/ui/src/components/kanban/TaskModal.tsx` и TaskModal' })
-    expect(found[0]).toMatchObject({ chunkId: 'projects#фронтенд', matchTypes: ['symbol', 'path'] })
+    expect(found[0]).toMatchObject({ chunkId: 'core:features/projects.md#фронтенд', matchTypes: ['symbol', 'path'] })
     expect(found[0].explanation).toBe('Точное совпадение символа')
   })
   it('сокращённый запрос CHAT-50 поднимает projects#фронтенд в топ-3 мимо шумного раздела', async () => {
     const kb = new FileKnowledgeBaseService(fixture())
     const found = await kb.search({ query: 'карточка задачи модалка описание TaskModal' })
-    expect(found.slice(0, 3).map((r) => r.chunkId)).toContain('projects#фронтенд')
-    const hit = found.find((r) => r.chunkId === 'projects#фронтенд')!
+    expect(found.slice(0, 3).map((r) => r.chunkId)).toContain('core:features/projects.md#фронтенд')
+    const hit = found.find((r) => r.chunkId === 'core:features/projects.md#фронтенд')!
     expect(hit.matchTypes).toContain('symbol')
   })
   it('выборочно вызывает reranker для неоднозначной выдачи и проверяет ids', async () => { const rerank = { rerank: vi.fn(async (_q, candidates) => [candidates.at(-1)!.chunkId, 'unknown']) }; const kb = new FileKnowledgeBaseService(fixture(), rerank); const found = await kb.search({ query: 'websocket' }); expect(rerank.rerank).toHaveBeenCalledOnce(); expect(found[0].matchTypes).toContain('semantic') })

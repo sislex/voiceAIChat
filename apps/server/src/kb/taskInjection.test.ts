@@ -49,7 +49,7 @@ describe('авто-инъекция на кодовых описаниях за�
     const task = tasks.find((item) => item.key === 'CHAT-54')!
     const auto = await buildKbAutoContext(kb, kbTaskQuery(task), PUBLIC_KB_VIEW)
     const docs = auto.sections.map((section) => section.documentId)
-    expect(docs.some((id) => id === 'machines' || id === 'ci-runner' || id === 'llm')).toBe(true)
+    expect(docs.some((id) => id === 'core:machines.md' || id === 'core:features/ci-runner.md' || id === 'core:llm.md')).toBe(true)
     // Упомянутые в описании пути должны быть задеты выданными разделами: именно
     // эта связь и делает контекст полезным для технической задачи.
     const paths = kbTaskQuery(task).paths
@@ -59,7 +59,7 @@ describe('авто-инъекция на кодовых описаниях за�
   it('CHAT-68 приводит к разделу про расход CI-рана', async () => {
     const task = tasks.find((item) => item.key === 'CHAT-68')!
     const auto = await buildKbAutoContext(kb, kbTaskQuery(task), PUBLIC_KB_VIEW)
-    expect(auto.sections.map((section) => section.documentId)).toContain('ci-runner')
+    expect(auto.sections.map((section) => section.documentId)).toContain('core:features/ci-runner.md')
   })
 
   it('CHAT-70 приводит к разделам про модели и UI, несмотря на ${…} в описании', async () => {
@@ -68,7 +68,7 @@ describe('авто-инъекция на кодовых описаниях за�
     expect(query.symbols).toEqual([])
     const auto = await buildKbAutoContext(kb, query, PUBLIC_KB_VIEW)
     const docs = auto.sections.map((section) => section.documentId)
-    expect(docs.some((id) => id === 'llm' || id === 'ui' || id === 'clients')).toBe(true)
+    expect(docs.some((id) => id === 'core:llm.md' || id === 'core:ui.md' || id === 'core:clients.md')).toBe(true)
   })
 
   it('средний размер инъекции остаётся в пределах бюджета', async () => {

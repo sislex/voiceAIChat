@@ -2,7 +2,7 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-08-02
+updated: 2026-10-05
 checked: 259877e
 areas:
   - docs/kb
@@ -49,6 +49,62 @@ related:
 ---
 
 # База знаний проекта
+
+## Repository modules
+
+`ModuleKnowledgeBaseService` indexes Core's `VC_KB_ROOT` (default `docs/kb`)
+as the reserved module `core`. Additional sources are an array in
+`$VC_DATA_DIR/kb-modules.json`. `VC_KB_MODULES`, when set, replaces that array
+with JSON from the environment; an empty array leaves only Core. Restart Core
+after changing the source list. Example:
+
+```json
+[{"id":"make","title":"Make","repository":"https://github.com/sislex/make.git","ref":"main","path":"docs/kb"}]
+```
+
+Module IDs are lowercase slugs and must be unique. Repositories use HTTPS
+without embedded credentials (absolute local repository paths support testing
+and local mirrors); docs paths must stay inside the checkout. Credentials come
+from the existing Git credential helper store (`git credential fill`) or the
+existing `VC_GITHUB_TOKEN` integration setting for `github.com`. The service
+passes credentials to Git in process environment configuration, never URL,
+command arguments, on-disk Git configuration, API responses or log messages.
+It does not create or modify credentials. Inbound project integration tokens
+are stored as hashes and are not Git hosting credentials.
+
+Each remote source has a shallow, sparse checkout under
+`$VC_DATA_DIR/kb-cache/<id>`. Startup triggers a refresh; subsequent checks run
+every ten minutes (`VC_KB_REFRESH_MS` overrides the interval). Git fetches the
+configured ref with depth one and requests blob filtering; sparse checkout
+materializes only the docs subtree. A changed SHA is fully parsed before its
+in-memory index replaces the previous generation. Unchanged SHAs retain the
+index timestamp. Concurrent refresh requests for one module share the same
+operation. A failed fetch or parse keeps the last successful in-memory index,
+SHA and timestamp, with `status: failed` and a constant sanitized `error`.
+Remote indexes are rebuilt at process startup; cached Git objects are reused.
+
+`GET /api/kb/modules` returns the module list, status, indexed SHA and Unix
+millisecond timestamp. `POST /api/kb/modules/:id/refresh` is admin-only and
+returns the resulting module state (404 for an unknown module). A failed
+refresh is represented by the returned state rather than raw Git diagnostics.
+
+File IDs are `<module>:<relative-path.md>`; `sourcePath` is relative to the
+source repository. Old unprefixed Core IDs, including frontmatter IDs and
+extensionless paths, continue to resolve. Database document IDs stay unchanged.
+Topics, search and context REST queries accept `module`; MCP `topics`, `search`
+and `document` accept the same optional filter. No filter searches all visible
+modules; an unknown module produces an empty result. File modules have the same
+public `usage` visibility as Core's existing files; `access.ts` is unchanged.
+The module filter narrows results and excludes unassociated database articles.
+
+Auto-context first tries the module matching the authorized current project's
+Git repository (or the repository explicitly supplied in the internal KB view).
+If it cannot produce useful context, it falls back to the normal visible search.
+SSH-style and HTTPS project URLs match the same configured repository.
+
+Implementation and operator commissioning are separate: deploying the code
+does not register production sources or provision tokens. Operators supply the
+source list and existing Git access, then verify module status after startup.
 
 ## Назначение
 
