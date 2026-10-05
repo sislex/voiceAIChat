@@ -192,6 +192,7 @@ export class VoiceChatDb {
         }
         await this.sql.exec('DROP INDEX IF EXISTS idx_environment_active_operation')
         await this.sql.exec(PG_SCHEMA.afterColumnsSql)
+        await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history_page ON messages(conversation_id, state, history_position, id)`)
         await initializePersonalTenants(this.sql, this.now, this.newId)
       })
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
@@ -201,6 +202,7 @@ export class VoiceChatDb {
       await this.migrateModelPriceTiers()
       await this.sql.exec(SCHEMA_SQL)
       await this.migrate()
+      await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history_page ON messages(conversation_id, state, history_position, id)`)
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
     await this.sql.exec("UPDATE environment_links SET address = 'host.docker.internal:' || listener_port WHERE address = ''")

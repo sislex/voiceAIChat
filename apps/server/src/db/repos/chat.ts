@@ -9,6 +9,7 @@ import { BaseRepo } from './base.js'
 import { parseJsonValue } from './support.js'
 import type { Values } from './chatSettings.js'
 import { InvalidChatSettings } from '../../chatSettingsValidation.js'
+import type { ConversationHistory } from '@voicechat/shared'
 
 interface ConversationRow {
   id: string
@@ -1184,6 +1185,40 @@ export class ChatRepo extends BaseRepo {
   async listMessages(userId: string, conversationId: string): Promise<Message[]> {
     if (!(await this.ownsConversation(userId, conversationId))) return []
     const rows = (await this.sql.all(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
+    return this.messageRows(rows)
+  }
+
+  /** Indexed keyset read: fetch one extra row, never materialize the full history. */
+  async pageMessages(userId: string, conversationId: string, limit: number, before?: string): Promise<{ messages: Message[]; history: ConversationHistory } | null> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw Error('Invalid history limit')
+    if (!(await this.ownsConversation(userId, conversationId))) throw Error('conversation not found')
+    const cursor = before === undefined ? undefined : await this.sql.get<{ history_position: number | null; id: string }>(
+      `SELECT history_position, id FROM messages WHERE conversation_id = ? AND id = ? AND state = 'published'`, [conversationId, before])
+    if (before !== undefined && !cursor) return null
+    // Desktop imports can have NULL positions. Preserve listMessages' native
+    // NULL ordering using separate indexed ranges, without an OR/table scan.
+    const partitions = this.sql.engine === 'postgres' ? [true, false] : [false, true]
+    const start = cursor ? partitions.indexOf(cursor.history_position === null) : 0
+    const rows: MessageRow[] = []
+    for (const nullPosition of partitions.slice(start)) {
+      if (rows.length === limit + 1) break
+      const samePartition = cursor && (cursor.history_position === null) === nullPosition
+      const bound = !samePartition ? '' : nullPosition ? 'AND id < ?' : 'AND (history_position, id) < (?, ?)'
+      rows.push(...await this.sql.all<MessageRow>(
+        `SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+         AND history_position IS ${nullPosition ? '' : 'NOT '}NULL ${bound}
+         ORDER BY history_position DESC, id DESC LIMIT ?`,
+        [conversationId, ...(samePartition ? nullPosition ? [cursor.id] : [cursor.history_position, cursor.id] : []), limit + 1 - rows.length]))
+    }
+    const total = await this.sql.get<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])
+    const hasMore = rows.length > limit
+    if (hasMore) rows.pop()
+    rows.reverse()
+    return { messages: this.messageRows(rows), history: { hasMore, oldestId: rows[0]?.id ?? null, total: Number(total!.total) } }
+  }
+
+  private messageRows(rows: MessageRow[]): Message[] {
     return rows.map((r) => ({
       id: r.id,
       conversationId: r.conversation_id,
