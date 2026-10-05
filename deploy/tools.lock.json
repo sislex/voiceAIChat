@@ -12,8 +12,8 @@
       "package": "@sislexa/playwright-reader",
       "workspace": "apps/playwright-reader",
       "repository": "https://github.com/sislex/playwrightreader",
-      "version": "1.2.3",
-      "commit": "55091701d4b7e8be7cea3659dfa6d2ef7ec3b14f"
+      "version": "1.2.4",
+      "commit": "857d5a20c557f13c61fd6a2c8ef71d8cd8b246ac"
     },
     "web-reader": {
       "package": "@sislexa/web-reader",
