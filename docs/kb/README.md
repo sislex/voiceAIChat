@@ -36,7 +36,7 @@
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 427 коммит(ов) в areas после сверки: 4f44c3a2 feat(server): compress JSON API responses (make-chat-service-data-v1 C02) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-09-29 | ⚠ 4 коммит(ов) в areas после сверки: 97660b3c feat(gates): gate:quick and test:files with GATE-FAILED-TESTS (delivery-fast-gate-v1 C03) … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-09-29 | ⚠ 5 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-04 | ⚠ 3 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-05 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 275 коммит(ов) в areas после сверки: e86fbb8c refactor(ui): consume independently released Core UI artifacts … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-09-29 | ⚠ 12 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-05 | ⚠ 2 коммит(ов) в areas после сверки: 5ec8d336 feat(server): chat service data only on the conversation setting (make-chat-service-data-v1 C01) … |
