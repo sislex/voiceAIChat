@@ -39,7 +39,11 @@ if (( free_kb < need_kb + margin_kb )); then
   printf '{"stage":"files-snapshot","status":"failed","log":"insufficient disk space: need %s KiB plus %s KiB margin, free %s KiB"}\n' "$need_kb" "$margin_kb" "$free_kb"
   exit 3
 fi
-"${run[@]}" "${args[@]}" . > "$out"
+# GNU tar exits 1 when files change while it reads a live volume; the archive is complete.
+# migrate runs before the write freeze, and cutover takes its final archive read-only.
+status=0
+"${run[@]}" "${args[@]}" . > "$out" || status=$?
+if (( status != 0 && status != 1 )); then exit "$status"; fi
 chmod 0600 "$out"
 python3 - "$out" "$since" <<'PY'
 import hashlib, json, os, sys
