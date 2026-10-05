@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-05
-checked: b7a1ecce
+checked: 9458da8d
 areas:
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
@@ -2415,7 +2415,9 @@ overlay precedes link overrides and `current.yml`.
 `environment-files-snapshot.sh` streams the production data volume through `docker run
 --log-driver none` (the default JSON log would store the whole archive a second time) and
 refuses with exit 3 when the output directory lacks the volume's apparent size plus a margin of
-1 GiB or 10 %. U04 `migrate` filled the production disk without both: Postgres reported one
+1 GiB or 10 %. GNU tar exit status 1 (`file changed as we read it` on the live volume) keeps the
+complete archive: `migrate` runs before the write freeze, and `cutover` takes its final archive
+read-only. U04 `migrate` filled the production disk without both: Postgres reported one
 `could not extend file … No space left on device` and Kanban restarted.
 
 The stand script records its final Compose chain (without `current.yml`) in

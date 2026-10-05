@@ -56,6 +56,23 @@ class FilesTest(unittest.TestCase):
             self.assertFalse(any('tar' in json.loads(line) for line in log.read_text().splitlines()))
             self.assertEqual([p.name for p in out.iterdir() if p.name.startswith('environment-files.')], [p.name for p in out.iterdir() if p.name.startswith('environment-files.') and p.stat().st_size])
 
+    def test_live_volume_changes_keep_the_archive(self):
+        # GNU tar exits 1 for 'file changed as we read it' (U04 migrate on the live production volume).
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root / 'out'; out.mkdir()
+            docker = root / 'docker'
+            docker.write_text("#!/usr/bin/env python3\nimport sys\nif 'du' in sys.argv: print('1\\t/data'); sys.exit(0)\nif sys.argv[1]=='run': sys.stdout.buffer.write(b'archive-bytes'); sys.stderr.write('tar: .: file changed as we read it\\n'); sys.exit(1)\n")
+            docker.chmod(0o700)
+            result = subprocess.run(['bash', str(HERE / 'environment-files-snapshot.sh'), str(out)], env={**os.environ, 'DOCKER': str(docker)}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            final = json.loads(result.stdout.splitlines()[-1])
+            self.assertEqual((final['status'], final['size']), ('passed', len(b'archive-bytes')))
+            docker.write_text("#!/usr/bin/env python3\nimport sys\nif 'du' in sys.argv: print('1\\t/data'); sys.exit(0)\nif sys.argv[1]=='run': sys.stdout.buffer.write(b'part'); sys.exit(2)\n")
+            before = sorted(p.name for p in out.iterdir())
+            failed = subprocess.run(['bash', str(HERE / 'environment-files-snapshot.sh'), str(out)], env={**os.environ, 'DOCKER': str(docker)}, capture_output=True, text=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(sorted(p.name for p in out.iterdir()), before)
+
     def test_failure_removes_partial_archive(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
