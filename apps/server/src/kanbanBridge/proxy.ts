@@ -18,6 +18,9 @@ export const KANBAN_PROXY_PREFIXES = [
 ] as const
 
 export function registerKanbanProxy(app: FastifyInstance, opts: { kanbanUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): void {
+  // B01 dev-stand collection, manifest and component operations are delegated under
+  // /api/projects/:id/dev-stands. Kanban owns allocation and the manifest; Core's
+  // existing project authorization and forwarded session apply to every method.
   // Загрузка скриншотов QA — до 10 МБ base64 в JSON; запас на обёртку.
   registerServiceProxy(app, { name: 'kanban', baseUrl: opts.kanbanUrl, prefixes: KANBAN_PROXY_PREFIXES, bodyLimit: 32 * 1024 * 1024, ...opts })
 }

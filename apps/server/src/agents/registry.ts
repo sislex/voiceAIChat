@@ -7,6 +7,7 @@ import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 
 import { randomUUID } from 'node:crypto'
 import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@sislexa/agent-contracts'
+import type { DevProcessMethod, DevProcessResponseMessage, DevProcessRpc } from '@voicechat/shared'
 import { evaluateAgentCommand, isToolAllowed, requiredVersion, AGENT_VERSION, DEFAULT_AGENT_POLICY, type AgentHttpRequest, type AgentHttpResponse, type AgentImageHost, type AgentPolicy, type AgentTelemetry, type AgentToServer, type FsOp, type FsResult, type GitAccessRequest, type GitAccessResult, type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@sislexa/agent-contracts'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
@@ -161,6 +162,8 @@ export class AgentRegistry {
   private readonly pendingFs = new Map<string, PendingFs>()
   private readonly pendingHttp = new Map<string, PendingHttp>()
   private readonly pendingGitAccess = new Map<string, PendingGitAccess>()
+  // Dev stand processes (dev-lane-v1): start waits for dependencies and readiness on the agent.
+  private readonly pendingDev = new Map<string, { agentId: string; method: DevProcessMethod; timer: NodeJS.Timeout; resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   private readonly pendingVpn = new Map<string, { agentId: string; timer: NodeJS.Timeout; resolve: (o: VpnObservation) => void; reject: (e: Error) => void }>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
@@ -297,6 +300,10 @@ export class AgentRegistry {
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    for (const [requestId, p] of this.pendingDev) {
+      if (p.agentId !== agentId) continue
+      this.pendingDev.delete(requestId); clearTimeout(p.timer); p.reject(new Error('machine_unavailable: agent disconnected'))
     }
     for (const [requestId, p] of this.pendingVpn) {
       if (p.agentId !== agentId) continue
@@ -561,6 +568,25 @@ export class AgentRegistry {
       this.pendingVpn.set(requestId, { agentId, timer, resolve, reject })
       try { this.send(agentId, { t: 'vpn.request', requestId, request }) }
       catch { clearTimeout(timer); this.pendingVpn.delete(requestId); reject(new Error('offline')) }
+    })
+  }
+
+  /**
+   * Forward a dev stand process request to the agent. Errors carry the stable dev stand code as a
+   * `<code>: <message>` prefix so callers behind RPC (Kanban) can branch on it.
+   */
+  devProcess<M extends DevProcessMethod>(agentId: string, method: M, request: DevProcessRpc[M]['request']): Promise<DevProcessRpc[M]['result']> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('machine_unavailable: machine is offline'))
+    const requestId = this.newId()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDev.delete(requestId)
+        reject(new Error(method === 'devProcess.start' ? 'readiness_timeout: dev process did not become ready' : 'machine_unavailable: no answer from the agent'))
+      }, method === 'devProcess.start' ? 10 * 60_000 : 60_000)
+      timer.unref?.()
+      this.pendingDev.set(requestId, { agentId, method, timer, resolve: resolve as (v: unknown) => void, reject })
+      try { this.send(agentId, { t: method, requestId, ...request } as unknown as ServerToAgent) }
+      catch { clearTimeout(timer); this.pendingDev.delete(requestId); reject(new Error('machine_unavailable: send failed')) }
     })
   }
 
@@ -959,6 +985,16 @@ export class AgentRegistry {
       // overtook tunnel.open and reached the target before tunnel.connect, which dropped it.
       tunnel.queue = (tunnel.queue ?? Promise.resolve()).then(() => this.handleTunnelFrame(agentId, tunnel, msg)).catch(() => undefined)
       return tunnel.queue
+    }
+    const dev = msg as unknown as DevProcessResponseMessage
+    if (typeof dev.t === 'string' && dev.t.startsWith('devProcess.') && 'requestId' in dev) {
+      const pending = this.pendingDev.get(dev.requestId)
+      if (!pending || pending.agentId !== agentId) return
+      this.pendingDev.delete(dev.requestId); clearTimeout(pending.timer)
+      if (dev.t === 'devProcess.error') pending.reject(new Error(`${dev.code}: ${dev.message}`))
+      else if (dev.t === `${pending.method}.result`) pending.resolve(dev.result)
+      else pending.reject(new Error('internal_error: unexpected dev process response'))
+      return
     }
     if (msg.t === 'vpn.result') {
       const pending = this.pendingVpn.get(msg.requestId)
