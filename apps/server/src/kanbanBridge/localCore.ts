@@ -13,6 +13,7 @@ import type { EnsureProjectMainCurrent, KanbanCore } from '../kanban/core.js'
 export interface LocalKanbanCoreDeps {
   registry: MachinesService
   kb: KnowledgeBaseService
+  kbModules: KanbanCore['kbModules']
   uploads: UploadStore
   widgets: { contexts: WidgetContextStore; ui: WidgetUiRelay }
   ensureProjectMainCurrent: EnsureProjectMainCurrent
@@ -22,6 +23,7 @@ export function createLocalKanbanCore(deps: LocalKanbanCoreDeps): KanbanCore {
   return {
     machines: deps.registry,
     kb: deps.kb,
+    kbModules: deps.kbModules,
     uploads: {
       get: (id) => deps.uploads.get(id),
       read: async (id) => {
