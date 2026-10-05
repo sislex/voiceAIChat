@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-05
-checked: e26ed457
+checked: 7b3cc1d3
 areas:
   - packages/shared/src
 ---
@@ -107,6 +107,8 @@ knowledge, and the `knowledge_sources` gate result records it (reliability-v2 B0
 conversation history: `REST.conversation(id, { limit, before })`, `ConversationHistoryQuery`,
 `ConversationWithMessages.history` (`hasMore`, `oldestId`, `total`) and
 `INVALID_HISTORY_CURSOR` (reliability-v2 B01).
+
+0.1.21 (`voicechat-shared-0.1.21-fcf5f27bcc29.tgz`, contracts commit `7b3cc1d3`) adds optional `limit` and `before` to the `conversations:get` IPC contract (paged history for the renderer).
 
 ### Existing modules
 
