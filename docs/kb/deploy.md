@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-06
-checked: 5fa975c5
+checked: fe4de637
 areas:
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
