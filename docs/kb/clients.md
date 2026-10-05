@@ -60,7 +60,7 @@ setting with an on-demand «загружено X из Y МБ» progress bar and 
 (make-chat-service-data-v1 C03).
 1.5.1 keeps the timeline still while typing: the shell and `SharedChat` ignore composer-only state,
 so a keystroke re-renders only the composer (a 360-message Make chat spent ~440 ms per key).
-Desktop 1.0.19 (owner commit `b61d4f01`, agent 0.22.1, agent contracts 1.2.1) embeds the same renderer;
+Desktop 1.0.20 (owner commit `246fbcfe`, agent 0.22.1, agent contracts 1.2.1) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
