@@ -97,7 +97,7 @@ export * from './componentConfig'
 export * from './llmAccounting'
 
 // Preserve the published Core contract while existing owner releases migrate.
-export * from '@sislexa/agent-contracts/agentProtocol'
+export * from './agentProtocol'
 export * from '@sislexa/agent-contracts/version'
 export * from '@sislexa/agent-contracts/gitAccess'
 export * from '@sislexa/agent-contracts/vpn'
@@ -108,3 +108,4 @@ export * from './browserUiRelease'
 
 export * from './environment'
 export * from './integrationTokens'
+export * from './devStand'
