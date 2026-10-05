@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-05
-checked: 6cb5a147
+updated: 2026-10-06
+checked: 3444a1ba
 areas:
   - packages/shared/src
 ---
@@ -115,6 +115,8 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.23 (`voicechat-shared-0.1.23-d6509beb7835.tgz`, contracts commit `765b3a23`) drops an unused `KbScope` import from `ipc.ts` so consumers compiling with `noUnusedLocals` accept the knowledge base module contracts.
 
 0.1.24 (`voicechat-shared-0.1.24-d1f695c1a28a.tgz`, contracts commit `6cb5a147`) adds dev stand contracts: `DEV_COMPONENT_REGISTRY`, `DevStandManifest`, dev build ids `<version>-dev.<sha12>` with `isDevBuildVersion`, dev stand REST and the agent `devProcess.*` RPC (dev-lane-v1 B01).
+
+0.1.25 (`voicechat-shared-0.1.25-b9fb6f8fdc76.tgz`, contracts commit `3444a1ba`) moves the agent contracts peer to 1.3.0 (agent 0.23.0 with the devProcess RPC, dev-lane-v1 C01).
 
 ### Existing modules
 
