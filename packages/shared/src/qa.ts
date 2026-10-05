@@ -78,6 +78,8 @@ export interface ReadinessDecision { id: string; text: string; rationale: string
 export interface DevelopmentReadiness {
   /** Version 2 is the immutable, confirmed Development Brief contract. */
   schemaVersion?: 2
+  /** Missing means connected for compatibility with existing briefs. */
+  knowledgeBase?: 'connected' | 'absent'
   goal?: string
   scope?: string[]
   outOfScope?: string[]
@@ -113,6 +115,15 @@ export interface ReadinessCheck { allowed: boolean; reasons: string[] }
  */
 export function hasRequiredComponentScenario(testCases: readonly TestCaseDefinition[]): boolean {
   return testCases.some((item) => item.required && (item.testType === 'ui' || item.testType === 'automated' || item.testType === 'mixed'))
+}
+
+/** Without a connected knowledge base, repository documentation counts as knowledge. */
+function availableKnowledgeSources(input: DevelopmentReadiness): ReadinessSource[] {
+  return (input.sources ?? []).filter((source) => source.status === 'available' && (
+    source.kind === 'knowledge' || (input.knowledgeBase === 'absent' && source.kind === 'code' && source.refs.some((ref) =>
+      /^(?:\.\/)?docs\/.+/.test(ref) || /^(?:\.\/)?(?:[^/]+\/)*README(?:\.[^/]+)?$/i.test(ref)
+    ))
+  ))
 }
 
 export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): ReadinessCheck {
@@ -155,7 +166,7 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
     if ((input.contradictions ?? []).some((item) => item.trim())) reasons.push('unresolved_material_contradiction')
     for (const assumption of input.assumptions ?? []) if (assumption.material || !assumption.rationale.trim()) reasons.push(`invalid_assumption:${assumption.id}`)
     if (!(input.sources ?? []).length) reasons.push('missing_researched_sources')
-    if (!(input.sources ?? []).some((source) => source.kind === 'knowledge' && source.status === 'available')) reasons.push('missing_knowledge_source')
+    if (input.knowledgeBase !== 'absent' && !availableKnowledgeSources(input).length) reasons.push('missing_knowledge_source')
     if (!(input.sources ?? []).some((source) => source.kind === 'code' && source.status === 'available')) reasons.push('missing_code_source')
     for (const source of input.sources ?? []) if (source.critical && source.status !== 'available') reasons.push(`critical_source_unavailable:${source.id}`)
   }
@@ -174,10 +185,22 @@ export function developmentReadinessGateResults(input: DevelopmentReadiness): Pr
     ['assumptions_allowed', (r) => r.startsWith('invalid_assumption:')],
     ['sensitive_data_redacted', () => false]
   ]
-  return checks.map(([code, matches]) => {
+  const results: PreparationGateResult[] = checks.map(([code, matches]) => {
     const refs = reasons.filter(matches)
     return { code, status: refs.length ? 'fail' : 'pass', explanation: refs.length ? refs.join(', ') : 'Проверка пройдена', refs }
   })
+  if (input.schemaVersion === 2) {
+    const sources = availableKnowledgeSources(input)
+    results.push({
+      code: 'knowledge_sources',
+      status: reasons.includes('missing_knowledge_source') ? 'fail' : 'pass',
+      explanation: input.knowledgeBase === 'absent'
+        ? 'У проекта нет подключённой базы знаний; источник из неё не требуется.'
+        : sources.length ? 'Источники базы знаний изучены.' : 'missing_knowledge_source',
+      refs: sources.flatMap((source) => source.refs)
+    })
+  }
+  return results
 }
 
 /** Gate for leaving integration-test creation. */
