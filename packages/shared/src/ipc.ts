@@ -80,7 +80,7 @@ import type {
   ProjectMachineDirectoryKind
 } from './projects'
 
-import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
+import type { KbContextBundle, KbContextRequest, KbTopicsRequest, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
 import type { TaskPreparationRun } from './qa'
 
 /** Статус локальной модели Whisper. */
@@ -140,10 +140,10 @@ export interface IpcInvokeMap {
   'app:ping': { arg: void; result: HealthResponse }
   'kb:status': { arg: void; result: KbStatus }
   /** Оглавление доступных разделов; фильтр по разделу/проекту — необязательный. */
-  'kb:topics': { arg: { scope?: KbScope; projectId?: string | null } | void; result: KbDocumentSummary[] }
+  'kb:topics': { arg: KbTopicsRequest | void; result: KbDocumentSummary[] }
   'kb:search': { arg: KbSearchRequest; result: KbSearchResult[] }
   'kb:document': { arg: { id: string }; result: KbDocument | null }
-  'kb:context': { arg: { query: string; budget?: number }; result: KbContextBundle }
+  'kb:context': { arg: KbContextRequest; result: KbContextBundle }
   /** Создать/переписать статью раздела «Настройки пользователя» или «Разработка проекта». */
   'kb:saveDocument': { arg: KbDocumentDraft; result: KbDocument }
   'kb:deleteDocument': { arg: { id: string }; result: void }

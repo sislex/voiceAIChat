@@ -1,13 +1,15 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-05
-checked: 5f973e31
+checked: 8e052b52
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/kb.ts
+  - packages/shared/src/kbService.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/llm.ts
   - packages/shared/src/imageStudioInternal.ts
@@ -17,6 +19,67 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Knowledge modules and service RPC (B01)
+
+`@voicechat/shared` 0.1.11 adds `KbModule` and `REST.kbModules`
+(`GET /api/kb/modules`, result `KbModule[]`). Each module has a lowercase
+hyphen-separated slug `id`, `title`, nullable `repository`, `ref`, `path`,
+nullable `indexedSha`, nullable `indexedAt` (Unix milliseconds), and `status`
+(`ready`, `indexing`, `failed`, or `disabled`). Null index metadata means there
+is no successful index yet; a failed refresh can retain the last successful metadata.
+
+`KbDocumentSummary` (and therefore `KbDocument`) and `KbSearchResult` gain an
+optional `module`. Context sections inherit it. `KbTopicsRequest`,
+`KbSearchRequest`, and `KbContextRequest` accept an optional module slug;
+absence means all modules visible to the authenticated viewer. This filter
+does not grant access or replace scope/project authorization. Existing IPC
+topics calls without arguments and context calls with only query/budget remain
+valid. REST keeps the existing `q`, `kind`, `tags`, `limit`, `budget`, `scope`
+and `projectId` parameters and adds `module` to topics/search/context.
+
+File topic IDs use `<module>:<path>`. `parseKbFileDocumentId` resolves an
+unprefixed legacy ID to `core`; `formatKbFileDocumentId` produces the qualified
+form. Paths are preserved verbatim, including existing extensionless topic IDs:
+`features/project-knowledge-base` and `core:features/project-knowledge-base`
+identify the same topic. Do not add/remove `.md` or URI-decode in these helpers.
+The helpers reject malformed slugs, empty paths, traversal segments, backslashes,
+control characters and additional colons. Database article IDs remain opaque;
+do not pass them through the file ID helpers. REST document IDs are URL-encoded
+as a single path parameter using the existing `REST.kbDocument` helper.
+
+`kbService.ts` exports the typed `KbServiceRpcMap`, argument/result lookup types,
+and runtime `KB_SERVICE_RPC` validation registry. Stable service method names are:
+
+| Method | Argument | Result |
+| --- | --- | --- |
+| `status` | void | `KbStatus` |
+| `modules` | void | `KbModule[]` |
+| `topics` | `KbTopicsRequest` or void | `KbDocumentSummary[]` |
+| `document` | `{ id: string }` | `KbDocument` or null |
+| `search` | `KbSearchRequest` | `KbSearchResult[]` |
+| `context` | `KbContextRequest` | `KbContextBundle` |
+| `write` | `KbDocumentDraft` | `KbDocument` |
+| `delete` | `{ id: string }` | void |
+| `usage` | `KbUsageRequest` | `KbUsageResult` |
+
+Usage arguments select `target: conversation | project | run | task` with the
+corresponding `conversationId`, `projectId`, `runId`, or `projectId` + `taskId`.
+Results carry the same target and its existing report type. JSON transports omit
+void arguments and encode the void delete result as null. Validators operate on
+decoded values (`query`, numeric limit/budget, array kinds/tags); HTTP adapters
+remain responsible for query-string conversion. Optional unknown fields are
+tolerated for forward compatibility, and no new numeric limits are imposed on
+legacy requests.
+
+`createKbServiceRpcDispatcher` is the pure boundary adapter: it validates before
+dispatch and passes the host's viewer context separately to every handler.
+Handlers must enforce the existing access rules; payload fields cannot establish
+identity. Invalid RPC input throws `TypeError`; handler errors propagate for the
+host transport to map. The registry does not implement networking or storage.
+B01 defines and tests this shared boundary; Core engine/REST adoption belongs to
+C01, the engine-backed in-process adapter to U03, and remote transport deployment
+to kb-service-v2.
 
 ## Paged conversation history
 

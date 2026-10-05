@@ -74,6 +74,7 @@ export * from './kanbanSimilarity'
 export * from './orchestration'
 
 export * from './kb'
+export * from './kbService'
 export * from './kbGaps'
 export * from './contextGating'
 export * from './machineHealth'
