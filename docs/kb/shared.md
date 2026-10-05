@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-05
-checked: 765b3a23
+checked: 6cb5a147
 areas:
   - packages/shared/src
 ---
@@ -113,6 +113,8 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.22 (`voicechat-shared-0.1.22-2374d42bebbf.tgz`, contracts commit `22eb01a9`) adds knowledge base modules: `KbModule`, `REST.kbModules`, the `module` filter and `<module>:<path>` file topic ids, and the typed knowledge service RPC registry (kb-service-v1 B01).
 
 0.1.23 (`voicechat-shared-0.1.23-d6509beb7835.tgz`, contracts commit `765b3a23`) drops an unused `KbScope` import from `ipc.ts` so consumers compiling with `noUnusedLocals` accept the knowledge base module contracts.
+
+0.1.24 (`voicechat-shared-0.1.24-d1f695c1a28a.tgz`, contracts commit `6cb5a147`) adds dev stand contracts: `DEV_COMPONENT_REGISTRY`, `DevStandManifest`, dev build ids `<version>-dev.<sha12>` with `isDevBuildVersion`, dev stand REST and the agent `devProcess.*` RPC (dev-lane-v1 B01).
 
 ### Existing modules
 
