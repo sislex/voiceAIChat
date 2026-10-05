@@ -172,3 +172,39 @@ describe('KB module sources', () => {
     expect((await scoped.context('Widget', 3500, { ...view, module: 'remote' })).relatedDocuments).toEqual(['remote:topic.md'])
   })
 })
+
+describe('KB module registration', () => {
+  it('registers a repository once, persists the source list and indexes it', async () => {
+    const { root, dir, bare } = fixture()
+    const kb = new ModuleKnowledgeBaseService({ root, dataDir: join(dir, 'data') }); services.push(kb)
+    const created = await kb.ensureSource({ repository: bare, title: 'Remote repo' })
+    expect(created).toMatchObject({ id: 'remote', title: 'Remote repo', ref: 'main', path: 'docs/kb' })
+    expect(await kb.ensureSource({ repository: bare })).toMatchObject({ id: 'remote' })
+    expect(JSON.parse(readFileSync(join(dir, 'data/kb-modules.json'), 'utf8'))).toEqual([{ id: 'remote', title: 'Remote repo', repository: bare, ref: 'main', path: 'docs/kb' }])
+    await vi.waitFor(async () => expect((await kb.modules()).find(m => m.id === 'remote')?.status).toBe('ready'))
+    expect(await kb.document('remote:topic.md')).toMatchObject({ module: 'remote' })
+    // A restart reads the persisted list.
+    const restarted = new ModuleKnowledgeBaseService({ root, dataDir: join(dir, 'data') }); services.push(restarted)
+    expect((await restarted.modules()).map(m => m.id)).toEqual(['core', 'remote'])
+  })
+
+  it('removes a registered module with its documents and never removes core', async () => {
+    const { root, dir, bare } = fixture()
+    const kb = new ModuleKnowledgeBaseService({ root, dataDir: join(dir, 'data') }); services.push(kb)
+    await kb.ensureSource({ repository: bare })
+    await kb.refreshModule('remote')
+    expect(await kb.removeSource('core')).toBe(false)
+    expect(await kb.removeSource('remote')).toBe(true)
+    expect(await kb.document('remote:topic.md')).toBeNull()
+    expect(JSON.parse(readFileSync(join(dir, 'data/kb-modules.json'), 'utf8'))).toEqual([])
+  })
+
+  it('refuses runtime registration when VC_KB_MODULES manages the list and rejects invalid repositories', async () => {
+    const { root, dir, bare } = fixture()
+    const managed = new ModuleKnowledgeBaseService({ root, dataDir: dir, sources: [], managedByEnv: true }); services.push(managed)
+    await expect(managed.ensureSource({ repository: bare })).rejects.toThrow('kb_modules_managed_by_env')
+    const kb = new ModuleKnowledgeBaseService({ root, dataDir: join(dir, 'other') }); services.push(kb)
+    await expect(kb.ensureSource({ repository: 'https://user:secret@example.test/repo.git' })).rejects.toThrow('Invalid KB repository URL')
+    expect(existsSync(join(dir, 'other/kb-modules.json'))).toBe(false)
+  })
+})
