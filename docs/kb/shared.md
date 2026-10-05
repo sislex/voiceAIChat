@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-05
-checked: e28cfec6
+checked: e26ed457
 areas:
   - packages/shared/src
 ---
@@ -102,6 +102,11 @@ size summary, the pure `stripServiceData(meta)` helper (drops `meta.activity`, r
 `DevelopmentReadiness.knowledgeBase: 'connected' | 'absent'` (missing = connected): an absent
 knowledge base does not require a knowledge source, repository `docs/**` and README count as
 knowledge, and the `knowledge_sources` gate result records it (reliability-v2 B03).
+
+0.1.20 (`voicechat-shared-0.1.20-1654ee1de8f9.tgz`, contracts commit `e26ed457`) adds paged
+conversation history: `REST.conversation(id, { limit, before })`, `ConversationHistoryQuery`,
+`ConversationWithMessages.history` (`hasMore`, `oldestId`, `total`) and
+`INVALID_HISTORY_CURSOR` (reliability-v2 B01).
 
 ### Existing modules
 
