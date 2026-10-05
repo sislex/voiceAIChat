@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-05
-checked: 8e5dc447
+checked: e28cfec6
 areas:
   - packages/shared/src
 ---
@@ -97,6 +97,11 @@ size summary, the pure `stripServiceData(meta)` helper (drops `meta.activity`, r
 `meta.request` to model, permission mode, prompt size and KB context) and
 `REST.messageServiceData(conversationId, messageId)` with `MessageServiceData`
 (make-chat-service-data-v1 B01).
+
+0.1.19 (`voicechat-shared-0.1.19-6eb18257f30f.tgz`, contracts commit `e28cfec6`) adds
+`DevelopmentReadiness.knowledgeBase: 'connected' | 'absent'` (missing = connected): an absent
+knowledge base does not require a knowledge source, repository `docs/**` and README count as
+knowledge, and the `knowledge_sources` gate result records it (reliability-v2 B03).
 
 ### Existing modules
 
