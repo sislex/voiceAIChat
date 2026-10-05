@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-05
-checked: 81235edd
+checked: 0aef0202
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -46,7 +46,7 @@ without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
 own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.5.2, owner commit `dc04a9f22db32c3f76308c35467e5c4ca4652166`. Since 1.4.12
+from Core UI 1.5.3, owner commit `75aef0fb55af7bafb95ff727db3cb07c316aa40b`. Since 1.4.12
 it recovers the project list when the browser read cache supersedes the startup request
 (retry once, then an error state with retry instead of an endless load); 1.4.13 also
 never strands detail-only project tabs (Release Center, settings, code) behind their
@@ -61,7 +61,9 @@ setting with an on-demand «загружено X из Y МБ» progress bar and 
 1.5.1 keeps the timeline still while typing: the shell and `SharedChat` ignore composer-only state,
 so a keystroke re-renders only the composer (a 360-message Make chat spent ~440 ms per key).
 1.5.2 opens long chats with only the latest 40 messages and renders earlier ones on demand.
-Desktop 1.0.21 (owner commit `1895dbd3`, agent 0.22.1, agent contracts 1.2.1) embeds the same renderer;
+1.5.3 loads history in pages of 50 (`conversations:get` with `limit`/`before`), virtualizes the timeline
+(memoized `MessageRow`) and pins agent contracts 1.2.2 (reliability-v2 C01).
+Desktop 1.0.22 (owner commit `52ef5413`, agent 0.22.2, agent contracts 1.2.2) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
