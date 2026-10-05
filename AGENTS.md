@@ -81,7 +81,9 @@ details: [testing conventions](docs/kb/conventions.md) and
 
 ## Knowledge base
 
-Use the generated [KB index](docs/kb/README.md) to find a topic. Frequent entry
+Use the generated [KB index](docs/kb/README.md) to find a Core topic and the
+[module ownership map](docs/kb/modules.md) to locate knowledge owned by another
+repository (cross-module references use `<module>:<path>` ids). Frequent entry
 points are [architecture](docs/kb/architecture.md),
 [contracts](docs/kb/protocol.md), [server](docs/kb/server-internals.md),
 [auth/data](docs/kb/data-auth.md), [testing](docs/kb/testing-operations.md),
