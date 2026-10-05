@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-06
-checked: fe4de637
+checked: e9247051
 areas:
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
@@ -2389,11 +2389,16 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.22.2 (contracts 1.2.2): a WebSocket heartbeat (ping every 15 s, reconnect after
+Core pins agent 0.23.0 (contracts 1.3.0), which adds the `devProcess.start/stop/status/logs` RPC
+for dev stands (dev-lane-v1 C01): the agent runs a component from a branch checkout in dev mode
+without Docker. Agents older than 0.23.0 answer these calls with an unknown-method error; the rest
+of the protocol is unchanged.
+
+Agent 0.22.2 (contracts 1.2.2) added a WebSocket heartbeat (ping every 15 s, reconnect after
 30 s without any inbound frame — a route change such as turning off an exit node left agent 0.22.1
 connected to nothing), the project Git write check in a temporary repository (0.22.1 reported
 «insufficient permissions» for any token) and the Docker bridge address when `docker0` has no
-carrier. Core UI and Desktop keep agent contracts 1.2.1 until their next release.
+carrier.
 
 On macOS the agent runs under launchd, where Docker Desktop's `credsStore: desktop` hangs on
 `docker-credential-desktop get` (no keychain access), so private GHCR images never download. The
