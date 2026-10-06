@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-06
-checked: 7532b8f2
+checked: 9979b97f
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -46,7 +46,7 @@ without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
 own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.5.5, owner commit `328c9007fc3fc6e4c8b1a1220dba194b89b9773e`. Since 1.4.12
+from Core UI 1.5.6, owner commit `69c2324409827ad375a0e61c9e8482a786f23809`. Since 1.4.12
 it recovers the project list when the browser read cache supersedes the startup request
 (retry once, then an error state with retry instead of an endless load); 1.4.13 also
 never strands detail-only project tabs (Release Center, settings, code) behind their
@@ -65,7 +65,8 @@ so a keystroke re-renders only the composer (a 360-message Make chat spent ~440 
 (memoized `MessageRow`) and pins agent contracts 1.2.2 (reliability-v2 C01).
 1.5.4 adds the knowledge base module selector (kb-service-v1 C02).
 1.5.5 adds the UI dev mode and the dev stands section (dev-lane-v1 C04), shared 0.1.25 and agent contracts 1.3.0.
-Desktop 1.0.24 (owner commit `cd4a3935`, agent 0.23.0, agent contracts 1.3.0) embeds the same renderer;
+1.5.6 adds the release disk preflight with the «Разобраться в чате» cleanup chat in Release Center (release-disk-preflight-v1 C02), asynchronous dev stand operations with gateway urls (dev-lane-v2 B02) and shared 0.1.26.
+Desktop 1.0.25 (owner commit `fad49350`, agent 0.23.0, agent contracts 1.3.0) embeds the same renderer;
 `scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
