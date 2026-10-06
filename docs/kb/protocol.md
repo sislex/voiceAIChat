@@ -1,6 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-05
+updated: 2026-10-06
 checked: a7838661
 areas:
   - apps/playwright-reader
@@ -8,6 +8,8 @@ areas:
   - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/release.ts
+  - packages/shared/src/releaseDisk.ts
   - packages/shared/src/kb.ts
   - packages/shared/src/kbService.ts
   - packages/shared/src/agentProtocol.ts
@@ -21,6 +23,38 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Release disk preflight (release-disk-preflight-v1 B01)
+
+Shared exports `RELEASE_MIN_FREE_BYTES = 10 * 1024 ** 3` (10 GiB),
+`ReleaseDiskCheck`, `ReleaseDiskPreflight`, `parseReleaseDiskPreflight` and
+`releaseDiskCleanupPrompt` through the release contract and package barrel.
+`REST.projectReleasePreflight(id)` builds the encoded path for
+`GET /api/projects/:id/releases/preflight?agentId=<encoded build agent ID>`;
+the caller appends the query parameter.
+
+Each check carries `role: 'build' | 'production'`, `machineId: string | null`,
+`machineName`, `freeBytes: number | null`, `minBytes`, `ok`, `measuredAt`
+(Unix milliseconds), and optional `error`. An unmeasurable machine must carry
+`freeBytes: null`, `ok: false` and a nonblank error. Measured checks succeed at
+`freeBytes >= minBytes` and omit `error`. The strict parser throws `TypeError`
+for unknown or missing fields, invalid types, blank names/IDs/errors, negative,
+fractional or unsafe numeric quantities, empty check lists, and contradictory
+check or aggregate success flags. Aggregate `ok` equals every check's `ok`.
+
+The HTTP 409 `ReleaseDiskLowResponse` is
+`{ code: 'release_disk_low', error: string, preflight: ReleaseDiskPreflight }`;
+`RELEASE_DISK_LOW` exports the code. Existing `releases:createBranch` and
+`releases:deploy` request arguments accept optional `ignoreDiskCheck?: boolean`.
+The Russian cleanup prompt names the machine, reports free/minimum GiB and
+exact bytes (or the measurement error), lists cleanup candidates and asks to
+show their sizes. It prohibits deletion without explicit user confirmation in
+that chat and prohibits touching personal files.
+
+B01 supplies pure contracts, validation and prompt generation. Kanban C01 owns
+measurement, HTTP enforcement and owner authorization for overrides; Core UI
+C02 owns preflight display and opening the cleanup chat. Building the shared
+archive and commissioning those integrations belong to the integrator.
 
 ## Dev stands (dev-lane-v1 B01)
 
