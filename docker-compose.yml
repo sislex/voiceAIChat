@@ -173,7 +173,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:285c3500059d3d512226ffdfa7847a1b332f6d8a}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:b215d18fa764a915b21e6e966d73b592078ad04c}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -196,7 +196,7 @@ services:
   # Playwright Reader владеет REST-сессиями и действиями модели. БД и том ему не нужны:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:857d5a20c557f13c61fd6a2c8ef71d8cd8b246ac}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
     mem_limit: 256m
     depends_on:
       - browser-runner
@@ -243,7 +243,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:ecd0b4e54f655bd5f0e182131ea7725781a8b925}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:03434c729c0119ea4f979e950f7ccb4e59f324c9}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -362,7 +362,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:3a662223ab173e37f0c9f4faa76d92667e0ba4fd}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:36003b199cae41c697f393ba0011b91943ae5d76}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -412,7 +412,7 @@ services:
   # Изолированный Chromium: Playwright Reader и этап автотестов. Наружу не
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:857d5a20c557f13c61fd6a2c8ef71d8cd8b246ac}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"
