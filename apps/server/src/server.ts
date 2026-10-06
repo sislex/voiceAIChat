@@ -705,6 +705,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     managedByEnv: opts.config.kbModules !== undefined
   }, reranker)
   if (fileKb instanceof ModuleKnowledgeBaseService) {
+    try { await fileKb.reconcileModules() }
+    catch { app.log.warn('KB module reconciliation failed') }
     fileKb.start()
     app.addHook('onClose', async () => fileKb.close())
   }
@@ -714,7 +716,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
   registerUiPerformanceRoutes(app)
-  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
+  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled,
+    reconcileModules: fileKb instanceof ModuleKnowledgeBaseService ? () => fileKb.reconcileModules() : undefined })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.

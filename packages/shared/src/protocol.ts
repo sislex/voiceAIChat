@@ -162,6 +162,7 @@ export const REST = {
   health: '/api/health',
   kbStatus: '/api/kb/status',
   kbModules: '/api/kb/modules',
+  kbModulesReconcile: '/api/kb/modules/reconcile',
   kbTopics: '/api/kb/topics',
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
