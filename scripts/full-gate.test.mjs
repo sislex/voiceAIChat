@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
-import { FRONTEND_E2E_FILES, FULL_GATE_STAGES, remainingBrowserFiles, runStages } from './full-gate.mjs'
+import { FRONTEND_E2E_FILES, FULL_GATE_STAGES, remainingBrowserFiles, runStages, runTestTasks, testConcurrency, testTasks } from './full-gate.mjs'
 
 test('frontend work is removed only after a full successful gate', () => {
   const files = [...FRONTEND_E2E_FILES, 'e2e/settings.e2e.test.ts']
@@ -24,9 +25,65 @@ test('signals and missing executables cannot report success', () => {
 test('Core gate verifies artifacts and consumer integration; performance is a release stage', () => {
   const calls = []
   const result = runStages(FULL_GATE_STAGES, (command, args) => { calls.push(args.join(' ')); return { status: 0 } })
-  assert.deepEqual(calls, ['run typecheck','run test','run build:frontends','run verify:core-ui','run test:browser'])
+  assert.deepEqual(calls, ['run typecheck', 'run test', 'run build:frontends', 'run verify:core-ui', 'run test:browser'])
   assert.equal(result.length, 5)
   assert.ok(result.every(row => row.exitCode === 0 && row.seconds >= 0))
+})
+
+test('parallel test output is printed in task order and all failures are reported', async () => {
+  const logs = []
+  const tasks = [
+    { name: 'slow-first', args: ['first'] },
+    { name: 'failed-second', args: ['second'] },
+    { name: 'failed-third', args: ['third'] }
+  ]
+  await assert.rejects(runTestTasks(tasks, async (_command, [name]) => {
+    if (name === 'first') await new Promise(resolve => setTimeout(resolve, 15))
+    return { status: name === 'first' ? 0 : name === 'second' ? 7 : 9, output: `${name} output` }
+  }, { concurrency: 3, log: line => logs.push(line) }), error => {
+    assert.match(error.message, /failed-second, failed-third/)
+    assert.equal(error.results.length, 3)
+    return true
+  })
+  assert.deepEqual(logs.filter(line => line.startsWith('[gate:tests]')), [
+    '[gate:tests] slow-first', '[gate:tests] failed-second', '[gate:tests] failed-third'
+  ])
+  assert.deepEqual(logs.filter(line => line.endsWith('output')), [
+    'first output', 'second output', 'third output'
+  ])
+})
+
+test('parallel test runner respects its concurrency bound', async () => {
+  let active = 0, maximum = 0
+  const tasks = Array.from({ length: 7 }, (_, index) => ({ name: `workspace-${index}`, args: [] }))
+  await runTestTasks(tasks, async () => {
+    active++
+    maximum = Math.max(maximum, active)
+    await new Promise(resolve => setTimeout(resolve, 5))
+    active--
+    return { status: 0 }
+  }, { concurrency: 2, log: () => {} })
+  assert.equal(maximum, 2)
+})
+
+test('test concurrency defaults to three and rejects invalid overrides', () => {
+  assert.equal(testConcurrency(undefined), 3)
+  assert.equal(testConcurrency('4'), 4)
+  for (const value of ['0', '-1', '1.5', 'many']) assert.throws(() => testConcurrency(value), /positive integer/)
+})
+
+test('full gate creates one process per test-bearing workspace without changing local npm test', () => {
+  const root = fileURLToPath(new URL('..', import.meta.url))
+  assert.deepEqual(testTasks(root).map(task => task.name), [
+    'tooling',
+    '@voicechat/shared',
+    '@voicechat/knowledge',
+    '@sislexa/component-runtime',
+    '@voicechat/automation-runner',
+    '@voicechat/server'
+  ])
+  const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts
+  assert.equal(scripts.test, 'npm run test:tooling && npm run test --workspaces --if-present')
 })
 
 test('release command retains performance and owner system acceptance outside the Core gate', () => {

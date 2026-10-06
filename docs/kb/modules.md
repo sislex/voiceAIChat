@@ -1,6 +1,7 @@
 ---
 title: Module ownership map
-updated: 2026-10-05
+updated: 2026-10-06
+checked: 181a1e96
 areas: []
 ---
 
@@ -12,6 +13,17 @@ about them stay in Core until their owners take them over. Until owner knowledge
 cover a Core topic, the Core topic is kept, not shortened. `module:path` values below are stable cross-module KB document
 identifiers, not filesystem links in this checkout. Core keeps only shared
 architecture and contracts plus release, deployment, pins and operations.
+
+Core uses this table as runtime registration input at startup and on the
+admin-only `POST /api/kb/modules/reconcile` route. Keep the four-column table
+and its header unchanged: module IDs and `owner/repo` values are backtick
+literals; an available knowledge base uses exactly `<module>:README.md`
+followed by the backtick `docs/kb` directory in parentheses, as below.
+Rows marked `нет` are skipped. Registered owner modules use HTTPS GitHub URLs,
+ref `main`, and path `docs/kb`; no project is required. The Core repository
+maps to built-in `core`, and reconciliation removes older duplicate
+registrations. `VC_KB_MODULES` takes precedence and disables automatic changes
+to its managed list. See [repository module behavior](features/project-knowledge-base.md#repository-modules).
 
 | Module | Repository | Knowledge base | Owner responsibility |
 |---|---|---|---|
