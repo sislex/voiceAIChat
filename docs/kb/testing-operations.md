@@ -1060,8 +1060,8 @@ owner-built product/Core UI artifact verification, and retained Core functional
 browser integration. It does not run detailed owner scenarios or Web/Desktop
 performance measurements. `gate:performance` runs serial Web route budgets by
 default; `VC_ELECTRON_TESTS=1` restores Electron measurement. `gate:system` runs
-owner-maintained system acceptance. `gate:release`
-requires all three. Known budget/measurement edits still select their real browser
+owner-maintained system acceptance. `gate:release` selects these stages from the
+release diff as described below. Known budget/measurement edits still select their real browser
 measurements directly. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
@@ -1070,6 +1070,42 @@ selected performance suites. Routine settings/onboarding runs do not rewrite the
 reviewed screenshots tracked under `artifacts/onboarding/`. Set
 `VC_VISUAL_ARTIFACTS=artifacts/onboarding` only when intentionally refreshing that
 evidence, or set `VC_VISUAL_FAILURE_ARTIFACTS` to capture failure-only diagnostics.
+
+### Release regression base and owner selection
+
+`scripts/release-gate.mjs --base <production-sha>` (or
+`VOICECHAT_RELEASE_BASE_SHA`) refreshes `refs/tags/verified/full-gate/*` from
+origin before planning. It selects the newest tag by tagger date only when it is
+annotated, names its exact 40-hex commit, contains `gate:all exit 0`, and lies
+between production and HEAD by ancestry. A fetch failure or no qualifying tag
+keeps production as the base. An unknown production commit still runs all stages.
+The selected verified base is printed with the production SHA for auditing.
+
+Core changes still select `gate:all`, but system suites are selected independently
+per archive: Core UI, Web Reader and Playwright Reader run only for changed pins
+or their Core integration prefixes. `SYSTEM_PATH_PREFIXES` in the release script
+is the tested source of truth for those prefixes. Pin comparison reads snapshot,
+manifest and lock identities even when the application planner falls back to full.
+`gate:system -- --owners webreader,playwrightreader,sislexa-core-ui` accepts any
+nonempty subset; omission preserves the complete manual system gate.
+
+Performance runs only for the Core UI pin or the tested
+`PERFORMANCE_PATH_PREFIXES` (chat rendering, UI delivery, route measurement and
+budgets). Other diffs print an explicit performance skip reason, including in
+full Core mode. The narrowed application plan does not duplicate route budgets.
+`gate:release:full` remains the explicit all-stage override.
+
+`npm run gate:promotion` captures HEAD, requires a clean committed tree, runs
+`gate:all`, rechecks HEAD and tree cleanliness, then invokes the attestation
+helper. Promotion orchestrators that already own the full gate can instead
+invoke `node scripts/mark-full-gate.mjs <sha>` only after `gate:all` exits zero
+for that exact checkout.
+The helper creates and pushes the annotated `verified/full-gate/<sha>` tag with
+`gate:all exit 0` and an ISO timestamp. It never force-updates tags and propagates
+tag/push failures. It is an attestation publisher, not a substitute for running
+the gate. The promotion operator must select `gate:promotion` or wire the
+post-success helper call in its owning orchestrator; that commissioning is
+outside the Core scripts.
 
 `npm run verify:frontend` runs `frontend:build-gates`: product artifact verification,
 Core UI artifact verification and browser route budgets. React builds, Storybook
