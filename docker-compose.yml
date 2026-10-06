@@ -127,6 +127,8 @@ services:
       VC_SMTP_URL: ${VC_SMTP_URL:-}
       VC_MAIL_FROM: ${VC_MAIL_FROM:-}
       VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
+      # Project knowledge base modules clone private owner repositories (kb.ensureModule).
+      VC_GITHUB_TOKEN: ${VC_GITHUB_TOKEN:-}
       # Anthropic-compatible backend для внешних клиентов Claude Code.
       # Значения берутся из shell/.env; если URL пуст, gateway отвечает 503.
       VC_CLAUDE_GATEWAY_BACKEND: ${VC_CLAUDE_GATEWAY_BACKEND:-upstream}
