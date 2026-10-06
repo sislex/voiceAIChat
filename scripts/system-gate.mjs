@@ -16,6 +16,13 @@ export function systemPlan(matrix, coreCommit) {
 export function executeSystemPlan(plan, execute) {
   for (const owner of plan) execute(owner)
 }
+export function selectSystemOwners(plan, args) {
+  const index = args.indexOf('--owners')
+  if (index < 0) return plan
+  const selected = args[index + 1]?.split(',') ?? []
+  if (!selected.length || selected.some(name => !plan.some(owner => owner.repository === name))) throw Error('Invalid system owner selection')
+  return plan.filter(owner => selected.includes(owner.repository))
+}
 export function main(args = process.argv.slice(2)) {
   const root = resolve(import.meta.dirname, '..')
   // Exercise the exact local artifact set before the existing owner system suites.
@@ -23,22 +30,24 @@ export function main(args = process.argv.slice(2)) {
   // retain their committed-input requirement.
   if (existsSync(join(root, 'dependency-snapshots.json'))) {
     const command = [process.execPath, '--import', 'tsx', 'scripts/shared-chat-gate.mjs']
-    if (args.includes('--dry-run')) { console.log(JSON.stringify({ subject: 'exact-artifacts', command })); return }
-    const result = spawnSync(command[0], command.slice(1), { cwd: root, env: process.env, stdio: 'inherit' })
-    if (result.error || result.status !== 0) throw result.error ?? Error('Exact-artifact system acceptance failed')
+    if (args.includes('--dry-run')) console.log(JSON.stringify({ subject: 'exact-artifacts', command }))
+    else {
+      const result = spawnSync(command[0], command.slice(1), { cwd: root, env: process.env, stdio: 'inherit' })
+      if (result.error || result.status !== 0) throw result.error ?? Error('Exact-artifact system acceptance failed')
+    }
   }
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
   const commit = git('rev-parse', 'HEAD')
-  const matrix = JSON.parse(readFileSync(join(root, 'system-tests/owners.json')))
+  const matrix = JSON.parse(readFileSync(join(root, 'system-tests/owners.json'), 'utf8'))
   if (existsSync(join(root, 'dependency-snapshots.json'))) {
-    const snapshot = JSON.parse(readFileSync(join(root, 'dependency-snapshots.json')))
+    const snapshot = JSON.parse(readFileSync(join(root, 'dependency-snapshots.json'), 'utf8'))
     for (const owner of matrix.owners) {
       const artifact = snapshot.packages.find(row => row.repository === `https://github.com/sislex/${owner.repository}` && ['@sislexa/core-ui', '@sislexa/web-reader', '@sislexa/playwright-reader'].includes(row.name))
       if (!artifact) throw Error('Missing exact system owner artifact')
       owner.commit = artifact.commit
     }
   }
-  const plan = systemPlan(matrix, commit)
+  const plan = selectSystemOwners(systemPlan(matrix, commit), args)
   if (args.includes('--dry-run')) { console.log(JSON.stringify(plan, null, 2)); return }
   if (git('status', '--porcelain', '--untracked-files=no')) throw Error('System release gate requires committed Core inputs')
   const results = [], directory = join(root, 'artifacts/gate-timings'); mkdirSync(directory, { recursive: true })
