@@ -585,7 +585,7 @@ export class AgentRegistry {
       }, method === 'devProcess.start' ? 10 * 60_000 : 60_000)
       timer.unref?.()
       this.pendingDev.set(requestId, { agentId, method, timer, resolve: resolve as (v: unknown) => void, reject })
-      try { this.send(agentId, { t: method, requestId, ...request } as unknown as ServerToAgent) }
+      try { this.send(agentId, { t: method, requestId, ...withCloneUrl(request) } as unknown as ServerToAgent) }
       catch { clearTimeout(timer); this.pendingDev.delete(requestId); reject(new Error('machine_unavailable: send failed')) }
     })
   }
@@ -1112,4 +1112,14 @@ export class AgentRegistry {
 // narrows them out so the exec handling below keeps its `execId` messages.
 function isDevProcessResponse(msg: { t: string }): msg is DevProcessResponseMessage {
   return msg.t.startsWith('devProcess.') && 'requestId' in msg
+}
+
+// The dev stand contract names repositories as `owner/name` (DEV_COMPONENT_REGISTRY); the agent runs
+// `git clone` with the value, so the GitHub shorthand becomes an HTTPS clone URL. Full URLs, scp-style
+// remotes and local paths pass through unchanged.
+const GITHUB_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+function withCloneUrl<T>(request: T): T {
+  const repository = (request as { repository?: unknown }).repository
+  if (typeof repository !== 'string' || !GITHUB_SHORTHAND.test(repository) || repository.startsWith('.')) return request
+  return { ...request, repository: `https://github.com/${repository.replace(/\.git$/, '')}.git` }
 }

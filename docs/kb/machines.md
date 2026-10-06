@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-06
-checked: e9247051
+checked: b9947252
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -1643,3 +1643,6 @@ rename и перечитывается для проверки размера и
 10 minutes (dependencies and readiness), other methods 60 s; a disconnect rejects pending requests.
 Errors keep the dev stand code as a `<code>: <message>` prefix. Kanban reaches it through the Core
 RPC `machines.devProcess` (and the machines process RPC `devProcess` in remote mode).
+The registry expands the contract's `owner/name` repository shorthand (`DEV_COMPONENT_REGISTRY`) into
+`https://github.com/owner/name.git` before `devProcess.start`, because the agent passes the value to
+`git clone`; full URLs, scp-style remotes and local paths are unchanged.
