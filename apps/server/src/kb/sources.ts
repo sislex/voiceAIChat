@@ -1,8 +1,12 @@
+import { ModuleKnowledgeBaseService as Engine } from './moduleService.js'
+import { reconcileOwnerModules } from './ownerModules.js'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ModuleKnowledgeBaseService as Engine, readKbSources as readSources, type KbSource } from '../../../../packages/knowledge/src/sources.js'
+import { readKbSources as readSources, type KbSource } from '../../../../packages/knowledge/src/sources.js'
 import type { KbGit } from '../../../../packages/knowledge/src/ports.js'
 import type { KbSemanticReranker } from './types.js'
 import { kbFiles } from './files.js'
@@ -72,7 +76,16 @@ export function createKbGit(dataDir: string, credentials?: KbCredentials): KbGit
   } }
 }
 export class ModuleKnowledgeBaseService extends Engine {
-  constructor(options: { root: string; dataDir: string; sources?: KbSource[]; credentials?: KbCredentials; refreshMs?: number; managedByEnv?: boolean }, reranker?: KbSemanticReranker) {
+  private readonly ownerMap: string
+  private readonly managedByEnv: boolean
+  private reconciliation?: ReturnType<typeof reconcileOwnerModules>
+  reconcileModules() {
+    if (this.managedByEnv) return this.modules()
+    return this.reconciliation ??= Promise.resolve().then(() =>
+      reconcileOwnerModules(this, readFileSync(this.ownerMap, 'utf8'))
+    ).finally(() => { this.reconciliation = undefined })
+  }
+  constructor(options: { root: string; dataDir: string; sources?: KbSource[]; credentials?: KbCredentials; refreshMs?: number; managedByEnv?: boolean; ownerMap?: string }, reranker?: KbSemanticReranker) {
     super({ ...options, sources: options.sources ?? readKbSources(options.dataDir), files: kbFiles, git: createKbGit(options.dataDir, options.credentials),
       writeSources: (sources) => {
         const file = join(options.dataDir, 'kb-modules.json')
@@ -80,5 +93,7 @@ export class ModuleKnowledgeBaseService extends Engine {
         writeFileSync(file + '.tmp', JSON.stringify(sources, null, 2) + '\n')
         renameSync(file + '.tmp', file)
       } }, reranker)
+    this.ownerMap = options.ownerMap ?? fileURLToPath(new URL('../../../../docs/kb/modules.md', import.meta.url))
+    this.managedByEnv = options.managedByEnv ?? false
   }
 }

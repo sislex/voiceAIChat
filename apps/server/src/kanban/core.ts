@@ -70,7 +70,7 @@ export type EnsureProjectMainCurrent = (args: { userId: string; projectId: strin
 /** Repository knowledge bases registered as KB modules (kb-service-v1 U01). */
 export interface KanbanKbModules {
   modules(): Promise<KbModule[]>
-  ensureModule(input: { repository: string; ref?: string; path?: string; title?: string }): Promise<KbModule>
+  ensureModule(input: { id?: string; repository: string; ref?: string; path?: string; title?: string }): Promise<KbModule>
   removeModule(id: string): Promise<boolean>
 }
 
