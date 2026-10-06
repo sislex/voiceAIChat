@@ -705,8 +705,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     managedByEnv: opts.config.kbModules !== undefined
   }, reranker)
   if (fileKb instanceof ModuleKnowledgeBaseService) {
-    try { await fileKb.reconcileModules() }
-    catch { app.log.warn('KB module reconciliation failed') }
+    // Owner modules clone and index GitHub repositories; tests and local servers skip them unless enabled.
+    if (opts.config.kbOwnerModules) {
+      try { await fileKb.reconcileModules() }
+      catch { app.log.warn('KB module reconciliation failed') }
+    }
     fileKb.start()
     app.addHook('onClose', async () => fileKb.close())
   }

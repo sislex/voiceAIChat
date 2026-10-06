@@ -57,6 +57,8 @@ export interface ServerConfig {
   /** Корень read-only базы знаний Markdown. */
   kbRefreshMs?: number
   kbModules?: string
+  /** Register the owner knowledge base modules of docs/kb/modules.md at startup (production only). */
+  kbOwnerModules?: boolean
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
@@ -269,6 +271,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
     kbRefreshMs: Number(env.VC_KB_REFRESH_MS) > 0 ? Number(env.VC_KB_REFRESH_MS) : 600_000,
     kbModules: env.VC_KB_MODULES,
+    kbOwnerModules: env.VC_KB_OWNER_MODULES === '1',
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,

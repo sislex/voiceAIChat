@@ -129,6 +129,8 @@ services:
       VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
       # Project knowledge base modules clone private owner repositories (kb.ensureModule).
       VC_GITHUB_TOKEN: ${VC_GITHUB_TOKEN:-}
+      # Owner knowledge base modules from docs/kb/modules.md (cloned from GitHub at startup).
+      VC_KB_OWNER_MODULES: ${VC_KB_OWNER_MODULES:-1}
       # Anthropic-compatible backend для внешних клиентов Claude Code.
       # Значения берутся из shell/.env; если URL пуст, gateway отвечает 503.
       VC_CLAUDE_GATEWAY_BACKEND: ${VC_CLAUDE_GATEWAY_BACKEND:-upstream}
