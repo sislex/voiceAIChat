@@ -5,12 +5,12 @@ import { resolve } from 'node:path'
 import { taskPlan, executeTask, changedFiles, main } from './task-gate.mjs'
 import reporter from './task-test-reporter.mjs'
 
-test('task selection narrows Core to changed workspace and related files', () => {
+test('task selection narrows Core to changed workspace and explicit test files', () => {
   const steps = taskPlan(['apps/server/src/identityBridge.ts', 'apps/server/src/identityBridge.test.ts'])
   assert.deepEqual(steps, [
     { command: 'npm', args: ['run', '-w', '@voicechat/server', 'typecheck'] },
-    { path: 'apps/server', runner: 'vitest', related: true,
-      files: ['apps/server/src/identityBridge.ts', 'apps/server/src/identityBridge.test.ts'] }
+    { path: 'apps/server', runner: 'vitest',
+      files: ['apps/server/src/identityBridge.test.ts'] }
   ])
   assert.deepEqual(taskPlan(['packages/shared/src/devStand.ts'])[0].args,
     ['run', '-w', '@voicechat/shared', 'typecheck'])
@@ -20,7 +20,7 @@ test('root/config changes never escalate; browser/system/owner suites are exclud
   assert.deepEqual(taskPlan(['package.json', 'package-lock.json', 'unknown.config',
     'e2e/settings.e2e.test.ts', 'system-tests/owners.json']), [])
   const steps = taskPlan(['apps/server/vitest.config.ts'])
-  assert.equal(steps.length, 2)
+  assert.equal(steps.length, 1)
   assert.equal(steps[0].args.at(-1), 'typecheck')
   assert.ok(steps.every(step => !step.args?.includes('gate:all')))
   const tooling = taskPlan(['scripts/task-gate.mjs'])
@@ -61,6 +61,10 @@ test('Vitest reports count cases, accept the boundary and preserve failures', ()
   passing.run()
   assert.equal(passing.output.at(-1), 'GATE-TASK: tests=100 seconds=0.010')
   assert.equal(passing.calls[0].options.timeout, 60000)
+  assert.ok(passing.calls[0].args.includes('--maxWorkers=4'))
+  assert.ok(passing.calls[0].args.includes('--fileParallelism'))
+  assert.ok(!passing.calls[0].args.includes('related'))
+  assert.ok(passing.output.some(line => line.startsWith('GATE-TASK-CASE:')))
   assert.throws(reportedRun(1, { status: 1 }).run, /Check exited 1/)
 })
 
@@ -80,6 +84,10 @@ test('timeout without a report identifies unfinished files; missing report fails
     spawn: () => ({ error: { code: 'ETIMEDOUT' } }) }), error => error.exitCode === 2)
   assert.ok(output.some(line => line.includes('scripts/task-gate.test.mjs')))
   assert.throws(() => executeTask(steps, { log() {}, spawn: () => ({ status: 0 }) }), /Missing task test report/)
+  assert.throws(() => executeTask(steps, { log() {}, spawn(command, args) {
+    assert.ok(args.includes('--test-concurrency=4'))
+    return { status: 0 }
+  } }), /Missing task test report/)
 })
 
 test('typechecking consumes the same wall-time budget and timeout stops the plan', () => {
@@ -136,7 +144,7 @@ test('real Node and Vitest adapters produce counted reports', () => {
     writeFileSync(resolve(fixture, 'vitest.config.mjs'), 'export default { test: { include: ["vitest.test.mjs"], pool: "threads", poolOptions: { threads: { singleThread: true } } } };\n')
     executeTask([
       { path: '.', runner: 'node', files: [resolve(fixture, 'node.test.mjs')] },
-      { path: fixture, runner: 'vitest', related: true, files: [resolve(fixture, 'vitest.test.mjs')] }
+      { path: fixture, runner: 'vitest', files: [resolve(fixture, 'vitest.test.mjs')] }
     ], { log: line => output.push(line) })
     assert.match(output.at(-1), /^GATE-TASK: tests=2 seconds=/)
   } finally { rmSync(fixture, { recursive: true, force: true }) }

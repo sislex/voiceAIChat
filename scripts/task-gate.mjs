@@ -42,6 +42,10 @@ export function executeTask(steps, {
   }
   try {
     for (const step of steps) {
+      if (step.deferred) {
+        log(`GATE-TASK-DEFERRED: ${step.deferred} direct importer file(s) left to the promotion gate`)
+        continue
+      }
       const label = step.files?.join(', ') ?? `${step.command} ${step.args.join(' ')}`
       if (seconds() >= maxSeconds) breach(label)
       let temporary
@@ -58,9 +62,9 @@ export function executeTask(steps, {
           const files = step.files.map(file => relative(cwd, resolve(repository, file)))
           command = process.execPath
           args = step.runner === 'node'
-            ? ['--import', 'tsx', '--test', '--test-reporter', resolve(root, 'scripts/task-test-reporter.mjs'), ...files]
+            ? ['--import', 'tsx', '--test', '--test-concurrency=4', '--test-reporter', resolve(root, 'scripts/task-test-reporter.mjs'), ...files]
             : [resolve(repository, 'node_modules/vitest/vitest.mjs'),
-                ...(step.related ? ['related', '--run'] : ['run']), ...files,
+                'run', ...files, '--maxWorkers=4', '--minWorkers=1', '--fileParallelism',
                 '--passWithNoTests', '--reporter=default', '--reporter=json', `--outputFile.json=${report}`]
           env.GATE_TASK_REPORT = report
         }
@@ -72,8 +76,10 @@ export function executeTask(steps, {
           const data = JSON.parse(readFileSync(report, 'utf8'))
           count += data.numTotalTests
           if (!Number.isFinite(count)) throw Error('Invalid test count in task report')
-          for (const suite of data.testResults) for (const assertion of suite.assertionResults)
+          for (const suite of data.testResults) for (const assertion of suite.assertionResults) {
             timings.push({ name: `${suite.name}: ${assertion.fullName}`, duration: assertion.duration ?? 0 })
+            log(`GATE-TASK-CASE: ${suite.name}: ${assertion.fullName}`)
+          }
         } else if (step.runner && !result.error && result.status === 0) throw Error('Missing task test report')
         if (count > maxTests || seconds() > maxSeconds ||
           (result.error && 'code' in result.error && result.error.code === 'ETIMEDOUT')) breach(label)
