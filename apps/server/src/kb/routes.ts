@@ -12,6 +12,7 @@ export interface KbUsageRoutesDeps {
   db: VoiceChatDb
   /** Инструменты mcp__kb__* включены администратором (config.kbToolEnabled). */
   toolEnabled: boolean
+  reconcileModules?: () => Promise<import('@voicechat/shared').KbModule[]>
 }
 
 /**
@@ -39,6 +40,12 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
   const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
   app.get(REST.kbStatus, async () => kb.status())
   app.get(REST.kbModules, async () => kb.modules?.() ?? [])
+  app.post(REST.kbModulesReconcile, async (req, reply) => {
+    if ((req.user as { role?: string } | undefined)?.role !== 'admin') return reply.code(403).send({ error: 'admin required' })
+    if (!usage?.reconcileModules) return reply.code(503).send({ error: 'kb_modules_unavailable' })
+    try { return await usage.reconcileModules() }
+    catch { return reply.code(500).send({ error: 'KB module reconciliation failed' }) }
+  })
   app.post<{ Params: { id: string } }>('/api/kb/modules/:id/refresh', async (req, reply) => {
     if ((req.user as { role?: string } | undefined)?.role !== 'admin') return reply.code(403).send({ error: 'admin required' })
     const result = await kb.refreshModule?.(req.params.id)

@@ -346,10 +346,11 @@ describe('WS: живые изменения списка сессий', () => {
 
     const victimSid = (await db.identity.listSessions('wsuser')).find((s) => s.userAgent === 'Phone/1.0')!.sid
     await app.inject({ method: 'DELETE', url: `/api/session/${victimSid}`, headers: { authorization: `Bearer ${observerToken}` } })
-    await settle()
-
-    expect(victimFrames).toEqual([{ t: 'session.revoked', v: 1, sid: victimSid }])
-    expect(observerFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    // Frames arrive asynchronously; wait for them instead of a fixed pause (flaky on a loaded machine).
+    await vi.waitFor(() => {
+      expect(victimFrames).toEqual([{ t: 'session.revoked', v: 1, sid: victimSid }])
+      expect(observerFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    }, { timeout: 5_000 })
     victim.close()
     observer.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
@@ -369,10 +370,11 @@ describe('WS: живые изменения списка сессий', () => {
 
     // «Выйти на других» с ноутбука: телефон мёртв и должен узнать это сразу.
     await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${laptopToken}` } })
-    await settle()
-    expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
-    // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
-    expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    await vi.waitFor(() => {
+      expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
+      // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
+      expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    }, { timeout: 5_000 })
     phone.close()
     laptop.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
@@ -399,12 +401,10 @@ describe('WS: живые изменения списка сессий', () => {
     const frames = collect(ws)
     const sid = (await db.identity.listSessions('renamer'))[0]!.sid
     await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}` } })
-    await settle()
-    expect(frames).toEqual([{ t: 'sessions.update', v: 1 }])
+    await vi.waitFor(() => expect(frames).toEqual([{ t: 'sessions.update', v: 1 }]), { timeout: 5_000 })
     // Отзыв администратором приходит владельцу так же адресно, как свой.
     await app.inject({ method: 'DELETE', url: `/api/admin/sessions/${sid}`, headers: { authorization: `Bearer ${TOKEN}` } })
-    await settle()
-    expect(frames.at(-1)).toEqual({ t: 'session.revoked', v: 1, sid })
+    await vi.waitFor(() => expect(frames.at(-1)).toEqual({ t: 'session.revoked', v: 1, sid }), { timeout: 5_000 })
     ws.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
@@ -799,7 +799,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
         segments: [{ speakerId: 1, text: 'привет' }]
       })
     )
-    await wait(20)
+    // The turn has started once the first token arrives; a fixed delay raced the server on a loaded machine.
+    await new Promise<void>((resolve) => ws.on('message', (d) => { if (JSON.parse(d.toString()).t === 'claude.token') resolve() }))
     await closeWs(ws) // «обновление страницы» посреди генерации
     // Ответ мока приходит через 60 мс, запись в базу — ещё позже: ждём сам факт сохранения.
     const saved = await vi.waitFor(async () => {
@@ -899,7 +900,17 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   // @testCase TC-WS-02
   it('claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется', async () => {
-    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
+    // The late done is fired by the test after the cancel, so a loaded machine cannot finish the turn first.
+    let finishLate: (() => void) | undefined
+    const controlledClaude: LlmClient = {
+      send(_req, h) {
+        void h.onSession('sess-cancel')
+        setTimeout(() => h.onDelta('Ча'), 5)
+        finishLate = () => h.onDone('Часть ответа')
+        return { cancel: () => undefined }
+      }
+    }
+    const { sapp, sdb, sport } = await buildSlow(controlledClaude)
     const conv = await sdb.chat.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     const events: Array<{ t: string; text?: string }> = []
@@ -923,7 +934,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
     await firstToken
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
     await cancelledDone
-    await wait(80) // финал мока уже не должен записать второе сообщение
+    finishLate?.() // поздний финал мока уже не должен записать второе сообщение
+    await wait(80)
     const saved = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ text: 'Ча', meta: { interrupted: true } })

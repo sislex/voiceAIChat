@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-06
-checked: ea76c7df
+checked: 181a1e96
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -24,6 +24,7 @@ protocols:
   - GET /api/kb/topics
   - GET /api/kb/search
   - GET /api/kb/context
+  - POST /api/kb/modules/reconcile
   - GET /api/kb/documents/:id
   - POST /api/kb/documents
   - DELETE /api/kb/documents/:id
@@ -56,11 +57,35 @@ related:
 as the reserved module `core`. Additional sources are an array in
 `$VC_DATA_DIR/kb-modules.json`. `VC_KB_MODULES`, when set, replaces that array
 with JSON from the environment; an empty array leaves only Core. Restart Core
-after changing the source list. Example:
+after changing the environment source list. Example:
 
 ```json
 [{"id":"make","title":"Make","repository":"https://github.com/sislex/make.git","ref":"main","path":"docs/kb"}]
 ```
+
+Without `VC_KB_MODULES`, Core reconciles the checked-out
+`docs/kb/modules.md` ownership table at startup and on admin-only
+`POST /api/kb/modules/reconcile`. The response is the current module list;
+registration starts indexing in the background, so registration success does
+not mean the remote repository has already been fetched. The strict parser
+accepts rows naming `<module>:README.md` at `docs/kb`, skips rows marked `нет`,
+and rejects malformed maps before changing registrations. Owner repositories
+use `https://github.com/<owner/repo>.git`, ref `main`, path `docs/kb`, and the
+first column's stable module ID. This registers `make`, `agent`,
+`playwright-reader`, `web-reader`, `kanban`, and `core-ui` without projects.
+Existing generated IDs for these same sources migrate to the owner ID;
+an occupied ID belonging to a different source fails reconciliation.
+
+The existing `kb.ensureModule` registration path recognizes
+`sislex/voiceAIChat` as built-in `core` (including HTTPS and Git SSH shorthand)
+and never registers another copy. Reconciliation removes old Core repository
+registrations and their indexed documents while preserving unrelated sources.
+Repeated and concurrent reconciliations are idempotent. When `VC_KB_MODULES`
+is present, reconciliation leaves its list untouched, including any existing
+duplicates; runtime registration restrictions remain in force.
+Startup reconciliation failures emit a sanitized warning and keep Core
+available; the admin route returns a sanitized 500 and can be retried after
+correcting the map or source conflict. Non-admin requests return 403.
 
 Module IDs are lowercase slugs and must be unique. Repositories use HTTPS
 without embedded credentials (absolute local repository paths support testing
