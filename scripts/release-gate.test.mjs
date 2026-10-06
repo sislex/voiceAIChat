@@ -47,7 +47,7 @@ test('a proven owner replacement runs the narrowed plan and the owner system sui
 
 const newer = 'b'.repeat(40), older = 'c'.repeat(40)
 const ref = value => `refs/tags/verified/full-gate/${value}`
-function fakeGit(tags, calls = [], failFetch = false) {
+function fakeGit(tags, calls = [], failFetch = false, forks = {}) {
   return (...args) => {
     calls.push(args)
     if (args[0] === 'fetch') { if (failFetch) throw Error('offline'); return '' }
@@ -59,6 +59,7 @@ function fakeGit(tags, calls = [], failFetch = false) {
       const tag = tags.find(tag => (tag.ref ?? ref(tag.sha)) === args[2])
       return args[1] === '-t' ? tag.type ?? 'tag' : `object ${tag.object ?? tag.sha}\ntype ${tag.targetType ?? 'commit'}\ntag x\ntagger Test\n\n${tag.message ?? 'gate:all exit 0\n2026-10-06T00:00:00Z'}`
     }
+    if (args[0] === 'merge-base' && args[1] !== '--is-ancestor') return forks[args[1]] ?? args[1]
     if (args[0] === 'merge-base') {
       const tag = tags.find(tag => tag.sha === (args[3] === 'HEAD' ? args[2] : args[3]))
       if (args[3] === 'HEAD' ? tag.nonAncestor : tag.beforeProduction) throw Error('not ancestor')
@@ -71,6 +72,13 @@ test('newest valid annotated attestation is selected after fetching only verifie
   const calls = []
   assert.equal(verifiedBase(sha, fakeGit([{ sha: newer }, { sha: older }], calls)), newer)
   assert.deepEqual(calls[0], ['fetch', '--no-tags', 'origin', 'refs/tags/verified/full-gate/*:refs/tags/verified/full-gate/*'])
+  assert.ok(calls.some(args => args.join(' ') === `merge-base --is-ancestor ${sha} ${newer}`))
+})
+test('a production release branch is compared from where it left the candidate history', () => {
+  const calls = []
+  const productionBranchHead = 'f'.repeat(40)
+  assert.equal(verifiedBase(productionBranchHead, fakeGit([{ sha: newer }], calls, false, { [productionBranchHead]: sha })), newer)
+  assert.ok(calls.some(args => args.join(' ') === `merge-base ${productionBranchHead} HEAD`))
   assert.ok(calls.some(args => args.join(' ') === `merge-base --is-ancestor ${sha} ${newer}`))
 })
 test('invalid names, lightweight tags, mismatched objects, missing success and unrelated history are rejected', () => {
