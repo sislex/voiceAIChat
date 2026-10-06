@@ -2,8 +2,8 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-05
-checked: 41027c4e
+updated: 2026-10-06
+checked: ea76c7df
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -117,7 +117,9 @@ fails with `kb_modules_managed_by_env`; module `core` cannot be removed.
 
 The server image installs `git` for module fetches. Private repositories need
 `VC_GITHUB_TOKEN` (read access to the module repositories) in the Core environment;
-without it a module stays `failed` with `KB source fetch failed`.
+without it a module stays `failed` with `KB source fetch failed`. In production the value comes
+from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voicechat` service
+(before 0.1.413 only the `kanban` service received it, so private modules such as Make failed).
 
 ## Назначение
 
