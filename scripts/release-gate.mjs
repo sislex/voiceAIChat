@@ -61,7 +61,10 @@ export function verifiedBase(production, invoke = git) {
         const [header, ...message] = invoke('cat-file', '-p', ref).split('\n\n')
         if (!header.startsWith(`object ${match[1]}\ntype commit\n`) || !message.join('\n\n').includes('gate:all exit 0')) continue
         invoke('merge-base', '--is-ancestor', match[1], 'HEAD')
-        invoke('merge-base', '--is-ancestor', production, match[1])
+        // Production runs a release branch whose own commits (index refresh, version) are not on main:
+        // the attestation must descend from where that branch left the candidate's history.
+        const fork = invoke('merge-base', production, 'HEAD')
+        invoke('merge-base', '--is-ancestor', fork, match[1])
         return match[1]
       } catch { /* Ignore invalid and unrelated attestations. */ }
     }
