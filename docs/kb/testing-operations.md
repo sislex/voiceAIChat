@@ -20,17 +20,24 @@ areas:
 
 `npm run gate:task -- --base <sha>` compares the merge base with the current
 worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
-only changed workspace packages are typechecked, and Vitest runs changed test
-files or the workspace-local related import graph. Changed tests included in a
-related run are not scheduled a second time. Related script tests use Node's
-test runner. No builds, browser E2E, system suites, owner suites or artifact
+only changed workspace packages are typechecked. Test selection is ordered:
+changed test files first, then tests named after a changed source module in the
+same package (`x.test.ts` / `x.dom.test.tsx`, including JavaScript equivalents),
+then other tests that import a changed file directly, provided there are at most
+10 such files. Above that threshold none of those additional importers run; the
+gate prints `GATE-TASK-DEFERRED: <n> direct importer file(s) left to the promotion gate`.
+Files are deduplicated. The task planner never traverses transitive imports or
+uses `vitest related`. Script tests follow the same selection with Node's test
+runner. Selected files run in parallel with at most four workers per runner;
+runner groups execute sequentially so the total worker limit remains four.
+No builds, browser E2E, system suites, owner suites or artifact
 verification are added. Root, lockfile and configuration changes never escalate
 this mode to the full gate; promotion owns that coverage. A docs-only or empty
 diff runs `npm run kb:check` only. Failure to read the diff fails closed.
 
 The task budget is 100 test cases and 60 seconds of total wall time, including
 planning and typecheck. Each command receives the remaining timeout. Reports
-count actual cases (not files); a breach exits 2, prints `GATE-TASK-SLOW:` and then the
+count actual cases (not files), with `GATE-TASK-CASE:` evidence; a breach exits 2, prints `GATE-TASK-SLOW:` and then the
 test files sorted by duration plus unfinished files/commands, one per line. Ordinary failures exit 1. Every
 execution ends with `GATE-TASK: tests=<n> seconds=<s>`. Vitest reports are available
 after its run finishes; on timeout, unfinished file names identify the work for
@@ -39,10 +46,11 @@ after each result. Temporary reports live under `artifacts/gate-task` and are
 removed after reading. Missing successful-run reports fail the gate.
 
 Focused regression coverage: `node --import tsx --test
-scripts/task-gate.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.mjs`.
+scripts/task-gate.test.mjs scripts/task-tests.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.mjs`.
 It covers selection, docs-only execution, count/time breaches, failure handling
 and real Node/Vitest report adapters. This gate does not commission a stand or
 replace full repository and release checks at promotion.
+The dev-to-main promotion gate retains its full selection and budgets.
 
 ## Dev stand focused checks (C02)
 
