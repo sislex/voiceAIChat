@@ -193,26 +193,26 @@ it('opens a kanban message by its explicit context after reload', async () => {
 })
 
 // @testCase TC-NAV
-it('navigates each source through the real palette and retains deep links after reload', async () => {
+// One case per source: each navigates, reloads and waits for its page, so a single case for all
+// sources ran past the per-test timeout on a loaded release machine.
+it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the deep link after reload', async source => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  for (const source of SEARCH_SOURCES) {
-    await page.goto(base + '/#/chat/' + chatId)
-    const hit = expected.find(hit => hit.source === source)!
-    const dialog = await open()
-    await dialog.getByRole('group', { name: SEARCH_LABELS[source], exact: true }).getByRole('option').filter({ hasText: hit.title }).first().click()
-    await expect.poll(() => page.url()).toContain(hit.href)
-    await page.reload()
-    await expect.poll(() => page.url()).toContain(hit.href)
-    if (source === 'messages') {
-      await expect.poll(() => page.locator('[data-mid="' + messageId + '"]').count()).toBeGreaterThan(0)
-    } else if (source === 'files') {
-      await page.getByText('файл # 1.txt', { exact: true }).first().waitFor()
-    } else if (source === 'kb') {
-      await page.getByText('PaletteNeedle document body', { exact: false }).first().waitFor()
-    } else if (source !== 'projects' && source !== 'tasks') {
-      await page.getByText(hit.title, { exact: false }).first().waitFor()
-    }
-    // Проект и задачу рисует сервис канбана, которого в стенде ядра нет: ядру здесь важна глубокая ссылка.
+  await page.goto(base + '/#/chat/' + chatId)
+  const hit = expected.find(hit => hit.source === source)!
+  const dialog = await open()
+  await dialog.getByRole('group', { name: SEARCH_LABELS[source], exact: true }).getByRole('option').filter({ hasText: hit.title }).first().click()
+  await expect.poll(() => page.url()).toContain(hit.href)
+  await page.reload()
+  await expect.poll(() => page.url()).toContain(hit.href)
+  if (source === 'messages') {
+    await expect.poll(() => page.locator('[data-mid="' + messageId + '"]').count()).toBeGreaterThan(0)
+  } else if (source === 'files') {
+    await page.getByText('файл # 1.txt', { exact: true }).first().waitFor()
+  } else if (source === 'kb') {
+    await page.getByText('PaletteNeedle document body', { exact: false }).first().waitFor()
+  } else if (source !== 'projects' && source !== 'tasks') {
+    await page.getByText(hit.title, { exact: false }).first().waitFor()
   }
+  // Проект и задачу рисует сервис канбана, которого в стенде ядра нет: ядру здесь важна глубокая ссылка.
 })
 
