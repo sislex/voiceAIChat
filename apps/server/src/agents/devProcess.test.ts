@@ -19,6 +19,18 @@ describe('dev process forwarding', () => {
     registry.unregister('m1')
   })
 
+  it('expands the owner/name repository shorthand into a GitHub clone URL for the agent', () => {
+    const registry = new AgentRegistry(), send = vi.fn()
+    registry.register('m1', 'M1', { send, close: vi.fn() }, undefined, AGENT_VERSION)
+    const start = { ...target, sha: 'a'.repeat(40), command: ['npm', 'run', 'dev:component'] as [string, ...string[]], env: {}, port: 23001 }
+    void registry.devProcess('m1', 'devProcess.start', { ...start, repository: 'sislex/voiceAIChat' }).catch(() => undefined)
+    void registry.devProcess('m1', 'devProcess.start', { ...start, repository: 'https://github.com/sislex/make.git' }).catch(() => undefined)
+    void registry.devProcess('m1', 'devProcess.start', { ...start, repository: './local/checkout' }).catch(() => undefined)
+    expect(send.mock.calls.map(call => (JSON.parse(call[0]) as { repository: string }).repository))
+      .toEqual(['https://github.com/sislex/voiceAIChat.git', 'https://github.com/sislex/make.git', './local/checkout'])
+    registry.unregister('m1')
+  })
+
   it('maps agent errors to a code-prefixed message and rejects pending requests when the agent leaves', async () => {
     const registry = new AgentRegistry(), send = vi.fn()
     registry.register('m1', 'M1', { send, close: vi.fn() }, undefined, AGENT_VERSION)
