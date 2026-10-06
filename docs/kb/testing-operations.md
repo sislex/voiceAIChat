@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-06
-checked: c3a02158
+checked: 58747772
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1062,7 +1062,12 @@ performance measurements. `gate:performance` runs serial Web route budgets by
 default; `VC_ELECTRON_TESTS=1` restores Electron measurement. `gate:system` runs
 owner-maintained system acceptance. `gate:release` selects these stages from the
 release diff as described below. Known budget/measurement edits still select their real browser
-measurements directly. Errors and signals stop every stage; timing artifacts live
+measurements directly. The full gate's test stage runs tooling and each workspace
+test script as separate processes, with at most three active by default; set
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. Their output
+is buffered and printed in manifest order, all failing workspaces are reported,
+and `[gate:timing] tests/<workspace>` records individual durations. The ordinary
+`npm run test` command remains sequential for local use. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
 fallbacks suppress duplicate functional suites, but never suppress explicitly
