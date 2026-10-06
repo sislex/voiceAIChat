@@ -57,9 +57,9 @@ function reportedRun(count, { status = 0, elapsed = 10, error } = {}) {
 }
 
 test('Vitest reports count cases, accept the boundary and preserve failures', () => {
-  const passing = reportedRun(100)
+  const passing = reportedRun(1000)
   passing.run()
-  assert.equal(passing.output.at(-1), 'GATE-TASK: tests=100 seconds=0.010')
+  assert.equal(passing.output.at(-1), 'GATE-TASK: tests=1000 seconds=0.010')
   assert.equal(passing.calls[0].options.timeout, 60000)
   assert.ok(passing.calls[0].args.includes('--maxWorkers=4'))
   assert.ok(passing.calls[0].args.includes('--fileParallelism'))
@@ -69,7 +69,7 @@ test('Vitest reports count cases, accept the boundary and preserve failures', ()
 })
 
 test('count and wall-time breaches exit 2 with slow-test evidence and summary', () => {
-  for (const fixture of [reportedRun(101), reportedRun(1, { elapsed: 60001 }),
+  for (const fixture of [reportedRun(1001), reportedRun(1, { elapsed: 60001 }),
     reportedRun(1, { error: { code: 'ETIMEDOUT' } })]) {
     assert.throws(fixture.run, error => error.exitCode === 2)
     assert.ok(fixture.output.some(line => line.includes('sample.test.ts: slow case')))
