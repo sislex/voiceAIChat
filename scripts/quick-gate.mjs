@@ -4,6 +4,7 @@ import { resolve, dirname, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { main as applicationMain, OWNER_PIN_TESTS } from './application-gate.mjs'
 import { root, workspaceEntries, isTest, mapTestFiles, runTests, reportFailure } from './test-files.mjs'
+import { taskTests } from './task-tests.mjs'
 
 function walk(path) {
   if (!existsSync(path)) return []
@@ -47,10 +48,7 @@ export function quickPlanCommands(plan, files, repository = root, { task = false
     const changed = files.filter(file => file.startsWith(workspace.path + '/'))
     for (const file of changed.filter(isTest)) if (existsSync(resolve(repository, file))) tests.add(file)
     const sources = changed.filter(file => !isTest(file) && /\.[cm]?[jt]sx?$/.test(file))
-    if (task && sources.length) {
-      for (const file of changed.filter(isTest)) if (tests.delete(file)) sources.push(file)
-    }
-    if (sources.length) steps.push({ path: workspace.path, runner: 'vitest', related: true, files: sources })
+    if (!task && sources.length) steps.push({ path: workspace.path, runner: 'vitest', related: true, files: sources })
   }
   for (const check of task ? [] : plan.contracts) {
     const workspace = workspaces.find(item => item.name === check.workspace)
@@ -60,7 +58,12 @@ export function quickPlanCommands(plan, files, repository = root, { task = false
       for (const file of walk(absolute).filter(isTest)) tests.add(relative(repository, file))
     }
   }
-  if (task || plan.tooling) for (const file of relatedTooling(files, repository)) tests.add(file)
+  if (task) {
+    const selection = taskTests(files, repository)
+    tests.clear()
+    for (const file of selection.files) tests.add(file)
+    if (selection.deferred) steps.push({ deferred: selection.deferred })
+  } else if (plan.tooling) for (const file of relatedTooling(files, repository)) tests.add(file)
   if (!task && plan.pinChecks) for (const file of OWNER_PIN_TESTS) tests.add(file)
   for (const file of task ? [] : plan.e2eFiles ?? []) tests.add(file)
   if (!task && plan.verifyArtifacts) steps.push({ command: 'npm', args: ['run', 'verify:core-ui'] })

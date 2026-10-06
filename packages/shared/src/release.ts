@@ -1,5 +1,6 @@
 // Подготовленные release-ветки и неизменяемая история production deploy.
 import type { ReleaseCompositionEntry } from './releaseComposition'
+export * from './releaseDisk'
 export const RELEASE_BRANCH_RE = /^release\/(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 export type ReleaseStatus = 'preparing' | 'checking' | 'ready' | 'queued' | 'switching' | 'building' | 'health_check' | 'failed' | 'released'

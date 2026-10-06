@@ -533,11 +533,11 @@ export interface IpcInvokeMap {
   /** Состав релиза из выпусков приложений: закреплённое в базовой ветке и опубликованные выпуски (Kanban). */
   'releases:composition': { arg: { projectId: string; baseBranch?: string; agentId?: string }; result: import('./releaseComposition').ReleaseCompositionCatalog }
   /** `composition` — выбранные выпуски; их закрепляет подготовка release-ветки. */
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string; composition?: import('./releaseComposition').ReleaseCompositionItem[] }; result: import('./release').ProjectRelease }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string; ignoreDiskCheck?: boolean; composition?: import('./releaseComposition').ReleaseCompositionItem[] }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string; includeArchived?: boolean }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:changes': { arg: { projectId: string; releaseId: string; from?: string }; result: import('./release').ReleaseChangesResult }
-  'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
+  'releases:deploy': { arg: { projectId: string; branch: string; ignoreDiskCheck?: boolean }; result: import('./release').ProjectRelease }
   'releases:managedPreflight': { arg: { projectId: string }; result: import('./release').ManagedPreflightConfirmation }
   'releases:managedConfirm': { arg: { projectId: string; confirmationToken: string }; result: ProjectDetail }
   'projects:bootstrapProduction': { arg: { id: string; agentId: string; storageId?: string; deployCommand?: string; healthCheckCommand?: string }; result: import('./release').ProductionBootstrapResult }
