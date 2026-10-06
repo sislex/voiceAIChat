@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-09-20 | ⚠ 21 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-09-22 | ⚠ 35 коммит(ов) в areas после сверки: 7f397ace Merge origin/main into dc/kb-service-v1-u03 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-06 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 17 коммит(ов) в areas после сверки: 487f5ebb chore(agent): pin agent 0.23.0 and agent contracts 1.3.0 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 18 коммит(ов) в areas после сверки: b06ab57c chore: pin Core UI 1.5.5 and Desktop 1.0.24 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 16 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 8 коммит(ов) в areas после сверки: 0692d1dd refactor(kb): isolate the knowledge engine in @voicechat/knowledge (kb-service-v1 U03) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-06 | ✓ |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 63 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 22 коммит(ов) в areas после сверки: 1f65fcef feat(shared): dev stand contracts (dev-lane-v1 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 29 коммит(ов) в areas после сверки: 9d8a894a fix(shared): drop an unused KbScope import from ipc.ts … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-05 | ⚠ 10 коммит(ов) в areas после сверки: e13d978b chore(shared): pin Shared 0.1.25 archive … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 96 коммит(ов) в areas после сверки: 7f397ace Merge origin/main into dc/kb-service-v1-u03 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 5 коммит(ов) в areas после сверки: 8f186384 feat(dev-stand): stand gateway, Core dev mode and dev build rejection (dev-lane-v1 C02) … |
@@ -60,18 +60,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1088. Последние:
+Всего записей: 1089. Последние:
 
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-25.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-25.md) — pin-shared-0-1-25
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md) — pin-make-1-4-0
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md) — pin-kanban-0-2-9
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-5-desktop-1-0-24.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-5-desktop-1-0-24.md) — pin-core-ui-1-5-5-desktop-1-0-24
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-23-0.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-23-0.md) — pin-agent-0-23-0
+- [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-core-github-token.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-core-github-token.md) — core-github-token
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u04-results.md) — u04-results
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u03-knowledge-extraction.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-u03-knowledge-extraction.md) — u03-knowledge-extraction
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-stand-lan-proxy.md) — stand-lan-proxy
 - [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-24.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-24.md) — pin-shared-0-1-24
-- [2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-23.md](log/2026-10-05-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-23.md) — pin-shared-0-1-23
 
 ## Исторические планы
 
