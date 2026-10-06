@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-06
-checked: 58747772
+updated: 2026-10-07
+checked: 011bb5ac
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -284,7 +284,9 @@ missing their separate dependencies produces TS2307 for `electron` and
 `src/kanban/standalone/index.ts` из чекаута того коммита, который закрепил compose
 (`SISLEXA_KANBAN_IMAGE`). Чекаут — `SISLEXA_KANBAN_SOURCE`, иначе кэш
 `npm run e2e:kanban-stand` (`scripts/kanban-stand-prepare.mjs`: `~/.cache/sislexa/kanban/<коммит>`
-или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`), иначе соседний `../sislexa-kanban`.
+или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`; после каждой подготовки кэш оставляет
+`VC_E2E_KANBAN_CACHE_KEEP` (по умолчанию 3) последних по использованию чекаутов — время использования
+хранит маркер `.sislexa-e2e-ready`), иначе соседний `../sislexa-kanban`.
 Деревья сравниваются с закреплённым коммитом (merge-коммит с тем же содержимым подходит;
 `SISLEXA_KANBAN_SOURCE_ANY_COMMIT=1` снимает проверку). `scripts/browser-gate.mjs` готовит
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
