@@ -43,10 +43,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-07 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-07 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-06 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ✓ |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-09-20 | ✓ |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ✓ |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-07 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ✓ |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
@@ -60,18 +60,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1100. Последние:
+Всего записей: 1101. Последние:
 
 - [2026-10-07-delivery-c01-kb-service-v3.md](log/2026-10-07-delivery-c01-kb-service-v3.md) — kb-service-v3
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md) — task-gate-budget-300
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md) — pin-kanban-0-2-12
+- [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kb-service-v4.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kb-service-v4.md) — kb-service-v4
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md) — kanban-stand-cache-prune
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md) — task-gate-module-scope
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-release-gate-speed-b01.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-release-gate-speed-b01.md) — release-gate-speed-b01
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-release-disk-preflight-b01.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-release-disk-preflight-b01.md) — release-disk-preflight-b01
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-25.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-25.md) — pin-shared-0-1-25
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md) — pin-make-1-4-0
-- [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md) — pin-kanban-0-2-9
 
 ## Исторические планы
 
