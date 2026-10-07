@@ -609,8 +609,8 @@ export interface ProjectQuota {
 
 export interface ProjectSummary {
   /** Null for a top-level project. */
-  parentProjectId: string | null
-  subprojectCount: number
+  parentProjectId?: string | null
+  subprojectCount?: number
   id: string
   /** Identity tenant that owns the project and its shared budget. */
   tenantId?: string
@@ -1414,7 +1414,7 @@ export interface TaskChatBadge {
 /** Снапшот доски проекта. */
 export interface Board {
   /** Included projects, even when they currently have no tasks. */
-  projects: { id: string; name: string }[]
+  projects?: { id: string; name: string }[]
   columns: KanbanColumn[]
   tasks: Task[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
