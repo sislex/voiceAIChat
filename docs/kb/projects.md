@@ -1,65 +1,36 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-09-29
-checked: 8ed0a31c
+updated: 2026-10-07
 
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
   - packages/shared/src/qa.ts
-  - packages/projects-app/src
   - apps/server/src/routes/projects.ts
   - apps/server/src/projects
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
-  - packages/ui/src/components/ProjectPage.tsx
-  - packages/ui/src/components/ProjectBoard.tsx
-  - packages/ui/src/components/ProjectSettings.tsx
-  - packages/ui/src/components/ProjectMachinesSettings.tsx
-  - packages/ui/src/components/ProjectMachinesSettings.stories.tsx
-  - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/components/KanbanAssistant.tsx
-  - packages/ui/src/components/WidgetAssistantFrame.tsx
-  - packages/ui/src/components/kanban
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/ipc.ts
-  - packages/ui-foundation/src/lib/dnd.ts
-  - packages/ui/src/lib/useDismissibleMenu.ts
-  - packages/ui/src/store/domains/projectsStore.ts
-  - packages/ui/src/components/ConversationSettings.tsx
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
   - apps/server/src/mcp/makeMcp.ts
   - apps/server/src/ci/modelHooks.ts
-  - apps/llm-runner/src/cli/claudeCli.ts
-  - apps/llm-runner/src/cli/codexCli.ts
   - packages/shared/src/llm.ts
   - packages/shared/src/prompt.ts
   - packages/shared/src/types.ts
-  - packages/ui/src/components/ChatColumn.tsx
-  - packages/ui/src/App.tsx
-  - packages/ui/src/styles/app.css
   - packages/ui/src/store/react.tsx
   - owner-repo
 ---
 
 # Проекты и канбан-доска
 
+Module details: `kanban:README.md`
+Module details: `core-ui:README.md`
+
 Отдельный режим web-клиента: пользователь ведёт **проекты**, внутри проекта —
 канбан-доска задач. Первая многопользовательская сущность в проекте (в отличие от
 разговоров/машин, которые принадлежат одному владельцу).
-
-## Что это
-
-У проекта: имя, описание, git-репозиторий, теги технологий и навыков (свободные
-строки), список машин-агентов (id из реестра машин) и участники. Внутри —
-колонки и задачи. **Колонка = статус задачи**: перемещение задачи между колонками
-и есть смена статуса, отдельного поля статуса нет. Колонку можно скрыть (флаг
-`hidden`), не удаляя задачи, и задать ей WIP-лимит (`wipLimit`, перебор
-подсвечивается). У задач, помимо иерархии и приоритета, — атрибуты в духе Jira:
-метки (`labels`), стори-поинты, срок (`dueDate`), флаг «внимание» (`flagged`) и
-сквозной номер в проекте (`seq`) — из него UI строит ключ вида `PRJ-42`
-(счётчик `projects.task_seq`, номера удалённых задач не переиспользуются).
 
 ## Tenant ownership
 
@@ -87,9 +58,9 @@ can be listed.
 
 Для ролей `developer`/`tester`/`observer` действует квота на проекты, где пользователь состоит владельцем. Подсчёт идёт по членствам с ролью `owner` (`VoiceChatDb.countOwnedProjects` в `apps/server/src/db/database.ts`), поэтому удаление собственного проекта освобождает место. Значение по умолчанию `DEFAULT_OWNED_PROJECT_LIMIT = 5` задано в `packages/shared/src/projects.ts`, текущее значение хранится в `app_config` под ключом `projects.ownedLimit`; роль `admin` не ограничивается.
 
-`POST /api/projects` в `apps/server/src/routes/projects.ts` читает настройку на каждый запрос и при исчерпании отвечает `409` с человеческим объяснением, а не ошибкой права. `GET /api/projects/quota` (мост `projects:quota`) возвращает `{ owned, limit, unlimited }`: `NewProjectDialog` предупреждает при последнем свободном месте, а при исчерпании показывает причину и блокирует кнопку создания. Серверная проверка остаётся обязательной независимо от состояния интерфейса.
+`POST /api/projects` в `apps/server/src/routes/projects.ts` читает настройку на каждый запрос и при исчерпании отвечает `409` с человеческим объяснением, а не ошибкой права. `GET /api/projects/quota` (мост `projects:quota`) возвращает `{ owned, limit, unlimited }`. Серверная проверка остаётся обязательной независимо от состояния интерфейса.
 
-Администратор меняет целое значение от 1 до 1000 в секции открытой регистрации через `GET/PUT /api/admin/signup`; сервер сохраняет его синхронно в `app_config`, поэтому новая квота применяется без перезапуска. Поведение — включая `409`, освобождение места после удаления и исключение для admin — закреплено в `apps/server/src/routes/projects.test.ts`, подсказки интерфейса — в `packages/ui/src/components/NewProjectDialog.dom.test.tsx`.
+Администратор меняет целое значение от 1 до 1000 в секции открытой регистрации через `GET/PUT /api/admin/signup`; сервер сохраняет его синхронно в `app_config`, поэтому новая квота применяется без перезапуска. Поведение — включая `409`, освобождение места после удаления и исключение для admin — закреплено в `apps/server/src/routes/projects.test.ts`.
 
 Квота проектов дополняет, но не заменяет защиту рассылки приглашений: `apps/server/src/routes/invitations.ts` отдельно ограничивает создание приглашений скользящим окном до 20 в час на пользователя и 40 в час на IP; превышение отвечает `429`.
 
@@ -170,28 +141,13 @@ workflow в `migrate()` дописывала конвейер разработк
 родителем. Заготовки берутся из самого проекта: видимые колонки доски с именами,
 теги, навыки по типам элементов, git/CI-настройки. Новый узел всегда `private`.
 
-**Где что живёт в интерфейсе.** Каталог типов — раздел «Типы проектов» в
-пользовательских настройках (`ProjectTypesSettings`): дерево видимых узлов,
-создание своих подтипов, отправка на утверждение, отзыв публикации, причина
-отказа. Он именно в пользовательских настройках, а не внутри проекта: типы
-переживают проекты и не принадлежат ни одному из них. Очередь заявок у
-администратора — секция «Типы проектов» в `UsersAdmin`
-(`packages/admin-app/src/ProjectTypesAdmin.tsx`); отклонение требует причины,
-иначе автору нечего исправлять. Порядок узлов во всех списках задаёт одна функция
+Порядок узлов во всех списках задаёт одна функция
 `compareProjectTypes` из shared — встроенные впереди и в порядке объявления,
 остальные по имени; без общего правила выбор при создании и каталог показывали бы
 разный порядок.
 
-**Type changes preview both enabled and disabled capabilities before saving.** The confirmation lists task tabs gated by git (Code, Merge), CI (Preparation, Improvements, Run feed) and QA (Component QA, Integration tests, Automated QA, Manual QA), matching TaskModal; stage-specific tabs may already be hidden for a particular task. Existing data remains. The selection enters the project draft; only Save persists it. Published-type refusal remains explained by the existing server policy and a catalog hint.
-
-`ConfirmDialog` previews every type change, including both expansion and
-reduction. Silent switching would make disappearing sections look like a failure. Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
+Каталог отдаёт `usageCount` — сколько проектов используют узел; кнопка
 удаления заблокирована с объяснением, а не отказом после нажатия.
-
-**Ярлык типа виден в шапке проекта** (`ToolFrame.titleExtra`). Слот отдельный и
-рендерится **рядом** с `h2`, а не внутри: иначе бейдж попадает в доступное имя
-заголовка («Мой проект РАЗРАБОТКА ПО») и ломает поиск по нему. На телефоне ярлык
-скрыт — там важнее само имя.
 
 **Участник добавляется только приглашением.** `onAddMember` убран из
 `ProjectSettings`; REST-роут `POST /api/projects/:id/members` остался для
@@ -222,8 +178,7 @@ Make-проект хранится в `task_designs`; актуальный ко�
 инструменты `make_*`, и модель блокирует подготовку вопросом «критичный
 источник истины недоступен» про опубликованный URL — так было с CHAT-391.
 Связь создаётся **до** запуска подготовки: makeSources собираются при старте
-рана. Для уже существующей задачи связь ставится вручную: карточка → «Дизайн»
-→ «Связать дизайн» (или из панели Make «связать карточку»).
+рана.
 
 **Связь адресует живой Make-проект, а не снимок.** Дизайн правится дальше, и
 карточка обязана показывать текущее состояние экрана. Целевой контракт одной
@@ -249,13 +204,7 @@ Make-проект хранится в `task_designs`; актуальный ко�
 `VoiceChatDb.isMakeProjectViewer` пускает участника в `access(…, 'viewer')`
 роутов Make, включая `GET /api/preview/make/:id/*`.
 
-**Где в интерфейсе.** В карточке — секция «Дизайн»
-(`packages/ui/src/components/kanban/TaskDesigns.tsx`): форма лениво загружает все
-файлы выбранного Make-проекта, отдельно предлагает «весь проект» или множественный
-выбор файлов и позволяет открыть существующую связь для атомарной замены набора.
-Карточка показывает тот же отсортированный список и `fileStatuses` с точечными ошибками недоступности. `TaskDesignLink` также сохраняет `createdBy` и метаданные живого Make-проекта. Действие «Превью» доступно для всего проекта и для первого HTML-пути файловой связи (в частности `index.html`); URL строит `makeDesignPreviewUrl`. В панели Make — пункт
-меню «⋯» → «🗂 Задачи проекта» (`MakeTaskLinksDialog`): связанные карточки,
-переход на доску и связывание открытой страницы с задачей.
+`TaskDesignLink` также сохраняет `createdBy` и метаданные живого Make-проекта.
 
 **Дизайн уходит модели.** `designPromptLines` (shared) перечисляет явный режим,
 точные пути и имя read-only Make MCP-источника без preview URL; строки добавляют и ход чата
@@ -275,8 +224,6 @@ Make-проект хранится в `task_designs`; актуальный ко�
 получала, — то есть врала пользователю. Тот же контекст (с типом) уходит
 ассистенту виджета доски.
 
-**Панель канбан-ассистента сохраняет функции доски, но визуально следует живому Make-макету «Проект 14»** (CHAT-391; макет — `index.html`/`styles.css` Make-проекта, связь хранится в карточке задачи). Первая реализация (02.09.2026) ограничилась палитрой и строкой статуса поверх прежнего `ChatColumn`/`VoiceBar`, и на проде «новый шаблон» не был виден; со второй итерации `KanbanAssistant` (`packages/ui/src/components/KanbanAssistant.tsx`) рисует разметку макета сам, без `ChatColumn`: боковая колонка «Чаты канбана» (`ProjectAssistantChatSelector` — поиск, «＋ Новый чат», точки статуса working/waiting/ready/done по `conversation.status`, удаление обычных чатов, легенда), шапка со знаком ассистента, eyebrow-названием проекта, заголовком чата, статус-пилюлей (`role=status`, при ошибке/отсутствии транспорта — `role=alert`) и кнопкой настроек LLM, приветственный экран «С чего начнём?» с четырьмя подсказками (клик подставляет текст в композер), композер с тумблером «Автопилот» и кнопкой модели, который после первого сообщения прижимается к низу ленты; ответы — строки со знаком ассистента и Markdown, пользователь — пузырь справа, стрим — три точки. Предложения и планы работ выводятся карточками внутри ленты. `WidgetAssistantFrame` получил `hideHeader`: рамка не дублирует шапку, крестик закрытия отдаёт `onClose` ассистента, выбор чата — `onSelectConversation` (App хранит `assistantConversationId`). Ширина решается container query по `.widget-assistant-panel`: до 900 px колонка чатов выдвижная (кнопка «Открыть канбан-чаты» + затемнение), от 900 px (страница ассистента) — постоянная; до 640 px шапка и подсказки сжимаются как в макете; переключение виджета и чата на телефоне остаётся на 820 px. Стили — правила `.ka-*` в `packages/ui/src/styles/app.css` (токены `--assistant-*` повторяют `:root` макета). Состояния — в `KanbanAssistant.stories.tsx`, поведение — в `WidgetAssistantFrame.dom.test.tsx`.
-
 **Подготовка Development Brief сохраняет фактическую доступность источников.** Валидатор в `apps/server/src/kanban/module.ts` принимает только единственный JSON-объект с числовым `schemaVersion=2` и нормализует лишь однозначные совместимые представления; полный перечень и причины отказа описаны в [интерактивной подготовке задачи](features/task-preparation.md). Неизвестные `kind` и статусы остаются ошибкой, а `absent`/`unavailable` никогда не подменяются на `available`. Источник, который нужен лишь на этапе визуальной реализации или приёмки, остаётся некритичным и не блокирует подтверждение готовности; его проверка должна оставаться в scope и тест-кейсах. Это поведение закреплено в `apps/server/src/taskPreparation.test.ts` и `packages/shared/src/qa.test.ts`.
 
 **Тип проекта уходит в промпт модели** (`apps/server/src/turns.ts`): ярлык
@@ -293,40 +240,13 @@ Make-проект хранится в `task_designs`; актуальный ко�
 адресованные по логину, и по подтверждённому адресу. Иначе при повторной
 регистрации того же логина они снова к нему привязывались бы.
 
-**Интерфейс.** Проект создаётся окном `NewProjectDialog` (каскад селектов по
-уровням дерева; встроенные типы идут в порядке объявления, а не по алфавиту —
-основной тип первым) вместо прежнего инлайн-поля в сайдбаре: селект нельзя было
-держать в поле, закрывающемся по `onBlur`. Возможности показываются чипами, а не
-прозой — иначе строка дублировала описание типа. По возможностям фильтруются:
-вкладка «Релизы» страницы проекта, вкладки «Workflow и CI» / «Машины» и поля
-git/превью/тестовых пользователей в настройках, вкладки CI/QA/merge в карточке
-задачи (скрытая вкладка не выбирается и по умолчанию). Тип виден ярлыком в строке
-проекта в сайдбаре и меняется владельцем на вкладке «Общее»; опции подписаны
-путём от корня, чтобы одноимённые подтипы различались.
-
-## Маршруты вкладок карточки задачи
-
-Открытая вкладка карточки имеет стабильный дочерний маршрут
-`/projects/:projectId/task/:taskId/:tab`; полный допустимый словарь и его parser
-находятся в `packages/projects-app/src/routes/projectsRoute.ts`. Выбор вкладки
-обновляет URL, а прямое открытие и навигация по history синхронизируют состояние
-у новой и legacy-карточки через `TaskModal` и `TaskCardContainer`. Все входы в
-чат задачи ведут на сегмент `chat`: разговор остаётся встроенным
-`TaskChatPanel` карточки, а не становится глобальным экраном чата.
-
-Неизвестный child-сегмент не считается проектным маршрутом и `App` заменяет
-его каноническим `general`. Допустимый сегмент сам по себе не открывает
-недоступную панель: `TaskModal` строит фактический набор вкладок по возможностям
-проекта и стадии задачи, а скрытую или неприменимую вкладку переключает на
-«Общее» и синхронизирует маршрут тем же `onTabChange`.
-
 ## Приглашения участников
 
 Участник не добавляется молча: владелец приглашает по логину или адресу, уходит
 письмо, приглашённый подтверждает вступление сам. Таблица `project_invitations`
 (токен — sha256, статусы `pending|accepted|declined|revoked`, частичные уникальные
 индексы держат ровно одно живое приглашение на адресата), роуты —
-`apps/server/src/routes/invitations.ts`, экран — `packages/ui/src/components/InviteScreen.tsx`.
+`apps/server/src/routes/invitations.ts`.
 
 **Роуты делятся на два семейства, и это не стилистика.** Управление со стороны
 проекта (`/api/projects/:id/invitations…`) гейтит глобальный auth-hook проектным
@@ -344,7 +264,7 @@ owner-гейт срезал бы его на входе. Публичный пр
 and in email; owner invitation lists do not contain the token or link.
 
 Invitation creation accepts optional `ttlDays` (integer, 1–30; default 7).
-The UI offers 1, 7 or 30 days together with the role. Resending rotates the
+Resending rotates the
 token and restarts the original lifetime; the former URL becomes invalid.
 Mail includes the actual expiry timestamp. Owners can also resend username-only
 invitations and copy the newly issued link. The server rejects self-demotion of
@@ -362,88 +282,6 @@ the last owner before updating membership, independently of disabled UI controls
 
 Ссылка письма ведёт на `#/project-invite/<token>` — свой маршрут, потому что
 `#/invite/<token>` уже занят регистрацией по админскому инвайту (`InviteRegister`).
-Экран один на два случая: неавторизованному показывает, куда зовут, и ведёт на
-вход или регистрацию; вошедшему — «Принять» и «Отклонить». Свои приглашения
-видны в сайдбаре над списком проектов — приглашённому по логину письмо не
-приходит, и это единственное место, где он их увидит.
-
-## Критерии приёмки
-
-Критерии по-прежнему хранятся в `Task.acceptanceCriteria` одной Markdown-строкой,
-но её канонический вид — последовательный ordered list. Единственное общее правило
-задаёт идемпотентная `normalizeAcceptanceCriteria` в
-`packages/shared/src/projects.ts`: верхнеуровневые непустые строки становятся
-пунктами `1.`, `2.`, …, старые ручные номера и checkbox-маркеры снимаются, а
-строки с отступом, цитаты, заголовки и fenced-блоки остаются содержимым текущего
-пункта. Поэтому повторная нормализация не добавляет второй номер и старые задачи
-без номеров безопасно приводятся к тому же представлению.
-
-`TaskModal` применяет эту функцию при загрузке задачи, обычном вводе,
-многострочной вставке, показе Markdown и сохранении. В textarea обычный Enter
-начинает следующий критерий, Shift+Enter вставляет внутреннюю строку с отступом,
-а Enter на пустом пункте не продолжает бесконечную нумерацию; после изменения
-выделение восстанавливается. Сервер независимо нормализует `acceptanceCriteria`
-в `POST /api/projects/:id/tasks` и `PATCH /api/projects/:id/tasks/:taskId` перед
-передачей в БД, поэтому ручное создание, ассистентские и чатовые пути используют
-один контракт записи. Режим просмотра рендерит единый Markdown-список; стили
-`packages/ui/src/styles/app.css` переносят длинный текст в пределах карточки, а
-широкий код прокручивается только внутри `pre`.
-
-## Шапка карточки задачи
-
-Открытая `TaskModal` показывает идентификатор, редактируемое название и текущее
-состояние в одной шапке; прежней дублирующей строки под ней нет. Формирование
-`currentState` находится в
-`packages/ui/src/components/kanban/TaskModal.tsx`: первым всегда идёт имя
-текущей колонки (либо «Без статуса»), затем фаза активного development-рана, а
-при его отсутствии — «Мерж выполняется» для активного merge-рана. Если активной
-операции нет, успешный итог дополнительно не выводится; для
-`failed`/`timeout`/`cancelled` рядом с этапом показывается последняя фаза
-или метка результата.
-
-Серверный `taskCiDisplaySummary` в `apps/server/src/db/database.ts` выбирает
-активный ран раньше терминальных и считает ошибку или отмену актуальной только
-пока задача остаётся в колонке, зафиксированной при завершении рана. Поэтому
-ручной переход на другой этап сразу убирает старый терминальный результат из
-шапки, а обновления доски и CI-сводки через props пересобирают текст без
-перезагрузки. Черновик создания задачи сохраняет отдельное поле названия:
-проектного ключа и серверного этапа у него ещё нет.
-
-Шапка собрана в две строки: надстрочная `.task-modal-heading__eyebrow` с ключом,
-точкой состояния и самим этапом, под ней — крупное поле названия
-`.task-modal-heading__title`. Раньше ключ, поле и этап в скобках стояли одной
-строкой, и при длинном названии этап уезжал вниз оторванным хвостом. Точка
-`.task-modal-heading__dot` берёт тон у активного рана (`ciTone`), а без рана —
-у колонки: она дублирует подпись этапа рядом, а не заменяет её.
-
-Действия задачи (флаг и удаление) живут в `⋯`-меню **на любой ширине**, не
-только на телефоне: в шапке остаются только «ещё» и крестик диалога. Отдельного
-действия перехода в связанный чат больше нет — чат открывается вкладкой «AI-чат»
-внутри карточки. Полный состав шапки доступен через `title` и accessibility label
-окна.
-
-## Выпадающие меню чатов и канбана
-
-Общее поведение задаёт `packages/ui/src/lib/useDismissibleMenu.ts`. Открытое
-меню закрывается по `pointerdown` за пределами переданного контейнера и по
-Escape; нажатие внутри контейнера не закрывает его до выполнения обработчика
-выбранного действия. При открытии экземпляр отправляет document-событие
-`voicechat:menu-open`, по которому остальные открытые экземпляры закрываются,
-поэтому одновременно остаётся только последнее открытое меню.
-
-Хук подключён к меню экспорта в `ChatColumn`, меню действий карточки
-`TaskCard`, мобильному меню действий `TaskModal`, меню колонки и фильтру
-исполнителей в `KanbanBoard`. Кнопка экспорта дополнительно отражает состояние
-через `aria-expanded`; DOM-тест `ChatColumn.dom.test.tsx` фиксирует закрытие
-по внешнему нажатию и взаимное исключение меню разных чатов.
-
-## Данные и доступ
-
-Таблицы в `apps/server/src/db/schema.ts`: `projects`, `project_members`,
-`project_machines`, `kanban_columns`, `tasks` (FK `ON DELETE CASCADE` к проекту;
-задачи каскадят и от колонки). Технологии/навыки — JSON-массивы в колонке (как
-`conversations.skill_names`). Порядок колонок и задач — дробный ранг (`position REAL`,
-шаг 1024) с ренормализацией при схлопывании; см. методы в `database.ts`.
 
 ### Проект при создании обычного разговора
 
@@ -505,150 +343,14 @@ default становится неэффективным. Каталог не в�
 `path`, `reposRoot`, `sshHost` и `sshUser`; менять их может только владелец
 машины.
 
-Вкладка машин вынесена в `packages/ui/src/components/ProjectMachinesSettings.tsx`.
-«Мои машины» строится из полного пользовательского каталога агентов, поэтому
-показывает собственные online/offline-машины независимо от предоставления проекту.
-«Машины, предоставленные проекту» содержит только явно предоставленные машины
-других владельцев. У каждой таблицы свой независимый фильтр «Онлайн»/«Офлайн»/«Все»,
-при открытии выбран режим «Онлайн». Online-индикатор стоит слева от имени машины,
-а владелец показан второй строкой; отдельных колонок владельца и online-состояния
-нет. В колонке «Готовность» машина считается готовой только при одновременном
-выполнении трёх условий: она online, заполнены «Папка проекта» и «Корень Feature
-Run». Цветной индикатор и tooltip перечисляют все причины неготовности.
-Переключатель предоставления активен лишь у собственных машин, а персональный
-default можно назначить любой собственной online-машине без предварительного
-предоставления проекту либо доступной предоставленной чужой машине.
-
 Четыре рабочих поля (`path`, `reposRoot`, `sshHost`, `sshUser`) у собственной
 машины редактируются независимо от предоставления проекту, у чужой всегда
 readonly. При первом сохранении собственной непривязанной машины сервер создаёт
 строку конфигурации в `project_machines`, но не создаёт доступ в
 `machine_project_shares`: остальные участники её по-прежнему не видят и не могут
-использовать. Каждое поле имеет постоянную подпись и фокусируемую tooltip-подсказку. Черновик
-синхронизируется с серверным значением; blur или Enter отправляет только реально
-изменённое значение и показывает `saving`/`saved`/`error`. Store пробрасывает
-ошибки записи обратно компоненту, чтобы отказ API не выглядел успешным.
-Статусные и readiness-индикаторы используют фокусируемые tooltip-цели, а сам
-tooltip рендерится portal-ом в `document.body`, поэтому горизонтальный
-`overflow` таблицы его не обрезает. Storybook-витрина `Project Settings/Machines`
-работает на fixtures/spies; DOM- и play-тесты фиксируют разделение таблиц,
-редактирование, readonly, предоставление, ошибку сохранения и персональный
-взаимоисключающий default. UI сохраняет его отдельным каналом
+использовать. UI сохраняет персональный default отдельным каналом
 `projects:setUserDefaultMachine` через `PUT …/machines/default`; legacy/production
 `projects:setDefaultMachine` продолжает использовать `POST …/default-machine`.
-
-## Миграция системных колонок workflow
-
-При открытии базы канонизация workflow в `apps/server/src/db/database.ts` сначала
-доверяет сохранённой семантике: если у проекта уже есть колонка с
-`semantic_type = 'cancelled'`, именно она сохраняет свой стабильный `id`. Только
-при отсутствии такой колонки миграция один раз распознаёт `custom`-колонку с
-точным названием «Отменены» и меняет ей только `semantic_type` на `cancelled`.
-Карточки при этом не переносятся: их `column_id` и `position` остаются прежними.
-Повторное открытие базы не создаёт вторую cancelled-колонку и не меняет результат.
-Название служит только legacy-фолбэком; при наличии пригодной семантики оно не
-участвует в выборе.
-
-**Канонизация правит только порядок и семантику, но не пользовательские
-настройки колонки.** Раньше проход, расставляющий позиции, попутно писал
-системным колонкам `hidden = 0` — и скрытая колонка возвращалась на доску при
-каждом старте сервера, то есть скрытие системной колонки не переживало
-перезапуск вовсе (у своих `custom`-колонок флаг сохранялся, отсюда асимметрия
-поведения). Дефект нашёлся тестом «настроенная доска переживает перезапуск»
-(`database.projectTypes.test.ts`): он проверяет, что после повторного открытия
-файла целы переименование, своя колонка, скрытие и размещение задач. Скрытие —
-пользовательская настройка (`setColumnHidden`, задачи при этом остаются), и
-миграция его больше не трогает.
-
-**Разовые миграции отмечаются в `app_config`.** Шаг, переписывающий
-пользовательские данные, обязан отработать один раз, иначе он становится
-правилом, отменяющим настройку на каждом старте. Помощник — `runOnce(key, step)`
-в `VoiceChatDb`; первый случай — нормализация исторических шаблонов ветки CI
-(`migration.ciBranchTemplate.normalized`): значение `feature/{task_number}`
-человек вправе выбрать осознанно, а прогон на каждом открытии базы молча
-возвращал ему `{task_number}`. **Ловушка при постановке отметки:** списки колонок
-вроде `featureProjectCols` — это снимок `PRAGMA table_info` **до** `ALTER TABLE`,
-и на свежей базе они колонки не видят; разовый шаг под таким условием пропускает
-первое открытие и срабатывает на втором — уже поверх пользовательского значения.
-
-## Вычисляемая колонка «Улучшения»
-
-«Улучшения» в `KanbanBoard` — не системная колонка и не новый semantic workflow-
-статус, а очередь предложений проекта со статусом `new` или `accepted`
-(`GET /api/projects/:id/improvements`, `db.listProjectImprovements`, тип
-`ProjectImprovement` = `TaskImprovement` + `taskTitle/taskSeq/taskColumnId`).
-С 2026-09-02 карточка рисуется **на каждое предложение**, а не на задачу: в ней
-заголовок предложения, ключ и название исходной задачи, число повторов и колонка,
-где задача стоит сейчас. Исходная задача никуда не переезжает и сохраняет
-`column_id` и результат CI, поэтому очередь не участвует в development-, QA- и
-merge-переходах. Задачи в `done` здесь нормальны: предложения появляются и у
-успешных ранов (шаг со второй попытки, `fixedByModel`), а закрываются только руками.
-
-Нажатие на карточку открывает `ImprovementModal`
-(`packages/ui/src/components/kanban/ImprovementModal.tsx`): описание (Markdown),
-критерии приёмки, файлы репозитория из лога шага, подтверждающие данные — и три
-кнопки без формы. «Создать задачу» вызывает
-`POST /api/improvements/:id/create-task` с пустым телом: сервер берёт название,
-описание и критерии из предложения, а колонку — единственную `backlog` (TODO);
-несколько или ноль backlog-колонок — 409 с просьбой выбрать явно. «Создать и
-подготовить» передаёт `startPreparation: true`: после создания маршрут зовёт
-`launchTaskPreparation` (проброшен в `registerCiRoutes` из `server.ts`), задача
-уезжает в колонку `preparation`; отказ подготовки (нет машины, провайдер закрыт
-пользователю) не откатывает задачу, а возвращается в `preparationError`, окно
-остаётся с текстом ошибки. «Отменить» — `DELETE /api/improvements/:id`, запись
-удаляется (не `rejected`), кнопка требует второго нажатия «Точно удалить?» вместо
-диалога подтверждения. После создания открывается карточка новой задачи (вкладка
-`preparation`, если подготовка запущена). Старый маршрут
-`/improvements/tasks` и вкладка «Улучшения» в `TaskModal` сохранены.
-
-## Лёгкая доска и точечные обновления (производительность)
-
-Ответ `GET /api/projects/:id/board` (`db.getBoard`) намеренно **лёгкий**: карточке
-доски тяжёлые тексты не нужны, поэтому в board-задачах `description` и
-`acceptanceCriteria` пустые (`''`), `taskPreparationLog` — `null`, а подзапрос лога
-подготовки из board-SQL убран (`database.ts` `getBoard`). Полные данные задачи
-отдаёт `GET /api/projects/:id/tasks/:taskId` (`db.getTaskDetail`, мост `tasks:get`)
-— его при открытии карточки грузит `KanbanBoard` и накладывает `description`/
-`acceptanceCriteria` поверх живой карточки доски (`KanbanBoard.tsx`, состояние
-`fullTask`). `TaskModal` принимает это обновление при прежнем `task.id` и
-синхронизирует локальные `description` и `acceptanceCriteria` независимо:
-позднее серверное значение применяется только пока пользователь не изменил
-соответствующее поле. Черновик одного редактора не блокирует гидратацию другого,
-а смена `task.id` полностью сбрасывает оба черновика и режимы редактирования.
-Живые обновления доски остаются change-driven: WS `board.changed`
-(инвалидация, не снапшот) → дебаунс-рефетч теперь уже лёгкого board.
-
-`KanbanBoard` сохраняет весь облегчённый массив задач в клиентской модели, но
-списки раскрытых колонок виртуализированы (`owner-repo/packages/ui/src/modules/projects/components/kanban/KanbanBoard.tsx`): DOM содержит только диапазон общей
-вертикальной области просмотра и буфер по пять карточек с каждой стороны.
-Начальная оценка высоты карточки — 112 px; `ResizeObserver` уточняет высоты
-смонтированных карточек и размер области прокрутки, а без него остаётся оценочный
-расчёт. Поиск, общие и колонковые фильтры, счётчики и вычисление соседей
-`afterId`/`beforeId` выполняются по полным упорядоченным массивам, а не по DOM,
-поэтому открытие карточки, клавиатурный и pointer drag-and-drop и оптимистичное
-перемещение сохраняют прежние контракты.
-
-При первом открытии без сохранённой пользовательской настройки колонки с
-`semanticType: done` свёрнуты и не монтируют карточек; после раскрытия применяется
-тот же виртуализированный список. Регрессионный DOM-набор
-`KanbanBoard.dom.test.tsx` строит детерминированную доску из 500 задач и проверяет:
-реакцию на клик менее чем за 2000 мс в тестовом окружении, ограниченный карточный
-DOM, смену диапазона при прокрутке, поиск по немонтированной карточке,
-клавиатурный перенос по полным соседям, нормализацию диапазона после фильтра и
-единственную колонку в narrow-режиме. Тест запускается обычным workspace-скриптом
-`@voicechat/ui test`; отдельного браузерного benchmark-профиля ноутбука и
-артефактов измерений до/после в изменении нет.
-
-Подготовка задачи: `preparation/runs` (весь список ранов, тяжёлый) грузится
-**один раз** при открытии панели; обновления идут по WS-событию
-`preparation.run.updated` точечно — `TaskPreparationTab` догружает только
-изменившийся ран (`tasks:getPreparationRun` / `GET /api/task-preparation/runs/:runId`)
-и патчит его локально, без перезапроса всего списка (коалесинг по runId, троттл
-500 мс). На сервере дельты стрим-лога коалесятся до ~1/с на ран
-(`preparationRunDelta` в `server.ts`) — WS больше не летит на каждый чанк, а
-переход рана сбрасывает окно троттла, чтобы значимое событие ушло сразу.
-Reconnect → полная сверка списка. Инцидент-фон: раньше `preparation/runs`
-дёргался по кругу (событие на каждую дельту → рефетч всего списка).
 
 ## Контракт (REST + WS + мост)
 
@@ -656,8 +358,8 @@ Reconnect → полная сверка списка. Инцидент-фон: �
 `packages/shared/src/protocol.ts`, IPC-каналы — в `packages/shared/src/ipc.ts`
 (`projects:*`, `board:get`, `columns:*`, `tasks:*`). Роуты —
 `apps/server/src/routes/projects.ts` (`registerProjectRoutes`, регистрируется в
-`server.ts`); все под Bearer, не в `isPublic`. Клиент — каналы в
-`packages/ui/src/remote/httpApi.ts`. Перемещение задачи (`tasks:move`) принимает
+`server.ts`); все под Bearer, не в `isPublic`.
+Перемещение задачи (`tasks:move`) принимает
 соседей `afterId`/`beforeId` (id, не индексы); сервер считает ранг в транзакции.
 Вместе с целью клиент присылает необязательный `fromColumnId` — колонку карточки
 до оптимистичного переноса; сервер по нему отличает настоящую смену стадии от
@@ -673,17 +375,6 @@ Reconnect → полная сверка списка. Инцидент-фон: �
 ошибка оставляет карточку в `ready` и показывается тостом). Остальные
 перемещения, включая сортировку внутри колонки, никакой очереди не трогают.
 
-На каждой `TaskCard` есть нативные кнопки перехода в фактически соседнюю колонку
-слева и справа. Соседи вычисляются в `KanbanBoard` по полному `board.columns`, а не
-по видимым колонкам или текущей сортировке карточек, поэтому скрытая обязательная
-стадия не пропускается. Кнопка передаёт в общий `onMoveTask` актуальные `taskId` и
-`fromColumnId`, id соседней колонки и позицию после последней задачи цели; на время
-запроса обе стрелки карточки блокируются. Клик не всплывает в карточку, а успешный
-ответ объявляется через live-region. Оптимистичное состояние и откат при отказе,
-обновление доски и связанных представлений остаются в едином `moveTask` из
-`packages/ui/src/store/domains/projectsStore.ts`; его булев результат не позволяет
-объявить успех после серверной или сетевой ошибки.
-
 Важно: общий `POST /api/projects/:id/tasks/:taskId/move` не является универсальным
 workflow-гейтом. `apps/server/src/routes/projects.ts` отдельно обслуживает
 `ready` → `development`, возврат активной разработки в backlog и запуск
@@ -694,17 +385,6 @@ preparation-run, но общий fallback напрямую вызывает `Voi
 Automated QA, Manual QA или merge gate. Проверенные автоматические переходы этих
 стадий выполняются их специализированными QA/merge-сценариями; наличие стрелок
 само по себе не добавляет защиту gate к произвольному ручному переносу.
-
-## Порядок карточек в разработке
-
-Карточки в колонке с `semanticType: 'development'` отображаются по убыванию
-приоритета: `urgent`, `high`, `medium`, `low`. Внутри одного приоритета сохраняется
-ручной порядок `position`; при совпадении ранга устойчивый fallback — `createdAt`,
-затем `id`. Единое правило находится в `compareTasksInColumn`
-(`packages/shared/src/projects.ts`), поэтому серверный снимок доски и локальный
-показ `KanbanBoard` совпадают. Этот же отображаемый порядок использует CI-раннер,
-когда выбирает следующий ожидающий ран своего проекта после освобождения слота;
-подробности очереди — в [ci-runner.md](features/ci-runner.md#параллельные-раны).
 
 ## Завершённые задачи уходят с доски (как в Jira)
 
@@ -726,8 +406,7 @@ Automated QA, Manual QA или merge gate. Проверенные автомат
 Done ставит её заново; перенос между done-колонками её сохраняет. Строки без
 `doneAt` (старые данные) идут после помеченных и стабильно упорядочиваются по
 `position`, затем `createdAt` и `id`; этот же fallback разрешает одинаковый
-`doneAt`. Сервер сортирует снапшот доски после фильтрации, а `KanbanBoard`
-повторяет правило при локальном показе и фильтрации.
+`doneAt`. Сервер сортирует снапшот доски после фильтрации.
 
 Правило одно на всех — `isCompletedHidden` в `packages/shared/src/projects.ts`.
 Фильтрует **сервер** (`getBoard(..., { includeCompleted })`), иначе payload
@@ -736,100 +415,16 @@ Done ставит её заново; перенос между done-колонк
 `board.update` приходили в том же составе). Задача не удаляется: переключатель
 «Показать завершённые» в шапке доски запрашивает её заново, а прямая ссылка
 `#/projects/:id/task/:taskId` на отсутствующую в снапшоте карточку один раз
-включает этот флаг сама (эффект в `App.tsx`). При каждом переключении фильтра
-`projectsStore` очищает прежний `board`, включает общий `boardLoading` и не
-принимает realtime-снапшоты до завершения соответствующего REST-запроса. Поэтому
-доска целиком заменяется лоадером, а не показывает карточки от предыдущего
-фильтра. Успешный ответ устанавливает новый снимок; ошибка завершает загрузку,
-оставляет доску пустой и показывает штатное уведомление с повтором того же
-запроса. Оба направления переключения, успех и ошибка с повтором покрыты в
-`App.projects.dom.test.tsx` и `store/appRuntime.projects.test.ts`.
+включает этот флаг сама (эффект в `App.tsx`).
 
 Сам флаг — часть **вида доски**, который с круга 5 живёт на сервере
 (`board_views`, `GET/PUT /api/projects/:id/board/view`): фильтры, свимлейны,
-«скрытые» и «завершённые» открываются одинаково на любом компьютере. В
-предпочтениях браузера остался только локальный дубль `vc.board.includeCompleted`
-(им доска стартует до ответа сервера), а прежняя запись фильтров переносится на
-сервер один раз при первом открытии доски. Туда же переехал **вид доски**:
-свимлейны и «скрытые» колонки лежат рядом с фильтрами канбана в
-`voicechat.kanban.filters.v3.<user>.<projectId>`. Ключ строится только по
-реальному `projectId` загруженной доски — пока её нет, ключа нет вовсе, иначе
-вид писался бы под временным ключом с именем проекта и терялся при его подмене.
+«скрытые» и «завершённые» открываются одинаково на любом компьютере.
 `BoardView` also stores `overdueOnly` and `completedOnly`; the shared sanitizer
 accepts only booleans, so old saved JSON receives false defaults and malformed
 clients cannot persist truthy strings or numbers.
 Раньше и то и другое жило только в памяти, и каждая перезагрузка (а на проде —
 каждый деплой) возвращала доску к исходному виду.
-
-## Настройки проекта
-
-`ProjectSettings` разделён на вкладки: «Общее», «LLM», «Доска», «Workflow и CI»,
-«Участники» и «Машины». На вкладке «Общее» владелец задаёт `previewUrl` проекта — только абсолютный `http/https`; он служит адресом веб-превью по умолчанию для связанных разговоров, пока у разговора нет собственного `previewUrl`. Вкладка LLM объединяет проектную пару движок/модель,
-режим запуска, глубину уточнений и режим базы знаний для следующего CI-рана.
-Смена проектной пары сразу обновляет привязанные чаты; задачи получают её через
-`resolveTaskLlmConfig` по обычной цепочке наследования.
-
-The active settings tab comes from `#/projects/:projectId/settings/:tab`; stories
-and standalone tests fall back to local state. `ProjectSettings` derives the visible
-tabs from the effective project-type features: Workflow requires `ci`, Machines
-requires `machines`, while General, LLM, Board and Members remain available. If a
-type change disables the current tab, routing replaces it with General. Server detail
-refreshes preserve the tab and unsaved project-field patches. `ProjectSettingsDraft`
-batches `onUpdate` fields into one save and retains them on rejection. Its sticky
-Save/Cancel bar reports validation errors; browser unload and hash-router navigation
-warn before discarding a draft. Switching settings tabs keeps the draft.
-
-Git URLs accept HTTPS, SSH URLs and SCP-style SSH syntax. CI branch names reject
-spaces and invalid Git ref syntax. Branch templates support `{task_number}` and
-legacy `{slug}`, each once, matching `ci/runManager.ts`. Edited command fields
-must be nonempty; existing empty optional overrides remain compatible with
-inheritance. Errors appear below fields and set `aria-invalid`. An input receives
-`aria-describedby` only while its matching `role=alert` error is rendered; correcting
-the value removes both the message and the relationship.
-CI commands have multiline input, shell syntax preview, catalog suggestions from
-CI/CiCommands and an explicit machine check. Checks use the project default
-machine and its path, preserve the command exit code, support cancellation and
-display at most 50 output lines.
-
-Production checks require saved settings. Legacy checks verify checkout, exact
-origin and a clean worktree, then run the health-check command. Managed checks
-reuse managed preflight to obtain the canonical checkout before health-check.
-The result lists individual successes and failures with repair hints; no deploy
-command runs.
-
-Test-user passwords are masked. “Check login” opens a project-bound Web Reader
-conversation and asks its assistant to fetch credentials using `test-users`,
-exercise the login form and report the authentication result there. The MCP
-tool itself only returns credentials; it does not authenticate. Passwords are
-not copied into the request text. Unsaved credentials or a missing preview URL
-disable the action. Production-password warnings remain visible.
-
-
-The application shell keeps the document fixed, and its shrinkable flex chain
-ends in `.project-settings-form`. The settings H1 and horizontal tab list stay
-outside the sole focusable vertical scroll surface, `.project-settings-scroll`;
-individual panels and long command output do not create competing vertical
-scrollers. The tab list uses roving tabindex with cyclic arrow/Home/End navigation,
-and the selected tab is brought into view after pointer, keyboard or route changes.
-Each active panel has an H2 associated with the tabpanel.
-
-`ProjectSettingsDraft` overlays its patch onto the server detail before rendering,
-so controls and the LLM summary always describe the same unsaved state. Switching
-settings tabs preserves that patch. Browser unload and navigation outside this
-project's settings require confirmation, while navigation among its settings tabs
-does not. Saving disables the fieldset and announces pending, success and failure
-locally; field errors receive `role=alert`, and a control has `aria-describedby`
-only while its error exists. Removing any removable participant asks for
-confirmation naming that participant; the last owner remains protected.
-
-At phone widths, the tab list scrolls horizontally with a continuation cue, forms
-and selects occupy one column, and the sticky save bar reserves the bottom safe
-area. Machine tables become bordered per-machine cards without losing controls.
-Long paths and commands wrap or remain selectable instead of being clipped;
-machine values also have an explicit copy action, whose accessible failure message
-tells the user to select the value manually. The behavior is covered by DOM and
-Storybook accessibility/layout tests, including the narrow viewport.
-
 
 ## Чаты завершённых задач скрыты из списка бесед
 
@@ -865,23 +460,21 @@ Storybook accessibility/layout tests, including the narrow viewport.
 уходит и возвращается без перезагрузки. Стор перезапрашивает список бесед по
 событиям — `ci.done`, терминальный `ci.summary`, `chat.message` в фоновый чат и
 `board.update`, в котором изменился набор задач в колонках `done`/`cancelled`. Подробности и
-защита от шторма запросов — в [ui.md](ui.md#список-бесед-обновляется-по-событиям).
+защита от шторма запросов принадлежит Core UI. Module details: `core-ui:README.md`.
 
 ## Создание задачи по запросу ассистента
 
 Ассистент может завершить ответ одним или несколькими блоками `task-launch`; парсер в `packages/shared/src/prompt.ts` убирает корректный суффикс из видимого текста. Одиночный блок сохраняется в прежнем `message.meta.taskLaunch`, а несколько предложений — в `TurnMeta.taskLaunches` как независимые `TaskLaunchProposal` со стабильными `id` (контракт в `packages/shared/src/types.ts`). Это сохраняет обратную совместимость со старыми сообщениями.
 
-`ChatColumn` не рендерит промежуточную таблицу или кнопку предложения. `App.tsx` на маршруте открытого активного чата (`routeChatId === activeId`) сразу открывает стандартную `TaskModal` в режиме черновика; у чата без проекта карточка не открывается и показывается тост с причиной. Несколько предложений обрабатываются по очереди.
-
-Состояние предложения является частью метаданных сообщения. При показе карточки `chatStore.ts` ставит элементу `status: 'opened'`, а после выбора — `created` или `declined`; целиком обновлённые метаданные уходят через `messages:updateMeta` / `PATCH /api/conversations/:id/messages/:messageId`, после чего сервер сохраняет JSON в SQLite. `opened` не даёт закрытому черновику открыться повторно после перезагрузки. Другие окна получают возвращённое сообщение через `localStorage`-ключ `vc:message-meta-update` и событие `storage`. Старый `meta.taskLaunch` UI читает как предложение с `id: 'legacy'` и при первом изменении метаданных преобразует его в `taskLaunches`.
+Состояние предложения является частью метаданных сообщения. При показе карточки `chatStore.ts` ставит элементу `status: 'opened'`, а после выбора — `created` или `declined`; целиком обновлённые метаданные уходят через `messages:updateMeta` / `PATCH /api/conversations/:id/messages/:messageId`, после чего сервер сохраняет JSON в SQLite. `opened` не даёт закрытому черновику открыться повторно после перезагрузки.
 
 Карточка предоставляет ровно три действия. «Создать в TODO» создаёт карточку без запуска ранов. «Создать в подготовке к разработке» вызывает единую серверную операцию `/api/projects/:id/task-launch/preparation`: сервер до создания требует ровно одну колонку с `semanticType === 'preparation'`, создаёт задачу сразу в ней и запускает штатный task preparation-run; имя, позиция и UUID колонки не являются бизнес-признаками. «Работать в текущем чате» не создаёт карточку. Новый выбор отправляет точный текст `Пользователь выбрал: создать предложенную задачу в подготовке к разработке`.
 
-Ключ идемпотентности составляется из сообщения, предложения и действия. Результат сохраняется сервером в `task_launch_results`: повтор возвращает прежнюю задачу и фактический активный/успешный preparation-run, не создавая development-run. Если задача создана, а синхронный запуск подготовки завершился ошибкой, сервер возвращает частичный результат с `taskId`, причиной и `canRetry`; повтор запускает только подготовку. UI сохраняет `TaskLaunchResult` в метаданных предложения, оставляет заполненный черновик открытым при ошибке и поддерживает чтение исторического результата `in_progress`. Набор допустимых семантик колонки определён в `packages/shared/src/projects.ts`: `backlog`, `preparation`, `ready`, `development`, `component_qa`, `integration_tests`, `automated_qa`, legacy `testing` и `qa_preparation`, `manual_qa`, `awaiting_merge`, `merge`, `decision_required`, `done`, `cancelled`, `custom`.
+Ключ идемпотентности составляется из сообщения, предложения и действия. Результат сохраняется сервером в `task_launch_results`: повтор возвращает прежнюю задачу и фактический активный/успешный preparation-run, не создавая development-run. Если задача создана, а синхронный запуск подготовки завершился ошибкой, сервер возвращает частичный результат с `taskId`, причиной и `canRetry`; повтор запускает только подготовку. Набор допустимых семантик колонки определён в `packages/shared/src/projects.ts`: `backlog`, `preparation`, `ready`, `development`, `component_qa`, `integration_tests`, `automated_qa`, legacy `testing` и `qa_preparation`, `manual_qa`, `awaiting_merge`, `merge`, `decision_required`, `done`, `cancelled`, `custom`.
 
-До открытия черновика `App.tsx` использует уже загруженный `ProjectDetail` этого проекта либо вызывает `projects:get`, а затем сохраняет `members` прямо в состоянии предложения и передаёт их в `TaskModal`. Поэтому список исполнителей относится к проекту чата и не зависит от того, какой project detail пользователь откроет позже. Новый черновик предварительно выбирает текущего пользователя (с fallback на владельца загруженного проекта) и поясняет, что без другого выбора задача будет назначена на него; селект предлагает только участников, у которых `active !== false`. Для TODO поля черновика уходят через `tasks:create`, а для подготовки — через `tasks:createFromProposalInPreparation`; обе операции получают выбранного исполнителя вместе с остальными полями карточки. Сервер заново определяет автора из сессии и проверяет итоговое назначение, поэтому клиентское предварительное заполнение не заменяет серверную границу.
+Для TODO поля черновика уходят через `tasks:create`, а для подготовки — через `tasks:createFromProposalInPreparation`; обе операции получают выбранного исполнителя вместе с остальными полями карточки. Сервер заново определяет автора из сессии и проверяет итоговое назначение, поэтому клиентское предварительное заполнение не заменяет серверную границу.
 
-Черновик использует ту же `TaskModal` и классы `.jmodal-*`, что карточки на доске: заголовок, описание, критерии, исполнитель, приоритет, метки, навыки, родитель, оценка и срок редактируются стандартными контролами. Для `taskLaunch` карточка скрывает вкладки уже созданной задачи и серверные панели CI/QA/Merge и добавляет в стандартный footer три действия выбора. При выборе создания таска сервер сразу создаёт приватный связанный чат автора; для эпика и стори чата нет. Движок и модель показываются в панели подробностей; закрытие по стандартному Esc, крестику или overlay не сохраняет черновик. Ошибка создания или серверной валидации показывается тостом, но `taskProposal` не очищается: форма остаётся открытой с заголовком, остальными полями и выбранным исполнителем; pending-флаг снимается для повторной попытки.
+При выборе создания таска сервер сразу создаёт приватный связанный чат автора; для эпика и стори чата нет.
 
 Серверная граница назначения находится в `VoiceChatDb.createTask` и `updateTask` (`apps/server/src/db/database.ts`). Пользовательское создание передаёт `source`: `created_by` и исторический снимок `created_by_name` берутся только из серверной сессии, а поле `createdBy` в REST-теле отклоняется. Отсутствующий или `null` `assignee` означает автоматическое назначение на создателя; явный исполнитель допустим только как активный, незаблокированный участник того же проекта, иначе вся транзакция откатывается. Внутренний вызов без `source` считается системным: автора и случайного исполнителя у него нет, аудит получает способ `system`.
 
@@ -909,516 +502,10 @@ Per-connection подписка в `session.ts` принимает `board.subscr
 `emitTaskRepositories` / `onTaskRepositoriesChange`. `MergeRunManager` публикует
 его после регистрации task repository и после успешного удаления хотя бы одной
 копии. WS-сессия перед отправкой `task.repositories.updated` с `projectId` и
-`taskId` проверяет текущий доступ чтением доски. Активный `MergePanel` принимает
-только событие своей задачи, склеивает близкие сигналы 100-миллисекундным debounce
-и адресно перечитывает список репозиториев; содержимое по WS не передаётся.
-Источники — `apps/server/src/projects/boardHub.ts`, `apps/server/src/session.ts` и
-`packages/ui/src/components/ci/MergePanel.tsx`.
+`taskId` проверяет текущий доступ чтением доски.
+Источники — `apps/server/src/projects/boardHub.ts` и `apps/server/src/session.ts`.
 
 Единственный источник полного снимка доски — `GET /api/projects/:projectId/board`.
-Web-клиент отправляет подписку до первоначального GET, игнорирует инвалидации других
-проектов и объединяет сигналы активного проекта окном 50 мс. Координатор в обоих
-projects store допускает один GET для текущей версии `projectId + includeCompleted`;
-сигнал во время загрузки ставит один pending-refetch, а generation-token не даёт
-запоздалому ответу старого проекта или фильтра заменить состояние. Успешный reconnect
-повторно отправляет только текущую логическую подписку и планирует одну синхронизацию.
-История открытой подготовки после reconnect выполняет ровно одну собственную
-контрольную синхронизацию. Смена проекта/фильтра, закрытие и dispose очищают
-debounce-таймер, pending-сигнал и подписку. Фоновая ошибка сохраняет последний
-успешный снимок. Клиентский мост `window.board` (`RendererBoardBridge`) — только web;
-он доставляет общие инвалидации доски, адресные preparation-run события и lifecycle
-подключения. В desktop живой синхронизации нет.
-
-## Фронтенд
-
-`projectsStore.openProject(id, { board: false })` loads only project details.
-`ensureBoard(id)` loads the board once when the board tab becomes active; a
-repeated call for an already loaded or loading board does not request it again.
-The regression is in `packages/ui/src/store/appRuntime.projects.test.ts`.
-CHAT-468 shares allowlisted board/detail reads through the session read cache.
-Board bridge change/reconnect events invalidate that project's reads before
-scheduling synchronization. Local project, task and column mutations invalidate
-at both start and settlement, fencing responses that raced a successful write.
-
-Проектный фронтенд разделён между двумя пакетами, и **граница пока проведена только
-наполовину**. Экраны — `ProjectPage`, `ProjectBoard`, `ProjectSettings`, `KanbanBoard`,
-`TaskCard`, `TaskModal`, CI/QA/merge-панели, releases и `KanbanAssistant` — по-прежнему
-живут в `packages/ui` и работают на доменном `projectsStore` из `packages/ui/src/store/domains` (`projectsOpen`, `projects`,
-`projectsLoaded`, `projectDetail`, `activeProjectId`, `board`; оптимистичные
-`moveTask`/`reorderColumns`, управляемый REST-refetch после `applyBoardChanged` из WS). Новый workspace-пакет
-`packages/projects-app` (`@voicechat/projects-app`) содержит будущий фундамент этого
-раздела: контракты `ProjectsClient`/`ProjectsHost`/`ProjectsChatPort`, React-независимый
-`createProjectsStore`, `ProjectsProvider`, `ProjectsApp`, parser/builder всех `#/projects/*`
-адресов и переехавшие туда нормализацию и fixtures канбана. Устройство пакета, его гейты
-и архитектурный тест описаны в [ui.md](ui.md#пакет-voicechatprojects-app-контракты-store-и-маршруты).
-
-Из нового пакета в работающем приложении используются ровно три вещи: `parseProjectsRoute`
-в `App.tsx` и два файла-реэкспорта в `packages/ui/src/components/kanban/`
-(`normalize.ts` и `fixtures.ts` теперь только пробрасывают реализацию из публичного входа
-пакета, своего кода в них не осталось). `createProjectsStore`, `ProjectsProvider`,
-`ProjectsApp`, `createProjectsClient` (адаптер `RendererApi` + board-мост → `ProjectsClient`,
-экспортируется из `packages/ui/src/index.ts`) и `styles.css` пакета потребителей ещё не
-имеют: они собираются и тестируются, но ни один экран через них не рендерится. Значит, при
-правке поведения доски менять надо `packages/ui/src/store/domains/projectsStore.ts`, а не одноимённый стор пакета `/projects-app`, — иначе изменение
-просто не проявится.
-
-Делегирование маршрутов в `App.tsx` тоже частичное. Через `parseProjectsRoute(path)`
-теперь определяются сам факт «мы в проектах», `routeProjectId`, вкладки `settings` и
-`releases`, `taskId` и `conversationId` связанного чата; вкладка ассистента
-(`segments[2] === 'assistant'`) и deep link на подготовку (`segments[4] === 'preparation'`)
-по-прежнему читаются из сырых сегментов. У этого есть два наблюдаемых следствия.
-Во-первых, идентификаторы из адреса теперь проходят `decodeURIComponent`, а сырые
-сегменты — нет. Во-вторых, распознавание раздела стало строгим: parser возвращает `null`
-на любом лишнем или неполном сегменте (`#/projects/p1/task` без id, `#/projects/p1/foo`,
-`#/projects/p1/settings/nope`), поэтому такой адрес больше не показывает страницу проекта,
-а проваливается в обычный Chat — раньше `segments[0] === 'projects'` оставлял пользователя
-в разделе.
-
-**Вкладки настроек проекта — в адресе.** С 2026-09-02 маршрут `settings` несёт
-необязательный сегмент вкладки: `#/projects/:id/settings/:tab`, где `tab` — один из
-`PROJECT_SETTINGS_TABS` (`general | llm | board | workflow | members | machines`,
-экспорт `@voicechat/projects-app`). Без сегмента открыто «Общее»; чужой сегмент
-(`/settings/nope`) и лишний хвост (`/settings/llm/extra`) parser по-прежнему отвергает.
-`ProjectSettings` вкладку сам не хранит, когда хост передал `activeTab`/`onTabChange`:
-клик по вкладке — это `navigate(buildProjectsRoute({ kind: 'settings', projectId, tab }))`
-из `App.tsx`, так что у каждой вкладки своя ссылка, а «Назад» возвращает на предыдущую.
-Если тип проекта отключил открытую вкладку (например, `machines` у «Общего проекта»),
-компонент просит хоста перейти на `general` с `{ replace: true }` — без новой записи в
-истории, иначе кнопка «Назад» упиралась бы в редирект. Без пропсов вкладка живёт в локальном
-состоянии — так работают сториз и тесты без роутера. Подвкладки «Настройки/Git-доступ»
-внутри «Машин» зависят от выбранной машины и в адрес не вынесены.
-
-**Одна страница проекта на весь раздел.** `ProjectPage` держит `ToolFrame
-variant="page"`: в заголовке имя проекта, в слоте `actions` — вкладки «Канбан» и
-«Настройки» (`role="tablist"`, `aria-selected`, вид общий с переключателем списка
-в сайдбаре — `.sideswitch`). Активная вкладка выводится из маршрута, клик и
-стрелки навигируют, а не переключают локальное состояние; содержимое — либо
-`ProjectBoard`, либо `ProjectSettings`, и своей рамки они не рисуют.
-`onClose` в `ToolFrame` не передаётся, поэтому **крестика в шапке нет**: из
-раздела уходят навигацией, а Esc над открытой карточкой достаётся самой карточке
-через общий стек окон (`TaskModal` → `PopupFrame`). Страницы-списка проектов нет
-вовсе: выбор проекта и «+ Проект» живут в `Sidebar`, а `#/projects` без id
-немедленно уводит на первый проект списка (`navigate(..., { replace: true })`).
-Крайние случаи — там же, в `ProjectPage`: нет проектов вообще
-(`ProjectsEmptyPage`, подсказка создать в сайдбаре) и проекта из адреса нет в
-списке доступных (`ProjectNotFoundPage` вместо пустой доски).
-
-Доска в стиле Jira — изолированный компонент `components/kanban/`:
-`KanbanBoard` (самодостаточный, только пропсы: панель фильтров с чекбоксом
-«скрытые», свимлейны, WIP-лимиты, композер «+ Создать», состояние `error`,
-нормализация битых данных в `normalize.ts`), `TaskCard`, `TaskModal`,
-атрибутика в `kanbanMeta.tsx`; `ProjectBoard` от неё оставляет себе только
-открытую карточку задачи (`initialOpenTaskId` из адреса). Сториз —
-`*.stories.tsx` рядом (`npm run -w @voicechat/ui storybook`).
-
-### Прокрутка доски при обновлениях
-
-`KanbanBoard` сохраняет `scrollLeft` и `scrollTop` своего общего scroll-контейнера в памяти экземпляра по `scrollScopeId` (на проектной странице это область текущей доски). Обычная замена объекта `board` при фоновом или пользовательском обновлении не перемонтирует DOM-узел и оставляет обе координаты как есть. Если блокирующая загрузка временно убрала доску и показала skeleton, layout-effect в `packages/ui/src/components/kanban/KanbanBoard.tsx` запоминает координаты при cleanup и восстанавливает их после появления нового контейнера. Слушатель только наблюдает scroll, поэтому не вмешивается в pointer-DnD и его автоскролл.
-
-Координаты разделены по области: переход на другой проект получает начальную позицию `(0, 0)`, а сохранённое положение прежней доски не применяется к новой. Смена режима swimlane может заменить scroll-контейнер и поэтому входит в цикл сохранения/восстановления. DOM-регрессия в `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx` отдельно фиксирует сохранение обеих осей при обычном обновлении данных, после временного skeleton и сброс при смене `scrollScopeId`.
-
-### Фильтры исполнителей канбана
-
-`KanbanBoard` предоставляет глобальный чекбокс «Показывать только мои задачи» и независимую кнопку-иконку фильтра в заголовке каждой колонки. Кнопка открывает компактный popover с «Все исполнители», «Без исполнителя» и активными участниками проекта. Можно одновременно выбрать несколько `ProjectMember.username` и задачи без назначения: условия объединяются по ИЛИ. «Все исполнители» означает отсутствие локальных условий и очищает их; «Выбрать всех» явно включает всех активных участников вместе с неназначенными задачами. Выбранные условия показаны съёмными chips внутри popover, а заголовок сохраняет только выделенную иконку и badge количества условий.
-
-Глобальный режим временно имеет приоритет над локальными фильтрами: значения сохраняются и восстанавливаются после выключения, а открытый popover явно сообщает, что применяется общий режим. Фильтры объединяются с поиском, типом, приоритетом, метками, эпиками, флагом и недавними задачами; пустая колонка предлагает сброс локального фильтра, а «Сбросить фильтры» очищает общие и локальные значения. Кнопка предоставляет `aria-label`, `aria-expanded` и `aria-controls`, нативные checkbox доступны с клавиатуры, Escape закрывает popover без изменения выбора.
-
-Состояние сохраняется в `localStorage` по ключу версии `v3`, включающему устойчивый id пользователя и `projectId` доски; независимые значения колонок лежат в `columnAssigneeFilters` под id колонки в форме `{ assigneeIds: string[], includeUnassigned: boolean }`. При смене пользовательского или проектного контекста прежнее состояние сначала сбрасывается, затем загружается состояние нового ключа. Идентификаторы отсутствующих или неактивных участников удаляются при обновлении состава проекта. Заголовок при активных фильтрах показывает `N из M`, где `M` — полный размер колонки, а `N` — число карточек после совместного применения общих и локального фильтров. Поскольку фильтрация вычисляется из актуального `board` на каждом рендере, входящие обновления назначения, создания и перемещения задач сразу меняют видимость и счётчики, не сбрасывая выбор.
-
-DnD строит `afterId`/`beforeId` по полному порядку задач ячейки, включая скрытые фильтрами карточки, и передаёт только целевую колонку и соседей: активный фильтр не меняет порядок и сам по себе не переназначает исполнителя. То же вычисление применяется в обычной раскладке и swimlanes.
-
-### Board search and keyboard navigation (2026-09-11)
-
-The board search covers the issue key, title, description, acceptance criteria,
-labels, and assignee. Its result counter uses the currently displayed columns as
-the denominator, updates through a polite live region, and remains visible even
-when no tasks match. The zero-result state offers one action that clears every
-global and per-column filter. A dedicated clear button keeps focus in the search
-field, while `Escape` clears the query in place and `/` focuses search unless the
-user is already editing another field.
-
-Visible matches are highlighted case-insensitively in the issue key, title, and
-the first three label chips. If a card matched data that is normally hidden or
-compressed, it adds at most two compact context rows for the assignee, an
-overflow label, the description, or acceptance criteria. Description and
-criteria rows contain a bounded excerpt around the match. Matching uses literal
-substring indexes, so punctuation and regular-expression characters are safe;
-the original text remains the accessible text of the card. Empty searches add
-no highlight markup. DOM tests cover repeated matches, case folding, hidden
-sources, special characters, and accessible names; built Chromium verifies
-rendered color and mobile card overflow.
-
-The shared board scroll surface is a named, focusable region. When the surface
-itself has focus, Left and Right move by one column width and Home/End move to the
-horizontal edges. Child controls keep their native key handling. Each movement is
-also announced through the existing `kanban-live` region. This behavior applies
-to both the normal layout and swimlanes and is covered in
-`KanbanBoard.dom.test.tsx`; the `ManyColumns` Storybook story is the manual browser
-check for actual horizontal scrolling.
-
-### Column navigator (2026-09-11)
-
-The filter bar contains a column navigator with a select and previous/next
-buttons. It lists the currently displayed columns in board order, includes each
-visible task count, disables directional actions at the edges, and preserves the
-current selection when hidden columns are revealed. If the selected column is no
-longer displayed, the first available column becomes current.
-
-Choosing a column scrolls its header into view, moves focus to that header, and
-announces the column name, visible task count, and hidden state through
-`kanban-live`. Arrow, Home, and End navigation on the board surface updates the
-same selection. Header targets are shared by the regular layout and swimlane
-layout, so both modes have the same navigation behavior. DOM tests cover focus,
-edge states, hidden columns, and swimlanes; the `ManyColumns`, `HiddenColumns`,
-and `SwimlanesByAssignee` Storybook stories are used for Chromium verification.
-
-### Active filter strip (2026-09-11)
-
-Every active task filter is repeated as a removable chip below the filter bar:
-search, each assignee, type, priority, label, epic, the three quick modes, and
-each per-column assignee selection. Epic and column identifiers are resolved to
-their visible names. Removing a chip changes only its condition; `Reset all`
-clears the same complete set as the zero-result recovery action.
-
-The strip is outside the mobile `details` element, so a collapsed filter panel
-cannot hide the reason for a reduced or empty board. Long values are truncated
-visually while their full accessible button name remains available. DOM tests
-cover every chip category, isolated removal, complete reset, and placement on a
-mobile board. The interactive Storybook board is the Chromium check for desktop
-and collapsed mobile behavior.
-
-Type, priority, label, and epic dropdowns share a searchable multi-select. The
-search field receives focus when the native `details` opens, reports
-`visible из total`, and shows an explicit empty result. Bulk actions select or
-clear only the currently visible values, while a separate reset removes the
-whole facet selection. Searching never removes already selected hidden values;
-Escape clears the dropdown query in place. Each option remains a native
-checkbox. The option list scrolls independently inside a viewport-bounded menu,
-including on phones. DOM tests cover partial bulk changes, preservation, empty
-results, focus, and Escape; built Chromium verifies the eight-label story and
-real responsive geometry.
-
-The same component also provides a detailed `Исполнители` facet next to the
-quick avatar buttons. It lists readable usernames, decorative avatars, complete
-task counts for the displayed columns, and a separate unassigned option. Avatar
-initials are hidden from the checkbox accessible name, which remains
-`username count`. Search and bulk actions operate on people while the active
-selection stays synchronized in both directions with the quick avatar buttons.
-The summary count and existing active-filter chips use the same `assignees`
-state. DOM and built-Chromium tests cover counts, decoration semantics, search,
-bulk selection, quick-button synchronization, result filtering, and mobile
-menu width.
-
-### Compact task-card metadata (2026-09-11)
-
-Each task card exposes a composite accessible name with the issue key, type,
-title, full priority name, assignee, and due state. Due dates use local calendar
-days and render compact relative states (`Overdue`, `Today`, `Tomorrow`, or days
-remaining); the `time` element keeps the exact date and full state in its
-accessible label and tooltip. Assignee avatars and story-point values have named
-accessible units instead of relying on initials or bare numbers.
-
-Labels remain visible in every workflow stage. A card renders the first three
-labels and a `+N` overflow item whose tooltip and accessible name list every
-hidden label, which prevents wide metadata from changing the board geometry.
-`TaskCard.dom.test.tsx` covers the complete semantic contract, and the
-`AllAttributes` and `LongTitles` Storybook states are the Chromium checks for
-relative deadlines and label overflow.
-
-### Child task progress (2026-09-11)
-
-Every task with direct children shows their completion progress regardless of
-the parent's current workflow stage. The compact row combines a visual track,
-percentage, completed/total count, and remaining count; zero and complete states
-have explicit styles. Its `progressbar` exposes the child count as min/max/current
-values and a complete text alternative with completed, remaining, and percentage
-values. Compact density and phone layouts hide only the redundant remaining
-caption while preserving the semantic value and keeping the row inside the card.
-
-### Task update freshness (2026-09-11)
-
-Every task card renders `updatedAt` as a semantic `time` value in its footer.
-The visible value progresses from now, minutes and hours through today,
-yesterday, recent calendar days, and a short date. Its accessible label and
-tooltip retain the exact local date and time. Fresh, recent, and stale states
-provide stable styling hooks; stale timestamps use the attention color, while
-compact and phone layouts bound the label width without hiding it.
-
-### Board snapshot status (2026-09-11)
-
-The filter toolbar identifies the current board snapshot using the greatest
-task `updatedAt` value, or the arrival time for an empty board. The semantic
-`time` element keeps an ISO value, an exact local tooltip, a relative visible
-caption, and the same fresh/recent/stale states as cards. Client-side filtering
-does not change the snapshot timestamp. During a background reload the existing
-board remains visible with `aria-busy="true"`, the timestamp becomes a polite
-`Обновляется…` status, and a reduced-motion-safe dot indicates activity.
-
-When a reload or mutation fails while a snapshot is already available, the UI
-keeps the board usable and marks its wrapper with `data-stale`. An assertive,
-responsive warning explains that saved data is being shown, includes the error
-detail and last snapshot age, and offers an explicit reload action. The board
-references that warning through `aria-describedby`, allowing both assistive
-technology and browser automation to distinguish stale data from a fatal empty
-state. A successful replacement snapshot removes the marker with the error.
-
-On phone layouts the collapsed filter summary is a sticky 44-pixel control. It
-keeps the visible task count and snapshot age available without opening the
-large filter panel; active filter count remains a separate badge. The sticky
-surface accounts for the top safe area, uses a translucent blurred background,
-and stays above columns while they scroll. The expanded filter content remains
-inside the same surface, and desktop rendering still uses the ordinary
-non-sticky toolbar.
-
-### Visible board summary (2026-09-11)
-
-The board keeps a compact summary directly below its filters: visible tasks,
-visible story points, overdue active tasks, unassigned tasks, flagged tasks, and
-completed tasks in the current snapshot. Every metric uses the fully filtered
-task set across currently displayed columns, so global filters, per-column
-assignee filters, hidden-column visibility, and incoming board snapshots update
-the figures without a separate data source. Completed tasks are excluded from
-the overdue count even when historical completed tasks are loaded.
-
-The summary is a named region with explicit accessible units and correct Russian
-task plurals. Its flexible layout wraps on narrow screens and remains outside
-the collapsible mobile filter panel. `KanbanBoard.dom.test.tsx` covers metric
-values, filtering, and a replacement snapshot; `FullFeaturedCard` is the
-desktop and mobile Chromium check.
-
-The overdue, unassigned, flagged, and completed metrics are also toggle buttons.
-They stay synchronized with the ordinary filters, expose `aria-pressed`, create
-the same removable active-filter chips, and participate in `Reset all`. The
-completed slice requests completed history when needed and limits the board to
-semantic `done` columns. The overdue slice excludes completed tasks and uses the
-same local-calendar deadline calculation as task cards.
-
-### Visible board text export (2026-09-12)
-
-The filter toolbar can copy the current board view as structured plain text. The
-export uses displayed column order and the same fully filtered, locally sorted
-task lists as the rendered board. It records the visible/loaded count, active
-filter labels, empty columns, hidden-column markers, and each task's issue key,
-type, priority, assignee, story points, ISO due date, labels, and flag. This makes
-the visible snapshot portable to a message, issue, or model context without
-silently including cards that the current filters hide.
-
-The action is disabled for a zero-result view. Clipboard success and failure have
-distinct button text and are announced through the board live region. The pure
-`formatVisibleBoardList` formatter has deterministic DOM coverage; the Storybook
-Chromium check grants clipboard permission, applies a search filter, and verifies
-that the copied task count and filter description match the screen.
-
-### Board diagnostics snapshot (2026-09-12)
-
-The filter toolbar opens a semantic `Dialog` containing one self-consistent
-diagnostic snapshot of the current board view. It records transport state
-(`current`, `refreshing`, or `stale`), the exact snapshot timestamp and age,
-loading state, loaded/displayed/visible task counts, total/displayed/hidden and
-collapsed column counts, active column, density, swimlane mode, completed and
-hidden-column visibility, active filters, and the visible summary metrics. A
-column table adds visible/total task load and each WIP limit in display order.
-All values are derived from the same render as the board, so the dialog does not
-trigger a second request or combine data from different snapshots.
-
-The root exposes stable `data-snapshot-state`, `data-snapshot-age`,
-`data-visible-tasks`, and `data-displayed-columns` evidence for browser tools.
-`formatBoardDiagnostics` produces the same information as structured plain text
-for model context or defect reports, including an ISO timestamp and one line per
-column. Clipboard state is announced in the fixed dialog footer. The shared
-dialog primitive provides focus trapping, Escape handling, opener-focus return,
-and a full-screen phone layout; the column table remains horizontally scrollable.
-`KanbanBoard.dom.test.tsx` fixes the semantics, filtered counts, report contents,
-clipboard behavior, accessibility, and focus contract. Built Storybook Chromium
-checks desktop and phone geometry, clipboard output, scrollability, and console
-errors.
-
-### WIP capacity feedback (2026-09-11)
-
-Every column with a positive WIP limit shows its current load as `current/limit`
-and a semantic progress bar. The accessible value describes the actionable
-state: available capacity and its free slots, an exactly full limit, or an
-overflow and its exact number of excess tasks. The visual fill is capped at
-100%, while the text keeps the real count, so an over-limit column cannot distort
-the header layout.
-
-WIP load always uses the complete task collection in the column. Search,
-assignee, and other view filters may reduce the rendered cards but cannot make a
-full column appear to have free capacity. Available, full, and over-limit states
-have separate header and badge treatments, and the compact grid keeps the count
-and progress track readable at mobile widths. Pure presentation logic lives in
-`kanbanMeta.tsx`; DOM tests cover semantic values, filter independence, and all
-three capacity states, while the `WipExceeded` story is the Chromium check.
-
-### Column empty states (2026-09-11)
-
-An empty rendered column is classified from its complete task collection. A
-truly empty stage names the column, explains both creation and drag-and-drop,
-and opens a focused inline composer from its primary action. A populated stage
-hidden by filters instead shows the exact hidden task count and identifies
-whether board filters, the column assignee filter, or both caused the result.
-
-Reset actions follow that diagnosis. Clearing board filters preserves a column's
-assignee selection, and the local reset is offered only when it can reveal a
-globally matching task. This avoids an action that appears to do nothing. Each
-state is a polite status with stable `data-empty-kind` and `data-hidden-count`
-evidence, and the column region references it through `aria-describedby`.
-Swimlane cells omit repeated explanations. `emptyColumnPresentation` holds the
-pure classification, while unit, DOM, and Chromium checks cover the interaction
-and the compact mobile layout.
-
-### Board density (2026-09-11)
-
-The filter toolbar exposes an `Обычно`/`Компактно` density group with pressed
-state semantics. Compact mode reduces columns from 272 to 240 pixels, tightens
-board, header, body, drop-zone, card, chip, and footer spacing, and keeps the card
-action menu visible. Card titles and metadata remain readable instead of being
-removed, so density changes geometry without changing the information model.
-
-The choice is stored separately from the server-backed board view under
-`voicechat.kanban.density.v1.<user>.<project>`. Hydration validates the two known
-values, falls back to comfortable density for missing or damaged data, and
-resets before a user/project context change to prevent preference leakage. Both
-regular and swimlane surfaces expose `data-density` and the same CSS modifier.
-Mobile controls fill the filter row and keep 40-pixel targets. DOM tests cover
-semantics, persistence, isolation, and damaged storage; Chromium checks exact
-desktop geometry, reload restoration, and mobile target size.
-
-### Task card keyboard contract (2026-09-11)
-
-Focusable task cards expose themselves as named articles with an accessible
-shortcut description. `Enter` opens a normal card, `Space` starts keyboard
-dragging, and `Enter` commits a card that is already grabbed. `Shift+F10`, the
-Context Menu key, and a pointer context click open the same action menu without
-starting a drag or opening the task. Keyboard events from chat, CI, and other
-nested controls remain owned by those controls.
-
-The action trigger exposes `aria-haspopup="menu"`, expansion state, and the menu
-id. The named menu uses menuitem semantics, focuses its first action when opened,
-wraps with Up/Down, supports Home/End, closes on Tab, and restores card focus on
-Escape. Moving focus between the card and its descendant controls no longer
-cancels a pending board operation through a bubbled blur. DOM tests cover the
-complete contract and Chromium verifies it against both normal and already
-grabbed Storybook cards.
-
-The card menu also contains an ordered “Move to column” group. It lists every
-other project column, includes hidden destinations with an explicit marker, and
-omits the current column. Selection closes the menu and uses the guarded board
-move path, which rejects duplicate requests and announces the destination. The
-menu keeps its existing top/bottom actions and uses a bounded, scrollable height
-when projects have many workflow stages.
-
-The same menu can copy a stable absolute task permalink. The route keeps the
-current deployment pathname and encodes both project and task identifiers before
-building `#/projects/:projectId/task/:taskId`. Selection closes the menu without
-opening the card. The board reports success or clipboard failure both visibly in
-the filter toolbar and through its live region, and clears that report when the
-project changes. `taskPermalink` has deterministic encoding coverage; TaskCard
-and board DOM tests cover menu isolation and both clipboard outcomes, while the
-FullFeaturedCard Chromium check verifies the real clipboard value.
-
-### Due-date windows (2026-09-11)
-
-The board toolbar provides one mutually exclusive due-date selector: all tasks,
-overdue, today, the next seven local calendar days, or tasks without a due date.
-The seven-day window includes day zero through day six. Today and the window use
-calendar boundaries instead of elapsed 24-hour intervals; overdue excludes done
-tasks, matching the summary metric and task-card presentation.
-
-The selection participates in result counts, empty-state diagnosis, active
-filter chips, global reset, server-backed `BoardView`, and legacy local storage.
-The overdue summary button selects the same enum value, so it cannot conflict
-with `today`, `week`, or `none`. `overdueOnly` is written alongside the enum for
-old clients and is migrated to `dueWindow: overdue` when no enum exists. Pure
-boundary tests cover every interval, DOM tests cover selection and persistence,
-and Chromium verifies the full option set, metric synchronization, chips, reset,
-and mobile layout.
-
-### Priority overview (2026-09-11)
-
-A named priority region below the board summary exposes low, medium, high, and
-urgent task counts as icon buttons. Counts apply every active condition except
-the priority filter itself, including per-column assignee filters. They therefore
-remain stable and actionable while one or more priorities are selected instead
-of collapsing all unselected values to zero.
-
-Buttons mirror the existing multi-select priority filter and active chips, expose
-pressed state and full count units, and combine selections with OR. A zero-count
-button is disabled only while unselected; an active zero-count value remains
-available for removal. `Все приоритеты` clears the complete priority selection.
-Urgent/high selections use the danger palette, other selections use the board
-accent, and each retains its semantic priority icon. The compact row scrolls
-horizontally on narrow screens. DOM tests cover counts, OR selection, reset, and
-other-filter interaction; Chromium verifies semantics, synchronization, and
-mobile overflow.
-
-### Board keyboard help (2026-09-11)
-
-The filter toolbar has a `Клавиши` control that opens a modal reference generated
-from the board's implemented keyboard contract: search focus, surface column
-navigation, card opening, keyboard dragging, commit/cancel, and the card action
-menu. The trigger exposes dialog and expanded semantics. Opening moves focus to
-the close button; Tab remains trapped, while Escape, the close button, and the
-backdrop close the dialog and return focus to the trigger. A note explains that
-commands are not intercepted while the user edits a field. The definition list
-uses visual `kbd` tokens, becomes one column below 600 pixels, and remains
-bounded and scrollable within the viewport. DOM tests verify content and focus;
-built Chromium checks desktop semantics, focus trapping, Escape, and mobile
-geometry.
-
-### Collapsible board columns (2026-09-11)
-
-Each displayed board column can be reduced to a 60-pixel rail from its header.
-The rail keeps the column name, complete task count, WIP limit and WIP state, so
-freeing horizontal space does not hide the information needed to decide where a
-task can move. Column order and the toolbar navigator stay unchanged. In
-swimlane mode the matching cell in every lane is reduced with the header, while
-the lane grid keeps its column alignment.
-
-The header toggle exposes `aria-expanded` and `aria-controls`; after either
-collapse or expansion, focus moves to the replacement toggle. Toolbar commands
-collapse or expand every displayed column and announce `N из M`. The preference
-is stored locally under
-`voicechat.kanban.collapsed-columns.v1.<user>.<project>`, isolated by user and
-stable project id. Hydration accepts only string identifiers and removes ids
-that no longer exist in the board snapshot. DOM tests cover focus, semantics,
-bulk commands, persistence, stale-id cleanup, and swimlanes. Chromium verifies
-the built Storybook at desktop and mobile widths, including reload restoration.
-
-Swimlane rows have equivalent bulk and per-row controls. Their headers keep the
-complete task count and show `visible из total` while any board or per-column
-filter is active. A row toggle controls a stable content element and retains
-focus across collapse/expansion. Collapsed row ids are stored per swimlane mode
-under `voicechat.kanban.collapsed-lanes.v1.<user>.<project>`; assignee and epic
-choices cannot overwrite one another, and ids absent from the current lane set
-are removed. The grid content uses an explicit `[hidden]` rule so author styles
-cannot accidentally expose a collapsed row.
-
-### Меню колонки
-
-`KanbanBoard` хранит id открытого меню в едином состоянии `colMenu`, поэтому открытие
-меню другой колонки заменяет предыдущее. Активная обёртка `jcard-menuwrap` включает
-кнопку-триггер и само меню; пока меню открыто, эффект в
-`packages/ui/src/components/kanban/KanbanBoard.tsx` слушает `pointerdown` и
-`keydown` документа. Нажатие вне этой обёртки закрывает меню, не отменяя событие
-целевого элемента; нажатие внутри не закрывает его преждевременно. Повторный клик
-по триггеру, Escape и выбор действия также закрывают меню. Cleanup эффекта снимает
-обе document-подписки при закрытии, смене активного меню и размонтировании.
-
-DOM-сценарии внешнего и внутреннего pointer-нажатия, Escape и повторного клика по
-триггеру находятся в
-`packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`; внешний клик там
-одновременно проверяет, что целевая карточка продолжает получать событие и
-открывает свою модалку.
-
-The column action popup exposes a complete keyboard menu contract. Its trigger
-announces `aria-haspopup="menu"`, expanded state, and the controlled menu id; the
-popup uses `role="menu"` and each available action uses `role="menuitem"`.
-Opening a menu focuses its first action. Arrow keys move between actions with
-wrapping, Home and End jump to the edges, Escape closes the popup and returns
-focus to its trigger, and Tab closes it while preserving normal tab order.
-Opening another column menu replaces the current popup and transfers focus to
-the new menu after React has committed it.
 
 ### Универсальный ассистент виджета
 
@@ -1429,17 +516,6 @@ the new menu after React has committed it.
 включает его, когда инструменты канбана не подняты (`deps.kanbanMcpBaseUrl`
 пуст), и тогда поведение ровно такое, как в этом разделе.
 
-Рамка `WidgetAssistantFrame` теперь оборачивает всю страницу проекта, а не
-только доску: ассистент открыт и в «Настройках», и в «Релизах».
-
-`WidgetAssistantFrame` не зависит от канбана: принимает произвольные слоты
-`widget` и `assistant`, встроенный/`page`-режим, рисует изменяемый сплит и
-хранит ширину по переданному ключу `localStorage`. На ширине до 768 px панели
-заменяются ARIA-переключателем. Маршрут
-`#/projects/:projectId/assistant` открывает полноэкранный page-вариант поверх
-обычной оболочки приложения; ссылка на него появляется рядом с включённым
-ассистентом.
-
 Общий контракт находится в `@voicechat/shared/widgetAssistant`:
 `WidgetAssistantContext<TSelection>`, `WidgetAssistantAdapter` и union
 `WidgetAssistantCommand`. Контекст содержит только безопасный срез проекта
@@ -1448,17 +524,7 @@ the new menu after React has committed it.
 него не входят. Для канбана selection включает актуальные колонки, семантический
 список карточек с ревизией, открытую карточку целиком и редактируемое поле в
 фокусе. В `recentActions` остаются
-последние 20 открытий карточек, выборов полей и исполненных команд ассистента.
-Обработчик selection, переданный в `ProjectBoard`, стабилен между рендерами:
-иначе зависящий от него эффект повторно сообщал бы тот же выбор после каждой
-записи в журнал. Дополнительно журнал не добавляет подряд идущее действие с теми
-же `kind`, `label` и `targetId`; после другого действия тот же выбор снова
-фиксируется. `KanbanAssistant` оборачивает панель публичной поверхностью `EmbeddedChat` из
-`@voicechat/chat-app`, но содержимое пока собирает из host-компонентов `ChatColumn` и
-`VoiceBar`; канбан-контекст, предложения и настройки LLM выводятся над лентой.
-Он держит контекст в ref и читает его заново при каждой отправке,
-поэтому изменения доски, карточки, фокуса и журнала между сообщениями попадают в
-следующий запрос. Для каждого пользователя и проекта сервер создаёт ровно один приватный разговор с `assistant_kind='kanban'`, `scope='kanban'` и `project_id` текущего проекта. Он скрыт из обычного списка чатов, но остаётся доступен во встроенном ассистенте. `GET /api/projects/:projectId/kanban-assistant` без `conversationId` возвращает этот разговор, а с `conversationId` принимает только разговор с теми же `scope='kanban'` и `projectId`; чужой, проектно не связанный или разговор другой области безопасно заменяется приватным. Реплика сохраняется обычным `messages:add` в фактически
+последние 20 открытий карточек, выборов полей и исполненных команд ассистента. Для каждого пользователя и проекта сервер создаёт ровно один приватный разговор с `assistant_kind='kanban'`, `scope='kanban'` и `project_id` текущего проекта. Он скрыт из обычного списка чатов, но остаётся доступен во встроенном ассистенте. `GET /api/projects/:projectId/kanban-assistant` без `conversationId` возвращает этот разговор, а с `conversationId` принимает только разговор с теми же `scope='kanban'` и `projectId`; чужой, проектно не связанный или разговор другой области безопасно заменяется приватным. Реплика сохраняется обычным `messages:add` в фактически
 загруженный разговор, затем отправляется как `claude.send` с тем же id и проходит
 через общий `TurnManager`; безопасный `assistantContext` добавляется к промпту
 только на время хода и не засоряет видимую историю. Поэтому стрим и ответы
@@ -1468,27 +534,14 @@ the new menu after React has committed it.
 `{text, commands}`. Неизвестные команды и поля patch отбрасываются:
 поддержаны навигация в настройки/карточку, предложения создать или изменить
 карточку, перефразирования, критериев приёмки и безопасного набора
-пользовательских настроек (включая provider/model). Навигационные команды
-выполняются сразу. Все `propose.*` сначала рендерятся `WidgetProposalCard` как
-before/after; в стор они попадают только после кнопки «Применить», «Отмена»
-ничего не меняет. Этот же контракт предназначен для будущих адаптеров
+пользовательских настроек (включая provider/model). Этот же контракт предназначен для будущих адаптеров
 проводника, консоли и браузера. Служебный чат по умолчанию динамически наследует
 `llmEngineId/provider/model` проекта. В раскрываемых настройках ассистента можно
 задать собственные три значения; кнопка «Сбросить к проекту» записывает `NULL` и
 возвращает динамическое наследование, поэтому последующие изменения проекта
 применяются без копирования конфигурации в разговор.
 
-В шапке ассистента расположен селектор чатов проекта: он запрашивает `conversations:list` с `scope='kanban'`, обязательным текущим `projectId` и `includeCompleted`, а приватную беседу получает через `kanbanAssistant:get`. Каждый пункт показывает название и лейбл источника. Новый чат панели создаётся сразу с `scope='kanban'` и тем же `projectId`, а не создаётся обычным с последующей перепривязкой. Последний выбранный id хранится отдельно
-для каждого проекта в localStorage под ключом
-`voicechat.projectAssistantChat.<projectId>` и перечитывается при смене проекта.
-Если сохранённый id ещё доступен среди разговоров проекта, панель восстанавливает
-его; иначе выбирает приватный kanban-разговор.
-
-Выбор меняет локальный `assistantConversationId` в `App`, не глобальный
-`activeId` и не маршрут. `KanbanAssistant` очищает прежнюю ленту и запрашивает
-историю выбранного id; заголовок, новые сообщения, LLM-отправка и `WidgetToolScope`
-берут id из одного загруженного объекта разговора. Поэтому переключение не уводит
-с канбана. Кнопка «Новый чат» атомарно создаёт kanban-разговор текущего проекта, добавляет его в селектор и выбирает в этой же панели без `navigate`.
+В шапке ассистента расположен селектор чатов проекта: он запрашивает `conversations:list` с `scope='kanban'`, обязательным текущим `projectId` и `includeCompleted`, а приватную беседу получает через `kanbanAssistant:get`. Новый чат панели создаётся сразу с `scope='kanban'` и тем же `projectId`, а не создаётся обычным с последующей перепривязкой.
 
 Чат карточки подчиняется тому же инварианту: `openOrCreateTaskChat` сохраняет `scope='kanban'` и `project_id` проекта задачи. Если у пользователя уже есть старый чат этой карточки, повторное открытие обновляет оба поля из достоверной связи `task_id` с переданным доступным проектом, восстанавливая изоляцию без потери истории. Источник поведения — `apps/server/src/db/database.ts`.
 
@@ -1519,152 +572,6 @@ id сообщения-предложения и идемпотентный кл�
 аудита или идемпотентности у шлюза нет. Обычный `board.update` заменяет снимок
 активной доски в UI, поэтому следующий query видит новую ревизию.
 
-Связанный с карточкой чат открывается самостоятельной страницей по адресу
-`#/projects/:projectId/task/:taskId/chat/:chatId`. В этом маршруте `App` выводит
-обычный экран чата вместо страницы проекта; кнопка «Открыть чат» на карточке
-строит именно такой адрес. Это сохраняет проект и задачу в ссылке, в том числе
-для чата завершённой задачи.
-
-### Описание задачи: маркдаун в просмотре, поле в правке
-
-Описания задач пишутся маркдауном (заголовки, списки, `code`, блоки кода), и в
-карточке (`TaskModal`) они по умолчанию **отрисованы** тем же `Markdown`, что и
-ответы в ленте чата, — читать их сырым текстом в `textarea` было нельзя. Пустое
-описание вместо этого показывает подсказку «Добавьте описание…»: клик по ней —
-то же, что кнопка. Разметка просмотра — `.jmodal-desc-view`
-(`data-testid="task-desc-view"`), подсказка — `.jmodal-desc-empty`
-(`task-desc-empty`); в CSS заголовки маркдауна внутри карточки на пару ступеней
-мельче, чем в ленте чата, — рядом с 13px полями заголовки ленты ломали бы ритм.
-
-Правка — по кнопке «Изменить описание» (карандаш рядом с заголовком секции,
-`data-testid="task-desc-edit"`). Тогда на месте разметки появляется `textarea`
-ровно на `rows={10}` — **без** `useAutoGrow`: растущее под текст поле увозило бы
-критерии приёмки и подзадачи за экран. Курсор ставится в конец текста. Запись
-(`onUpdate(task.id, { description })`, только если текст изменился) делают и
-кнопка «Сохранить», и `onBlur`; «Отмена» и Esc возвращают просмотр без записи.
-Уход фокуса на «Сохранить»/«Отмена»/палочку AI за уход из правки не считается
-(проверка `relatedTarget` внутри обёртки поля) — иначе `onBlur` записывал бы
-черновик раньше клика по «Отмене». Переключение задачи (подзадача, родитель)
-сбрасывает режим вместе с черновиками полей: чужая карточка всегда открывается в
-просмотре.
-
-Esc своим обработчиком в поле не поймать: стек окон слушает `window` в фазе
-перехвата и гасит событие раньше (см.
-[ui.md](ui.md#модальные-окна-popup-и-доступность)). Второго слоя стека карточка не
-заводит — она отвечает на общий запрос закрытия (`Dialog onEscape`): пока правка
-открыта, Esc возвращает её в просмотр, а карточку закрывает уже следующий Esc.
-Крестика и клика по фону это не касается: они сперва уводят фокус из поля, и
-правка успевает закрыться сохранением по `onBlur`.
-
-AI-помощник (`useAiAssist` + `applyNativeInputValue`) привязан к полю, поэтому
-палочка показывается только в правке; если поле к моменту применения уже
-размонтировано, значение уходит через `setDescription` + `onUpdate`. Критерии
-приёмки остались обычной `textarea` — маркдаун-просмотр только у описания.
-
-### Прокрутка доски
-
-Размеры страницы передаются доске по сжимаемой flex-цепочке: `.toolpage` и
-`.proj-detail` ограничивают доступную область, а промежуточные элементы вплоть до
-`.jboard-wrap` имеют `min-width: 0` и `min-height: 0`. На странице проекта в
-цепочке стоит рамка ассистента: `.toolpage` → `.widget-assistant` →
-`.widget-assistant-widget` → `.jboard-wrap`, поэтому правило обёртки нарочно не
-привязано к родителю (просто `.jboard-wrap`, без `.toolpage >`). `.jboard-wrap`
-занимает остаток страницы и скрывает внешнее переполнение; фактический viewport
-доски — вложенная `.jboard`. Инварианты размеров и overflow находятся в
-`packages/ui/src/styles/app.css` и зафиксированы текстовыми CSS-тестами
-`packages/ui/src/styles/boardScroll.test.ts` (включая звенья рамки ассистента).
-В Storybook высоту доске даёт декоратор-обёртка `.toolpage` в
-`KanbanBoard.stories.tsx`.
-
-В обычном режиме `.jboard` — единый viewport по обеим осям
-(`overflow-x: auto; overflow-y: auto`). Колонки `.jcol` имеют стабильную ширину
-272 px, не сжимаются, заполняют доступную высоту через `min-height: 100%` и растут
-выше неё по содержимому. `.jcol-body` — flex-колонка с `overflow: visible`, а не
-scroll-контейнер: длинная колонка увеличивает общий scrollable размер `.jboard`.
-Поэтому вертикальный жест синхронно сдвигает шапки, карточки и композеры всех
-колонок, а горизонтальный по-прежнему открывает доступ к колонкам за краем.
-Глобального перехвата `wheel` нет: колесо, тачпад и обычный touch-жест обслуживает
-нативная `.jboard`, а `touch-action: none` задан только ручкам захвата.
-
-DOM-узлы доски, колонок и карточек сохраняют идентичность благодаря React keys на
-стабильных id сущностей (для ячейки свимлейна — стабильной паре lane/column), а не
-индексах. Поэтому общие `scrollLeft` и `scrollTop` поверхности не сбрасываются
-после drop, открытия/закрытия карточки или обновления снимка доски. Это поведение
-проверяет `packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx`.
-
-Свимлейны используют тот же общий вертикальный viewport `.jboard`. Их ячейки
-`.jcol--incell` сбрасывают унаследованную минимальную высоту до нуля и сохраняют
-автоматическую высоту с видимым переполнением, поэтому высота дорожек по содержимому
-не регрессирует.
-
-### Перетаскивание карточек и колонок
-
-Механизм один на мышь, палец и стилус — pointer-события (`packages/ui-foundation/src/lib/dnd.ts`),
-без внешних dnd-библиотек. Нативный HTML5 DnD (`application/x-task` /
-`application/x-column`) убран целиком: мобильные браузеры не генерируют
-`dragstart`/`drop`, поэтому на телефоне и планшете доска была нередактируемой.
-
-- **Распознавание жеста.** Мышь — смещение 6px (`DRAG_THRESHOLD_PX`), иначе клик по
-  карточке превращался бы в перенос. Палец — удержание 200мс (`DRAG_HOLD_MS`) почти
-  без движения; уехал раньше — жест отдаётся браузеру, это общий скролл доски.
-  Ручка «⠿» на карточке и в шапке колонки — единственное место с
-  `touch-action: none`, с неё палец начинает перенос сразу.
-- **Пока несём** — приподнятая копия элемента в слое `.vc-draglayer` под
-  указателем (клон без `data-testid`/`id`, чтобы не двоиться в тестах и хит-тесте),
-  а на месте вставки — плейсхолдер `.jcard-placeholder` высотой с карточку;
-  исходная карточка скрыта (`.jcard.dragging { display: none }`).
-  The board also exposes `data-dragging="pointer"` and `data-drag-task-id`, while
-  the selected insertion gap exposes `data-drop-active`. The atomic live region
-  announces pointer lift with the source column, each distinct target with its
-  column and position, successful placement, same-position placement, and every
-  cancellation path. Repeated pointer events inside one gap do not repeat the
-  announcement.
-- **Цель считает доска, а не движок.** Ячейка (колонка × дорожка свимлейна) — по
-  `[data-drop-body]`, внутри неё ближайшая по вертикали зона `[data-dropzone]`
-  даёт `afterId`/`beforeId` (контракт `move` не изменился) и `data-slot` для
-  плейсхолдера. Desktop card autoscroll uses both axes of `.jboard`. Mobile card
-  autoscroll uses `.jboard` horizontally and the target `.jcol-content` vertically
-  (the drop body is the fallback in swimlanes). Hit testing is refreshed every
-  animation frame, and `data-drop-target` highlights the selected column.
-  При переносе колонки автоскролл работает исключительно по горизонтальной оси
-  `.jboard` и не меняет общий `scrollTop`.
-- **Отмена** — Esc и `pointercancel` (входящий звонок, системный жест): карточка
-  возвращается, запроса на сервер нет. Брошенная на своё же место — тоже без
-  запроса. Esc движок гасит через `stopImmediatePropagation` и подписывается из
-  `useLayoutEffect`: `useDialogStack` слушает тот же `window` в фазе перехвата, и
-  иначе страница-обёртка закрывалась бы вместо отмены переноса.
-- **Клавиатура.** Карточка фокусируется (`tabIndex`), Space/Enter — «взять»,
-  стрелки ←→ между колонками и ↑↓ по позициям, Enter — положить, Esc — отмена.
-  Взятая карточка остаётся на месте (иначе слетел бы фокус) и подсвечивается
-  `.jcard--grabbed`. Каждый шаг проговаривается в `aria-live`
-  («Задача X: колонка Y, позиция 2 из 5») — область `[data-testid=kanban-live]`.
-- **Column keyboard ordering.** Each column grip is a named button with
-  `Alt+ArrowLeft` and `Alt+ArrowRight` shortcuts. A move jumps to the adjacent
-  displayed column while producing the complete persisted order, including
-  hidden columns. The live region announces the resulting visible position or
-  an edge boundary, and focus remains on the same grip. Plain arrow keys keep
-  their board-navigation behavior and do not reorder columns.
-- **Тач в Chrome:** после долгого тапа мало отменить `pointermove` — он для тача
-  не `cancelable`; гасить надо `touchmove` (`passive: false`), иначе браузер уводит
-  жест в скролл и присылает `pointercancel` вместо переноса.
-- Тесты: `lib/dnd.test.ts` (жест, геометрия, авто-скролл), pointer- и
-  keyboard-сценарии в `KanbanBoard.dom.test.tsx` (jsdom не считает раскладку —
-  прямоугольники в тесте задаются руками), сториз `GrabbedCard`,
-  `MobileViewport`, `Interactive`. CSS- и DOM-регрессии общего viewport проверяют
-  `styles/boardScroll.test.ts` и `KanbanBoard.dom.test.tsx`; Storybook-сборка
-  рендерит обычную, мобильную и интерактивную сториз для ручной проверки.
-
-## Что помнить
-
-- Гейт как обычно: `npm run -w @voicechat/server typecheck && test` + тесты
-  `ui`/`shared`. Тесты рядом: `db/database.projects.test.ts`,
-  `routes/projects.test.ts`, `routes/projects.ws.test.ts`,
-  `store/appRuntime.projects.test.ts`, `components/ProjectBoard.dom.test.tsx`.
-- Машина задачи и машина чата имеют разные цепочки наследования: задача берёт
-  `Task.agentId → Project.defaultAgentId`, чат — `Conversation.execTarget →`
-  персональный default user–project → безопасный online-fallback. `NULL` остаётся
-  маркером наследования и не заполняется результатом запуска или cleanup.
-
 ## Папка на машину, машина по умолчанию, связь с чатом (итерация 2)
 
 У проекта на каждой машине — своя рабочая папка: `project_machines.path`
@@ -1675,14 +582,11 @@ DOM-узлы доски, колонок и карточек сохраняют �
 проекта: после него уводим на другой доступный проект, а если их не осталось —
 в пустое состояние.
 
-Machine rows show project-default/release and production roles separately from the user's personal default. Directory checks call `window.fs.list(agentId, path, projectId)` on the selected machine, accept an empty directory as success and explain access or missing-path errors. Editing a path clears its previous check result. On phones, settings render table rows as single-column cards.
-
 Каталог во вкладке «Настройки проекта → Машины» показывает для каждой машины
 текущую загрузку. Поле `ProjectMachine.load` — это одно целое число: количество
 активных CI-запусков, назначенных агенту, которое сервер получает из
 `countActiveCiRunsByAgent()`; `0` означает, что активных запусков нет, `1` — что
-идёт один запуск. Это не дробь и не отношение к лимиту ёмкости. В интерфейсе
-пояснение доступно по наведению и с клавиатуры на строке «Загрузка: N».
+идёт один запуск. Это не дробь и не отношение к лимиту ёмкости.
 
 `default_agent_id` — обычная колонка, без внешнего ключа на `agents`, поэтому
 удаление самой машины (не отвязка от проекта, а `DELETE /api/agents/:id`) её не
@@ -1696,8 +600,7 @@ Machine rows show project-default/release and production roles separately from t
 `conversations:setProject`). При привязке сервер сохраняет у чата
 `exec_target = NULL`: это динамическое наследование персонального default текущего
 пользователя, а не копия project default. Рабочая папка также не копируется; навыки
-становятся `skills` проекта. В `ConversationSettings` список ограничен доступными
-пользователю машинами контекста проекта и показывает effective персональную машину. Контекст проекта (id, имя, git/технологии/навыки/описание) дописывается в промпт
+становятся `skills` проекта. Контекст проекта (id, имя, git/технологии/навыки/описание) дописывается в промпт
 каждого связанного хода в `turns.ts`; id и имя есть даже у пустого проекта.
 LLM-поля чата при привязке сбрасываются в `null`: это метка динамического
 наследования, а не скопированное значение. Эффективная цепочка обычного хода:
@@ -1710,111 +613,14 @@ LLM-поля чата при привязке сбрасываются в `null`
 `llm_engine_id`, `llm_provider`, `llm_model`; совпадающее с наследуемым собственное значение
 также схлопывается в `null`, поэтому последующие изменения предка применяются динамически.
 Та же эффективная пара видна модели через `mcp__kb__runtime_context`; инструмент
-не выдаёт секреты. Проект и чат используют общий `LlmSettingsEditor`, а их табы —
-общий `SettingsPage`; редактор явно подписывает наследуемое/переопределённое состояние.
+не выдаёт секреты.
 
-Кнопки сайдбара «проводник»/«консоль» открываются на ЭФФЕКТИВНОЙ машине и папке
-активного чата (`openUtilityForActiveChat` → `execTarget`+`workdir`). Для чата с
+Для чата с
 проектом сервер заново разрешает персональный default пользователя и путь effective
-машины; явный override разговора имеет приоритет. Проводник
-открывает саму папку (`FileExplorer initialDir` / `ToolSpec.dir`), а не её родителя.
+машины; явный override разговора имеет приоритет.
 
 Проекты пока одновладельческие для выполнения: exec идёт только по своим машинам
 (изоляция агентов не меняется).
-
-
-## Epic / Story / Task
-
-Новые проекты получают системный QA-workflow: «Бэклог» (`backlog`),
-«Подготовка к разработке» (`preparation`), «Ready for Development» (`ready`),
-«Development» (`development`), «Component QA» (`component_qa`), «Создание
-интеграционных автотестов» (`integration_tests`), «Automated QA»
-(`automated_qa`), «Ручное QA» (`manual_qa`), «Ожидает мержа»
-(`awaiting_merge`), «Мерж» (`merge`) и «Готово» (`done`). `merge` — полноценная
-стадия активного merge-рана и его обязательных проверок, а не legacy-псевдоним.
-Исключения попадают в отдельную `decision_required` после основного маршрута;
-автоматический выход из неё запрещён. Машинный смысл хранит `semantic_type`,
-поэтому пользовательское переименование подписи не меняет workflow.
-
-`migrate()` транзакционно и идемпотентно приводит существующие доски к тому же
-визуальному порядку. Отсутствующие стадии создаются, обязательные системные
-колонки становятся видимыми, дубликаты одного `semantic_type` объединяются с
-сохранением первой по прежнему визуальному порядку. Карточки уже существующей
-целевой колонки остаются первыми, затем в прежнем порядке добавляются карточки
-дубликатов и legacy-колонок. `testing` сливается в `automated_qa`,
-`qa_preparation` — в `component_qa`; после переноса пустые legacy-колонки
-удаляются. Существующая `merge` сохраняется. Пользовательские `custom`-колонки,
-их видимость и относительный порядок сохраняются после системных. Повторный
-старт не меняет уже мигрированную доску.
-
-Каноническая последовательность и разрешённые переходы сосредоточены в
-`packages/shared/src/projects.ts`: `canTransitionWorkflow` работает только с
-`semantic_type`. Из `decision_required` автоматический выход невозможен, а
-пользователь может вернуть задачу на выбранную стадию, кроме прямого `done`.
-Серверный development-run отвергает старт из `backlog` и `preparation`: на этих
-стадиях UI не показывает действия «В очередь» и «Параллельно».
-
-У task-карточки может быть включён `autoPilot`: после попадания в автоматизируемую
-часть workflow сервер сам запускает последовательные QA-стадии и существующий
-merge-ран. Настройки ручного gate, команды Automated QA и лимита возвратов, а
-также поведение при ошибках описаны в
-[features/task-autopilot.md](features/task-autopilot.md).
-
-Переход таска `backlog → preparation` запускает отдельный пред-разработческий
-ран, а не только меняет колонку. История хранится в `task_preparation_runs` и
-не смешивается ни с `ci_runs`, ни с пост-разработческими
-`qa_preparation_runs`. Запуск идемпотентен для активного рана задачи (уникальный
-частичный индекс по `status='running'`); ошибка, отмена или рестарт сервера
-оставляют карточку в `preparation` и разрешают новую попытку. Каждая попытка —
-отдельная строка с `attempt = MAX(attempt)+1` по задаче: повтор через
-`POST /api/task-preparation/runs/:runId/retry` ничего не перезаписывает, а
-история задачи читается `GET …/tasks/:taskId/preparation/runs` (свежие первыми).
-`canRetry` истинен для `failed` и `cancelled`, `canCancel` — только для
-`running`. Первый запуск делает карточка в TODO кнопкой «Начать подготовку
-задачи»; статус, ошибку, `gateReasons`, ленту каждой попытки и действия
-«Повторить подготовку»/«Отменить» показывает отдельная вкладка модального окна
-«Подготовка к разработке» — см.
-[features/ci-runner.md](features/ci-runner.md).
-
-Движок и модель подготовки берутся из настроек, а не зашиты: этап задачи → этап
-проекта → модель проекта → настройки пользователя, который нажал кнопку (стадия
-`planning`, см. [features/ci-runner.md](features/ci-runner.md)). CLI работает в
-профиле этого пользователя, поэтому падение авторизации — состояние его профиля,
-а не подготовки: первой строкой ленты пишется движок, модель и CLI-профиль, а
-итоговая ошибка после двух попыток называет движок, профиль и, для
-авторизационных сообщений CLI, прямо указывает на неавторизованный CLI
-(`taskPreparationFailure`).
-
-Модель пред-разработческой подготовки работает без инструментов и возвращает
-`DevelopmentReadiness`: функциональные требования, критерии, стабильные
-структурированные тест-кейсы, UI-impact и затронутые компоненты. Общий QA-контракт
-находится в `packages/shared/src/qa.ts`. `canConfirmDevelopmentReadiness` не
-допускает `Ready for Development` без функциональных требований, критериев,
-полного обязательного кейса и определённого UI-impact; для UI-работы требуется
-Storybook-связь либо документированное исключение с альтернативной проверкой.
-Успешный гейт атомарно обновляет описание и критерии задачи, сохраняет
-структурированные сценарии и переносит карточку в `ready`; провал гейта хранит
-причины в ране и не двигает карточку. `canCompleteAutomation` далее требует для
-каждого обязательного автоматизируемого кейса непустую ссылку на тест текущего SHA,
-а для неавтоматизируемого — причину и альтернативную ручную проверку.
-
-Задачи образуют иерархию Epic → Story → Task. В быстрой форме доски для Story
-обязательно выбирается родительский Epic; без него UI не отправляет запрос.
-Выполнение задачи — CI-раннер, см. [features/ci-runner.md](features/ci-runner.md).
-
-Для пула рабочих копий CI используется отдельное `project_machines.repos_root`
-(бывший `feature_repos_root`); `project_machines.path` по-прежнему задаёт
-директорию обычного проектного чата.
-
-CI-настройки живут в самих `projects` (`ci_base_branch`, `ci_branch_template`,
-`ci_reuse_strategy`, `ci_exec_auth_ref`, `ci_kb_context_mode`) и добавляются
-идемпотентными ALTER'ами в `migrate()`. `ci_kb_context_mode` (`auto` | `manual` |
-`off`, дефолт `auto`) — режим базы знаний в ходах МОДЕЛИ рана: селектор
-«CI: база знаний в ране» в `ProjectSettings` с пояснением, что на чаты проекта
-настройка не влияет (у чата свой режим) и что значение применяется к следующему
-рану — ран фиксирует снимок в `ci_runs.kb_context_mode`. Подробности —
-[features/ci-runner.md](features/ci-runner.md) и
-[features/kb-usage.md](features/kb-usage.md).
 
 ## Навыки по умолчанию, навыки карточки и связанный чат
 
@@ -1824,11 +630,9 @@ CI-настройки живут в самих `projects` (`ci_base_branch`, `ci
 (`createTask`) навыки его типа копируются в карточку — колонка `tasks.skills`
 (`Task.skills`); если навыки переданы явно, они перекрывают дефолт. В карточке
 (`TaskModal`) навыки правятся как метки: авто-добавленные можно убрать, свои —
-дописать (`updateTask({ skills })`). На карточке (`TaskCard`) и в модалке навыки
-показываются зелёными чипами (`.jcard-skill`).
+дописать (`updateTask({ skills })`).
 
-Каждая карточка умеет открыть **связанный чат** (кнопка «💬» на карточке и
-«Открыть/Создать чат» в модалке). `openOrCreateTaskChat(userId, projectId, taskId)`
+Каждая карточка умеет открыть **связанный чат**. `openOrCreateTaskChat(userId, projectId, taskId)`
 идемпотентен по (пользователь, задача): находит чат текущего юзера с
 `conversations.task_id = taskId` или создаёт новый, привязанный к задаче и её
 проекту (машина/папка — дефолт проекта, навыки чата = `Task.skills`;
@@ -1838,8 +642,7 @@ provider, model и разрешённый `llmEngineId` — из пользов�
 пользователя, поэтому у каждого участника — свой
 связанный чат. `getBoard`
 подтягивает `Task.chatId` (id чата текущего юзера) корр. подзапросом. REST —
-`POST /api/projects/:id/tasks/:taskId/chat` (`tasks:openChat`); стор-экшен
-`openTaskChat` открывает чат и (в `App`) уводит на страницу чата `navigate('/')`.
+`POST /api/projects/:id/tasks/:taskId/chat` (`tasks:openChat`).
 
 Чат к **таску** создаётся для автора сразу вместе с пользовательской задачей:
 `TasksRepo.createTask` после успешного создания вызывает идемпотентный
@@ -1866,323 +669,12 @@ provider, model и разрешённый `llmEngineId` — из пользов�
 Чат задачи знает свой контекст с двух сторон. Для модели — блок
 «## Контекст задачи» в промпте хода (`turns.ts`, рядом с контекстом проекта):
 иерархия, критерии приёмки, этап воркфлоу, машина, рабочая папка, режим
-последнего рана. Для пользователя — шапка `components/chat/TaskChatHeader.tsx`
-над лентой сообщений: крошки Проект/Эпик/Стори/Задача, лозенг этапа, режим и
-статус рана, живой таймер работы, машина и папка, «Открыть задачу»
-(`#/projects/:id/task/:taskId` → `ProjectBoard initialOpenTaskId`) и разворот в
-ленту рана (`RunFeed`) по клику. Сама шапка сворачивается в одну строку (ключ
-задачи + статус рана), как и композер внизу — детали в
-[ui.md](ui.md), раздел «Свёрнутые панели чата». Источник — `GET /api/conversations/:id/task-context`
+последнего рана. Источник — `GET /api/conversations/:id/task-context`
 (`db.getTaskChatContext`, канал `conversations:taskContext`), в сторе —
 `taskChatContext`; контекст помечен своим `conversationId`, и шапка видна только
 в том чате, которому принадлежит (почему так — в [ui.md](ui.md), «Компоненты и
 поверхности»). Ключи задач (`issueKey`/`projectKey`) переехали из
 `kanbanMeta.tsx` в `packages/shared/src/projects.ts`, потому что их считает и сервер.
-
-В модалке задачи, помимо `CiTaskSettings`, есть панель CI-рана (статус, фаза,
-«Выполнить», «Лента рана» / «Ответить модели») и — у завершённого рана — раздел
-«Отчёт» (`CiReport`: стоимость, токены, запросы к модели, время рана и работы
-модели, шаги со статусом и длительностью; подробности в
-[features/ci-runner.md](features/ci-runner.md#отчёт-по-задаче-расход-модели)),
-а боковая колонка `.jmodal-side`
-и `.jmodal-main` скроллятся независимо: модалка живёт в `.ccobs`
-(`height: 88vh; overflow: hidden`), а `ToolFrame` не рендерит `.ccobs-body`.
-
-**Колонка свойств видна на любой вкладке.** Панели вкладок лежат в обёртке
-`.jmodal-panels`, а `aside.jmodal-side` — её сосед внутри `.jmodal`; раньше она
-была внутри панели «Общего» и исчезала, стоило открыть ход выполнения или QA.
-**У обёртки `.jmodal-panels` не должно быть `flex-wrap`.** Панель объявлена
-`flex: 1 1 100%`; с переносом каждая уходит на свою строку, высота строки
-считается по содержимому — и `overflow: auto` панели ограничивать нечего:
-вертикальный скролл во вкладке пропадает, а содержимое обрезает `.jmodal`. Без
-переноса единственная видимая панель растягивается по высоте обёртки
-(`align-items: stretch`) и скроллится сама. Держит
-`styles/taskCardStyles.test.ts` («обёртка панелей не переносит строки»).
-Строка свойства — сетка `подпись | значение` (`.jmodal-field` +
-`.jmodal-field-label`); контролы остались нативными `select`/`input` со своими
-`aria-label` — свой поповер потерял бы клавиатуру и системный выбор даты, а
-выглядит так же. Метки и навыки берут всю ширину строки (`.jmodal-field--wide`).
-К уже существовавшим полям добавилась строка «Проект» (только чтение).
-
-Вкладка «Общее» разбита на секции `.task-section` с текстовым действием справа
-(«Редактировать» вместо иконки-карандаша). У «Подзадач» есть полоса готовности
-(`ProgressTrack`, считается по `semanticType === 'done'`) и создание подзадачи:
-проп `onCreateSubtask` карточка получает от `KanbanBoard`, а колонку (первая
-видимая `backlog`) и тип потомка (эпик → стори, стори → задача) выбирает сама.
-Секция «Активность» собирается **из уже загруженных полей задачи**
-(`ciSummary`, `doneAt`, `latestRunResult`, `createdAt`) — отдельного запроса при
-открытии карточки она не делает, подробности этапов остаются во вкладке
-«Временная шкала».
-
-### Новая и legacy-версия карточки
-
-**Новая карточка доведена до макета (2026-09-08).** Эталон — Make-проект
-`e7b501e7-a0b5-4c00-bb20-e8743e25011f` (превью: `/api/preview/make/<id>/`), там же
-сценариями лежат все состояния. Появились: шапка со стадией и её статусом
-(«Component QA · Выполняется»), номером цикла и кнопкой
-«↩ На доработку · цикл N»; баннер активного рана; динамический состав вкладок по
-возможностям типа проекта и стадии, с точкой у «Ленты рана» на время рана.
-«Общее» получило разметку критериев относительно первоначальной постановки
-(`criteriaDiff.ts`: дословное совпадение — «Исходный», ≥50 % общих слов —
-«Изменён», остальное — «Добавлен»; считается на клиенте, потому что сервер хранит
-критерии одной строкой), сворачиваемую первоначальную постановку, блок «Изменения
-в текущем цикле» со ссылкой на план, зону переноса файлов, карточку Make-дизайна
-(режим, обновление, доступ AI, статусы файлов, «Открыть превью», «Удалить связь»)
-и правую колонку с workflow и блоком «Задача». **Прогнозов длительности этапов
-там нет намеренно** — подкрепить их нечем; факт живёт во вкладке «Ход выполнения».
-
-Довершено 2026-09-08: у Make-дизайна есть «Заменить» (связь переезжает на другой
-Make-проект проекта: `tasks:unlinkDesign` + `tasks:linkDesign`) и «Удалить связь»;
-картинки-вложения показывают превью **по кнопке**, а не при открытии карточки, и
-байты идут мостом `tasks:readAttachment` (`GET …/attachments/:attachmentId`) —
-прямой `<img src>` на `/api` получил бы 401, как и в студии картинок.
-
-**Функциональные вкладки по макету (2026-09-12, CHAT-445).** Вкладки, кроме
-«Общего» и «Доработок», `TaskCardContainer` отдаёт через `renderPanel`, но уже не
-голыми legacy-панелями, а панелями новой карточки из `components/kanban/NewTask*Panel.tsx`:
-каждая владеет своими формами, результатами и представлением выбранного рана,
-переиспользуя существующие доменные API и общие примитивы `NewTaskStages.tsx`.
-Целые legacy-панели больше не монтируются. `NewDevelopmentRunFeed` самостоятельно
-подписывается на development-ран и показывает его лог; с legacy-лентой разделяется
-только небольшой примитив `InteractionCard`. `useNewTaskResource` сохраняет
-последние загруженные данные при ошибке обновления, изолирует ресурсы по ключу и
-игнорирует запоздалые ответы, а `useNewTaskAction` блокирует параллельные повторы
-действия и после успеха или ошибки перечитывает фактическое состояние. Выбор
-исторической попытки не перенаправляет ответ или отмену на активный ран.
-
-Этапы рейки — чистая функция `assignToCycles` (`taskCycles.ts`): этап 1 — исходная
-постановка, дальше по одному этапу на каждый **отправленный** цикл доработки
-(черновики этапов не образуют, цикл без ранов показывается как «Ожидает»). Раны
-относятся к циклу по времени (последний цикл, отправленный до старта рана), у
-подготовки `preparationRunId` цикла пересиливает время. Словарь статусов один на все
-вкладки (`StageStatus` + `STAGE_STATUS_LABEL`, конвертеры `ciStageStatus`,
-`qaRunStageStatus`, `qaStageRunStatus`, `mergeStageStatus`, `qaSessionStageStatus`,
-`preparationStageStatus`); тон бейджа — `stageStatusTone`. Each open tab owns one
-panel through a stable `StageRail` portal. Its DOM host moves to the selected
-`StageCard` slot; the React portal and panel instance stay in the same place in
-the React tree. Changing a stage may load another attempt, but does not reload
-the panel's shared state. Other stages retain summaries and the “Показать” action.
-The preparation panel also keeps the same details wrapper across status changes.
-
-**CHAT-449 (2026-09-12).** The current statement edits inline through the existing
-`onUpdate` callback; both textareas use `useAutoGrow`, cancellation discards local
-changes, and rejected saves retain the text. Draft editing reuses the existing
-sidebar and update bridge, including attachment IDs and unavailable Make paths.
-Drafts sort newest first or by ascending sequence; the tab shows the selected
-draft count. Workflow renders valid start/end timestamps with `time` and `title`;
-on mobile it follows the main column inside a closed “Workflow и задача” details.
-The progress overview maps actual `TaskTimeline.stages` durations to available tabs.
-Stage errors use the latest attempt of that cycle; retry actions are supplied by
-the functional panels and retain their availability checks. The title expands
-on click, copying the key reports success only after Clipboard resolves, and
-the active banner opens the run-feed tab. Cancellation retains confirmation and
-reports success only after the bridge succeeds. Empty drafts and absent runs
-offer an available next action. Regression coverage lives beside the components
-with TC1–TC8 markers; the three new stories are StatementEditing, StageWithError,
-and MobileRail. The browser check is
-`node packages/ui/src/components/kanban/NewTaskCardView.browser.mjs` after
-`npm run build:storybook`; it checks axe and layout at 1280px and 390px.
-
-Storybook metadata in `NewTaskCardView.stories.tsx` explicitly maps component
-`new-task-card-view` to the required primary story
-`kanban-newtaskcard--desktop`. The broader browser regression in
-`NewTaskPanels.browser.mjs` opens that story plus `--reworks` and `--rework` in
-light and dark themes at 390 and 1280 px. It waits for the «Общее»/«Доработки»
-tabs, workflow rail, rework history or draft form as appropriate, and rejects
-page errors and document-level horizontal overflow. DOM regressions for inline
-editing, draft/submitted reworks and workflow durations remain beside
-`NewTaskCardView` in `NewTaskCardView.dom.test.tsx`.
-
-«Подготовка» владеет выбором машины и модели, попытками каждого цикла,
-вопросами и ответами, readiness-гейтами, Development Brief и шагами рана. Из
-истории отправленных доработок открывается соответствующий цикл подготовки;
-ответы адресуются только выбранной активной попытке. «Ход выполнения» — под-разделы
-`SubTabs` (Обзор · Работа модели · Проверки · База знаний · Ресурсы · Временная шкала),
-данные — `ci.getTaskReport` (метрики этапа: шаги, проверки-команды, время, попытки
-починки), лента выбранного рана — `NewDevelopmentRunFeed` со своей подпиской, кнопка
-«В очередь на разработку» по `canStartCiRun`; QA-вкладки — «история проходов»,
-проверки «Запуск прохода / Результат» из статуса; «Ручное QA» — блок «Тестовое
-окружение» (`appUrl`/`storybookUrl` сессии) и проходы по QA-сессиям; «Merge» —
-проверки «Актуальность main» (нет конфликтов) и «CI и конфликты»; «Лента рана» —
-шапка «движок · этап» с живой точкой и «Остановить ран» (отмена через
-`ci.cancelRun`/`cancelMerge` после подтверждения `useConfirm`). «Общее» получило
-редактор связи с Make (`onLinkMake`/`onReplaceMake` с `{conversationId, mode, paths}`,
-список файлов — `tasks:reworkMakeFiles`) и время этапов workflow из
-`ci.getTaskTimeline` (`TIMELINE_TYPE`: `preparation → task_preparation`, остальные —
-по имени); у текущего этапа — живой счётчик от `stage.startedAt`. «Доработки» —
-очередь с выбором нескольких черновиков: «Отправить выбранные» сливает их в самый
-старый (`mergeDraftInputs`: описания «№ N — …», объединённые критерии и Make-источники,
-`uploadIds` всех вложений — id вложения совпадает с id загрузки), удаляет остальные и
-отправляет один цикл, потому что сервер после первой отправки переводит задачу в
-подготовку и второй `submit` отвечает 409. Make-связи новая карточка грузит сама
-через `tasks:designs` — в задаче доски поля `designs` нет. Выбранная версия карточки
-хранится в `localStorage` (`TASK_CARD_VERSION_KEY = 'vc.taskCard.version'`), дефолт
-без записи — legacy; `initialVersion` пропа сильнее. Полоса вкладок — `flex: none`,
-тело `min-height: 0`: раньше на высоте окна ~800px тело требовало 580px и flex-колонка
-ужимала вкладки до 1px (закреплено в `taskCardStyles.test.ts`).
-
-**Детали реализации и регрессии CHAT-445.** Замена Make-связи не атомарна:
-`tasks:unlinkDesign` выполняется перед `tasks:linkDesign`. Контейнер сразу сохраняет
-подтверждённый результат отвязки, а при сбое перечитывает фактические связи; повтор
-не пытается отвязать уже удалённый источник. Групповая отправка черновиков также
-последовательна: самый старый выбранный черновик обновляется объединёнными данными,
-остальные выбранные удаляются, затем выполняется единственный submit. При частичном
-сбое очередь перечитывается и ошибка показывается пользователю; невыбранные
-черновики не меняются.
-
-Завершённые этапы workflow показывают записанную длительность; счётчик продолжает
-идти только у этапа со `startedAt` в состоянии выполнения или ожидания ввода.
-Снимок development-цикла берёт названия корневых шагов из выбранного отчёта и явно
-сообщает об отсутствии шагов. Другие панели помечают workflow текущей задачи как
-текущий, а не выдают его за сохранённый исторический снимок.
-
-`NewTaskPanels.stories.tsx` provides `kanban-newtaskcard-functionalpanels--*`
-stories for all eleven tabs. The DOM suite covers both themes and widths, cycle
-isolation and action routing; container tests cover Make, selected draft batches,
-partial failures and version persistence without task writes. The Playwright
-script `NewTaskPanels.browser.mjs` checks the same 44 tab/theme/width combinations
-and writes screenshots to `.generated_images`. Real deployed preview availability
-still requires manual verification.
-
-**Черновики доработок (2026-09-08).** У `task_rework_cycles` появилась колонка
-`status` (`draft` | `submitted`; миграция в `database.ts` проставляет старым
-строкам `submitted`). Черновик правится и удаляется, задачу не двигает и не
-требует успешного рана — набор доработок собирается заранее; ворота (подходящая
-колонка, успешная разработка позади, отсутствие активного рана, переход по
-`canTransitionWorkflow`) проверяются в момент отправки. Маршруты — `POST/PATCH/DELETE
-/api/projects/:id/tasks/:taskId/rework-drafts[/:cycleId]` и `POST …/:cycleId/submit`
-(мосты `tasks:createReworkDraft` / `updateReworkDraft` / `deleteReworkDraft` /
-`submitReworkDraft`); на правку отправленного цикла все три отвечают 409. Вкладка
-«Доработки» показывает черновики с действиями «Отправить на доработку», «Изменить»
-и «Удалить», ниже — неизменяемую историю запущенных циклов.
-
-Основной канбан открывает `TaskCardContainer`: он нормализует доменную `Task`,
-колонку, Make-связи и последний ран в типизированный `TaskCardViewModel`, владеет
-локальным состоянием формы и подключает постоянные API, а `NewTaskCardView`
-остаётся представлением на модели и callbacks. Переключатель в шапке меняет только
-локальную версию; «Старая» по-прежнему рендерит `TaskModal` со всеми прежними
-вкладками и действиями.
-
-**AI-чат задачи встроен в обе версии карточки и использует одну панель**
-`TaskChatPanel` из `packages/ui/src/components/kanban/TaskModal.tsx`. И legacy,
-и новая версия открывают его только отдельной вкладкой «AI-чат»: legacy монтирует
-панель непосредственно в `TaskModal`, новая получает ту же панель через
-`TaskCardContainer.renderPanel('chat')`. Прежние кнопки в «Общем» и меню действий,
-а также переход на страницу связанного разговора удалены.
-
-При открытии вкладки панель идемпотентно получает разговор текущей задачи через
-`tasks:openChat`, затем читает сообщения через `conversations:get` со scope
-`kanban` и `projectId`; события завершения и ошибки фильтруются по полученному
-`conversationId`, поэтому чужой разговор в карточку не попадает. Панель использует
-обычные `ChatColumn` и docked-`VoiceBar`: доступны та же лента сообщений, состояния
-загрузки и отправки, вывод ошибки и повтор неудавшегося хода. Пользовательское
-сообщение сохраняется через `messages:add`, после чего его id передаётся в
-`window.claude.send`; ответ добавляется из `onDone` этого разговора. Сервер на
-каждом ходе добавляет task-chat context с актуальными названием, описанием,
-критериями и статусом задачи; источник и проверки —
-`apps/server/src/taskChatContext.test.ts`.
-
-`TaskChatPanel` сохраняет выбранные файлы штатным `uploads:add` с
-`conversationId`, показывает processing/error/retry в `VoiceBar` и передаёт ready
-пути в адресный `window.claude.send`. Отмена также адресна этому `conversationId`.
-Панель занимает отдельную flex-область: история `ChatColumn.scroll` прокручивается
-независимо, а docked-`VoiceBar` остаётся снизу; на компактной ширине он использует
-штатное сворачивание. Режим доступа пока локален для адаптера, а настройки
-провайдера, модели и инструментов остаются настройками связанного разговора и не
-заменяются отдельным состоянием карточки.
-
-Новая карточка различает все системные semantic type через русские подписи и
-безопасный fallback пользовательской колонки, нормализует состояния рана в
-`queued/running/waiting_for_answer/success/failed/cancelled`, отдельно показывает
-исходную постановку, постоянные файлы, Make-источники и историю циклов. При
-открытии формы «На доработку» контейнер запрашивает доступные пользователю
-Make-проекты; представление различает `loading`, `empty`, `ready` и `error`
-с повтором. Для каждого выбранного проекта черновик независимо хранит режим
-`whole_project` либо `files`; во втором случае список файлов загружается
-маршрутом `rework-make`, а сервер при создании повторно проверяет доступ к
-источнику, каноничность путей и наличие каждого файла. Источники контрактов и
-мостов — `packages/shared/src/projects.ts`, `packages/shared/src/protocol.ts`
-и `packages/shared/src/ipc.ts`.
-
-Исходные вложения задачи и вложения черновика загружаются, показываются и удаляются
-через постоянный attachment API. Метаданные и содержимое до 20 МБ хранятся в
-`task_attachments` со scope `source` или `rework_draft`; при создании цикла
-выбранные строки черновика атомарно получают scope `rework_cycle` и становятся
-частью неизменяемой ревизии, поэтому обычное удаление их больше не затрагивает.
-Реализация хранения и проверок находится в `apps/server/src/db/repos/tasks.ts`,
-схема — в `apps/server/src/db/schema.ts`.
-
-POST `/api/projects/:id/tasks/:taskId/rework-cycles` требует заголовок
-`Idempotency-Key`. Одна SQLite-транзакция назначает следующий `sequence`,
-фиксирует автора, время, дополнение, критерии, снимок Make-источников и вложения,
-после чего переводит задачу в системную колонку `preparation`, не переписывая
-исходное ТЗ и прежние циклы. Повтор существующего ключа возвращает сохранённую
-ревизию до повторной проверки изменившихся Make-источников. Активный ран даёт 409
-`task_active_run`; UI блокирует создание и объясняет причину, не отменяя ран.
-
-Повторная подготовка получает детерминированный накопительный текст из
-`taskReworkContext`: исходные описание, критерии и вложения, затем все циклы по
-`sequence` с их критериями, отсортированными Make-снимками и вложениями, включая
-пометки `missing`. Формирование находится в `packages/shared/src/projects.ts`,
-подключение к preparation-промпту — в `apps/server/src/server.ts`.
-
-### Что карточка грузит при открытии
-
-Открытие карточки делает **один** запрос — `GET tasks/:taskId` за тяжёлыми
-полями (в круге 1 здесь было сказано «один», но к нему добавлялись ещё три
-`listStageRuns` — их убрали в круге 4). Всё остальное отложено до первого показа
-своей вкладки или до условия, при котором данные вообще могут существовать:
-
-- `listTaskImprovements` — только у задачи, у которой вообще был ран
-  (`ciSummary` или `latestRunResult`): у карточки в бэклоге список заведомо пуст;
-- `getTaskKbUsage` и `getTaskReport` — с первого открытия «Хода выполнения»;
-- `ComponentQaPanel`, `QaStageRunPanel`, `ManualQaPanel`, `FeaturePreviewSection`
-  и `TaskDesigns` — с первого открытия своей вкладки. У `ComponentQaPanel` внутри
-  ещё и `setInterval` на 2 секунды: раньше он крутился у любой открытой карточки,
-  стоявшей на QA-этапе;
-- три `listStageRuns` (по одному на QA-этап, нужны для состава вкладок и
-  автоперехода на активный этап) — только при `features.qa` **и** при наличии
-  хоть одного рана: QA-раны создаёт сам этап, поэтому у карточки без ранов их
-  заведомо нет. Позицией в воркфлоу гейтить нельзя — фикс-цикл возвращает задачу
-  в разработку, и история QA должна остаться видимой.
-
-Реестр открытых вкладок — состояние `seenTabs` в `TaskModal`: панель монтируется
-с первого показа и дальше остаётся. Исключения намеренные: `merge`, `preparation`
-и `feed` живут по `activeTab`, потому что у merge при возврате нужен свежий
-снимок машин (без скелетона, правило `loadView`), а у двух других — живые
-подписки, которые незачем держать на скрытой вкладке. `TaskTimeline` тоже
-монтируется по активной вкладке: у неё посекундный таймер.
-
-`loadFullTask` в `KanbanBoard` берётся через `ref`, а эффект зависит только от
-`openTaskId`. Хост передаёт загрузчик инлайновой стрелкой, и её идентичность
-менялась на каждом рендере приложения — а рендерит его каждый WS-кадр активного
-рана: эффект перезапускался, обнулял загруженную задачу (описание и критерии на
-секунду возвращались к пустым значениям лёгкой доски) и снова дёргал
-`GET tasks/:id`. Это частный случай общего правила «колбэк-пропс из `App`
-не ставят в зависимости загружающего эффекта» — оно же объясняет поток
-`preparation/runs` и повторные `POST …/tasks/:taskId/chat`, см.
-[ui.md](ui.md#интерфейс-react-store-remote-мосты-и-голосовой-ux).
-
-Оформление доски и настроек выровнено под дизайн-систему Jira (Atlassian): палитра
-`#0052CC`/`#0C66E4`, нейтрали `#626f86`/`#f7f8f9`, шрифтовой стек Atlassian,
-капс-подписи полей в настройках.
-
-## Доступ к открытому проекту отозвали
-
-Владелец может исключить участника, пока у того открыта доска. Сервер начинает
-отвечать 404 на всё по этому проекту, и раньше стор просто показывал тост с
-«Повторить» — повтор упирался в тот же отказ, а устаревшая доска оставалась на
-экране и выглядела рабочей. Теперь `openBoard`/`syncBoard` отличают потерю
-доступа (403/404) от временного сбоя: проект закрывается, убирается из списка,
-список перечитывается, и человек попадает на штатный экран
-`ProjectNotFoundPage`; тост объясняет причину и **не** предлагает повтор.
-
-Чтобы это стало возможно, транспорт кладёт код ответа на саму ошибку
-(`Object.assign(new Error(detail), { status })` в `remote/httpApi.ts`): без него
-стор видел только переведённый текст и отличить «доступ отобрали» от «сеть
-моргнула» не мог. Отдельного редиректа для такого случая заводить не нужно —
-экран «Проект не найден» уже был и объясняет ситуацию лучше, чем молчаливый
-переход на другой проект.
 
 ## Смена роли доходит до открытой страницы
 
@@ -2199,69 +691,6 @@ POST `/api/projects/:id/tasks/:taskId/rework-cycles` требует заголо
 деталь открытого проекта и список. Обратной подстановки быть не должно:
 перечитывать проект по кадру уведомлений нельзя, он приходит на каждое событие
 рана.
-
-Страница задачи отдельной обработки не потребовала: при отзыве доступа её
-закрывает тот же разбор 403/404, что и доску (см. раздел выше) — проверено
-живьём.
-
-## Повторный переход по принятой ссылке приглашения
-
-Письмо остаётся в почте, а вкладок может быть две, поэтому по одной и той же
-ссылке ходят повторно. Раньше второй раз отвечал отказом «Приглашение
-недействительно» — человек только что вошёл в проект и получал сообщение, что
-приглашения нет. Теперь `acceptProjectInvitation` идемпотентен: если приглашение
-уже принято **тем же** адресатом и он состоит в проекте, ответ такой же
-успешный, с `projectId`.
-
-Идемпотентность держится именно на членстве, а не на статусе записи: исключённый
-участник по старой принятой ссылке обратно не войдёт — она снова недействительна
-(покрыто тестом). Отозванное и истёкшее приглашение отклоняются как прежде,
-чужому пользователю принятая ссылка тоже отказывает. Гонка двух вкладок при
-этом безопасна и без идемпотентности — приём идёт в транзакции, второй запрос
-получал 400; теперь оба получают 200 и попадают в проект.
-
-## Смену роли проговариваем
-
-Когда владельца понижают до участника, владельческие действия исчезают с экрана
-сами (см. `project.membership` выше). Молча исчезнувшая кнопка «Удалить проект»
-читается как поломка, поэтому `refreshMembership` сравнивает роль до и после и
-показывает `info`-тост: «настройки проекта теперь доступны только для чтения»
-или «вам выдали права владельца». Сообщение появляется только при реальной смене
-роли — на обычном обновлении членства лишнего тоста нет.
-
-## Отказ по опубликованному типу объясняется, а не маскируется
-
-Правило «опубликованный узел правит только администратор» отвечало на `PATCH`,
-`DELETE` и `publish` кодом 404 — и автор, который видит свой тип в каталоге,
-получал «Объект не найден», будто узел исчез. Теперь `editableOrRefusal`
-различает случаи: свой видимый узел в статусе `published` → **409** с текстом
-«Опубликованный тип меняет только администратор. Отзовите публикацию или
-создайте под ним подтип», а чужой либо невидимый узел — по-прежнему **404**,
-чтобы не подтверждать его существование. Отзыв публикации (`unpublish`) через
-эту проверку не идёт: у него своя, иначе автор не смог бы забрать тип обратно.
-
-Проверено живьём заодно с остальными правилами каталога: отзыв публикации у
-типа, на котором есть чужой проект, отвечает 409 «Тип используют чужие проекты
-(1 из 1)»; видимость каталога по ролям верна — автор видит свои `private`,
-`pending` и `rejected` вместе с причиной отказа, посторонний только
-опубликованные и свои.
-
-## «Сохранить как подтип» — отказ участнику объясняется
-
-`POST /api/projects/:id/derive-type` доступен только владельцу проекта, но
-проверку делал сам метод БД: он возвращал `null`, и роут отвечал 404. Участник,
-у которого проект открыт на экране, получал «Объект не найден» — будто проект
-исчез. Теперь роут различает: проект не виден → **404** (существование не
-подтверждаем), виден, но проситель не владелец → **403** «Сохранить проект как
-подтип может только владелец проекта».
-
-Предельная глубина дерева проверена живьём и правок не потребовала: на шестом
-уровне создание отклоняется текстом «Слишком глубокая вложенность типов
-(максимум 5)». Код ответа при этом 400, а не 409, как у остальных инвариантов
-каталога (удаление с детьми, публикация под приватным родителем) — расхождение
-осознанное: `createProjectType` не различает ошибку ввода и нарушение инварианта
-без типизированных ошибок, а пользователю в обоих случаях показывается один и
-тот же понятный текст.
 
 ## Раздел «Код»: рабочие копии проекта (2026-08-31)
 
@@ -2347,31 +776,6 @@ ptyId `storybook:<workspaceId>`). Не `exec`: он убивает группу 
 `main`. Подготовка, CI и QA этот путь сознательно минует — merge-ран со своими проверками
 (конфликты, тесты, обновление БЗ) остаётся обязательным.
 
-## Автопроход: что происходит при провале этапа
-
-Этап автотестов **реализован** и исполняет команду проекта
-(`projects.automated_qa_command`, по умолчанию `npm test`) тем же механизмом, что
-Component QA — `createAutomatedQaRunner` в `apps/server/src/ci/componentQa.ts`.
-Провал уходит в `handleAutoPilotFailure`: заводится баг в бэклоге с меткой
-`bug`, ссылкой `sourceTaskId` на исходную задачу и описанием «этап, причина,
-ссылка на ран», счётчик кругов растёт, задача возвращается в разработку и
-запускается новый dev-ран. При исчерпании `autoPilotFixLimit` (по умолчанию 3)
-задача уходит в «Требуется решение», и автоматика её оттуда не забирает.
-
-**Дефект, найденный тестами (29.08.2026):** обработчик слепо звал
-`transitionAutoPilotTask(..., 'development')`, а из `awaiting_merge`, `merge` и
-`done` такого перехода в карте нет — если задачу успели увести вручную, пока шёл
-этап, исключение летело прямо в колбэк завершения рана и роняло не автопроход, а
-само завершение. Теперь возможность перехода проверяется заранее: при
-недостижимом `development` автопроход останавливается, пишет событие
-`autopilot.stopped` с полем `blockedFrom` и возвращает `decisionRequired`.
-
-Логика покрыта `database.autopilot.test.ts` — до этого у неё не было ни одного
-теста. Там же зафиксирована ловушка подготовки: довести задачу до QA-колонки
-нужно по карте переходов (`backlog → preparation → ready → development → …`),
-из `backlog` в `development` напрямую нельзя.
-
-
 ## Автопилот ассистента виден и правится в инспекторе контекста
 
 `Conversation.assistantAutonomy` (`auto` | `confirm`) решает на сервере
@@ -2384,45 +788,3 @@ Component QA — `createAutomatedQaRunner` в `apps/server/src/ci/componentQa.ts
 доски автопилоту нечего делать) с правкой прямо из карточки через мост
 `kanbanAssistant:setAutonomy`. Правка доступна не только админу: доска — данные
 проекта, а не безопасность платформы.
-
-
-## Активность карточки: комментарии, ворклог, история (как в Jira)
-
-Вкладка «Активность» в `TaskModal` (`TaskActivityPanel`) — три ленты с
-переключателем. **История** пишется сервером сама: `updateTask` диффом видимых
-полей (title, description, criteria, priority, assignee, storyPoints, dueDate,
-labels, skills, type, flagged), `moveTask` — переносом между колонками с их
-именами (перестановка внутри колонки историю не пишет). **Комментарии** и
-**ворклог** — CRUD; чужую запись правит и удаляет только автор, владелец
-проекта или админ (и все — только участники проекта: членство — граница
-видимости, роль — граница модерации). Итог ворклога считает сервер
-(`totalMinutes`).
-
-Таблицы `task_comments`, `task_worklog`, `task_history` (`via` различает
-человека и модель). REST: `GET tasks/:taskId/activity` (снимок трёх лент),
-CRUD `…/comments[/:commentId]` и `…/worklog[/:entryId]`; ошибка прав — 403
-словами. Мосты `tasks:activity`, `tasks:comment*`, `tasks:worklog*`.
-
-**Модель тоже работает с комментариями** — инструменты канбан-ассистента
-`task_comments` (чтение активности), `task_comment_add/update`,
-`task_comment_delete` (необратимо — подтверждение даже при полной автономии),
-`task_worklog_add`. Записи модели помечены `via='model'` и бейджем «модель»
-в ленте.
-
-## Ленивая загрузка доски
-
-`openProject(id, { board: false })` в
-`packages/ui/src/store/domains/projectsStore.ts` открывает релизы, настройки
-или код, загружая только `projects:get`: запросы снимка, личного вида и
-статусов доски и подписка `board.changed` до перехода на канбан не нужны.
-`ensureBoard(id)` догружает доску по требованию. Если снимок того же проекта
-уже есть и его cache-key ещё свеж, функция ничего не запрашивает; после TTL она
-обновляет снимок, не скрывая текущую доску и выбранный фильтр завершённых задач.
-
-Общий read-cache разделяет board-ключи по project id и нормализованному
-`includeCompleted`. Проектные мутации и `board.changed` инвалидируют
-относящиеся к проекту чтения; потеря доступа удаляет проект и его кэшированные
-данные. Generation-проверки и идентичность cache-entry не дают позднему ответу
-для прежнего проекта, фильтра или уже инвалидированной записи изменить
-действующий state. Ошибка остаётся в блоке доски, а retry повторяет именно её
-загрузку.

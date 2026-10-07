@@ -1,7 +1,6 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-06
-checked: 61635c64
+updated: 2026-10-07
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -10,6 +9,10 @@ areas:
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
+
+Module details: `web-reader:README.md`
+Module details: `core-ui:README.md`
+Module details: `agent:README.md`
 
 ## Core UI distribution
 
@@ -90,22 +93,6 @@ The historical monorepo paths in older sections below describe the pre-extractio
 layout. Current sources and internal commands are in the owner READMEs.
 
 
-## Reader bundles
-
-Web и desktop продолжают монтировать общий legacy `@voicechat/ui` bootstrap. Новый module registry объявляет Web Reader и Playwright Reader отдельными dynamic imports; каждый пакет экспортирует собственный stylesheet. `apps/web-recorder` остаётся отдельным Vite-приложением и не импортируется Reader-пакетами.
-
-Проект имеет три пользовательских host-приложения, но только один продуктовый React-UI. Browser и desktop renderer используют `@voicechat/ui`; agent-tray — отдельная маленькая оболочка управления компаньон-агентом без чата.
-
-## Browser (`apps/web`)
-
-Пакет состоит из Vite-конфига, HTML entry, `src/main.tsx` и определения server URL. `main.tsx` сначала устанавливает remote bridges, затем монтирует общий `App`. Это требование порядка: store обращается к `window.*` уже во время инициализации.
-
-`VITE_SERVER_URL` нужен, когда backend на другом origin. В dev пустой URL идёт через Vite proxy; в Docker production web собирается для same-origin. Backend с `VC_WEB_DIR` раздаёт `dist` и SPA fallback, поэтому browser refresh на клиентском route не должен давать 404.
-
-Dev-прокси Vite (порт 5273) — часть dev-контура Web Reader: `/web-recorder/` уходит на отдельный Reader dev server (порт 5274) c `ws: true`, чтобы HMR-сокет Reader тоже шёл same-origin путём и изменения `apps/web-recorder` применялись внутри iframe без пересборки `apps/web`; `/api` проксируется на Fastify **без** `changeOrigin` — previewProxy сверяет host диагностической страницы с Host запроса, и с переписанным Host самодиагностика в dev получала SSRF-отказ. Формы прокси зафиксированы тестом `apps/web/src/devProxy.test.ts`. `scripts/dev-web.sh` поднимает backend + оба Vite, ждёт готовности всех трёх портов (до 30 с) и завершает весь dev-сеанс с диагностикой, если любой обязательный процесс упал до готовности; production от dev-прокси не зависит — сервер раздаёт сборку Reader сам (`VC_WEB_RECORDER_DIR`).
-
-Здесь не размещают компоненты, состояние или fetch-логику. Исключения — host/bootstrap, Vite proxy, CSP/assets и выбор URL.
-
 ## Desktop (`apps/desktop`)
 
 Desktop — Electron main/preload/renderer вокруг удалённого server. Он намеренно исключён из корневых npm workspaces: Electron и native `better-sqlite3` имеют отдельный lockfile/node_modules.
@@ -135,26 +122,6 @@ Electron preload должен сохранять `contextIsolation` и публ�
 `electron-vite` собирает main, preload и renderer. Main bundle — ESM, поэтому пути к preload/renderer вычисляются через `dirname(fileURLToPath(import.meta.url))`; CommonJS-глобальная `__dirname` в packaged приложении не определена и оставляет процесс только с tray/menu-bar без `BrowserWindow`. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
 
 Команды: `npm --prefix apps/desktop install`, `npm run typecheck:desktop`, `npm run test:desktop`, `npm --prefix apps/desktop run dev`, `npm --prefix apps/desktop run dist`.
-
-## Agent tray (`apps/agent-tray`)
-
-Agent tray — Electron-приложение для пользователя, который предоставляет машину, но не работает с CLI. Оно хранит server URL и machine token, показывает setup, журнал, permissions и update controls, создаёт tray icon и запускает bundle агента как дочерний процесс.
-
-`src/main/configStore.ts` отвечает за устойчивое хранение конфигурации; секрет не должен попадать в renderer log. `serverUrl.ts` нормализует http/https и производные ws/wss адреса. `trayIcon.ts` управляет меню и lifecycle окон.
-
-Renderer намеренно простой HTML+TypeScript, без React: `setup` вводит адрес/токен, `log` показывает ограниченный поток строк, `permissions` читает и изменяет policy через сервер. Preload выдаёт только необходимые команды/события.
-
-Поведение агента не копируется. Tray запускает распространяемый `voicechat-agent.cjs`; изменения exec/fs/pty делаются в `apps/agent`. Версия tray package и `AGENT_VERSION` независимы.
-
-Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
-
-## Login application (`apps/login-application`)
-
-Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment и только после успешного ответа применяет возвращённые `serverUrl` и machine token: token сохраняется через `safeStorage`, затем запускается `startConnection` из `apps/agent`; exec/fs/pty не копируются. Повторная доставка одной уже успешно обработанной ссылки идемпотентна. Если машина уже настроена, до redeem показывается системное подтверждение: отказ сохраняет старую конфигурацию, а согласие атомарно заменяет её зашифрованным файлом. Renderer-форма в `apps/login-application/src/renderer` предлагает сервер ChatAI, логин и пароль; кнопка активна только при заполненных обязательных полях. Она вызывает только preload-операции `configured` и `addCurrentDevice`, передаёт пароль в IPC-запросе и очищает его после завершения, ошибки и успешного подключения; credentials не сохраняются. Аккаунты с 2FA направляются в enrollment flow из открытой web-сессии.
-
-В URI находятся только краткоживущий enrollment `secret`, `correlationId` и `origin` сервера; старые имена query-параметров читаются на время обновления установленных приложений. HTTPS origin разрешён всегда, а HTTP — только для `localhost`, IPv6 loopback и диапазона `127.0.0.0/8` в development. Постоянный machine token приходит в ответе redeem. В desktop-host `voicechat-login://open` только раскрывает окно; enrollment-ссылка проходит `parse`/`enroll`, а её `serverUrl` применяется лишь после успешного `enroll` (`apps/desktop/src/main/remoteConfig.ts`). Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
-
-Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Диалог подключения устройства реализован в `packages/ui/src/App.tsx` на общем `Dialog`, поэтому закрывается штатной кнопкой и с клавиатуры. Production-мост использует `loginApplication:artifacts` для DMG, `loginApplication:issueEnrollment` для новой одноразовой ссылки и `loginApplication:enrollmentStatus` для polling результата. Состояния загрузки, ожидания, истечения и ошибок выводятся как live-region `status`/`alert`; закрытие инвалидирует текущий polling и отменяет отложенное действие. После completed enrollment UI дополнительно ждёт online-машину, выбирает её как default и выполняет continuation ровно один раз.
 
 ## Границы безопасности Electron
 
