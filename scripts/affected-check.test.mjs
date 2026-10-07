@@ -433,7 +433,7 @@ esac
 test('production deploy безопасно мигрирует постоянный серверный том до compose up', async (t) => {
   const repository = dirname(dirname(fileURLToPath(import.meta.url)))
 
-  const runScenario = ({ target = [], legacy = {}, fail = '' }) => {
+  const runScenario = ({ target = [], legacy = {}, fail = '', postgres = false }) => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'voicechat-volume-test-'))
     const commandsDirectory = join(tempRoot, 'commands')
     const volumesRoot = join(tempRoot, 'volumes')
@@ -442,6 +442,7 @@ test('production deploy безопасно мигрирует постоянны
     mkdirSync(volumesRoot)
     mkdirSync(join(tempRoot, 'apps/server'), { recursive: true })
     writeFileSync(join(tempRoot, 'apps/server/release.json'), JSON.stringify({ apiVersion: '1.1.0', dataVersion: '1.0.0' }))
+    if (postgres) writeFileSync(join(tempRoot, '.env'), 'VC_DB_URL=postgres://fixture/voicechat\n')
 
     const putVolume = (name, files) => {
       const directory = join(volumesRoot, name)
@@ -502,6 +503,10 @@ for mount in "\${mounts[@]}"; do
     /backup) backup=$volume ;;
   esac
 done
+if [[ -n $data && "$*" == *python3* && "$*" == *VC_DATA_REQUIRES_SQLITE=0* ]]; then
+  [[ -f "$VOLUMES_ROOT/$data/session.secret" && -s "$VOLUMES_ROOT/$data/session.secret" ]]
+  exit
+fi
 if [[ -n $data && "$*" == *python3* ]]; then
   [[ -f "$VOLUMES_ROOT/$data/voicechat.db" &&
      -s "$VOLUMES_ROOT/$data/voicechat.db" &&
@@ -574,6 +579,23 @@ exit 2
       assert.equal(repeat.read('voicechat-server-data', 'session.secret'), 'current')
       assert.doesNotMatch(repeat.calls, /\/target/)
     } finally { repeat.cleanup() }
+  })
+
+  await t.test('with Postgres the volume needs session.secret only, not the legacy SQLite file', () => {
+    const postgres = runScenario({ postgres: true, target: [['session.secret', 'current'], ['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.equal(postgres.result.status, 0, postgres.result.stderr)
+      assert.match(postgres.calls, /compose up -d --build/)
+    } finally { postgres.cleanup() }
+    const sqlite = runScenario({ target: [['session.secret', 'current'], ['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.notEqual(sqlite.result.status, 0)
+      assert.doesNotMatch(sqlite.calls, /compose up -d --build/)
+    } finally { sqlite.cleanup() }
+    const noSecret = runScenario({ postgres: true, target: [['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.notEqual(noSecret.result.status, 0)
+    } finally { noSecret.cleanup() }
   })
 
   await t.test('чистая установка и пустой legacy не блокируют compose', () => {

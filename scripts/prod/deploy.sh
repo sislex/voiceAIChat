@@ -374,19 +374,29 @@ volume_nonempty() {
     'test -n "$(find /data -mindepth 1 -maxdepth 1 -print -quit)"'
 }
 
+# With Postgres (VC_DB_URL in the checkout .env) the volume keeps session.secret and file
+# data only; the legacy SQLite voicechat.db is no longer required.
+postgres_configured() {
+  [[ -n ${VC_DB_URL:-} ]] || grep -Eq '^VC_DB_URL=.+' "$REPO/.env" 2>/dev/null
+}
+
 validate_data_volume() {
-  docker run --rm -v "$1:/data:ro" "$sqlite_image" python3 -c \
+  local require_sqlite=1
+  postgres_configured && require_sqlite=0
+  docker run --rm -e "VC_DATA_REQUIRES_SQLITE=$require_sqlite" -v "$1:/data:ro" "$sqlite_image" python3 -c \
     'import os,sqlite3,stat
 db="/data/voicechat.db"
 secret="/data/session.secret"
-for path in (db,secret):
+requires_sqlite=os.environ.get("VC_DATA_REQUIRES_SQLITE")=="1"
+for path in ((db,secret) if requires_sqlite else (secret,)):
  item=os.stat(path)
  assert stat.S_ISREG(item.st_mode), f"{path} is not a regular file"
  assert item.st_size > 0, f"{path} is empty"
-connection=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
-result=connection.execute("PRAGMA integrity_check").fetchone()
-connection.close()
-assert result and result[0]=="ok", f"voicechat.db integrity_check: {result}"'
+if requires_sqlite:
+ connection=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
+ result=connection.execute("PRAGMA integrity_check").fetchone()
+ connection.close()
+ assert result and result[0]=="ok", f"voicechat.db integrity_check: {result}"'
 }
 
 migration_error() {
@@ -404,7 +414,7 @@ docker volume create "$data_volume" >/dev/null ||
 
 if volume_nonempty "$data_volume"; then
   validate_data_volume "$data_volume" ||
-    migration_error "постоянный том непуст, но не содержит корректный комплект voicechat.db/session.secret"
+    migration_error "постоянный том непуст, но не содержит корректный комплект данных (session.secret; voicechat.db без Postgres)"
   log 'постоянный том уже содержит корректные данные; миграция не требуется'
 else
   volume_status=$?
