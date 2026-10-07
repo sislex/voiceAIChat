@@ -1,6 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-07
+checked: cb339cad
 areas:
   - apps/server/src
   - packages/knowledge/src
