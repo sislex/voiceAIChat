@@ -1,8 +1,14 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-07
-checked: 7a977975
+updated: 2026-10-08
+checked: 4329951c
 areas:
+  - scripts/contracts-release.mjs
+  - scripts/contracts-release.test.mjs
+  - scripts/release-train.mjs
+  - scripts/release-train.test.mjs
+  - scripts/release-train-run.mjs
+  - scripts/release-train-run.test.mjs
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
   - scripts/release-version.mjs
@@ -36,7 +42,117 @@ areas:
 
 # Деплой: Docker, HTTPS, прод-сервер, env
 
+## Contract pin release
+
+`node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
+--commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local
+contract release. See [Shared](shared.md#one-command-contract-release) for owner
+and Shared examples. Run from the target Core checkout with explicit, assigned
+consumer paths. Temporary clones live under `DELIVERY_ATTEMPT_ROOT/tmp` when
+allocated, otherwise under Core's `artifacts/contracts-release`, and are removed
+on completion or error. Owner pack lifecycle scripts run in that detached clone.
+
+The command updates dependency and peer pins, vendors the content-addressed
+archive, records provenance, and runs `npm install --package-lock-only
+--ignore-scripts --strict-peer-deps` in each target. Consumers additionally run
+`npm ci --ignore-scripts --strict-peer-deps`; Core's installed dependencies are
+not replaced. It never commits, pushes, publishes or deploys.
+
+Use dedicated consumer checkouts: their manifests, lockfiles, vendor metadata
+and installed dependencies are modified. Results are JSON lines with `consumer`,
+`status`, and npm diagnostics on failure. A peer conflict is an actionable
+failure, never bypassed with `--force` or `--legacy-peer-deps`. Other consumers
+are still checked. Failed targets retain their proposed pins and archive for
+review; this is not an atomic multi-repository transaction. Correct the peer
+baseline or choose a compatible release and rerun. Existing unrelated snapshot
+entries and metadata are preserved, and old archives are not pruned.
+
+Review the resulting diffs and all consumer results before commissioning the
+release through the normal operator workflow. A successful local command does
+not constitute production deployment or consumer application acceptance.
+
 Module details: `llm-runner:README.md`
+
+## Release train planning (B01)
+
+`node scripts/release-train.mjs plan [--json]` is a read-only preflight. It reads
+every GitHub owner application in `deploy/tools.lock.json`, reports its pinned
+version/commit, proposed next patch, and all commit subjects ahead on `dev`.
+Shared repositories (for example STT/TTS) remain separate report rows but have
+one proposed owner release. Inconsistent shared pins block the plan.
+
+Owner branch heads are resolved through the GitHub REST API before paginated
+comparison. The planner checks the published `v<pinned-version>` release against
+the actual tag commit, not its potentially moving `target_commitish`. Missing
+releases, draft releases and mismatched commits are distinguished in JSON.
+Core commits come from local `origin/main..origin/dev`; refresh these refs before
+planning. The planner never fetches, clones, creates directories, writes Git
+state, logs into Docker, publishes, or deploys.
+
+Prerequisites are a reachable Docker daemon (`docker info`), nonempty `GH_TOKEN`
+or `GITHUB_TOKEN` (never printed), and an existing `~/sislexa-worktrees` root.
+The root must not be a symlink and may contain only clean Git worktrees, with
+no untracked files or dirty submodules; an empty existing root is valid. Missing,
+unreadable or unsafe roots block planning; the planner never repairs them.
+API failures, diverged owner branches, mismatched published tags and missing
+Core refs also block readiness. JSON uses schema version 1 and `ready`; blocked
+plans still include available results and exit 1. Successful plans exit 0.
+
+The ordered proposal covers owner patch/gate/merge/publish/verification, Core
+pin and KB updates, Core gate/merge, then Release Center preflight and branch
+creation. An unchanged owner missing its pinned release proposes publication
+of that exact pin. Production deployment remains a separate explicit operator
+action through `run --deploy`. Fixture Git repositories and fake HTTP responses
+test these adapters without contacting real owners.
+
+## Release train execution (C01)
+
+`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
+owner repository (including both voice services). An unchanged owner with a
+missing release publishes the exact existing pin without a version bump.
+
+The runner creates private clones below
+`~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
+`~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
+original owner selection, commits, versions and deploy intent; it skips completed
+steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
+file excludes competing runners; after a hard process/host crash, confirm the
+runner is no longer active before removing its stale lock and resuming. Clone
+directories remain available for diagnosis. Journals contain no tokens or child
+command output. Failures identify the journal and failed step and exit nonzero.
+
+Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
+then run `npm install --package-lock-only` (never `npm version --workspaces`).
+The runner installs dependencies in its clones and runs `gate:release` when the
+owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR
+to `main`, and requests a merge constrained to the gated head SHA. Required
+reviews and GitHub protections still apply: merge rejection stops the train;
+resume after review/check completion. `dev` advances without force to merged
+`main`; concurrent incompatible changes stop execution.
+
+Publication uses a new clean clone and the existing
+`scripts/owner-release-publish.mjs --source` adapter. GHCR login sends the GitHub
+token on stdin into a temporary `DOCKER_CONFIG`; the directory is removed on
+success and failure. Verification checks the actual GitHub tag commit, release
+manifest provenance and all expected remote images before Core pins change.
+Retries reconcile existing PRs, release branches and deployments instead of
+blindly creating new ones. Core updates tools-lock versions/commits, compose
+image tags and the deployment KB, runs KB touch/log/index and `npm run gate`,
+then merges a PR from `dev` to `main`.
+
+Operator commissioning must supply `GH_TOKEN` or `GITHUB_TOKEN`, Git push
+authentication, Docker, npm and Git, plus `RELEASE_CENTER_URL`,
+`RELEASE_CENTER_PROJECT_ID` and `RELEASE_CENTER_TOKEN`. The latter must authorize
+the project's release APIs; the runner does not create or change credentials.
+`RELEASE_CENTER_AGENT_ID` optionally selects the build machine. Release Center
+GET `/releases/preflight` must pass before POST `/releases/branches` with the
+next patch branch based on `main`. Core moving after its merge blocks branch
+creation. With `--deploy`, POST `/releases/deploy` starts deployment and the
+runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
+the new version for up to ten minutes. Without that flag it stops after branch
+creation. Real publication/deployment and token commissioning are operator
+actions, separate from fixture verification of the implementation.
 
 ## Dev stand gateway and Core component (C02)
 
@@ -504,7 +620,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.13, SHA `70370ce3bdec3433b8f3d7370332081fb2d407fa` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.13 после деплоя прода удаляются неиспользуемые образы (кроме образов предыдущего выпуска) и старые резервные копии, а диск прода проверяется раз в 30 минут с уведомлением проекта; с 0.2.12 подмена Make на стенде без данных Make начинается с пустого каталога; с 0.2.11 подмены стенда разработки получают расшифрованные секреты стенда и путь к Docker для данных Make, база знаний Kanban; с 0.2.10 проверка места на машине сборки и проде перед созданием релизной ветки и деплоем (`release_disk_low`, подтверждение владельцем), асинхронные операции стенда разработки с настройками стенда и адресами шлюза; с 0.2.9 стенды разработки, гейт задачи и режим разработки (dev-lane-v1 C03, C07); с 0.2.8 подключение базы знаний репозитория к проекту через модули Core и shared 0.1.23; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.13, SHA `8d64d6317b185c29c1c1fece166ce4d607d6ffac` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.13 после деплоя прода удаляются неиспользуемые образы (кроме образов предыдущего выпуска) и старые резервные копии, а диск прода проверяется раз в 30 минут с уведомлением проекта; с 0.2.12 подмена Make на стенде без данных Make начинается с пустого каталога; с 0.2.11 подмены стенда разработки получают расшифрованные секреты стенда и путь к Docker для данных Make, база знаний Kanban; с 0.2.10 проверка места на машине сборки и проде перед созданием релизной ветки и деплоем (`release_disk_low`, подтверждение владельцем), асинхронные операции стенда разработки с настройками стенда и адресами шлюза; с 0.2.9 стенды разработки, гейт задачи и режим разработки (dev-lane-v1 C03, C07); с 0.2.8 подключение базы знаний репозитория к проекту через модули Core и shared 0.1.23; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
@@ -2422,3 +2538,7 @@ included by `test_environment_scripts.py`. The real Compose config-only test
 skips when Docker Compose is unavailable; it never starts services. Machine
 commissioning (Docker access, owner images, runner authentication, resources
 and end-to-end creation/removal) remains an operator/integration step.
+
+<!-- release-train:f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b -->
+- sislex/make: 1.4.2
+- sislex/sislexa-kanban: 0.2.14

@@ -99,25 +99,29 @@ interface ProjectMemberRow {
 export class ProjectsRepo extends BaseRepo {
   async listIntegrationTokens(userId: string, projectId: string): Promise<IntegrationTokenView[] | null> {
     if (!await this.isProjectOwner(userId, projectId)) return null
-    const rows = await this.sql.all(`SELECT id, project_id, name, scopes, created_at, last_used_at
+    const rows = await this.sql.all(`SELECT id, project_id, project_ids, name, scopes, created_at, last_used_at
       FROM integration_tokens WHERE project_id = ? AND revoked_at IS NULL ORDER BY created_at, id`, [projectId])
     return rows.map(row => ({
-      id: String(row.id), projectId: String(row.project_id), name: String(row.name),
+      id: String(row.id), projectId: String(row.project_id), projectIds: JSON.parse(String(row.project_ids)) as string[], name: String(row.name),
       scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[],
       createdAt: Number(row.created_at), lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at)
     }))
   }
 
-  async createIntegrationToken(userId: string, projectId: string, name: string, scopes: IntegrationTokenScope[]): Promise<(IntegrationTokenView & { token: string }) | null> {
-    if (!await this.isProjectOwner(userId, projectId)) return null
+  async createIntegrationToken(userId: string, projectId: string, name: string, scopes: IntegrationTokenScope[], projectIds: string[] = [projectId]): Promise<(IntegrationTokenView & { token: string }) | null> {
+    if (!Array.isArray(projectIds) || projectIds.length < 1 || projectIds.length > 50
+      || !projectIds.includes(projectId) || projectIds.some(id => typeof id !== 'string' || !id)
+      || new Set(projectIds).size !== projectIds.length) throw new Error('invalid_integration_token')
+    const normalizedProjectIds = [projectId, ...projectIds.filter(id => id !== projectId)]
+    for (const id of normalizedProjectIds) if (!await this.isProjectOwner(userId, id)) return null
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 200
       || !Array.isArray(scopes) || !scopes.length || scopes.some(scope => scope !== 'tasks:external')
       || new Set(scopes).size !== scopes.length) throw new Error('invalid_integration_token')
     const token = 'sit_' + randomBytes(32).toString('base64url')
-    const view: IntegrationTokenView = { id: this.newId(), projectId, name: name.trim(), scopes, createdAt: this.now(), lastUsedAt: null }
+    const view: IntegrationTokenView = { id: this.newId(), projectId, projectIds: normalizedProjectIds, name: name.trim(), scopes, createdAt: this.now(), lastUsedAt: null }
     await this.sql.run(`INSERT INTO integration_tokens
-      (id, project_id, name, scopes, token_hash, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [view.id, projectId, view.name, JSON.stringify(scopes), createHash('sha256').update(token).digest('hex'), userId, view.createdAt])
+      (id, project_id, project_ids, name, scopes, token_hash, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [view.id, projectId, JSON.stringify(normalizedProjectIds), view.name, JSON.stringify(scopes), createHash('sha256').update(token).digest('hex'), userId, view.createdAt])
     return { ...view, token }
   }
 
@@ -133,9 +137,9 @@ export class ProjectsRepo extends BaseRepo {
     if (!token) return null
     // Conditional UPDATE atomically checks revocation and records use.
     const row = await this.sql.get(`UPDATE integration_tokens SET last_used_at = ?
-      WHERE token_hash = ? AND revoked_at IS NULL RETURNING project_id, scopes`,
+      WHERE token_hash = ? AND revoked_at IS NULL RETURNING project_id, project_ids, scopes`,
       [this.now(), createHash('sha256').update(token).digest('hex')])
-    return row ? { kind: 'integration', projectId: String(row.project_id), scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[] } : null
+    return row ? { kind: 'integration', projectId: String(row.project_id), projectIds: JSON.parse(String(row.project_ids)) as string[], scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[] } : null
   }
   /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
   async getBoardView(userId: string, projectId: string): Promise<BoardView> {
@@ -675,6 +679,9 @@ export class ProjectsRepo extends BaseRepo {
   private async mapProjectSummary(r: ProjectRow, myRole: string): Promise<ProjectSummary> {
     return {
       id: r.id,
+      // Local Core mode keeps projects flat; subprojects live in the Kanban service.
+      parentProjectId: null,
+      subprojectCount: 0,
       ...(r.tenant_id ? { tenantId: r.tenant_id } : {}),
       ...(r.tenant_kind ? { tenantKind: r.tenant_kind } : {}),
       name: r.name,

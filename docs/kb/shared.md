@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-06
-checked: 3444a1ba
+updated: 2026-10-08
+checked: f29f68ef
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,38 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Карта модулей
+
+### One-command contract release
+
+From the Core checkout, run:
+
+```bash
+node scripts/contracts-release.mjs @voicechat/make-contracts --version 1.6.0 --source /assigned/make --commit <full-sha> --consumers make=/assigned/make-consumer,core-ui=/assigned/core-ui
+node scripts/contracts-release.mjs @voicechat/shared --version 0.1.27 --source /assigned/core-source --commit <full-sha>
+```
+
+The source must be clean, including untracked files. Owner contract versions must
+already match the committed workspace manifest. The command clones the source
+locally into a disposable detached checkout, installs locked owner build tools
+with scripts disabled when a lockfile exists, and runs `npm pack -w <package>`.
+Shared uses the selected commit's `build:core-contracts` script, which derives
+its peer baseline from that commit's lockfile. No source checkout is switched or
+version-bumped. The packed name and version are verified before Core is changed.
+
+Archives use a SHA-256 prefix of 12 characters in the asset name. Every tracked
+source `package.json` reference is updated to the relative vendor archive;
+existing peer references become exact version pins. The npm lockfile and both
+`dependency-snapshots.json` and `vendor/owner-artifacts.json` record the release,
+including SHA-256, SHA-512 integrity, full source commit and provenance.
+
+Consumers are explicit checkout paths, optionally `name=path`; bare names such
+as `make` resolve relative to Core's working directory. There is no sibling
+workspace discovery. Each consumer receives the same archive and pins, followed
+by lockfile resolution and a clean `npm ci --ignore-scripts --strict-peer-deps`.
+This replaces that consumer's `node_modules`. JSON result lines identify each
+consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
+prevent checking subsequent consumers; the overall exit status is nonzero.
+See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
 ### Sislexa operation and consumption contracts
 
@@ -117,6 +149,12 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.24 (`voicechat-shared-0.1.24-d1f695c1a28a.tgz`, contracts commit `6cb5a147`) adds dev stand contracts: `DEV_COMPONENT_REGISTRY`, `DevStandManifest`, dev build ids `<version>-dev.<sha12>` with `isDevBuildVersion`, dev stand REST and the agent `devProcess.*` RPC (dev-lane-v1 B01).
 
 0.1.25 (`voicechat-shared-0.1.25-b9fb6f8fdc76.tgz`, contracts commit `3444a1ba`) moves the agent contracts peer to 1.3.0 (agent 0.23.0 with the devProcess RPC, dev-lane-v1 C01).
+
+0.1.26 (`voicechat-shared-0.1.26-7117c54e28b6.tgz`, contracts commit `1cc31438`) moves the make-contracts peer to 1.4.0 (Make project mode port, make-project-mode-v1); Make cannot install make-contracts 1.4.0 next to Shared 0.1.25 and older.
+
+0.1.27 (`voicechat-shared-0.1.27-39a478888a3a.tgz`, contracts commit `6d302b4f`) adds subproject contracts (`parentProjectId`, `subprojectCount`, `REST.subprojects`, board `projects` filter, `displayColumnId`, `subprojectColumnFor`; board-subproject-view-v1 B01), multi-project integration tokens (`projectIds`; board-subprojects-v1 B01) and the `releases:automate` token scope, so the Kanban shared copy no longer diverges.
+
+0.1.28 (`voicechat-shared-0.1.28-28e9e61f4571.tgz`, contracts commit `f29f68ef`) makes the 0.1.27 additions optional (`parentProjectId`, `subprojectCount`, `Board.projects`, `IntegrationTokenView.projectIds`): consumers that compile shipped sources of older packages keep building.
 
 ### Existing modules
 

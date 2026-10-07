@@ -27,7 +27,7 @@
     "@sislexa/web-reader": "file:../../vendor/sislexa-web-reader-1.3.1-8a5ddee3aab3.tgz",
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-7eebb7eb21e7.tgz",
     "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
-    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.3.0-be08aa1056e2.tgz",
+    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.6.0-11d6f03a8356.tgz",
     "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-6494ddf245ed.tgz",
     "@voicechat/shared": "*",
     "@voicechat/voice-contracts": "file:../../vendor/voicechat-voice-contracts-1.0.0-7e51e57ebf3b.tgz",
