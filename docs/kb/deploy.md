@@ -1,8 +1,10 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-07
-checked: 7a977975
+checked: 26ad9be5
 areas:
+  - scripts/release-train.mjs
+  - scripts/release-train.test.mjs
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
   - scripts/release-version.mjs
@@ -37,6 +39,39 @@ areas:
 # Деплой: Docker, HTTPS, прод-сервер, env
 
 Module details: `llm-runner:README.md`
+
+## Release train planning (B01)
+
+`node scripts/release-train.mjs plan [--json]` is a read-only preflight. It reads
+every GitHub owner application in `deploy/tools.lock.json`, reports its pinned
+version/commit, proposed next patch, and all commit subjects ahead on `dev`.
+Shared repositories (for example STT/TTS) remain separate report rows but have
+one proposed owner release. Inconsistent shared pins block the plan.
+
+Owner branch heads are resolved through the GitHub REST API before paginated
+comparison. The planner checks the published `v<pinned-version>` release against
+the actual tag commit, not its potentially moving `target_commitish`. Missing
+releases, draft releases and mismatched commits are distinguished in JSON.
+Core commits come from local `origin/main..origin/dev`; refresh these refs before
+planning. The planner never fetches, clones, creates directories, writes Git
+state, logs into Docker, publishes, or deploys.
+
+Prerequisites are a reachable Docker daemon (`docker info`), nonempty `GH_TOKEN`
+or `GITHUB_TOKEN` (never printed), and an existing `~/sislexa-worktrees` root.
+The root must not be a symlink and may contain only clean Git worktrees, with
+no untracked files or dirty submodules; an empty existing root is valid. Missing,
+unreadable or unsafe roots block planning; the planner never repairs them.
+API failures, diverged owner branches, mismatched published tags and missing
+Core refs also block readiness. JSON uses schema version 1 and `ready`; blocked
+plans still include available results and exit 1. Successful plans exit 0.
+
+The ordered proposal covers owner patch/gate/merge/publish/verification, Core
+pin and KB updates, Core gate/merge, then Release Center preflight and branch
+creation. An unchanged owner missing its pinned release proposes publication
+of that exact pin. Production deployment remains a separate explicit operator
+action. B01 supplies planning only; execution/resume and Release Center token
+commissioning belong to subsequent release-train tasks. Fixture Git repositories
+and fake HTTP responses test these adapters without contacting real owners.
 
 ## Dev stand gateway and Core component (C02)
 
