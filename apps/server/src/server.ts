@@ -120,6 +120,8 @@ import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
+import { MakeProjectAdapters, projectModeError } from './makeBridge/projectAdapters.js'
+import { MakeRequestAuthority } from './makeBridge/requestAuthority.js'
 import { createRemoteMake } from './makeBridge/remote.js'
 import { registerMakeProxy } from './makeBridge/proxy.js'
 import { registerInternalRoutes } from './routes/internal.js'
@@ -185,6 +187,8 @@ export interface BuildOptions {
   /** Embedded hosts supply the same authenticated transport as managed Billing. */
   billingTransport?: { url: string; fetchImpl: typeof fetch; environmentId: string }
   delegationClient?: DelegationIntrospectionClient
+  /** Kanban HTTP transport for Make project previews; injectable without a live stand. */
+  makeKanbanFetch?: typeof fetch
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
   db?: VoiceChatDb
@@ -481,7 +485,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy') : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
+  const makeRequests = new MakeRequestAuthority(async userId => {
+    const user = await db.identity.getUser(userId)
+    return user && !user.blocked ? { name: user.name, role: user.role } : null
+  })
   const authenticate: AuthenticateFn = async req => {
+    const makeRequest = await makeRequests.authenticate(req)
+    if (makeRequest) return makeRequest
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
@@ -773,9 +783,27 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уходят владельцу кадром make.changed. Ядро и Make видят друг друга только через
   // порты MakeCore / MakeService (docs/plans/make-standalone.md): здесь — единственная
   // точка, где Make получает доступ к данным чата, канбана и машин.
+  const makeProjectAdapters = new MakeProjectAdapters({
+    db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
+    authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
+    boardChanged: projectId => kanban.service.board.changed(projectId),
+    readDesignFile: async (userId, conversationId, path) => {
+      const url = '/api/make/' + encodeURIComponent(conversationId) + '/file?path=' + encodeURIComponent(path)
+      return makeRequests.run(userId, 'GET', url, async authorization => {
+        // Injection uses the same authenticated route/proxy in embedded and remote modes.
+        const response = await app.inject({ method: 'GET', url, headers: { authorization } })
+        if (response.statusCode !== 200) projectModeError(response.statusCode, 'make_design_file_unavailable')
+        const file = response.json() as { content?: unknown }
+        if (typeof file.content !== 'string') projectModeError(502, 'invalid_make_file_response')
+        return file.content
+      })
+    }
+  })
   const makeCore = new LocalMakeCore({
     db,
     git: gitWorkspaces,
+    standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
+    transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
     // Чтение репозитория проекта: файловый мост машины только на чтение —
