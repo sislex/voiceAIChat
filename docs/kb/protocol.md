@@ -1,6 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-07
+updated: 2026-10-08
+checked: 344fab15
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -382,6 +383,20 @@ with `x-sislexa-tenant-id`. Omitting the header selects the personal tenant.
 Identity rejects foreign or removed memberships before Core handles the request.
 Browser WebSockets carry the same selection as the encoded `tenantId` query
 parameter because the browser WebSocket API cannot set a custom header.
+
+### Multi-project integration tokens
+
+`POST /api/projects/:id/integration-tokens` accepts the existing `name` and
+`scopes` plus optional `projectIds` (1–50 unique ids). The list must contain
+`:id`, and the authenticated caller must own every listed project. Responses
+expose both `projectIds` and compatibility `projectId`, which is always the first
+entry. When omitted, `projectIds` is `[projectId]`.
+
+An integration principal returned by `/internal/whoami` has
+`{kind: 'integration', projectId, projectIds, scopes}`. The compatibility
+`projectId` remains the first entry. Integration ingress authorizes its URL
+project by membership in `projectIds`; token listing and revocation remain
+anchored to `projectId`.
 
 Core stores tenant ownership on projects and conversations. The public transfer
 boundary is `PUT REST.projectTenant(id)` with `{ tenantId }`; only a project

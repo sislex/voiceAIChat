@@ -9,13 +9,16 @@ export function registerIntegrationTokenRoutes(app: FastifyInstance, db: VoiceCh
     const tokens = await db.projects.listIntegrationTokens(uid(req), req.params.id)
     return tokens ?? reply.code(403).send({ error: 'project_owner_required' })
   })
-  app.post<{ Params: { id: string }; Body: { name: string; scopes: IntegrationTokenScope[] } }>(path, async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { name: string; scopes: IntegrationTokenScope[]; projectIds?: string[] } }>(path, async (req, reply) => {
     if (!await db.projects.isProjectOwner(uid(req), req.params.id)) return reply.code(403).send({ error: 'project_owner_required' })
-    const { name, scopes } = req.body ?? {}
+    const { name, scopes, projectIds = [req.params.id] } = req.body ?? {}
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 200
       || !Array.isArray(scopes) || !scopes.length || scopes.some(scope => scope !== 'tasks:external')
-      || new Set(scopes).size !== scopes.length) return reply.code(400).send({ error: 'invalid_integration_token' })
-    const created = await db.projects.createIntegrationToken(uid(req), req.params.id, name, scopes)
+      || new Set(scopes).size !== scopes.length
+      || !Array.isArray(projectIds) || projectIds.length < 1 || projectIds.length > 50
+      || !projectIds.includes(req.params.id) || projectIds.some(id => typeof id !== 'string' || !id)
+      || new Set(projectIds).size !== projectIds.length) return reply.code(400).send({ error: 'invalid_integration_token' })
+    const created = await db.projects.createIntegrationToken(uid(req), req.params.id, name, scopes, projectIds)
     if (!created) return reply.code(403).send({ error: 'project_owner_required' })
     reply.header('cache-control', 'no-store')
     return reply.code(201).send(created)
