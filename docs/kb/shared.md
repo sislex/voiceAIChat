@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-08
-checked: 6d302b4f
+checked: f29f68ef
 areas:
   - packages/shared/src
 ---
@@ -153,6 +153,8 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.26 (`voicechat-shared-0.1.26-7117c54e28b6.tgz`, contracts commit `1cc31438`) moves the make-contracts peer to 1.4.0 (Make project mode port, make-project-mode-v1); Make cannot install make-contracts 1.4.0 next to Shared 0.1.25 and older.
 
 0.1.27 (`voicechat-shared-0.1.27-39a478888a3a.tgz`, contracts commit `6d302b4f`) adds subproject contracts (`parentProjectId`, `subprojectCount`, `REST.subprojects`, board `projects` filter, `displayColumnId`, `subprojectColumnFor`; board-subproject-view-v1 B01), multi-project integration tokens (`projectIds`; board-subprojects-v1 B01) and the `releases:automate` token scope, so the Kanban shared copy no longer diverges.
+
+0.1.28 (`voicechat-shared-0.1.28-28e9e61f4571.tgz`, contracts commit `f29f68ef`) makes the 0.1.27 additions optional (`parentProjectId`, `subprojectCount`, `Board.projects`, `IntegrationTokenView.projectIds`): consumers that compile shipped sources of older packages keep building.
 
 ### Existing modules
 
