@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-07
-checked: 1cc31438
+updated: 2026-10-08
+checked: 5a3c3956
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,38 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Карта модулей
+
+### One-command contract release
+
+From the Core checkout, run:
+
+```bash
+node scripts/contracts-release.mjs @voicechat/make-contracts --version 1.6.0 --source /assigned/make --commit <full-sha> --consumers make=/assigned/make-consumer,core-ui=/assigned/core-ui
+node scripts/contracts-release.mjs @voicechat/shared --version 0.1.27 --source /assigned/core-source --commit <full-sha>
+```
+
+The source must be clean, including untracked files. Owner contract versions must
+already match the committed workspace manifest. The command clones the source
+locally into a disposable detached checkout, installs locked owner build tools
+with scripts disabled when a lockfile exists, and runs `npm pack -w <package>`.
+Shared uses the selected commit's `build:core-contracts` script, which derives
+its peer baseline from that commit's lockfile. No source checkout is switched or
+version-bumped. The packed name and version are verified before Core is changed.
+
+Archives use a SHA-256 prefix of 12 characters in the asset name. Every tracked
+source `package.json` reference is updated to the relative vendor archive;
+existing peer references become exact version pins. The npm lockfile and both
+`dependency-snapshots.json` and `vendor/owner-artifacts.json` record the release,
+including SHA-256, SHA-512 integrity, full source commit and provenance.
+
+Consumers are explicit checkout paths, optionally `name=path`; bare names such
+as `make` resolve relative to Core's working directory. There is no sibling
+workspace discovery. Each consumer receives the same archive and pins, followed
+by lockfile resolution and a clean `npm ci --ignore-scripts --strict-peer-deps`.
+This replaces that consumer's `node_modules`. JSON result lines identify each
+consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
+prevent checking subsequent consumers; the overall exit status is nonzero.
+See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
 ### Sislexa operation and consumption contracts
 
