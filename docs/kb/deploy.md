@@ -1,10 +1,12 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-07
-checked: 26ad9be5
+checked: acf1dc7e
 areas:
   - scripts/release-train.mjs
   - scripts/release-train.test.mjs
+  - scripts/release-train-run.mjs
+  - scripts/release-train-run.test.mjs
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
   - scripts/release-version.mjs
@@ -69,9 +71,57 @@ The ordered proposal covers owner patch/gate/merge/publish/verification, Core
 pin and KB updates, Core gate/merge, then Release Center preflight and branch
 creation. An unchanged owner missing its pinned release proposes publication
 of that exact pin. Production deployment remains a separate explicit operator
-action. B01 supplies planning only; execution/resume and Release Center token
-commissioning belong to subsequent release-train tasks. Fixture Git repositories
-and fake HTTP responses test these adapters without contacting real owners.
+action through `run --deploy`. Fixture Git repositories and fake HTTP responses
+test these adapters without contacting real owners.
+
+## Release train execution (C01)
+
+`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+Application names are tools-lock keys. Selecting one alias selects its entire
+owner repository (including both voice services). An unchanged owner with a
+missing release publishes the exact existing pin without a version bump.
+
+The runner creates private clones below
+`~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
+`~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
+original owner selection, commits, versions and deploy intent; it skips completed
+steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
+file excludes competing runners; after a hard process/host crash, confirm the
+runner is no longer active before removing its stale lock and resuming. Clone
+directories remain available for diagnosis. Journals contain no tokens or child
+command output. Failures identify the journal and failed step and exit nonzero.
+
+Changed owners update the root and every selected application `package.json`,
+then run `npm install --package-lock-only` (never `npm version --workspaces`).
+The runner installs dependencies in its clones and runs `gate:release` when the
+owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR
+to `main`, and requests a merge constrained to the gated head SHA. Required
+reviews and GitHub protections still apply: merge rejection stops the train;
+resume after review/check completion. `dev` advances without force to merged
+`main`; concurrent incompatible changes stop execution.
+
+Publication uses a new clean clone and the existing
+`scripts/owner-release-publish.mjs --source` adapter. GHCR login sends the GitHub
+token on stdin into a temporary `DOCKER_CONFIG`; the directory is removed on
+success and failure. Verification checks the actual GitHub tag commit, release
+manifest provenance and all expected remote images before Core pins change.
+Retries reconcile existing PRs, release branches and deployments instead of
+blindly creating new ones. Core updates tools-lock versions/commits, compose
+image tags and the deployment KB, runs KB touch/log/index and `npm run gate`,
+then merges a PR from `dev` to `main`.
+
+Operator commissioning must supply `GH_TOKEN` or `GITHUB_TOKEN`, Git push
+authentication, Docker, npm and Git, plus `RELEASE_CENTER_URL`,
+`RELEASE_CENTER_PROJECT_ID` and `RELEASE_CENTER_TOKEN`. The latter must authorize
+the project's release APIs; the runner does not create or change credentials.
+`RELEASE_CENTER_AGENT_ID` optionally selects the build machine. Release Center
+GET `/releases/preflight` must pass before POST `/releases/branches` with the
+next patch branch based on `main`. Core moving after its merge blocks branch
+creation. With `--deploy`, POST `/releases/deploy` starts deployment and the
+runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
+the new version for up to ten minutes. Without that flag it stops after branch
+creation. Real publication/deployment and token commissioning are operator
+actions, separate from fixture verification of the implementation.
 
 ## Dev stand gateway and Core component (C02)
 

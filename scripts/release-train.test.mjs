@@ -156,7 +156,7 @@ test('missing Core refs, invalid versions and unsupported commands fail explicit
   assert.throws(() => nextPatch('1.0.0-beta'))
   assert.equal(githubRepository('git@github.com:acme/voice.git'), 'acme/voice')
   assert.equal(githubRepository('https://github.com.evil/acme/voice'), null)
-  await assert.rejects(main(['run']), /Usage:/)
+  await assert.rejects(main(['unknown']), /Usage:/)
 })
 
 test('plan assembly with fake adapters preserves output and blocks conflicting shared pins', async t => {
