@@ -1,7 +1,6 @@
 ---
 title: Module ownership map
-updated: 2026-10-06
-checked: 181a1e96
+updated: 2026-10-07
 areas: []
 ---
 
@@ -29,7 +28,7 @@ to its managed list. See [repository module behavior](features/project-knowledge
 |---|---|---|---|
 | `core` | `sislex/voiceAIChat` | `core:README.md` (`docs/kb`) | Public contracts, authorization, persistence, orchestration, host integration, release and operations |
 | `core-ui` | `sislex/sislexa-core-ui` | `core-ui:README.md` (`docs/kb`) | Core browser renderer, UI modules, state, routes, stories and UI tests |
-| `ui` | `sislex/sielexa-ui` | нет (пока не заведена) | UI Kit and Foundation primitives and their tests |
+| `ui` | `sislex/sielexa-ui` | `ui:README.md` (`docs/kb`) | UI Kit and Foundation primitives and their tests |
 | `sdk` | `sislex/sdk` | нет (пока не заведена) | Public integration SDK and compatibility |
 | `make` | `sislex/make` | `make:README.md` (`docs/kb`) | Make API/UI, project data, preview/build pipeline and tests |
 | `agent` | `sislex/agent` | `agent:README.md` (`docs/kb`) | Companion runtime, tray/login apps, installers, tunnels, remote execution and tests |
@@ -41,7 +40,7 @@ to its managed list. See [repository module behavior](features/project-knowledge
 | `analytics` | `sislex/analytics` | нет (пока не заведена) | Product analytics and reporting |
 | `llm-runner` | `sislex/llm-runner` | нет (пока не заведена) | Claude/Codex process execution and runner contracts |
 | `desktop` | `sislex/desktop` | нет (пока не заведена) | Electron host, preload, migration and desktop packaging |
-| `image-studio` | `sislex/image-studio` | нет (пока не заведена) | Image Studio API, panel and contracts |
+| `image-studio` | `sislex/image-studio` | `image-studio:README.md` (`docs/kb`) | Image Studio API, panel and contracts |
 | `voice` | `sislex/voice` | нет (пока не заведена) | STT/TTS services, microphone UI and voice contracts |
 | `knowledge` | knowledge service repository | нет (пока не заведена) | Multi-repository KB indexing, search, context and KB UI |
 | `delivery-control` | `sislex/delivery-control` | нет (пока не заведена) | Delivery scheduling, workers, release commissioning and recovery |
