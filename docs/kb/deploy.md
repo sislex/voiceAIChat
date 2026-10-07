@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
-checked: da93b309
+checked: 00fa018e
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -122,7 +122,7 @@ runner is no longer active before removing its stale lock and resuming. Clone
 directories remain available for diagnosis. Journals contain no tokens or child
 command output. Failures identify the journal and failed step and exit nonzero.
 
-Changed owners update the root and every selected application `package.json`,
+Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, amends the bump commit and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
 then run `npm install --package-lock-only` (never `npm version --workspaces`).
 The runner installs dependencies in its clones and runs `gate:release` when the
 owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR

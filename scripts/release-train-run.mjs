@@ -1,8 +1,8 @@
 // @ts-check
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, renameSync, rmSync, openSync, closeSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, renameSync, rmSync, openSync, closeSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { planReleaseTrain, nextPatch, pinnedRelease, githubClient } from './release-train.mjs'
 
@@ -29,6 +29,17 @@ export function parseRunArgs(args) {
   if (options.resume && (options.deploy || options.apps.length)) throw Error('Resume uses the journal selection and deploy intent')
   if (options.resume && !/^[a-zA-Z0-9-]+$/.test(options.resume)) throw Error('Invalid journal id')
   return options
+}
+
+/** Knowledge topics (`<kbDir>/*.md` frontmatter `areas`) that cover any of the given repository files. */
+export function topicsCoveringFiles(kbDir, files) {
+  if (!existsSync(kbDir)) return []
+  const covers = (area, file) => area === file || file.startsWith(area.replace(/\/+$/, '') + '/')
+  return readdirSync(kbDir).filter(name => name.endsWith('.md') && name !== 'README.md').sort().filter(name => {
+    const text = readFileSync(join(kbDir, name), 'utf8'), front = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? ''
+    const areas = /(?:^|\n)areas:\n((?:[ \t]+- .*\n?)*)/.exec(front)?.[1] ?? ''
+    return areas.split('\n').map(line => line.replace(/^[ \t]+- /, '').trim()).filter(Boolean).some(area => files.some(file => covers(area, file)))
+  })
 }
 
 export function createJournal(plan, options, repository) {
@@ -137,9 +148,25 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       clone(`https://github.com/${owner.repository}.git`, owner.source, cwd)
       const files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
       for (const file of files) { const pkg = json(join(cwd, file)); pkg.version = owner.version; write(join(cwd, file), pkg) }
+      const pkg = json(join(cwd, 'package.json')), kb = Boolean(pkg.scripts?.['kb:check'])
+      // Topics must be fresh before the bump; afterwards only topics whose areas cover the bumped
+      // manifests are re-checked, because a version-only commit does not change their content.
+      if (kb) { run('npm', ['ci', '--ignore-scripts'], cwd); run('npm', ['run', 'kb:check'], cwd) }
       run('npm', ['install', '--package-lock-only'], cwd)
       git(cwd, 'add', '--', ...files, 'package-lock.json')
       if (git(cwd, 'diff', '--cached', '--name-only')) git(cwd, 'commit', '-m', `Release ${owner.version}`)
+      if (kb) {
+        const kbDir = join(cwd, existsSync(join(cwd, 'kb.config.json')) ? json(join(cwd, 'kb.config.json')).kbDir ?? 'docs/kb' : 'docs/kb')
+        const topics = topicsCoveringFiles(kbDir, [...files, 'package-lock.json'])
+        const touch = existsSync(join(cwd, 'scripts/kb.mjs')) ? ['node', ['scripts/kb.mjs', 'touch']] : ['npx', ['--no-install', 'sislexa-kb', 'touch']]
+        for (const topic of topics) run(touch[0], [...touch[1], topic], cwd)
+        if (topics.length) {
+          if (pkg.scripts['kb:index']) run('npm', ['run', 'kb:index'], cwd)
+          git(cwd, 'add', '--all', '--', relative(cwd, kbDir))
+          git(cwd, 'commit', '--amend', '--no-edit')
+        }
+        run('npm', ['run', 'kb:check'], cwd)
+      }
       return git(cwd, 'rev-parse', 'HEAD')
     }
     if (action === 'gate') {
