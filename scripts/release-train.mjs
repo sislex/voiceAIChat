@@ -157,11 +157,15 @@ export function formatPlan(plan) {
 }
 
 export async function main(args = process.argv.slice(2)) {
-  if (args[0] !== 'plan' || args.length > 2 || (args[1] && args[1] !== '--json')) throw Error('Usage: node scripts/release-train.mjs plan [--json]')
+  if (args[0] === 'run') {
+    const { runCli } = await import('./release-train-run.mjs')
+    return runCli(args.slice(1))
+  }
+  if (args[0] !== 'plan' || args.length > 2 || (args[1] && args[1] !== '--json')) throw Error('Usage: node scripts/release-train.mjs plan [--json] | run [--apps a,b] [--deploy] | run --resume <id>')
   const plan = await planReleaseTrain()
   console.log(args.includes('--json') ? JSON.stringify(plan, null, 2) : formatPlan(plan))
   if (!plan.ready) process.exitCode = 1
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { console.error('Release train planning failed; check arguments, tools lock and read access'); process.exitCode = 1 })
+  main().catch(error => { console.error(error.message); process.exitCode = 1 })
 }
