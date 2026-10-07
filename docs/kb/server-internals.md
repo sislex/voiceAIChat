@@ -504,6 +504,20 @@ temporary readable files for both embedded and HTTP CLI execution.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
+### Project mode в Core (2026-10-07)
+
+`LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
+текущего участника. Структуру и дизайн рабочей копии он читает только через
+read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
+элементами, 256 КиБ на файл и 4 МиБ суммарно. Инвентарь включает package roots,
+stories, style files, CSS custom properties из `:root` и `data-theme`, простые
+JSON/TypeScript token maps и экспортированные компоненты.
+
+Git-операции project mode используют тот же `GitWorkspaceService`, что REST
+`/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
+занятость workspace и запрет push в protected branches проверяются в одном месте.
+Те же методы проходят через schema-validated `/internal/make/core` RPC.
+
 Серверная часть Make уже выделена в workspace `apps/make` (`@voicechat/make`) и умеет
 запускаться отдельно (`src/standalone/index.ts`). В compose это сервис `make:8788`, а ядро
 использует `VC_MAKE_MODE=remote`; для dev/desktop сохраняется `embedded`. Границу пакетов
