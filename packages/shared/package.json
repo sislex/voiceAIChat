@@ -17,7 +17,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.4.0-aba1a51fd2c2.tgz",
+    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.5.0-0770bfb76b35.tgz",
     "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-6494ddf245ed.tgz",
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-7eebb7eb21e7.tgz",
     "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.2.0-354b8e560bac.tgz",
