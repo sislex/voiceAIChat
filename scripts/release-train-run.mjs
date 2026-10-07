@@ -163,7 +163,8 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         if (topics.length) {
           if (pkg.scripts['kb:index']) run('npm', ['run', 'kb:index'], cwd)
           git(cwd, 'add', '--all', '--', relative(cwd, kbDir))
-          git(cwd, 'commit', '--amend', '--no-edit')
+          // A separate commit: touch records the current HEAD, which an amend would orphan.
+          git(cwd, 'commit', '-m', `docs(kb): reconcile topics after release ${owner.version}`)
         }
         run('npm', ['run', 'kb:check'], cwd)
       }
