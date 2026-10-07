@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 66 коммит(ов) в areas после сверки: 7445937b fix(kb): owner knowledge base modules are opt-in (VC_KB_OWNER_MODULES) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 25 коммит(ов) в areas после сверки: 7445937b fix(kb): owner knowledge base modules are opt-in (VC_KB_OWNER_MODULES) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 30 коммит(ов) в areas после сверки: e7b14a42 feat(shared): release disk preflight contract (release-disk-preflight-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 5 коммит(ов) в areas после сверки: c9a10310 chore(release): pin Kanban 0.2.12 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 6 коммит(ов) в areas после сверки: 1e621e08 fix(e2e): prune the Kanban stand checkout cache … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 98 коммит(ов) в areas после сверки: 7445937b fix(kb): owner knowledge base modules are opt-in (VC_KB_OWNER_MODULES) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -60,8 +60,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1098. Последние:
+Всего записей: 1099. Последние:
 
+- [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md) — task-gate-budget-300
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md) — pin-kanban-0-2-12
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md) — kanban-stand-cache-prune
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md) — task-gate-module-scope
@@ -71,7 +72,6 @@
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-make-1-4-0.md) — pin-make-1-4-0
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-9.md) — pin-kanban-0-2-9
 - [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-10-core-ui-1-5-6.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-10-core-ui-1-5-6.md) — pin-kanban-0-2-10-core-ui-1-5-6
-- [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-5-desktop-1-0-24.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-5-desktop-1-0-24.md) — pin-core-ui-1-5-5-desktop-1-0-24
 
 ## Исторические планы
 

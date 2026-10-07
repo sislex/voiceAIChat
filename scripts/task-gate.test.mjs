@@ -60,18 +60,23 @@ test('Vitest reports count cases, accept the boundary and preserve failures', ()
   const passing = reportedRun(1000)
   passing.run()
   assert.equal(passing.output.at(-1), 'GATE-TASK: tests=1000 seconds=0.010')
-  assert.equal(passing.calls[0].options.timeout, 60000)
+  assert.equal(passing.calls[0].options.timeout, 300000)
   assert.ok(passing.calls[0].args.includes('--maxWorkers=4'))
   assert.ok(passing.calls[0].args.includes('--fileParallelism'))
   assert.ok(!passing.calls[0].args.includes('related'))
   assert.ok(passing.output.some(line => line.startsWith('GATE-TASK-CASE:')))
   assert.throws(reportedRun(1, { status: 1 }).run, /Check exited 1/)
+  // Owner decision 2026-10-07: the wall-time budget is 300 seconds, so a two-minute run passes.
+  const slowButInBudget = reportedRun(1, { elapsed: 120000 })
+  slowButInBudget.run()
+  assert.equal(slowButInBudget.output.at(-1), 'GATE-TASK: tests=1 seconds=120.000')
+  reportedRun(1, { elapsed: 300000 }).run()
 })
 
 test('count and wall-time breaches exit 2 with slow-test evidence and summary', () => {
-  for (const fixture of [reportedRun(1001), reportedRun(1, { elapsed: 60001 }),
+  for (const fixture of [reportedRun(1001), reportedRun(1, { elapsed: 300001 }),
     reportedRun(1, { error: { code: 'ETIMEDOUT' } })]) {
-    assert.throws(fixture.run, error => error.exitCode === 2)
+    assert.throws(fixture.run, error => error.exitCode === 2 && /1000 tests \/ 300 seconds/.test(error.message))
     assert.ok(fixture.output.some(line => line.includes('sample.test.ts: slow case')))
     assert.match(fixture.output.at(-1), /^GATE-TASK: tests=\d+ seconds=/)
   }
@@ -98,11 +103,11 @@ test('typechecking consumes the same wall-time budget and timeout stops the plan
     { command: 'npm', args: ['run', 'should-not-run'] }
   ], { now: () => time, log: line => output.push(line), spawn() {
     calls++
-    time = 60001
+    time = 300001
     return { status: 0 }
   } }), error => error.exitCode === 2)
   assert.equal(calls, 1)
-  assert.equal(output.at(-1), 'GATE-TASK: tests=0 seconds=60.001')
+  assert.equal(output.at(-1), 'GATE-TASK: tests=0 seconds=300.001')
 })
 
 test('Node report counts leaf cases without counting describe suites twice', async () => {
