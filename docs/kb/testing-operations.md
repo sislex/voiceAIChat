@@ -1,7 +1,6 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-06
-checked: 58747772
+updated: 2026-10-07
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -15,6 +14,9 @@ areas:
 ---
 
 # Разработка, тестирование, диагностика и эксплуатация
+
+Module details: `core-ui:README.md`
+Module details: `web-reader:README.md`
 
 ## Task gate for the dev lane
 
@@ -35,7 +37,8 @@ verification are added. Root, lockfile and configuration changes never escalate
 this mode to the full gate; promotion owns that coverage. A docs-only or empty
 diff runs `npm run kb:check` only. Failure to read the diff fails closed.
 
-The task budget is 100 test cases and 60 seconds of total wall time, including
+The task budget is 1000 test cases and 300 seconds (5 minutes, owner decision
+2026-10-07) of total wall time, including
 planning and typecheck. Each command receives the remaining timeout. Reports
 count actual cases (not files), with `GATE-TASK-CASE:` evidence; a breach exits 2, prints `GATE-TASK-SLOW:` and then the
 test files sorted by duration plus unfinished files/commands, one per line. Ordinary failures exit 1. Every
@@ -225,21 +228,9 @@ claim live-provider acceptance. Artifacts live in `artifacts/onboarding/`.
 The embedded LLM Runner remains tracked in the extraction completion plan;
 this increment is not final completion.
 
-## Лимит одного теста: 60 секунд во фронтенде
-
-`testTimeout` у `@voicechat/ui` и `@voicechat/ui-kit` — 60 секунд, как у сервера.
-Двадцати не хватало не тестам, а машине: в релизном regression воркспейсы
-гоняются параллельно и голодают по CPU, поэтому dom-тест, который локально идёт
-0,4 с, упирался в лимит на 21-й секунде. Так подряд упали две релизные сборки —
-`release/0.1.226` (ImageStudioPane, кнопка «Вернуть») и `release/0.1.227`
-(App.projects, «Открыть чат»), причём на разных тестах, что и указывает на
-окружение, а не на код. Настоящее зависание 60-секундный лимит всё равно
-поймает; если сборки продолжат упираться в него, лечить надо загрузку машины
-подготовки, а не лимит.
-
 ## Проверки Reader frontend
 
-Оба Reader workspace имеют собственные `typecheck` и `test`. Unit-наборы проверяют route round-trip, независимые conversation selectors, preview fallback без материализации, stale-response protection, browser-session lifecycle/capability degradation и dispose. Architecture tests запрещают host/chatStore/cross-Reader imports, transports, browser storage и imports исходников recorder/browser-runner. `frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces. Корневые `frontend:typecheck` и `frontend:test` запускают пакеты отдельно; `verify:frontend` затем выполняет web build, bundle gate, Storybook build и desktop web build. Наличие команд в gate зафиксировано кодом, но KB не утверждает, что конкретный merge SHA прошёл их, если результат запуска не сохранён.
+`frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces. Корневые `frontend:typecheck` и `frontend:test` запускают пакеты отдельно; `verify:frontend` затем выполняет web build, bundle gate, Storybook build и desktop web build. Наличие команд в gate зафиксировано кодом, но KB не утверждает, что конкретный merge SHA прошёл их, если результат запуска не сохранён.
 
 ## Установка зависимостей
 
@@ -284,7 +275,9 @@ missing their separate dependencies produces TS2307 for `electron` and
 `src/kanban/standalone/index.ts` из чекаута того коммита, который закрепил compose
 (`SISLEXA_KANBAN_IMAGE`). Чекаут — `SISLEXA_KANBAN_SOURCE`, иначе кэш
 `npm run e2e:kanban-stand` (`scripts/kanban-stand-prepare.mjs`: `~/.cache/sislexa/kanban/<коммит>`
-или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`), иначе соседний `../sislexa-kanban`.
+или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`; после каждой подготовки кэш оставляет
+`VC_E2E_KANBAN_CACHE_KEEP` (по умолчанию 3) последних по использованию чекаутов — время использования
+хранит маркер `.sislexa-e2e-ready`), иначе соседний `../sislexa-kanban`.
 Деревья сравниваются с закреплённым коммитом (merge-коммит с тем же содержимым подходит;
 `SISLEXA_KANBAN_SOURCE_ANY_COMMIT=1` снимает проверку). `scripts/browser-gate.mjs` готовит
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
@@ -923,15 +916,6 @@ positive tests». `terminate()` безопасен в любом состоян�
 
 Эти же слои автоматизирует **самодиагностика чата** прямо из UI: команда `самодиагностика чата` / `/chat-diagnostics` в композере любого разговора прогоняет 11 проверок (transport → backend → model → persistence → store) и публикует пошаговый результат служебными сообщениями в саму беседу, останавливаясь на первом провале с указанием слоя. Быстрый способ проверить весь путь «клиент → сервер → модель → БД» глазами пользователя, без devtools. Реализация и список шагов — [ui.md](ui.md), раздел про самодиагностику.
 
-## Известные дефекты dev-режима браузера (2026-08-24)
-
-Два независимых дефекта ломают вход в dev-режиме (`npm run dev:web`, Vite + React development build) и не проявляются в production-сборке; оба воспроизводятся на чистом main и не связаны с Web Reader:
-
-- **React StrictMode + одноразовый dispose runtime.** `useCreateAppRuntime` создаёт runtime в `useMemo`, а эффект на StrictMode-цикле mount → cleanup → mount вызывает `runtime.dispose()` и затем `start()` на уже необратимо disposed runtime: все `setState` доменных сторов молча блокируются, `check()`/`login()` не устанавливают `currentUser`, и приложение навсегда остаётся на экране «Вход», хотя сетевые запросы (login 200, bootstrap) проходят.
-- **Redux DevTools-обёртка зацикливает эффекты.** `createReduxDevToolsDiagnostics` оборачивает `store.actions` в Proxy, чей `get` создаёт новую функцию на каждый доступ; зависимость `useEffect(..., [path, setSidebarOpen])` в `App.tsx` меняется на каждом рендере, а `setState` без bail-out уведомляет подписчиков даже без изменения значения — при установленном расширении Redux DevTools рендер падает в «Maximum update depth exceeded» и экран пуст. Без расширения обёртка неактивна и дефект не виден.
-
-**Исправлено 2026-08-25:** dispose runtime в `useCreateAppRuntime` откладывается на тик и отменяется повторным StrictMode-mount (регресс — StrictMode-тест в `App.dom.test.tsx`), а Proxy devtools кэширует обёртки actions (стабильные ссылки; тест в `store/devtools.test.ts`). Dev-вход работает без обходов.
-
 ## Docker
 
 Dockerfile многостадийный: устанавливает workspace dependencies, собирает web, формирует runtime с server source, shared и необходимыми системными binary/libs. Приложение слушает configurable `HOST/PORT`, persistent data монтируется в `VC_DATA_DIR`.
@@ -1036,22 +1020,6 @@ drill against the retained set before applying a production retention plan.
 ## База знаний
 
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
-
-## Проверки Operations frontend
-
-Пакет имеет собственные команды `typecheck` и `test`. `routes.test.ts` покрывает round-trip публичных hash routes и базовые POSIX/Windows path helpers; `operationsStore.test.ts` проверяет stale machine response, повторный `dispose` и независимость закрытия Explorer от Console. `architecture.test.ts` сканирует TypeScript-исходники и запрещает host stores, прямые transports, platform apps и явные имена token-полей. JSDOM setup находится в `src/test/setup.ts`.
-
-`packages/ui/.storybook/main.ts` включает stories пакета. `Operations.stories.tsx` содержит состояния online/offline, utility, restricted policy, Explorer, LLM History, Knowledge Base, CI и diagnostics; это независимые поверхности без production transport. Проверки запускаются `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`; общий проектный гейт остаётся `npm run affected-check`.
-
-## Проверки Administration frontend
-
-`@voicechat/admin-app` имеет собственные `typecheck` и `test`, JSDOM setup, route, store stale-response/dispose, DOM и architecture tests. Architecture suite запрещает host stores, apps/web/apps/desktop, прямые fetch/WebSocket/Electron API, глубокие host imports и browser storage. Storybook host включает `packages/admin-app/src/**/*.stories.tsx`. Штатный итоговый гейт — `npm run affected-check`; после переноса он прошёл fast и full stages.
-
-## Проверки App Shell
-
-`@voicechat/app-shell` запускает `npm run -w @voicechat/app-shell typecheck` и `npm run -w @voicechat/app-shell test`; Vitest использует JSDOM и `src/test/setup.ts` с jest-dom. `registry.test.ts` проверяет role gate до lazy load и диагностику конфликтующих route examples. `runtime.test.ts` подтверждает независимость нескольких runtime/store экземпляров, раздельные load/createStore/bootstrap и продолжение cleanup после ошибки одного ресурса, включая повторные logout/dispose.
-
-`architecture.test.ts` рекурсивно сканирует TypeScript исходники App Shell и запрещает импорты Chat/Projects/Operations/Admin, host `@voicechat/ui`, platform apps и прямые обращения к перечисленным `window.*` bridges. Storybook host включает stories App Shell, Chat, Projects, Operations и Admin.
 
 ## Единый frontend quality gate
 

@@ -1,26 +1,21 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-22
-checked: 60c3f73a
+updated: 2026-10-07
 areas:
-  - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
   - apps/server/src/session.ts
   - apps/server/src/turns.ts
-  - packages/app-shell/src
-  - packages/ui/src/index.ts
-  - packages/ui/src/createApplication.ts
-  - packages/ui/src/adapters
-  - packages/ui/src/remote
-  - packages/web-reader-app
-  - packages/playwright-reader-app
-  - apps/web/src/main.tsx
 ---
 
 # Архитектура: кто с кем разговаривает
+
+Module details: `voice:README.md`
+
+Module details: `playwright-reader:README.md`
+Module details: `core-ui:README.md`
 
 ## Core frontend ownership
 
@@ -74,20 +69,10 @@ Fastify-процесс или модуль ядра. REST `/api/browser/*` и и
 `PlaywrightReaderService`; встроенный и отдельный режимы обоих ридеров сочетаются
 независимо. Подробнее — [Playwright Reader](features/playwright-reader.md).
 
-Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`; каждый владеет маршрутом, conversation read model, browser surface, store и lifecycle. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Разрешённая product-зависимость Reader → публичный `@voicechat/chat-app` нужна только для `SplitChatWorkspace`; architecture gates запрещают обратную связь и cross-Reader imports.
-
 Рабочий host загружает панели через `applicationHost.tsx`: собственные IIFE/CSS,
 манифест, версия и SRI. Реализации панелей не входят в основной web bundle.
-`moduleRegistry.ts` сохраняет переходные Reader surfaces; оркестрация разговоров
-и общие эффекты ещё находятся в `App.tsx`. Отдельный выпуск панели не означает
-полного переноса всех host-адаптеров в новый store.
 
-Web Reader API отделён в `apps/web-reader`, iframe в `apps/web-recorder` входит
-в его образ и выпуск. Прокси ядра сохраняет origin под `/web-recorder/`.
-`ReaderCore` и HTTP-клиент находятся в `packages/web-reader-contracts`, порты
-Playwright — в `packages/playwright-reader-contracts`, клиент Chromium — в
-`packages/browser-contracts`. API Reader не имеют общей БД и не импортируют
-реализацию браузерного раннера. Релизы `web-reader`, `web-reader-ui`,
+Прокси ядра сохраняет origin под `/web-recorder/`. Релизы `web-reader`, `web-reader-ui`,
 `playwright-reader`, `playwright-reader-ui` и `browser-runner` независимы;
 диапазоны совместимости проверяются перед deploy.
 
@@ -175,23 +160,7 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 тестируется без DOM, React подключается через `store/react.tsx`. После CHAT-236 он
 отвечает только за аудио: готовую транскрипцию он публикует событием, а разговор
 создаёт и реплику сохраняет `chatStore` — их сводит `runtime/appRuntime.ts`.
-Карта доменов состояния — [ui.md](ui.md#слои).
-
-Озвучка идёт по мере готовности предложений: `sentences.ts` (shared + ui) режет
-поток токенов на произносимые фразы, `lib/ttsPlayer.ts` играет их очередью.
-VAD (`lib/vad.ts`) даёт hands-free и barge-in.
-
-## Платформенно-независимый frontend runtime
-
-`createAppRuntime(ports, modules)` из `packages/app-shell/src/runtime.ts` создаёт независимые shell/session/settings/voice stores и `ModuleRegistry`; общего singleton и публичного универсального `setState` у runtime нет. Платформенные эффекты приходят через `ApplicationPorts`: session/settings/voice clients, `AppShellHost`, optional reconnect и cleanup. `packages/ui/src/createApplication.ts` предоставляет тонкую обёртку `createApplication({ bridges, modules? })`, а `createBrowserAdapters` собирает browser location/logging host из переданных clients, не создавая сеть при импорте.
-
-При активации registry сначала применяет `visible` и role gates к parser-кандидатам, и только затем runtime выполняет отдельные стадии `module.load()`, optional `createStore()` и `bootstrap()`. Экземпляр модуля кэшируется по id; realtime-события направляются подписчикам owner id. Logout/dispose собирают dispose загруженных модулей, зарегистрированные cleanup, reconnect unsubscribe и остановку voice, исполняют их через `Promise.allSettled`, поэтому отказ одного ресурса не отменяет остальные попытки; повторные logout/dispose защищены общими promises. После logout session очищается и host делает replace-переход на `#/`.
-
-Это новый composition path, но ещё не единственный frontend runtime: `packages/ui/src/index.ts` продолжает экспортировать legacy `App.tsx` с прежним host runtime и продуктовыми компонентами. Web/desktop bootstrap этим изменением на `createApplication` не переведён.
-
-## Единый контейнер popup
-
-Все модальные поверхности UI используют `PopupFrame`: он владеет overlay, `role=dialog`, кликом по фону и обработкой Escape. `ToolFrame` остаётся надстройкой для тулов и полноэкранного режима, но его modal-вариант также построен на `PopupFrame`.
+The Core UI state-domain map is documented in `core-ui:README.md`.
 
 ## Tool repository ownership
 
