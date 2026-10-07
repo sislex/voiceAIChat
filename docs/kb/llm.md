@@ -1,7 +1,6 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-29
-checked: 8ed7728f
+updated: 2026-10-07
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -573,7 +572,7 @@ Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/
 `LlmRequest.previewMcpUrl`, хинт — `previewToolHint()`
 (`packages/shared/src/previewActions.ts`); сервер лишь транслирует действие
 клиентам по WS (`preview.action`/`preview.result`) и ждёт ответ, исполняет его
-браузер с активным чатом хода. Детали — [ui.md](ui.md#веб-превью).
+браузер с активным чатом хода. Module details: `web-reader:README.md`.
 
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
