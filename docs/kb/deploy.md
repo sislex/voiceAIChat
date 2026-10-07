@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-07
-checked: dd777731
+checked: 7a977975
 areas:
   - scripts/dev-gateway.mjs
   - scripts/dev-component.mjs
@@ -35,6 +35,8 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+Module details: `llm-runner:README.md`
 
 ## Dev stand gateway and Core component (C02)
 
@@ -414,55 +416,8 @@ runner host and owner deployment procedure.
 
 ## Аутентификация CLI живёт в контейнере
 
-Логин CLI теперь живёт не в контейнере сервера, а в контейнерах исполнителя:
-`runner-work` и `runner-personal`. Персональные профили пользователей лежат внутри
-`VC_DATA_DIR/cli-users/<base64url(user)>`; сервер видит только HTTP API
-исполнителя и bearer-токен к нему. Общий `HOME` исполнителя нужен лишь как seed
-для auth/config.
-
-`runner-work` переиспользует прежние volume `vc-claude` / `vc-codex`, поэтому рабочая
-авторизация переезжает без повторного логина. Его профили пользователей теперь
-живут в отдельном volume `vc-runner-work-data`; при первом старте entrypoint
-копирует туда старое дерево `vc-data:/data/cli-users`, чтобы не потерять
-историю сессий, usage и generated images. `runner-personal` хранит свои volume
-авторизации и профилей отдельно и требует одноразового `claude auth login` внутри
-контейнера.
-
-Для осознанного общего сервисного аккаунта Codex включите у исполнителя
-`VC_CODEX_SHARED_AUTH=true`. Тогда `.codex/auth.json` каждого пользовательского
-профиля перезаписывается общим источником при каждом запуске (`seedFile(..., overwrite=true)`
-в `cliProfiles.ts`); истории, сессии и рабочие каталоги остаются раздельными.
-По умолчанию режим выключен.
-
-**Источник общего auth зависит от `VC_CODEX_SHARED_AUTH_USER`, и это ловушка при
-`codex login`.** Если переменная задана (напр. `admin`), источник — не `HOME/.codex/
-auth.json`, а профиль этого пользователя: `<dataDir>/cli-users/<base64url(логин)>/.codex/
-auth.json` (в проде `/data/cli-users/YWRtaW4/.codex/auth.json` для `admin`; `YWRtaW4`
-= base64url `admin`). Пустая переменная — источник действительно `HOME/.codex/auth.json`.
-Поэтому обычный `codex login` внутри `runner-work` пишет в `HOME` (`/home/node/.codex`)
-и **не вступает в силу**: раздаётся всем по-прежнему старый токен из профиля админа,
-а ходы Codex падают с `401 invalid_refresh_token` (токены ChatGPT-логина протухают).
-Логиниться нужно в профиль-источник:
-
-```bash
-docker exec -it -e CODEX_HOME=/data/cli-users/YWRtaW4/.codex \
-  voiceaichat-runner-work-1 codex login
-```
-
-либо, залогинившись в дефолтный HOME, скопировать результат в профиль-источник
-(`cp -f /home/node/.codex/auth.json /data/cli-users/YWRtaW4/.codex/auth.json`).
-После этого фикс расходится на остальных сам — профили пересеиваются на следующем
-ходе, перезапуск контейнеров не нужен. Codex установлен только в `runner-work`
-(в `runner-personal` он выключен через `VC_CODEX_BIN=/bin/false`). Проверка
-живого токена: `codex login status` говорит «Logged in» и на протухшем токене —
-доверяй не ему, а реальному прогону `echo … | codex exec --json --skip-git-repo-check -`
-(инцидент 2026-08-25).
-
-Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
-`/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
-профиль пользователя внутри соответствующего исполнителя. Именно исполнитель
-читает `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`; bind-mount
-общих `.claude` / `.codex` в серверный контейнер для этих функций больше не нужен.
+Core boundary: сервер видит только HTTP API
+исполнителя и bearer-токен к нему.
 
 ## HTTPS по IP
 
@@ -549,7 +504,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.12, SHA `bc31be1f190398b004a0775d7f5b375e4b809241` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.12 подмена Make на стенде без данных Make начинается с пустого каталога; с 0.2.11 подмены стенда разработки получают расшифрованные секреты стенда и путь к Docker для данных Make, база знаний Kanban; с 0.2.10 проверка места на машине сборки и проде перед созданием релизной ветки и деплоем (`release_disk_low`, подтверждение владельцем), асинхронные операции стенда разработки с настройками стенда и адресами шлюза; с 0.2.9 стенды разработки, гейт задачи и режим разработки (dev-lane-v1 C03, C07); с 0.2.8 подключение базы знаний репозитория к проекту через модули Core и shared 0.1.23; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.13, SHA `70370ce3bdec3433b8f3d7370332081fb2d407fa` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.13 после деплоя прода удаляются неиспользуемые образы (кроме образов предыдущего выпуска) и старые резервные копии, а диск прода проверяется раз в 30 минут с уведомлением проекта; с 0.2.12 подмена Make на стенде без данных Make начинается с пустого каталога; с 0.2.11 подмены стенда разработки получают расшифрованные секреты стенда и путь к Docker для данных Make, база знаний Kanban; с 0.2.10 проверка места на машине сборки и проде перед созданием релизной ветки и деплоем (`release_disk_low`, подтверждение владельцем), асинхронные операции стенда разработки с настройками стенда и адресами шлюза; с 0.2.9 стенды разработки, гейт задачи и режим разработки (dev-lane-v1 C03, C07); с 0.2.8 подключение базы знаний репозитория к проекту через модули Core и shared 0.1.23; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
@@ -2129,69 +2084,6 @@ archive passed `pg_restore --list` with 1,155 entries, and the copied archive an
 Billing snapshot hashes match their server copies. This validated archive
 readability, not a restore drill. The 0.1.329 Core image, Identity 1.3.2 image,
 Billing 1.2.1 image and UI 1.3.1 release remain available as rollback inputs.
-
-## Image Studio executor repair (LLM Runner 0.3.4)
-
-Image Studio generation failed on the separate runner host with `bwrap: No
-permissions to create new namespace`. Ubuntu 24.04 AppArmor restricted the
-unprivileged user namespace that Codex `workspace-write` uses. LLM Runner 0.3.2
-introduced the repository-owned `llm-runner-bwrap` AppArmor profile and applies
-it only to the Codex-enabled work runner together with `no-new-privileges` and an
-unconfined seccomp policy. The production container has no added capabilities and
-does not use privileged mode. A real Bubblewrap namespace probe passes there.
-
-The same investigation found that the image lacked the rendering tools named by
-the Image Studio prompt. LLM Runner 0.3.3 adds Python Pillow and ImageMagick.
-Version 0.3.4 (`63514a5eda882272100c7cb426aabc72f85cdd56`) also defaults a
-user-scoped run without a project `cwd` to the user's isolated profile home. This
-is writable by Codex and is the same root exposed through the authenticated
-Runner file API. PRs #12 through #14, their release gates, and all local gates
-passed. The 0.3.4 GHCR publish job was blocked before runner allocation by the
-GitHub account billing/spending limit. That incident led to the server-owned
-release flow described below; no account or registry fix is now required.
-
-Production runs image `sislexa-llm-runner:0.3.4-63514a5eda88`; all three runner
-containers are healthy. Pillow and ImageMagick produced valid PNGs. A real Codex
-`acceptEdits` run with no `cwd`, matching Image Studio, created a 32×32 PNG in the
-user profile; `/v1/files/read` returned the valid PNG to the caller. The temporary
-profile and generated file were removed.
-
-The deployment preserved the six runner volumes. Its stopped-writer archive is
-`/var/backups/llm-runner/0.3.2-fdec065ed501/profiles.tar.gz`, with SHA-256
-`6925c7afef09cb9621303a3dbfc1c52d9110bda46912751f4a96b71c0bc64fc9`.
-The final 0.3.4 configuration and rollback inventory are in
-`/var/backups/llm-runner/0.3.4-63514a5eda88`; the previous 0.3.3 image remains
-available for rollback.
-
-## Server-owned LLM Runner releases (0.3.5)
-
-LLM Runner PR #15 removed its GitHub Actions workflow and GHCR dependency.
-Release tag `v0.3.5` at commit
-`ad0819ab77d17eb4abfc993f7a603de8499f1440` created no Actions run. The dedicated
-runner host now checks out the exact tag, reruns the canonical gate, Compose
-tests and dependency audit, builds the `linux/amd64` image, then checks the
-authenticated API, Bubblewrap, Pillow and ImageMagick in a disposable container.
-It writes an atomic release manifest only after every check succeeds.
-
-The first server-owned run passed 489 Vitest cases, eight operational Node tests,
-four package/release tests, five Compose tests and an audit with zero
-vulnerabilities. Its manifest is
-`/opt/llm-runner/releases/ad0819ab77d17eb4abfc993f7a603de8499f1440/release.json`.
-Production pins immutable image ID
-`sha256:5e18dcd5db0813b67f57a5da259041b1b12d49949895d5d13407a7fe6e654f7c`
-instead of a mutable tag. Work, personal and callbacks are healthy; both
-executors report zero active runs. The work service retains
-`no-new-privileges`, `seccomp=unconfined`, and `apparmor=llm-runner-bwrap`, with
-no added capabilities and without privileged mode.
-
-The first deployment attempt passed both new-image smoke checks, then its
-operator helper failed while writing the persistent image reference. Automatic
-recovery restored 0.3.4 and reopened Core and automation. The corrected second
-attempt deployed 0.3.5 and atomically updated `RUNNER_IMAGE`. Records are in
-`/var/backups/llm-runner/0.3.5-ad0819ab77d1` and
-`/var/backups/llm-runner/0.3.5-ad0819ab77d1-attempt2`; 0.3.3 and 0.3.4 remain as
-rollback images. Core, automation, Image Studio API/UI and the public signup
-probe were healthy after deployment.
 
 ## Delivery Control coordinator foundation (2026-09-24)
 

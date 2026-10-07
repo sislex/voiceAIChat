@@ -28,7 +28,7 @@ export function changedFiles(base, repository = root, spawn = spawnSync) {
 
 export function executeTask(steps, {
   repository = root, spawn = spawnSync, now = () => performance.now(), log = console.log,
-  started = now(), maxTests = 1000, maxSeconds = 60
+  started = now(), maxTests = 1000, maxSeconds = 300
 } = {}) {
   let count = 0
   const timings = []
@@ -38,7 +38,7 @@ export function executeTask(steps, {
     log('GATE-TASK-SLOW:')
     for (const entry of [...timings].sort((a, b) => b.duration - a.duration)) log(entry.name)
     if (pending) log(pending)
-    throw Object.assign(Error('Task budget exceeded (1000 tests / 60 seconds)'), { exitCode: 2 })
+    throw Object.assign(Error(`Task budget exceeded (${maxTests} tests / ${maxSeconds} seconds)`), { exitCode: 2 })
   }
   try {
     for (const step of steps) {

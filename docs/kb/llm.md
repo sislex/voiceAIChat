@@ -1,7 +1,6 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-09-29
-checked: 8ed7728f
+updated: 2026-10-07
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -31,6 +30,8 @@ areas:
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
 
+Module details: `llm-runner:README.md`
+
 ## Independent runner boundary
 
 Core consumes LLM Runner 0.3.1 from `sislex/llm-runner`. The `apps/llm-runner`
@@ -53,20 +54,11 @@ owner's original source layout.
 
 ## Scoped preview generation
 
-Runner `POST /v1/preview-grants` and DELETE by grant ID require the existing master Runner token. A grant binds project/task/run/user/provider/model and only the `generate` operation, expires within two hours, and stores its opaque token hashed in memory. Restart revokes all grants; explicit revoke and the one-second TTL sweep cancel active CLI children. Scoped tokens authorize only exact `POST /v1/run`, never health, filesystem, cancellation or grant issuance.
-
-The preview gateway removes caller-supplied user identity, cwd, MCP configuration and session continuation before forwarding generation. Runner also validates the narrow body and enforces the grant's identity/model. Claude receives `--tools ""`, an empty strict MCP configuration, empty setting sources and disabled session persistence. No CLI home or credentials enter a preview container.
-
-Codex grants currently fail closed with `preview_text_only_unavailable`. Existing `executionDisabled` is insufficient isolation: Claude previously disabled only Bash, and Codex used a prompt hint while its default invocation could retain bypass flags. This implementation does not present that hint as a security boundary.
+The preview gateway removes caller-supplied user identity, cwd, MCP configuration and session continuation before forwarding generation.
 
 ## Модель вызывается как CLI, а не по API
 
-`ClaudeCli` (`apps/llm-runner/src/cli/claudeCli.ts`) делает
-`spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose',
-'--include-partial-messages', '--model', …])`, при необходимости
-`--permission-mode` и `--resume <sessionId>`. `spawn` инжектируется — все тесты
-работают на фейковом процессе, реальный CLI в тестах не запускается. Аналогично
-`CodexCli` для `codex`; выбор движка — настройка `llmProvider`, а разговор может
+выбор движка — настройка `llmProvider`, а разговор может
 переопределить движок и модель через `conversations.llm_provider`/`llm_model`
 (`null` — наследовать настройки). Исполнитель выбирается отдельно через `llmEngineId`
 (разговор сильнее общих настроек); сервер проверяет роль/enabled/kind и при
@@ -92,11 +84,9 @@ Codex grants currently fail closed with `preview_text_only_unavailable`. Existin
 совместимо, но раздел настроек, кнопка и клиентские actions помощника отсутствуют.
 `ConversationSettings` редактирует LLM-переопределение конкретного разговора на адресуемой вкладке `/chat/:id/settings/general`: общий `LlmSettingsEditor` показывает исполнитель, провайдер и модель, а `showEngine` сохраняет видимость селектора даже при пустом каталоге персональных engine. Изменение записывает `llmEngineId`, `llmProvider` и `llmModel` только в разговор. Сброс выключает override и при сохранении передаёт для всех трёх полей `null`; это возвращает динамическое наследование эффективных проектных/пользовательских настроек. Вкладка `/chat/:id/settings/context` содержит `ContextInspector`, а legacy `/chat/:id/context` заменяется этим каноническим адресом. У
 Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
-`opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`: id уходит в
-`claude --model` как есть, включая суффикс окна `[1m]`. У Codex актуальный каталог
+`opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`. У Codex актуальный каталог
 состоит из `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
-`gpt-5.5`; первый пункт является `DEFAULT_CODEX_MODEL`. Выбранный id передаётся
-в `codex -m` дословно, без алиаса. Чистая проекция `chatModelMenu` считает чат
+`gpt-5.5`; первый пункт является `DEFAULT_CODEX_MODEL`. Чистая проекция `chatModelMenu` считает чат
 новым только при `messageCount === 0`. Тогда верхний уровень содержит пять
 доступных `CODEX_MODELS`, пункт «Скорость работы» и пункт «Модели» с доступными
 `CLAUDE_MODELS`. После появления сообщения верхний уровень содержит только
@@ -107,17 +97,13 @@ legacy-модель сохраняется в полном каталоге. В�
 
 «Скорость работы» — одиночный выбор `reasoningEffort=low|medium|high|xhigh|max`,
 а `deepThinking` — независимый переключатель, поэтому одно значение не сбрасывает
-другое. Оба входят в `LlmRequest`. Claude получает `--effort`: `xhigh`
-безопасно преобразуется в `high`, а `deepThinking=true` — в `max`. Codex
-получает `model_reasoning_effort` (его `max` преобразуется в `xhigh`) и при
-глубоком мышлении `model_reasoning_summary="detailed"`. Неизвестные CLI-флаги
-не передаются; преобразования зафиксированы тестами fake spawn.
+другое. Оба входят в `LlmRequest`.
 
 Старые значения из БД/настроек не ломают ход: `normalizeClaudeModel` тянет их к пункту меню по
 префиксу алиаса (`opus`, `opus-4.5` → `opus[1m]`; неизвестное → `default`), а
 `turns.ts` нормализует Claude до проверки персонального доступа. Пустая модель
 codex (прежний пункт «По умолчанию (из codex)») по-прежнему допустима —
-исполнитель тогда не добавляет `-m`, а UI показывает её отдельным пунктом, как
+UI показывает её отдельным пунктом, как
 любую модель не из пресетов.
 
 Дефолты новых пользователей — `DEFAULT_SETTINGS.model = 'default'` и
@@ -126,29 +112,14 @@ codex (прежний пункт «По умолчанию (из codex)») по-
 задаёт только персональный deny-list. У CI своя константа
 `DEFAULT_CI_CLAUDE_MODEL = 'opus'` (`packages/shared/src/ci.ts`), и она
 намеренно осталась прежней: ран отдаёт `ci_runs.llm_model` в `--model` без
-нормализации (`modelFor` в `ci/modelHooks.ts`), а голый алиас `opus` CLI
-по-прежнему понимает. В меню его нет, поэтому селекты дорисовывают такую
+нормализации (`modelFor` в `ci/modelHooks.ts`). В меню его нет, поэтому селекты дорисовывают такую
 модель отдельным пунктом — см. [features/ci-runner.md](features/ci-runner.md).
 
-Отсюда два следствия: (1) аутентификация — это `claude login` / `codex login` на
-хосте или в контейнере runner-а, ключей в конфиге нет; (2) ошибки CLI переводятся в
-человеческие сообщения (`ENOENT` → «установите Claude Code», stderr про
-авторизацию → «выполните `claude login`»), не выбрасывай их наружу как есть.
-
-В Docker-проде CLI разведены по двум внутренним сервисам compose: `runner-work`
-(рабочие `claude` + `codex`, без публикации порта наружу) и `runner-personal`
-(отдельный личный `claude`). Серверный образ `claude`/`codex` больше не содержит:
-он разговаривает с runner-ами по HTTP и хранит только URL/токен.
-
-**Сами CLI-классы живут не на сервере.** `claudeCli.ts`, `codexCli.ts`,
-`childKill.ts`, `mcp.ts` и `cliProfiles.ts` переехали в воркспейс исполнителя
-(`apps/llm-runner`), а контракт `LlmRequest`/`LlmClient` — в
-`packages/shared/src/llm.ts`. Запрос следующего хода содержит provider-neutral
+The `LlmRequest`/`LlmClient` contract is in `packages/shared/src/llm.ts`.
+Запрос следующего хода содержит provider-neutral
 `reasoningEffort` (`low|medium|high|xhigh|max`) и независимый `deepThinking`;
 Core фиксирует оба значения до старта хода и передаёт исполнителю.
-`apps/server/src/claude/types.ts` остался реэкспортом общего контракта. Сервер пока зовёт классы напрямую через
-`@voicechat/llm-runner/cli`, но сам `spawn` уже не содержит — см.
-[features/llm-runners.md](features/llm-runners.md).
+`apps/server/src/claude/types.ts` остался реэкспортом общего контракта.
 
 **Одноразовые вызовы без разговора.** KB-reranker (`kb/reranker.ts`) вызывает
 `LlmClient.send` напрямую с `sessionId: null`, `permissionMode: 'plan'`,
@@ -161,13 +132,7 @@ Core фиксирует оба значения до старта хода и п
 читает локальный `HOME`: при настроенном исполнителе `routes/rest.ts` получает
 снимок через `RunnerFsClient.authStatus()` (`GET /v1/auth/status?userId=...`).
 Если Claude и Codex живут на разных исполнителях, клиент сшивает ответ из двух
-половин. Для Claude авторитетен результат `claude auth status --json`, запущенный
-с `HOME` профиля пользователя (`apps/llm-runner/src/auth/loginStatus.ts`): наличие
-`.credentials.json` не означает действующую авторизацию. `loggedIn: true` выдаётся
-только при нулевом exit code и JSON-поле `loggedIn: true`; отрицательный результат
-и подтверждённые признаки повторного входа дают фиксированное безопасное сообщение
-без передачи stdout/stderr и `loggedIn: false` (`packages/shared/src/auth.ts`).
-Codex сохраняет проверку `~/.codex/auth.json`/`OPENAI_API_KEY`.
+половин.
 
 Сервер хранит единое per-user состояние: `/api/auth/status` читает его же, а при
 каждом подключении `/ws` отправляется полный кадр
@@ -177,16 +142,6 @@ Codex сохраняет проверку `~/.codex/auth.json`/`OPENAI_API_KEY`.
 снимок, история не воспроизводится. UI инициализирует и обновляет статус этими
 кадрами; периодического polling `/api/auth/status` нет, HTTP-маршрут сохранён для
 диагностики и обратной совместимости.
-
-**У каждого пользователя свой HOME для CLI** (`apps/llm-runner/src/cli/cliProfiles.ts`):
-`<dataDir>/cli-users/<base64url(логин)>/` с `.claude` и `.codex` внутри. Из общего
-HOME контейнера копируются только файлы авторизации и конфигурации — история,
-`projects/` и `sessions/` не копируются, чтобы пользователи не видели чужие
-сессии. При каждом обращении повреждённый или окончательно просроченный OAuth
-Claude восстанавливается из действующего общего профиля, но рабочие
-пользовательские токены никогда не перезаписываются. При локальном запуске
-`buildServer` всё ещё передаёт движкам `profileHome(userId)`, но проводник CC/Codex
-и статус логина при настроенном исполнителе теперь читаются только через его HTTP API.
 
 ## Исполнитель по HTTP (`RemoteLlmClient`)
 
@@ -200,37 +155,20 @@ stdout CLI, поэтому разбор stream-json/JSONL, usage и `session_id`
 ход от локального.
 
 `LlmRequest.attachments` carries file bytes together with the authoritative
-`serverPath` used in the prompt. `prepareLlmAttachments` in
-`apps/llm-runner/src/cli/attachments.ts` materializes those bytes in a temporary
-`voicechat-llm-run-*` directory and rewrites every mentioned `serverPath` to the
-local copy. Both embedded `ClaudeCli`/`CodexCli` and the HTTP `RunManager` call
-the same helper and clean the directory after completion, cancellation, client
-disconnect, or a synchronous spawn failure. A producer must mention the exact
+`serverPath` used in the prompt. A producer must mention the exact
 `serverPath` in its prompt; `runnerName` alone does not create a path that the
-model can discover. `cwd` remains a desired path: the HTTP runner validates it
-on its own host and simply omits an unavailable directory from `spawn`.
+model can discover.
 
 Общее место разбора — `llm/sinks.ts`: приёмник строк (`createClaudeSink` /
-`createCodexSink`) отделён от способа их получить, им пользуются и локальные
-CLI-классы, и `RemoteLlmClient`. Там же живут `describeClaudeExit` /
+`createCodexSink`) отделён от способа их получить, им пользуется `RemoteLlmClient`. Там же живут `describeClaudeExit` /
 `describeCodexExit`, накопление usage и единичный финал `onDone|onError`.
 Заводишь новый транспорт — кормишь тот же приёмник, а не копируешь `switch` по
 событиям.
 
 `runId` рана генерирует СЕРВЕР до запроса: иначе отмену до первого байта ответа
-некуда адресовать. `LlmHandle.cancel()` шлёт `DELETE /v1/run/:id` (исполнитель
-убивает свой CLI) и рвёт поток.
+некуда адресовать. `LlmHandle.cancel()` шлёт `DELETE /v1/run/:id` и рвёт поток.
 
-Codex resume с непустым `sessionId` получает в `RunManager` эксклюзивную аренду по
-паре `userId + sessionId` до подготовки вложений и `spawn`. Пока владелец жив,
-второй `POST /v1/run` получает `409 { error: 'codex_thread_in_use' }` без запуска
-CLI. Разные thread одного пользователя, одинаковый thread разных пользователей и
-новые Codex-сессии без `sessionId` продолжают выполняться параллельно; Claude эта
-аренда не затрагивает. Аренда принадлежит `runId`, освобождается идемпотентно только
-владельцем после окончательного `close` (с любым кодом), синхронной ошибки `spawn`,
-события `child.error` либо при abandon из-за обрыва клиента/orphan-timeout. Один
-`SIGTERM` при `DELETE` аренду не снимает: новый resume разрешается после
-подтверждённой смерти процесса. `RemoteLlmClient` распознаёт только точную пару
+`RemoteLlmClient` распознаёт только точную пару
 HTTP 409 + `error=codex_thread_in_use` и отдаёт через существующий `onError`
 фиксированную безопасную подсказку дождаться завершения, остановить текущий ход
 либо сбросить сессию; произвольные детали тела в неё не попадают.
@@ -573,7 +511,7 @@ Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/
 `LlmRequest.previewMcpUrl`, хинт — `previewToolHint()`
 (`packages/shared/src/previewActions.ts`); сервер лишь транслирует действие
 клиентам по WS (`preview.action`/`preview.result`) и ждёт ответ, исполняет его
-браузер с активным чатом хода. Детали — [ui.md](ui.md#веб-превью).
+браузер с активным чатом хода. Module details: `web-reader:README.md`.
 
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
@@ -587,21 +525,17 @@ Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/
 
 ## Наблюдатели сессий Claude Code и Codex
 
-Фактические jsonl лежат только в профиле исполнителя. Серверные `/api/cc/*` и
+Серверные `/api/cc/*` и
 `/api/cx/*` больше не читают диск напрямую: `routes/rest.ts` проксирует в
 `RunnerFsClient`, а тот вызывает файловые роуты исполнителя `/v1/fs/cc/*` и
-`/v1/fs/cx/*`, сохраняя наружу прежние формы ответов. На стороне исполнителя
-`ccSessions.ts` и `codexSessions.ts` читают только «голову» файла для списков,
-полный разбор делают при открытии транскрипта, usage считают из того же jsonl, а
-реальный путь проекта берут из `cwd`-события, а не из имени каталога.
+`/v1/fs/cx/*`, сохраняя наружу прежние формы ответов.
 
 Live-tail больше идёт не через локальный `fs.watch` сервера, а через SSE
 `/v1/fs/cc/watch` и `/v1/fs/cx/watch`. `session.ts` выбирает либо локальные
 watchers, либо `observerTail` от `buildServer`; при вынесенном исполнителе это
 `RunnerFsClient.watchCc/watchCx`. Клиентский контракт `cc.tail` / `cx.tail` не
 меняется, а reconnect сервера к исполнителю продолжается с `Last-Event-ID`, чтобы
-не терять хвост между переподключениями: id SSE равен последнему смещению в файле,
-и после обрыва исполнитель дочитывает jsonl именно с него.
+не терять хвост между переподключениями.
 
 Тот же файловый клиент обслуживает и `GET /api/files/read`: сервер сначала
 пытается прочитать картинку через `/v1/files/read`, а локальный `serverFiles.ts`

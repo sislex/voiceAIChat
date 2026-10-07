@@ -1,7 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-06
-checked: a7838661
+updated: 2026-10-07
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -425,7 +424,7 @@ and all attached conversations move atomically. A tenant mismatch returns 404.
 только чтение), `conversations:copyContext`
 (`POST /api/conversations/:id/context-copy` — перенос выключений из другого
 разговора: источник передаётся телом, потому что это данные операции, а не
-адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
+адрес). Module details: `core-ui:README.md`.
 
 Чтение репозитория проекта из Make: `GET /api/make/:id/project-files?path=`
 (листинг машины), `GET …/project-links` (статусы связей) и
@@ -433,7 +432,7 @@ and all attached conversations move atomically. A tenant mismatch returns 404.
 `make:projectLinks`, `make:projectPull`. Обратного `project-push` и моста
 `make:projectPush` больше нет (удалены 2026-09-04): Make в репозиторий не
 пишет, иначе общая копия проекта остаётся dirty мимо git. Разбор —
-[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта-только-чтение).
+`make:README.md`.
 
 `warnings` снимка считает сервер, и порогов там три разного смысла.
 `CONTEXT_PREVIEW_TOKENS_NOTICE` (4000 токенов) — абсолютный: «постоянная часть
@@ -551,7 +550,7 @@ input/change, submit, click и навигации; открытие повтор
 слоям route/active-chat, host, cookie/auth, proxy/network, page-loading, dom-bridge,
 action или timeout. Детали действий и UI запуска — [ui.md](ui.md).
 
-Детали протокола действий, лимиты и relay — [ui.md](ui.md#действия-модели-в-превью-mcp__browser__)
+Детали действий Web Reader — `web-reader:README.md`;
 и [llm.md](llm.md).
 
 `kb.usage` — обращение к базе знаний (авто-инъекция контекста сервером или вызов
@@ -621,7 +620,7 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 `development_done` для режима разработки; ошибка или отмена статус не меняют.
 Мост и ручка остались, но точки входа для ручной смены в UI больше нет: селектор
 из карточки чата убран (там теперь режим чата, см.
-[ui.md](ui.md#компоненты-и-поверхности)), и `conversations:setStatus` зовёт только
+`core-ui:README.md`), и `conversations:setStatus` зовёт только
 автозавершение хода.
 
 `Message.execTarget` — неизменяемый снимок фактической цели конкретного вопроса
@@ -808,7 +807,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 собирает `makeDesignPreviewUrl(conversationId, path)` (`protocol.ts`) — одна функция на UI
 и на промпт модели. Связать можно только Make-проект, привязанный к тому же проекту (иначе
 400 с текстом), а участники проекта получают на такой Make-проект доступ `viewer`, включая
-`GET /api/preview/make/:id/*`. Подробности — [projects.md](projects.md#дизайн-из-make-в-карточке).
+`GET /api/preview/make/:id/*`. Module details: `kanban:README.md`.
 
 **Мок-API проекта (п.29).** Если запрошенного файла нет, превью (`/api/preview/make/:id/*`) и публикация (`/p/…`, `/s/…`) ищут `mock/<путь>.<METHOD>.json` → `mock/<путь>.json` → `mock/<путь>/index[.<METHOD>].json` (`mockCandidates` в `@shared/makeMock`) и отдают JSON с `x-vc-mock: 1`. Файл — либо тело как есть, либо конверт `{ "$status", "$headers", "$delay" (≤ 5000 мс), "$body" }` (`unwrapMockEnvelope`). Не-GET методы (`POST/PUT/PATCH/DELETE`) на этих путях отдают только моки; на публикации `__auth__` обрабатывается тем же маршрутом (`publicMutation`). На публикации со закреплённым снимком моки берутся из снимка. Битый JSON мока → 500 с текстом ошибки. Прямой запрос файла `mock/…` мокам не подлежит (отдаётся как обычный файл).
 

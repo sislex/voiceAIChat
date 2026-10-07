@@ -11,7 +11,8 @@ import { registerKbRoutes } from './routes.js'
 import type { VoiceChatDb } from '../db/database.js'
 
 const map = readFileSync(new URL('../../../../docs/kb/modules.md', import.meta.url), 'utf8')
-const ids = ['core', 'core-ui', 'make', 'agent', 'playwright-reader', 'web-reader', 'kanban']
+// Order of docs/kb/modules.md rows that have a knowledge base.
+const ids = ['core', 'core-ui', 'ui', 'make', 'agent', 'playwright-reader', 'web-reader', 'kanban', 'llm-runner', 'image-studio', 'voice']
 const dirs: string[] = [], services: ModuleKnowledgeBaseService[] = []
 afterEach(async () => {
   await Promise.all(services.splice(0).map(service => service.close()))
@@ -69,7 +70,7 @@ describe('owner module reconciliation', () => {
       expect(await kb.document('core:topic.md')).not.toBeNull()
       expect(await kb.document('playwright-reader:topic.md')).toMatchObject({ module: 'playwright-reader' })
       expect((await kb.modules()).every(module => module.status === 'ready')).toBe(true)
-      expect(saved).toHaveLength(7)
+      expect(saved).toHaveLength(ids.length)
     } finally { await kb.close() }
   })
   it('refuses owner ID collisions without replacing unrelated sources', async () => {
@@ -88,7 +89,7 @@ describe('owner module reconciliation', () => {
     const persisted = readFileSync(join(dir, 'kb-modules.json'), 'utf8')
     await kb.reconcileModules()
     expect(readFileSync(join(dir, 'kb-modules.json'), 'utf8')).toBe(persisted)
-    expect(refresh).toHaveBeenCalledTimes(6)
+    expect(refresh).toHaveBeenCalledTimes(ids.length - 1)
     const restarted = new ModuleKnowledgeBaseService({ root: dir, dataDir: dir }); services.push(restarted)
     expect((await restarted.modules()).map(module => module.id)).toEqual(['core', 'custom', ...ids.slice(1)])
   })
@@ -108,7 +109,7 @@ describe('owner module reconciliation', () => {
     await expect(kb.reconcileModules()).rejects.toThrow('Invalid KB owner module map')
     expect(await kb.modules()).toEqual(original)
     writeFileSync(ownerMap, map)
-    await expect(kb.reconcileModules()).resolves.toHaveLength(8)
+    await expect(kb.reconcileModules()).resolves.toHaveLength(ids.length + 1)
   })
   it('migrates an existing generated repository ID to the stable owner ID', async () => {
     const { kb } = fixture()
