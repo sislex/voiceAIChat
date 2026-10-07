@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-07
-checked: 011bb5ac
+checked: efd6bc4f
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -35,7 +35,8 @@ verification are added. Root, lockfile and configuration changes never escalate
 this mode to the full gate; promotion owns that coverage. A docs-only or empty
 diff runs `npm run kb:check` only. Failure to read the diff fails closed.
 
-The task budget is 100 test cases and 60 seconds of total wall time, including
+The task budget is 1000 test cases and 300 seconds (5 minutes, owner decision
+2026-10-07) of total wall time, including
 planning and typecheck. Each command receives the remaining timeout. Reports
 count actual cases (not files), with `GATE-TASK-CASE:` evidence; a breach exits 2, prints `GATE-TASK-SLOW:` and then the
 test files sorted by duration plus unfinished files/commands, one per line. Ordinary failures exit 1. Every
