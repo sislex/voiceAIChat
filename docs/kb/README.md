@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 67 коммит(ов) в areas после сверки: cb339cad feat(make): Core project mode for Make — projects, structure, design, git (make-project-mode-v1 C01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 26 коммит(ов) в areas после сверки: cb339cad feat(make): Core project mode for Make — projects, structure, design, git (make-project-mode-v1 C01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 30 коммит(ов) в areas после сверки: e7b14a42 feat(shared): release disk preflight contract (release-disk-preflight-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 14 коммит(ов) в areas после сверки: cb339cad feat(make): Core project mode for Make — projects, structure, design, git (make-project-mode-v1 C01) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 15 коммит(ов) в areas после сверки: faf4288b docs(kb): make project mode in Core … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 99 коммит(ов) в areas после сверки: cb339cad feat(make): Core project mode for Make — projects, structure, design, git (make-project-mode-v1 C01) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -42,7 +42,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-07 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-07 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-07 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-06 | ⚠ 2 коммит(ов) в areas после сверки: c2abe1d1 feat(kb): owner knowledge base modules from the ownership map (kb-service-v2 B01) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-07 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-07 | ✓ |
@@ -60,18 +60,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1105. Последние:
+Всего записей: 1106. Последние:
 
 - [2026-10-07-delivery-c01-kb-service-v3.md](log/2026-10-07-delivery-c01-kb-service-v3.md) — kb-service-v3
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md) — task-gate-budget-300
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-execution.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-execution.md) — release-train-execution
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-b01.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-b01.md) — release-train-b01
+- [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-26.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-26.md) — pin-shared-0-1-26
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-13.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-13.md) — pin-kanban-0-2-13
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-12.md) — pin-kanban-0-2-12
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-make-project-mode-core.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-make-project-mode-core.md) — make-project-mode-core
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kb-service-v4.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kb-service-v4.md) — kb-service-v4
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-kanban-stand-cache-prune.md) — kanban-stand-cache-prune
-- [2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md](log/2026-10-06-alexeys-macbook-air-tailae39a6-ts-net-task-gate-module-scope.md) — task-gate-module-scope
 
 ## Исторические планы
 
