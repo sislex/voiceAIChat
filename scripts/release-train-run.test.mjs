@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter } from './release-train-run.mjs'
+import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
@@ -111,6 +111,16 @@ function fixture(t, realGit = true) {
   return { directory, repository, plan, env, run, fetcher, calls, git, owner,
     failPublish: value => { failPublish = value }, failPreflight: value => { failPreflight = value } }
 }
+
+test('knowledge topics covering bumped manifests', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kb-topics-')); t.after(() => rmSync(dir, { recursive: true, force: true }))
+  writeFileSync(join(dir, 'deploy.md'), '---\ntitle: Deploy\nareas:\n  - package.json\n  - scripts/\n---\n# Deploy\n')
+  writeFileSync(join(dir, 'app.md'), '---\ntitle: App\nareas:\n  - apps/make\n---\n# App\n')
+  writeFileSync(join(dir, 'ui.md'), '---\ntitle: UI\nareas:\n  - packages/ui/src\n---\n# UI\n')
+  writeFileSync(join(dir, 'README.md'), '---\nareas:\n  - package.json\n---\n')
+  assert.deepEqual(topicsCoveringFiles(dir, ['package.json', 'apps/make/package.json', 'package-lock.json']), ['app.md', 'deploy.md'])
+  assert.deepEqual(topicsCoveringFiles(join(dir, 'missing'), ['package.json']), [])
+})
 
 test('selected owners only need their own readiness', () => {
   const row = { application: 'a', repository: 'acme/a', changes: { ahead: true, dev: 'd'.repeat(40), main: 'm'.repeat(40) }, release: { matchesPinnedCommit: true }, proposedVersion: '1.0.1', pinnedVersion: '1.0.0', pinnedCommit: 'a'.repeat(40) }
