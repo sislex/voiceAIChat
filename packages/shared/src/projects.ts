@@ -608,6 +608,9 @@ export interface ProjectQuota {
 }
 
 export interface ProjectSummary {
+  /** Null for a top-level project. */
+  parentProjectId: string | null
+  subprojectCount: number
   id: string
   /** Identity tenant that owns the project and its shared budget. */
   tenantId?: string
@@ -787,6 +790,15 @@ export interface ProjectInvitationForUser extends ProjectInvitation {
 }
 
 /** Проект со всем составом (ответ get/create/update). */
+export interface ProjectSubprojectSummary {
+  id: string
+  name: string
+  role: ProjectRole
+}
+
+/** Full project contract, also available under the existing detail name. */
+export type Project = ProjectDetail
+
 export interface ProjectDetail extends ProjectSummary {
   members: ProjectMember[]
   /** Машины проекта с папками. */
@@ -808,6 +820,23 @@ export interface KanbanColumn {
   /** WIP-лимит (макс. карточек в колонке) или null — без лимита. */
   wipLimit: number | null
   createdAt: number
+}
+
+/** Match semantics first (including hidden columns), then use the first visible column.
+ * Columns are supplied in board order; no match and no visible column returns undefined.
+ */
+export function subprojectColumnFor(
+  semanticType: KanbanColumnSemanticType,
+  columns: readonly KanbanColumn[]
+): KanbanColumn | undefined {
+  return columns.find(column => column.semanticType === semanticType)
+    ?? columns.find(column => !column.hidden)
+}
+
+/** Selection shared by both phases of board loading. Omission keeps the default project. */
+export interface BoardRequestOptions {
+  includeCompleted?: boolean
+  projects?: string[]
 }
 
 /** Нормализованный сервером последний актуальный процесс или терминальный результат задачи. */
@@ -1054,6 +1083,8 @@ export interface Task {
   projectId: string
   external?: TaskExternalRef
   columnId: string
+  /** Requested-board column; columnId remains the source project column. */
+  displayColumnId?: string
   type: WorkItemType
   parentId: string | null
   /** Исходная задача для карточки, созданной из предложения улучшения. */
@@ -1382,6 +1413,8 @@ export interface TaskChatBadge {
 
 /** Снапшот доски проекта. */
 export interface Board {
+  /** Included projects, even when they currently have no tasks. */
+  projects: { id: string; name: string }[]
   columns: KanbanColumn[]
   tasks: Task[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */

@@ -679,6 +679,9 @@ export class ProjectsRepo extends BaseRepo {
   private async mapProjectSummary(r: ProjectRow, myRole: string): Promise<ProjectSummary> {
     return {
       id: r.id,
+      // Local Core mode keeps projects flat; subprojects live in the Kanban service.
+      parentProjectId: null,
+      subprojectCount: 0,
       ...(r.tenant_id ? { tenantId: r.tenant_id } : {}),
       ...(r.tenant_kind ? { tenantKind: r.tenant_kind } : {}),
       name: r.name,
