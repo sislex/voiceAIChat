@@ -32,12 +32,12 @@ describe('integration ingress', () => {
   afterEach(async () => { await app?.close(); await db?.close(); if (dir) rmSync(dir, { recursive: true, force: true }) })
 
   it('forwards an external task upsert of the token project to Kanban with the same credential', async () => {
-    const { token } = (await db.projects.createIntegrationToken('owner', projectId, 'Board sync', ['tasks:external']))!
-    const response = await put(projectId, 'Bearer ' + token)
+    const { token } = (await db.projects.createIntegrationToken('owner', projectId, 'Board sync', ['tasks:external'], [projectId, otherId]))!
+    const response = await put(otherId, 'Bearer ' + token)
     expect(response.statusCode).toBe(201)
     expect(response.json()).toEqual({ id: 'task' })
     const [url, init] = fetchImpl.mock.calls[0]!
-    expect(url).toBe(`http://kanban:8789/api/projects/${projectId}/external-tasks/delivery-control/run%3AB04`)
+    expect(url).toBe(`http://kanban:8789/api/projects/${otherId}/external-tasks/delivery-control/run%3AB04`)
     expect(init).toMatchObject({ method: 'PUT', headers: { authorization: 'Bearer ' + token } })
     expect(JSON.parse(String(init!.body))).toEqual({ title: 'B04', state: 'running' })
   })

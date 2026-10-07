@@ -12,7 +12,7 @@ export function registerIntegrationIngress(app: FastifyInstance, db: Pick<VoiceC
   app.put<{ Params: { id: string; source: string; externalId: string } }>('/integrations/v1/projects/:id/external-tasks/:source/:externalId', async (req, reply) => {
     const principal = await db.projects.resolveIntegrationToken(req.headers.authorization)
     if (!principal) return reply.code(401).send({ error: 'unauthorized' })
-    if (principal.projectId !== req.params.id || !principal.scopes.includes('tasks:external')) return reply.code(403).send({ error: 'integration_access_denied' })
+    if (!principal.projectIds.includes(req.params.id) || !principal.scopes.includes('tasks:external')) return reply.code(403).send({ error: 'integration_access_denied' })
     if (!opts.kanbanUrl) return reply.code(503).send({ error: 'kanban_unavailable' })
     const target = `${opts.kanbanUrl.replace(/\/+$/, '')}/api/projects/${encodeURIComponent(req.params.id)}/external-tasks/${encodeURIComponent(req.params.source)}/${encodeURIComponent(req.params.externalId)}`
     try {

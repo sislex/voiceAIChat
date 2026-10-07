@@ -62,9 +62,9 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect(JSON.stringify(row)).not.toContain(created.token)
       expect((await create()).json().token).not.toBe(created.token)
       now = 2000
-      expect((await whoami(created.token)).json()).toEqual({ ok: true, principal: { kind: 'integration', projectId, scopes: ['tasks:external'] } })
+      expect((await whoami(created.token)).json()).toEqual({ ok: true, principal: { kind: 'integration', projectId, projectIds: [projectId], scopes: ['tasks:external'] } })
       const list = (await app.inject({ url: path(), headers: headers() })).json()
-      expect(list.find((item: { id: string }) => item.id === created.id)).toEqual({ id: created.id, projectId, name: 'Board sync', scopes: ['tasks:external'], createdAt: 1000, lastUsedAt: 2000 })
+      expect(list.find((item: { id: string }) => item.id === created.id)).toEqual({ id: created.id, projectId, projectIds: [projectId], name: 'Board sync', scopes: ['tasks:external'], createdAt: 1000, lastUsedAt: 2000 })
       expect(JSON.stringify(list)).not.toContain(created.token)
       expect(JSON.stringify(list)).not.toContain('token_hash')
       expect((await whoami(created.token, created.token)).statusCode).toBe(401)
@@ -83,6 +83,19 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect((await app.inject({ url: path() })).statusCode).toBe(401)
       expect((await app.inject({ method: 'DELETE', url: `/api/projects/${otherId}/integration-tokens/${created.id}`, headers: headers() })).statusCode).toBe(404)
       expect((await whoami(created.token)).json().ok).toBe(true)
+    })
+
+    it('issues a token for several owned projects and rejects a non-owned project', async () => {
+      const foreignId = (await db.projects.createProject('outsider', { name: 'Foreign' })).id
+      const response = await app.inject({ method: 'POST', url: path(), headers: headers(), payload: {
+        name: 'Multi-project sync', scopes: ['tasks:external'], projectIds: [otherId, projectId]
+      } })
+      expect(response.statusCode).toBe(201)
+      expect(response.json()).toMatchObject({ projectId, projectIds: [projectId, otherId] })
+      expect((await whoami(response.json().token)).json().principal).toMatchObject({ projectId, projectIds: [projectId, otherId] })
+      expect((await app.inject({ method: 'POST', url: path(), headers: headers(), payload: {
+        name: 'Denied', scopes: ['tasks:external'], projectIds: [projectId, foreignId]
+      } })).statusCode).toBe(403)
     })
 
     it('revokes immediately, preserves audit data and rejects unknown credentials', async () => {
@@ -108,7 +121,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
     })
 
     it('validates names and scopes without creating tokens', async () => {
-      for (const payload of [{}, { name: ' ' }, { name: 'Sync', scopes: [] }, { name: 'Sync', scopes: ['admin'] }, { name: 'Sync', scopes: ['tasks:external', 'tasks:external'] }, { name: 'x'.repeat(201), scopes: ['tasks:external'] }]) {
+      for (const payload of [{}, { name: ' ' }, { name: 'Sync', scopes: [] }, { name: 'Sync', scopes: ['admin'] }, { name: 'Sync', scopes: ['tasks:external', 'tasks:external'] }, { name: 'x'.repeat(201), scopes: ['tasks:external'] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [otherId] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [projectId, projectId] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: Array.from({ length: 51 }, (_, index) => `p${index}`) }]) {
         expect((await app.inject({ method: 'POST', url: path(), headers: headers(), payload })).statusCode).toBe(400)
       }
       expect(await db.projects.listIntegrationTokens('owner', projectId)).toEqual([])
@@ -133,6 +146,14 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect(token).not.toBeNull()
       await db.projects.deleteProject('owner', projectId)
       expect(await db.projects.resolveIntegrationToken('Bearer ' + token!.token)).toBeNull()
+    })
+
+    it('migrates existing single-project token rows to one-element project lists', async () => {
+      const token = 'sit_' + randomUUID().replace(/-/g, '')
+      await sql().run(`INSERT INTO integration_tokens (id, project_id, name, scopes, token_hash, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`, ['legacy', projectId, 'Legacy', '["tasks:external"]', createHash('sha256').update(token).digest('hex'), 'owner', 1])
+      await (db as unknown as { init(): Promise<void> }).init()
+      expect(await db.projects.resolveIntegrationToken('Bearer ' + token)).toMatchObject({ projectId, projectIds: [projectId] })
     })
   })
 }

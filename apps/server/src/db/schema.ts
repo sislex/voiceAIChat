@@ -500,6 +500,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS integration_tokens (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  project_ids TEXT NOT NULL DEFAULT '[]',
   name TEXT NOT NULL,
   scopes TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
