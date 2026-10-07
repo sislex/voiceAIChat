@@ -1,5 +1,20 @@
 # Core KB section assignment (Core `origin/dev` 287cdab3)
 
+## Rules for C01 (read before editing Core topics)
+
+1. Rows whose owner is `core`: leave the section unchanged.
+2. Rows with an owner module and an empty «Core keeps»: delete the whole section.
+3. Rows with an owner module and a non-empty «Core keeps»: the column is only a hint of WHAT stays.
+   Keep the original Core sentences that describe it — verbatim, with their details (routes, status
+   codes, roles, tables, transactions, env vars, file paths in `apps/server` or `packages/shared`).
+   Remove only the sentences about the module's own code. Never replace the section with the hint
+   text: losing Core facts is worse than keeping one module sentence.
+4. Module links are module-level only, one line per module: «Module details: `<module>:README.md`»,
+   placed right after the topic's `# ` title (never before it, never with an anchor).
+5. A topic left without Core content becomes: the `# ` title, one sentence saying the knowledge
+   moved to the module, and the module link.
+
+
 | Core topic | Section | Status | Owner module | Core keeps |
 |---|---|---|---|---|
 | projects.md | ## Что это | covered | kanban |  |
