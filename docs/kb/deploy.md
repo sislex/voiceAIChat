@@ -3,6 +3,8 @@ title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-07
 checked: acf1dc7e
 areas:
+  - scripts/contracts-release.mjs
+  - scripts/contracts-release.test.mjs
   - scripts/release-train.mjs
   - scripts/release-train.test.mjs
   - scripts/release-train-run.mjs
@@ -39,6 +41,35 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Contract pin release
+
+`node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
+--commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local
+contract release. See [Shared](shared.md#one-command-contract-release) for owner
+and Shared examples. Run from the target Core checkout with explicit, assigned
+consumer paths. Temporary clones live under `DELIVERY_ATTEMPT_ROOT/tmp` when
+allocated, otherwise under Core's `artifacts/contracts-release`, and are removed
+on completion or error. Owner pack lifecycle scripts run in that detached clone.
+
+The command updates dependency and peer pins, vendors the content-addressed
+archive, records provenance, and runs `npm install --package-lock-only
+--ignore-scripts --strict-peer-deps` in each target. Consumers additionally run
+`npm ci --ignore-scripts --strict-peer-deps`; Core's installed dependencies are
+not replaced. It never commits, pushes, publishes or deploys.
+
+Use dedicated consumer checkouts: their manifests, lockfiles, vendor metadata
+and installed dependencies are modified. Results are JSON lines with `consumer`,
+`status`, and npm diagnostics on failure. A peer conflict is an actionable
+failure, never bypassed with `--force` or `--legacy-peer-deps`. Other consumers
+are still checked. Failed targets retain their proposed pins and archive for
+review; this is not an atomic multi-repository transaction. Correct the peer
+baseline or choose a compatible release and rerun. Existing unrelated snapshot
+entries and metadata are preserved, and old archives are not pruned.
+
+Review the resulting diffs and all consumer results before commissioning the
+release through the normal operator workflow. A successful local command does
+not constitute production deployment or consumer application acceptance.
 
 Module details: `llm-runner:README.md`
 
