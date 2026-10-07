@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-08
-checked: 344fab15
+checked: 7e048553
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -23,6 +23,35 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Subproject board contracts (board-subproject-view-v1 B01)
+
+Shared defines `ProjectSummary.parentProjectId: string | null` and
+`subprojectCount: number`. The full `ProjectDetail` inherits both; `Project`
+is an alias for that full contract. `projects:update` accepts optional
+`parentProjectId`: omission leaves the relationship unchanged, null detaches it.
+
+`REST.subprojects(id)` builds `GET /api/projects/:id/subprojects`, returning
+`ProjectSubprojectSummary[]` with `id`, `name`, and the viewer's `role`.
+The corresponding `projects:subprojects` IPC channel is in `IPC_CHANNELS`.
+No new WebSocket message types are introduced.
+
+`BoardRequestOptions.projects` selects the requested project itself and/or its
+subprojects. `REST.board(id, { projects: ['a', 'b'] })` produces
+`/api/projects/:id/board?projects=a,b`. IDs are individually URL-encoded.
+`REST.projectBoard` and `REST.projectBoardStatuses` accept the same options
+and retain their legacy boolean includeCompleted argument. Both IPC loading
+phases (`board:get`, `board:getStatuses`) share these options; callers must
+send the same selection for the skeleton and TaskStatus requests.
+Omission preserves the default project; an explicit empty list is transmitted
+as `projects=`, distinct from omission. includeCompleted can be combined with
+the selection.
+
+`Board.projects` lists included projects as `{ id, name }[]`, including those
+without tasks. A subproject task retains its original `projectId` and
+`columnId`; optional `displayColumnId` names its column on the requested board.
+These are shared contracts and URL adapters; server authorization, persistence,
+and consumer integration are owned by the subsequent implementation tasks.
 
 ## Release disk preflight (release-disk-preflight-v1 B01)
 
