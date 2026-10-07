@@ -12,7 +12,7 @@ export interface IntegrationTokenView {
   /** Primary project retained for compatibility and token management. */
   projectId: string
   /** All projects that the integration may access; projectId is always first. */
-  projectIds: string[]
+  projectIds?: string[]
   name: string
   scopes: IntegrationTokenScope[]
   createdAt: number

@@ -29,11 +29,12 @@ describe('subproject transport contracts', () => {
     expect(REST.subprojects('parent /')).toBe('/api/projects/parent%20%2F/subprojects')
     expect(IPC_CHANNELS.filter(channel => channel === 'projects:subprojects')).toHaveLength(1)
     expectTypeOf<IpcResult<'projects:subprojects'>>().toEqualTypeOf<ProjectSubprojectSummary[]>()
-    expectTypeOf<Project['parentProjectId']>().toEqualTypeOf<string | null>()
-    expectTypeOf<ProjectSummary['subprojectCount']>().toEqualTypeOf<number>()
+    // New fields are optional so older consumers and servers stay compatible.
+    expectTypeOf<Project['parentProjectId']>().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<ProjectSummary['subprojectCount']>().toEqualTypeOf<number | undefined>()
     expectTypeOf<IpcArg<'projects:update'>['parentProjectId']>().toEqualTypeOf<string | null | undefined>()
     expectTypeOf<Task['displayColumnId']>().toEqualTypeOf<string | undefined>()
-    expectTypeOf<Board['projects']>().toEqualTypeOf<{ id: string; name: string }[]>()
+    expectTypeOf<Board['projects']>().toEqualTypeOf<{ id: string; name: string }[] | undefined>()
     expectTypeOf<IpcArg<'board:get'>>().toEqualTypeOf<IpcArg<'board:getStatuses'>>()
   })
 
