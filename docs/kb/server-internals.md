@@ -8,6 +8,8 @@ areas:
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
 
+Module details: `voice:README.md`
+
 Module details: `make:README.md`
 Module details: `web-reader:README.md`
 
@@ -251,13 +253,9 @@ Observer-модули как код живут и на сервере, и в и�
 
 `system/resources.ts` читает cgroup v1/v2 лимиты CPU/RAM с fallback на host. `capabilities.ts` сравнивает их с default или `VC_MIN_MEM_STT/TTS`. Недоступность отражается в API и блокирует запуск.
 
-Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`; runner единолично владеет `whisper-cli`, моделями, временными WAV, очередью, лимитами и очисткой. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
-
-Синтез вынесен в отдельный `@voicechat/tts-runner`: только этот процесс запускает Piper или macOS `say`, владеет каталогом голосов и временными WAV. Внутренний ресурсный API `/v1/runs` защищён Bearer-токеном: создание и статус возвращают JSON-ресурс, WAV читается отдельно через `/v1/runs/:runId/audio`, отмена — `DELETE /v1/runs/:runId`. Runner ограничивает длину текста, очередь, конкурентность, время процесса и размер WAV, а после старта очищает оставшиеся временные файлы.
+Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
 
 Сервер использует только `TtsClient` (`RemoteTtsClient` в runtime, `FakeTtsClient` в тестах). `ttsSession` сохраняет браузерную FIFO-очередь и прежний кадр `tts.audio`, связывает активную фразу с `runId` и отменяет её при barge-in или закрытии WebSocket. Если URL или токен runner не настроены, capabilities помечает только TTS недоступным; STT и текстовый чат не блокируются.
-
-Piper доступен только при бинарнике и валидной паре `.onnx` + `.onnx.json`; на macOS `say` остаётся альтернативой. Фактически выбранные engine и voice фиксируются в ресурсе запуска.
 
 ## Конфигурация
 
