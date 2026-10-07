@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 27 коммит(ов) в areas после сверки: d59f3b5f chore(make): pin make-contracts 1.6.0 (live stand ops and transfer links) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 20 коммит(ов) в areas после сверки: 01031f18 feat(shared): subproject contracts — parent project, subprojects, board project filter (board-subproject-view-v1 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-08 | ⚠ 2 коммит(ов) в areas после сверки: a043d816 fix(server): flat project and board fields for subproject contracts in local mode … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-08 | ⚠ 1 коммит(ов) в areas после сверки: 48e6f92c fix(release): re-check owner knowledge topics after the version bump |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-08 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 86 коммит(ов) в areas после сверки: f29f68ef fix(shared): optional subproject and multi-project fields for compatible consumers … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 46 коммит(ов) в areas после сверки: f29f68ef fix(shared): optional subproject and multi-project fields for compatible consumers … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 71 коммит(ов) в areas после сверки: f29f68ef fix(shared): optional subproject and multi-project fields for compatible consumers … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 30 коммит(ов) в areas после сверки: f29f68ef fix(shared): optional subproject and multi-project fields for compatible consumers … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 32 коммит(ов) в areas после сверки: 01031f18 feat(shared): subproject contracts — parent project, subprojects, board project filter (board-subproject-view-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 25 коммит(ов) в areas после сверки: b1f1935b chore(shared): pin Shared 0.1.27 archive … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 26 коммит(ов) в areas после сверки: a58929f3 chore(shared): pin Shared 0.1.28 archive … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 101 коммит(ов) в areas после сверки: b51e76ff feat(integrations): multi-project integration tokens (board-subprojects-v1 B01) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -60,9 +60,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1115. Последние:
+Всего записей: 1116. Последние:
 
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-selected-readiness.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-selected-readiness.md) — release-train-selected-readiness
+- [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-separate-commit.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-separate-commit.md) — release-train-kb-separate-commit
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-after-bump.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-after-bump.md) — release-train-kb-after-bump
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-28.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-28.md) — pin-shared-0-1-28
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-27.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-27.md) — pin-shared-0-1-27
@@ -71,7 +72,6 @@
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-task-gate-budget-300.md) — task-gate-budget-300
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-execution.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-execution.md) — release-train-execution
 - [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-b01.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-release-train-b01.md) — release-train-b01
-- [2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-26.md](log/2026-10-07-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-26.md) — pin-shared-0-1-26
 
 ## Исторические планы
 
