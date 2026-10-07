@@ -108,7 +108,7 @@ test these adapters without contacting real owners.
 ## Release train execution (C01)
 
 `node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
-Application names are tools-lock keys. Selecting one alias selects its entire
+With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
 

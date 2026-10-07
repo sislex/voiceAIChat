@@ -112,6 +112,18 @@ function fixture(t, realGit = true) {
     failPublish: value => { failPublish = value }, failPreflight: value => { failPreflight = value } }
 }
 
+test('selected owners only need their own readiness', () => {
+  const row = { application: 'a', repository: 'acme/a', changes: { ahead: true, dev: 'd'.repeat(40), main: 'm'.repeat(40) }, release: { matchesPinnedCommit: true }, proposedVersion: '1.0.1', pinnedVersion: '1.0.0', pinnedCommit: 'a'.repeat(40) }
+  const stale = { ...row, application: 'x', repository: 'acme/x', error: 'Published tag does not match pinned commit' }
+  const ok = { docker: { ok: true }, token: { ok: true }, worktrees: { ok: true } }
+  const plan = { ready: false, prerequisites: ok, core: { count: 1 }, applications: [row, stale] }
+  assert.equal(createJournal(plan, { apps: ['a'], deploy: false }, '.').owners.length, 1)
+  assert.throws(() => createJournal(plan, { apps: ['x'] }, '.'), /blocked/)
+  assert.throws(() => createJournal(plan, { apps: [] }, '.'), /blocked/)
+  assert.throws(() => createJournal({ ...plan, prerequisites: { ...ok, worktrees: { ok: false } } }, { apps: ['a'] }, '.'), /blocked/)
+  assert.throws(() => createJournal({ ...plan, core: null }, { apps: ['a'] }, '.'), /blocked/)
+})
+
 test('run arguments, owner selection, shared aliases and pinned-only publication', () => {
   assert.deepEqual(parseRunArgs(['--apps', 'a,b', '--deploy']), { apps: ['a', 'b'], deploy: true, resume: undefined })
   for (const args of [['--resume', '../escape'], ['--resume', 'x', '--deploy'], ['--unknown'], ['--apps']]) assert.throws(() => parseRunArgs(args))

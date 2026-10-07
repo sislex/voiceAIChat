@@ -32,9 +32,16 @@ export function parseRunArgs(args) {
 }
 
 export function createJournal(plan, options, repository) {
-  if (!plan.ready) throw Error('Release plan blocked; run plan --json for prerequisites')
   for (const app of options.apps) if (!plan.applications.some(row => row.application === app)) throw Error(`Unknown app: ${app}`)
   const selected = plan.applications.filter(row => !options.apps.length || options.apps.includes(row.application))
+  // With --apps only the selected owners must be releasable: blockers of unrelated owners
+  // (for example a stale pin of an application that is not released) do not stop the train.
+  const selectedRepositories = new Set(selected.map(row => row.repository))
+  const ready = options.apps.length
+    ? Object.values(plan.prerequisites ?? {}).every(check => check.ok) && Boolean(plan.core)
+      && !plan.applications.some(row => selectedRepositories.has(row.repository) && row.error)
+    : plan.ready
+  if (!ready) throw Error('Release plan blocked; run plan --json for prerequisites')
   const owners = []
   for (const row of selected) {
     if (owners.some(owner => owner.repository === row.repository)) continue
