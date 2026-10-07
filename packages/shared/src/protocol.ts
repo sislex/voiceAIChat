@@ -1,3 +1,4 @@
+import type { BoardRequestOptions } from './projects'
 import type { MakePresenceClient } from '@voicechat/make-contracts/make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
@@ -23,6 +24,17 @@ import type { QaRunStage } from './qa'
 import type { PreviewAction, PreviewActionResult } from '@voicechat/browser-contracts/previewActions'
 import type { WidgetUiAction, WidgetUiActionResult } from './widgetAssistant'
 import type { LoginStatusMap } from './auth'
+
+/** Preserve legacy boolean calls and share selection across both board phases. */
+function boardQuery(options?: boolean | BoardRequestOptions): string {
+  const selection = typeof options === 'boolean' ? { includeCompleted: options } : options
+  const query: string[] = []
+  if (selection?.includeCompleted) query.push('includeCompleted=1')
+  if (selection?.projects !== undefined) {
+    query.push('projects=' + selection.projects.map(id => encodeURIComponent(id)).join(','))
+  }
+  return query.length ? '?' + query.join('&') : ''
+}
 
 // --- Общие ---------------------------------------------------------------
 
@@ -452,6 +464,9 @@ export const REST = {
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  subprojects: (id: string) => `/api/projects/${encodeURIComponent(id)}/subprojects`,
+  board: (id: string, options?: BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board${boardQuery(options)}`,
   projectTenant: (id: string) => `/api/projects/${encodeURIComponent(id)}/tenant`,
   // Дерево типов проекта: каталог общий, решения по публикации — под /api/admin/.
   projectInvitations: (id: string) => `/api/projects/${encodeURIComponent(id)}/invitations`,
@@ -481,15 +496,15 @@ export const REST = {
   projectAutomatedQaCheck: (id: string) => `/api/projects/${encodeURIComponent(id)}/automated-qa/check`,
   projectUserDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines/default`,
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
-  projectBoard: (id: string, includeCompleted?: boolean) =>
-    `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
+  projectBoard: (id: string, options?: boolean | BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board${boardQuery(options)}`,
   /**
    * Вторая фаза доски: состояние карточек (чат, merge, подготовка, последний
    * ран) и сводки CI. Отдельный запрос — чтобы доска рисовалась по скелету, не
    * дожидаясь обхода восьми таблиц ранов.
    */
-  projectBoardStatuses: (id: string, includeCompleted?: boolean) =>
-    `/api/projects/${encodeURIComponent(id)}/board/statuses${includeCompleted ? '?includeCompleted=1' : ''}`,
+  projectBoardStatuses: (id: string, options?: boolean | BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board/statuses${boardQuery(options)}`,
   /** Вид доски текущего человека в проекте: фильтры, свимлейны, показ скрытых. */
   projectBoardView: (id: string) => `/api/projects/${encodeURIComponent(id)}/board/view`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
