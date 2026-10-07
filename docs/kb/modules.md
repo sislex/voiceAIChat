@@ -38,10 +38,10 @@ to its managed list. See [repository module behavior](features/project-knowledge
 | `identity` | `sislex/identity` | нет (пока не заведена) | Identity, sessions, login/recovery/2FA and access UI |
 | `billing` | `sislex/billing` | нет (пока не заведена) | Plans, entitlements, metering and billing UI |
 | `analytics` | `sislex/analytics` | нет (пока не заведена) | Product analytics and reporting |
-| `llm-runner` | `sislex/llm-runner` | нет (пока не заведена) | Claude/Codex process execution and runner contracts |
+| `llm-runner` | `sislex/llm-runner` | `llm-runner:README.md` (`docs/kb`) | Claude/Codex process execution and runner contracts |
 | `desktop` | `sislex/desktop` | нет (пока не заведена) | Electron host, preload, migration and desktop packaging |
 | `image-studio` | `sislex/image-studio` | `image-studio:README.md` (`docs/kb`) | Image Studio API, panel and contracts |
-| `voice` | `sislex/voice` | нет (пока не заведена) | STT/TTS services, microphone UI and voice contracts |
+| `voice` | `sislex/voice` | `voice:README.md` (`docs/kb`) | STT/TTS services, microphone UI and voice contracts |
 | `knowledge` | knowledge service repository | нет (пока не заведена) | Multi-repository KB indexing, search, context and KB UI |
 | `delivery-control` | `sislex/delivery-control` | нет (пока не заведена) | Delivery scheduling, workers, release commissioning and recovery |
 

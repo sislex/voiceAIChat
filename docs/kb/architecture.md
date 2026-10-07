@@ -12,6 +12,8 @@ areas:
 
 # Архитектура: кто с кем разговаривает
 
+Module details: `voice:README.md`
+
 Module details: `playwright-reader:README.md`
 Module details: `core-ui:README.md`
 
@@ -159,10 +161,6 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 отвечает только за аудио: готовую транскрипцию он публикует событием, а разговор
 создаёт и реплику сохраняет `chatStore` — их сводит `runtime/appRuntime.ts`.
 The Core UI state-domain map is documented in `core-ui:README.md`.
-
-Озвучка идёт по мере готовности предложений: `sentences.ts` (shared + ui) режет
-поток токенов на произносимые фразы, `lib/ttsPlayer.ts` играет их очередью.
-VAD (`lib/vad.ts`) даёт hands-free и barge-in.
 
 ## Tool repository ownership
 
