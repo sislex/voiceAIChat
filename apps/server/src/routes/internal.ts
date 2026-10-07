@@ -1,4 +1,5 @@
 import { VpnError } from '../machines/vpn/tailscale.js'
+import { createMakeCoreDispatcher } from '../makeBridge/coreRpc.js'
 import type { Maintenance } from '../maintenance.js'
 import {IDENTITY_PATHS, IDENTITY_CORE_METHODS} from '@sislexa/identity/contracts/index'
 import { integrationBearer, type IntegrationPrincipal } from '../auth/integrationTokens.js'
@@ -16,7 +17,7 @@ import type { ImageStudioCore } from '@sislexa/image-studio/image-studio/index'
 import { registerImageStudioInternal } from '../imageStudioBridge/internal.js'
 import {
   INTERNAL_MAKE_CORE_PATH, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_MAKE_SERVICE_PATH, INTERNAL_WHOAMI_PATH, RpcError,
-  createCoreRpcDispatcher, createServiceRpcDispatcher,
+  createServiceRpcDispatcher,
   type MakeCore, type MakeEventsRequest, type MakeHub, type MakeService, type RpcRequest, type WhoamiRequest, type WhoamiResponse
 } from '@voicechat/make-contracts'
 import type { AuthenticateFn } from "@sislexa/identity/server/users/auth"
@@ -81,7 +82,7 @@ export interface InternalRoutesDeps {
 }
 
 export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoutesDeps): void {
-  const dispatch = createCoreRpcDispatcher(deps.makeCore)
+  const dispatch = createMakeCoreDispatcher(deps.makeCore)
   const sendRpcError = (reply: { code(status: number): { send(body: unknown): unknown } }, error: unknown): unknown =>
     reply.code(error instanceof RpcError || error instanceof VpnError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error), ...(error instanceof VpnError ? { code: error.code } : {}) })
   app.register(async (scope) => {

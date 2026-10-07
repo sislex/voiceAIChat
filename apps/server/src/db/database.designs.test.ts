@@ -26,6 +26,18 @@ async function scene(): Promise<{ projectId: string; taskId: string; makeId: str
 }
 
 describe('дизайны карточки', () => {
+  it('links an owned cross-project Make design only through the transfer adapter option', async () => {
+    const { projectId, taskId } = await scene()
+    const own = await db.chat.createConversation('alice', 'Personal design', 'make')
+    const foreign = await db.chat.createConversation('bob', 'Foreign design', 'make')
+    await expect(db.tasks.linkTaskDesign('alice', projectId, taskId, { conversationId: own.id })).rejects.toThrow()
+    const links = await db.tasks.linkTaskDesign('alice', projectId, taskId,
+      { conversationId: own.id, mode: 'files', paths: ['Button.tsx'] }, { transfer: true })
+    expect(links[0]).toMatchObject({ conversationId: own.id, mode: 'files', paths: ['Button.tsx'] })
+    await expect(db.tasks.linkTaskDesign('alice', projectId, taskId, { conversationId: foreign.id }, { transfer: true })).rejects.toThrow()
+    await expect(db.tasks.linkTaskDesign('carol', projectId, taskId, { conversationId: own.id }, { transfer: true })).rejects.toThrow()
+  })
+
   it('связывает задачу со страницей Make-проекта и отдаёт имя проекта вместе со связью', async () => {
     const { projectId, taskId, makeId } = await scene()
     const links = await db.tasks.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'pay.html', label: 'Оплата' })

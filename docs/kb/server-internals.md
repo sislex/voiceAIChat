@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-07
-checked: cb339cad
+checked: d59f3b5f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -518,6 +518,51 @@ Git-операции project mode используют тот же `GitWorkspace
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
 Те же методы проходят через schema-validated `/internal/make/core` RPC.
+
+`server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
+Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is
+remote. Start reuses a stand on the selected project machine or creates one
+from an environment assigned to that machine. Status and URL use the stand's
+gateway URLs. `live_on` and `live_off` address a component of a specified stand;
+live writes use that stand machine's configured project working-copy path,
+never a caller-supplied absolute path. Project access and write roles are
+checked before mutation; Kanban remains responsible for allocation, durable
+operations, live-process readiness and machine/path validation. Transport
+failure or an offline Kanban returns 503 `stand_preview_unavailable`; Kanban
+client errors retain their HTTP status.
+
+`MakeRequestAuthority` creates an in-memory, random capability for each outbound
+request, bound to the user, exact method and URL, with a 30-second lifetime and
+immediate revocation on completion. The ordinary Core authenticator recognizes
+these capabilities, including through Kanban/Make's authenticated whoami
+callback. No user session or persistent credential is created. Design file
+reads use the authenticated Make file API through Fastify injection, so the
+same adapter works with embedded Make and the remote Make proxy.
+
+Transfer requires repository write permission and a writable, clean project
+machine workspace. The target project must point to the selected repository:
+`sislex/sislexa-core-ui` or UI Kit's `sislex/sielexa-ui`. Core reads only the
+selected files of an owned Make conversation, creates a backlog task and a
+`task_designs` link, then creates a unique `make/<slug>-<suffix>` branch, writes
+files, commits and pushes through `GitWorkspaceService`. After recording the
+pushed CI workspace revision it moves the task to awaiting-merge and restores
+the original branch. Failed writes remain on the transfer branch for recovery;
+the task is not advertised as ready to merge before a successful push. A local
+workspace guard prevents overlapping Make transfers. Transfers are bounded to
+200 files, the Git editor per-file limit and 4 MiB total. The explicit internal
+transfer option on `linkTaskDesign` permits an owned design from another
+project; ordinary link requests retain the same-project rule.
+
+The Core RPC compatibility adapter dispatches all six project-mode methods,
+preserves adapter HTTP errors, accepts `live_on`/`live_off` and retains transfer
+branch/task/design URLs. The installed make-contracts 1.4 schemas only describe
+start/status/url and the minimal transfer result; Make clients must adopt the
+extended operations/results to expose them. Cross-project task design reads
+through Make's scoped MCP additionally require Make-owner support (its current
+scope validator requires the conversation's project to match the task).
+Stand provisioning, repository credentials and actual remote push/preview
+commissioning remain operator responsibilities; Core tests use fake HTTP and
+Git transports.
 
 Серверная часть Make уже выделена в workspace `apps/make` (`@voicechat/make`) и умеет
 запускаться отдельно (`src/standalone/index.ts`). В compose это сервис `make:8788`, а ядро
