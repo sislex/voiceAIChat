@@ -268,7 +268,7 @@ export class TasksRepo extends BaseRepo {
     const board = await this.getBoardSkeleton(userId, projectId, opts)
     if (!board) return null
     const statuses = await this.getBoardStatuses(userId, projectId, opts)
-    return { columns: board.columns, tasks: applyTaskStatuses(board.tasks, statuses?.tasks ?? []), ciRuns: statuses?.ciRuns ?? [] }
+    return { columns: board.columns, tasks: applyTaskStatuses(board.tasks, statuses?.tasks ?? []), ciRuns: statuses?.ciRuns ?? [], projects: board.projects }
   }
 
   /**
@@ -302,7 +302,9 @@ export class TasksRepo extends BaseRepo {
       if (a.columnId !== b.columnId) return a.columnId.localeCompare(b.columnId)
       return compareTasksInColumn(a, b, semanticByColumnId.get(a.columnId) ?? 'custom')
     })
-    return { columns, tasks }
+    // Local Core mode keeps projects flat: the board covers only the requested project.
+    const project = (await this.sql.get(`SELECT name FROM projects WHERE id = ?`, [projectId])) as { name: string } | undefined
+    return { columns, tasks, projects: [{ id: projectId, name: project?.name ?? '' }] }
   }
 
   /**

@@ -1,6 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-07
+updated: 2026-10-08
+checked: 7e048553
 
 areas:
   - packages/shared/src/projects.ts
@@ -24,6 +25,28 @@ areas:
 ---
 
 # Проекты и канбан-доска
+
+## Subproject board selection (board-subproject-view-v1 B01)
+
+The shared project summary now carries nullable `parentProjectId` and required
+`subprojectCount`; full `ProjectDetail` / `Project` inherits these fields.
+The update contract accepts a parent ID or null to detach, while omission
+preserves the current parent. Subproject listings use
+`ProjectSubprojectSummary { id, name, role }` and
+`GET /api/projects/:id/subprojects`.
+
+Board and status requests accept the same `projects` ID list: the board's
+project itself and/or its subprojects. `Board.projects` identifies the included
+projects, even when they have no tasks. Task source ownership and `columnId`
+stay unchanged; `displayColumnId` optionally supplies a requested-board column.
+
+`subprojectColumnFor(semanticType, columns)` returns the first semantic match,
+including a hidden matching column. If no match exists it returns the first
+visible column in supplied board order; it returns undefined for an empty list
+or an all-hidden list without a match. It does not reorder or mutate columns.
+The caller owns board ordering and handling the absence of a display column.
+REST query serialization and the helper have focused shared tests.
+Server/UI rollout remains separate from these shared contracts.
 
 Module details: `kanban:README.md`
 Module details: `core-ui:README.md`

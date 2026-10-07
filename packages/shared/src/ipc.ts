@@ -486,6 +486,7 @@ export interface IpcInvokeMap {
     result: ProjectDetail
   }
 
+  'projects:subprojects': { arg: { id: string }; result: import('./projects').ProjectSubprojectSummary[] }
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
 
   // --- Приглашения в проект ---
@@ -545,6 +546,7 @@ export interface IpcInvokeMap {
   'projects:update': {
     arg: {
       id: string
+      parentProjectId?: string | null
       /** Узел дерева типов: меняет живые возможности, доску не трогает. */
       typeId?: string
       name?: string
@@ -653,9 +655,9 @@ export interface IpcInvokeMap {
   /** Назначить персональную машину пользователя по умолчанию для проекта. */
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
-  'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  'board:get': { arg: { id: string } & import('./projects').BoardRequestOptions; result: Board }
   /** Состояние карточек доски: вторая фаза, приезжает следом за скелетом. */
-  'board:getStatuses': { arg: { id: string; includeCompleted?: boolean }; result: import('./projects').BoardStatuses }
+  'board:getStatuses': { arg: { id: string } & import('./projects').BoardRequestOptions; result: import('./projects').BoardStatuses }
   /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
   'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
   /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
@@ -1505,6 +1507,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:quota',
   'projects:create',
   'projects:get',
+  'projects:subprojects',
   'projects:invitations',
   'projects:invite',
   'projects:resendInvitation',
