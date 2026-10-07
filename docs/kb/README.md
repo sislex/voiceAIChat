@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 27 коммит(ов) в areas после сверки: d59f3b5f chore(make): pin make-contracts 1.6.0 (live stand ops and transfer links) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 18 коммит(ов) в areas после сверки: c2abe1d1 feat(kb): owner knowledge base modules from the ownership map (kb-service-v2 B01) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-03 | ⚠ 9 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-07 | ⚠ 6 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-08 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 83 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 43 коммит(ов) в areas после сверки: 304afe00 fix(machines): expand the dev stand repository shorthand into a clone URL … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 68 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 27 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 30 коммит(ов) в areas после сверки: e7b14a42 feat(shared): release disk preflight contract (release-disk-preflight-v1 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 17 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 18 коммит(ов) в areas после сверки: 2854543d feat(release): one-command contract release (dev-speed-v1 B06) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 100 коммит(ов) в areas после сверки: bac444b3 feat(make): Core stand preview with live mode and transfer to Sislexa (make-project-mode-v2 B01) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -45,7 +45,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-08 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-07 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-07 | ⚠ код изменён 2026-10-08, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
