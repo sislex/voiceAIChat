@@ -756,12 +756,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
+  const gitWorkspaces = new GitWorkspaceService({
+    db,
+    runtime: {
+      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
+      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      policyOf: (agentId) => agentRegistry.policyOf(agentId),
+      platformOf: (agentId) => agentRegistry.platformOf(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    },
+    gate: commandGate
+  })
   // Make (mcp__make__*): файлы проекта разговора в <dataDir>/make/<conv>; изменения
   // уходят владельцу кадром make.changed. Ядро и Make видят друг друга только через
   // порты MakeCore / MakeService (docs/plans/make-standalone.md): здесь — единственная
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeCore = new LocalMakeCore({
     db,
+    git: gitWorkspaces,
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
     // Чтение репозитория проекта: файловый мост машины только на чтение —
@@ -1388,19 +1402,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
-  const gitWorkspaces = new GitWorkspaceService({
-    db,
-    runtime: {
-      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
-      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
-      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
-      isOnline: (agentId) => agentRegistry.isOnline(agentId),
-      policyOf: (agentId) => agentRegistry.policyOf(agentId),
-      platformOf: (agentId) => agentRegistry.platformOf(agentId),
-      nameOf: (agentId) => agentRegistry.nameOf(agentId)
-    },
-    gate: commandGate
-  })
   registerIntegrationTokenRoutes(app, db)
   registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined })
   registerProjectGitRoutes(app, gitWorkspaces)
