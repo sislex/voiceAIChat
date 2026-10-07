@@ -4,8 +4,9 @@
 
 import type { VoiceChatDb } from '../db/database.js'
 import { buildGitWorkspaceId } from '@voicechat/shared'
-import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewOperation, StandPreviewResult } from '@voicechat/make-contracts'
+import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
+import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 
 const MAX_FILES = 2_000
 const MAX_FILE_BYTES = 256 * 1024
@@ -24,8 +25,8 @@ export interface LocalMakeCoreDeps {
   machineFs?: Omit<MakeMachineFs, 'isOnline'> & { isOnline(agentId: string): boolean }
   boardChanged?: (projectId: string) => void
   git?: GitWorkspaceService
-  standPreview?: (userId: string, projectId: string, operation: StandPreviewOperation) => Promise<StandPreviewResult>
-  transferTask?: (userId: string, args: CreateTransferTaskArgs) => Promise<{ taskId: string; projectId: string }>
+  standPreview?: (userId: string, projectId: string, operation: PreviewOperation) => Promise<StandPreviewResult>
+  transferTask?: MakeProjectAdapters['createTransferTask']
 }
 
 export class LocalMakeCore implements MakeCore {
@@ -132,7 +133,7 @@ export class LocalMakeCore implements MakeCore {
     if (operation.op === 'push') { const value = await this.deps.git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
     await this.deps.git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
   }
-  standPreview(userId: string, projectId: string, operation: StandPreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(501, 'stand_preview_unavailable') }
+  standPreview(userId: string, projectId: string, operation: PreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(503, 'stand_preview_unavailable') }
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
 
   readonly machineFs: MakeMachineFs | null

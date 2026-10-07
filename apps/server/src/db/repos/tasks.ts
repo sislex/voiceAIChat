@@ -489,12 +489,12 @@ export class TasksRepo extends BaseRepo {
   }
 
   /** Проверяет, что новую дизайн-связь создаёт владелец Make-проекта. */
-  async assertTaskDesignSource(userId: string, projectId: string, taskId: string, conversationId: string): Promise<void> {
+  async assertTaskDesignSource(userId: string, projectId: string, taskId: string, conversationId: string, transfer = false): Promise<void> {
     if (!(await this.repos.projects.isProjectMember(userId, projectId))) throw new Error('Пользователь не состоит в проекте')
     if (!(await this.getTask(projectId, taskId))) throw new Error('Задача не найдена в проекте')
     const conv = (await this.sql.get(`SELECT id, assistant_kind, project_id, user_id FROM conversations WHERE id = ?`, [conversationId])) as { id: string; assistant_kind: string | null; project_id: string | null; user_id: string | null } | undefined
     if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
-    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    if (!transfer && conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
     if (conv.user_id !== userId) throw new Error('Можно связать только свой Make-проект')
   }
 
@@ -506,9 +506,10 @@ export class TasksRepo extends BaseRepo {
     userId: string,
     projectId: string,
     taskId: string,
-    args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string }
+    args: { conversationId: string; mode?: 'whole_project' | 'files'; paths?: string[]; path?: string; label?: string },
+    options: { transfer?: boolean } = {}
   ): Promise<TaskDesignLink[]> {
-    await this.assertTaskDesignSource(userId, projectId, taskId, args.conversationId)
+    await this.assertTaskDesignSource(userId, projectId, taskId, args.conversationId, options.transfer)
     const legacyPath = (args.path ?? '').trim()
     const mode = args.mode ?? (legacyPath ? 'files' : 'whole_project')
     const inputPaths = args.paths ?? (legacyPath ? [legacyPath] : [])
