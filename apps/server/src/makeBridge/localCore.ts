@@ -13,6 +13,15 @@ export interface LocalMakeCoreDeps {
 }
 
 export class LocalMakeCore implements MakeCore {
+  // Project mode (make-contracts 1.4.0) is implemented by make-project-mode-v1 C01;
+  // until then every method reports that the capability is unavailable.
+  async listProjects(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+  async projectStructure(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+  async projectDesign(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+  async projectGit(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+  async standPreview(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+  async createTransferTask(): Promise<never> { throw Object.assign(new Error('make_project_mode_unavailable'), { statusCode: 501 }) }
+
   readonly machineFs: MakeMachineFs | null
 
   constructor(private readonly deps: LocalMakeCoreDeps) {
