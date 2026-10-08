@@ -9,6 +9,7 @@ import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness } from './restHarness.js'
 import { skillNameForContextId, toolNameForContextId } from '@voicechat/shared'
 import { enabledContextSkills } from '../turns.js'
+import { coldStartPrompt } from '../prompt/coldStart.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -892,9 +893,19 @@ describe('REST: conversations/messages/settings', () => {
       return snap.groups.flatMap((g: { items: unknown[] }) => g.items).find((e: { id: string }) => e.id === 'conversation-history')
     }
 
+    vi.stubEnv('VC_COLD_START_PROMPT_CHARS', '10')
+    try {
+      const bounded = await item()
+      const expected = coldStartPrompt(await db.chat.listMessages(U, created.id))
+      expect(expected).toContain('сокращена')
+      expect(bounded.details?.prompt).toBe(expected)
+      expect(bounded.size?.chars).toBe(expected.length)
+    } finally {
+      vi.unstubAllEnvs()
+    }
     const withoutSession = await item()
     expect(withoutSession.description).toMatch(/1 сообщений, ≈\d+ токенов/)
-    expect(withoutSession.explanation).toContain('пересобирается в промпт целиком')
+    expect(withoutSession.explanation).toContain('свежая часть истории')
     expect(withoutSession.size?.chars).toBeGreaterThan(0)
 
     // Живая сессия движка: история уже у модели, в промпт она не пересобирается.
@@ -907,7 +918,7 @@ describe('REST: conversations/messages/settings', () => {
 
     // Сессия другого движка чужой разговор не «продолжает»: у codex своя.
     await db.chat.setClaudeSession(U, created.id, 'codex:sess-2')
-    expect((await item()).explanation).toContain('пересобирается в промпт целиком')
+    expect((await item()).explanation).toContain('свежая часть истории')
   })
 
   it('цепочка AGENTS.md читается с машины по просьбе: от общей к конкретной, без шума о ненайденных', async () => {
