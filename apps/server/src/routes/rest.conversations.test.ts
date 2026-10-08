@@ -113,6 +113,25 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(404)
   })
 
+  it('сбрасывает только собственный thread, usage и оставляет системную заметку для cold start', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Длинный чат' } })).json()
+    await db.chat.addMessage(U, created.id, 'u1', 'Сохранённый контекст', '10:00')
+    await db.chat.setClaudeSession(U, created.id, 'claude:thread-1')
+    await db.chat.setConversationContextUsage(U, created.id, { usedTokens: 100, windowTokens: 200_000, provider: 'claude', model: 'claude-sonnet-4-5', measuredAt: 10 })
+
+    await db.identity.createUser('outsider-reset', '', 'developer')
+    const outsider = signToken({ name: 'outsider-reset', role: 'developer' }, SECRET)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset`, headers: { authorization: `Bearer ${outsider}` } })).statusCode).toBe(404)
+
+    const reset = await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset` })
+    expect(reset.statusCode).toBe(200)
+    expect(reset.json()).toMatchObject({ id: created.id, claudeSessionId: null })
+    expect(reset.json().contextUsage).toBeUndefined()
+    const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
+    expect(after.messages.at(-1)).toMatchObject({ role: 'ai', text: expect.stringContaining('контекст потока сброшен') })
+    expect(coldStartPrompt(after.messages)).toContain('Сохранённый контекст')
+  })
+
   it('возвращает авторизованный серверный снимок эффективного контекста', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Контекст' } })).json()
     const res = await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })

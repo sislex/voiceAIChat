@@ -30,10 +30,13 @@ export type CodexStreamEvent =
 function usageMeta(usage: unknown): TurnMeta {
   const meta: TurnMeta = {}
   const u = (usage ?? {}) as Record<string, unknown>
-  if (typeof u.input_tokens === 'number') meta.inputTokens = u.input_tokens
-  if (typeof u.output_tokens === 'number') meta.outputTokens = u.output_tokens
-  if (typeof u.cached_input_tokens === 'number') meta.cacheReadTokens = u.cached_input_tokens
-  if (typeof u.cache_write_input_tokens === 'number') meta.cacheCreationTokens = u.cache_write_input_tokens
+  const total = ((u.total_token_usage ?? u) as Record<string, unknown>)
+  const last = (u.last_token_usage as Record<string, unknown> | undefined)
+  if (typeof total.input_tokens === 'number') meta.inputTokens = total.input_tokens
+  if (typeof total.output_tokens === 'number') meta.outputTokens = total.output_tokens
+  if (typeof total.cached_input_tokens === 'number') meta.cacheReadTokens = total.cached_input_tokens
+  if (typeof total.cache_write_input_tokens === 'number') meta.cacheCreationTokens = total.cache_write_input_tokens
+  if (typeof last?.input_tokens === 'number') meta.contextInputTokens = last.input_tokens
   if (Object.keys(meta).length > 0) meta.codexThreadUsage = codexThreadUsageOf(meta)
   return meta
 }

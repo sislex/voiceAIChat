@@ -1,7 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-08
-checked: 869b36ca
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -255,6 +254,13 @@ to discover older details through these tools.
 Временные managed-файлы очищает `GeneratedCleanupService`: пользовательский `Settings.generatedFilesTtlDays` принимает целое значение 1–3650 и по умолчанию равен безопасным 30 дням. Один проход использует снимок TTL, перечисляет только непосредственные элементы `<chatRoot>/.generated`, удаляет лишь обычные файлы с `mtime < now - TTL` через специализированную нерекурсивную операцию агента и пропускает каталоги, симлинки, небезопасные имена, свежие файлы, ссылки актуальных сообщений и файлы под lease ретуши/публикации. `attachments`, `artifacts`, `.generated_images` и sibling-пути в обход не попадают. Ошибки binding, offline-машины и файловой системы сохраняются в `generated_cleanup_retry`; `ENOENT` считается достигнутым конечным состоянием. Итог каждого запуска — структурированные счётчики `checked`, `deleted`, `skipped`, `deferred` с `runId`.
 
 Штатная модельная картинка хранится в AI-сообщении компактным fenced-блоком ```image с абсолютным путём, `agentId` и подписью; `MessageImage` получает её байты только при рендеринге. При наличии сохранённого provider-session следующий ход идёт через resume и в prompt попадает лишь новая реплика. После сброса/отсутствия session `TurnManager` пересобирает prompt из всех `messages.text` через `buildConversationPrompt`. При этом функция вырезает из AI-реплик корректные служебные ```image-блоки и локальные markdown-картинки через `parseImages`: это метаданные для UI, а не контекст следующего хода. Inline data-URL (`data:image/...;base64,...`) или иной base64 в тексте AI-сообщения не преобразуется и будет повторно отправлен модели. `parseImages` вырезает только локальные markdown-картинки и корректные ```image-блоки; внешние URL и data-URL остаются в markdown.
+
+Снимок заполнения provider-thread хранится в `conversations.context_usage_json` и
+публикуется как `Conversation.contextUsage`. `TurnManager` обновляет его после
+завершённого хода и очищает, когда runner сообщает другой thread id. Явный
+`POST /api/conversations/:id/thread/reset` атомарно очищает session и usage и
+оставляет заметку в ленте; следующий ход поэтому проходит через `coldStartPrompt`
+со свежим ограниченным хвостом и серверным резюме, а не через resume.
 
 ## LLM и MCP
 
