@@ -1416,6 +1416,42 @@ describe('turns: автоматический контекст базы знан
   })
 })
 
+describe('turns: conversation history MCP', () => {
+  const HISTORY_MCP = 'http://127.0.0.1:8787/mcp/history?k=secret'
+  function broker() {
+    const live = new Set<string>()
+    return { register: (token: string) => live.add(token), unregister: (token: string) => live.delete(token), live: () => [...live] }
+  }
+
+  it('connects for a normal turn and revokes its token when the turn ends', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'History'); const rec = recorder(); const tool = broker()
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.historyMcpUrl).toContain('/mcp/history?k=secret&turn=')
+    expect(tool.live()).toEqual([])
+    await turns.idle(); await db.close()
+  })
+
+  it('honours the mcp-history context toggle', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'History'); const rec = recorder(); const tool = broker()
+    await db.chat.setConversationContextEnabled(U, conversation.id, 'mcp-history', false)
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.historyMcpUrl).toBeUndefined()
+    expect(tool.live()).toEqual([])
+    await turns.idle(); await db.close()
+  })
+
+  it('adds a discovery hint only for long conversations', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'Long'); const rec = recorder(); const tool = broker()
+    for (let index = 0; index < 201; index++) await db.chat.addMessage(U, conversation.id, 'u1', `message ${index}`, '10:00')
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.prompt).toContain('mcp__history__history_search')
+    await turns.idle(); await db.close()
+  })
+})
+
 describe('turns: MCP-инструменты базы знаний и режимы kbContextMode', () => {
   const bundle = {
     query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
@@ -1778,6 +1814,7 @@ describe('turns: управляемая персистентная очеред�
     await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
     const conversation = await db.chat.createConversation(U, 'make')
     await db.chat.setClaudeSession(U, conversation.id, 'codex:01a0423d-0b8d-7931-ba8f-c7282aa63583')
+    await db.chat.addMessage(U, conversation.id, 'u1', 'OLD-COLD-HISTORY' + 'x'.repeat(200_000), '09:00')
     const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Сделай кнопку', '10:00')
     const llm = controlled()
     const errors: string[] = []
@@ -1792,6 +1829,8 @@ describe('turns: управляемая персистентная очеред�
     expect(llm.handlers).toHaveLength(2)
     expect(llm.requests[1]?.sessionId ?? null).toBeNull()
     expect(llm.requests[1]?.prompt).toContain('Сделай кнопку')
+    expect(llm.requests[1]?.prompt).toContain('1 ранних сообщений опущены')
+    expect(llm.requests[1]?.prompt).not.toContain('OLD-COLD-HISTORY')
     expect(errors).toEqual([])
     expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(false)
 

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-08
-checked: bfca75d8
+checked: 869b36ca
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -197,6 +197,18 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 ## Процесс-глобальные ходы
 
 `turns.ts` хранит по одному активному ходу на conversation id. `start()` выбирает Claude/Codex client, строит запрос с cwd/profile/MCP и подписывается на token/activity/usage. Partial хранится в памяти и транслируется всем заинтересованным соединениям.
+
+The read-only history MCP endpoint (`/mcp/history`, tools
+`mcp__history__history_search` and `mcp__history__history_get`) is attached to a
+normal assistant turn with an in-memory, conversation-scoped token. Search uses
+the messages full-text index but can only return published messages from that
+turn's conversation, newest first; snippets are capped at 400 characters.
+Direct reads return the selected message and at most five neighbours on either
+side, with every message capped at 4,000 characters. The `mcp-history` context
+toggle removes the whole server. Delegated/text-only turns never receive it,
+and turn completion, cancellation, or failure revokes its token. Conversations
+with more than 200 published messages add a short prompt hint telling the model
+to discover older details through these tools.
 
 По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. Каждый возвращаемый `Conversation` содержит серверный агрегат стоимости сохранённых AI-сообщений: `costUsd` и `costStatus` (`known`, `partial`, `unknown`). Источник расчёта — `conversationCosts` в `apps/server/src/db/database.ts`: он связывает фактический `messages.engine` и `meta.model` с `model_prices`, используя `conversations.llm_model` только как fallback модели. Обычный вход равен `max(inputTokens - cacheReadTokens, 0)`, чтение и создание кэша и output тарифицируются отдельно. AI-ход считается известным только при числовых input/output (и, если присутствуют, cache) usage и найденном тарифе для provider/model; все известны — `known`, известна лишь часть — `partial`, нет ни одного известного или AI-ходов ещё нет — `unknown`. Для `partial`/`unknown` `costUsd` равен `null`, чтобы известная часть или отсутствие usage не выглядели полной нулевой суммой.
 
@@ -627,6 +639,33 @@ UI Make остаётся в `packages/ui` и собирается общим web
   — в `@voicechat/shared` (чистые; вход, приглашения, студия картинок, компоненты репозитория),
   SSRF-гард `assertPublicHost`/`isPublicAddress` — `util/publicHost.ts` ядра (`routes/previewProxy.ts`
   оборачивает его в `PreviewProxyError(403)`) и намеренная копия `apps/make/src/publicHost.ts`.
+
+## Bounded cold-start conversation history
+
+Core uses shared `buildConversationPromptWithin` for cold starts: no session,
+edited/deleted history, provider switch, and retry after a lost Codex thread.
+Turn execution and the context inspector share `prompt/coldStart.ts`.
+`VC_COLD_START_PROMPT_CHARS` sets the rendered history budget (default 200,000
+characters, approximately 50k tokens). Invalid, nonpositive or noninteger values
+use the default. The newest contiguous messages fit including role labels and
+separators. An oversized newest message retains its ending. Short histories keep
+the existing prompt format; resumed turns still send only the new message.
+
+An omission notice precedes retained history. The optional shared-helper summary
+block follows that notice and precedes recent messages. Notice, summary,
+attachment instructions and other turn context are additional to the history
+budget. B01 does not generate or persist summaries. Inspector history details
+expose the same bounded prompt and its size; stored messages remain unchanged.
+
+`conversationSummary.ts` supplies the rolling summary consumed by that cold
+start. After 40 published messages beyond the stored boundary it starts a
+deduplicated background run with the cheapest configured runner model. The run
+has a fresh session, plan permission, disabled execution and no tools. It folds
+the previous summary together with only the messages after the boundary, caps
+the saved result at 1,500 words, persists all three summary fields atomically,
+and emits `chat.conversation`. Runner failures are logged, never fail the chat
+turn, and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh uses the same service but bypasses the threshold.
 
 ## Account profile query path
 

@@ -1,3 +1,4 @@
+import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
@@ -12,7 +13,7 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, buildConversationPrompt, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -47,6 +48,7 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  conversationSummary?: { consider(userId: string, conversationId: string): void }
   /** Клиент конкретного исполнителя из реестра. */
   engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
@@ -74,6 +76,11 @@ export interface TurnManagerDeps {
         userSettings?: Record<string, unknown>
       }
     }): void
+    unregister(token: string): void
+  }
+  historyMcpBaseUrl?: string
+  historyTool?: {
+    register(token: string, entry: { userId: string; conversationId: string }): void
     unregister(token: string): void
   }
   /**
@@ -352,6 +359,7 @@ interface TurnState {
   turnId: string
   /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
   kbToolToken: string | null
+  historyToolGrantId: string | null
   /** Токен бинарного файлового контекста remote:image. */
   remoteFileToken: string | null
   source: StartTurnRequest
@@ -469,6 +477,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       const message = await deps.db.chat.addMessage(userId, conversationId, 'u0',
         req.segments.map(segment => segment.text).join('\n'), timeHHMM())
       req.messageId = message.id
+      deps.conversationSummary?.consider(userId, conversationId)
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
@@ -575,7 +584,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
-      : buildConversationPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
+      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -588,6 +597,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
+    const historyEnabled = !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
+    if (historyEnabled && (conv?.messageCount ?? 0) > 200) {
+      basePrompt += '\n\nЭтот разговор длинный. Если для ответа нужны прежние детали, используй mcp__history__history_search и затем mcp__history__history_get вместо догадок.'
+    }
     if (!req.delegation && deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
@@ -861,6 +874,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       })
     }
+    let historyToolGrantId: string | null = null
+    let historyMcpUrl: string | undefined
+    if (historyEnabled) {
+      historyToolGrantId = randomUUID()
+      historyMcpUrl = `${deps.historyMcpBaseUrl}&turn=${encodeURIComponent(historyToolGrantId)}`
+      deps.historyTool!.register(historyToolGrantId, { userId, conversationId })
+    }
     // Инструменты веб-превью (mcp__browser__*) — вне ветки `remote`: действия
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
@@ -1000,6 +1020,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       execTarget: requestedTarget,
       turnId,
       kbToolToken,
+      historyToolGrantId,
       remoteFileToken,
       source: req
     }
@@ -1050,6 +1071,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
+        ...(historyMcpUrl ? { historyMcpUrl } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
         ...(previewMcpUrl && previewSurface ? { previewSurface } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
@@ -1166,6 +1188,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               promptChars: requestInfo.promptChars,
               turnInputTokens: turnInputTokens(merged)
             })
+            deps.conversationSummary?.consider(userId, conversationId)
             return message
           }
           // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
@@ -1287,7 +1310,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   /**
-   * Снять токены инструментов хода (БЗ и файлы). Обязателен во всех выходах
+   * Снять токены инструментов хода (БЗ, истории и файлов). Обязателен во всех выходах
    * хода (готово, ошибка, отмена, остановка сервера) — иначе каждый отменённый
    * ход оставляет живые токены, по которым можно действовать от его имени.
    */
@@ -1295,6 +1318,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (turn.kbToolToken) {
       deps.kbTool?.unregister(turn.kbToolToken)
       turn.kbToolToken = null
+    }
+    if (turn.historyToolGrantId) {
+      deps.historyTool?.unregister(turn.historyToolGrantId)
+      turn.historyToolGrantId = null
     }
     if (turn.remoteFileToken) {
       deps.remoteFileTool?.unregister(turn.remoteFileToken)
@@ -1333,6 +1360,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const message = turn.partial.trim()
       ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
+    if (message) deps.conversationSummary?.consider(turn.userId, conversationId)
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn

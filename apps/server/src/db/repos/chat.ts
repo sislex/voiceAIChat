@@ -45,6 +45,9 @@ interface ConversationRow {
   cost_dirty?: number
   last_exec_target?: string | null
   archived_at: number | null
+  summary_text: string | null
+  summary_covers_message_id: string | null
+  summary_updated_at: number | null
 }
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined (не роняет чтение ленты). */
@@ -529,6 +532,21 @@ export class ChatRepo extends BaseRepo {
       }
     ).n
     return await this.mapConversation(row, count)
+  }
+
+  async summaryMessages(userId: string, conversationId: string): Promise<{ summary: Conversation['summary']; messages: Message[] } | null> {
+    const conversation = await this.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const rows = await this.sql.all<MessageRow>(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+      AND history_position > COALESCE((SELECT history_position FROM messages WHERE id = ? AND conversation_id = ?), 0)
+      ORDER BY history_position, id`, [conversationId, conversation.summary?.coversUntilMessageId ?? '', conversationId])
+    return { summary: conversation.summary, messages: this.messageRows(rows) }
+  }
+
+  async setConversationSummary(userId: string, conversationId: string, summary: NonNullable<Conversation['summary']>): Promise<Conversation | null> {
+    const changed = await this.sql.run(`UPDATE conversations SET summary_text = ?, summary_covers_message_id = ?, summary_updated_at = ?
+      WHERE id = ? AND user_id = ?`, [summary.text, summary.coversUntilMessageId, summary.updatedAt, conversationId, userId])
+    return changed.changes ? await this.getConversation(userId, conversationId) : null
   }
 
   /** Владеет ли пользователь разговором (для проверок при работе с сообщениями). */
@@ -1188,6 +1206,47 @@ export class ChatRepo extends BaseRepo {
     return this.messageRows(rows)
   }
 
+  /** MCP history is deliberately scoped to one owned conversation. */
+  async searchConversationHistory(userId: string, conversationId: string, query: string, limit: number): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const match = this.sql.engine === 'postgres' ? toPgTsQuery(query) : toFtsMatchQuery(query)
+    if (!match || !this.ftsReady) return []
+    const rows = this.sql.engine === 'postgres'
+      ? await this.sql.all<MessageRow>(`SELECT m.* FROM messages m
+          WHERE m.conversation_id = ? AND m.state = 'published'
+            AND m.text_tsv @@ to_tsquery('simple', ?)
+          ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
+      : await this.sql.all<MessageRow>(`SELECT m.* FROM messages_fts
+          JOIN messages m ON m.rowid = messages_fts.rowid
+          WHERE m.conversation_id = ? AND m.state = 'published' AND messages_fts MATCH ?
+          ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
+    return this.messageRows(rows)
+  }
+
+  async conversationHistoryAround(userId: string, conversationId: string, messageId: string, around: number): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const center = await this.sql.get<{ history_position: number | null }>(
+      `SELECT history_position FROM messages WHERE id = ? AND conversation_id = ? AND state = 'published'`,
+      [messageId, conversationId])
+    if (!center) return []
+    // Imported legacy rows can lack a position; the deterministic full-history fallback
+    // preserves their native order while the normal path remains a bounded indexed read.
+    if (center.history_position === null) {
+      const all = await this.listMessages(userId, conversationId)
+      const index = all.findIndex((message) => message.id === messageId)
+      return index < 0 ? [] : all.slice(Math.max(0, index - around), index + around + 1)
+    }
+    const before = await this.sql.all<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND state = 'published' AND history_position < ?
+      ORDER BY history_position DESC, id DESC LIMIT ?`, [conversationId, center.history_position, around])
+    const selected = await this.sql.get<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND id = ? AND state = 'published'`, [conversationId, messageId])
+    const after = await this.sql.all<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND state = 'published' AND history_position > ?
+      ORDER BY history_position ASC, id ASC LIMIT ?`, [conversationId, center.history_position, around])
+    return this.messageRows([...before.reverse(), ...(selected ? [selected] : []), ...after])
+  }
+
   /** Indexed keyset read: fetch one extra row, never materialize the full history. */
   async pageMessages(userId: string, conversationId: string, limit: number, before?: string): Promise<{ messages: Message[]; history: ConversationHistory } | null> {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw Error('Invalid history limit')
@@ -1702,6 +1761,9 @@ export class ChatRepo extends BaseRepo {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount,
+      ...(row.summary_text && row.summary_covers_message_id && row.summary_updated_at !== null
+        ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at } }
+        : {}),
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,

@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS conversations (
   cost_prices_stamp INTEGER,
   cost_dirty        INTEGER NOT NULL DEFAULT 1,
   permission_mode TEXT,
-  archived_at INTEGER
+  archived_at INTEGER,
+  summary_text TEXT,
+  summary_covers_message_id TEXT,
+  summary_updated_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS conversation_groups (

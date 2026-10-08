@@ -41,6 +41,7 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
+import { createConversationSummaryService, type ConversationSummaryService } from './conversationSummary.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
@@ -160,6 +161,7 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { registerHistoryMcp, historyTurnBroker, HISTORY_MCP_PATH } from './mcp/historyMcp.js'
 import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { createReaderModule } from '@sislexa/web-reader'
@@ -641,6 +643,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
     return operation
   }
+  let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
@@ -667,6 +670,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     publishChatMessage: async (userId, conversationId, message) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
     },
+    conversationSummary: () => conversationSummary,
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return
@@ -701,6 +705,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
       : unconfiguredLlmClient()))
+  conversationSummary = createConversationSummaryService({
+    db,
+    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
+    // when this installation only has a Claude runner.
+    client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
+    model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    publish: async (userId, conversation) => {
+      frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
+    },
+    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+  })
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
@@ -880,6 +895,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     deployTrigger
   })
+  registerHistoryMcp(app, { db, secret: mcpSecret })
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении; сам MCP собирает модуль ридера ниже.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
@@ -904,6 +920,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
+  const historyMcpBaseUrl = buildPublicMcpUrl(opts.config, HISTORY_MCP_PATH, mcpSecret)
   // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
   const readerRemote = opts.config.readerMode === 'remote'
   if (readerRemote && !(opts.config.readerUrl && (managedReader || opts.config.internalToken) && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
@@ -1307,11 +1324,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude: await claude,
     codex: await codex,
+    conversationSummary,
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     kb,
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
+    historyTool: historyTurnBroker,
     resolveUpload: async (id) => {
       const upload = uploads.get(id)
       if (!upload) return null
@@ -1354,6 +1373,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
+    historyMcpBaseUrl,
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
