@@ -1841,6 +1841,28 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('persists latest context fill and clears it when the provider starts another thread', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'context fill')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Привет', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    await llm.handlers[0]!.onSession('thread-one')
+    await llm.handlers[0]!.onDone('Ответ', { model: 'claude-sonnet-4-5', inputTokens: 10, cacheReadTokens: 20, cacheCreationTokens: 5 })
+    await turns.idle()
+    expect((await db.chat.getConversation(U, conversation.id))?.contextUsage).toMatchObject({ usedTokens: 35, windowTokens: 200_000, provider: 'claude' })
+
+    const next = await db.chat.addMessage(U, conversation.id, 'u1', 'Ещё', '10:01')
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: next.id, segments: [{ speakerId: 1, text: next.text }] })
+    await llm.handlers[1]!.onSession('thread-two')
+    expect((await db.chat.getConversation(U, conversation.id))?.contextUsage).toBeUndefined()
+    await llm.handlers[1]!.onDone('Ещё ответ', { model: 'claude-sonnet-4-5', inputTokens: 12 })
+    await turns.idle()
+    await turns.idle()
+    db.close()
+  })
+
   it('isLostCodexThread recognises only the missing rollout error', () => {
     expect(isLostCodexThread('Error: thread/resume: thread/resume failed: no rollout found for thread id abc (code -32600)')).toBe(true)
     expect(isLostCodexThread('runner failed')).toBe(false)

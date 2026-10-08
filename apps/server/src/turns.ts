@@ -13,6 +13,7 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
+import { conversationContextUsage } from '@voicechat/shared'
 import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
@@ -584,7 +585,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
-      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
+      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -1086,6 +1087,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       {
         onSession: async (sid) => {
           codexThreadId = sid
+          if (conv?.claudeSessionId && conv.claudeSessionId !== `${provider}:${sid}`) {
+            await deps.db.chat.setConversationContextUsage(userId, conversationId, null)
+          }
           await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`)
         },
         onInit: (info) => {
@@ -1178,7 +1182,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               timeHHMM(),
               provider,
               merged,
-              requestedTarget
+              requestedTarget,
+              undefined,
+              undefined,
+              conversationContextUsage(provider, resolvedModel, merged, now())
             )
             // Итоги хода — в его обращения к БЗ: id сообщения (панель ведёт на
             // ход) и размеры промпта/входа (доля БЗ в промпте).

@@ -44,6 +44,18 @@ describe('parseCodexLine', () => {
     })
   })
 
+  it('extracts last_token_usage separately from cumulative thread totals', () => {
+    const ev = parseCodexLine(JSON.stringify({ type: 'turn.completed', usage: {
+      total_token_usage: { input_tokens: 1000, output_tokens: 20 },
+      last_token_usage: { input_tokens: 125, output_tokens: 5 }
+    } }))
+    expect(ev && ev.kind === 'result' && ev.meta).toMatchObject({
+      inputTokens: 1000,
+      contextInputTokens: 125,
+      codexThreadUsage: { inputTokens: 1000, outputTokens: 20 }
+    })
+  })
+
   it('turn.completed without usage leaves meta empty', () => {
     const ev = parseCodexLine(JSON.stringify({ type: 'turn.completed' }))
     expect(ev && ev.kind === 'result' && ev.meta).toEqual({})
