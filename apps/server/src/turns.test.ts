@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
-import { createTurnManager, ProjectMainSnapshotCoordinator } from './turns.js'
+import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { imageBlock } from '@voicechat/shared'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
@@ -1771,6 +1771,40 @@ describe('turns: управляемая персистентная очеред�
     expect((await db.chat.listQueuedTurns(U, conversation.id)).map((item) => item.text)).toEqual(['A', 'B'])
     await turns.idle()
     db.close()
+  })
+
+  it('a lost Codex thread is forgotten and the message is retried in a fresh thread', async () => {
+    const db = await freshDb()
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
+    const conversation = await db.chat.createConversation(U, 'make')
+    await db.chat.setClaudeSession(U, conversation.id, 'codex:01a0423d-0b8d-7931-ba8f-c7282aa63583')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Сделай кнопку', '10:00')
+    const llm = controlled()
+    const errors: string[] = []
+    const turns = createTurnManager({ db: await db, claude: llm.client, codex: llm.client })
+    turns.subscribe((m) => { if (m.t === 'claude.error') errors.push(m.message) })
+
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    expect(llm.requests[0]?.sessionId).toBe('01a0423d-0b8d-7931-ba8f-c7282aa63583')
+    await llm.handlers[0]!.onError('thread/resume: thread/resume failed: no rollout found for thread id 01a0423d-0b8d-7931-ba8f-c7282aa63583 (code -32600)')
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+    expect(llm.requests[1]?.prompt).toContain('Сделай кнопку')
+    expect(errors).toEqual([])
+    expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(false)
+
+    await llm.handlers[1]!.onError('thread/resume failed: no rollout found for thread id x')
+    await turns.idle()
+    expect(llm.handlers).toHaveLength(2)
+    expect(errors).toHaveLength(1)
+    db.close()
+  })
+
+  it('isLostCodexThread recognises only the missing rollout error', () => {
+    expect(isLostCodexThread('Error: thread/resume: thread/resume failed: no rollout found for thread id abc (code -32600)')).toBe(true)
+    expect(isLostCodexThread('runner failed')).toBe(false)
   })
 
   it('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {

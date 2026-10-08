@@ -1,7 +1,6 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-08
-checked: f29f68ef
 areas:
   - packages/shared/src
 ---
@@ -17,6 +16,19 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Карта модулей
+
+### Agent-facing stand gateway contract
+
+`devStand.ts` exports `DEV_GATEWAY_VERSION` (currently `1.0.0`),
+`DEV_GATEWAY_HEALTH_PATH` (`/__gateway/health`), `DevGatewayHealth` and
+`readDevGatewayManifest`. The stable Core CLI is
+`node --import tsx scripts/dev-gateway.mjs`; `--version` needs no stand setup.
+The gateway reader projects schema-1 routing fields, accepts opaque `gateway`
+metadata and warns about ignored future top-level fields. Component validation
+remains strict; the existing strict manifest validator is unchanged.
+Health reports the manifest stand ID and per-component HTTP reachability/status,
+not application readiness. See [deployment](deploy.md#dev-stand-gateway-and-core-component-c02)
+for environment inputs, reload behavior, probe semantics and operator commissioning.
 
 ### One-command contract release
 

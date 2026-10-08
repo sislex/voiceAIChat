@@ -1,7 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
-checked: 4329951c
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -169,6 +168,30 @@ the lifecycle; Core does not allocate environments or write manifests.
 `SISLEXA_GATEWAY_HOST` defaults to `0.0.0.0`, listening on both the host's LAN
 and Tailscale IPv4 addresses. Operators must commission DNS, reachability and
 access controls for those addresses; the launcher does not modify the host.
+
+The agent-facing entry is `node --import tsx scripts/dev-gateway.mjs` (also
+`npm run dev:gateway`). `--version` prints `1.0.0` and exits without requiring
+environment configuration or opening a port. Its independently versioned Shared
+contract is `DEV_GATEWAY_VERSION`, `DEV_GATEWAY_HEALTH_PATH` and `DevGatewayHealth`
+in `devStand.ts`. Breaking CLI/health behavior requires a major version change.
+The gateway reader accepts schema 1 with optional opaque owner `gateway` metadata.
+Future top-level fields are ignored with a `dev_gateway_unknown_manifest_field`
+warning naming only the field, never its value. Required fields, schema version,
+component map and component entries retain strict validation.
+
+`GET /__gateway/health` returns uncached JSON with `version`, manifest `standId`
+and a `components` map of all registry IDs. Each entry contains `reachable` and,
+when an HTTP response arrived, `statusCode`. Probes run concurrently with a
+two-second total timeout per upstream, using its registry readiness path. A dev
+component with a URL is probed directly; other entries probe base Caddy. Thus a
+base result proves Caddy reachability, not readiness of the component behind it.
+Any HTTP status proves reachability; this is not authenticated acceptance.
+Valid manifests return 200 even with unreachable upstreams; malformed/unreadable
+manifests return 503 JSON with `error: invalid_dev_stand_manifest`. Other HTTP
+methods return 405. Responses omit upstream URLs and credentials.
+Health and proxy requests reread the file named by `SISLEXA_STAND_MANIFEST` on
+every request, including atomic replacement; editing that file requires no
+restart. Changing the launch environment's path requires relaunching the process.
 
 Routing uses the longest matching, segment-bounded prefix in
 `DEV_COMPONENT_REGISTRY`. A matching component with `source: dev` and a URL
