@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 73 коммит(ов) в areas после сверки: 869b36ca feat(server): conversation history search MCP for the assistant (chat-history-v1 B04) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 34 коммит(ов) в areas после сверки: 869b36ca feat(server): conversation history search MCP for the assistant (chat-history-v1 B04) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 35 коммит(ов) в areas после сверки: 869b36ca feat(server): conversation history search MCP for the assistant (chat-history-v1 B04) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 33 коммит(ов) в areas после сверки: 869b36ca feat(server): conversation history search MCP for the assistant (chat-history-v1 B04) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 34 коммит(ов) в areas после сверки: cce5064e docs(kb): touch server internals for history MCP … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 103 коммит(ов) в areas после сверки: 869b36ca feat(server): conversation history search MCP for the assistant (chat-history-v1 B04) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -60,18 +60,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1121. Последние:
+Всего записей: 1122. Последние:
 
 - [2026-10-08-pc-radvilovich-tailae39a6-ts-net-chat-history-mcp.md](log/2026-10-08-pc-radvilovich-tailae39a6-ts-net-chat-history-mcp.md) — chat-history-mcp
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-selected-readiness.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-selected-readiness.md) — release-train-selected-readiness
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-separate-commit.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-separate-commit.md) — release-train-kb-separate-commit
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-after-bump.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-kb-after-bump.md) — release-train-kb-after-bump
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-release-train-f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b.md) — release-train-f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b
+- [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-29.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-29.md) — pin-shared-0-1-29
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-28.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-28.md) — pin-shared-0-1-28
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-27.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-27.md) — pin-shared-0-1-27
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-multi-project-integration-tokens.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-multi-project-integration-tokens.md) — multi-project-integration-tokens
 - [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-codex-lost-thread-fresh-start.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-codex-lost-thread-fresh-start.md) — codex-lost-thread-fresh-start
-- [2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-b03-versioned-stand-gateway.md](log/2026-10-08-alexeys-macbook-air-tailae39a6-ts-net-b03-versioned-stand-gateway.md) — b03-versioned-stand-gateway
 
 ## Исторические планы
 
