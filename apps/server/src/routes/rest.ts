@@ -14,6 +14,7 @@ import { uid } from "@sislexa/identity/server/users/auth"
 import { readCoreUserFile } from '../userFiles.js'
 import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import type { ConversationSummaryService } from '../conversationSummary.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
@@ -794,6 +795,7 @@ export async function registerRest(
     refreshProjectMain?: (userId: string, projectId: string) => void
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
+    conversationSummary?: () => ConversationSummaryService | undefined
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1041,6 +1043,20 @@ export async function registerRest(
       return { conversation, messages: await clientMessages(db, uid(req), conversation.id, page.messages), history: page.history }
     }
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
+  })
+
+  app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.getConversation(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
+  })
+
+  app.post<{ Params: { id: string } }>(REST.conversationSummaryRefresh(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const service = opts.conversationSummary?.()
+    if (!service) return reply.code(503).send({ error: 'summary runner unavailable' })
+    const conversation = await service.refresh(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
   })
 
   app.get<{ Params: { id: string; messageId: string }; Querystring: { scope?: string; projectId?: string } }>(
@@ -1477,6 +1493,7 @@ export async function registerRest(
       }
       const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
       await opts.publishChatMessage?.(userId, req.params.id, message)
+      opts.conversationSummary?.()?.consider(userId, req.params.id)
       return (await clientMessages(db, userId, req.params.id, [message]))[0]
     }
   )

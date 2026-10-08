@@ -104,6 +104,8 @@ describe('REST: conversations/messages/settings', () => {
     const got = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
     expect(got.conversation.title).toBe('Тест')
     expect(got.messages).toEqual([])
+    expect((await inj({ method: 'GET', url: `/api/conversations/${created.id}/summary` })).json()).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/summary/refresh` })).json()).toBeNull()
   })
 
   it('404 на несуществующий разговор', async () => {

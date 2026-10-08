@@ -256,6 +256,15 @@ stored diagnostics and WebSocket message events are unchanged.
 The renderer IPC channel `conversations:get` accepts the same optional `limit` and
 `before`; web and desktop hosts map them to the REST query.
 
+## Rolling conversation summaries
+
+`Conversation.summary` is optional and contains `text`, the inclusive
+`coversUntilMessageId` boundary, and `updatedAt` in Unix milliseconds. `GET
+/api/conversations/:id/summary` returns that object or `null`; `POST
+/api/conversations/:id/summary/refresh` runs an on-demand refresh and returns
+the resulting object. A stored change is also delivered to the owner's active
+connections as `chat.conversation` with the complete updated conversation.
+
 ## Versioned chat/application boundary
 
 `packages/shared/src/chatContract.ts` is the additive public boundary for reusable

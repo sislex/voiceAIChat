@@ -185,6 +185,8 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationSummary: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary`,
+  conversationSummaryRefresh: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary/refresh`,
   conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
   projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
@@ -945,6 +947,7 @@ export type ServerMessage =
    * чём — поэтому это не `claude.done`.
    */
   | { t: 'chat.message'; conversationId: string; message: Message }
+  | { t: 'chat.conversation'; conversation: Conversation }
   /**
    * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
    * моделью). Рассылается по userId, как `claude.usage`, — подписки нет.
@@ -1061,6 +1064,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.interaction',
   'merge.snapshot',
   'chat.message',
+  'chat.conversation',
   'kb.usage',
   'preview.action',
   'widget.action',

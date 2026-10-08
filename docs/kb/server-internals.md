@@ -1,7 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-08
-checked: bfca75d8
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -644,6 +643,16 @@ block follows that notice and precedes recent messages. Notice, summary,
 attachment instructions and other turn context are additional to the history
 budget. B01 does not generate or persist summaries. Inspector history details
 expose the same bounded prompt and its size; stored messages remain unchanged.
+
+`conversationSummary.ts` supplies the rolling summary consumed by that cold
+start. After 40 published messages beyond the stored boundary it starts a
+deduplicated background run with the cheapest configured runner model. The run
+has a fresh session, plan permission, disabled execution and no tools. It folds
+the previous summary together with only the messages after the boundary, caps
+the saved result at 1,500 words, persists all three summary fields atomically,
+and emits `chat.conversation`. Runner failures are logged, never fail the chat
+turn, and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh uses the same service but bypasses the threshold.
 
 ## Account profile query path
 
