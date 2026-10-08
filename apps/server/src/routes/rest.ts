@@ -1,3 +1,4 @@
+import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
@@ -5,7 +6,7 @@ import { clientMessages, loadsServiceData } from '../serviceData.js'
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, buildConversationPrompt, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -174,7 +175,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.
   const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
-  const historyText = buildConversationPrompt(messages)
+  const historyText = coldStartPrompt(messages)
   // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? await db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId) : null
@@ -437,11 +438,11 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         explanation: resumeId
           ? 'Ход продолжает сессию движка (resume): история в промпт не пересобирается, уходит только новое сообщение — но все блоки настроек ниже отправляются заново каждым ходом. Сессия сбрасывается при смене движка и правке или удалении сообщений.'
           : messages.length > 0
-            ? 'Сессии движка нет — история пересобирается в промпт целиком.'
+            ? 'Сессии движка нет — в промпт включается свежая часть истории в пределах лимита символов.'
             : 'Истории пока нет: в ход уйдёт только ваше сообщение.',
         configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0,
         size: resumeId ? null : { chars: historyText.length, approxTokens: approxTokens(historyText.length) },
-        details: { messageCount: messages.length, 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
+        details: { messageCount: messages.length, ...(!resumeId ? { prompt: historyText } : {}), 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]

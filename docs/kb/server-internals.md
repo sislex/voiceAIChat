@@ -628,6 +628,23 @@ UI Make остаётся в `packages/ui` и собирается общим web
   SSRF-гард `assertPublicHost`/`isPublicAddress` — `util/publicHost.ts` ядра (`routes/previewProxy.ts`
   оборачивает его в `PreviewProxyError(403)`) и намеренная копия `apps/make/src/publicHost.ts`.
 
+## Bounded cold-start conversation history
+
+Core uses shared `buildConversationPromptWithin` for cold starts: no session,
+edited/deleted history, provider switch, and retry after a lost Codex thread.
+Turn execution and the context inspector share `prompt/coldStart.ts`.
+`VC_COLD_START_PROMPT_CHARS` sets the rendered history budget (default 200,000
+characters, approximately 50k tokens). Invalid, nonpositive or noninteger values
+use the default. The newest contiguous messages fit including role labels and
+separators. An oversized newest message retains its ending. Short histories keep
+the existing prompt format; resumed turns still send only the new message.
+
+An omission notice precedes retained history. The optional shared-helper summary
+block follows that notice and precedes recent messages. Notice, summary,
+attachment instructions and other turn context are additional to the history
+budget. B01 does not generate or persist summaries. Inspector history details
+expose the same bounded prompt and its size; stored messages remain unchanged.
+
 ## Account profile query path
 
 `GET /api/me/profile` runs its independent reads concurrently. Conversation

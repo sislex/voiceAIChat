@@ -165,6 +165,55 @@ export function buildConversationPrompt(
   return withAttachments(body, attachmentPaths)
 }
 
+/** Budget for rendered history; notices, summaries and attachments are additional context. */
+export const DEFAULT_COLD_START_PROMPT_CHARS = 200_000
+
+/** Keep the newest contiguous history, cutting only an oversized last message from the start. */
+export function buildConversationPromptWithin(
+  messages: PromptMessage[],
+  budget = DEFAULT_COLD_START_PROMPT_CHARS,
+  { summary, attachmentPaths = [] }: { summary?: string; attachmentPaths?: string[] } = {}
+): string {
+  const limit = Number.isSafeInteger(budget) && budget > 0 ? budget : DEFAULT_COLD_START_PROMPT_CHARS
+  const kept: string[] = []
+  let length = 0
+  let newestLabel = ''
+  let omitted = 0
+  let truncated = false
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]!
+    const text = buildConversationPrompt([message])
+    if (!text) continue
+    const label = `${message.role === 'ai' ? 'Ассистент' : 'Пользователь'}: `
+    if (!kept.length) {
+      if (text.length > limit) {
+        kept.push(text.slice(-limit))
+        omitted = i
+        truncated = true
+        break
+      }
+      newestLabel = label
+      kept.push(text)
+      length = text.length
+      continue
+    }
+    const lastLabel = kept.length === 1 ? newestLabel : ''
+    const nextLength = length + lastLabel.length + 2 + label.length + text.length
+    if (nextLength > limit) {
+      omitted = i + 1
+      break
+    }
+    if (lastLabel) kept[0] = lastLabel + kept[0]
+    kept.push(label + text)
+    length = nextLength
+  }
+  const blocks: string[] = []
+  if (omitted || truncated) blocks.push(`История разговора до этого места сокращена: ${omitted} ранних сообщений опущены.`)
+  if (summary?.trim()) blocks.push(`[Сводка разговора]\n${summary.trim()}\n[/Сводка разговора]`)
+  blocks.push(kept.reverse().join('\n\n'))
+  return withAttachments(blocks.filter(Boolean).join('\n\n'), attachmentPaths)
+}
+
 /** Маппинг модели из настроек в алиас модели Claude CLI. */
 export function claudeModelAlias(model: string): string {
   return normalizeClaudeModel(model)
