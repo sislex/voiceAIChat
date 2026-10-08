@@ -112,3 +112,25 @@ test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifest
   assert.equal(invalid.status, 503)
   assert.deepEqual(await invalid.json(), { error: 'invalid_dev_stand_manifest' })
 })
+test('gateway presents same-origin browser requests with the upstream origin', async t => {
+  const dir = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'gateway-origin-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24000', '24001', '24002']).map(Number)
+  const base = http.createServer((req, res) => res.end(String(req.headers.origin ?? 'none')))
+  base.listen(ports[0], '127.0.0.1'); await once(base, 'listening')
+  const path = join(dir, 'manifest.json')
+  writeFileSync(path, JSON.stringify(manifest()))
+  const gateway = createGateway({ manifestPath: path, baseUrl: `http://127.0.0.1:${ports[0]}`, onError() {}, onWarning() {} })
+  gateway.listen(ports[2], '127.0.0.1'); await once(gateway, 'listening')
+  t.after(async () => { await new Promise(resolve => gateway.close(resolve)); await new Promise(resolve => base.close(resolve)) })
+  const send = origin => new Promise((resolve, reject) => {
+    const request = http.request({ host: '127.0.0.1', port: ports[2], path: '/api/auth/login', method: 'POST',
+      headers: { host: `stand.example:${ports[2]}`, ...(origin ? { origin } : {}) } }, response => {
+      let body = ''; response.on('data', chunk => { body += chunk }); response.on('end', () => resolve(body))
+    })
+    request.on('error', reject); request.end()
+  })
+  assert.equal(await send(`http://stand.example:${ports[2]}`), `http://127.0.0.1:${ports[0]}`)
+  assert.equal(await send('http://evil.example'), 'http://evil.example')
+  assert.equal(await send(undefined), 'none')
+})
