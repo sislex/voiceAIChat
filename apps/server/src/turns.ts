@@ -78,6 +78,11 @@ export interface TurnManagerDeps {
     }): void
     unregister(token: string): void
   }
+  historyMcpBaseUrl?: string
+  historyTool?: {
+    register(token: string, entry: { userId: string; conversationId: string }): void
+    unregister(token: string): void
+  }
   /**
    * База URL MCP-эндпоинта действий веб-превью (с секретом k). Только для хода
    * разговора: действия транслируются подключённым клиентам пользователя.
@@ -354,6 +359,7 @@ interface TurnState {
   turnId: string
   /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
   kbToolToken: string | null
+  historyToolGrantId: string | null
   /** Токен бинарного файлового контекста remote:image. */
   remoteFileToken: string | null
   source: StartTurnRequest
@@ -591,6 +597,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
+    const historyEnabled = !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
+    if (historyEnabled && (conv?.messageCount ?? 0) > 200) {
+      basePrompt += '\n\nЭтот разговор длинный. Если для ответа нужны прежние детали, используй mcp__history__history_search и затем mcp__history__history_get вместо догадок.'
+    }
     if (!req.delegation && deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
@@ -864,6 +874,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       })
     }
+    let historyToolGrantId: string | null = null
+    let historyMcpUrl: string | undefined
+    if (historyEnabled) {
+      historyToolGrantId = randomUUID()
+      historyMcpUrl = `${deps.historyMcpBaseUrl}&turn=${encodeURIComponent(historyToolGrantId)}`
+      deps.historyTool!.register(historyToolGrantId, { userId, conversationId })
+    }
     // Инструменты веб-превью (mcp__browser__*) — вне ветки `remote`: действия
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
@@ -1003,6 +1020,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       execTarget: requestedTarget,
       turnId,
       kbToolToken,
+      historyToolGrantId,
       remoteFileToken,
       source: req
     }
@@ -1053,6 +1071,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
+        ...(historyMcpUrl ? { historyMcpUrl } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
         ...(previewMcpUrl && previewSurface ? { previewSurface } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
@@ -1291,7 +1310,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   /**
-   * Снять токены инструментов хода (БЗ и файлы). Обязателен во всех выходах
+   * Снять токены инструментов хода (БЗ, истории и файлов). Обязателен во всех выходах
    * хода (готово, ошибка, отмена, остановка сервера) — иначе каждый отменённый
    * ход оставляет живые токены, по которым можно действовать от его имени.
    */
@@ -1299,6 +1318,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (turn.kbToolToken) {
       deps.kbTool?.unregister(turn.kbToolToken)
       turn.kbToolToken = null
+    }
+    if (turn.historyToolGrantId) {
+      deps.historyTool?.unregister(turn.historyToolGrantId)
+      turn.historyToolGrantId = null
     }
     if (turn.remoteFileToken) {
       deps.remoteFileTool?.unregister(turn.remoteFileToken)

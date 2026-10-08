@@ -54,12 +54,16 @@ export function isContextToggleable(id: string): boolean {
 /**
  * Имя MCP-инструмента для `--disallowedTools`, если id пункта — MCP-инструмент.
  * `mcp-remote-bash` → `mcp__remote__bash`, `mcp-kb-search` → `mcp__kb__search`.
+ * The server-level `mcp-history` toggle disables both history tools with a wildcard.
  */
 export function toolNameForContextId(id: string): string | null {
+  if (id === 'mcp-history') return 'mcp__history__*'
   const remote = /^mcp-remote-(.+)$/.exec(id)
   if (remote) return `mcp__remote__${remote[1]}`
   const kb = /^mcp-kb-(.+)$/.exec(id)
   if (kb) return `mcp__kb__${kb[1]}`
+  const history = /^mcp-history-(.+)$/.exec(id)
+  if (history) return `mcp__history__${history[1]}`
   return null
 }
 
