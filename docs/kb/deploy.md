@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
-checked: f702b46f
+checked: f338056d
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -119,8 +119,25 @@ original owner selection, commits, versions and deploy intent; it skips complete
 steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
 file excludes competing runners; after a hard process/host crash, confirm the
 runner is no longer active before removing its stale lock and resuming. Clone
-directories remain available for diagnosis. Journals contain no tokens or child
-command output. Failures identify the journal and failed step and exit nonzero.
+directories remain available for diagnosis. Failures identify the journal and failed
+step and exit nonzero. The error and journal include the failed command, exit code,
+and last 40 output lines, with environment credentials, bearer tokens and recognized
+token formats redacted. Successful resume clears the saved error.
+
+The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
+the runner stops before planning or resuming with an installation hint. GitHub API
+requests retry HTTP 422, 5xx and network failures up to five times after the initial
+attempt, with 1/2/4/8/16-second backoff. Final errors include HTTP status and GitHub
+`message`/`errors`. Verification polls the release, provenance manifest and Docker
+manifests every five seconds for up to five minutes; request and Docker timeouts
+are bounded by the remaining verification time.
+
+If the Core pin push is rejected because `dev` advanced, the runner fetches and
+rebases the pin commit onto `origin/dev`, reruns the Core gate, and pushes without
+force. Only conflicts confined to generated `docs/kb/README.md` are resolved
+automatically by `kb:index`; other conflicts abort the rebase and stop the train.
+The journal records the rebased pin and invalidates the earlier Core gate so a
+failed gate must pass on resume before the rebased commit can be pushed.
 
 Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
 then run `npm install --package-lock-only` (never `npm version --workspaces`).

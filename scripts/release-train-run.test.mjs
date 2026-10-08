@@ -4,10 +4,177 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles } from './release-train-run.mjs'
+import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
+function apiFixture(t) {
+  const f = fixture(t, false)
+  mkdirSync(join(f.repository, 'deploy'))
+  put(join(f.repository, 'deploy/tools.lock.json'), { tools: {} })
+  let time = 0
+  return { ...f, env: { GH_TOKEN: randomUUID() }, now: () => time,
+    sleep: async ms => { time += ms }, run: () => '' }
+}
+
+test('Core dependencies are required before release execution', t => {
+  const f = fixture(t, false)
+  assert.throws(() => requireDependencies(f.repository), /Core checkout dependencies missing.*tsx/)
+  mkdirSync(join(f.repository, 'node_modules/.bin'), { recursive: true })
+  writeFileSync(join(f.repository, 'node_modules/.bin/tsx'), '')
+  assert.doesNotThrow(() => requireDependencies(f.repository))
+})
+
+for (const status of [422, 500, 503, 'network', 403]) {
+  test(`GitHub ${status}: bounded retries, backoff and redacted diagnostics`, async t => {
+    const f = apiFixture(t), journal = createJournal(f.plan, { apps: [] }, f.repository)
+    let calls = 0
+    const waits = []
+    const adapter = concreteAdapter({ ...f, sleep: async ms => waits.push(ms), fetcher: async () => {
+      calls++
+      if (status === 'network') throw Error('connection reset ' + f.env.GH_TOKEN)
+      return Response.json({ message: 'upstream ' + f.env.GH_TOKEN, errors: [{ code: 'fixture-code' }] }, { status })
+    } })
+    await assert.rejects(executeJournal(journal, f.directory, (_, owner, j) => adapter('merge', owner, j)), error => {
+      assert.match(error.message, new RegExp(`GitHub HTTP ${status === 'network' ? 'unavailable' : status}`))
+      assert.ok(!error.message.includes(f.env.GH_TOKEN))
+      if (status !== 'network') assert.match(error.message, /fixture-code/)
+      return true
+    })
+    assert.equal(calls, status === 403 ? 1 : 6)
+    assert.deepEqual(waits, status === 403 ? [] : [1000, 2000, 4000, 8000, 16000])
+    const disk = read(join(f.directory, journal.id + '.json'))
+    assert.match(disk.error, /GitHub HTTP/)
+    assert.ok(!JSON.stringify(disk).includes(f.env.GH_TOKEN))
+  })
+}
+
+test('GitHub transient failures recover through the concrete merge adapter', async t => {
+  const f = apiFixture(t), journal = createJournal(f.plan, { apps: [] }, f.repository)
+  let attempts = 0
+  journal.results['owner-0-prepare'] = 'expected'
+  const adapter = concreteAdapter({ ...f, fetcher: async url => {
+    if (url.includes('/pulls?')) {
+      if (++attempts < 3) return Response.json({ message: 'retry' }, { status: 422 })
+      return Response.json([{ number: 1, head: { sha: 'expected' }, base: { ref: 'main' } }])
+    }
+    return Response.json({ merged: true, merge_commit_sha: 'merged' })
+  } })
+  assert.equal(await adapter('merge', journal.owners[0], journal), 'merged')
+  assert.equal(attempts, 3)
+  assert.equal(f.now(), 3000)
+})
+
+for (const stage of ['release', 'manifest', 'docker']) {
+  for (const permanent of [false, true]) {
+    test(`verify polls ${stage}, ${permanent ? 'times out' : 'recovers'}`, async t => {
+      const f = apiFixture(t), journal = createJournal(f.plan, { apps: [] }, f.repository)
+      const commit = 'a'.repeat(40), owner = journal.owners[0]
+      journal.results['owner-0-publish'] = commit
+      let failures = 0
+      const fail = () => { failures++; return permanent || failures < 3 }
+      const adapter = concreteAdapter({ ...f,
+        run: (binary, args, cwd, options) => {
+          if (binary === 'docker' && args[0] === 'manifest') {
+            assert.ok(options.timeout <= 30000)
+            if (stage === 'docker' && fail()) throw Error('manifest unknown')
+          }
+          return ''
+        },
+        fetcher: async url => {
+          if (url.includes('/releases/tags/')) {
+            if (stage === 'release' && fail()) return Response.json({ message: 'Not Found' }, { status: 404 })
+            return Response.json({ published_at: 'today', assets: [{ name: 'sislexa-release.json', url: 'https://api.github.com/assets/1' }] })
+          }
+          if (url.includes('/commits/')) return Response.json({ sha: commit })
+          if (url.endsWith('/user')) return Response.json({ login: 'fixture' })
+          if (stage === 'manifest' && fail()) return Response.json({}, { status: 404 })
+          return Response.json({ repository: 'https://github.com/sislex/identity', version: owner.version, commit,
+            images: [{ name: 'ghcr.io/sislex/identity' }] })
+        }
+      })
+      if (permanent) {
+        await assert.rejects(adapter('verify', owner, journal), /timed out after 5 minutes/)
+        assert.equal(f.now(), 300000)
+      } else {
+        assert.equal((await adapter('verify', owner, journal)).commit, commit)
+        assert.ok(f.now() > 0 && f.now() < 300000)
+      }
+    })
+  }
+}
+
+test('child failure records command, exit code and redacted final 40 lines in journal', async t => {
+  const token = randomUUID()
+  const f = fixture(t, false), journal = createJournal(f.plan, { apps: [] }, f.repository)
+  const script = 'for(let i=0;i<50;i++) console.log("line-"+i); console.error(process.env.GH_TOKEN); process.exit(7)'
+  await assert.rejects(executeJournal(journal, f.directory, () => execute(process.execPath, ['-e', script], f.directory,
+    { env: { GH_TOKEN: token } })), error => {
+    assert.match(error.message, /exit code 7/)
+    assert.ok(!error.message.includes(token))
+    assert.ok(!error.message.includes('\nline-10\n'))
+    assert.match(error.message, /line-49/)
+    return true
+  })
+  const message = read(join(f.directory, journal.id + '.json')).error
+  assert.ok(message.includes(script))
+  assert.equal(message.split('\n').length, 41)
+  assert.match(message, /\[redacted\]/)
+})
+
+for (const conflict of ['none', 'index', 'other', 'gate']) {
+  test(`concurrent dev push rebases pin with ${conflict} conflict`, async t => {
+    const f = fixture(t), journal = createJournal(f.plan, { apps: [] }, f.repository)
+    if (conflict === 'index') {
+      writeFileSync(join(f.repository, 'docs/kb/README.md'), 'base\n')
+      f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'index base')
+      f.git(f.repository, 'branch', '-f', 'dev', 'HEAD')
+      journal.core.dev = f.git(f.repository, 'rev-parse', 'HEAD')
+    }
+    let moved = false, regenerated = false, oldPin, concurrent, failGate = conflict === 'gate'
+    const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+      if (moved && failGate && binary === 'npm' && args.join(' ') === 'run gate') throw Error('Rebased gate failed')
+      if (binary === 'npm' && args.join(' ') === 'run kb:index' && conflict === 'index') {
+        writeFileSync(join(cwd, 'docs/kb/README.md'), moved ? 'regenerated\n' : 'pin index\n')
+        if (moved) regenerated = true
+      }
+      if (!moved && binary === 'git' && args[0] === 'push' && cwd.endsWith('/core') && args.at(-1).endsWith(':refs/heads/dev')) {
+        moved = true; oldPin = journal.results.pin
+        f.git(f.repository, 'checkout', 'dev')
+        const file = conflict === 'index' ? 'docs/kb/README.md' : conflict === 'other' ? 'docs/kb/deploy.md' : 'concurrent'
+        writeFileSync(join(f.repository, file), 'concurrent dev change\n')
+        f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'concurrent dev')
+        concurrent = f.git(f.repository, 'rev-parse', 'HEAD')
+        f.git(f.repository, 'checkout', '--detach')
+      }
+      return f.run(binary, args, cwd, options)
+    } })
+    if (conflict === 'other') {
+      await assert.rejects(executeJournal(journal, f.directory, adapter), /coreMerge/)
+      assert.equal(f.git(f.repository, 'rev-parse', 'dev'), concurrent)
+      assert.equal(journal.results.pin, oldPin)
+      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === 'run gate').length, 1)
+    } else {
+      if (conflict === 'gate') {
+        await assert.rejects(executeJournal(journal, f.directory, adapter), /Rebased gate failed/)
+        assert.notEqual(journal.results.pin, oldPin)
+        assert.equal(Object.hasOwn(journal.results, 'coreGate'), false)
+        assert.equal(f.git(f.repository, 'rev-parse', 'dev'), concurrent)
+        const saved = read(join(f.directory, journal.id + '.json'))
+        assert.equal(saved.results.pin, journal.results.pin)
+        assert.equal(Object.hasOwn(saved.results, 'coreGate'), false)
+        failGate = false
+      }
+      await executeJournal(journal, f.directory, adapter)
+      assert.notEqual(journal.results.pin, oldPin)
+      assert.equal(f.git(f.repository, 'rev-parse', 'dev'), journal.results.pin)
+      assert.equal(f.git(f.repository, 'merge-base', '--is-ancestor', concurrent, 'dev'), '')
+      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === 'run gate').length, 2)
+      assert.equal(regenerated, conflict === 'index')
+    }
+  })
+}
+
 function fixture(t, realGit = true) {
   const directory = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'train-run-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
@@ -62,7 +229,7 @@ function fixture(t, realGit = true) {
       return '{}'
     }
     if (args.includes('--source')) {
-      if (failPublish) throw Error('fixture secret must never reach journal')
+      if (failPublish) throw Error(`fixture publication failed: ${env.GH_TOKEN}`)
       const sourceDir = args.at(-1)
       assert.equal(git(sourceDir, 'status', '--porcelain'), '')
       published = { repository: 'https://github.com/sislex/identity', version: read(join(sourceDir, 'package.json')).version,

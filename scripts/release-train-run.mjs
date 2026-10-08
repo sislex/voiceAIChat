@@ -4,15 +4,33 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { planReleaseTrain, nextPatch, pinnedRelease, githubClient } from './release-train.mjs'
+import { planReleaseTrain, nextPatch, pinnedRelease } from './release-train.mjs'
 
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
+export function redact(value, env = process.env, secrets = []) {
+  let text = String(value)
+  for (const secret of [...Object.entries(env).filter(([key]) => /token|secret|password|credential|api_key/i.test(key)).map(([, value]) => value), ...secrets]) {
+    if (secret) text = text.replaceAll(secret, '[redacted]')
+  }
+  return text.replace(/(Bearer\s+)[^\s"']+/gi, '$1[redacted]')
+    .replace(/((?:token|password|secret|api_key)["']?\s*[:=]\s*["']?)[^\s,"']+/gi, '$1[redacted]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)/g, '[redacted]')
+    .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/g, '$1[redacted]@')
+}
+
+export function requireDependencies(repository) {
+  if (!existsSync(join(repository, 'node_modules/.bin/tsx'))) throw Error('Core checkout dependencies missing: node_modules/.bin/tsx; install dependencies in the Core checkout before running the release train')
+}
+
 export function execute(binary, args, cwd, options = {}) {
   const result = spawnSync(binary, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
-    timeout: 3600000, env: { ...process.env, ...options.env }, input: options.input })
-  // Never include child output: build tools may echo credentials.
-  if (result.error || result.status !== 0) throw Error(`${binary} ${args[0]} failed (${result.status ?? 'unavailable'})`)
+    timeout: options.timeout ?? 3600000, env: { ...process.env, ...options.env }, input: options.input })
+  if (result.error || result.status !== 0) {
+    const output = [result.stdout, result.stderr, result.error?.message].filter(Boolean).join('\n').trimEnd().split(/\r?\n/).slice(-40).join('\n')
+    throw Error(redact(`${[binary, ...args].join(' ')} failed (exit code ${result.status ?? 'unavailable'}${result.signal ? `, signal ${result.signal}` : ''})\n${output}`,
+      { ...process.env, ...options.env }, [options.input?.trim()]))
+  }
   return result.stdout.trim()
 }
 
@@ -83,7 +101,11 @@ export async function executeJournal(journal, directory, adapter) {
       if (Object.hasOwn(journal.results, step.key)) continue
       journal.pending = step.key; journal.status = 'running'; save()
       try { journal.results[step.key] = await adapter(step.action, step.owner, journal) ?? null }
-      catch { journal.status = 'failed'; save(); throw Error(`Release train ${journal.id} stopped at ${step.key}; run --resume ${journal.id}`) }
+      catch (error) {
+        journal.status = 'failed'; journal.error = redact(error.message); save()
+        throw Error(`Release train ${journal.id} stopped at ${step.key}; run --resume ${journal.id}\n${journal.error}`)
+      }
+      delete journal.error
       journal.pending = null; save()
     }
     journal.status = 'completed'; save()
@@ -91,18 +113,37 @@ export async function executeJournal(journal, directory, adapter) {
   } finally { closeSync(fd); rmSync(lock, { force: true }) }
 }
 
-export function concreteAdapter({ repository, directory, env = process.env, run = execute, fetcher = fetch }) {
+export function concreteAdapter({ repository, directory, env = process.env, run = execute, fetcher = fetch,
+  sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now }) {
   const token = env.GH_TOKEN || env.GITHUB_TOKEN
-  const get = githubClient(token, fetcher)
+  let deadline = Infinity
+  const remaining = () => {
+    if (now() >= deadline) throw Error('Verification deadline reached')
+    return Math.max(1, Math.min(30000, deadline - now()))
+  }
   const request = async (base, path, method = 'GET', body = undefined, secret = token) => {
-    let response
-    try { response = await fetcher(`${base}${path}`, { method, redirect: 'error', signal: AbortSignal.timeout(30000),
-      headers: { Authorization: `Bearer ${secret}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }) }) } catch { throw Error('Release API unavailable') }
-    if (!response.ok) throw Error(`Release API HTTP ${response.status}`)
-    return response.json()
+    const github = base === 'https://api.github.com'
+    for (let attempt = 0; ; attempt++) {
+      let response, data, failure
+      try {
+        response = await fetcher(`${base}${path}`, { method, redirect: 'error', signal: AbortSignal.timeout(remaining()),
+          headers: { Authorization: `Bearer ${secret}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+        data = await response.json()
+      } catch (error) { failure = error }
+      if (response?.ok && !failure) return data
+      const status = response?.status
+      const message = redact(`${github ? 'GitHub' : 'Release API'} HTTP ${status ?? 'unavailable'}: ${data?.message ?? failure?.message ?? 'Request failed'}${data?.errors ? `; errors: ${JSON.stringify(data.errors)}` : ''}`, env)
+      if (!github || attempt >= 5 || (status !== undefined && status !== 422 && status < 500) || now() >= deadline)
+        throw Object.assign(Error(message), { status })
+      await sleep(Math.min(1000 * 2 ** attempt, Math.max(0, deadline - now())))
+      if (now() >= deadline) throw Object.assign(Error(message), { status })
+    }
   }
   const gh = (path, method = 'GET', body = undefined) => request('https://api.github.com', path, method, body)
+  const get = async (path, optional = false) => {
+    try { return await gh(path) } catch (error) { if (optional && error.status === 404) return null; throw error }
+  }
   const rc = (path, method = 'GET', body = undefined) => request(env.RELEASE_CENTER_URL,
     `/api/projects/${encodeURIComponent(env.RELEASE_CENTER_PROJECT_ID)}/releases${path}`, method, body, env.RELEASE_CENTER_TOKEN)
   const git = (cwd, ...args) => run('git', args, cwd)
@@ -134,11 +175,11 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     try {
       const user = await gh('/user')
       const options = { env: { ...env, DOCKER_CONFIG: config, GITHUB_TOKEN: token } }
-      run('docker', ['login', 'ghcr.io', '--username', user.login, '--password-stdin'], repository, { ...options, input: token + '\n' })
+      run('docker', ['login', 'ghcr.io', '--username', user.login, '--password-stdin'], repository, { ...options, input: token + '\n', timeout: remaining() })
       return await callback(options)
     } finally { rmSync(config, { recursive: true, force: true }) }
   }
-  return async (action, owner, journal) => {
+  const adapter = async (action, owner, journal) => {
     const workspace = join(directory, journal.id); mkdirSync(workspace, { recursive: true })
     const index = owner ? journal.owners.indexOf(owner) : -1
     const cwd = join(workspace, owner ? `owner-${index}` : 'core')
@@ -198,26 +239,38 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return commit
     }
     if (action === 'verify') {
-      const commit = result('publish')
-      if (!(await pinnedRelease(owner.repository, owner.version, commit, get)).matchesPinnedCommit) throw Error('Published release mismatch')
-      const release = await get(`/repos/${owner.repository}/releases/tags/v${owner.version}`)
-      const asset = release.assets.find(row => row.name === 'sislexa-release.json')
-      if (!asset) throw Error('Release manifest missing')
-      if (!asset.url.startsWith('https://api.github.com/')) throw Error('Untrusted release asset URL')
-      let response = await fetcher(asset.url, { redirect: 'manual', signal: AbortSignal.timeout(30000), headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } })
-      if (response.status === 302) {
-        const url = new URL(response.headers.get('location'))
-        if (url.protocol !== 'https:' || !url.hostname.endsWith('.githubusercontent.com')) throw Error('Untrusted release asset redirect')
-        response = await fetcher(url.href, { redirect: 'error', signal: AbortSignal.timeout(30000) })
+      deadline = now() + 300000
+      try {
+        for (;;) {
+          try { return await verify() } catch (error) {
+            if (now() >= deadline) throw Error(`Release verification timed out after 5 minutes: ${redact(error.message, env)}`)
+            await sleep(Math.min(5000, deadline - now()))
+            if (now() >= deadline) throw Error(`Release verification timed out after 5 minutes: ${redact(error.message, env)}`)
+          }
+        }
+      } finally { deadline = Infinity }
+      async function verify() {
+        const commit = result('publish')
+        if (!(await pinnedRelease(owner.repository, owner.version, commit, get)).matchesPinnedCommit) throw Error('Published release mismatch')
+        const release = await get(`/repos/${owner.repository}/releases/tags/v${owner.version}`)
+        const asset = release.assets.find(row => row.name === 'sislexa-release.json')
+        if (!asset) throw Error('Release manifest missing')
+        if (!asset.url.startsWith('https://api.github.com/')) throw Error('Untrusted release asset URL')
+        let response = await fetcher(asset.url, { redirect: 'manual', signal: AbortSignal.timeout(remaining()), headers: { Authorization: `Bearer ${token}`, Accept: 'application/octet-stream' } })
+        if (response.status === 302) {
+          const url = new URL(response.headers.get('location'))
+          if (url.protocol !== 'https:' || !url.hostname.endsWith('.githubusercontent.com')) throw Error('Untrusted release asset redirect')
+          response = await fetcher(url.href, { redirect: 'error', signal: AbortSignal.timeout(remaining()) })
+        }
+        if (!response.ok) throw Error('Manifest download failed')
+        const manifest = await response.json()
+        if (manifest.commit !== commit || manifest.version !== owner.version || manifest.repository !== `https://github.com/${owner.repository}`) throw Error('Manifest provenance mismatch')
+        const { OWNER_IMAGES } = await import('./owner-release-publish.mjs')
+        const expected = OWNER_IMAGES[manifest.repository] ?? []
+        for (const image of expected) if (!manifest.images.some(row => row.name === image.name)) throw Error('Manifest image missing')
+        await withDocker(options => { for (const image of expected) run('docker', ['manifest', 'inspect', `${image.name}:${commit}`], repository, { ...options, timeout: remaining() }) })
+        return { commit, version: owner.version, images: expected.map(image => image.name) }
       }
-      if (!response.ok) throw Error('Manifest download failed')
-      const manifest = await response.json()
-      if (manifest.commit !== commit || manifest.version !== owner.version || manifest.repository !== `https://github.com/${owner.repository}`) throw Error('Manifest provenance mismatch')
-      const { OWNER_IMAGES } = await import('./owner-release-publish.mjs')
-      const expected = OWNER_IMAGES[manifest.repository] ?? []
-      for (const image of expected) if (!manifest.images.some(row => row.name === image.name)) throw Error('Manifest image missing')
-      await withDocker(options => { for (const image of expected) run('docker', ['manifest', 'inspect', `${image.name}:${commit}`], repository, options) })
-      return { commit, version: owner.version, images: expected.map(image => image.name) }
     }
     if (action === 'pin') {
       clone(git(repository, 'remote', 'get-url', 'origin'), journal.core.dev, cwd)
@@ -252,7 +305,35 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
     }
     if (action === 'coreMerge') {
-      git(cwd, 'push', 'origin', `${journal.results.pin}:refs/heads/dev`)
+      const coreGate = () => {
+        run('npm', ['ci'], cwd); run('npm', ['run', 'gate'], cwd)
+        if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
+        journal.results.coreGate = null
+      }
+      if (!Object.hasOwn(journal.results, 'coreGate')) coreGate()
+      try { git(cwd, 'push', 'origin', `${journal.results.pin}:refs/heads/dev`) }
+      catch (error) {
+        if (!/non-fast-forward|fetch first|stale info/i.test(error.message)) throw error
+        git(cwd, 'fetch', 'origin')
+        // Replay only the pin commit, preserving concurrent dev changes.
+        try { git(cwd, 'rebase', '--onto', 'origin/dev', `${journal.results.pin}^`) }
+        catch (rebaseError) {
+          const conflicts = git(cwd, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean)
+          if (conflicts.length !== 1 || conflicts[0] !== 'docs/kb/README.md') {
+            git(cwd, 'rebase', '--abort'); throw rebaseError
+          }
+          try {
+            git(cwd, 'checkout', '--ours', '--', 'docs/kb/README.md')
+            run('npm', ['run', 'kb:index'], cwd)
+            git(cwd, 'add', '--', 'docs/kb/README.md')
+            run('git', ['-c', 'core.editor=true', 'rebase', '--continue'], cwd)
+          } catch (resolutionError) { git(cwd, 'rebase', '--abort'); throw resolutionError }
+        }
+        journal.results.pin = git(cwd, 'rev-parse', 'HEAD')
+        delete journal.results.coreGate
+        coreGate()
+        git(cwd, 'push', 'origin', `${journal.results.pin}:refs/heads/dev`)
+      }
       const remote = git(cwd, 'remote', 'get-url', 'origin')
       const { githubRepository } = await import('./release-train.mjs')
       const slug = githubRepository(remote)
@@ -302,10 +383,14 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       throw Error('Timed out waiting for new Core version')
     }
   }
+  return async (...args) => {
+    try { return await adapter(...args) } catch (error) { throw Error(redact(error.message, env)) }
+  }
 }
 
 export async function runCli(args, env = process.env) {
   const options = parseRunArgs(args), repository = resolve(import.meta.dirname, '..')
+  requireDependencies(repository)
   const directory = join(homedir(), '.local/state/sislexa/release-train')
   for (const name of ['RELEASE_CENTER_URL', 'RELEASE_CENTER_PROJECT_ID', 'RELEASE_CENTER_TOKEN']) if (!env[name]) throw Error(`${name} required`)
   if (!(env.GH_TOKEN || env.GITHUB_TOKEN)) throw Error('GitHub token required')
