@@ -92,6 +92,28 @@ export function validateDevStandManifest(value: unknown): DevStandManifest {
   return value
 }
 
+/** Agent-facing gateway contract, versioned independently of package releases. */
+export const DEV_GATEWAY_VERSION = '1.0.0'
+export const DEV_GATEWAY_HEALTH_PATH = '/__gateway/health'
+export interface DevGatewayHealth {
+  version: string
+  standId: string
+  components: Record<DevComponentId, { reachable: boolean; statusCode?: number }>
+}
+
+/** Gateway consumes routing fields only; owner gateway metadata is opaque. */
+export function readDevGatewayManifest(value: unknown, warn: (message: string) => void): DevStandManifest {
+  if (!record(value)) throw new Error('invalid_dev_stand_manifest')
+  const fields = ['schemaVersion', 'standId', 'machineId', 'baseEnvironmentId', 'components']
+  const manifest = validateDevStandManifest(Object.fromEntries(
+    fields.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])))
+  for (const key of Object.keys(value)) {
+    if (!fields.includes(key) && key !== 'gateway')
+      warn(`dev_gateway_unknown_manifest_field: ${JSON.stringify(key)}`)
+  }
+  return manifest
+}
+
 export interface CreateDevStandRequest { machineId: string; baseEnvironmentId: string }
 export type CreateDevStandResponse = DevStandManifest
 export type ListDevStandsResponse = DevStandManifest[]

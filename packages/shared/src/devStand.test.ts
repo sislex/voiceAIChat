@@ -1,8 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, DEV_STAND_ERROR_CODES, DEV_STAND_ERROR_STATUS,
   formatDevBuildId, parseDevBuildId, isDevBuildVersion, isDevStandManifest,
-  validateDevStandManifest, isCreateDevStandRequest, isStartDevStandComponentRequest,
+  validateDevStandManifest, readDevGatewayManifest, isCreateDevStandRequest, isStartDevStandComponentRequest,
   type DevStandManifest
 } from './devStand'
 import { REST } from './protocol'
@@ -40,6 +41,16 @@ describe('dev build IDs', () => {
   })
 })
 describe('strict stand manifests', () => {
+  it('gateway reads owner metadata and warns about future root fields without weakening components', () => {
+    const warnings: string[] = []
+    const value = { ...manifest(), gateway: { port: 24032, url: 'http://stand' }, future: { secret: randomUUID() } }
+    expect(readDevGatewayManifest(value, message => warnings.push(message))).toEqual(manifest())
+    expect(warnings).toEqual(['dev_gateway_unknown_manifest_field: "future"'])
+    expect(value.gateway.port).toBe(24032)
+    expect(() => readDevGatewayManifest({ ...value, schemaVersion: 2 }, () => {})).toThrow('invalid_dev_stand_manifest')
+    expect(() => readDevGatewayManifest({ ...value, components: { ...value.components,
+      core: { ...value.components.core, extra: true } } }, () => {})).toThrow('invalid_dev_stand_manifest')
+  })
   it('accepts base composition and mixed dev overrides without mutating input', () => {
     const value = manifest()
     expect(validateDevStandManifest(value)).toBe(value)

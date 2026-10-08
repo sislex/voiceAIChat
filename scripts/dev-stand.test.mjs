@@ -2,11 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { once } from 'node:events'
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import WebSocket, { WebSocketServer } from 'ws'
-import { DEV_COMPONENT_REGISTRY } from '../packages/shared/src/devStand.ts'
+import { DEV_COMPONENT_REGISTRY, DEV_GATEWAY_VERSION } from '../packages/shared/src/devStand.ts'
 import { createGateway, targetFor } from './dev-gateway.mjs'
 import { componentEnvironment } from './dev-component.mjs'
 import { checkRelease, applyRelease } from './release-composition.mjs'
@@ -16,6 +17,13 @@ import { verifySnapshot, verifyDesktopRendererProvenance } from './shared-chat-a
 const manifest = () => ({ schemaVersion: 1, standId: 'test', machineId: 'machine', baseEnvironmentId: 'base',
   components: Object.fromEntries(Object.entries(DEV_COMPONENT_REGISTRY).map(([id, value]) =>
     [id, { repository: value.repository, sha: 'a'.repeat(40), source: 'base' }])) })
+test('gateway version works without stand configuration', () => {
+  const env = { ...process.env }
+  for (const key of ['SISLEXA_STAND_MANIFEST', 'SISLEXA_BASE_STAND_URL', 'SISLEXA_GATEWAY_PORT']) delete env[key]
+  const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/dev-gateway.mjs', '--version'], { env, encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout.trim(), DEV_GATEWAY_VERSION)
+})
 test('longest component prefix wins; inactive components fall back to Caddy', () => {
   const value = manifest()
   for (const id of ['core', 'core-ui', 'make']) value.components[id] = { ...value.components[id], source: 'dev', url: `http://${id}` }
@@ -60,8 +68,18 @@ test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifest
   wss.on('connection', socket => socket.on('message', data => socket.send(data)))
   const dev = await listen(devServer, ports[1])
   const path = join(dir, 'manifest.json'), value = manifest()
+  value.gateway = { port: ports[2] }
+  value.future = true
   writeFileSync(path, JSON.stringify(value))
-  const gateway = await listen(createGateway({ manifestPath: path, baseUrl: base, onError() {} }), ports[2])
+  const warnings = []
+  const gateway = await listen(createGateway({ manifestPath: path, baseUrl: base, onError() {}, onWarning: message => warnings.push(message), probeTimeoutMs: 100 }), ports[2])
+  const health = await fetch(gateway + '/__gateway/health')
+  assert.equal(health.status, 200)
+  assert.equal(health.headers.get('cache-control'), 'no-store')
+  assert.deepEqual(await health.json(), { version: DEV_GATEWAY_VERSION, standId: 'test',
+    components: Object.fromEntries(Object.keys(value.components).map(id => [id, { reachable: true, statusCode: 200 }])) })
+  assert.ok(warnings.includes('dev_gateway_unknown_manifest_field: "future"'))
+  assert.equal((await fetch(gateway + '/__gateway/health', { method: 'POST' })).status, 405)
   assert.equal(await (await fetch(gateway + '/ws')).text(), 'base:/ws')
   value.components.core = { ...value.components.core, source: 'dev', url: dev }
   writeFileSync(path + '.new', JSON.stringify(value)); renameSync(path + '.new', path)
@@ -73,8 +91,24 @@ test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifest
   await once(ws, 'open'); ws.send('echo')
   assert.equal(String((await once(ws, 'message'))[0]), 'echo')
   ws.close(); await once(ws, 'close')
+  devServer.removeAllListeners('request')
+  devServer.on('request', (req, res) => { res.writeHead(503); res.end() })
+  const responding = await (await fetch(gateway + '/__gateway/health')).json()
+  assert.deepEqual(responding.components.core, { reachable: true, statusCode: 503 })
+  // A connected upstream that never returns headers must also time out.
+  devServer.removeAllListeners('request')
+  devServer.on('request', () => {})
+  value.standId = 'reloaded'
+  writeFileSync(path + '.new', JSON.stringify(value)); renameSync(path + '.new', path)
+  const degraded = await (await fetch(gateway + '/__gateway/health')).json()
+  assert.equal(degraded.standId, 'reloaded')
+  assert.deepEqual(degraded.components.core, { reachable: false })
+  assert.deepEqual(degraded.components.make, { reachable: true, statusCode: 200 })
   value.components.core.source = 'base'; writeFileSync(path, JSON.stringify(value))
   assert.equal(await (await fetch(gateway + '/api/events')).text(), 'base:/api/events')
   writeFileSync(path, '{}')
   assert.equal((await fetch(gateway + '/api/events')).status, 503)
+  const invalid = await fetch(gateway + '/__gateway/health')
+  assert.equal(invalid.status, 503)
+  assert.deepEqual(await invalid.json(), { error: 'invalid_dev_stand_manifest' })
 })

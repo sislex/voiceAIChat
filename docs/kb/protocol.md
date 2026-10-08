@@ -1,7 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-08
-checked: 7e048553
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -86,6 +85,14 @@ C02 owns preflight display and opening the cleanup chat. Building the shared
 archive and commissioning those integrations belong to the integrator.
 
 ## Dev stands (dev-lane-v1 B01)
+
+The agent-facing Core gateway CLI and health contract are versioned separately
+as `DEV_GATEWAY_VERSION` in Shared. `scripts/dev-gateway.mjs --version` (run with
+`node --import tsx`) reports that version. `GET /__gateway/health` returns
+`DevGatewayHealth`: version, standId and each component's upstream reachability.
+`readDevGatewayManifest` accepts optional opaque `gateway` metadata and ignores
+future top-level fields with warnings, while retaining strict component entries.
+See [deployment](deploy.md#dev-stand-gateway-and-core-component-c02) for the full CLI contract.
 
 `packages/shared/src/devStand.ts` owns the schema-1 `DevStandManifest`,
 `DevComponentId`, `DEV_COMPONENT_REGISTRY`, build ID helpers and REST payloads.
