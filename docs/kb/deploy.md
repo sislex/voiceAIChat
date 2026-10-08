@@ -1,6 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-08
+updated: 2026-10-09
+checked: ba1f6c9c
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2466,7 +2467,13 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.23.0 (contracts 1.3.0), which adds the `devProcess.start/stop/status/logs` RPC
+Core pins agent 0.24.0 (contracts 1.4.0). It manages the dev stand gateway, recovers dev stand
+components after an agent restart, and on component replacement keeps the old process until the new
+one is ready, then switches the stand manifest (`sha`, `url`, `devBuildId`, `startedAt`) atomically
+before retiring the old process (stand-fixes-v1 B02). Before 0.24.0 a replacement could report
+success while the manifest still pointed at the stopped process (`dev_upstream_unavailable`).
+
+Agent 0.23.0 (contracts 1.3.0) added the `devProcess.start/stop/status/logs` RPC
 for dev stands (dev-lane-v1 C01): the agent runs a component from a branch checkout in dev mode
 without Docker. Agents older than 0.23.0 answer these calls with an unknown-method error; the rest
 of the protocol is unchanged.
