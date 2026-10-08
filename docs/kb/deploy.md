@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
-checked: f338056d
+checked: 7334ed18
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -186,6 +186,12 @@ the lifecycle; Core does not allocate environments or write manifests.
 `SISLEXA_GATEWAY_HOST` defaults to `0.0.0.0`, listening on both the host's LAN
 and Tailscale IPv4 addresses. Operators must commission DNS, reachability and
 access controls for those addresses; the launcher does not modify the host.
+The gateway rewrites `Host` to the upstream and sends the browser's address as
+`x-forwarded-host`. A request whose `Origin` equals the gateway address (a page
+the gateway served) is forwarded with the upstream origin, so Core's same-origin
+check accepts mutations at any stand address; foreign origins pass unchanged and
+stay `origin_denied`. Without this, login at the Tailscale/LAN gateway address
+failed with `origin_denied` (2026-10-08).
 
 The agent-facing entry is `node --import tsx scripts/dev-gateway.mjs` (also
 `npm run dev:gateway`). `--version` prints `1.0.0` and exits without requiring

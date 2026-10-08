@@ -51,6 +51,9 @@ export function createGateway({ manifestPath, baseUrl, onError = console.error, 
     }
     const headers = { ...req.headers, host: target.host, 'x-forwarded-host': req.headers.host,
       'x-forwarded-proto': 'http', 'x-forwarded-for': req.socket.remoteAddress }
+    // A page served by the gateway is same-origin with the gateway, but the upstream only sees its
+    // own host. Present such requests with the upstream origin; foreign origins pass unchanged.
+    if (req.headers.origin === 'http://' + req.headers.host) headers.origin = target.origin
     const upstream = (target.protocol === 'https:' ? https : http).request(target, {
       method: req.method, path: target.pathname.replace(/\/$/, '') + req.url, headers
     })
