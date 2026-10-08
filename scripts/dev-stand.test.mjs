@@ -134,3 +134,34 @@ test('gateway presents same-origin browser requests with the upstream origin', a
   assert.equal(await send('http://evil.example'), 'http://evil.example')
   assert.equal(await send(undefined), 'none')
 })
+test('gateway presents same-origin WebSocket upgrades with the upstream origin', async t => {
+  const dir = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'gateway-ws-origin-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24000', '24001', '24002']).map(Number)
+  const base = http.createServer()
+  const wss = new WebSocketServer({ server: base })
+  wss.on('connection', (socket, request) => socket.send(String(request.headers.origin ?? 'none')))
+  base.listen(ports[0], '127.0.0.1'); await once(base, 'listening')
+  const path = join(dir, 'manifest.json')
+  writeFileSync(path, JSON.stringify(manifest()))
+  const gateway = createGateway({ manifestPath: path, baseUrl: `http://127.0.0.1:${ports[0]}`, onError() {}, onWarning() {} })
+  gateway.listen(ports[2], '127.0.0.1'); await once(gateway, 'listening')
+  t.after(async () => {
+    for (const client of wss.clients) client.terminate()
+    await new Promise(resolve => wss.close(resolve))
+    await new Promise(resolve => gateway.close(resolve))
+    await new Promise(resolve => base.close(resolve))
+  })
+  const connect = async origin => {
+    const socket = new WebSocket(`ws://127.0.0.1:${ports[2]}/ws`, { origin })
+    try {
+      const [message] = await once(socket, 'message')
+      return String(message)
+    } finally {
+      socket.close()
+      await once(socket, 'close')
+    }
+  }
+  assert.equal(await connect(`http://127.0.0.1:${ports[2]}`), `http://127.0.0.1:${ports[0]}`)
+  assert.equal(await connect('http://evil.example'), 'http://evil.example')
+})
