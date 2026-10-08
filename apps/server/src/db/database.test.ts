@@ -129,6 +129,15 @@ describe('VoiceChatDb — разговоры', () => {
     expect(fetched?.title).toBe('Поездка в Лиссабон')
   })
 
+  it('stores a rolling summary and exposes only messages after its boundary', async () => {
+    const c = await db.chat.createConversation(U, 'History')
+    const first = await db.chat.addMessage(U, c.id, 'u1', 'first', '')
+    const second = await db.chat.addMessage(U, c.id, 'ai', 'second', '')
+    await db.chat.setConversationSummary(U, c.id, { text: 'Old summary', coversUntilMessageId: first.id, updatedAt: 99 })
+    expect((await db.chat.getConversation(U, c.id))?.summary).toEqual({ text: 'Old summary', coversUntilMessageId: first.id, updatedAt: 99 })
+    expect((await db.chat.summaryMessages(U, c.id))?.messages.map(message => message.id)).toEqual([second.id])
+  })
+
   // @testCase TC-REG-01
   it('uses compatible reasoning defaults for legacy and persists explicit conversation overrides', async () => {
     const conversation = await db.chat.createConversation(U, 'Legacy')
@@ -426,6 +435,25 @@ describe('VoiceChatDb — разговоры', () => {
     expect((await db.chat.searchConversations(U, '  ')).map((x) => x.id).sort()).toEqual([a.id, b.id, c.id].sort())
     // ничего не найдено
     expect(await db.chat.searchConversations(U, 'зззз')).toEqual([])
+  })
+})
+
+describe.skipIf(ON_POSTGRES)('conversations: summary storage migration', () => {
+  it('adds rolling-summary columns to an existing conversations table', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-summary-migration-'))
+    const path = join(dir, 'old.sqlite')
+    const raw = new Database(path)
+    raw.exec(SCHEMA_SQL)
+    raw.exec(`ALTER TABLE conversations DROP COLUMN summary_text;
+      ALTER TABLE conversations DROP COLUMN summary_covers_message_id;
+      ALTER TABLE conversations DROP COLUMN summary_updated_at;`)
+    raw.close()
+    const migrated = new VoiceChatDb(path)
+    await migrated.ready
+    const columns = ((migrated as unknown as { db: Database.Database }).db.prepare('PRAGMA table_info(conversations)').all() as Array<{ name: string }>).map(row => row.name)
+    expect(columns).toEqual(expect.arrayContaining(['summary_text', 'summary_covers_message_id', 'summary_updated_at']))
+    await migrated.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

@@ -48,6 +48,7 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  conversationSummary?: { consider(userId: string, conversationId: string): void }
   /** Клиент конкретного исполнителя из реестра. */
   engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
@@ -470,6 +471,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       const message = await deps.db.chat.addMessage(userId, conversationId, 'u0',
         req.segments.map(segment => segment.text).join('\n'), timeHHMM())
       req.messageId = message.id
+      deps.conversationSummary?.consider(userId, conversationId)
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
@@ -1167,6 +1169,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               promptChars: requestInfo.promptChars,
               turnInputTokens: turnInputTokens(merged)
             })
+            deps.conversationSummary?.consider(userId, conversationId)
             return message
           }
           // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
@@ -1334,6 +1337,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const message = turn.partial.trim()
       ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
+    if (message) deps.conversationSummary?.consider(turn.userId, conversationId)
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn

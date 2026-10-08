@@ -45,6 +45,9 @@ interface ConversationRow {
   cost_dirty?: number
   last_exec_target?: string | null
   archived_at: number | null
+  summary_text: string | null
+  summary_covers_message_id: string | null
+  summary_updated_at: number | null
 }
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined (не роняет чтение ленты). */
@@ -529,6 +532,21 @@ export class ChatRepo extends BaseRepo {
       }
     ).n
     return await this.mapConversation(row, count)
+  }
+
+  async summaryMessages(userId: string, conversationId: string): Promise<{ summary: Conversation['summary']; messages: Message[] } | null> {
+    const conversation = await this.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const rows = await this.sql.all<MessageRow>(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+      AND history_position > COALESCE((SELECT history_position FROM messages WHERE id = ? AND conversation_id = ?), 0)
+      ORDER BY history_position, id`, [conversationId, conversation.summary?.coversUntilMessageId ?? '', conversationId])
+    return { summary: conversation.summary, messages: this.messageRows(rows) }
+  }
+
+  async setConversationSummary(userId: string, conversationId: string, summary: NonNullable<Conversation['summary']>): Promise<Conversation | null> {
+    const changed = await this.sql.run(`UPDATE conversations SET summary_text = ?, summary_covers_message_id = ?, summary_updated_at = ?
+      WHERE id = ? AND user_id = ?`, [summary.text, summary.coversUntilMessageId, summary.updatedAt, conversationId, userId])
+    return changed.changes ? await this.getConversation(userId, conversationId) : null
   }
 
   /** Владеет ли пользователь разговором (для проверок при работе с сообщениями). */
@@ -1702,6 +1720,9 @@ export class ChatRepo extends BaseRepo {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount,
+      ...(row.summary_text && row.summary_covers_message_id && row.summary_updated_at !== null
+        ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at } }
+        : {}),
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,

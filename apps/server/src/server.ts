@@ -41,6 +41,7 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
+import { createConversationSummaryService, type ConversationSummaryService } from './conversationSummary.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
@@ -641,6 +642,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
     return operation
   }
+  let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
@@ -667,6 +669,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     publishChatMessage: async (userId, conversationId, message) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
     },
+    conversationSummary: () => conversationSummary,
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
       if (!project?.gitUrl) return
@@ -701,6 +704,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
       : unconfiguredLlmClient()))
+  conversationSummary = createConversationSummaryService({
+    db,
+    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
+    // when this installation only has a Claude runner.
+    client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
+    model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    publish: async (userId, conversation) => {
+      frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
+    },
+    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+  })
   const reranker = opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
@@ -1307,6 +1321,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     claude: await claude,
     codex: await codex,
+    conversationSummary,
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     kb,
     kbUsage,

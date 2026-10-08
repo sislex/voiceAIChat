@@ -869,6 +869,12 @@ export interface ConversationMembershipMutation {
   archived: boolean
 }
 
+export interface ConversationSummary {
+  text: string
+  coversUntilMessageId: string
+  updatedAt: number
+}
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -877,6 +883,8 @@ export interface Conversation {
   createdAt: number
   updatedAt: number
   messageCount: number
+  /** Rolling server-generated context for bounded cold starts. */
+  summary?: ConversationSummary
   /** session-id Claude CLI, привязанный к разговору (null до первого ответа). */
   claudeSessionId: string | null
   /** Изменяемая цель новых ходов только этого чата. */
