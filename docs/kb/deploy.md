@@ -1,7 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
-checked: 7334ed18
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -179,6 +178,29 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 `/api/projects/:id/dev-stands` through its existing authenticated Kanban proxy.
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
+
+### Login and locations on the stand machine
+
+A stand's base environment is a Docker Compose project whose Postgres database
+starts from a copy of the production database. Stand users and their passwords
+therefore match production at the time of the copy. `VC_ADMIN_PASSWORD` takes
+effect only when the `admin` user does not exist yet: Identity's `ensureAdmin`
+uses `INSERT OR IGNORE`, so setting this variable for a production copy does not
+change the existing `admin` password.
+
+When a distinct stand-only password is needed, an operator may use Identity's
+`hashPassword` format and write a `scrypt$<saltHex>$<hashHex>` value to
+`users.password_hash` in the **stand database only, never production**. The hash
+uses scrypt with a 32-byte derived key and a randomly generated 16-byte salt.
+
+Stand runtime files are located as follows:
+
+- the stand manifest and gateway log are in
+  `~/.voicechat/dev/stands/<standId>/`;
+- development processes and worktrees are under
+  `~/.voicechat/dev-processes/`, whose registry is `registry.json`;
+- the base environment's Compose directory is
+  `<ChatAI data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
 
 `npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
 `SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
