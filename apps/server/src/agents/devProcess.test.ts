@@ -43,4 +43,17 @@ describe('dev process forwarding', () => {
     await expect(pending).rejects.toThrow(/^machine_unavailable/)
     await expect(registry.devProcess('m1', 'devProcess.status', target)).rejects.toThrow(/^machine_unavailable/)
   })
+
+  it('ignores dev stand recovery events without disturbing pending requests', async () => {
+    const registry = new AgentRegistry(), send = vi.fn()
+    registry.register('m1', 'M1', { send, close: vi.fn() }, undefined, AGENT_VERSION)
+    const result = registry.devProcess('m1', 'devProcess.status', target)
+    const { requestId } = JSON.parse(send.mock.calls[0][0]) as { requestId: string }
+    await answer(registry, 'm1', { t: 'devProcess.recovered', ...target, url: 'http://127.0.0.1:23001' })
+    await answer(registry, 'm1', { t: 'devProcess.recoveryFailed', ...target, url: 'http://127.0.0.1:23001', message: 'port busy' })
+    const status = { ...target, state: 'ready' }
+    await answer(registry, 'm1', { t: 'devProcess.status.result', requestId, result: status })
+    expect(await result).toEqual(status)
+    registry.unregister('m1')
+  })
 })

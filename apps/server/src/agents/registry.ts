@@ -1055,6 +1055,9 @@ export class AgentRegistry {
       }
       return
     }
+    // Agent 0.24.0 reports dev stand recovery after a restart; Core has no consumer yet
+    // (stand reconciliation belongs to Kanban), so the events are not exec traffic.
+    if (isDevProcessRecovery(msg)) return
     const p = this.pending.get(msg.execId)
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {
@@ -1112,6 +1115,11 @@ export class AgentRegistry {
 // narrows them out so the exec handling below keeps its `execId` messages.
 function isDevProcessResponse(msg: { t: string }): msg is DevProcessResponseMessage {
   return msg.t.startsWith('devProcess.') && 'requestId' in msg
+}
+
+type DevProcessRecovery = Extract<AgentToServer, { t: 'devProcess.recovered' | 'devProcess.recoveryFailed' }>
+function isDevProcessRecovery(msg: AgentToServer): msg is DevProcessRecovery {
+  return msg.t === 'devProcess.recovered' || msg.t === 'devProcess.recoveryFailed'
 }
 
 // The dev stand contract names repositories as `owner/name` (DEV_COMPONENT_REGISTRY); the agent runs
