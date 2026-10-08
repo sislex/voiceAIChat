@@ -197,6 +197,18 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 `turns.ts` хранит по одному активному ходу на conversation id. `start()` выбирает Claude/Codex client, строит запрос с cwd/profile/MCP и подписывается на token/activity/usage. Partial хранится в памяти и транслируется всем заинтересованным соединениям.
 
+The read-only history MCP endpoint (`/mcp/history`, tools
+`mcp__history__history_search` and `mcp__history__history_get`) is attached to a
+normal assistant turn with an in-memory, conversation-scoped token. Search uses
+the messages full-text index but can only return published messages from that
+turn's conversation, newest first; snippets are capped at 400 characters.
+Direct reads return the selected message and at most five neighbours on either
+side, with every message capped at 4,000 characters. The `mcp-history` context
+toggle removes the whole server. Delegated/text-only turns never receive it,
+and turn completion, cancellation, or failure revokes its token. Conversations
+with more than 200 published messages add a short prompt hint telling the model
+to discover older details through these tools.
+
 По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. Каждый возвращаемый `Conversation` содержит серверный агрегат стоимости сохранённых AI-сообщений: `costUsd` и `costStatus` (`known`, `partial`, `unknown`). Источник расчёта — `conversationCosts` в `apps/server/src/db/database.ts`: он связывает фактический `messages.engine` и `meta.model` с `model_prices`, используя `conversations.llm_model` только как fallback модели. Обычный вход равен `max(inputTokens - cacheReadTokens, 0)`, чтение и создание кэша и output тарифицируются отдельно. AI-ход считается известным только при числовых input/output (и, если присутствуют, cache) usage и найденном тарифе для provider/model; все известны — `known`, известна лишь часть — `partial`, нет ни одного известного или AI-ходов ещё нет — `unknown`. Для `partial`/`unknown` `costUsd` равен `null`, чтобы известная часть или отсутствие usage не выглядели полной нулевой суммой.
 
 **Итог кэшируется в самой беседе** (`conversations.cost_usd`, `cost_status`, `cost_prices_stamp`, `cost_dirty`): полный агрегат сканирует все AI-сообщения беседы и разбирает JSON каждого, и на списке сайдбара это было 95% его времени (17.5 мс на 22 беседы, 353 мс на 158). Протухание ловят **триггеры** на `messages` (INSERT/UPDATE/DELETE → `cost_dirty = 1`), а не вызовы по коду: сообщения пишет десяток мест (ход, правка, откат, импорт legacy), и любое забытое давало бы устаревшую цену в списке — ошибку, которую никто не заметит. Смену прайса ловит `cost_prices_stamp` (`MAX(updated_at)` и число строк `model_prices` — второе нужно, чтобы заметить удаление цены). Триггеры снимаются в начале миграций и создаются в конце: пересборка `conversations` (DROP + RENAME) падает, пока жив триггер с телом, ссылающимся на эту таблицу. После кэша список стоит 0.6 мс на окно недели и 7 мс на все 158 бесед.
