@@ -81,6 +81,7 @@ export interface SystemCapabilities {
 // GET    /api/conversations                  -> Conversation[]
 // POST   /api/conversations {title?}         -> Conversation
 // GET    /api/conversations/:id              -> ConversationWithMessages | 404
+// POST   /api/conversations/:id/thread/reset -> Conversation | 404
 // PATCH  /api/conversations/:id {title}      -> Conversation
 // DELETE /api/conversations/:id              -> { ok }
 // POST   /api/conversations/:id/messages AddMessageArgs -> Message
@@ -295,6 +296,7 @@ export const REST = {
     if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
+  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */

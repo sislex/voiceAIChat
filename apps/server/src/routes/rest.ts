@@ -1047,6 +1047,12 @@ export async function registerRest(
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 
+  app.post<{ Params: { id: string } }>(REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.resetConversationThread(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation
+  })
+
   app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
     const conversation = await db.chat.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
