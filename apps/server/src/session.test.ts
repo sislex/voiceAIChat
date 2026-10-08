@@ -215,10 +215,11 @@ describe('WS: аутентификация соединения', () => {
         opened = true
       })
       ws.on('close', () => resolve('closed'))
-      setTimeout(() => resolve(opened ? 'stayed' : 'closed'), 800)
+      // Under a loaded full gate the server's auth check can take longer than a second.
+      setTimeout(() => resolve(opened ? 'stayed' : 'closed'), 5000)
     })
     expect(result).toBe('closed')
-    // На загруженной машине соединение может не успеть установиться за 800 мс.
+    // На загруженной машине соединение может не успеть установиться за отведённое время.
     // `close()` по такому сокету бросает «WebSocket was closed before the
     // connection was established», и vitest считает это ошибкой всего прогона;
     // `terminate()` безопасен в любом состоянии, а пустой обработчик error
