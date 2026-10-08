@@ -161,6 +161,7 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { registerHistoryMcp, historyTurnBroker, HISTORY_MCP_PATH } from './mcp/historyMcp.js'
 import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { createReaderModule } from '@sislexa/web-reader'
@@ -894,6 +895,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     deployTrigger
   })
+  registerHistoryMcp(app, { db, secret: mcpSecret })
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении; сам MCP собирает модуль ридера ниже.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
@@ -918,6 +920,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
+  const historyMcpBaseUrl = buildPublicMcpUrl(opts.config, HISTORY_MCP_PATH, mcpSecret)
   // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
   const readerRemote = opts.config.readerMode === 'remote'
   if (readerRemote && !(opts.config.readerUrl && (managedReader || opts.config.internalToken) && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
@@ -1327,6 +1330,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
+    historyTool: historyTurnBroker,
     resolveUpload: async (id) => {
       const upload = uploads.get(id)
       if (!upload) return null
@@ -1369,6 +1373,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
+    historyMcpBaseUrl,
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,

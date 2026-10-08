@@ -1431,6 +1431,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(ids).toEqual([
       'instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
       'knowledge-mode',
+      // mcp-history: turns.ts reads it (historyEnabled), see turns.test «honours the mcp-history context toggle».
+      'mcp-history',
       'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
       'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
       'personalization', 'project-binding', 'task-context'
