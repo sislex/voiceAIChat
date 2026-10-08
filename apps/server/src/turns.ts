@@ -29,6 +29,11 @@ import type { LlmBillingSession } from '@voicechat/shared'
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
+/** Codex cannot resume a thread whose rollout is gone; such a turn must start a new thread. */
+export function isLostCodexThread(message: string): boolean {
+  return /no rollout found for thread id|thread\/resume failed/i.test(message)
+}
+
 /** Навыки, которые реально передаются исполнителю после контекстных тумблеров. */
 export function enabledContextSkills(skillNames: string[], disabledContext: Iterable<string>): string[] {
   const disabled = new Set(disabledContext)
@@ -1240,6 +1245,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           if (turn.done) return
           deps.onAuthError?.(userId, provider, message)
           finish()
+          // The runner lost the Codex thread (for example a recreated runner volume): forget it so
+          // the next turn starts a fresh thread, and retry this message instead of failing it.
+          const lostThread = provider === 'codex' && !!sessionId && isLostCodexThread(message)
+          if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {
             await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
               segments: req.segments,
@@ -1250,11 +1259,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               delegation: req.delegation,
               billingSession: req.billingSession
             }, false)
-            await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
+            if (!lostThread) {
+              await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
+              await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
+            }
             await emitQueue(userId, conversationId)
           }
-          broadcast({ t: 'claude.error', conversationId, message }, userId)
+          if (!lostThread || !req.messageId) broadcast({ t: 'claude.error', conversationId, message }, userId)
           await dispatchNext(userId, conversationId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
