@@ -1,3 +1,4 @@
+import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
@@ -5,7 +6,7 @@ import { clientMessages, loadsServiceData } from '../serviceData.js'
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, buildConversationPrompt, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -13,6 +14,7 @@ import { uid } from "@sislexa/identity/server/users/auth"
 import { readCoreUserFile } from '../userFiles.js'
 import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import type { ConversationSummaryService } from '../conversationSummary.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
@@ -174,7 +176,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.
   const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
-  const historyText = buildConversationPrompt(messages)
+  const historyText = coldStartPrompt(messages)
   // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? await db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId) : null
@@ -294,7 +296,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     'mcp-remote-bash': { 'Инструмент': 'mcp__remote__bash', 'Назначение': 'Выполняет shell-команду в рабочем каталоге машины.', 'Параметры': ['command', 'timeout_ms', 'machine'], 'Изменяет данные': true, 'Ограничение': 'Потенциально опасно; политика машины и режим прав.' },
     'mcp-kb-search': { 'Инструмент': 'mcp__kb__search', 'Назначение': 'Поиск по доступным разделам базы знаний.', 'Параметры': ['query', 'limit'], 'Изменяет данные': false, 'Ограничение': 'Результаты фильтруются по пользователю и проекту.' },
     'mcp-kb-document': { 'Инструмент': 'mcp__kb__document', 'Назначение': 'Чтение раздела БЗ по устойчивому id.', 'Параметры': ['documentId', 'anchor'], 'Изменяет данные': false },
-    'mcp-kb-topics': { 'Инструмент': 'mcp__kb__topics', 'Назначение': 'Список тем/разделов базы знаний.', 'Параметры': [], 'Изменяет данные': false }
+    'mcp-kb-topics': { 'Инструмент': 'mcp__kb__topics', 'Назначение': 'Список тем/разделов базы знаний.', 'Параметры': [], 'Изменяет данные': false },
+    'mcp-history': { 'Инструменты': ['mcp__history__history_search', 'mcp__history__history_get'], 'Назначение': 'Поиск и чтение опубликованной истории текущего разговора.', 'Изменяет данные': false, 'Ограничение': 'Только текущий разговор и только во время хода.' }
   }
   const groups: ContextSnapshotGroup[] = [
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
@@ -405,7 +408,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
           + (tool.available && tool.readOnlyInPlan && permissionMode === 'plan' ? ' Режим «Только планирование»: инструмент подключается только на чтение — запись отклоняется.' : ''),
         configured: true, available: tool.available, includedInNextTurn: tool.available,
         details: { 'Инструменты': tool.tools, 'Подключает': tool.source, ...(tool.readOnlyInPlan ? { 'В режиме планирования': 'только чтение' } : {}) } })),
-      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
+      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } })),
+      contextItem({ id: 'mcp-history', type: 'MCP-инструмент', source: 'MCP history', scope: 'Текущий разговор', priority: 'Возможность', title: 'history:search/get', description: 'Находит и читает прежние опубликованные сообщения этого разговора.', explanation: 'Подключается к обычному ходу; delegated/text-only ходы его не получают.', configured: true, available: true, includedInNextTurn: true, details: { ...mcpToolDetails['mcp-history'], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('history')) ? 'да' : 'нет данных' } })
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
       // Доступность индекса — отдельный вопрос от режима: «авто» при сломанном
@@ -437,11 +441,11 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         explanation: resumeId
           ? 'Ход продолжает сессию движка (resume): история в промпт не пересобирается, уходит только новое сообщение — но все блоки настроек ниже отправляются заново каждым ходом. Сессия сбрасывается при смене движка и правке или удалении сообщений.'
           : messages.length > 0
-            ? 'Сессии движка нет — история пересобирается в промпт целиком.'
+            ? 'Сессии движка нет — в промпт включается свежая часть истории в пределах лимита символов.'
             : 'Истории пока нет: в ход уйдёт только ваше сообщение.',
         configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0,
         size: resumeId ? null : { chars: historyText.length, approxTokens: approxTokens(historyText.length) },
-        details: { messageCount: messages.length, 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
+        details: { messageCount: messages.length, ...(!resumeId ? { prompt: historyText } : {}), 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
@@ -793,6 +797,7 @@ export async function registerRest(
     refreshProjectMain?: (userId: string, projectId: string) => void
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
+    conversationSummary?: () => ConversationSummaryService | undefined
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1040,6 +1045,20 @@ export async function registerRest(
       return { conversation, messages: await clientMessages(db, uid(req), conversation.id, page.messages), history: page.history }
     }
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
+  })
+
+  app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.getConversation(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
+  })
+
+  app.post<{ Params: { id: string } }>(REST.conversationSummaryRefresh(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const service = opts.conversationSummary?.()
+    if (!service) return reply.code(503).send({ error: 'summary runner unavailable' })
+    const conversation = await service.refresh(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
   })
 
   app.get<{ Params: { id: string; messageId: string }; Querystring: { scope?: string; projectId?: string } }>(
@@ -1476,6 +1495,7 @@ export async function registerRest(
       }
       const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
       await opts.publishChatMessage?.(userId, req.params.id, message)
+      opts.conversationSummary?.()?.consider(userId, req.params.id)
       return (await clientMessages(db, userId, req.params.id, [message]))[0]
     }
   )

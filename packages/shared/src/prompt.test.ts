@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   appendChangeAuthorizationHint,
   buildConversationPrompt,
+  buildConversationPromptWithin,
   buildPrompt,
   CHANGE_AUTHORIZATION_HINT,
   claudeModelAlias,
@@ -172,6 +173,36 @@ describe('buildConversationPrompt (пересбор истории)', () => {
   it('добавляет пути вложений', () => {
     const p = buildConversationPrompt([{ role: 'u1', text: 'смотри' }], ['/data/a.png'])
     expect(p).toContain('/data/a.png')
+  })
+})
+
+describe('bounded history', () => {
+  it('preserves short history exactly', () => {
+    const messages = [{ role: 'u1' as const, text: 'hello' }, { role: 'ai' as const, text: 'world' }]
+    expect(buildConversationPromptWithin(messages)).toBe(buildConversationPrompt(messages))
+    expect(buildConversationPromptWithin([])).toBe('')
+  })
+  it('bounds 10,000 messages and retains the newest suffix', () => {
+    const messages = Array.from({ length: 10_000 }, (_, i) => ({ role: 'u1' as const, text: 'message ' + i + ' ' + 'x'.repeat(100) }))
+    const prompt = buildConversationPromptWithin(messages)
+    expect(prompt).toContain('сокращена:')
+    expect(prompt.slice(prompt.indexOf('\n\n') + 2).length).toBeLessThanOrEqual(200_000)
+    expect(prompt).toContain('message 9999 ')
+    expect(prompt).not.toContain('message 0 ')
+  })
+  it('places the summary between notice and recent history', () => {
+    const prompt = buildConversationPromptWithin([{ role: 'u1', text: 'old' }, { role: 'u1', text: 'new' }], 3, { summary: 'Earlier decisions' })
+    expect(prompt).toBe('История разговора до этого места сокращена: 1 ранних сообщений опущены.\n\n[Сводка разговора]\nEarlier decisions\n[/Сводка разговора]\n\nnew')
+  })
+  it('keeps the ending of an oversized last message', () => {
+    expect(buildConversationPromptWithin([{ role: 'u1', text: 'start---finish' }], 6)).toBe('История разговора до этого места сокращена: 0 ранних сообщений опущены.\n\nfinish')
+  })
+  it('counts labels and separators at the boundary', () => {
+    const messages = [{ role: 'u1' as const, text: 'first' }, { role: 'ai' as const, text: 'last' }]
+    const full = buildConversationPrompt(messages)
+    expect(buildConversationPromptWithin(messages, full.length)).toBe(full)
+    expect(buildConversationPromptWithin(messages, full.length - 1)).not.toContain('first')
+    expect(buildConversationPromptWithin(messages, 4, { attachmentPaths: ['/data/file'] })).toContain('/data/file')
   })
 })
 

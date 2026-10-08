@@ -85,6 +85,8 @@ export interface LlmRequest {
    * хода. Передаётся и БЕЗ `remote`: БЗ read-only и от машины не зависит.
    */
   kbMcpUrl?: string
+  /** Conversation-scoped, read-only search over published chat history. */
+  historyMcpUrl?: string
   /**
    * Режим БЗ разговора для системного хинта: 'manual' — авто-контекста нет,
    * инструменты единственный путь к базе (усиленная формулировка).

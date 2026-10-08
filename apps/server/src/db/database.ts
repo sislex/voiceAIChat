@@ -415,6 +415,9 @@ export class VoiceChatDb {
       ['cost_usd', 'REAL'],
       ['cost_status', 'TEXT'],
       ['cost_prices_stamp', 'INTEGER'],
+      ['summary_text', 'TEXT'],
+      ['summary_covers_message_id', 'TEXT'],
+      ['summary_updated_at', 'INTEGER'],
       ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
     ] as const) {
       if (!convCols.some((c) => c.name === column)) await this.sql.exec(`ALTER TABLE conversations ADD COLUMN ${column} ${ddl}`)

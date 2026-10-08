@@ -1,6 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-08
+checked: f702b46f
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2565,3 +2566,6 @@ and end-to-end creation/removal) remains an operator/integration step.
 <!-- release-train:f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b -->
 - sislex/make: 1.4.2
 - sislex/sislexa-kanban: 0.2.14
+
+<!-- release-train:20f8fcbc-e2a1-4c2a-ab5b-fc4b322575bd -->
+- sislex/make: 1.4.3
