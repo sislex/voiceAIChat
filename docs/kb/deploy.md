@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-08
-checked: f702b46f
+updated: 2026-10-09
+checked: ba1f6c9c
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -119,8 +119,25 @@ original owner selection, commits, versions and deploy intent; it skips complete
 steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
 file excludes competing runners; after a hard process/host crash, confirm the
 runner is no longer active before removing its stale lock and resuming. Clone
-directories remain available for diagnosis. Journals contain no tokens or child
-command output. Failures identify the journal and failed step and exit nonzero.
+directories remain available for diagnosis. Failures identify the journal and failed
+step and exit nonzero. The error and journal include the failed command, exit code,
+and last 40 output lines, with environment credentials, bearer tokens and recognized
+token formats redacted. Successful resume clears the saved error.
+
+The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
+the runner stops before planning or resuming with an installation hint. GitHub API
+requests retry HTTP 422, 5xx and network failures up to five times after the initial
+attempt, with 1/2/4/8/16-second backoff. Final errors include HTTP status and GitHub
+`message`/`errors`. Verification polls the release, provenance manifest and Docker
+manifests every five seconds for up to five minutes; request and Docker timeouts
+are bounded by the remaining verification time.
+
+If the Core pin push is rejected because `dev` advanced, the runner fetches and
+rebases the pin commit onto `origin/dev`, reruns the Core gate, and pushes without
+force. Only conflicts confined to generated `docs/kb/README.md` are resolved
+automatically by `kb:index`; other conflicts abort the rebase and stop the train.
+The journal records the rebased pin and invalidates the earlier Core gate so a
+failed gate must pass on resume before the rebased commit can be pushed.
 
 Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
 then run `npm install --package-lock-only` (never `npm version --workspaces`).
@@ -163,12 +180,41 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
 
+### Login and locations on the stand machine
+
+A stand's base environment is a Docker Compose project whose Postgres database
+starts from a copy of the production database. Stand users and their passwords
+therefore match production at the time of the copy. `VC_ADMIN_PASSWORD` takes
+effect only when the `admin` user does not exist yet: Identity's `ensureAdmin`
+uses `INSERT OR IGNORE`, so setting this variable for a production copy does not
+change the existing `admin` password.
+
+When a distinct stand-only password is needed, an operator may use Identity's
+`hashPassword` format and write a `scrypt$<saltHex>$<hashHex>` value to
+`users.password_hash` in the **stand database only, never production**. The hash
+uses scrypt with a 32-byte derived key and a randomly generated 16-byte salt.
+
+Stand runtime files are located as follows:
+
+- the stand manifest and gateway log are in
+  `~/.voicechat/dev/stands/<standId>/`;
+- development processes and worktrees are under
+  `~/.voicechat/dev-processes/`, whose registry is `registry.json`;
+- the base environment's Compose directory is
+  `<ChatAI data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
+
 `npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
 `SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
 (the base stand's Caddy entry) and an allocated `SISLEXA_GATEWAY_PORT`.
 `SISLEXA_GATEWAY_HOST` defaults to `0.0.0.0`, listening on both the host's LAN
 and Tailscale IPv4 addresses. Operators must commission DNS, reachability and
 access controls for those addresses; the launcher does not modify the host.
+The gateway rewrites `Host` to the upstream and sends the browser's address as
+`x-forwarded-host`. A request whose `Origin` equals the gateway address (a page
+the gateway served) is forwarded with the upstream origin, so Core's same-origin
+check accepts mutations at any stand address; foreign origins pass unchanged and
+stay `origin_denied`. Without this, login at the Tailscale/LAN gateway address
+failed with `origin_denied` (2026-10-08).
 
 The agent-facing entry is `node --import tsx scripts/dev-gateway.mjs` (also
 `npm run dev:gateway`). `--version` prints `1.0.0` and exits without requiring
@@ -2421,7 +2467,13 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.23.0 (contracts 1.3.0), which adds the `devProcess.start/stop/status/logs` RPC
+Core pins agent 0.24.0 (contracts 1.4.0). It manages the dev stand gateway, recovers dev stand
+components after an agent restart, and on component replacement keeps the old process until the new
+one is ready, then switches the stand manifest (`sha`, `url`, `devBuildId`, `startedAt`) atomically
+before retiring the old process (stand-fixes-v1 B02). Before 0.24.0 a replacement could report
+success while the manifest still pointed at the stopped process (`dev_upstream_unavailable`).
+
+Agent 0.23.0 (contracts 1.3.0) added the `devProcess.start/stop/status/logs` RPC
 for dev stands (dev-lane-v1 C01): the agent runs a component from a branch checkout in dev mode
 without Docker. Agents older than 0.23.0 answer these calls with an unknown-method error; the rest
 of the protocol is unchanged.

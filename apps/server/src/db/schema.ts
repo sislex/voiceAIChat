@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   archived_at INTEGER,
   summary_text TEXT,
   summary_covers_message_id TEXT,
-  summary_updated_at INTEGER
+  summary_updated_at INTEGER,
+  context_usage_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS conversation_groups (

@@ -421,6 +421,15 @@ URL руками. Параметризованные пути — функции
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
 
+`Conversation.contextUsage` — необязательный снимок заполнения текущего LLM-потока:
+`{ usedTokens, windowTokens, provider, model, measuredAt }`. Для Claude `usedTokens`
+равен input + cache read + cache creation последнего assistant turn; для Codex —
+только `last_token_usage.input_tokens`, а не кумулятивный total потока. Размер окна
+берётся из общей таблицы моделей с консервативным fallback 128k. Поле приходит и в
+`GET REST.conversation(id)`. `POST REST.conversationThreadReset(id)` доступен только
+владельцу, очищает provider session и снимок usage, добавляет системную заметку и
+возвращает обновлённый `Conversation`; чужой и отсутствующий разговор одинаково дают 404.
+
 ### Tenant selection
 
 An authenticated REST client selects one of its current Identity memberships

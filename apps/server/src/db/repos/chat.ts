@@ -10,6 +10,7 @@ import { parseJsonValue } from './support.js'
 import type { Values } from './chatSettings.js'
 import { InvalidChatSettings } from '../../chatSettingsValidation.js'
 import type { ConversationHistory } from '@voicechat/shared'
+import type { ConversationContextUsage } from '@voicechat/shared'
 
 interface ConversationRow {
   id: string
@@ -48,6 +49,7 @@ interface ConversationRow {
   summary_text: string | null
   summary_covers_message_id: string | null
   summary_updated_at: number | null
+  context_usage_json: string | null
 }
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined (не роняет чтение ленты). */
@@ -828,6 +830,25 @@ export class ChatRepo extends BaseRepo {
     await this.sql.run(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`, [sessionId, id, userId])
   }
 
+  async setConversationContextUsage(userId: string, id: string, usage: ConversationContextUsage | null): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET context_usage_json = ? WHERE id = ? AND user_id = ?`, [usage ? JSON.stringify(usage) : null, id, userId])
+  }
+
+  /** Clears the provider thread and leaves a visible, non-provider-authored audit note. */
+  async resetConversationThread(userId: string, id: string): Promise<Conversation | null> {
+    const resetAt = this.now()
+    const noteId = this.newId()
+    await this.sql.transaction(async () => {
+      const owned = await this.ownsConversation(userId, id)
+      if (!owned) return
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [id])) as { position: number }).position
+      await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
+      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position)
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.', new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
+    })
+    return await this.getConversation(userId, id)
+  }
+
   async listQueuedTurns(userId: string, conversationId: string): Promise<QueuedTurn[]> {
     if (!(await this.ownsConversation(userId, conversationId))) return []
     const rows = (await this.sql.all(`SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
@@ -1040,7 +1061,8 @@ export class ChatRepo extends BaseRepo {
     meta?: TurnMeta,
     execTarget?: string | null,
     attachments?: MessageAttachment[],
-    requestedId?: string
+    requestedId?: string,
+    contextUsage?: ConversationContextUsage
   ): Promise<Message> {
     if (!(await this.ownsConversation(userId, conversationId))) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
@@ -1068,12 +1090,12 @@ export class ChatRepo extends BaseRepo {
       `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
     )
-    const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
+    const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ?, context_usage_json = COALESCE(?, context_usage_json) WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     await this.sql.transaction(async () => {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
       await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
-      await touch.run(createdAt, conversationId)
+      await touch.run(createdAt, contextUsage ? JSON.stringify(contextUsage) : null, conversationId)
     })
     return {
       id,
@@ -1764,6 +1786,10 @@ export class ChatRepo extends BaseRepo {
       ...(row.summary_text && row.summary_covers_message_id && row.summary_updated_at !== null
         ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at } }
         : {}),
+      ...(() => {
+        const usage = parseJsonValue<ConversationContextUsage | null>(row.context_usage_json, null)
+        return usage ? { contextUsage: usage } : {}
+      })(),
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,
