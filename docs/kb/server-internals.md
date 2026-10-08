@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-07
-checked: d59f3b5f
+updated: 2026-10-08
+checked: bfca75d8
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -185,6 +185,8 @@ close. Regression tests cover ordering, initialization failure and early close.
 `ws.ts` отвечает только за framing и routing: JSON управляющие сообщения, binary PCM, lifecycle сокета. `createSession()` создаёт per-connection handlers и владеет STT/TTS session, подписками tail, PTY relay и cleanup. Общая `UserFrameHub` подписывает каждую браузерную сессию и фильтрует публикации по аутентифицированному `userId`.
 
 После успешного `db.chat.addMessage`, атомарного создания draft-разговора или обновления meta REST публикует `chat.message` через процесс-глобальный `UserFrameHub`. Кадр содержит `conversationId` и полный сохранённый `Message`, адресуется по аутентифицированному `userId` и поэтому приходит всем активным соединениям владельца, включая источник, но не другому аккаунту. Публикации при ошибке записи нет; повтор с тем же `messageId` может повторить кадр, а клиент обязан слить его по `Message.id`. Эта публикация не зависит от старта модели или первого токена: серверные проверки двух одновременных сессий находятся в `apps/server/src/session.test.ts`.
+
+A Codex turn that fails with `no rollout found for thread id` (the runner lost the thread, for example after its volume was recreated) clears the conversation's stored `codex:` session and re-queues the same message without marking it failed, so it runs once more in a fresh thread; a second failure follows the normal error path (`isLostCodexThread` in `turns.ts`).
 
 `TurnManager` также публикует весь lifecycle хода и авторитетные снимки очереди всем сессиям владельца через подписку с `ownerUserId`. В `createSession.onOpen` подписка на ходы устанавливается до отправки `claude.active`, затем сессия подписывается на `UserFrameHub` до первого ожидания БД и вызывает `resumeQueues(userId)`. Поэтому reconnect получает накопленный active-turn, восстановленные из SQLite очереди и последующие `start/token/log/usage/done/error`; история сообщений остаётся авторитетным REST-снимком `conversations:get`, который клиент сливает с уже увиденными realtime-кадрами.
 
