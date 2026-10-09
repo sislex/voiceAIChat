@@ -2657,6 +2657,9 @@ VC_STAND_PROXY_PORTS=8790-8794 docker compose -f docker-compose.yml -f deploy/do
 Omit the overlay when the range is empty: the base Compose configuration and its
 published ports stay unchanged. Compose does not support an optional empty
 `ports` sequence entry, so the overlay requires a nonempty range explicitly.
+The stand UI reads `vc_csrf` from `document.cookie`, where it finds Core's own
+token (cookies are per host), so the proxy replaces `x-vc-csrf` with the stand's
+renamed csrf cookie; otherwise every mutation inside the stand fails with 403.
 Listeners bind only while leased and expire after one idle hour. The stand
 gateway itself stays on its machine; Core reaches its loopback port through the
 agent connection, including when Machines runs as a separate service.

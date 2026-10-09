@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
 import { makeStandOperationSchema, MAKE_STAND_ERROR_CODES, MAKE_STAND_MAX_FILE_BYTES, type MakeStandOperation, type MakeStandResult, type CreateTransferTaskArgs, type StandPreviewOperation, type StandPreviewResult } from '@voicechat/make-contracts'
-import { conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
+import { componentClone, conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
 import { runProjectGit } from './localCore.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
@@ -15,9 +15,13 @@ export type PreviewOperation = StandPreviewOperation | {
 export function projectModeError(statusCode: number, message: string): never {
   throw Object.assign(new Error(message), { statusCode })
 }
+const STAND_STATUS: Record<string, 'stopped' | 'starting' | 'running' | 'failed' | undefined> = {
+  stopped: 'stopped', starting: 'starting', recovering: 'starting', running: 'running', ready: 'running', degraded: 'running', failed: 'failed'
+}
 const standSchema = z.object({
   standId: z.string().min(1), machineId: z.string().min(1),
-  status: z.enum(['stopped', 'starting', 'running', 'failed']).optional(),
+  // Kanban details report ready/recovering/degraded; Make speaks the stand preview statuses.
+  status: z.string().transform(value => STAND_STATUS[value]).optional(),
   gateway: z.object({ urls: z.array(z.string().url()) }).optional(), error: z.string().optional(),
   components: z.record(z.string(), z.object({ repository: z.string(), sha: z.string(), source: z.enum(['base', 'dev', 'live']) })).optional(),
   live: z.array(z.object({ component: z.string(), workingCopyPath: z.string(), branch: z.string().nullable().optional(), head: z.string().nullable().optional(), status: z.string().optional(), state: z.string().optional(), error: z.string().optional() })).optional(),
@@ -231,8 +235,9 @@ export class MakeProjectAdapters {
         const matches: Array<{ hostProjectId: string; stand: Stand }> = []
         for (const host of await this.standHosts(user, projectId, component)) for (const summary of host.stands) {
           const machine = project.machines.find(m => m.canUse && m.agentId === summary.machineId)
-          if (!machine || !machines?.isOnline(summary.machineId)) continue
-          const root = conversationWorktree(machine.directories?.projectWorkdir.path || machine.path, conversationId)
+          const reposRoot = host.project.machines.find(m => m.agentId === summary.machineId)?.reposRoot
+          if (!machine || !reposRoot || !machines?.isOnline(summary.machineId)) continue
+          const root = conversationWorktree(reposRoot, conversationId)
           const detail = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
           if (detail.live?.some(l => l.component === component && l.workingCopyPath === root)) matches.push({ hostProjectId: host.project.id, stand: detail })
         }
@@ -245,21 +250,32 @@ export class MakeProjectAdapters {
         stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(op.standId)))
         if (stand.standId !== op.standId) throw new Error('stand_not_found')
       }
-      await this.project(user, hostProjectId, write)
+      const hostProject = await this.project(user, hostProjectId, write)
       Object.assign(state, { standId: stand.standId, hostProjectId, machineId: stand.machineId })
       if (op.op === 'status' && !stand.components && (stand.status === 'starting' || stand.operation?.phase === 'creating'))
         return { ...state, phase: 'creating' }
       if (!stand.components?.[component] || repositoryId(stand.components[component].repository) !== repository) throw new Error('component_not_in_stand')
       const machine = project.machines.find(m => m.canUse && m.agentId === stand.machineId)
       if (!machine || !machines) throw new Error('machine_unavailable')
-      const projectPath = machine.directories?.projectWorkdir.path || machine.path
-      const root = conversationWorktree(projectPath, conversationId)
+      const reposRoot = hostProject.machines.find(m => m.agentId === stand.machineId)?.reposRoot
+      if (!reposRoot) throw new Error('machine_unavailable')
+      const clone = componentClone(stand.components[component].repository)
+      const location = { reposRoot, repoName: clone.name, repositoryUrl: clone.url }
+      const root = conversationWorktree(reposRoot, conversationId)
       const live = stand.live?.find(l => l.component === component && l.workingCopyPath === root)
       Object.assign(state, { workingCopyPath: root, branch: live?.branch ?? null,
         directUrls: stand.gateway?.urls.filter(url => /^https?:\/\//.test(url)) ?? [],
         phase: stand.error || live?.error || stand.operation?.status === 'failed' ? 'failed' : live ? 'ready' : 'idle' })
       if (state.phase === 'failed') state.error = makeStandErrorCode(stand.error ?? live?.error ?? stand.operation?.error ?? 'operation_conflict')
-      const phase = stand.operation?.phase ?? live?.status ?? live?.state
+      let phase = stand.operation?.phase ?? live?.status ?? live?.state
+      // Kanban runs live/override jobs in the background and lists them only under
+      // /operations; without this a status poll reports idle until the job finishes.
+      if (op.op === 'status' && !live && !phase && !stand.error) {
+        const jobs = await this.request<unknown>(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(stand.standId) + '/operations')
+        const list = (Array.isArray(jobs) ? jobs : (jobs as { operations?: unknown[] })?.operations ?? []) as Array<{ kind?: string; component?: string | null; status?: string; error?: string | null }>
+        const running = list.find(job => job.status === 'running' && job.component === component && ['live-start', 'live-stop', 'override'].includes(job.kind ?? ''))
+        if (running) phase = running.kind === 'live-start' ? 'installing' : 'switching'
+      }
       if (phase && ['creating', 'preparing', 'installing', 'switching'].includes(phase)) state.phase = phase as MakeStandResult['phase']
       if (phase === 'starting') state.phase = 'switching'
       if (phase === 'failed') { state.phase = 'failed'; state.error ??= 'operation_conflict' }
@@ -273,7 +289,7 @@ export class MakeProjectAdapters {
         state.phase = 'preparing'
         this.standProgress.set(lock!, state)
         const slug = (conversation.title ?? 'conversation').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'conversation'
-        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', projectPath, conversation: conversationId,
+        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', ...location, conversation: conversationId,
           branch: op.branch, newBranch: op.newBranch, baseBranch: op.baseBranch ?? (project.ciBaseBranch || 'main'), defaultBranch: 'make/' + slug + '-' + conversationId.slice(0, 8) })
         if (prepared.root !== root) throw new Error('path_outside_working_copy')
         state.branch = prepared.branch
@@ -288,7 +304,7 @@ export class MakeProjectAdapters {
       } else if (op.op === 'files' || op.op === 'git') {
         const check = async (relative: string, allowMissing = false) => {
           if (relative !== '.' && (!isSafeRepoRelativePath(relative) || relative.split('/').some(p => p.toLowerCase() === '.git'))) throw new Error('path_outside_working_copy')
-          const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', projectPath, conversation: conversationId, relative, allowMissing })
+          const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', ...location, conversation: conversationId, relative, allowMissing })
           if (checked.root !== root) throw new Error('path_outside_working_copy')
           return checked
         }

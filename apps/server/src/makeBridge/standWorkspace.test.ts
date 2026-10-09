@@ -13,12 +13,15 @@ function fixture() {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(process.env.DELIVERY_ATTEMPT_ROOT ? path.join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'stand-workspace-')))
   directories.push(dir)
   const project = path.join(dir, 'project'), root = path.join(dir, 'make-worktrees', 'conversation')
-  fs.mkdirSync(project)
+  fs.mkdirSync(path.join(project, '.git'), { recursive: true })
+  const url = 'https://github.com/sislex/project.git'
   let registered = false, current = 'make/test'
   const refs = new Set(['refs/remotes/origin/dev', 'refs/heads/existing', 'refs/remotes/origin/remote'])
   const spawnSync = vi.fn((_bin: string, argv: string[], options: { cwd: string; shell: boolean }) => {
     expect(options.shell).toBe(false)
+    if (argv[0] === 'clone') { expect(options.cwd).toBe(dir); fs.mkdirSync(path.join(argv.at(-1)!, '.git'), { recursive: true }); return { status: 0, stdout: '', stderr: '' } }
     expect(options.cwd).toBe(project)
+    if (argv[0] === 'remote') return { status: 0, stdout: url + '\n', stderr: '' }
     if (argv[0] === 'worktree' && argv[1] === 'list') return { status: 0, stdout: `worktree ${project}\nbranch refs/heads/dev\n\n${registered ? `worktree ${root}\nbranch refs/heads/${current}\n` : ''}`, stderr: '' }
     if (argv[0] === 'worktree' && argv[1] === 'add') {
       fs.mkdirSync(root, { recursive: true }); registered = true
@@ -30,7 +33,7 @@ function fixture() {
   })
   const run = (operation: Record<string, unknown>) => {
     let output = ''
-    const process = { argv: ['node', Buffer.from(JSON.stringify({ projectPath: project, conversation: 'conversation', baseBranch: 'dev', defaultBranch: 'make/test', ...operation })).toString('base64')],
+    const process = { argv: ['node', Buffer.from(JSON.stringify({ reposRoot: dir, repoName: 'project', repositoryUrl: url, conversation: 'conversation', baseBranch: 'dev', defaultBranch: 'make/test', ...operation })).toString('base64')],
       env: {}, exitCode: 0, stdout: { write: (chunk: string) => { output += chunk } } }
     vm.runInNewContext(STAND_WORKSPACE_PROGRAM, { require: (id: string) => id === 'node:fs' ? fs : id === 'node:path' ? path : { spawnSync }, Buffer, process })
     return { ...JSON.parse(output), exitCode: process.exitCode }
@@ -40,10 +43,18 @@ function fixture() {
 }
 
 describe('agent worktree program', () => {
+  it('clones the component repository into the host reposRoot once, then refuses a foreign origin', () => {
+    const f = fixture(); fs.rmSync(path.join(f.project, '.git'), { recursive: true })
+    fs.rmdirSync(f.project)
+    expect(f.prepare()).toMatchObject({ exitCode: 0, root: f.root })
+    expect(f.spawnSync).toHaveBeenCalledWith('git', ['clone', '--no-checkout', '--', 'https://github.com/sislex/project.git', f.project], expect.objectContaining({ cwd: f.dir, shell: false }))
+    expect(f.run({ action: 'prepare', repositoryUrl: 'https://github.com/other/project.git' })).toMatchObject({ exitCode: 1, error: 'operation_conflict' })
+  })
   it('fetches origin then adds a worktree using argv from the remote base', () => {
     const f = fixture()
     expect(f.prepare()).toMatchObject({ exitCode: 0, root: f.root, branch: 'make/test' })
-    expect(f.spawnSync.mock.calls[0]?.[1]).toEqual(['fetch', 'origin'])
+    expect(f.spawnSync.mock.calls.map(([, argv]) => argv[0])).toEqual(expect.arrayContaining(['remote', 'fetch']))
+    expect(f.spawnSync.mock.calls.some(([, argv]) => argv[0] === 'clone')).toBe(false)
     expect(f.spawnSync).toHaveBeenCalledWith('git', ['worktree', 'add', '-b', 'make/test', '--', f.root, 'origin/dev'], expect.objectContaining({ cwd: f.project, shell: false }))
     expect(fs.existsSync(f.project)).toBe(true)
   })
@@ -117,8 +128,9 @@ describe('agent worktree program', () => {
   })
 
   it('validates conversation IDs before computing a worktree', () => {
-    expect(conversationWorktree('/work/ui', 'abc-123')).toBe('/work/make-worktrees/abc-123')
-    expect(() => conversationWorktree('/work/ui', '../../secret')).toThrow('path_outside_working_copy')
+    expect(conversationWorktree('/work/repos', 'abc-123')).toBe('/work/repos/make-worktrees/abc-123')
+    expect(() => conversationWorktree('/work/repos', '../../secret')).toThrow('path_outside_working_copy')
+    expect(() => conversationWorktree('/', 'abc')).toThrow('path_outside_working_copy')
   })
 })
 
