@@ -74,6 +74,14 @@ function fixture() {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('sends DELETE live without a JSON content-type (Fastify rejects an empty JSON body)', async () => {
+    const f = fixture(); f.bind()
+    expect((await f.call({ op: 'detach', ...identity })).phase).toBe('switching')
+    const del = f.fetchImpl.mock.calls.find(([, init]) => init?.method === 'DELETE')
+    expect(del).toBeDefined()
+    expect((del![1]!.headers as Record<string, string>)['content-type']).toBeUndefined()
+    expect(del![1]!.body).toBeUndefined()
+  })
   it('reports a running Kanban live job as installing while status polls', async () => {
     const f = fixture(); f.jobs.push({ kind: 'live-start', component: 'core-ui', status: 'running', error: null })
     expect((await f.call({ op: 'status', ...identity })).phase).toBe('installing')
