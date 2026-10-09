@@ -200,13 +200,17 @@ export class MakeProjectAdapters {
             return { agentId: m.agentId, name: machines?.nameOf(m.agentId) ?? m.name ?? m.agentId, online, canCreate: ready && online,
               ...(!ready ? { reason: 'base_environment_missing' } : !online ? { reason: 'machine_unavailable' } : {}) }
           }) }
-          for (const host of hosts) for (const summary of host.stands) {
-            const stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
+          // Kanban waits on an offline machine for its stand details; list entries are enough there.
+          const details = await Promise.all(hosts.flatMap(host => host.stands.map(async summary => ({ host, stand:
+            machines?.isOnline(summary.machineId)
+              ? standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
+              : summary }))))
+          for (const { host, stand } of details) {
             const live = stand.live?.find(l => l.component === component)
             const source = component ? stand.components?.[component] : undefined
             state.options.stands.push({ standId: stand.standId, hostProjectId: host.project.id, hostProjectName: host.project.name,
               machineId: stand.machineId, machineName: machines?.nameOf(stand.machineId) ?? host.project.machines.find(m => m.agentId === stand.machineId)?.name ?? stand.machineId,
-              online: machines?.isOnline(stand.machineId) ?? false, status: stand.status ?? (stand.error ? 'failed' : 'running'),
+              online: machines?.isOnline(stand.machineId) ?? false, status: !(machines?.isOnline(stand.machineId) ?? false) ? 'stopped' : stand.status ?? (stand.error ? 'failed' : 'running'),
               componentSource: live ? 'live' : source?.source ?? 'base', branch: live?.branch ?? null, sha: live?.head ?? source?.sha ?? null })
           }
           return state
@@ -227,7 +231,7 @@ export class MakeProjectAdapters {
         const matches: Array<{ hostProjectId: string; stand: Stand }> = []
         for (const host of await this.standHosts(user, projectId, component)) for (const summary of host.stands) {
           const machine = project.machines.find(m => m.canUse && m.agentId === summary.machineId)
-          if (!machine) continue
+          if (!machine || !machines?.isOnline(summary.machineId)) continue
           const root = conversationWorktree(machine.directories?.projectWorkdir.path || machine.path, conversationId)
           const detail = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
           if (detail.live?.some(l => l.component === component && l.workingCopyPath === root)) matches.push({ hostProjectId: host.project.id, stand: detail })
