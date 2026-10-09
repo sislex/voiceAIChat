@@ -7,7 +7,7 @@ import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environm
 // которое процесс машин наполняет по постоянному WebSocket событий; вызовы — RPC и потоковый exec;
 // события PTY приходят той же шиной и раздаются `emit`-подписчикам, зарегистрированным в `ptyStart`.
 // Кадры владельцам (журнал команд, watchdog) процесс машин присылает сюда же — они уходят в шину кадров ядра.
-import { WebSocket } from 'ws'
+import { WebSocket, createWebSocketStream } from 'ws'
 import type { ServerMessage } from '@voicechat/shared'
 import type { AgentPolicy } from '@sislexa/agent-contracts'
 import { AgentFsError } from '../agents/registry.js'
@@ -237,6 +237,14 @@ export class HttpMachines implements MachinesService {
   listLinks(projectId: string, environmentId: string): Promise<EnvironmentLink[]> { return this.rpc('listLinks', [projectId, environmentId]) }
 
   // --- тоннели ---
+  connectCoreTunnel(agentId: string, port: number) {
+    const url = new URL('/internal/machines/core-tunnel', this.opts.machinesUrl)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    url.searchParams.set('agentId', agentId); url.searchParams.set('port', String(port))
+    const socket = new WebSocket(url, { headers: { authorization: 'Bearer ' + this.opts.token }, handshakeTimeout: 15_000 })
+    return createWebSocketStream(socket)
+  }
+
   async createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize?: () => Promise<boolean>, onClose?: () => Promise<void>): Promise<number> {
     this.tunnelCallbacks.set(id, { authorize: authorize ?? (async () => true), ...(onClose ? { onClose } : {}) })
     try {

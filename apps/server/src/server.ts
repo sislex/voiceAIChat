@@ -1,3 +1,5 @@
+import { standProxyKanban } from './standProxyKanban.js'
+import { StandProxy, proxyPorts, registerStandProxy } from './standProxy.js'
 import { clientEvent } from './serviceData.js'
 import { Maintenance } from './maintenance.js'
 import { registerHttpCompression } from './httpCompression.js'
@@ -615,6 +617,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ...(opts.agentRegistry ? { registry: opts.agentRegistry } : {})
   })
   const agentRegistry: MachinesService = remoteMachines ?? machinesModule!.machines
+  const standSession = async (cookie: string) => {
+    const verdict = await sessionAuthenticate({ method: 'GET', url: '/api/dev-stand-access', headers: { cookie } })
+    return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
+  }
+  const standProxy = new StandProxy({
+    ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
+    session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
+    connect: (machine, port) => agentRegistry.connectCoreTunnel(machine, port),
+    stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+  })
+  registerStandProxy(app, standProxy, standSession)
   const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
   if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
