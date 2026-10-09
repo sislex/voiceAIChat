@@ -1,6 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-09
+updated: 2026-10-10
 checked: 145c3981
 areas:
   - apps/server/src
@@ -23,6 +23,29 @@ after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
 
 ## Запуск и dependency injection
+
+### Exec stream memory bound
+
+`internal/execStream.ts` serves both `/internal/kanban/exec-stream` and
+`/internal/machines/exec-stream`. It checks `ServerResponse.writableLength` before
+forwarding each chunk. At 8 MiB it drops subsequent output, counting UTF-8 bytes,
+until the queue falls below 1 MiB. It then writes one NDJSON chunk containing
+`\n…[stream output dropped: <n> bytes, consumer too slow]\n` before resuming.
+The output queue is bounded by the high-water mark plus one encoded chunk
+(including HTTP framing); output is not accumulated in a separate queue.
+The final `result` or `error` waits for capacity and ends the response normally.
+Disconnect still aborts the machine command; overflow never destroys the socket.
+
+Audit of other HTTP writers: PTY/tail events use WebSocket transports, not raw
+HTTP output relays. MCP `raw.writeHead` sites emit terminal error responses.
+`anthropic/gateway.ts` writes a fixed sequence of SSE records from a completed
+LLM result, not a live machine-output relay (its result accumulation is a
+separate memory concern). Its upstream HTTP response and `standProxy.ts` use
+Node streams/pipes, which propagate backpressure.
+
+The production entry point starts `processMemory.ts`: one JSON memory sample
+every five minutes, in MiB. Its interval is unreferenced and stopped by the
+application close hook. See `deploy.md#core-memory-diagnostics` for snapshots.
 
 ### Knowledge module lifecycle
 
