@@ -6,12 +6,12 @@ import { MakeProjectAdapters } from './projectAdapters.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 import type { StandMachines } from './standWorkspace.js'
 
-const root = '/work/make-worktrees/conversation'
+const root = '/work/repos/make-worktrees/conversation'
 const identity = { standId: 'stand', hostProjectId: 'host' }
 function fixture() {
   const user = { name: 'alice', role: 'developer', blocked: false }
   const project = { id: 'project', name: 'UI', gitUrl: 'git@github.com:sislex/sislexa-core-ui.git', ciBaseBranch: 'dev',
-    machines: [{ agentId: 'agent', name: 'Mac', canUse: true, path: '/work/ui' }] }
+    machines: [{ agentId: 'agent', name: 'Mac', canUse: true, path: '/work/ui', reposRoot: '/work/repos' }] }
   const host = { ...project, id: 'host', name: 'Sislexa', gitUrl: 'sislex/voiceAIChat' }
   const other = { ...host, id: 'other' }
   const projects = [project, host, other]

@@ -779,8 +779,11 @@ list with status `stopped`; Files and Git skip them. Kanban detail statuses
 is the requested agent. The same environment rule applies to `standPreview`.
 Missing bases are reported; Core never provisions a base environment implicitly.
 
-Attach fetches origin and creates a Git worktree at
-`<projectWorkdir>/../make-worktrees/<conversationId>` on the stand machine.
+Attach works inside the stand host project's machine `reposRoot`, because
+Kanban admits a live working copy and its Git common directory only under that
+machine's `path` or `reposRoot`. The component repository is cloned once into
+`<reposRoot>/<repository name>` (origin must match the registry repository),
+fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
 The fixed agent-side Node program launches Git with argv and `shell: false`;
 user values travel as base64 JSON. A registered conversation worktree can be
 reused only on its existing branch. A taken new branch name fails with
