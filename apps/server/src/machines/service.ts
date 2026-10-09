@@ -63,6 +63,7 @@ export interface MachinesService extends Pick<VpnService, 'ensureEnvironmentGran
   /** В отдельном процессе машин буфер приходит по сети — вызывающий всегда ждёт `await`. */
   ptyBufferText(ptyId: string): string | null | Promise<string | null>
   ptyContextOf(ptyId: string): PtyContext | null
+  connectCoreTunnel(agentId: string, port: number): import('node:stream').Duplex
   // --- тоннели ---
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize?: () => Promise<boolean>, onClose?: () => Promise<void>): Promise<number>
   tunnelPort(id: string): number | null

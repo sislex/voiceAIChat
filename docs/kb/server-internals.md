@@ -1,6 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-08
+updated: 2026-10-09
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -757,3 +757,35 @@ RPC and HttpMachines expose `ensureLink(input)`,
 same methods with the `machines.` prefix. These are trusted internal worker
 ports, not user-facing APIs; no Kanban authorization callback or connected
 RPC event client is required to keep a link alive.
+
+## Dev stand access proxy
+
+`standProxy.ts` registers `POST /api/dev-stand-access {projectId, standId}`
+outside Kanban's `/api/projects` proxy. It requires a Core session cookie and
+project membership, then reads `GET /api/projects/:id/dev-stands/:standId` from
+Kanban with an exact-request user capability. Only the returned `machineId`
+and validated `gateway.port` select the upstream; clients cannot supply a
+target machine or TCP port. The shared response is `{url, expiresAt}`, with
+`expiresAt` expressed as Unix milliseconds.
+
+Allocation is serialized. A user/project/stand tuple reuses its lease; target
+changes replace it. The disabled or exhausted pool returns HTTP 503 with
+`stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
+deadline; expiry and Core shutdown close listeners and all their connections.
+Every HTTP request and WebSocket upgrade checks the current cookie session
+against the lease owner and rechecks project membership before opening a tunnel.
+
+Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+upstream, with the prefix removed. Response Set-Cookie names receive the prefix
+and Domain attributes are removed. Core authorization and internal forwarding
+headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
+to the leased proxy origin becomes the gateway origin, while foreign origins
+remain unchanged. SSE responses stream without buffering and WebSocket upgrades
+retain their initial bytes in both directions.
+
+`AgentRegistry.connectCoreTunnel` returns a Duplex using the agent's existing
+tunnel frames. It waits for connection acknowledgement, bounds data frames,
+observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
+reads when the Duplex fills. Agent disconnect/error closes the stream. The
+MachinesService port also supports remote Machines through the authenticated
+`/internal/machines/core-tunnel` WebSocket byte stream.

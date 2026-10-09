@@ -166,6 +166,7 @@ export interface HealthResponse {
 
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
+  devStandAccess: '/api/dev-stand-access',
   projectDevStands: (id: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands`,
   projectDevStand: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}`,
   projectDevStandComponent: (id: string, standId: string, component: import('./devStand').DevComponentId) =>

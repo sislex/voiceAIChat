@@ -1,3 +1,4 @@
+import { CoreTunnel } from './coreTunnel.js'
 import type { VpnService, VpnEnvironment } from '../machines/vpn/service.js'
 import { vpnAddress } from '../machines/vpn/telemetry.js'
 import type { LinkManager } from './linkManager.js'
@@ -167,6 +168,7 @@ export class AgentRegistry {
   private readonly pendingVpn = new Map<string, { agentId: string; timer: NodeJS.Timeout; resolve: (o: VpnObservation) => void; reject: (e: Error) => void }>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
+  private readonly coreTunnels = new Map<string, { agentId: string; stream: CoreTunnel }>()
   private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
@@ -292,6 +294,7 @@ export class AgentRegistry {
 
   /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
   unregister(agentId: string): void {
+    for (const tunnel of this.coreTunnels.values()) if (tunnel.agentId === agentId) tunnel.stream.destroy(new Error('Machine disconnected'))
     const had = this.online.delete(agentId)
     this.telemetry.delete(agentId)
     for (const tunnel of [...this.tunnels.values()]) if (tunnel.sourceAgentId === agentId || tunnel.targetAgentId === agentId) this.closeTunnel(tunnel.id)
@@ -859,6 +862,22 @@ export class AgentRegistry {
   deleteLink(projectId: string, environmentId: string, id: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.deleteLink(projectId, environmentId, id) }
   listLinks(projectId: string, environmentId: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.listLinks(projectId, environmentId) }
 
+  connectCoreTunnel(agentId: string, port: number): CoreTunnel {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid tunnel port')
+    if (!this.isOnline(agentId)) throw new Error('Machine unavailable')
+    const error = this.versionError(agentId, 'tunnel')
+    if (error) throw error
+    const id = randomUUID()
+    const stream = new CoreTunnel(frame => this.send(agentId, { ...frame, tunnelId: id, connectionId: id } as never),
+      () => this.bufferedAmount(agentId), () => {
+        this.coreTunnels.delete(id)
+        this.send(agentId, { t: 'tunnel.close', tunnelId: id })
+      })
+    this.coreTunnels.set(id, { agentId, stream })
+    this.send(agentId, { t: 'tunnel.connect', tunnelId: id, connectionId: id, port })
+    return stream
+  }
+
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: (frame: string) => Promise<boolean> = async () => true, onClose?: () => Promise<void>, listener?: { host: 'docker-host'; port: number }): Promise<number> {
     const existing = this.tunnels.get(id)
     if (existing?.localPort) return Promise.resolve(existing.localPort)
@@ -978,6 +997,11 @@ export class AgentRegistry {
       return
     }
     if ('tunnelId' in msg) {
+      const core = this.coreTunnels.get(msg.tunnelId)
+      if (core) {
+        if (core.agentId === agentId && (!('connectionId' in msg) || msg.connectionId === msg.tunnelId)) core.stream.frame(msg)
+        return
+      }
       const tunnel = this.tunnels.get(msg.tunnelId)
       if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
       // Frames of one tunnel are handled strictly in arrival order: authorization is async and

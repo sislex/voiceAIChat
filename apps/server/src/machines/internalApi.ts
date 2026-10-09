@@ -5,7 +5,7 @@
 import { VpnError } from './vpn/tailscale.js'
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import type { WebSocket } from 'ws'
+import { createWebSocketStream, type WebSocket } from 'ws'
 import { RpcError, type RpcRequest } from '@voicechat/shared'
 import { AgentFsError, type AgentRegistry } from '../agents/registry.js'
 import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
@@ -96,6 +96,15 @@ export function registerMachinesInternalApi(app: FastifyInstance, deps: Machines
       const body = req.body
       if (!body || typeof body.agentId !== 'string' || typeof body.command !== 'string') return reply.code(400).send({ error: 'bad exec request' })
       await serveExecStream(reply, body, registry)
+    })
+    scope.get<{ Querystring: { agentId: string; port: string } }>('/internal/machines/core-tunnel', { websocket: true }, (socket, req) => {
+      const bridge = createWebSocketStream(socket)
+      try {
+        const tunnel = registry.connectCoreTunnel(req.query.agentId, Number(req.query.port))
+        bridge.on('error', () => tunnel.destroy()); tunnel.on('error', () => bridge.destroy())
+        bridge.on('close', () => tunnel.destroy()); tunnel.on('close', () => bridge.destroy())
+        bridge.pipe(tunnel).pipe(bridge)
+      } catch { bridge.on('error', () => {}); bridge.destroy() }
     })
     scope.get(MACHINES_INTERNAL_EVENTS_PATH, { websocket: true }, (socket) => {
       clients.add(socket)
