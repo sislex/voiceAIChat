@@ -22,6 +22,12 @@ export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: 
   const prefix = 'sxs_' + key + '_'
   const cookies = (headers.cookie ?? '').split(';').map(s => s.trim()).filter(s => s.startsWith(prefix) && s.includes('=')).map(s => s.slice(prefix.length))
   if (cookies.length) result.cookie = cookies.join('; ')
+  // The stand UI reads `vc_csrf` from document.cookie and finds Core's own token there
+  // (cookies are per host); the stand validates header === cookie, so echo its renamed one.
+  if (headers['x-vc-csrf'] !== undefined) {
+    const csrf = ['__Secure-vc_csrf=', 'vc_csrf='].map(name => cookies.find(c => c.startsWith(name))).find(Boolean)
+    if (csrf) result['x-vc-csrf'] = csrf.slice(csrf.indexOf('=') + 1)
+  }
   if (result.origin === origin) result.origin = 'http://127.0.0.1:' + port
   return result
 }

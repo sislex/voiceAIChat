@@ -6,12 +6,12 @@ import { MakeProjectAdapters } from './projectAdapters.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 import type { StandMachines } from './standWorkspace.js'
 
-const root = '/work/make-worktrees/conversation'
+const root = '/work/repos/make-worktrees/conversation'
 const identity = { standId: 'stand', hostProjectId: 'host' }
 function fixture() {
   const user = { name: 'alice', role: 'developer', blocked: false }
   const project = { id: 'project', name: 'UI', gitUrl: 'git@github.com:sislex/sislexa-core-ui.git', ciBaseBranch: 'dev',
-    machines: [{ agentId: 'agent', name: 'Mac', canUse: true, path: '/work/ui' }] }
+    machines: [{ agentId: 'agent', name: 'Mac', canUse: true, path: '/work/ui', reposRoot: '/work/repos' }] }
   const host = { ...project, id: 'host', name: 'Sislexa', gitUrl: 'sislex/voiceAIChat' }
   const other = { ...host, id: 'other' }
   const projects = [project, host, other]
@@ -20,6 +20,7 @@ function fixture() {
     components: { 'core-ui': { repository: 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' } },
     live: [] as Array<{ component: string; workingCopyPath: string; branch: string; head: string; status?: string; error?: string }>,
     operation: undefined as { status: string; phase?: string; error?: string } | undefined }
+  const jobs: Array<{ kind: string; component: string | null; status: string; error: string | null }> = []
   const db = {
     identity: { getUser: vi.fn(async () => user) },
     chat: { conversationOwner: vi.fn(async () => 'alice'), getConversation: vi.fn(async () => ({ assistantKind: 'make', title: 'New UI' })), makeConversationProject: vi.fn(async () => 'project') },
@@ -53,6 +54,7 @@ function fixture() {
     if (init?.method === 'POST' || init?.method === 'DELETE') return Response.json({ standId: 'created', operationId: 'operation' }, { status: 202 })
     if (url === '/api/projects/host/dev-stands') return Response.json([stand])
     if (url === '/api/projects/host/dev-stands/stand') return Response.json(stand)
+    if (url === '/api/projects/host/dev-stands/stand/operations') return Response.json(jobs)
     if (url === '/api/projects/other/dev-stands') return Response.json([{ ...stand, components: { core: { repository: 'sislex/voiceAIChat', source: 'base', sha: 'def' } } }])
     if (url.endsWith('/dev-stands')) return Response.json([])
     return Response.json({ error: 'stand_not_found' }, { status: 404 })
@@ -68,10 +70,26 @@ function fixture() {
     return result
   }
   const bind = () => stand.live.push({ component: 'core-ui', workingCopyPath: root, branch: 'make/test', head: 'live-sha' })
-  return { call, bind, adapter, db, git, machines, fetchImpl, project, host, base, stand, user, deps, previewAccess }
+  return { call, bind, adapter, db, git, machines, fetchImpl, project, host, base, stand, user, deps, previewAccess, jobs }
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('reports a running Kanban live job as installing while status polls', async () => {
+    const f = fixture(); f.jobs.push({ kind: 'live-start', component: 'core-ui', status: 'running', error: null })
+    expect((await f.call({ op: 'status', ...identity })).phase).toBe('installing')
+    f.jobs[0]!.kind = 'override'
+    expect((await f.call({ op: 'status', ...identity })).phase).toBe('switching')
+    f.jobs[0]!.status = 'succeeded'
+    expect((await f.call({ op: 'status', ...identity })).phase).toBe('idle')
+  })
+  it('accepts the Kanban detail statuses ready, recovering and degraded', async () => {
+    for (const [status, expected] of [['ready', 'running'], ['recovering', 'starting'], ['degraded', 'running']] as const) {
+      const f = fixture(); (f.stand as { status: string }).status = status
+      const result = await f.call({ op: 'options' })
+      expect(result.phase).toBe('idle')
+      expect(result.options?.stands[0]?.status).toBe(expected)
+    }
+  })
   it('lists stands on offline machines from the stand list without waiting for their details', async () => {
     const f = fixture(); f.machines.isOnline.mockReturnValue(false)
     const result = await f.call({ op: 'options' })
