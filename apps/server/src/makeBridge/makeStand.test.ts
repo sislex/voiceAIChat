@@ -72,6 +72,14 @@ function fixture() {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('accepts the Kanban detail statuses ready, recovering and degraded', async () => {
+    for (const [status, expected] of [['ready', 'running'], ['recovering', 'starting'], ['degraded', 'running']] as const) {
+      const f = fixture(); (f.stand as { status: string }).status = status
+      const result = await f.call({ op: 'options' })
+      expect(result.phase).toBe('idle')
+      expect(result.options?.stands[0]?.status).toBe(expected)
+    }
+  })
   it('lists stands on offline machines from the stand list without waiting for their details', async () => {
     const f = fixture(); f.machines.isOnline.mockReturnValue(false)
     const result = await f.call({ op: 'options' })

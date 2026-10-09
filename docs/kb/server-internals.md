@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-09
-checked: 145c3981
+checked: 6a53b92e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -774,7 +774,8 @@ stands containing that component, with machine names and live branch/head.
 Details are requested in parallel and only for stands on online machines:
 Kanban holds a details request for an offline machine for about 30 seconds,
 longer than Make's 15-second Core timeout. Offline stands come from the stand
-list with status `stopped`; Files and Git skip them. Creation selects a host with a managed, ready environment whose first machine
+list with status `stopped`; Files and Git skip them. Kanban detail statuses
+`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
 is the requested agent. The same environment rule applies to `standPreview`.
 Missing bases are reported; Core never provisions a base environment implicitly.
 
