@@ -1,6 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-09
+updated: 2026-10-10
 checked: 449fa9c4
 areas:
   - scripts/contracts-release.mjs
@@ -41,6 +41,20 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Core memory diagnostics
+
+The Compose `voicechat` service keeps its `mem_limit: 1g` and starts Node with
+`--max-old-space-size=768 --heapsnapshot-near-heap-limit=1
+--diagnostic-dir=/data/diagnostics`. Startup creates that directory and removes
+previous `*.heapsnapshot` files before starting Node, retaining at most one
+automatic near-limit snapshot per process run. Retrieve the snapshot from the
+Core data volume at `/data/diagnostics` before restarting the container.
+Snapshots contain process memory and should be treated as private diagnostics.
+Every five minutes, `docker logs` receives a JSON `process_memory` event with
+`rss`, `heapUsed`, `heapTotal`, `external`, and `arrayBuffers` in MiB.
+The heap cap leaves space for native allocations but does not guarantee that
+a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
 
