@@ -1,0 +1,10 @@
+# Opt-in overlay: docker compose -f docker-compose.yml -f deploy/docker-compose.yml up -d
+# Omit this overlay when VC_STAND_PROXY_PORTS is empty. Compose cannot omit a ports
+# sequence entry by interpolating an empty environment variable.
+services:
+  voicechat:
+    ports:
+      - "${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}:${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}"
+    environment:
+      VC_STAND_PROXY_PORTS: ${VC_STAND_PROXY_PORTS}
+      VC_STAND_PROXY_PUBLIC_HOST: ${VC_STAND_PROXY_PUBLIC_HOST:-}

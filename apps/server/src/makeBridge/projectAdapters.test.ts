@@ -12,7 +12,7 @@ function fixture() {
   const db = {
     identity: { getUser: vi.fn(async () => user) },
     projects: { getProject: vi.fn(async () => project) },
-    environments: { listEnvironments: vi.fn(async () => [{ id: 'base', machines: ['agent'] }]) },
+    environments: { listEnvironments: vi.fn(async () => [{ id: 'base', mode: 'managed', state: 'ready', machines: ['agent'] }]) },
     chat: { getConversation: vi.fn(async () => ({ assistantKind: 'make' })), conversationOwner: vi.fn(async () => 'alice') },
     tasks: { getBoard: vi.fn(async () => ({ columns: [{ id: 'merge', semanticType: 'awaiting_merge' }, { id: 'backlog', semanticType: 'backlog' }] })),
       createTask: vi.fn(async () => ({ id: 'task' })), linkTaskDesign: vi.fn(async () => []), moveTask: vi.fn(async () => ({ id: 'task' })) },
@@ -64,6 +64,14 @@ describe('Make stand adapter', () => {
     expect(f.fetchImpl).toHaveBeenNthCalledWith(2, 'http://kanban.test/api/projects/p/dev-stands/stand/components/core-ui/live',
       expect.objectContaining({ method: op === 'live_on' ? 'POST' : 'DELETE',
         ...(op === 'live_on' ? { body: JSON.stringify({ workingCopyPath: '/work/core-ui' }) } : {}) }))
+  })
+
+  it.each([{ mode: 'external' }, { state: 'provisioning' }, { machines: ['other', 'agent'] }])('does not create on an unsuitable environment: %j', async change => {
+    const f = fixture()
+    f.fetchImpl.mockResolvedValueOnce(Response.json([]))
+    f.db.environments.listEnvironments.mockResolvedValueOnce([{ id: 'base', mode: 'managed', state: 'ready', machines: ['agent'], ...change }])
+    await expect(f.adapter.standPreview('alice', 'p', { op: 'start', subprojectPath: '.' })).rejects.toMatchObject({ message: 'base_environment_unavailable' })
+    expect(f.fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it('does not start a stand when asking for status', async () => {

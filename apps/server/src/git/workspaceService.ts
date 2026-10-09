@@ -89,6 +89,18 @@ export class GitWorkspaceService {
 
   constructor(private readonly deps: GitWorkspaceDeps) {}
 
+  /** Core-only scoped view; every operation rechecks the original machine permissions. */
+  atWorkingCopy(user: string, project: string, workspace: string, workingCopyPath: string): GitWorkspaceService {
+    const source = this
+    return new class extends GitWorkspaceService {
+      override async resolve(userId: string, projectId: string, workspaceId: string, opts: { write: boolean }) {
+        if (userId !== user || projectId !== project || workspaceId !== workspace)
+          throw new GitError(403, 'forbidden', 'Workspace scope mismatch')
+        return { ...await source.resolve(userId, projectId, workspaceId, opts), path: workingCopyPath }
+      }
+    }(this.deps)
+  }
+
   private now(): number {
     return this.deps.now?.() ?? Date.now()
   }
