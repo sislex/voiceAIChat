@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-10
-checked: 145c3981
+checked: 61fbfb07
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -23,29 +23,6 @@ after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
 
 ## Запуск и dependency injection
-
-### Exec stream memory bound
-
-`internal/execStream.ts` serves both `/internal/kanban/exec-stream` and
-`/internal/machines/exec-stream`. It checks `ServerResponse.writableLength` before
-forwarding each chunk. At 8 MiB it drops subsequent output, counting UTF-8 bytes,
-until the queue falls below 1 MiB. It then writes one NDJSON chunk containing
-`\n…[stream output dropped: <n> bytes, consumer too slow]\n` before resuming.
-The output queue is bounded by the high-water mark plus one encoded chunk
-(including HTTP framing); output is not accumulated in a separate queue.
-The final `result` or `error` waits for capacity and ends the response normally.
-Disconnect still aborts the machine command; overflow never destroys the socket.
-
-Audit of other HTTP writers: PTY/tail events use WebSocket transports, not raw
-HTTP output relays. MCP `raw.writeHead` sites emit terminal error responses.
-`anthropic/gateway.ts` writes a fixed sequence of SSE records from a completed
-LLM result, not a live machine-output relay (its result accumulation is a
-separate memory concern). Its upstream HTTP response and `standProxy.ts` use
-Node streams/pipes, which propagate backpressure.
-
-The production entry point starts `processMemory.ts`: one JSON memory sample
-every five minutes, in MiB. Its interval is unreferenced and stopped by the
-application close hook. See `deploy.md#core-memory-diagnostics` for snapshots.
 
 ### Knowledge module lifecycle
 
@@ -797,12 +774,19 @@ stands containing that component, with machine names and live branch/head.
 Details are requested in parallel and only for stands on online machines:
 Kanban holds a details request for an offline machine for about 30 seconds,
 longer than Make's 15-second Core timeout. Offline stands come from the stand
-list with status `stopped`; Files and Git skip them. Creation selects a host with a managed, ready environment whose first machine
+list with status `stopped`; Files and Git skip them. A status poll also reads
+the stand's `/operations`: a running Kanban `live-start` job is reported as
+`installing` and `live-stop`/`override` as `switching`, since Kanban's details
+show the live entry only after the job finishes. Kanban detail statuses
+`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
 is the requested agent. The same environment rule applies to `standPreview`.
 Missing bases are reported; Core never provisions a base environment implicitly.
 
-Attach fetches origin and creates a Git worktree at
-`<projectWorkdir>/../make-worktrees/<conversationId>` on the stand machine.
+Attach works inside the stand host project's machine `reposRoot`, because
+Kanban admits a live working copy and its Git common directory only under that
+machine's `path` or `reposRoot`. The component repository is cloned once into
+`<reposRoot>/<repository name>` (origin must match the registry repository),
+fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
 The fixed agent-side Node program launches Git with argv and `shell: false`;
 user values travel as base64 JSON. A registered conversation worktree can be
 reused only on its existing branch. A taken new branch name fails with
