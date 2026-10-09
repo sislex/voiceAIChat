@@ -15,9 +15,13 @@ export type PreviewOperation = StandPreviewOperation | {
 export function projectModeError(statusCode: number, message: string): never {
   throw Object.assign(new Error(message), { statusCode })
 }
+const STAND_STATUS: Record<string, 'stopped' | 'starting' | 'running' | 'failed' | undefined> = {
+  stopped: 'stopped', starting: 'starting', recovering: 'starting', running: 'running', ready: 'running', degraded: 'running', failed: 'failed'
+}
 const standSchema = z.object({
   standId: z.string().min(1), machineId: z.string().min(1),
-  status: z.enum(['stopped', 'starting', 'running', 'failed']).optional(),
+  // Kanban details report ready/recovering/degraded; Make speaks the stand preview statuses.
+  status: z.string().transform(value => STAND_STATUS[value]).optional(),
   gateway: z.object({ urls: z.array(z.string().url()) }).optional(), error: z.string().optional(),
   components: z.record(z.string(), z.object({ repository: z.string(), sha: z.string(), source: z.enum(['base', 'dev', 'live']) })).optional(),
   live: z.array(z.object({ component: z.string(), workingCopyPath: z.string(), branch: z.string().nullable().optional(), head: z.string().nullable().optional(), status: z.string().optional(), state: z.string().optional(), error: z.string().optional() })).optional(),
