@@ -4,7 +4,7 @@
 
 import type { VoiceChatDb } from '../db/database.js'
 import { buildGitWorkspaceId } from '@voicechat/shared'
-import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult } from '@voicechat/make-contracts'
+import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 
@@ -27,6 +27,7 @@ export interface LocalMakeCoreDeps {
   git?: GitWorkspaceService
   standPreview?: (userId: string, projectId: string, operation: PreviewOperation) => Promise<StandPreviewResult>
   transferTask?: MakeProjectAdapters['createTransferTask']
+  makeStand?: (userId: string, conversationId: string, operation: MakeStandOperation) => Promise<MakeStandResult>
 }
 
 export class LocalMakeCore implements MakeCore {
@@ -135,6 +136,10 @@ export class LocalMakeCore implements MakeCore {
   }
   standPreview(userId: string, projectId: string, operation: PreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(503, 'stand_preview_unavailable') }
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
+  makeStand(userId: string, conversationId: string, operation: MakeStandOperation) { return this.deps.makeStand ? this.deps.makeStand(userId, conversationId, operation) : fail(501, 'make_stand_unavailable') }
+  // Project notes are not hosted by Core yet; Make reports the 501 to the assistant.
+  projectNotesRead(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
+  projectNotesUpdate(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
 
   readonly machineFs: MakeMachineFs | null
 
