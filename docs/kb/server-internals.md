@@ -1,6 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-09
+checked: 9ecb0ecf
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -770,7 +771,10 @@ proxy lease service directly.
 Options match the project's GitHub repository against `DEV_COMPONENT_REGISTRY`.
 They include the conversation project's stands and other accessible projects'
 stands containing that component, with machine names and live branch/head.
-Creation selects a host with a managed, ready environment whose first machine
+Details are requested in parallel and only for stands on online machines:
+Kanban holds a details request for an offline machine for about 30 seconds,
+longer than Make's 15-second Core timeout. Offline stands come from the stand
+list with status `stopped`; Files and Git skip them. Creation selects a host with a managed, ready environment whose first machine
 is the requested agent. The same environment rule applies to `standPreview`.
 Missing bases are reported; Core never provisions a base environment implicitly.
 
