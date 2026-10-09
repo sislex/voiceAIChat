@@ -11,6 +11,7 @@ describe('/internal/make/core project methods', () => {
     ['projectStructure', ['alice', 'p'], []],
     ['projectDesign', ['alice', 'p', '.'], { tokens: [], themes: [], components: [] }],
     ['projectGit', ['alice', 'p', { op: 'push' }], { op: 'push', output: 'done' }],
+    ['makeStand', ['alice', 'conversation', { op: 'status', standId: 's', hostProjectId: 'p' }], { standId: 's', hostProjectId: 'p', machineId: 'agent', component: 'core-ui', branch: 'make/test', workingCopyPath: '/work/make-worktrees/conversation', phase: 'ready', previewUrl: null, directUrls: ['http://stand.test/'] }],
     ['standPreview', ['alice', 'p', { op: 'status', subprojectPath: '.' }], { standId: 's', status: 'running', url: 'http://stand.test' }],
     ['createTransferTask', ['alice', transfer], { taskId: 't', projectId: 'p', branch: 'make/button', branchUrl: 'https://github.com/sislex/sislexa-core-ui/tree/make/button', taskUrl: '/projects/p?task=t', designUrl: '/make/design' }],
     ['standPreview', ['alice', 'p', { op: 'live_on', subprojectPath: '.', component: 'core-ui', standId: 's' }], { standId: 's', status: 'starting', url: null }],

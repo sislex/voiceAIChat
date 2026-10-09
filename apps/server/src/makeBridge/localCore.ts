@@ -127,12 +127,7 @@ export class LocalMakeCore implements MakeCore {
     if (!this.deps.git) fail(501, 'project_git_unavailable')
     const machine = await this.projectMachine(userId, projectId)
     const workspace = buildGitWorkspaceId({ kind: 'project-machine', agentId: machine.agentId })
-    if (operation.op === 'status') { const value = await this.deps.git.status(userId, projectId, workspace); return { op: 'status', branch: value.branch, ahead: value.ahead, behind: value.behind, files: value.changes.map(item => ({ path: item.path, index: item.staged ? 'M' : ' ', workingTree: item.staged ? ' ' : 'M' })) } }
-    if (operation.op === 'branches') { const value = await this.deps.git.branches(userId, projectId, workspace, false); return { op: 'branches', branches: value.branches.map(item => ({ name: item.name, current: item.name === value.current, remote: item.remote })) } }
-    if (operation.op === 'pull') { const value = await this.deps.git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
-    if (operation.op === 'commit') { const value = await this.deps.git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
-    if (operation.op === 'push') { const value = await this.deps.git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
-    await this.deps.git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
+    return runProjectGit(this.deps.git, userId, projectId, workspace, operation)
   }
   standPreview(userId: string, projectId: string, operation: PreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(503, 'stand_preview_unavailable') }
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
@@ -173,4 +168,13 @@ export class LocalMakeCore implements MakeCore {
   project(userId: string, id: string) { return this.deps.db.projects.getProject(userId, id) }
   async userExists(name: string): Promise<boolean> { return Boolean(await this.deps.db.identity.getUser(name)) }
   boardChanged(projectId: string): void { this.deps.boardChanged?.(projectId) }
+}
+
+export async function runProjectGit(git: GitWorkspaceService, userId: string, projectId: string, workspace: string, operation: ProjectGitOperation): Promise<ProjectGitResult> {
+    if (operation.op === 'status') { const value = await git.status(userId, projectId, workspace); return { op: 'status', branch: value.branch, ahead: value.ahead, behind: value.behind, files: value.changes.map(item => ({ path: item.path, index: item.staged ? 'M' : ' ', workingTree: item.staged ? ' ' : 'M' })) } }
+    if (operation.op === 'branches') { const value = await git.branches(userId, projectId, workspace, false); return { op: 'branches', branches: value.branches.map(item => ({ name: item.name, current: item.name === value.current, remote: item.remote })) } }
+    if (operation.op === 'pull') { const value = await git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
+    if (operation.op === 'commit') { const value = await git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
+    if (operation.op === 'push') { const value = await git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
+    await git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
 }

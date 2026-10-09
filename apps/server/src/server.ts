@@ -813,6 +813,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeProjectAdapters = new MakeProjectAdapters({
     db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
+    machines: agentRegistry,
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user, project, stand) =>
+      standProxy.access(user, project, stand, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
     authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
     boardChanged: projectId => kanban.service.board.changed(projectId),
     readDesignFile: async (userId, conversationId, path) => {
@@ -831,6 +834,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     git: gitWorkspaces,
     standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
+    makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
     transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
