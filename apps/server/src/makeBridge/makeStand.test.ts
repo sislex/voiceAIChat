@@ -72,6 +72,13 @@ function fixture() {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('lists stands on offline machines from the stand list without waiting for their details', async () => {
+    const f = fixture(); f.machines.isOnline.mockReturnValue(false)
+    const result = await f.call({ op: 'options' })
+    expect(result.options?.stands).toEqual([{ ...identity, hostProjectName: 'Sislexa', machineId: 'agent', machineName: 'Live Mac', online: false,
+      status: 'stopped', componentSource: 'base', branch: null, sha: 'abc' }])
+    expect(f.fetchImpl.mock.calls.map(([input]) => new URL(String(input)).pathname)).not.toContain('/api/projects/host/dev-stands/stand')
+  })
   it('discovers cross-project stands by repository, live branch and machine names', async () => {
     const f = fixture(); f.bind()
     const result = await f.call({ op: 'options' })
