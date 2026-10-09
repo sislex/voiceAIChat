@@ -758,6 +758,48 @@ same methods with the `machines.` prefix. These are trusted internal worker
 ports, not user-facing APIs; no Kanban authorization callback or connected
 RPC event client is required to keep a link alive.
 
+## Make conversation stand worktrees
+
+`MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
+embedded and remote Make. Core checks the conversation owner and resolves its
+project through `db.chat.makeConversationProject`; project viewers cannot use
+this editing port. The standard Make RPC dispatcher validates both operations
+and results. `server.ts` supplies the machines, Git runtime and optional stand
+proxy lease service directly.
+
+Options match the project's GitHub repository against `DEV_COMPONENT_REGISTRY`.
+They include the conversation project's stands and other accessible projects'
+stands containing that component, with machine names and live branch/head.
+Creation selects a host with a managed, ready environment whose first machine
+is the requested agent. The same environment rule applies to `standPreview`.
+Missing bases are reported; Core never provisions a base environment implicitly.
+
+Attach fetches origin and creates a Git worktree at
+`<projectWorkdir>/../make-worktrees/<conversationId>` on the stand machine.
+The fixed agent-side Node program launches Git with argv and `shell: false`;
+user values travel as base64 JSON. A registered conversation worktree can be
+reused only on its existing branch. A taken new branch name fails with
+`branch_exists`. New branches start from the requested remote base, otherwise
+the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
+for component live mode. Status reads Kanban details; detach disables live
+without deleting the worktree or branch and refuses to disable another
+conversation's live copy.
+
+Files and Git find the conversation's live copy through Kanban, rejecting
+ambiguous bindings. File paths are relative to the computed worktree, checked
+on the agent against real paths and the repository's registered worktrees.
+Traversal, symlinks, `.git` metadata and directory mutations are refused;
+individual files are limited to 2 MiB, including truncated agent reads.
+File operations use the agent filesystem port. Git operations share the
+`projectGit` implementation through a scoped `GitWorkspaceService` view that
+rechecks machine permissions and retains command policy, locking and auditing.
+
+`previewUrl` comes from the stand proxy lease service when configured and is
+null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
+failures become the contract's failed state/error codes; authorization failures
+remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
+operator commissioning, not part of worktree attachment.
+
 ## Dev stand access proxy
 
 `standProxy.ts` registers `POST /api/dev-stand-access {projectId, standId}`

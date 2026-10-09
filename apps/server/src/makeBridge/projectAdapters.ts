@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { buildGitWorkspaceId, DEV_COMPONENT_IDS, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref } from '@voicechat/shared'
+import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
-import type { CreateTransferTaskArgs, StandPreviewOperation, StandPreviewResult } from '@voicechat/make-contracts'
+import { makeStandOperationSchema, MAKE_STAND_ERROR_CODES, MAKE_STAND_MAX_FILE_BYTES, type MakeStandOperation, type MakeStandResult, type CreateTransferTaskArgs, type StandPreviewOperation, type StandPreviewResult } from '@voicechat/make-contracts'
+import { conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
+import { runProjectGit } from './localCore.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeRequestAuthority } from './requestAuthority.js'
@@ -16,7 +18,10 @@ export function projectModeError(statusCode: number, message: string): never {
 const standSchema = z.object({
   standId: z.string().min(1), machineId: z.string().min(1),
   status: z.enum(['stopped', 'starting', 'running', 'failed']).optional(),
-  gateway: z.object({ urls: z.array(z.string().url()) }).optional(), error: z.string().optional()
+  gateway: z.object({ urls: z.array(z.string().url()) }).optional(), error: z.string().optional(),
+  components: z.record(z.string(), z.object({ repository: z.string(), sha: z.string(), source: z.enum(['base', 'dev', 'live']) })).optional(),
+  live: z.array(z.object({ component: z.string(), workingCopyPath: z.string(), branch: z.string().nullable().optional(), head: z.string().nullable().optional(), status: z.string().optional(), state: z.string().optional(), error: z.string().optional() })).optional(),
+  operation: z.object({ status: z.string(), phase: z.string().optional(), error: z.string().nullable().optional() }).nullable().optional()
 })
 type Stand = z.infer<typeof standSchema>
 function standDetail(value: unknown): Stand {
@@ -38,12 +43,37 @@ interface Deps {
   kanbanUrl?: string
   authority: MakeRequestAuthority
   fetchImpl?: typeof fetch
+  machines?: StandMachines
+  previewAccess?: (user: string, project: string, stand: string) => Promise<{ url: string }>
   readDesignFile(userId: string, conversationId: string, path: string): Promise<string>
   boardChanged(projectId: string): void
 }
 
+export function readyStandEnvironment(environments: EnvironmentDefinition[], machine: string) {
+  return environments.find(e => e.mode === 'managed' && e.state === 'ready' && e.machines[0] === machine)
+}
+
+function repositoryId(repository: string | null | undefined): string | null {
+  if (!repository) return null
+  try {
+    const url = new URL(repositoryWebUrl(repository))
+    return url.hostname.toLowerCase() === 'github.com' ? url.pathname.slice(1).toLowerCase() : null
+  } catch { return null }
+}
+
+function makeStandErrorCode(code: string, status?: number): string {
+  return (MAKE_STAND_ERROR_CODES as readonly string[]).includes(code) ? code
+    : /machine|offline|stand_preview_unavailable/.test(code) ? 'machine_unavailable'
+    : /base_environment/.test(code) ? 'base_environment_missing'
+    : /ref_not_found|unknown_branch/.test(code) ? 'branch_not_found'
+    : /unknown_component|repository_not_found/.test(code) ? 'component_not_in_stand'
+    : status === 404 ? 'stand_not_found' : 'operation_conflict'
+}
+
 export class MakeProjectAdapters {
   private transfers = new Set<string>()
+  private standMutations = new Set<string>()
+  private standProgress = new Map<string, MakeStandResult>()
   constructor(private readonly deps: Deps) {}
 
   private async project(userId: string, projectId: string, write: boolean) {
@@ -102,7 +132,7 @@ export class MakeProjectAdapters {
       stand = stands.map(standDetail).find(s => s.machineId === machine.agentId)
       if (!stand && op.op === 'start') {
         const environments = await this.deps.db.environments.listEnvironments(user, projectId)
-        const environment = environments.find(e => e.machines.includes(machine.agentId))
+        const environment = readyStandEnvironment(environments, machine.agentId)
         if (!environment) projectModeError(409, 'base_environment_unavailable')
         // Async creation may return only the allocated stand id and an operation id.
         const created = await this.request<{ standId?: string }>(user, base, 'POST', { machineId: machine.agentId, baseEnvironmentId: environment.id }, () => { pending = true })
@@ -115,6 +145,199 @@ export class MakeProjectAdapters {
     if (detail.standId !== stand.standId || detail.machineId !== stand.machineId) projectModeError(502, 'invalid_stand_response')
     const url = detail.gateway?.urls.find(url => /^https?:\/\//.test(url)) ?? null
     return { standId: stand.standId, status: detail.error ? 'failed' : pending ? 'starting' : detail.status ?? (url ? 'running' : 'starting'), url, ...(detail.error ? { error: detail.error } : {}) }
+  }
+
+  private async standHosts(user: string, projectId: string, component: string | null) {
+    const projects = await this.deps.db.projects.listProjects(user)
+    const hosts = []
+    for (const item of projects) {
+      const project = await this.project(user, item.id, false)
+      const raw = await this.request<unknown>(user, '/api/projects/' + encodeURIComponent(item.id) + '/dev-stands')
+      if (!Array.isArray(raw)) projectModeError(502, 'invalid_stand_response')
+      const stands = raw.map(standDetail).filter(s => item.id === projectId || (component && s.components?.[component]))
+      if (item.id === projectId || stands.length) hosts.push({ project, stands })
+    }
+    return hosts.sort((a, b) => Number(b.project.id === projectId) - Number(a.project.id === projectId) || a.project.id.localeCompare(b.project.id))
+  }
+
+  async makeStand(user: string, conversationId: string, operation: MakeStandOperation): Promise<MakeStandResult> {
+    // Owner access is deliberately stricter than the project-viewer path in Make.
+    if (await this.deps.db.chat.conversationOwner(conversationId) !== user) projectModeError(403, 'conversation_access_denied')
+    const conversation = await this.deps.db.chat.getConversation(user, conversationId)
+    if (!conversation || conversation.assistantKind !== 'make') projectModeError(403, 'conversation_access_denied')
+    if (operation.op === 'files' && operation.action === 'write' && typeof operation.content === 'string' && Buffer.byteLength(operation.content) > MAKE_STAND_MAX_FILE_BYTES)
+      projectModeError(413, 'file_too_large')
+    const parsed = makeStandOperationSchema.safeParse(operation)
+    if (!parsed.success) projectModeError(400, operation.op === 'files' ? 'path_outside_working_copy' : 'invalid_make_stand_operation')
+    const op = parsed.data
+    const projectId = await this.deps.db.chat.makeConversationProject(conversationId)
+    if (!projectId) projectModeError(404, 'project_not_found')
+    const write = !['options', 'status'].includes(op.op) && !(op.op === 'files' && ['list', 'read'].includes(op.action)) && !(op.op === 'git' && ['status', 'branches'].includes(op.operation.op))
+    const project = await this.project(user, projectId, write)
+    const repository = repositoryId(project.gitUrl)
+    const component = DEV_COMPONENT_IDS.find(id => DEV_COMPONENT_REGISTRY[id].repository.toLowerCase() === repository) ?? null
+    const state: MakeStandResult = { standId: null, hostProjectId: null, machineId: null, component, branch: null, workingCopyPath: null, phase: 'idle', previewUrl: null, directUrls: [] }
+    const machines = this.deps.machines
+    let lock: string | undefined
+    try {
+      if (write) {
+        lock = user + ':' + conversationId
+        if (this.standMutations.has(lock)) { lock = undefined; throw new Error('operation_conflict') }
+        this.standMutations.add(lock)
+      }
+      if (op.op === 'options' || op.op === 'create') {
+        const hosts = await this.standHosts(user, projectId, component)
+        const candidates: Array<typeof hosts[number] & { environments: EnvironmentDefinition[] }> = []
+        for (const host of hosts) {
+          const environments = await this.deps.db.environments.listEnvironments(user, host.project.id)
+          candidates.push({ ...host, environments })
+        }
+        const hostFor = (agent: string) => candidates.find(h => readyStandEnvironment(h.environments, agent))
+        if (op.op === 'options') {
+          state.options = { component, repository, stands: [], machines: project.machines.filter(m => m.canUse).map(m => {
+            const online = machines?.isOnline(m.agentId) ?? false
+            const ready = Boolean(component && hostFor(m.agentId))
+            return { agentId: m.agentId, name: machines?.nameOf(m.agentId) ?? m.name ?? m.agentId, online, canCreate: ready && online,
+              ...(!ready ? { reason: 'base_environment_missing' } : !online ? { reason: 'machine_unavailable' } : {}) }
+          }) }
+          for (const host of hosts) for (const summary of host.stands) {
+            const stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
+            const live = stand.live?.find(l => l.component === component)
+            const source = component ? stand.components?.[component] : undefined
+            state.options.stands.push({ standId: stand.standId, hostProjectId: host.project.id, hostProjectName: host.project.name,
+              machineId: stand.machineId, machineName: machines?.nameOf(stand.machineId) ?? host.project.machines.find(m => m.agentId === stand.machineId)?.name ?? stand.machineId,
+              online: machines?.isOnline(stand.machineId) ?? false, status: stand.status ?? (stand.error ? 'failed' : 'running'),
+              componentSource: live ? 'live' : source?.source ?? 'base', branch: live?.branch ?? null, sha: live?.head ?? source?.sha ?? null })
+          }
+          return state
+        }
+        if (!component) throw new Error('component_not_in_stand')
+        if (!machines?.isOnline(op.agentId) || !project.machines.some(m => m.canUse && m.agentId === op.agentId)) throw new Error('machine_unavailable')
+        const host = hostFor(op.agentId)
+        if (!host) throw new Error('base_environment_missing')
+        await this.project(user, host.project.id, true)
+        const environment = readyStandEnvironment(host.environments, op.agentId)!
+        const created = await this.request<{ standId: string; operationId: string }>(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands', 'POST', { machineId: op.agentId, baseEnvironmentId: environment.id })
+        if (!created?.standId || !created.operationId) throw new Error('operation_conflict')
+        return { ...state, standId: created.standId, hostProjectId: host.project.id, machineId: op.agentId, operationId: created.operationId, phase: 'creating' }
+      }
+      if (!component) throw new Error('component_not_in_stand')
+      let hostProjectId: string, stand: Stand
+      if (op.op === 'files' || op.op === 'git') {
+        const matches: Array<{ hostProjectId: string; stand: Stand }> = []
+        for (const host of await this.standHosts(user, projectId, component)) for (const summary of host.stands) {
+          const machine = project.machines.find(m => m.canUse && m.agentId === summary.machineId)
+          if (!machine) continue
+          const root = conversationWorktree(machine.directories?.projectWorkdir.path || machine.path, conversationId)
+          const detail = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
+          if (detail.live?.some(l => l.component === component && l.workingCopyPath === root)) matches.push({ hostProjectId: host.project.id, stand: detail })
+        }
+        if (!matches.length) throw new Error('stand_not_found')
+        if (matches.length > 1) throw new Error('operation_conflict')
+        ;({ hostProjectId, stand } = matches[0]!)
+      } else {
+        hostProjectId = op.hostProjectId
+        await this.project(user, hostProjectId, write)
+        stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(op.standId)))
+        if (stand.standId !== op.standId) throw new Error('stand_not_found')
+      }
+      await this.project(user, hostProjectId, write)
+      Object.assign(state, { standId: stand.standId, hostProjectId, machineId: stand.machineId })
+      if (op.op === 'status' && !stand.components && (stand.status === 'starting' || stand.operation?.phase === 'creating'))
+        return { ...state, phase: 'creating' }
+      if (!stand.components?.[component] || repositoryId(stand.components[component].repository) !== repository) throw new Error('component_not_in_stand')
+      const machine = project.machines.find(m => m.canUse && m.agentId === stand.machineId)
+      if (!machine || !machines) throw new Error('machine_unavailable')
+      const projectPath = machine.directories?.projectWorkdir.path || machine.path
+      const root = conversationWorktree(projectPath, conversationId)
+      const live = stand.live?.find(l => l.component === component && l.workingCopyPath === root)
+      Object.assign(state, { workingCopyPath: root, branch: live?.branch ?? null,
+        directUrls: stand.gateway?.urls.filter(url => /^https?:\/\//.test(url)) ?? [],
+        phase: stand.error || live?.error || stand.operation?.status === 'failed' ? 'failed' : live ? 'ready' : 'idle' })
+      if (state.phase === 'failed') state.error = makeStandErrorCode(stand.error ?? live?.error ?? stand.operation?.error ?? 'operation_conflict')
+      const phase = stand.operation?.phase ?? live?.status ?? live?.state
+      if (phase && ['creating', 'preparing', 'installing', 'switching'].includes(phase)) state.phase = phase as MakeStandResult['phase']
+      if (phase === 'starting') state.phase = 'switching'
+      if (phase === 'failed') { state.phase = 'failed'; state.error ??= 'operation_conflict' }
+      const progress = this.standProgress.get(user + ':' + conversationId)
+      if (op.op === 'status' && progress?.standId === stand.standId && progress.hostProjectId === hostProjectId) Object.assign(state, progress)
+      if (op.op !== 'status' && !machines.isOnline(machine.agentId)) throw new Error('machine_unavailable')
+      const workspace = buildGitWorkspaceId({ kind: 'project-machine', agentId: machine.agentId })
+      if (op.op !== 'status') await this.deps.git.resolve(user, projectId, workspace, { write })
+      const livePath = '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(stand.standId) + '/components/' + component + '/live'
+      if (op.op === 'attach') {
+        state.phase = 'preparing'
+        this.standProgress.set(lock!, state)
+        const slug = (conversation.title ?? 'conversation').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'conversation'
+        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', projectPath, conversation: conversationId,
+          branch: op.branch, newBranch: op.newBranch, baseBranch: op.baseBranch ?? (project.ciBaseBranch || 'main'), defaultBranch: 'make/' + slug + '-' + conversationId.slice(0, 8) })
+        if (prepared.root !== root) throw new Error('path_outside_working_copy')
+        state.branch = prepared.branch
+        state.phase = 'switching'
+        await this.request(user, livePath, 'POST', { workingCopyPath: root }, () => { state.phase = 'installing' })
+      } else if (op.op === 'detach') {
+        // Never turn off a different conversation's live working copy.
+        if (stand.live?.some(l => l.component === component && l.workingCopyPath !== root)) throw new Error('operation_conflict')
+        await this.request(user, livePath, 'DELETE', undefined, () => { state.phase = 'switching' })
+        if (state.phase !== 'switching') state.phase = 'idle'
+        return state
+      } else if (op.op === 'files' || op.op === 'git') {
+        const check = async (relative: string, allowMissing = false) => {
+          if (relative !== '.' && (!isSafeRepoRelativePath(relative) || relative.split('/').some(p => p.toLowerCase() === '.git'))) throw new Error('path_outside_working_copy')
+          const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', projectPath, conversation: conversationId, relative, allowMissing })
+          if (checked.root !== root) throw new Error('path_outside_working_copy')
+          return checked
+        }
+        if (op.op === 'git') {
+          await check('.')
+          if (op.operation.op === 'commit') for (const file of op.operation.files) await check(file, true)
+          state.git = await runProjectGit(this.deps.git.atWorkingCopy(user, projectId, workspace, root), user, projectId, workspace, op.operation)
+        } else if (op.action === 'list') {
+          const target = await check(op.dir)
+          const entries = (await machines.fsList(machine.agentId, target.target)).entries ?? []
+          state.files = { action: 'list', entries: [] }
+          for (const entry of entries) {
+            if (!['file', 'dir'].includes(entry.kind) || entry.name === '.git' || /[/\\]/.test(entry.name)) continue
+            const relative = op.dir === '.' ? entry.name : op.dir + '/' + entry.name
+            try { await check(relative) } catch (error) {
+              if (error instanceof Error && ['path_outside_working_copy', 'file_too_large'].includes(error.message)) continue
+              throw error
+            }
+            state.files.entries.push({ path: relative, kind: entry.kind === 'dir' ? 'directory' : 'file' })
+          }
+        } else if (op.action === 'rename') {
+          const from = await check(op.from), to = await check(op.to, true)
+          if (from.directory || to.directory || op.from === '.' || op.to === '.') throw new Error('path_outside_working_copy')
+          await machines.fsRename(machine.agentId, from.target, to.target)
+          state.files = { action: 'rename' }
+        } else {
+          const target = await check(op.path, op.action === 'write')
+          if (target.directory || op.path === '.') throw new Error('path_outside_working_copy')
+          if (op.action === 'read') {
+            const file = await machines.fsRead(machine.agentId, target.target)
+            const content = Buffer.from(file.dataBase64 ?? '', 'base64')
+            if (file.truncated || content.length > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
+            state.files = { action: 'read', content: content.toString('utf8') }
+          } else if (op.action === 'write') {
+            if (Buffer.byteLength(op.content) > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
+            await machines.fsWrite(machine.agentId, target.target, Buffer.from(op.content).toString('base64'))
+            state.files = { action: 'write' }
+          } else {
+            await machines.fsDeleteFileSafe(machine.agentId, target.target)
+            state.files = { action: 'delete' }
+          }
+        }
+      }
+      if (this.deps.previewAccess && state.directUrls.length) state.previewUrl = (await this.deps.previewAccess(user, hostProjectId, stand.standId)).url
+      return state
+    } catch (error) {
+      if (error instanceof GitError && error.status === 403) projectModeError(403, error.code)
+      const code = error instanceof GitError ? error.code : error instanceof Error ? error.message : ''
+      const status = (error as { statusCode?: number }).statusCode
+      if (status === 401 || status === 403) throw error
+      if (code === 'file_too_large') projectModeError(413, code)
+      return { ...state, phase: 'failed', error: makeStandErrorCode(code, status) }
+    } finally { if (lock) { this.standMutations.delete(lock); this.standProgress.delete(lock) } }
   }
 
   async createTransferTask(user: string, args: CreateTransferTaskArgs) {
