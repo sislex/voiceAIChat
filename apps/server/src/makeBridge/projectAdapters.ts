@@ -267,7 +267,15 @@ export class MakeProjectAdapters {
         directUrls: stand.gateway?.urls.filter(url => /^https?:\/\//.test(url)) ?? [],
         phase: stand.error || live?.error || stand.operation?.status === 'failed' ? 'failed' : live ? 'ready' : 'idle' })
       if (state.phase === 'failed') state.error = makeStandErrorCode(stand.error ?? live?.error ?? stand.operation?.error ?? 'operation_conflict')
-      const phase = stand.operation?.phase ?? live?.status ?? live?.state
+      let phase = stand.operation?.phase ?? live?.status ?? live?.state
+      // Kanban runs live/override jobs in the background and lists them only under
+      // /operations; without this a status poll reports idle until the job finishes.
+      if (op.op === 'status' && !live && !phase && !stand.error) {
+        const jobs = await this.request<unknown>(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(stand.standId) + '/operations')
+        const list = (Array.isArray(jobs) ? jobs : (jobs as { operations?: unknown[] })?.operations ?? []) as Array<{ kind?: string; component?: string | null; status?: string; error?: string | null }>
+        const running = list.find(job => job.status === 'running' && job.component === component && ['live-start', 'live-stop', 'override'].includes(job.kind ?? ''))
+        if (running) phase = running.kind === 'live-start' ? 'installing' : 'switching'
+      }
       if (phase && ['creating', 'preparing', 'installing', 'switching'].includes(phase)) state.phase = phase as MakeStandResult['phase']
       if (phase === 'starting') state.phase = 'switching'
       if (phase === 'failed') { state.phase = 'failed'; state.error ??= 'operation_conflict' }
