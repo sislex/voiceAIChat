@@ -3,9 +3,18 @@ import type { MachinesService } from '../machines/service.js'
 import { shellQuote } from '../util/shell.js'
 
 export type StandMachines = Pick<MachinesService, 'exec' | 'isOnline' | 'nameOf' | 'fsList' | 'fsRead' | 'fsWrite' | 'fsDeleteFileSafe' | 'fsRename'>
-export function conversationWorktree(projectPath: string, conversation: string): string {
-  if (!/^[a-zA-Z0-9_-]+$/.test(conversation) || !path.posix.isAbsolute(projectPath)) throw new Error('path_outside_working_copy')
-  return path.posix.resolve(projectPath, '..', 'make-worktrees', conversation)
+/**
+ * Conversation worktrees live under the stand host project's `reposRoot`: Kanban admits live
+ * working copies (and their Git common directory) only inside that machine's path or reposRoot.
+ */
+export function conversationWorktree(reposRoot: string, conversation: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(conversation) || !path.posix.isAbsolute(reposRoot) || reposRoot === '/') throw new Error('path_outside_working_copy')
+  return path.posix.join(path.posix.resolve(reposRoot), 'make-worktrees', conversation)
+}
+/** Base clone of the component repository inside the host reposRoot, e.g. `sislex/sislexa-core-ui` → `sislexa-core-ui`. */
+export function componentClone(repository: string): { url: string; name: string } {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('component_not_in_stand')
+  return { url: 'https://github.com/' + repository + '.git', name: repository.split('/')[1]! }
 }
 
 // The exec transport is a shell string. Only a fixed program and base64 JSON
@@ -26,13 +35,22 @@ const git = (cwd, args, optional = false) => {
   return { ok: r.status === 0, output: (r.stdout || '').trim() };
 };
 try {
-  const project = fs.realpathSync(a.projectPath);
-  if (project !== path.resolve(a.projectPath) || !/^[a-zA-Z0-9_-]+$/.test(a.conversation)) fail('path_outside_working_copy');
-  const parent = path.resolve(project, '..', 'make-worktrees');
+  if (!path.isAbsolute(a.reposRoot) || !/^[a-zA-Z0-9_-]+$/.test(a.conversation) || !/^[A-Za-z0-9_.-]+$/.test(a.repoName) || a.repoName === '.' || a.repoName === '..' || a.repoName === 'make-worktrees') fail('path_outside_working_copy');
+  if (a.action === 'prepare') fs.mkdirSync(a.reposRoot, { recursive: true });
+  const repos = fs.realpathSync(a.reposRoot);
+  if (repos !== path.resolve(a.reposRoot)) fail('path_outside_working_copy');
+  const project = path.join(repos, a.repoName);
+  const parent = path.join(repos, 'make-worktrees');
   const root = path.join(parent, a.conversation);
   if (fs.existsSync(parent) && fs.realpathSync(parent) !== parent) fail('path_outside_working_copy');
+  if (fs.existsSync(project) && fs.realpathSync(project) !== project) fail('path_outside_working_copy');
   let result;
   if (a.action === 'prepare') {
+    if (!fs.existsSync(path.join(project, '.git'))) {
+      if (fs.existsSync(project)) fail('operation_conflict');
+      git(repos, ['clone', '--no-checkout', '--', a.repositoryUrl, project]);
+    }
+    if (git(project, ['remote', 'get-url', 'origin']).output.replace(/\.git$/, '') !== a.repositoryUrl.replace(/\.git$/, '')) fail('operation_conflict');
     git(project, ['fetch', 'origin']);
     const list = git(project, ['worktree', 'list', '--porcelain']).output.split('\n\n');
     const existing = list.find(x => x.split('\n').includes('worktree ' + root));
@@ -59,6 +77,7 @@ try {
       result = { root, branch };
     }
   } else {
+    if (!fs.existsSync(path.join(project, '.git'))) fail('path_outside_working_copy');
     if (fs.realpathSync(root) !== root) fail('path_outside_working_copy');
     if (!git(project, ['worktree', 'list', '--porcelain']).output.split('\n').includes('worktree ' + root)) fail('path_outside_working_copy');
     const relative = a.relative || '.';

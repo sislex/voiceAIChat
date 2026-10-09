@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
 import { makeStandOperationSchema, MAKE_STAND_ERROR_CODES, MAKE_STAND_MAX_FILE_BYTES, type MakeStandOperation, type MakeStandResult, type CreateTransferTaskArgs, type StandPreviewOperation, type StandPreviewResult } from '@voicechat/make-contracts'
-import { conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
+import { componentClone, conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
 import { runProjectGit } from './localCore.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
@@ -235,8 +235,9 @@ export class MakeProjectAdapters {
         const matches: Array<{ hostProjectId: string; stand: Stand }> = []
         for (const host of await this.standHosts(user, projectId, component)) for (const summary of host.stands) {
           const machine = project.machines.find(m => m.canUse && m.agentId === summary.machineId)
-          if (!machine || !machines?.isOnline(summary.machineId)) continue
-          const root = conversationWorktree(machine.directories?.projectWorkdir.path || machine.path, conversationId)
+          const reposRoot = host.project.machines.find(m => m.agentId === summary.machineId)?.reposRoot
+          if (!machine || !reposRoot || !machines?.isOnline(summary.machineId)) continue
+          const root = conversationWorktree(reposRoot, conversationId)
           const detail = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(host.project.id) + '/dev-stands/' + encodeURIComponent(summary.standId)))
           if (detail.live?.some(l => l.component === component && l.workingCopyPath === root)) matches.push({ hostProjectId: host.project.id, stand: detail })
         }
@@ -249,15 +250,18 @@ export class MakeProjectAdapters {
         stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(op.standId)))
         if (stand.standId !== op.standId) throw new Error('stand_not_found')
       }
-      await this.project(user, hostProjectId, write)
+      const hostProject = await this.project(user, hostProjectId, write)
       Object.assign(state, { standId: stand.standId, hostProjectId, machineId: stand.machineId })
       if (op.op === 'status' && !stand.components && (stand.status === 'starting' || stand.operation?.phase === 'creating'))
         return { ...state, phase: 'creating' }
       if (!stand.components?.[component] || repositoryId(stand.components[component].repository) !== repository) throw new Error('component_not_in_stand')
       const machine = project.machines.find(m => m.canUse && m.agentId === stand.machineId)
       if (!machine || !machines) throw new Error('machine_unavailable')
-      const projectPath = machine.directories?.projectWorkdir.path || machine.path
-      const root = conversationWorktree(projectPath, conversationId)
+      const reposRoot = hostProject.machines.find(m => m.agentId === stand.machineId)?.reposRoot
+      if (!reposRoot) throw new Error('machine_unavailable')
+      const clone = componentClone(stand.components[component].repository)
+      const location = { reposRoot, repoName: clone.name, repositoryUrl: clone.url }
+      const root = conversationWorktree(reposRoot, conversationId)
       const live = stand.live?.find(l => l.component === component && l.workingCopyPath === root)
       Object.assign(state, { workingCopyPath: root, branch: live?.branch ?? null,
         directUrls: stand.gateway?.urls.filter(url => /^https?:\/\//.test(url)) ?? [],
@@ -277,7 +281,7 @@ export class MakeProjectAdapters {
         state.phase = 'preparing'
         this.standProgress.set(lock!, state)
         const slug = (conversation.title ?? 'conversation').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'conversation'
-        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', projectPath, conversation: conversationId,
+        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', ...location, conversation: conversationId,
           branch: op.branch, newBranch: op.newBranch, baseBranch: op.baseBranch ?? (project.ciBaseBranch || 'main'), defaultBranch: 'make/' + slug + '-' + conversationId.slice(0, 8) })
         if (prepared.root !== root) throw new Error('path_outside_working_copy')
         state.branch = prepared.branch
@@ -292,7 +296,7 @@ export class MakeProjectAdapters {
       } else if (op.op === 'files' || op.op === 'git') {
         const check = async (relative: string, allowMissing = false) => {
           if (relative !== '.' && (!isSafeRepoRelativePath(relative) || relative.split('/').some(p => p.toLowerCase() === '.git'))) throw new Error('path_outside_working_copy')
-          const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', projectPath, conversation: conversationId, relative, allowMissing })
+          const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', ...location, conversation: conversationId, relative, allowMissing })
           if (checked.root !== root) throw new Error('path_outside_working_copy')
           return checked
         }
