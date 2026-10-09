@@ -5,6 +5,7 @@ import { once } from 'node:events'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import net from 'node:net'
 import { tmpdir } from 'node:os'
 import WebSocket, { WebSocketServer } from 'ws'
 import { DEV_COMPONENT_REGISTRY, DEV_GATEWAY_VERSION } from '../packages/shared/src/devStand.ts'
@@ -14,6 +15,20 @@ import { checkRelease, applyRelease } from './release-composition.mjs'
 import { ownerPinChanges } from './owner-pins.mjs'
 import { verifySnapshot, verifyDesktopRendererProvenance } from './shared-chat-artifacts.mjs'
 
+// Fixed ports collide with Delivery Control worker attempts on the same machine
+// (they allocate from 24000 upwards); outside a reserved DELIVERY_PORTS range use free ones.
+async function testPorts() {
+  const reserved = process.env.DELIVERY_PORTS?.match(/\d+/g)
+  if (reserved && reserved.length >= 3) return reserved.slice(0, 3).map(Number)
+  const ports = []
+  for (let i = 0; i < 3; i++) {
+    const probe = net.createServer()
+    probe.listen(0, '127.0.0.1'); await once(probe, 'listening')
+    ports.push(probe.address().port)
+    await new Promise(resolve => probe.close(resolve))
+  }
+  return ports
+}
 const manifest = () => ({ schemaVersion: 1, standId: 'test', machineId: 'machine', baseEnvironmentId: 'base',
   components: Object.fromEntries(Object.entries(DEV_COMPONENT_REGISTRY).map(([id, value]) =>
     [id, { repository: value.repository, sha: 'a'.repeat(40), source: 'base' }])) })
@@ -48,7 +63,7 @@ test('composition, owner pins and Desktop provenance reject development versions
 test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifests', { timeout: 10_000 }, async t => {
   const dir = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'gateway-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24000', '24001', '24002']).map(Number)
+  const ports = await testPorts()
   const servers = []
   const sockets = new Set()
   t.after(async () => {
@@ -115,7 +130,7 @@ test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifest
 test('gateway presents same-origin browser requests with the upstream origin', async t => {
   const dir = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'gateway-origin-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24000', '24001', '24002']).map(Number)
+  const ports = await testPorts()
   const base = http.createServer((req, res) => res.end(String(req.headers.origin ?? 'none')))
   base.listen(ports[0], '127.0.0.1'); await once(base, 'listening')
   const path = join(dir, 'manifest.json')
@@ -137,7 +152,7 @@ test('gateway presents same-origin browser requests with the upstream origin', a
 test('gateway presents same-origin WebSocket upgrades with the upstream origin', async t => {
   const dir = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'gateway-ws-origin-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
-  const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24000', '24001', '24002']).map(Number)
+  const ports = await testPorts()
   const base = http.createServer()
   const wss = new WebSocketServer({ server: base })
   wss.on('connection', (socket, request) => socket.send(String(request.headers.origin ?? 'none')))

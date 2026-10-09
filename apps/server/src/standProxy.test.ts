@@ -25,6 +25,10 @@ describe('stand proxy policy', () => {
     const headers = standHeaders({ host: 'core:8790', origin: 'http://core:8790', cookie: 'vc_session=secret; sxs_other_session=bad; sxs_key_vc_session=stand; sxs_key_theme=dark', authorization: 'Bearer secret', 'x-vc-csrf': 'secret' }, 'key', 'http://core:8790', 9000)
     expect(headers).toEqual({ host: '127.0.0.1:9000', origin: 'http://127.0.0.1:9000', cookie: 'vc_session=stand; theme=dark' })
     expect(standHeaders({ origin: 'http://foreign' }, 'key', 'http://core', 9000).origin).toBe('http://foreign')
+    const swapped = standHeaders({ cookie: 'vc_csrf=core-token; sxs_key_vc_csrf=stand-token; sxs_key_vc_session=s', 'x-vc-csrf': 'core-token' }, 'key', 'http://core', 9000)
+    expect(swapped['x-vc-csrf']).toBe('stand-token')
+    expect(swapped.cookie).toBe('vc_csrf=stand-token; vc_session=s')
+    expect(standHeaders({ cookie: 'vc_csrf=core-token', 'x-vc-csrf': 'core-token' }, 'key', 'http://core', 9000)['x-vc-csrf']).toBeUndefined()
     expect(standCookies(['vc_session=x; Domain=core; Path=/; HttpOnly; SameSite=Lax', '__Secure-vc_session=y; Secure'], 'key')).toEqual(['sxs_key_vc_session=x; Path=/; HttpOnly; SameSite=Lax', 'sxs_key___Secure-vc_session=y; Secure'])
   })
   it('checks membership before Kanban, fails disabled, registers outside projects', async () => {
