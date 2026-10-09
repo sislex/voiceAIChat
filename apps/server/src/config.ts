@@ -83,6 +83,8 @@ export interface ServerConfig {
    * нет. Встроенного режима больше нет, код канбана живёт только в `sislexa-kanban`.
    */
   kanbanMode: 'remote' | 'off'
+  standProxyPorts?: string
+  standProxyPublicHost?: string
   kanbanUrl?: string
   /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
   kanbanMcpPublicBase?: string
@@ -282,6 +284,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
     kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'off',
+    standProxyPorts: env.VC_STAND_PROXY_PORTS,
+    standProxyPublicHost: env.VC_STAND_PROXY_PUBLIC_HOST,
     kanbanUrl: env.VC_KANBAN_URL,
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
     machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',

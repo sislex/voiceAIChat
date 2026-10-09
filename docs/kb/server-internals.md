@@ -1,6 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-08
+updated: 2026-10-09
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -757,3 +757,77 @@ RPC and HttpMachines expose `ensureLink(input)`,
 same methods with the `machines.` prefix. These are trusted internal worker
 ports, not user-facing APIs; no Kanban authorization callback or connected
 RPC event client is required to keep a link alive.
+
+## Make conversation stand worktrees
+
+`MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
+embedded and remote Make. Core checks the conversation owner and resolves its
+project through `db.chat.makeConversationProject`; project viewers cannot use
+this editing port. The standard Make RPC dispatcher validates both operations
+and results. `server.ts` supplies the machines, Git runtime and optional stand
+proxy lease service directly.
+
+Options match the project's GitHub repository against `DEV_COMPONENT_REGISTRY`.
+They include the conversation project's stands and other accessible projects'
+stands containing that component, with machine names and live branch/head.
+Creation selects a host with a managed, ready environment whose first machine
+is the requested agent. The same environment rule applies to `standPreview`.
+Missing bases are reported; Core never provisions a base environment implicitly.
+
+Attach fetches origin and creates a Git worktree at
+`<projectWorkdir>/../make-worktrees/<conversationId>` on the stand machine.
+The fixed agent-side Node program launches Git with argv and `shell: false`;
+user values travel as base64 JSON. A registered conversation worktree can be
+reused only on its existing branch. A taken new branch name fails with
+`branch_exists`. New branches start from the requested remote base, otherwise
+the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
+for component live mode. Status reads Kanban details; detach disables live
+without deleting the worktree or branch and refuses to disable another
+conversation's live copy.
+
+Files and Git find the conversation's live copy through Kanban, rejecting
+ambiguous bindings. File paths are relative to the computed worktree, checked
+on the agent against real paths and the repository's registered worktrees.
+Traversal, symlinks, `.git` metadata and directory mutations are refused;
+individual files are limited to 2 MiB, including truncated agent reads.
+File operations use the agent filesystem port. Git operations share the
+`projectGit` implementation through a scoped `GitWorkspaceService` view that
+rechecks machine permissions and retains command policy, locking and auditing.
+
+`previewUrl` comes from the stand proxy lease service when configured and is
+null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
+failures become the contract's failed state/error codes; authorization failures
+remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
+operator commissioning, not part of worktree attachment.
+
+## Dev stand access proxy
+
+`standProxy.ts` registers `POST /api/dev-stand-access {projectId, standId}`
+outside Kanban's `/api/projects` proxy. It requires a Core session cookie and
+project membership, then reads `GET /api/projects/:id/dev-stands/:standId` from
+Kanban with an exact-request user capability. Only the returned `machineId`
+and validated `gateway.port` select the upstream; clients cannot supply a
+target machine or TCP port. The shared response is `{url, expiresAt}`, with
+`expiresAt` expressed as Unix milliseconds.
+
+Allocation is serialized. A user/project/stand tuple reuses its lease; target
+changes replace it. The disabled or exhausted pool returns HTTP 503 with
+`stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
+deadline; expiry and Core shutdown close listeners and all their connections.
+Every HTTP request and WebSocket upgrade checks the current cookie session
+against the lease owner and rechecks project membership before opening a tunnel.
+
+Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+upstream, with the prefix removed. Response Set-Cookie names receive the prefix
+and Domain attributes are removed. Core authorization and internal forwarding
+headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
+to the leased proxy origin becomes the gateway origin, while foreign origins
+remain unchanged. SSE responses stream without buffering and WebSocket upgrades
+retain their initial bytes in both directions.
+
+`AgentRegistry.connectCoreTunnel` returns a Duplex using the agent's existing
+tunnel frames. It waits for connection acknowledgement, bounds data frames,
+observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
+reads when the Duplex fills. Agent disconnect/error closes the stream. The
+MachinesService port also supports remote Machines through the authenticated
+`/internal/machines/core-tunnel` WebSocket byte stream.

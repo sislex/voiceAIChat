@@ -2623,3 +2623,32 @@ and end-to-end creation/removal) remains an operator/integration step.
 
 <!-- release-train:20f8fcbc-e2a1-4c2a-ab5b-fc4b322575bd -->
 - sislex/make: 1.4.3
+
+## Core dev stand access ports
+
+Core's `POST /api/dev-stand-access` leases a same-host HTTP port to the current
+session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
+enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
+optional hostname override, otherwise Core uses the access request's Host
+(without its original port). Keep this hostname equal to the browser's Core
+hostname so its session cookie reaches the listener.
+
+The optional `deploy/docker-compose.yml` overlay publishes the same host and
+container range and forwards both variables to the `voicechat` service:
+
+```sh
+VC_STAND_PROXY_PORTS=8790-8794 docker compose -f docker-compose.yml -f deploy/docker-compose.yml up -d
+```
+
+Omit the overlay when the range is empty: the base Compose configuration and its
+published ports stay unchanged. Compose does not support an optional empty
+`ports` sequence entry, so the overlay requires a nonempty range explicitly.
+Listeners bind only while leased and expire after one idle hour. The stand
+gateway itself stays on its machine; Core reaches its loopback port through the
+agent connection, including when Machines runs as a separate service.
+
+Operator commissioning is separate from code delivery: publish/open the chosen
+range and verify browser login, SSE and WebSocket through the actual same-host
+address. These listeners serve HTTP, as in the IP-based stand contract; an HTTPS
+Core deployment needs TLS termination on the exposed ports to preserve Secure
+session cookies and avoid mixed-content restrictions.

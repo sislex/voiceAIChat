@@ -1,3 +1,5 @@
+import { standProxyKanban } from './standProxyKanban.js'
+import { StandProxy, proxyPorts, registerStandProxy } from './standProxy.js'
 import { clientEvent } from './serviceData.js'
 import { Maintenance } from './maintenance.js'
 import { registerHttpCompression } from './httpCompression.js'
@@ -615,6 +617,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ...(opts.agentRegistry ? { registry: opts.agentRegistry } : {})
   })
   const agentRegistry: MachinesService = remoteMachines ?? machinesModule!.machines
+  const standSession = async (cookie: string) => {
+    const verdict = await sessionAuthenticate({ method: 'GET', url: '/api/dev-stand-access', headers: { cookie } })
+    return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
+  }
+  const standProxy = new StandProxy({
+    ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
+    session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
+    connect: (machine, port) => agentRegistry.connectCoreTunnel(machine, port),
+    stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+  })
+  registerStandProxy(app, standProxy, standSession)
   const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
   if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
@@ -800,6 +813,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeProjectAdapters = new MakeProjectAdapters({
     db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
+    machines: agentRegistry,
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user, project, stand) =>
+      standProxy.access(user, project, stand, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
     authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
     boardChanged: projectId => kanban.service.board.changed(projectId),
     readDesignFile: async (userId, conversationId, path) => {
@@ -818,6 +834,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db,
     git: gitWorkspaces,
     standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
+    makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
     transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
