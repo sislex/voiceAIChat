@@ -95,7 +95,8 @@ export class MakeProjectAdapters {
       let response: Response
       try {
         response = await (this.deps.fetchImpl ?? fetch)(this.deps.kanbanUrl!.replace(/\/$/, '') + path, {
-          method, headers: { authorization, 'content-type': 'application/json' },
+          // A JSON content-type without a body makes Fastify answer 400 (DELETE live, reset).
+          method, headers: { authorization, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           redirect: 'error', signal: AbortSignal.timeout(25_000)
         })
