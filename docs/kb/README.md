@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 76 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 37 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 55 коммит(ов) в areas после сверки: 593220a9 docs(kb): glossary of roles, services, stands, delivery and technical terms … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 56 коммит(ов) в areas после сверки: c103f3ff docs(kb): glossary — vendor directory and pinning … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 106 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1137. Последние:
+Всего записей: 1138. Последние:
 
+- [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md) — stand-admin-scrypt
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md) — make-stand-host-worktree
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary.md) — glossary
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md) — glossary-vendor-pin
@@ -72,7 +73,6 @@
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-offline-machines.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-offline-machines.md) — make-stand-offline-machines
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-core.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-core.md) — make-stand-core
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-b02-stand-proxy.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-b02-stand-proxy.md) — Core dev stand session proxy (B02)
-- [2026-10-08-pc-radvilovich-tailae39a6-ts-net-chat-history-mcp.md](log/2026-10-08-pc-radvilovich-tailae39a6-ts-net-chat-history-mcp.md) — chat-history-mcp
 
 ## Исторические планы
 

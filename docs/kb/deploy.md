@@ -183,16 +183,23 @@ the lifecycle; Core does not allocate environments or write manifests.
 ### Login and locations on the stand machine
 
 A stand's base environment is a Docker Compose project whose Postgres database
-starts from a copy of the production database. Stand users and their passwords
-therefore match production at the time of the copy. `VC_ADMIN_PASSWORD` takes
-effect only when the `admin` user does not exist yet: Identity's `ensureAdmin`
-uses `INSERT OR IGNORE`, so setting this variable for a production copy does not
-change the existing `admin` password.
+starts from a copy of the production database. `environment-sanitize.sql` then
+clears every user's password (`must_change_password = 1`), replaces e-mail
+addresses and makes the first account an administrator whose password is
+`VC_ADMIN_PASSWORD` from the environment settings. Production passwords never work
+on a stand. The hash is written by `environment_stand.scrypt_password_hash` in
+Identity's `scrypt$<saltHex>$<hashHex>` format (node:crypto scrypt defaults, 16-byte
+salt, 32-byte key); until 2026-10-10 the script used pgcrypto bcrypt, which Identity
+never accepts, so no password opened a stand. `ensureAdmin` at Core startup uses
+`INSERT OR IGNORE` and does not change an existing `admin` password.
 
-When a distinct stand-only password is needed, an operator may use Identity's
-`hashPassword` format and write a `scrypt$<saltHex>$<hashHex>` value to
-`users.password_hash` in the **stand database only, never production**. The hash
-uses scrypt with a 32-byte derived key and a randomly generated 16-byte salt.
+To set a user's password on a stand, compute the hash with the stand's own Identity
+code inside its Core container and update `users` (never production), for example
+the operator helper `sislexa-stand-password [compose-project] [user]`: it reads the
+password from the terminal, calls `hashPassword` through `node --import tsx` with
+`pg` on `VC_DB_URL`, clears `failed_logins`/`locked_until` and checks
+`POST /api/session/login`. Other stand users get passwords from the stand
+administrator through reset codes in the admin screen.
 
 Stand runtime files are located as follows:
 
