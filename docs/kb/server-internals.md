@@ -526,6 +526,20 @@ temporary readable files for both embedded and HTTP CLI execution.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
+Make stand working copies resolve through `stand:<conversationId>/<hostProjectId>/<standId>`
+(three UUIDs). The Git workspace resolver requires the conversation owner and
+its Make project to match the caller and route project. It reads Kanban details
+through the same authorized `MakeProjectAdapters.getStand` client, matches the
+conversation repository against `DEV_COMPONENT_REGISTRY`, and uses the matching
+live entry's path and branch. Missing live entries return `409 stand_not_live`;
+owner/project mismatches and Kanban 404 return `404 workspace_not_found`.
+Machine permissions come from the conversation project, falling back to the
+host project only when no machine access exists there. The resolved kind is
+`project-worktree`, with the conversation id retained.
+For these workspaces, `storybook/open` uses a stand proxy lease for the session
+port when enabled, otherwise the existing machine bridge. Other workspace kinds
+retain direct and tunnel access selection.
+
 ### Project mode в Core (2026-10-07)
 
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
