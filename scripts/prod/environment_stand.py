@@ -12,6 +12,15 @@ import sys
 import time
 from compose_env import read_env
 
+
+def scrypt_password_hash(password, salt=None):
+    """Identity verifies only `scrypt$<saltHex>$<hashHex>` (node:crypto scrypt defaults:
+    N=16384, r=8, p=1, 32-byte key, 16-byte salt); a pgcrypto bcrypt hash never matches."""
+    import hashlib
+    salt = os.urandom(16) if salt is None else salt
+    digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+    return 'scrypt$' + salt.hex() + '$' + digest.hex()
+
 RESERVED = '''VC_ENVIRONMENT_ID COMPOSE_PROJECT_NAME COMPOSE_FILE COMPOSE_PROFILES
 COMPOSE_PARALLEL_LIMIT COMPOSE_BAKE VC_STAND_PORT VC_DATA_VOLUME VC_PUBLIC_HOST
 VC_ENVIRONMENT_OVERRIDES VC_DB_URL VC_KANBAN_MODE VC_RELEASE_VERSION VC_RELEASE_COMMIT'''.split()
@@ -354,8 +363,7 @@ class Stand:
         password = self.values.get('VC_ADMIN_PASSWORD', '')
         if not password:
             raise ValueError('missing admin password')
-        escaped = password.replace("'", "''")
-        sql = ("\\set admin_password '" + escaped + "'\n").encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+        sql = ("\\set admin_password_hash '" + scrypt_password_hash(password) + "'\n").encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
         with io.BytesIO(sql) as source:
             result = subprocess.run([self.docker, 'compose', 'exec', '-T', 'postgres', 'psql',
                 '-U', 'voicechat', '-d', 'voicechat'], env=self.env,
