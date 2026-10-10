@@ -15,7 +15,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 34 коммит(ов) в areas после сверки: 4f5f307b chore(release): pin Make 1.4.6 (x-vc-csrf in stand clients) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 25 коммит(ов) в areas после сверки: ef78122b make-stand-v1 B02 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-08 | ⚠ 5 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-10 | ⚠ 9 коммит(ов) в areas после сверки: d095b8d9 Merge pull request #555 from sislex/main … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-10 | ⚠ 11 коммит(ов) в areas после сверки: d121dffe Merge remote-tracking branch 'origin/main' into chore/sync-main-dev-4 … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 101 коммит(ов) в areas после сверки: d095b8d9 Merge pull request #555 from sislex/main … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 50 коммит(ов) в areas после сверки: ef78122b make-stand-v1 B02 … |
@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 76 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 37 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 61 коммит(ов) в areas после сверки: 689113d9 Merge remote-tracking branch 'origin/main' into chore/sync-main-dev-3 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 63 коммит(ов) в areas после сверки: d121dffe Merge remote-tracking branch 'origin/main' into chore/sync-main-dev-4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 106 коммит(ов) в areas после сверки: 9cf96f88 make-stand-v1 C01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1138. Последние:
+Всего записей: 1139. Последние:
 
+- [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md) — stand-admin-scrypt
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md) — make-stand-host-worktree
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary.md) — glossary
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md) — glossary-vendor-pin
@@ -72,7 +73,6 @@
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-0.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-0.md) — pin-agent-0-24-0
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-offline-machines.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-offline-machines.md) — make-stand-offline-machines
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-core.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-make-stand-core.md) — make-stand-core
-- [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-b02-stand-proxy.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-b02-stand-proxy.md) — Core dev stand session proxy (B02)
 
 ## Исторические планы
 
