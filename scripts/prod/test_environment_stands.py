@@ -1,6 +1,7 @@
 """Stand lifecycle contracts; no daemon or listener is started."""
 import json
 import os
+import pathlib
 import re
 import secrets
 from pathlib import Path
@@ -10,7 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from environment_stand import Stand, RESERVED
+from environment_stand import Stand, RESERVED, scrypt_password_hash
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -446,6 +447,19 @@ class StandTest(unittest.TestCase):
         self.assertEqual(code, 30)
         self.assertFalse(any(c['args'][:2] == ['volume', 'rm'] for c in calls))
         self.assertTrue((self.root / '.env').exists())
+
+
+class AdminPasswordHashTest(unittest.TestCase):
+    def test_sanitize_writes_an_identity_scrypt_hash(self):
+        salt = bytes.fromhex('0102030405060708090a0b0c0d0e0f10')
+        # Vector from node:crypto scryptSync('probe', salt, 32): Identity verifies exactly this format.
+        self.assertEqual(scrypt_password_hash('probe', salt),
+                         'scrypt$0102030405060708090a0b0c0d0e0f10$87aac9e7319723e3bf411415b528251b1eea1b4497eb7788618d785f740933bd')
+        self.assertNotEqual(scrypt_password_hash('probe'), scrypt_password_hash('probe'))
+        sql = (pathlib.Path(__file__).with_name('environment-sanitize.sql')).read_text()
+        self.assertIn(":'admin_password_hash'", sql)
+        self.assertNotIn('crypt(', sql)
+        self.assertNotIn('pgcrypto', sql)
 
 
 class StandComposeTest(unittest.TestCase):
