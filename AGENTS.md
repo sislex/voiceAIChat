@@ -87,7 +87,8 @@ repository (cross-module references use `<module>:<path>` ids). Frequent entry
 points are [architecture](docs/kb/architecture.md),
 [contracts](docs/kb/protocol.md), [server](docs/kb/server-internals.md),
 [auth/data](docs/kb/data-auth.md), [testing](docs/kb/testing-operations.md),
-[deployment](docs/kb/deploy.md) and [conventions](docs/kb/conventions.md).
+[deployment](docs/kb/deploy.md), [conventions](docs/kb/conventions.md) and the
+[glossary](docs/kb/glossary.md) of roles and terms.
 Historical plans in `docs/plans/` are context, not current truth.
 
 If KB lookup was incomplete and code research established the answer, update the
