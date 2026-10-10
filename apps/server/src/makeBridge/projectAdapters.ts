@@ -57,7 +57,7 @@ export function readyStandEnvironment(environments: EnvironmentDefinition[], mac
   return environments.find(e => e.mode === 'managed' && e.state === 'ready' && e.machines[0] === machine)
 }
 
-function repositoryId(repository: string | null | undefined): string | null {
+export function repositoryId(repository: string | null | undefined): string | null {
   if (!repository) return null
   try {
     const url = new URL(repositoryWebUrl(repository))
@@ -87,6 +87,10 @@ export class MakeProjectAdapters {
     if (!user || user.blocked || (write && !hasProjectPermission(user.role, 'repository:write')))
       projectModeError(403, 'project_write_forbidden')
     return project
+  }
+
+  async getStand(user: string, project: string, stand: string): Promise<Stand> {
+    return standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(project) + '/dev-stands/' + encodeURIComponent(stand)))
   }
 
   private async request<T>(user: string, path: string, method = 'GET', body?: unknown, accepted?: () => void): Promise<T> {

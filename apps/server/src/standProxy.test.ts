@@ -17,6 +17,13 @@ function deps() {
     connect: vi.fn(() => { throw new Error('No tunnel') }) }
 }
 describe('stand proxy policy', () => {
+  it.each([1023, 65536, 6006.5, '6006', null])('rejects invalid target port %s at the route', async port => {
+    const d = deps(); const proxy = new StandProxy(d)
+    const app = Fastify(); registerStandProxy(app, proxy, d.session); cleanup.push(() => app.close())
+    const response = await app.inject({ method: 'POST', url: '/api/dev-stand-access', headers: { cookie: 'vc_session=alice' }, payload: { projectId: 'p', standId: 's', port } })
+    expect(response.statusCode).toBe(400)
+    expect(d.stand).not.toHaveBeenCalled()
+  })
   it('parses disabled and bounded ranges', () => {
     expect(proxyPorts('')).toEqual([]); expect(proxyPorts('8790-8794')).toEqual([8790, 8791, 8792, 8793, 8794])
     for (const input of ['0', '65536', '5-4', 'x', '1-65535']) expect(() => proxyPorts(input)).toThrow()
@@ -44,6 +51,18 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it('keys leases by requested port and forwards to that port', async () => {
+    const d = deps(); d.ports = ports.slice(0, 3)
+    const proxy = new StandProxy(d); cleanup.push(() => proxy.close())
+    const gateway = await proxy.access('alice', 'p', 's', '127.0.0.1')
+    const story = await proxy.access('alice', 'p', 's', '127.0.0.1', 6008)
+    expect(story.url).not.toBe(gateway.url)
+    expect((await proxy.access('alice', 'p', 's', '127.0.0.1', 6008)).url).toBe(story.url)
+    expect((await fetch(story.url, { headers: { cookie: 'vc_session=alice' } })).status).toBe(502)
+    expect(d.connect).toHaveBeenCalledWith('m', 6008)
+    const other = await proxy.access('alice', 'p', 's', '127.0.0.1', 6009)
+    expect(other.url).not.toBe(story.url)
+  })
   it('serializes reuse, expires idle leases, exhausts and reclaims ports', async () => {
     let now = 100; const d = deps(); const proxy = new StandProxy({ ...d, now: () => now }); cleanup.push(() => proxy.close())
     const [first, same] = await Promise.all([proxy.access('alice', 'p', 's', '127.0.0.1:8787'), proxy.access('alice', 'p', 's', '127.0.0.1')])

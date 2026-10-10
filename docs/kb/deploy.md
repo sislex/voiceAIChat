@@ -1,6 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-09
+updated: 2026-10-10
 checked: 449fa9c4
 areas:
   - scripts/contracts-release.mjs
@@ -41,6 +41,20 @@ areas:
 ---
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Core memory diagnostics
+
+The Compose `voicechat` service keeps its `mem_limit: 1g` and starts Node with
+`--max-old-space-size=768 --heapsnapshot-near-heap-limit=1
+--diagnostic-dir=/data/diagnostics`. Startup creates that directory and removes
+previous `*.heapsnapshot` files before starting Node, retaining at most one
+automatic near-limit snapshot per process run. Retrieve the snapshot from the
+Core data volume at `/data/diagnostics` before restarting the container.
+Snapshots contain process memory and should be treated as private diagnostics.
+Every five minutes, `docker logs` receives a JSON `process_memory` event with
+`rss`, `heapUsed`, `heapTotal`, `external`, and `arrayBuffers` in MiB.
+The heap cap leaves space for native allocations but does not guarantee that
+a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
 
@@ -2632,6 +2646,15 @@ and end-to-end creation/removal) remains an operator/integration step.
 - sislex/make: 1.4.3
 
 ## Core dev stand access ports
+
+`POST /api/dev-stand-access` also accepts optional integer `port` (1024–65535).
+It targets that port on the stand machine; omission targets the gateway.
+Leases are isolated by user, host project, stand and requested port, so Storybook
+and gateway sessions can coexist. Cookie isolation and header rewriting remain
+the same. Make stand `storybook/open` uses the proxy service directly for the
+Storybook session port when the pool is enabled; otherwise it uses the machine
+bridge. Production commissioning still requires the published port pool and
+browser WebSocket/HMR verification.
 
 Core's `POST /api/dev-stand-access` leases a same-host HTTP port to the current
 session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to

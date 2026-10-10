@@ -9,8 +9,9 @@
 // CI- или merge-раном. Два процесса в одной рабочей копии перемешали бы коммиты, а
 // cleanup-шаг рана может снести каталог посреди нашего коммита.
 
-import { GIT_MAX_CHANGES, GIT_TEXT_MAX_BYTES, buildGitWorkspaceId, isProtectedGitBranch, isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage, parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain, parseGitWorkspaceId, splitGitSections, GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus, isProjectStoryPath, type GitBranchChanges, type GitBranchList, type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide, type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff, type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult, type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem, type GitWorkspaceRef, type GitWorkspaceStatus } from '@voicechat/shared'
+import { DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, type GitWorkspaceIdRef, GIT_MAX_CHANGES, GIT_TEXT_MAX_BYTES, buildGitWorkspaceId, isProtectedGitBranch, isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage, parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain, parseGitWorkspaceId, splitGitSections, GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus, isProjectStoryPath, type GitBranchChanges, type GitBranchList, type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide, type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff, type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult, type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem, type GitWorkspaceRef, type GitWorkspaceStatus } from '@voicechat/shared'
 import { type AgentPolicy, type FsResult } from '@sislexa/agent-contracts'
+import { repositoryId, type MakeProjectAdapters } from '../makeBridge/projectAdapters.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { buildShellCommand } from '../util/shell.js'
 import type { CommandGate } from '../agents/commandGate.js'
@@ -41,6 +42,7 @@ export interface GitRuntime {
 
 export interface GitWorkspaceDeps {
   db: VoiceChatDb
+  getStand?: MakeProjectAdapters['getStand']
   runtime: GitRuntime
   /** Гейт команд проекта и роли: deny-паттерны обязаны действовать и на наш git. */
   gate?: CommandGate
@@ -152,7 +154,9 @@ export class GitWorkspaceService {
         ? this.refFromTaskRepository(userId, project, parsed.taskRepositoryId)
         : parsed.kind === 'conversation'
           ? this.refFromConversation(userId, project, parsed.conversationId)
-          : this.refFromProjectMachine(userId, project, parsed.agentId))
+          : parsed.kind === 'make-stand'
+            ? this.refFromMakeStand(userId, project, parsed)
+            : this.refFromProjectMachine(userId, project, parsed.agentId))
     if (!ref) throw new GitError(404, 'workspace_not_found', 'Рабочая копия не найдена')
     if (!ref.path) throw new GitError(409, 'path_missing', 'У рабочей копии не задан каталог')
     if (!ref.online) throw new GitError(409, 'machine_offline', 'Машина не в сети')
@@ -829,6 +833,39 @@ export class GitWorkspaceService {
         : access.readOnlyReason,
       busy: null,
       released: false
+    }
+  }
+
+  private async refFromMakeStand(
+    userId: string, project: { id: string; gitUrl: string | null; machines: { agentId: string }[] },
+    ref: Extract<GitWorkspaceIdRef, { kind: 'make-stand' }>
+  ): Promise<GitWorkspaceRef | null> {
+    const conversation = await this.deps.db.chat.getConversation(userId, ref.conversationId)
+    if (!conversation || conversation.assistantKind !== 'make'
+      || await this.deps.db.chat.conversationOwner(ref.conversationId) !== userId
+      || await this.deps.db.chat.makeConversationProject(ref.conversationId) !== project.id) return null
+    const host = await this.deps.db.projects.getProject(userId, ref.hostProjectId)
+    if (!host) return null
+    if (!this.deps.getStand) throw new GitError(503, 'stand_preview_unavailable', 'Kanban is unavailable')
+    let stand: Awaited<ReturnType<MakeProjectAdapters['getStand']>>
+    try { stand = await this.deps.getStand(userId, ref.hostProjectId, ref.standId) }
+    catch (error) {
+      if ((error as { statusCode?: number }).statusCode === 404) return null
+      throw error
+    }
+    if (stand.standId !== ref.standId) return null
+    const repository = repositoryId(project.gitUrl)
+    const component = DEV_COMPONENT_IDS.find(id => DEV_COMPONENT_REGISTRY[id].repository.toLowerCase() === repository)
+    const live = stand.live?.find(entry => entry.component === component)
+    if (!live?.workingCopyPath) throw new GitError(409, 'stand_not_live', 'Stand component is not live')
+    const access = await this.machineAccess(userId, project, stand.machineId)
+      ?? await this.machineAccess(userId, host, stand.machineId)
+    if (!access) return null
+    return {
+      id: buildGitWorkspaceId(ref), kind: 'project-worktree', projectId: project.id,
+      taskId: null, taskTitle: null, taskSeq: null, conversationId: ref.conversationId,
+      agentId: stand.machineId, path: live.workingCopyPath, expectedBranch: live.branch ?? null,
+      expectedSha: null, pushed: null, busy: null, released: false, ...access
     }
   }
 
