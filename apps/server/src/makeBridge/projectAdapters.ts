@@ -252,7 +252,20 @@ export class MakeProjectAdapters {
       } else {
         hostProjectId = op.hostProjectId
         await this.project(user, hostProjectId, write)
-        stand = standDetail(await this.request(user, '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(op.standId)))
+        const standPath = '/api/projects/' + encodeURIComponent(hostProjectId) + '/dev-stands/' + encodeURIComponent(op.standId)
+        try {
+          stand = standDetail(await this.request(user, standPath))
+        } catch (error) {
+          if (op.op !== 'status' || (error as { statusCode?: number }).statusCode !== 404) throw error
+          Object.assign(state, { standId: op.standId, hostProjectId })
+          // Kanban records the create job before publishing the stand manifest.
+          const jobs = await this.request<unknown>(user, standPath + '/operations')
+          const list = (Array.isArray(jobs) ? jobs : (jobs as { operations?: unknown[] })?.operations ?? []) as Array<{ kind?: string; status?: string; error?: string | null }>
+          const create = list.find(job => job.kind === 'create' && job.status === 'running') ?? list.find(job => job.kind === 'create')
+          if (!create) throw error
+          if (create.status === 'failed') return { ...state, phase: 'failed', error: makeStandErrorCode(create.error ?? 'operation_conflict') }
+          return { ...state, phase: 'creating' }
+        }
         if (stand.standId !== op.standId) throw new Error('stand_not_found')
       }
       const hostProject = await this.project(user, hostProjectId, write)

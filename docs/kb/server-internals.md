@@ -1,7 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-10
-checked: 61fbfb07
+updated: 2026-10-11
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -540,6 +539,12 @@ For these workspaces, `storybook/open` uses a stand proxy lease for the session
 port when enabled, otherwise the existing machine bridge. Other workspace kinds
 retain direct and tunnel access selection.
 
+`StorybookSessions` appends `--port <port> --no-open --ci` to the configured
+command (default: `npm run storybook`). For `npm run`, `npm exec` and `npx`
+invocations it inserts `--` before these flags unless the command already has
+a standalone separator, including a trailing `--`. Other launch commands keep
+their existing argument forwarding.
+
 ### Project mode в Core (2026-10-07)
 
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
@@ -795,6 +800,14 @@ show the live entry only after the job finishes. Kanban detail statuses
 `ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
 is the requested agent. The same environment rule applies to `standPreview`.
 Missing bases are reported; Core never provisions a base environment implicitly.
+During creation, Kanban can return 404 for stand details before publishing its
+manifest. Status then queries the same authorized host/stand `/operations`
+endpoint and reports `creating`, retaining `standId` and `hostProjectId`, when
+a create operation exists and has not failed. A running create takes precedence
+over an older failed attempt; a succeeded create still waits for the manifest.
+A failed create reports its mapped error, and no create operation reports
+`stand_not_found`. This fallback applies only to status and detail HTTP 404;
+authorization and other transport errors retain their normal handling.
 
 Attach works inside the stand host project's machine `reposRoot`, because
 Kanban admits a live working copy and its Git common directory only under that
