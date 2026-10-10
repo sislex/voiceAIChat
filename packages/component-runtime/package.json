@@ -29,6 +29,6 @@
     "tsx": "^4.19.2"
   },
   "dependencies": {
-    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.4.1-eee562e748ed.tgz"
+    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.4.2-5582ba79fc5b.tgz"
   }
 }
