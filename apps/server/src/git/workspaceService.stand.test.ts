@@ -3,7 +3,7 @@ import { DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY } from '@voicechat/shared'
 import { GitWorkspaceService } from './workspaceService.js'
 const conversationId = '11111111-1111-4111-8111-111111111111'
 const hostProjectId = '22222222-2222-4222-8222-222222222222'
-const standId = '33333333-3333-4333-8333-333333333333'
+const standId = 'dev-5b9d0ce6-61b'
 const workspace = 'stand:' + [conversationId, hostProjectId, standId].join('/')
 function fixture() {
   const component = DEV_COMPONENT_IDS[0]!
