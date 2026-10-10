@@ -2647,6 +2647,15 @@ and end-to-end creation/removal) remains an operator/integration step.
 
 ## Core dev stand access ports
 
+`POST /api/dev-stand-access` also accepts optional integer `port` (1024–65535).
+It targets that port on the stand machine; omission targets the gateway.
+Leases are isolated by user, host project, stand and requested port, so Storybook
+and gateway sessions can coexist. Cookie isolation and header rewriting remain
+the same. Make stand `storybook/open` uses the proxy service directly for the
+Storybook session port when the pool is enabled; otherwise it uses the machine
+bridge. Production commissioning still requires the published port pool and
+browser WebSocket/HMR verification.
+
 Core's `POST /api/dev-stand-access` leases a same-host HTTP port to the current
 session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
 enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an

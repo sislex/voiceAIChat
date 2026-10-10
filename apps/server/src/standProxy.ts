@@ -61,14 +61,16 @@ export class StandProxy {
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.queue.then(fn); this.queue = next.catch(() => {}); return next
   }
-  async access(user: string, projectId: string, standId: string, host: string): Promise<DevStandAccessResponse> {
+  async access(user: string, projectId: string, standId: string, host: string, port?: number): Promise<DevStandAccessResponse> {
+    if (port !== undefined && (!Number.isInteger(port) || port < 1024 || port > 65535)) fail(400, 'invalid_stand_access')
     if (!await this.deps.member(user, projectId)) fail(403, 'project_access_denied')
     if (!this.deps.ports.length || this.closed) fail(503, 'stand_proxy_unavailable')
-    const target = await this.deps.stand(user, projectId, standId)
+    const stand = await this.deps.stand(user, projectId, standId)
+    const target = { ...stand, gatewayPort: port ?? stand.gatewayPort }
     return this.serial(async () => {
       if (this.closed) fail(503, 'stand_proxy_unavailable')
       await this.expire()
-      const id = JSON.stringify([user, projectId, standId])
+      const id = JSON.stringify([user, projectId, standId, port ?? null])
       let lease = this.leases.get(id)
       if (lease && (lease.machineId !== target.machineId || lease.gatewayPort !== target.gatewayPort)) { await this.remove(id, lease); lease = undefined }
       if (!lease) {
@@ -146,11 +148,11 @@ export class StandProxy {
 }
 export function registerStandProxy(app: FastifyInstance, proxy: StandProxy, session: StandProxyDeps['session']): void {
   app.post(REST.devStandAccess, async (req, reply) => {
-    const body = z.object({ projectId: z.string().min(1), standId: z.string().min(1) }).safeParse(req.body)
+    const body = z.object({ projectId: z.string().min(1), standId: z.string().min(1), port: z.number().int().min(1024).max(65535).optional() }).safeParse(req.body)
     if (!body.success) return reply.code(400).send({ error: 'invalid_stand_access' })
     const user = req.headers.cookie ? await session(req.headers.cookie) : null
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
-    try { return await proxy.access(user, body.data.projectId, body.data.standId, req.headers.host ?? '') }
+    try { return await proxy.access(user, body.data.projectId, body.data.standId, req.headers.host ?? '', body.data.port) }
     catch (error) { const e = error as Error & { statusCode?: number }; return reply.code(e.statusCode ?? 502).send({ error: e.message }) }
   })
   app.addHook('onClose', () => proxy.close())

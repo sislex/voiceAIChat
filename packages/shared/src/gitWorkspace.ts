@@ -17,6 +17,7 @@ export type GitWorkspaceKind = 'task-workspace' | 'merge-clone' | 'chat-workspac
  * «нет изменений» и «каталог снесён cleanup-шагом» — совершенно разные новости.
  */
 export type GitWorkspaceProblem =
+  | 'stand_not_live'
   | 'workspace_not_found'
   | 'machine_missing'
   | 'machine_offline'
@@ -34,7 +35,7 @@ export interface GitWorkspaceBusy {
 
 /** Рабочая копия, с которой работает панель. Путь и машину заполняет только сервер. */
 export interface GitWorkspaceRef {
-  /** `ws:<ciWorkspaceId>` | `repo:<taskRepositoryId>` | `chat:<conversationId>` | `project:<agentId>` */
+  /** `ws:<id>` | `repo:<id>` | `chat:<id>` | `project:<agentId>` | `stand:<conversationId>/<hostProjectId>/<standId>` */
   id: string
   kind: GitWorkspaceKind
   projectId: string
@@ -354,6 +355,7 @@ export function gitChangeShort(state: GitChangeState): string {
 /** Человеческий текст проблемы: он же попадает в `EmptyState`/`ErrorState`. */
 export function gitProblemMessage(problem: GitWorkspaceProblem): string {
   switch (problem) {
+    case 'stand_not_live': return 'Компонент стенда не в живом режиме'
     case 'workspace_not_found': return 'Рабочая копия не найдена'
     case 'machine_missing': return 'Машина рабочей копии недоступна в этом проекте'
     case 'machine_offline': return 'Машина не в сети'
@@ -570,6 +572,7 @@ export type GitWorkspaceIdRef =
   | { kind: 'task-repository'; taskRepositoryId: string }
   | { kind: 'conversation'; conversationId: string }
   | { kind: 'project-machine'; agentId: string }
+  | { kind: 'make-stand'; conversationId: string; hostProjectId: string; standId: string }
 
 /**
  * Разбор id рабочей копии. Формы «путь на машине» здесь нет намеренно: панель не
@@ -578,6 +581,11 @@ export type GitWorkspaceIdRef =
  * выданный сервером после проверки политики каталогов.
  */
 export function parseGitWorkspaceId(id: string): GitWorkspaceIdRef | null {
+  if (id.startsWith('stand:')) {
+    const parts = id.slice(6).split('/')
+    if (parts.length !== 3 || !parts.every(value => value.length === 36 && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value))) return null
+    return { kind: 'make-stand', conversationId: parts[0], hostProjectId: parts[1], standId: parts[2] }
+  }
   const at = id.indexOf(':')
   if (at <= 0) return null
   const prefix = id.slice(0, at)
@@ -591,6 +599,11 @@ export function parseGitWorkspaceId(id: string): GitWorkspaceIdRef | null {
 }
 
 export function buildGitWorkspaceId(ref: GitWorkspaceIdRef): string {
+  if (ref.kind === 'make-stand') {
+    const id = 'stand:' + [ref.conversationId, ref.hostProjectId, ref.standId].join('/')
+    if (!parseGitWorkspaceId(id)) throw new Error('Invalid make stand workspace id')
+    return id
+  }
   if (ref.kind === 'ci-workspace') return `ws:${ref.ciWorkspaceId}`
   if (ref.kind === 'task-repository') return `repo:${ref.taskRepositoryId}`
   if (ref.kind === 'conversation') return `chat:${ref.conversationId}`

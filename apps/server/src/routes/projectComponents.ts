@@ -11,12 +11,13 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { createHash } from 'node:crypto'
 import {
-  isProjectStoryPath, machineOrigin, parseStorybookIndex, storyPathMatches, storybookStoryId, storybookStoryName,
+  parseGitWorkspaceId, isProjectStoryPath, machineOrigin, parseStorybookIndex, storyPathMatches, storybookStoryId, storybookStoryName,
   type ProjectComponentEntry, type ProjectComponentsListing, type ProjectStorybookAccess, type ProjectStorybookAction
 } from '@voicechat/shared'
 import { uid } from "@sislexa/identity/server/users/auth"
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { parseStoryFile } from '@voicechat/shared'
+import type { StandProxy } from '../standProxy.js'
 import type { StorybookSessions } from '../components/storybookSessions.js'
 import type { ComponentTicketService } from '../components/componentTicket.js'
 
@@ -49,6 +50,7 @@ function tunnelIdFor(userId: string, workspace: string, agentId: string, port: n
 }
 
 export interface ProjectComponentsDeps {
+  standProxy?: Pick<StandProxy, 'access'>
   git: GitWorkspaceService
   storybook: StorybookSessions
   tickets: ComponentTicketService
@@ -183,6 +185,12 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
           url: `/api/preview?url=${encodeURIComponent(machineOrigin(ref.agentId, session.port))}`,
           tunnelId: null,
           note: 'Кадр идёт через мост машины: на медленном канале он собирается долго.'
+        }
+        const stand = parseGitWorkspaceId(workspace)
+        if (stand?.kind === 'make-stand') {
+          if (!deps.standProxy) return proxy
+          const lease = await deps.standProxy.access(userId, stand.hostProjectId, stand.standId, req.headers.host ?? '', session.port)
+          return { kind: 'proxy', url: lease.url, tunnelId: null, note: 'Storybook через прокси стенда с поддержкой HMR.' }
         }
         const localAgentId = req.body?.localAgentId?.trim() || null
         if (!localAgentId) return proxy

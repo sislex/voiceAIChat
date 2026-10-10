@@ -794,8 +794,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
-  const gitWorkspaces = new GitWorkspaceService({
+  const gitWorkspaces: GitWorkspaceService = new GitWorkspaceService({
     db,
+    getStand: (user, project, stand) => makeProjectAdapters.getStand(user, project, stand),
     runtime: {
       exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
       fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
@@ -1485,6 +1486,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   })
   registerProjectComponentsRoutes(app, {
+    standProxy: proxyPorts(opts.config.standProxyPorts).length ? standProxy : undefined,
     git: gitWorkspaces,
     storybook: storybookSessions,
     tickets: new ComponentTicketService({ db, git: gitWorkspaces }),
