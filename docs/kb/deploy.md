@@ -2488,7 +2488,7 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.24.1 (contracts 1.4.1): dev stand processes report the real spawn failure, log every
+Core pins agent 0.24.3 (contracts 1.4.1): dev stand processes report the real spawn failure, log every
 start/stop/failure, remove failed starts (registry entry and worktree, never recovered) and stop stale own
 port owners before a new stand starts (stand-agent-v1 B01). Agent 0.24.0 (contracts 1.4.0) manages the dev stand gateway, recovers dev stand
 components after an agent restart, and on component replacement keeps the old process until the new

@@ -17,7 +17,7 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.7.1-bf2087ea4868.tgz",
+    "@voicechat/make-contracts": "file:../../vendor/voicechat-make-contracts-1.7.1-016ab7d59b31.tgz",
     "@voicechat/playwright-reader-contracts": "file:../../vendor/voicechat-playwright-reader-contracts-1.2.0-6494ddf245ed.tgz",
     "@voicechat/browser-contracts": "file:../../vendor/voicechat-browser-contracts-1.1.0-7eebb7eb21e7.tgz",
     "@sislexa/sdk": "file:../../vendor/sislexa-sdk-1.2.0-354b8e560bac.tgz",
@@ -25,6 +25,6 @@
     "@voicechat/image-studio-contracts": "file:../../vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
     "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-0207bffe45ba.tgz",
     "@sislexa/voice": "file:../../vendor/sislexa-voice-1.1.0-7e51e57ebf3b.tgz",
-    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.4.1-eee562e748ed.tgz"
+    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.4.2-5582ba79fc5b.tgz"
   }
 }
