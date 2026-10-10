@@ -87,7 +87,8 @@ test('gateway streams SSE, proxies WebSocket frames, and reloads atomic manifest
   value.future = true
   writeFileSync(path, JSON.stringify(value))
   const warnings = []
-  const gateway = await listen(createGateway({ manifestPath: path, baseUrl: base, onError() {}, onWarning: message => warnings.push(message), probeTimeoutMs: 100 }), ports[2])
+  // 100 ms was too tight for the parallel health probes on a loaded release machine (release 0.1.440 regression).
+  const gateway = await listen(createGateway({ manifestPath: path, baseUrl: base, onError() {}, onWarning: message => warnings.push(message), probeTimeoutMs: 1000 }), ports[2])
   const health = await fetch(gateway + '/__gateway/health')
   assert.equal(health.status, 200)
   assert.equal(health.headers.get('cache-control'), 'no-store')
