@@ -17,6 +17,9 @@ export interface ExecStreamRequest {
 }
 export type ExecStreamLine = { chunk: string } | { result: ExecResult } | { error: string }
 
+export const EXEC_STREAM_HIGH_WATER = 8 * 1024 * 1024
+export const EXEC_STREAM_LOW_WATER = 1024 * 1024
+
 /** Сторона сервера: выполняет команду и пишет поток в ответ; обрыв соединения клиентом отменяет команду. */
 export async function serveExecStream(reply: FastifyReply, body: ExecStreamRequest, machines: Pick<MachinesService, 'exec' | 'execStream'>): Promise<void> {
   const controller = new AbortController()
@@ -25,15 +28,50 @@ export async function serveExecStream(reply: FastifyReply, body: ExecStreamReque
   raw.on('close', () => { if (!raw.writableFinished) controller.abort() })
   raw.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache', 'x-accel-buffering': 'no' })
   raw.flushHeaders()
-  const write = (line: ExecStreamLine): void => { if (!raw.writableEnded) raw.write(`${JSON.stringify(line)}\n`) }
+  const writable = (): boolean => !raw.writableEnded && !raw.destroyed
+  const write = (line: ExecStreamLine): void => { if (writable()) raw.write(`${JSON.stringify(line)}\n`) }
+  let dropped = 0
+  const flushDropped = (): void => {
+    if (!dropped || raw.writableLength >= EXEC_STREAM_LOW_WATER || !writable()) return
+    write({ chunk: `\n…[stream output dropped: ${dropped} bytes, consumer too slow]\n` })
+    dropped = 0
+  }
+  raw.on('drain', flushDropped)
+  const onChunk = (chunk: string): void => {
+    if (!writable()) return
+    flushDropped()
+    if (dropped || raw.writableLength >= EXEC_STREAM_HIGH_WATER) {
+      dropped += Buffer.byteLength(chunk)
+      return
+    }
+    write({ chunk })
+  }
+  // Keep terminal records without retaining output or destroying the socket.
+  const waitForCapacity = async (): Promise<void> => {
+    if (!writable() || raw.writableLength < EXEC_STREAM_LOW_WATER) return
+    await new Promise<void>((resolve) => {
+      const done = (): void => {
+        raw.off('drain', done)
+        raw.off('close', done)
+        resolve()
+      }
+      raw.once('drain', done)
+      raw.once('close', done)
+    })
+  }
+  let final: ExecStreamLine
   try {
     const result = body.stream
-      ? await machines.execStream(body.agentId, body.command, body.timeoutMs, (chunk) => write({ chunk }), controller.signal)
+      ? await machines.execStream(body.agentId, body.command, body.timeoutMs, onChunk, controller.signal)
       : await machines.exec(body.agentId, body.command, body.timeoutMs, controller.signal, body.meta)
-    write({ result })
+    final = { result }
   } catch (error) {
-    write({ error: error instanceof Error ? error.message : String(error) })
+    final = { error: error instanceof Error ? error.message : String(error) }
   }
+  await waitForCapacity()
+  flushDropped()
+  write(final)
+  raw.off('drain', flushDropped)
   raw.end()
 }
 
