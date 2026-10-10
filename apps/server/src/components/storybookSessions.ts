@@ -139,7 +139,9 @@ export class StorybookSessions {
       return this.snapshot(input.agentId, input.workspaceId, input.path)
     }
     const port = this.pickPort(input.agentId, input.port)
-    const command = `${(input.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND).trim()} --port ${port} --no-open --ci`
+    const baseCommand = (input.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND).trim()
+    const needsSeparator = /^(?:npm\s+(?:run|exec)\b|npx\s)/.test(baseCommand) && !/\s--(?:\s|$)/.test(baseCommand)
+    const command = `${baseCommand}${needsSeparator ? ' --' : ''} --port ${port} --no-open --ci`
     // Команда идёт в живой shell, и его выход `pty.exit` не наступает, когда падает
     // только она: без сентинела «npm error Missing script» выглядел бы как бесконечная
     // сборка. Приём тот же, что в console_run: `%d` в эхе ввода под `(\d+)` не подходит,
