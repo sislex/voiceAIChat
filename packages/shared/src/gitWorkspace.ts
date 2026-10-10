@@ -583,7 +583,9 @@ export type GitWorkspaceIdRef =
 export function parseGitWorkspaceId(id: string): GitWorkspaceIdRef | null {
   if (id.startsWith('stand:')) {
     const parts = id.slice(6).split('/')
-    if (parts.length !== 3 || !parts.every(value => value.length === 36 && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value))) return null
+    // Conversation and host project are UUIDs; Kanban stand ids look like `dev-5b9d0ce6-61b`.
+    const uuid = (value: string): boolean => value.length === 36 && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)
+    if (parts.length !== 3 || !uuid(parts[0]!) || !uuid(parts[1]!) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(parts[2]!)) return null
     return { kind: 'make-stand', conversationId: parts[0], hostProjectId: parts[1], standId: parts[2] }
   }
   const at = id.indexOf(':')
