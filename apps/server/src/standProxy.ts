@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { canInjectInspector, injectInspectorHtml, inspectorScriptUrl } from './htmlInject.js'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { REST, type DevStandAccessResponse } from '@voicechat/shared'
@@ -35,7 +36,8 @@ export function standCookies(cookies: string[] | undefined, key: string): string
   return cookies?.map(cookie => 'sxs_' + key + '_' + cookie.split(';').filter((part, i) => i === 0 || !/^\s*domain\s*=/i.test(part)).join(';'))
 }
 type Target = { machineId: string; gatewayPort: number }
-type Lease = Target & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; server: Server; sockets: Set<Duplex> }
+export type StandProxyAccessOptions = { inject?: 'make-inspector' }
+type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; server: Server; sockets: Set<Duplex> }
 export interface StandProxyDeps {
   ports: number[]
   publicHost?: string
@@ -61,7 +63,7 @@ export class StandProxy {
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.queue.then(fn); this.queue = next.catch(() => {}); return next
   }
-  async access(user: string, projectId: string, standId: string, host: string, port?: number): Promise<DevStandAccessResponse> {
+  async access(user: string, projectId: string, standId: string, host: string, port?: number, options: StandProxyAccessOptions = {}): Promise<DevStandAccessResponse> {
     if (port !== undefined && (!Number.isInteger(port) || port < 1024 || port > 65535)) fail(400, 'invalid_stand_access')
     if (!await this.deps.member(user, projectId)) fail(403, 'project_access_denied')
     if (!this.deps.ports.length || this.closed) fail(503, 'stand_proxy_unavailable')
@@ -70,7 +72,7 @@ export class StandProxy {
     return this.serial(async () => {
       if (this.closed) fail(503, 'stand_proxy_unavailable')
       await this.expire()
-      const id = JSON.stringify([user, projectId, standId, port ?? null])
+      const id = JSON.stringify([user, projectId, standId, port ?? null, options.inject ?? null])
       let lease = this.leases.get(id)
       if (lease && (lease.machineId !== target.machineId || lease.gatewayPort !== target.gatewayPort)) { await this.remove(id, lease); lease = undefined }
       if (!lease) {
@@ -78,7 +80,7 @@ export class StandProxy {
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()
-          const candidate: Lease = { ...target, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: 'http://' + hostname + ':' + port, server, sockets: new Set() }
+          const candidate: Lease = { ...target, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: 'http://' + hostname + ':' + port, server, sockets: new Set() }
           server.on('connection', socket => { candidate.sockets.add(socket); socket.on('close', () => candidate.sockets.delete(socket)) })
           server.on('request', (req, res) => { void this.forward(candidate, req, res).catch(() => res.destroy()) })
           server.on('upgrade', (req, socket, head) => {
@@ -115,7 +117,28 @@ export class StandProxy {
       response.on('error', () => { res?.destroy(); socket?.destroy(); tunnel.destroy() })
       const headers = { ...response.headers }
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
-      if (res) { res.writeHead(response.statusCode ?? 502, headers); response.pipe(res); res.on('close', () => { response.destroy(); tunnel.destroy() }) }
+      if (res) {
+        res.on('close', () => { response.destroy(); tunnel.destroy() })
+        const scriptUrl = inspectorScriptUrl(req.headers.host, Boolean((req.socket as Duplex & { encrypted?: boolean }).encrypted))
+        if (lease.inject === 'make-inspector' && req.method !== 'HEAD' && response.statusCode !== 204 && response.statusCode !== 304 && scriptUrl && canInjectInspector(headers, scriptUrl)) {
+          void (async () => {
+            const chunks: Buffer[] = []
+            for await (const chunk of response) chunks.push(Buffer.from(chunk))
+            const original = Buffer.concat(chunks)
+            const rewritten = await injectInspectorHtml(original, headers, scriptUrl)
+            if (res.destroyed) return
+            if (rewritten) {
+              headers['content-length'] = String(rewritten.length)
+              delete headers['content-encoding']
+              delete headers.etag
+              delete headers['content-md5']
+              delete headers.digest
+            }
+            res.writeHead(response.statusCode ?? 502, headers)
+            res.end(rewritten ?? original)
+          })().catch(() => { res.destroy(); tunnel.destroy() })
+        } else { res.writeHead(response.statusCode ?? 502, headers); response.pipe(res) }
+      }
       else { response.destroy(); socket?.destroy(); tunnel.destroy() }
     })
     upstream.on('upgrade', (response, remote, remoteHead) => {
