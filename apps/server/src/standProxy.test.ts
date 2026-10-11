@@ -60,12 +60,12 @@ describe('stand proxy listeners', () => {
       const encode = path === '/gzip' || path === '/csp' ? gzipSync : path === '/br' ? brotliCompressSync : path === '/deflate' ? deflateSync : (b: Buffer) => b
       const body = encode(raw)
       res.setHeader('content-type', path === '/json' ? 'application/json' : 'text/html; charset=utf-8')
-      res.setHeader('content-length', body.length)
+      if (path !== '/chunked') res.setHeader('content-length', body.length)
       res.setHeader('etag', '"upstream"')
       if (path === '/gzip' || path === '/csp') res.setHeader('content-encoding', 'gzip')
       if (path === '/br' || path === '/deflate') res.setHeader('content-encoding', path.slice(1))
       if (path === '/csp') res.setHeader('content-security-policy', "script-src 'none'")
-      res.end(body)
+      if (path === '/chunked') { res.write(body); res.end() } else res.end(body)
     })
     await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
     cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
@@ -84,8 +84,9 @@ describe('stand proxy listeners', () => {
       })
       req.on('error', reject); req.end()
     })
-    for (const path of ['/', '/gzip', '/br', '/deflate', '/body']) {
+    for (const path of ['/', '/gzip', '/br', '/deflate', '/body', '/chunked']) {
       const result = await read(opted.url, path)
+      expect(result.headers['transfer-encoding']).toBeUndefined()
       const script = '<script src="http://incoming.example:24016/api/make/inspector.js" data-vc-make-inspector></script>'
       expect(result.body.toString()).toBe(path === '/body' ? '<body class="app">' + script + 'hello</body>' : html.replace('</head>', script + '</head>'))
       expect(result.status).toBe(200)
