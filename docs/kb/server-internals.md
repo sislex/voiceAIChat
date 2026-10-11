@@ -884,6 +884,24 @@ unsupported encodings, partial responses, HEAD, chunked streams, SSE, and
 WebSocket upgrades pass through without rewriting. Invalid compressed HTML or
 documents without an insertion point retain their original bytes and headers.
 
+Make's `makeStand` preview adapter and `storybook/open` for `stand:` workspaces
+request inspector-enabled leases. When stand proxy ports are disabled,
+`storybook/open` issues a random, HttpOnly, SameSite=Lax bridge cookie scoped to
+`/api/preview` (Secure on HTTPS). Core keeps a bounded, 30-minute session registry
+binding each token to the authenticated user and the exact machine origin/port.
+Cookies have distinct names per origin so multiple Storybooks can remain open.
+This works with the existing Make client, which rebuilds story frame query strings.
+`readerBridge/proxy.ts` registers a Core response hook before either embedded or
+remote Reader, using the same `htmlInject.ts` helper on buffered HTML. It removes
+stale validators and encoding, corrects Content-Length, and marks rewritten
+responses private/no-store. Conditional request validators are removed for Make
+sessions so an ordinary cached preview cannot suppress the initial injection.
+Reader authorization still checks machine access on every request. Missing,
+expired, forged, other-user or other-origin sessions receive ordinary Reader
+responses; non-stand workspaces do not issue an inspector cookie. The opt-in lasts
+for the browser's machine-origin session, including other preview tabs for that
+same origin, until expiry; it does not depend on a caller-supplied injection flag.
+
 `AgentRegistry.connectCoreTunnel` returns a Duplex using the agent's existing
 tunnel frames. It waits for connection acknowledgement, bounds data frames,
 observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
