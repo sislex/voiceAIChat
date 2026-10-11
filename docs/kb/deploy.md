@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-10
-checked: 449fa9c4
+updated: 2026-10-11
+checked: 6a3f399a
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2488,7 +2488,10 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.24.3 (contracts 1.4.1): dev stand processes report the real spawn failure, log every
+Core pins agent 0.24.4 (contracts 1.4.2): startup recovery recognises its own dev stand process groups even
+when the saved leader (`npm run …`, which rewrites its process title) shows no environment to `ps -E` or
+`/proc/<pid>/environ`; the marker is read from the rest of the group, so an agent restart replaces its
+processes instead of leaving orphans on the stand ports. Agent 0.24.3 (contracts 1.4.1): dev stand processes report the real spawn failure, log every
 start/stop/failure, remove failed starts (registry entry and worktree, never recovered) and stop stale own
 port owners before a new stand starts (stand-agent-v1 B01). Agent 0.24.0 (contracts 1.4.0) manages the dev stand gateway, recovers dev stand
 components after an agent restart, and on component replacement keeps the old process until the new
