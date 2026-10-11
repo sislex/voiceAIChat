@@ -1,7 +1,6 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-11
-checked: c4f61069
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -869,6 +868,39 @@ headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
 to the leased proxy origin becomes the gateway origin, while foreign origins
 remain unchanged. SSE responses stream without buffering and WebSocket upgrades
 retain their initial bytes in both directions.
+
+Internal callers can opt in with
+`standProxy.access(user, project, stand, host, port?, { inject: 'make-inspector' })`.
+The injection mode is stored on the lease and included in its reuse key, so
+ordinary callers retain separate, unmodified leases. The public access route
+does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
+responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
+`</head>` (or after the opening `<body>`). Its URL uses the incoming request's
+Host and socket scheme: `/api/make/inspector.js`. Rewritten responses receive a
+byte-accurate Content-Length; Content-Encoding and stale entity validators are
+removed. Enforced CSP must allow the script; restrictive or unrecognized source
+policies and documents with CSP meta tags are left untouched. Non-HTML bodies,
+unsupported encodings, partial responses, HEAD, chunked streams, SSE, and
+WebSocket upgrades pass through without rewriting. Invalid compressed HTML or
+documents without an insertion point retain their original bytes and headers.
+
+Make's `makeStand` preview adapter and `storybook/open` for `stand:` workspaces
+request inspector-enabled leases. When stand proxy ports are disabled,
+`storybook/open` issues a random, HttpOnly, SameSite=Lax bridge cookie scoped to
+`/api/preview` (Secure on HTTPS). Core keeps a bounded, 30-minute session registry
+binding each token to the authenticated user and the exact machine origin/port.
+Cookies have distinct names per origin so multiple Storybooks can remain open.
+This works with the existing Make client, which rebuilds story frame query strings.
+`readerBridge/proxy.ts` registers a Core response hook before either embedded or
+remote Reader, using the same `htmlInject.ts` helper on buffered HTML. It removes
+stale validators and encoding, corrects Content-Length, and marks rewritten
+responses private/no-store. Conditional request validators are removed for Make
+sessions so an ordinary cached preview cannot suppress the initial injection.
+Reader authorization still checks machine access on every request. Missing,
+expired, forged, other-user or other-origin sessions receive ordinary Reader
+responses; non-stand workspaces do not issue an inspector cookie. The opt-in lasts
+for the browser's machine-origin session, including other preview tabs for that
+same origin, until expiry; it does not depend on a caller-supplied injection flag.
 
 `AgentRegistry.connectCoreTunnel` returns a Duplex using the agent's existing
 tunnel frames. It waits for connection acknowledgement, bounds data frames,
