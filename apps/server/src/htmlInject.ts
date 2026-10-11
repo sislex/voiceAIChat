@@ -40,12 +40,12 @@ export function canInjectInspector(headers: IncomingHttpHeaders, scriptUrl: stri
   const charset = /charset\s*=\s*["']?([^\s;"']+)/i.exec(type)?.[1]?.toLowerCase()
   return /^text\/html(?:\s*;|\s*$)/i.test(type)
     && (!charset || ['utf-8', 'utf8', 'us-ascii'].includes(charset))
-    && !headers['transfer-encoding'] && !headers['content-range']
+    && (!headers['transfer-encoding'] || headers['transfer-encoding'].toLowerCase() === 'chunked') && !headers['content-range']
     && allowsInspector(headers['content-security-policy'], scriptUrl)
     && (!headers['content-encoding'] || ['identity', ...Object.keys(decoders)].includes(headers['content-encoding'].toLowerCase()))
 }
 
-/** Returns undefined when the original bytes and headers must be preserved. */
+/** Returns undefined when the original bytes and headers must be preserved. Callers buffer the whole body, so chunked upstreams are fine; they must drop Transfer-Encoding when they set Content-Length. */
 export async function injectInspectorHtml(body: Buffer, headers: IncomingHttpHeaders, scriptUrl: string): Promise<Buffer | undefined> {
   if (!canInjectInspector(headers, scriptUrl)) return undefined
   try {
