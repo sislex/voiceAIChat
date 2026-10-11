@@ -256,13 +256,17 @@ export class MakeProjectAdapters {
         try {
           stand = standDetail(await this.request(user, standPath))
         } catch (error) {
-          if (op.op !== 'status' || (error as { statusCode?: number }).statusCode !== 404) throw error
+          if ((error as { statusCode?: number }).statusCode !== 404) throw error
+          // A deleted stand has nothing to detach from: report idle so the client drops its binding.
+          if (op.op === 'detach') return { ...state, phase: 'idle' }
+          if (op.op !== 'status') throw error
           Object.assign(state, { standId: op.standId, hostProjectId })
           // Kanban records the create job before publishing the stand manifest.
           const jobs = await this.request<unknown>(user, standPath + '/operations')
           const list = (Array.isArray(jobs) ? jobs : (jobs as { operations?: unknown[] })?.operations ?? []) as Array<{ kind?: string; status?: string; error?: string | null }>
           const create = list.find(job => job.kind === 'create' && job.status === 'running') ?? list.find(job => job.kind === 'create')
-          if (!create) throw error
+          // A succeeded create followed by 404 means the stand was deleted afterwards; only an unfinished create is "creating".
+          if (!create || create.status === 'succeeded') throw error
           if (create.status === 'failed') return { ...state, phase: 'failed', error: makeStandErrorCode(create.error ?? 'operation_conflict') }
           return { ...state, phase: 'creating' }
         }
