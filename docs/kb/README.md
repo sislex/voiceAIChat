@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 77 коммит(ов) в areas после сверки: 132ce22e make-stand-stories-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 38 коммит(ов) в areas после сверки: 132ce22e make-stand-stories-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 67 коммит(ов) в areas после сверки: bad717a7 chore(release): pin Agent 0.24.4 (contracts 1.4.2) — recovery reads the marker from the process group … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 70 коммит(ов) в areas после сверки: 846ba57d Merge remote-tracking branch 'origin/dev' into chore/pin-agent-0.24.4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 107 коммит(ов) в areas после сверки: 132ce22e make-stand-stories-v1 B01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,10 +61,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1142. Последние:
+Всего записей: 1143. Последние:
 
 - [2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-4.md](log/2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-4.md) — pin-agent-0-24-4
 - [2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-make-stand-stories-b03.md](log/2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-make-stand-stories-b03.md) — make-stand-stories-b03
+- [2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-make-stand-deleted-status.md](log/2026-10-11-alexeys-macbook-air-tailae39a6-ts-net-make-stand-deleted-status.md) — make-stand-deleted-status
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-stand-admin-scrypt.md) — stand-admin-scrypt
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-stories-workspace.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-stories-workspace.md) — make-stand-stories-workspace
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-make-stand-host-worktree.md) — make-stand-host-worktree
@@ -72,7 +73,6 @@
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-glossary-vendor-pin.md) — glossary-vendor-pin
 - [2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-core-memory-bounds.md](log/2026-10-10-alexeys-macbook-air-tailae39a6-ts-net-core-memory-bounds.md) — core-memory-bounds
 - [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-9-desktop-1-0-28.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-core-ui-1-5-9-desktop-1-0-28.md) — pin-core-ui-1-5-9-desktop-1-0-28
-- [2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-1.md](log/2026-10-09-alexeys-macbook-air-tailae39a6-ts-net-pin-agent-0-24-1.md) — pin-agent-0-24-1
 
 ## Исторические планы
 

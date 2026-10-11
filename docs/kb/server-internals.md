@@ -1,6 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-11
+checked: c4f61069
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -526,7 +527,7 @@ temporary readable files for both embedded and HTTP CLI execution.
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
 Make stand working copies resolve through `stand:<conversationId>/<hostProjectId>/<standId>`
-(three UUIDs). The Git workspace resolver requires the conversation owner and
+(two UUIDs and a Kanban stand id such as `dev-5b9d0ce6-61b`). The Git workspace resolver requires the conversation owner and
 its Make project to match the caller and route project. It reads Kanban details
 through the same authorized `MakeProjectAdapters.getStand` client, matches the
 conversation repository against `DEV_COMPONENT_REGISTRY`, and uses the matching
@@ -538,6 +539,12 @@ host project only when no machine access exists there. The resolved kind is
 For these workspaces, `storybook/open` uses a stand proxy lease for the session
 port when enabled, otherwise the existing machine bridge. Other workspace kinds
 retain direct and tunnel access selection.
+
+Make stand `status` on a Kanban 404 reports `creating` only while a `create` job
+is still running; a succeeded create followed by 404 means the stand was deleted
+and the status fails with `stand_not_found`. `detach` on a 404 returns an idle
+state so the Make service drops the conversation binding; otherwise a stale
+binding keeps the stand selector locked and rejects new `create` with 409.
 
 `StorybookSessions` appends `--port <port> --no-open --ci` to the configured
 command (default: `npm run storybook`). For `npm run`, `npm exec` and `npx`

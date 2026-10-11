@@ -74,13 +74,27 @@ function fixture() {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
-  it.each(['running', 'succeeded'])('keeps a missing manifest creating for a %s create job', async status => {
+  it('keeps a missing manifest creating for a running create job', async () => {
     const f = fixture()
-    f.jobs.push({ kind: 'create', component: null, status, error: null })
+    f.jobs.push({ kind: 'create', component: null, status: 'running', error: null })
     f.fetchImpl.mockResolvedValueOnce(Response.json({ error: 'stand_not_found' }, { status: 404 }))
     expect(await f.call({ op: 'status', ...identity })).toMatchObject({ ...identity, phase: 'creating' })
     expect(f.fetchImpl).toHaveBeenLastCalledWith('http://kanban.test/api/projects/host/dev-stands/stand/operations', expect.objectContaining({ method: 'GET' }))
     expect(f.machines.exec).not.toHaveBeenCalled()
+  })
+
+  it('reports a stand deleted after a succeeded create as missing instead of creating', async () => {
+    const f = fixture()
+    f.jobs.push({ kind: 'create', component: null, status: 'succeeded', error: null })
+    f.fetchImpl.mockResolvedValueOnce(Response.json({ error: 'stand_not_found' }, { status: 404 }))
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ ...identity, phase: 'failed', error: 'stand_not_found' })
+  })
+
+  it('detaches from a deleted stand as idle so the client can drop its binding', async () => {
+    const f = fixture()
+    f.fetchImpl.mockResolvedValueOnce(Response.json({ error: 'stand_not_found' }, { status: 404 }))
+    expect(await f.call({ op: 'detach', ...identity })).toMatchObject({ phase: 'idle', standId: null })
+    expect(f.fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it('accepts wrapped operations and prefers an active create over a failed attempt', async () => {
