@@ -1,6 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-11
+updated: 2026-10-12
+checked: bab55e93
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -876,7 +877,10 @@ ordinary callers retain separate, unmodified leases. The public access route
 does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
 responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
 `</head>` (or after the opening `<body>`). Its URL uses the incoming request's
-Host and socket scheme: `/api/make/inspector.js`. Rewritten responses receive a
+Host and socket scheme: `/api/make/inspector.js`. On injected leases the proxy answers
+`GET /api/make/inspector.js` itself through `deps.inspectorScript` (Core injects its own
+route with the caller's cookie), so the stand's Core version never has to serve it;
+ordinary leases forward that path to the stand. Rewritten responses receive a
 byte-accurate Content-Length; Content-Encoding and stale entity validators are
 removed. Enforced CSP must allow the script; restrictive or unrecognized source
 policies and documents with CSP meta tags are left untouched. Non-HTML bodies,
