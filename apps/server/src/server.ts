@@ -626,6 +626,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
     session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
     connect: (machine, port) => agentRegistry.connectCoreTunnel(machine, port),
+    inspectorScript: async cookie => {
+      const reply = await app.inject({ method: 'GET', url: '/api/make/inspector.js', headers: cookie ? { cookie } : {} })
+      const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
+      return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
+    },
     stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
   })
   registerStandProxy(app, standProxy, standSession)
