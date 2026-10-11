@@ -45,8 +45,11 @@ export interface StandProxyDeps {
   stand(user: string, project: string, stand: string): Promise<Target>
   session(cookie: string): Promise<string | null>
   connect(machine: string, port: number): Duplex
+  /** Serves the Make inspector script on injected leases so the stand itself never has to know the route. */
+  inspectorScript?(cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
   now?: () => number
 }
+const INSPECTOR_SCRIPT_PATH = '/api/make/inspector.js'
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
 
 export class StandProxy {
@@ -105,6 +108,15 @@ export class StandProxy {
     if (this.closed || lease.expiresAt <= this.now() || user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
     if (res?.destroyed || socket?.destroyed) return
     lease.expiresAt = this.now() + IDLE_MS
+    if (res && lease.inject === 'make-inspector' && this.deps.inspectorScript && (req.method === 'GET' || req.method === 'HEAD') && (req.url ?? '').split('?')[0] === INSPECTOR_SCRIPT_PATH) {
+      // The injected tag points at the lease origin; answer it here instead of asking the stand, whose Core may predate the route.
+      let script: { statusCode: number; headers: Record<string, string>; body: Buffer }
+      try { script = await this.deps.inspectorScript(req.headers.cookie ?? '') } catch { return deny(502) }
+      if (res.destroyed) return
+      res.writeHead(script.statusCode, { ...script.headers, 'content-length': String(script.body.length) })
+      res.end(req.method === 'HEAD' ? undefined : script.body)
+      return
+    }
     let tunnel: Duplex
     try { tunnel = this.deps.connect(lease.machineId, lease.gatewayPort) } catch { return deny(502) }
     lease.sockets.add(tunnel); tunnel.once('close', () => lease.sockets.delete(tunnel))
