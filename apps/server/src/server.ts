@@ -169,7 +169,8 @@ import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { createReaderModule } from '@sislexa/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
-import { registerReaderProxy } from './readerBridge/proxy.js'
+import { registerMakePreviewInspector, registerReaderProxy } from './readerBridge/proxy.js'
+import { makeStandPreviewAccess } from './makeBridge/previewAccess.js'
 import { registerBrowserShotRoutes } from './routes/browserShots.js'
 import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@sislexa/playwright-reader'
 import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
@@ -815,8 +816,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeProjectAdapters = new MakeProjectAdapters({
     db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
     machines: agentRegistry,
-    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user, project, stand) =>
-      standProxy.access(user, project, stand, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? makeStandPreviewAccess(
+      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
     authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
     boardChanged: projectId => kanban.service.board.changed(projectId),
     readDesignFile: async (userId, conversationId, path) => {
@@ -1452,6 +1453,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     module.register(app)
     playwrightReader = module.service
   }
+  registerMakePreviewInspector(app)
   if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl!, fetchImpl: managedReader?.publicFetchImpl })
   else createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
   // Register internal RPC only when a managed provider or legacy migration credential is configured.

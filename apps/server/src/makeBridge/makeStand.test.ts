@@ -4,6 +4,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { MakeProjectAdapters } from './projectAdapters.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
+import { makeStandPreviewAccess } from './previewAccess.js'
 import type { StandMachines } from './standWorkspace.js'
 
 const root = '/work/repos/make-worktrees/conversation'
@@ -62,7 +63,7 @@ function fixture() {
   const previewAccess = vi.fn(async () => ({ url: 'http://core.test:24032/' }))
   const deps = { db: db as unknown as VoiceChatDb, git: git as unknown as GitWorkspaceService, machines: machines as unknown as StandMachines,
     kanbanUrl: 'http://kanban.test', authority: new MakeRequestAuthority(async () => user as never), fetchImpl,
-    readDesignFile: vi.fn(), boardChanged: vi.fn(), previewAccess: undefined as typeof previewAccess | undefined }
+    readDesignFile: vi.fn(), boardChanged: vi.fn(), previewAccess: undefined as ((user: string, project: string, stand: string) => Promise<{ url: string }>) | undefined }
   const adapter = new MakeProjectAdapters(deps)
   const call = async (op: MakeStandOperation) => {
     const result = await adapter.makeStand('alice', 'conversation', op)
@@ -204,6 +205,14 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect(f.previewAccess).toHaveBeenCalledWith('alice', 'host', 'stand')
     f.previewAccess.mockRejectedValueOnce(new Error('stand_proxy_unavailable'))
     expect(await f.call({ op: 'status', ...identity })).toMatchObject({ phase: 'failed', error: 'stand_proxy_unavailable' })
+  })
+
+  it('requests an inspector lease through the concrete Make preview adapter', async () => {
+    const f = fixture(); f.bind()
+    const access = vi.fn(async () => ({ url: 'http://core.test:24032/', expiresAt: 123 }))
+    f.deps.previewAccess = makeStandPreviewAccess({ access }, 'core.test')
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ previewUrl: 'http://core.test:24032/' })
+    expect(access).toHaveBeenCalledWith('alice', 'host', 'stand', 'core.test', undefined, { inject: 'make-inspector' })
   })
 
   it.each(['preparing', 'installing', 'switching'] as const)('reports Kanban phase %s', async phase => {
