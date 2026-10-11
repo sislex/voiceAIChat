@@ -74,6 +74,41 @@ function fixture() {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it.each(['running', 'succeeded'])('keeps a missing manifest creating for a %s create job', async status => {
+    const f = fixture()
+    f.jobs.push({ kind: 'create', component: null, status, error: null })
+    f.fetchImpl.mockResolvedValueOnce(Response.json({ error: 'stand_not_found' }, { status: 404 }))
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ ...identity, phase: 'creating' })
+    expect(f.fetchImpl).toHaveBeenLastCalledWith('http://kanban.test/api/projects/host/dev-stands/stand/operations', expect.objectContaining({ method: 'GET' }))
+    expect(f.machines.exec).not.toHaveBeenCalled()
+  })
+
+  it('accepts wrapped operations and prefers an active create over a failed attempt', async () => {
+    const f = fixture()
+    f.fetchImpl.mockResolvedValueOnce(Response.json({}, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ operations: [{ kind: 'create', status: 'failed' }, { kind: 'create', status: 'running' }] }))
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ ...identity, phase: 'creating' })
+  })
+
+  it.each([
+    [[], 'stand_not_found'],
+    [[{ kind: 'live-start', status: 'running' }], 'stand_not_found'],
+    [[{ kind: 'create', status: 'failed', error: 'dependency_failed' }], 'operation_conflict'],
+    [[{ kind: 'create', status: 'failed', error: 'machine_unavailable' }], 'machine_unavailable']
+  ])('reports missing or failed creation: %j', async (operations, error) => {
+    const f = fixture()
+    f.fetchImpl.mockResolvedValueOnce(Response.json({}, { status: 404 })).mockResolvedValueOnce(Response.json(operations))
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ ...identity, phase: 'failed', error })
+  })
+
+  it.each([403, 503])('does not treat HTTP %s as a missing manifest', async status => {
+    const f = fixture()
+    f.fetchImpl.mockResolvedValueOnce(Response.json({ error: 'unavailable' }, { status }))
+    if (status === 403) await expect(f.call({ op: 'status', ...identity })).rejects.toMatchObject({ statusCode: 403 })
+    else expect(await f.call({ op: 'status', ...identity })).toMatchObject({ phase: 'failed', error: 'machine_unavailable' })
+    expect(f.fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it('sends DELETE live without a JSON content-type (Fastify rejects an empty JSON body)', async () => {
     const f = fixture(); f.bind()
     expect((await f.call({ op: 'detach', ...identity })).phase).toBe('switching')

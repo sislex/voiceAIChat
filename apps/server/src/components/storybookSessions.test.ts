@@ -42,6 +42,28 @@ function fakeRegistry(overrides: Partial<Fake> = {}): Fake {
 const target = { agentId: 'agent-1', workspaceId: 'ws:1', path: '/repo' }
 
 describe('StorybookSessions', () => {
+  it.each([
+    [undefined, 'npm run storybook --'],
+    ['npm run custom-storybook', 'npm run custom-storybook --'],
+    ['npm exec storybook dev', 'npm exec storybook dev --'],
+    ['npx storybook dev', 'npx storybook dev --'],
+    ['npm run storybook -- --host 0.0.0.0', 'npm run storybook -- --host 0.0.0.0'],
+    [' npm run storybook -- ', 'npm run storybook --'],
+    ['storybook dev', 'storybook dev'],
+    ['pnpm run storybook', 'pnpm run storybook'],
+    ['./start-storybook.sh', './start-storybook.sh']
+  ])('forwards launch flags for %s', async (command, expected) => {
+    const registry = fakeRegistry()
+    const sessions = new StorybookSessions({ registry })
+    try {
+      const result = await sessions.start({ ...target, command, port: 24016 })
+      expect(result.command).toBe(`${expected} --port 24016 --no-open --ci`)
+      expect(registry.inputs[0]).toContain(`${expected} --port 24016 --no-open --ci ; printf`)
+    } finally {
+      sessions.stop(target.agentId, target.workspaceId, target.path)
+    }
+  })
+
   it('до запуска отвечает «остановлен», а не пустотой', () => {
     const sessions = new StorybookSessions({ registry: fakeRegistry() })
     const snapshot = sessions.snapshot('agent-1', 'ws:1', '/repo')
