@@ -5,8 +5,8 @@
       "package": "@sislexa/make",
       "workspace": "apps/make",
       "repository": "https://github.com/sislex/make",
-      "version": "1.6.1",
-      "commit": "3469eedbe855b109cfcb59d6598c197d4ee1108f"
+      "version": "1.6.2",
+      "commit": "8e22321ee8508eead381da588bb7bace9d8d6d9c"
     },
     "playwright-reader": {
       "package": "@sislexa/playwright-reader",
