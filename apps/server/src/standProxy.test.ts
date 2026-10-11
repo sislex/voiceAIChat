@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createServer } from 'node:http'
+import { createServer, request } from 'node:http'
+import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib'
 import { connect, type Socket } from 'node:net'
 import { once } from 'node:events'
 import { WebSocket, WebSocketServer } from 'ws'
@@ -51,6 +52,54 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it('rewrites only opted-in HTML leases and preserves other upstream bytes and headers', async () => {
+    const html = '<html><head></head><body>Привет</body></html>'
+    const gateway = createServer((req, res) => {
+      const path = req.url!
+      const raw = Buffer.from(path === '/json' ? '{"ok":true}' : path === '/body' ? '<body class="app">hello</body>' : html)
+      const encode = path === '/gzip' || path === '/csp' ? gzipSync : path === '/br' ? brotliCompressSync : path === '/deflate' ? deflateSync : (b: Buffer) => b
+      const body = encode(raw)
+      res.setHeader('content-type', path === '/json' ? 'application/json' : 'text/html; charset=utf-8')
+      res.setHeader('content-length', body.length)
+      res.setHeader('etag', '"upstream"')
+      if (path === '/gzip' || path === '/csp') res.setHeader('content-encoding', 'gzip')
+      if (path === '/br' || path === '/deflate') res.setHeader('content-encoding', path.slice(1))
+      if (path === '/csp') res.setHeader('content-security-policy', "script-src 'none'")
+      res.end(body)
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const proxy = new StandProxy({ ...deps(), ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }) })
+    cleanup.push(() => proxy.close())
+    const ordinary = await proxy.access('alice', 'p', 's', '127.0.0.1')
+    const opted = await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })
+    expect(opted.url).not.toBe(ordinary.url)
+    expect((await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
+    const read = (base: string, path: string) => new Promise<{ body: Buffer; headers: import('node:http').IncomingHttpHeaders; status: number | undefined }>((resolve, reject) => {
+      const req = request(new URL(path, base), { headers: { cookie: 'vc_session=alice', host: 'incoming.example:24016' } }, res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => chunks.push(chunk)); res.on('error', reject)
+        res.on('end', () => resolve({ body: Buffer.concat(chunks), headers: res.headers, status: res.statusCode }))
+      })
+      req.on('error', reject); req.end()
+    })
+    for (const path of ['/', '/gzip', '/br', '/deflate', '/body']) {
+      const result = await read(opted.url, path)
+      const script = '<script src="http://incoming.example:24016/api/make/inspector.js" data-vc-make-inspector></script>'
+      expect(result.body.toString()).toBe(path === '/body' ? '<body class="app">' + script + 'hello</body>' : html.replace('</head>', script + '</head>'))
+      expect(result.status).toBe(200)
+      expect(result.headers['content-length']).toBe(String(result.body.length))
+      expect(result.headers['content-encoding']).toBeUndefined()
+      expect(result.headers.etag).toBeUndefined()
+    }
+    for (const [base, path, expected] of [[ordinary.url, '/gzip', gzipSync(Buffer.from(html))], [opted.url, '/csp', gzipSync(Buffer.from(html))], [opted.url, '/json', Buffer.from('{"ok":true}')]] as const) {
+      const result = await read(base, path)
+      expect(result.body).toEqual(expected)
+      expect(result.headers.etag).toBe('"upstream"')
+      expect(result.headers['content-length']).toBe(String(expected.length))
+      expect(result.headers['content-encoding']).toBe(path === '/json' ? undefined : 'gzip')
+    }
+  })
   it('keys leases by requested port and forwards to that port', async () => {
     const d = deps(); d.ports = ports.slice(0, 3)
     const proxy = new StandProxy(d); cleanup.push(() => proxy.close())
@@ -72,7 +121,7 @@ describe('stand proxy listeners', () => {
     const next = await proxy.access('bob', 'p', 's', '127.0.0.1')
     expect(next.url).toBe(first.url); expect(next.expiresAt).toBe(now + IDLE_MS)
   })
-  it('streams SSE and WebSocket through agent frames; rejects other users before connecting', async () => {
+  it.each([undefined, 'make-inspector'] as const)('streams SSE and WebSocket through agent frames with injection %s; rejects other users before connecting', async inject => {
     const seen: Array<{ cookie?: string; host?: string; origin?: string }> = []
     const gateway = createServer((req, res) => {
       seen.push(req.headers)
@@ -110,9 +159,9 @@ describe('stand proxy listeners', () => {
     cleanup.push(() => { registry.unregister('m'); for (const s of sockets.values()) s.destroy() })
     const d = deps(); const tunnel = vi.fn((machine: string, port: number) => registry.connectCoreTunnel(machine, port))
     const proxy = new StandProxy({ ...d, connect: tunnel }); cleanup.push(() => proxy.close())
-    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1')
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject })
     for (const cookie of ['', 'vc_session=bob']) {
-      const response = await fetch(lease.url, { headers: { cookie } }); expect(response.status).toBe(401)
+      const response = await fetch(lease.url, { headers: { cookie, connection: 'close' } }); expect(response.status).toBe(401)
     }
     expect(tunnel).not.toHaveBeenCalled()
     const deniedWs = new WebSocket(lease.url.replace('http:', 'ws:'))
@@ -120,7 +169,7 @@ describe('stand proxy listeners', () => {
     const denied = await new Promise<number>(resolve => deniedWs.on('unexpected-response', (_req, res) => { res.resume(); resolve(res.statusCode!); deniedWs.terminate() }))
     expect(denied).toBe(401)
     expect(tunnel).not.toHaveBeenCalled()
-    const response = await fetch(lease.url, { headers: { cookie: 'vc_session=alice', origin: lease.url.slice(0, -1) } })
+    const response = await fetch(lease.url, { headers: { cookie: 'vc_session=alice', origin: lease.url.slice(0, -1), connection: 'close' } })
     const reader = response.body!.getReader()
     const first = await reader.read(); expect(new TextDecoder().decode(first.value)).toContain('data: first')
     expect(first.done).toBe(false)
@@ -137,6 +186,6 @@ describe('stand proxy listeners', () => {
     ws.close()
     await once(ws, 'close')
     d.member.mockResolvedValue(false)
-    expect((await fetch(lease.url, { headers: { cookie: 'vc_session=alice' } })).status).toBe(401)
+    expect((await fetch(lease.url, { headers: { cookie: 'vc_session=alice', connection: 'close' } })).status).toBe(401)
   })
 })

@@ -17,6 +17,7 @@ import {
 import { uid } from "@sislexa/identity/server/users/auth"
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { parseStoryFile } from '@voicechat/shared'
+import { registerMakePreviewInspector } from '../readerBridge/proxy.js'
 import type { StandProxy } from '../standProxy.js'
 import type { StorybookSessions } from '../components/storybookSessions.js'
 import type { ComponentTicketService } from '../components/componentTicket.js'
@@ -70,6 +71,7 @@ export interface ProjectComponentsDeps {
 
 export function registerProjectComponentsRoutes(app: FastifyInstance, deps: ProjectComponentsDeps): void {
   const { git, storybook, tickets } = deps
+  const inspector = registerMakePreviewInspector(app)
 
   /**
    * Список компонентов. Живой Storybook — источник лучше: у него настоящие id стори,
@@ -188,8 +190,11 @@ export function registerProjectComponentsRoutes(app: FastifyInstance, deps: Proj
         }
         const stand = parseGitWorkspaceId(workspace)
         if (stand?.kind === 'make-stand') {
-          if (!deps.standProxy) return proxy
-          const lease = await deps.standProxy.access(userId, stand.hostProjectId, stand.standId, req.headers.host ?? '', session.port)
+          if (!deps.standProxy) {
+            inspector.open(userId, machineOrigin(ref.agentId, session.port), reply)
+            return proxy
+          }
+          const lease = await deps.standProxy.access(userId, stand.hostProjectId, stand.standId, req.headers.host ?? '', session.port, { inject: 'make-inspector' })
           return { kind: 'proxy', url: lease.url, tunnelId: null, note: 'Storybook через прокси стенда с поддержкой HMR.' }
         }
         const localAgentId = req.body?.localAgentId?.trim() || null
