@@ -60,7 +60,7 @@ function createMakePreviewInspector(app: FastifyInstance) {
     if (!scriptUrl) return payload
     const rewritten = await injectInspectorHtml(Buffer.from(payload), reply.getHeaders() as IncomingHttpHeaders, scriptUrl)
     if (!rewritten) return payload
-    for (const name of ['content-encoding', 'etag', 'content-md5', 'digest']) reply.removeHeader(name)
+    for (const name of ['transfer-encoding', 'content-encoding', 'etag', 'content-md5', 'digest']) reply.removeHeader(name)
     reply.header('content-length', rewritten.length)
     reply.header('cache-control', 'private, no-store')
     return rewritten
