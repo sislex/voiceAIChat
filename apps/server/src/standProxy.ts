@@ -141,6 +141,7 @@ export class StandProxy {
             if (res.destroyed) return
             if (rewritten) {
               headers['content-length'] = String(rewritten.length)
+              delete headers['transfer-encoding']
               delete headers['content-encoding']
               delete headers.etag
               delete headers['content-md5']

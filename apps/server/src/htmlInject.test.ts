@@ -24,7 +24,8 @@ describe('inspector HTML rewrite', () => {
     expect(allowsInspector(csp, url)).toBe(true)
   })
   it('skips streaming, partial, non-HTML and unsupported encodings', () => {
-    for (const extra of [{ 'transfer-encoding': 'chunked' }, { 'content-range': 'bytes 0-10/20' }, { 'content-type': 'text/event-stream' }, { 'content-type': 'application/json' }, { 'content-type': 'text/html; charset=iso-8859-1' }, { 'content-encoding': 'unknown' }]) {
+    expect(canInjectInspector({ ...headers, 'transfer-encoding': 'chunked' }, url)).toBe(true)
+    for (const extra of [{ 'transfer-encoding': 'gzip, chunked' }, { 'content-range': 'bytes 0-10/20' }, { 'content-type': 'text/event-stream' }, { 'content-type': 'application/json' }, { 'content-type': 'text/html; charset=iso-8859-1' }, { 'content-encoding': 'unknown' }]) {
       expect(canInjectInspector({ ...headers, ...extra }, url)).toBe(false)
     }
   })
