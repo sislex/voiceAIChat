@@ -124,6 +124,9 @@ import { UserFrameHub } from './frameHub.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
 import { MakeProjectAdapters, projectModeError } from './makeBridge/projectAdapters.js'
+import { StandDeliveries } from './makeBridge/standDeliveries.js'
+import { StandDeliveryCoordinator, type StandDeliveryIntegration } from './makeBridge/standDeliveryCoordinator.js'
+import { registerStandDeliveryRoutes } from './routes/standDeliveries.js'
 import { MakeRequestAuthority } from './makeBridge/requestAuthority.js'
 import { createRemoteMake } from './makeBridge/remote.js'
 import { registerMakeProxy } from './makeBridge/proxy.js'
@@ -194,6 +197,8 @@ export interface BuildOptions {
   delegationClient?: DelegationIntrospectionClient
   /** Kanban HTTP transport for Make project previews; injectable without a live stand. */
   makeKanbanFetch?: typeof fetch
+  standDeliveryFetch?: typeof fetch
+  standDeliveryIntegration?: (projectId: string) => StandDeliveryIntegration | undefined
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
   db?: VoiceChatDb
@@ -837,6 +842,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       })
     }
   })
+  registerStandDeliveryRoutes(app, new StandDeliveries({
+    db, git: gitWorkspaces, stands: makeProjectAdapters, machines: agentRegistry,
+    coordinator: new StandDeliveryCoordinator(opts.standDeliveryIntegration, opts.standDeliveryFetch)
+  }))
   const makeCore = new LocalMakeCore({
     db,
     git: gitWorkspaces,
