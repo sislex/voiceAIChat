@@ -8,33 +8,33 @@
   "packages": [
     {
       "name": "@sislexa/make",
-      "version": "1.6.2",
-      "filename": "sislexa-make-1.6.2.tgz",
-      "asset": "sislexa-make-1.6.2-827b1380c027.tgz",
-      "sha256": "827b1380c02718afe682dc9a2e9b45f456310b471df5ed0d1c0719817c1718cb",
-      "integrity": "sha512-JE8mrjNdqD7tA0Svfl9B49uBf3Apk0EeFIBbB6bviprVxlmPf2p1+ybb9j9wZTnfmNAX1GI3/v3rtObGzFf7xw==",
+      "version": "1.7.0",
+      "filename": "sislexa-make-1.7.0.tgz",
+      "asset": "sislexa-make-1.7.0-085d109c10e5.tgz",
+      "sha256": "085d109c10e52fbd3ef74d82fb6367357a019ca917c02ecacfc46c393a0b6272",
+      "integrity": "sha512-Eh2brP+4HYeShS4bI4w5NXUEPec4zSvs321Y32ma6prpY6qRAx8+p2VvcVnE+rvvaDNAJxZWiYRt0xEI9OKtLQ==",
       "repository": "https://github.com/sislex/make",
-      "commit": "8e22321ee8508eead381da588bb7bace9d8d6d9c",
+      "commit": "26360dfb2805cb05ed97e29685a74be07f3accf4",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "version": "1.6.2",
-        "commit": "8e22321ee8508eead381da588bb7bace9d8d6d9c"
+        "version": "1.7.0",
+        "commit": "26360dfb2805cb05ed97e29685a74be07f3accf4"
       }
     },
     {
       "name": "@voicechat/make-contracts",
       "version": "1.7.1",
       "filename": "voicechat-make-contracts-1.7.1.tgz",
-      "asset": "voicechat-make-contracts-1.7.1-1b306d6df396.tgz",
-      "sha256": "1b306d6df3965940da48b8713ba2b8a58b75bb1bf98bb20dfe0ae58d0c43b06d",
-      "integrity": "sha512-pA/rojkWvWqQmmN++mu8qUOeVBAmNFvB9ekQgkqeD25jFen/vPJZKJzWVaWvCTxdbTJ+PMrU84Vt37vN4kBOZg==",
+      "asset": "voicechat-make-contracts-1.7.1-8e50101c023b.tgz",
+      "sha256": "8e50101c023bb3489ce71ed9200cca05b4cab59310a1f042a20bcedafaea8136",
+      "integrity": "sha512-GWjOZkAK1oj9TvBgCAceTmOCRCxHqtERGffOdGV3oZHnCCIx35ANQs9fd6Hkvc6xD8/t7Ua01Ia3KGp/4/H+3g==",
       "repository": "https://github.com/sislex/make",
-      "commit": "8e22321ee8508eead381da588bb7bace9d8d6d9c",
+      "commit": "26360dfb2805cb05ed97e29685a74be07f3accf4",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "commit": "8e22321ee8508eead381da588bb7bace9d8d6d9c",
+        "commit": "26360dfb2805cb05ed97e29685a74be07f3accf4",
         "name": "@voicechat/make-contracts",
         "version": "1.7.1",
         "dirty": false,

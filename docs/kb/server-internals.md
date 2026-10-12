@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-12
-checked: fec7a276
+checked: 0a2cee95
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -844,6 +844,58 @@ null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
 failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.
+
+## Stand delivery to dev
+
+Core owns the concrete routes registered by `routes/standDeliveries.ts`:
+`POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
+`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
+`POST .../sync-dev` returns `StandSyncResult`. Both contracts and URL builders
+are exported from Shared. These exact routes take precedence over the Kanban proxy.
+
+`makeBridge/standDeliveries.ts` checks project access, repository write permission
+for mutations, the stand's machine and the Git workspace write policy. The working
+copy comes only from the authorized Kanban manifest's live entries. It selects
+the entry matching the project repository, or a single live entry on a host
+project; ambiguous multi-component bindings fail closed. History is filtered by
+that repository and live branch, and access is rechecked even on cache hits.
+
+`standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
+agent. Real paths, Git common directory and origin are checked against the
+project's allowed directory and selected repository. Submission reads the exact
+HEAD and verifies the current branch, but never pushes or fetches. Core forwards
+`{repository, branch, targetBranch:'dev', headSha, title, author}` to
+`POST /v1/candidates/branch`; author is the authenticated Core user.
+
+Outbound Delivery Control credentials are configured separately from Core's
+hashed inbound integration tokens. `VC_STAND_DELIVERY_PROJECTS` is a JSON object
+keyed by Core project id, each entry containing `url` and the project's operator
+`token`. Missing configuration returns 503; there is no global-token fallback.
+`BuildOptions.standDeliveryIntegration` and `standDeliveryFetch` inject the same
+concrete adapter in tests or managed hosts. Tokens are sent only as Bearer headers;
+redirects are refused and upstream error bodies are not exposed.
+
+`standDeliveryCoordinator.ts` reads `GET /v1/status` with a 10-second per-project
+cache, invalidated by submission. It joins persisted branch candidates with task
+and attempt status: candidates may be in `candidates` or `tasks[].candidate`, and
+tasks may be top-level or nested under `runs`. Optional status `events` apply
+`candidate.branch_submitted` and `attempt.integration_*` transitions. Public states
+are `submitted`, `gating`, `integrated`, `rejected`; a rejected gate log tail is
+limited to 16 KiB. History is reconstructed from the coordinator after restart,
+not synthesized from local submissions.
+
+Sync runs `git fetch origin` followed, only on success, by
+`git merge --no-edit origin/dev` in the live copy. `behind` counts commits still
+missing after that attempt. Conflicts return `merged:false` and NUL-parsed file
+names; Core never resets, aborts, cleans or pushes the working copy. Other Git
+failures return an error. Concurrent delivery/sync requests for the same working
+copy are rejected while a mutation is in flight. Vite/HMR can observe merged
+files directly; restarting Storybook remains a client/operator action.
+
+Operator commissioning remains separate: supply each project's coordinator URL
+and token, deploy the coordinator branch-candidate API with persisted status
+metadata, and exercise the Make push → delivery → sync flow on a real stand.
 
 ## Dev stand access proxy
 
