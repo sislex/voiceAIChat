@@ -182,7 +182,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:8e22321ee8508eead381da588bb7bace9d8d6d9c}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:26360dfb2805cb05ed97e29685a74be07f3accf4}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
