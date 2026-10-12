@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-11
-checked: 6a3f399a
+updated: 2026-10-12
+checked: 638e6775
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2688,3 +2688,7 @@ range and verify browser login, SSE and WebSocket through the actual same-host
 address. These listeners serve HTTP, as in the IP-based stand contract; an HTTPS
 Core deployment needs TLS termination on the exposed ports to preserve Secure
 session cookies and avoid mixed-content restrictions.
+
+Stand deliveries: `VC_STAND_DELIVERY_PROJECTS` (JSON `{projectId: {url, token}}`) is passed from `.env` to the
+`voicechat` service by `docker-compose.yml`; the coordinator must listen on an address reachable from the
+production host (private link `10.77.0.2:8798`).
