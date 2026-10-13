@@ -1,6 +1,6 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-07
+updated: 2026-10-13
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -438,6 +438,20 @@ builds the panels; `npm run -w @voicechat/web-recorder build` and
 a new action and cause a relay timeout even when direct iframe tests pass. The
 application gate performs the required builds; this distinction matters when
 running a focused browser test manually before the gate.
+
+### Playwright browser preparation
+
+Browser suites using `e2e/vitest.config.ts` (including `gate:quick`,
+`test:browser` and `gate:all`) run `scripts/ensure-playwright-browser.mjs`
+as global setup. It checks Playwright 1.62's Chromium headless-shell registry
+entry (`chromium_headless_shell-<revision>`), the executable used by default
+`chromium.launch()`, rather than the full Chromium executable. If missing,
+it runs `npx playwright install chromium` once per setup invocation with the
+inherited environment, including `PLAYWRIGHT_BROWSERS_PATH`, then checks again.
+An existing shell needs no download. With `VC_PLAYWRIGHT_OFFLINE=1` or
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, a missing shell fails immediately without
+spawning an installer. Install failures include the captured output tail.
+Injected unit tests run in `test:tooling` without downloading or launching browsers.
 
 ### Fast-stage затронутых тестов
 
