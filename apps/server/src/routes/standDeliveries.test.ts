@@ -25,8 +25,11 @@ async function fixture() {
   const coordinatorApp = Fastify()
   let status: unknown = { tasks: [{ runId: 'stand-delivery', taskId: 'T-1', candidate, createdAt: '2026-10-12T12:00:00Z', state: 'submitted' }] }
   const received: Array<{ url: string; authorization?: string; body: unknown }> = []
+  let refusal: { status: number; body: unknown } | undefined
   coordinatorApp.addHook('preHandler', async req => { received.push({ url: req.url, authorization: req.headers.authorization, body: req.body }) })
-  coordinatorApp.post('/v1/candidates/branch', async () => ({ runId: 'stand-delivery', taskId: 'T-1' }))
+  coordinatorApp.post('/v1/candidates/branch', async (_req, reply) => refusal
+    ? reply.code(refusal.status).send(refusal.body)
+    : { runId: 'stand-delivery', taskId: 'T-1' })
   coordinatorApp.get('/v1/status', async () => status)
   const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
     const response = await coordinatorApp.inject({ url: new URL(String(input)).pathname,
@@ -43,8 +46,28 @@ async function fixture() {
   registerStandDeliveryRoutes(app, service)
   const url = '/api/projects/project/dev-stands/stand'
   return { app, db, git, user, project, stand, machines, received, fetchImpl, url, fixtureToken,
+    setRefusal: (value: { status: number; body: unknown }) => { refusal = value },
     setStatus: (value: unknown) => { status = value }, close: async () => { await app.close(); await coordinatorApp.close() } }
 }
+
+it.each([
+  [400, { error: 'branch_patch_empty_or_large' }, 400, 'branch_patch_empty_or_large'],
+  [403, { error: 'operator_scope_denied' }, 403, 'operator_scope_denied'],
+  [409, { error: 'branch_head_changed' }, 409, 'branch_head_changed'],
+  [503, { error: 'stand_delivery_paused' }, 503, 'stand_delivery_paused'],
+  [400, { error: 'unknown_code' }, 502, 'stand_delivery_request_failed'],
+  [409, { error: 'unknown_code' }, 409, 'stand_delivery_request_failed'],
+  [400, { error: 'branch_patch_empty_or_large', diagnostics: 'private' }, 502, 'stand_delivery_request_failed']
+])('exposes only safe coordinator refusals (%i / %j)', async (status, body, expectedStatus, error) => {
+  const f = await fixture()
+  try {
+    f.setRefusal({ status, body })
+    const response = await f.app.inject({ method: 'POST', url: f.url + '/deliveries', payload: { branch: candidate.branch, title: 'Change' } })
+    expect(response.statusCode).toBe(expectedStatus)
+    expect(response.json()).toEqual({ error })
+    expect(f.received).toHaveLength(1)
+  } finally { await f.close() }
+})
 
 it('forwards the agent HEAD with the project token and authenticated author, without pushing', async () => {
   const f = await fixture()

@@ -25,6 +25,10 @@ export interface StorybookRegistry {
 
 export interface StorybookSessionsDeps {
   registry: StorybookRegistry
+  settings?: {
+    getAppConfig(key: string): Promise<string | null>
+    setAppConfig(key: string, value: string): Promise<void>
+  }
   now?: () => number
   /** Пауза между пробами готовности; в тестах — короткая. */
   probeIntervalMs?: number
@@ -57,6 +61,15 @@ interface Session {
   exitRe: RegExp
   /** Процесс запущен не нами: подхвачен по отвечающему порту. */
   adopted: boolean
+  restoring?: boolean
+}
+
+interface SessionIntent {
+  agentId: string
+  workspaceId: string
+  path: string
+  command: string
+  port: number
 }
 
 /** Экранные последовательности в логе бесполезны: панель показывает текст, а не терминал. */
@@ -76,7 +89,45 @@ const keyOf = (agentId: string, workspaceId: string, path: string): string => `$
 export class StorybookSessions {
   private readonly sessions = new Map<string, Session>()
 
-  constructor(private readonly deps: StorybookSessionsDeps) {}
+  private readonly intents = new Map<string, SessionIntent>()
+  private readonly attempted = new Set<string>()
+  private readonly restoreErrors = new Map<string, string>()
+  private readonly ready: Promise<void>
+  private pending: Promise<unknown> = Promise.resolve()
+
+  constructor(private readonly deps: StorybookSessionsDeps) {
+    this.ready = this.loadIntents()
+    void this.ready.catch(() => {})
+  }
+
+  private async loadIntents(): Promise<void> {
+    const raw = await this.deps.settings?.getAppConfig('storybook.sessions')
+    if (!raw) return
+    const intents: unknown = JSON.parse(raw)
+    if (!Array.isArray(intents)) throw new Error('Invalid Storybook session intents')
+    for (const intent of intents) {
+      if (!intent || typeof intent.agentId !== 'string' || typeof intent.workspaceId !== 'string'
+        || typeof intent.path !== 'string' || typeof intent.command !== 'string'
+        || !Number.isInteger(intent.port) || intent.port < 1 || intent.port > 65535) continue
+      this.intents.set(keyOf(intent.agentId, intent.workspaceId, intent.path), intent)
+    }
+  }
+
+  // Serialize persistence and lifecycle operations, including concurrent refresh requests.
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.pending.then(() => this.ready).then(operation)
+    this.pending = result.catch(() => {})
+    return result
+  }
+
+  private async saveIntents(): Promise<void> {
+    await this.deps.settings?.setAppConfig('storybook.sessions', JSON.stringify([...this.intents.values()]))
+  }
+
+  private async remember(intent: SessionIntent): Promise<void> {
+    this.intents.set(keyOf(intent.agentId, intent.workspaceId, intent.path), intent)
+    await this.saveIntents()
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now()
@@ -94,7 +145,7 @@ export class StorybookSessions {
       command: session?.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND,
       startedAt: session?.startedAt ?? null,
       readyAt: session?.readyAt ?? null,
-      error: session?.error ?? null,
+      error: session?.error ?? this.restoreErrors.get(keyOf(agentId, workspaceId, path)) ?? null,
       log: session?.log ?? '',
       adopted: session?.adopted ?? false
     }
@@ -109,7 +160,16 @@ export class StorybookSessions {
   }
 
   async start(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }): Promise<ProjectStorybookSession> {
+    return this.run(() => {
+      // A manual start supersedes any pending recovery for this process.
+      this.attempted.add(keyOf(input.agentId, input.workspaceId, input.path))
+      return this.startSession(input)
+    })
+  }
+
+  private async startSession(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }, restoring = false): Promise<ProjectStorybookSession> {
     const key = keyOf(input.agentId, input.workspaceId, input.path)
+    this.restoreErrors.delete(key)
     const existing = this.sessions.get(key)
     if (existing && existing.state !== 'stopped' && existing.state !== 'failed' && this.deps.registry.ptyLive(existing.ptyId)) {
       return this.snapshot(input.agentId, input.workspaceId, input.path)
@@ -119,13 +179,11 @@ export class StorybookSessions {
       throw new Error('Машина не в сети — Storybook запускать негде')
     }
     // Порт уже отвечает — значит Storybook подняли руками или он пережил перезапуск
-    // сервера (сессии живут в памяти). Второй процесс на том же порту всё равно не
+    // сервера. Второй процесс на том же порту всё равно не
     // встал бы, поэтому подключаемся к существующему, а не плодим сироту.
     const adoptPort = input.port ?? PORT_FROM
-    // Подхватываем только когда своих сессий на машине нет: иначе занятый порт — наш
-    // же Storybook соседней копии, и «подключиться» к нему значило бы показать чужие
-    // компоненты вместо запуска своего.
-    const ownsMachine = [...this.sessions.values()].some((s) => s.agentId === input.agentId && s.state !== 'stopped')
+    // Recovery knows the saved port; manual discovery must not adopt another workspace.
+    const ownsMachine = [...this.sessions.values()].some((s) => s.agentId === input.agentId && s.state !== 'stopped' && (!restoring || s.port === adoptPort))
     if (!ownsMachine && await this.storybookAnswers(input.agentId, adoptPort)) {
       const adopted: Session = {
         workspaceId: input.workspaceId, agentId: input.agentId, path: input.path,
@@ -136,6 +194,7 @@ export class StorybookSessions {
         probeTimer: null, exitRe: /$^/, adopted: true
       }
       this.sessions.set(key, adopted)
+      await this.remember({ ...input, command: adopted.command, port: adoptPort })
       return this.snapshot(input.agentId, input.workspaceId, input.path)
     }
     const port = this.pickPort(input.agentId, input.port)
@@ -161,7 +220,8 @@ export class StorybookSessions {
       log: '',
       probeTimer: null,
       exitRe: new RegExp(`${sentinel}(\\d+)__`),
-      adopted: false
+      adopted: false,
+      restoring
     }
     this.sessions.set(key, session)
     this.deps.registry.ptyStart(input.agentId, session.ptyId, 160, 48, input.path, (event) => {
@@ -175,28 +235,49 @@ export class StorybookSessions {
     })
     this.deps.registry.ptyInput(session.ptyId, `${command} ; printf '\\n${sentinel}%d__\\n' $?\r`)
     this.scheduleProbe(session)
+    await this.remember({ ...input, command: baseCommand, port })
     return this.snapshot(input.agentId, input.workspaceId, input.path)
   }
 
-  stop(agentId: string, workspaceId: string, path: string): ProjectStorybookSession {
-    const session = this.sessions.get(keyOf(agentId, workspaceId, path))
-    if (session) this.stopSession(session)
-    return this.snapshot(agentId, workspaceId, path)
+  async stop(agentId: string, workspaceId: string, path: string): Promise<ProjectStorybookSession> {
+    return this.run(async () => {
+      const key = keyOf(agentId, workspaceId, path)
+      this.intents.delete(key)
+      await this.saveIntents()
+      this.restoreErrors.delete(key)
+      const session = this.sessions.get(key)
+      if (session) this.stopSession(session)
+      return this.snapshot(agentId, workspaceId, path)
+    })
   }
 
   async restart(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }): Promise<ProjectStorybookSession> {
-    this.stop(input.agentId, input.workspaceId, input.path)
+    await this.stop(input.agentId, input.workspaceId, input.path)
     return await this.start(input)
   }
 
   /** Живая проверка: панель опрашивает состояние, пока идёт сборка. */
   async refresh(agentId: string, workspaceId: string, path: string, adoptPort: number = PORT_FROM): Promise<ProjectStorybookSession> {
-    const session = this.sessions.get(keyOf(agentId, workspaceId, path))
-    if (session && session.state !== 'stopped' && !session.adopted && !this.deps.registry.ptyLive(session.ptyId)) {
-      this.markStopped(session)
-    }
-    void adoptPort
-    return this.snapshot(agentId, workspaceId, path)
+    return this.run(async () => {
+      const key = keyOf(agentId, workspaceId, path)
+      const session = this.sessions.get(key)
+      if (session && session.state !== 'stopped' && !session.adopted && !this.deps.registry.ptyLive(session.ptyId)) {
+        this.markStopped(session)
+      }
+      const intent = this.intents.get(key)
+      if (intent && (!session || session.state === 'stopped' || session.state === 'failed')
+        && !this.attempted.has(key) && this.deps.registry.isOnline(agentId)) {
+        this.attempted.add(key)
+        try {
+          return await this.startSession(intent, true)
+        } catch (error) {
+          const failed = this.sessions.get(key)
+          if (failed) this.stopSession(failed)
+          this.restoreErrors.set(key, error instanceof Error ? error.message : String(error))
+        }
+      }
+      return this.snapshot(agentId, workspaceId, path, adoptPort)
+    })
   }
 
   /** Индекс живого Storybook: он же список компонентов с настоящими id стори. */
@@ -238,7 +319,7 @@ export class StorybookSessions {
   }
 
   private fail(session: Session, message: string): void {
-    session.state = 'failed'
+    session.state = session.restoring ? 'stopped' : 'failed'
     session.error = message
     session.readyAt = null
     if (session.probeTimer) clearTimeout(session.probeTimer)
