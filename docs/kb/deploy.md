@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-13
-checked: 7abd4085
+checked: 4ace7709
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -628,11 +628,25 @@ Core boundary: сервер видит только HTTP API
 
 ## HTTPS по IP
 
-`getUserMedia` (микрофон) работает только в secure-контексте, а у прода нет
-домена. Поэтому рядом с приложением стоит Caddy с `tls internal` и
-`default_sni <ip>` (браузер при заходе по голому IP не шлёт SNI). Сертификат
-локального CA — предупреждение браузера принимается один раз. Порты 80→443
-редиректом. Локальный CA и сертификаты — в томе `vc-caddy`.
+The repository Caddyfile configures the public `VC_PUBLIC_HOST` with the explicit
+Let's Encrypt ACME issuer (`https://acme-v02.api.letsencrypt.org/directory`) and
+`profile shortlived`. Caddy manages certificate issuance and renewal; preserve the
+`vc-caddy` volume and keep public ports 80/443 reachable for validation. This
+configuration was validated with Caddy 2.11.4. `default_sni` remains necessary for
+clients visiting a bare IP. HTTP on port 80 redirects to HTTPS. The compose-only
+hostname `caddy` retains `tls internal` and its existing local CA.
+
+Preparation is not proof of issuance: after a managed deployment, check the public
+certificate issuer, IP SAN and expiry from an external client with normal trust
+verification, then check login and an authenticated WebSocket. Observe Caddy's
+renewal scheduling and a subsequent renewal before claiming renewal acceptance.
+Do not disable TLS verification or install the old local CA as the public fix.
+
+Rollback: revert the public-host issuer block to `tls internal` through a reviewed
+configuration change and the normal release/deploy flow. Preserve `vc-caddy`;
+this restores the previous local-CA behavior, including its external trust warning.
+Never hand-edit the production checkout. A configuration-only validation does not
+contact ACME or verify public challenge reachability.
 
 ## Ротация логов контейнеров
 

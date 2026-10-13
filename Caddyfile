@@ -1,6 +1,6 @@
-# HTTPS-прокси для доступа по голому IP: браузеры дают микрофон (getUserMedia)
-# только secure-контексту, поэтому наружу отдаём https:// с сертификатом
-# локального CA Caddy (tls internal). Предупреждение браузера принимается один раз.
+# Public HTTPS uses Let's Encrypt short-lived IP certificates (Caddy >= 2.11).
+# Caddy manages issuance and renewal; keep ports 80/443 reachable and vc-caddy
+# persistent. The internal compose hostname retains its local CA.
 #
 # Адрес НЕ зашивается в файл: он менялся при переезде (45.135.182.251 →
 # 89.125.68.35), и захардкоженный хост уже привёл к расхождению — работающая
@@ -14,7 +14,12 @@
 }
 
 https://{$VC_PUBLIC_HOST} {
-	tls internal
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			profile shortlived
+		}
+	}
 	# Make — отдельный сервис: его пути идут в make:8788 напрямую, минуя ядро (ядро тоже умеет
 	# их переправлять — для доступа портом 8787 без Caddy). Внутренний API сервисов наружу закрыт.
 	handle /internal/* {

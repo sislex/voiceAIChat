@@ -11,8 +11,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const caddyfile = readFileSync(fileURLToPath(new URL('../../../Caddyfile', import.meta.url)), 'utf8')
-const compose = readFileSync(fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url)), 'utf8')
+const caddyfile = readFileSync(fileURLToPath(new URL('../../../Caddyfile', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+const compose = readFileSync(fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 describe('Caddyfile', () => {
   // @testCase TC3
@@ -33,6 +33,15 @@ describe('Caddyfile', () => {
   it('публичный хост подставляется из VC_PUBLIC_HOST', () => {
     expect(caddyfile).toContain('{$VC_PUBLIC_HOST}')
     expect(compose).toContain('VC_PUBLIC_HOST')
+  })
+
+  it('uses the public ACME shortlived issuer only for the public host', () => {
+    const publicBlock = caddyfile.split('https://{$VC_PUBLIC_HOST} {')[1]?.split('\n}')[0]
+    expect(publicBlock).toContain('issuer acme {')
+    expect(publicBlock).toContain('dir https://acme-v02.api.letsencrypt.org/directory')
+    expect(publicBlock).toContain('profile shortlived')
+    expect(publicBlock).not.toContain('tls internal')
+    expect(caddyfile.match(/profile shortlived/g)).toHaveLength(1)
   })
 
   it('внутреннее имя `caddy` обслуживается со своим сертификатом', () => {
