@@ -39,10 +39,11 @@ export function browserBatches(files, workers = browserWorkers(process.env.VC_E2
 export function browserArgs(batch) {
   return ['exec', '--', 'vitest', 'run', '--config', 'e2e/vitest.config.ts',
     batch.workers === 1 ? '--no-file-parallelism' : '--fileParallelism',
-    `--minWorkers=${batch.workers}`, `--maxWorkers=${batch.workers}`, ...batch.files]
+    `--minWorkers=${batch.workers}`, `--maxWorkers=${batch.workers}`, ...batch.files,
+    ...(process.env.GATE_TEST_REPORT ? ['--reporter=default', '--reporter=json', `--outputFile.json=${process.env.GATE_TEST_REPORT}`] : [])]
 }
 
-export function runBrowserBatches(batches, execute, record = () => {}) {
+export function runBrowserBatches(batches, execute, record = (_results) => {}) {
   const results = []
   for (const batch of batches) {
     const started = performance.now()
