@@ -41,6 +41,79 @@ function fakeRegistry(overrides: Partial<Fake> = {}): Fake {
 
 const target = { agentId: 'agent-1', workspaceId: 'ws:1', path: '/repo' }
 
+function settingsStore() {
+  let value: string | null = null
+  return {
+    getAppConfig: async () => value,
+    setAppConfig: async (_key: string, next: string) => { value = next }
+  }
+}
+
+describe('Storybook session recovery', () => {
+  it.each([true, false])('restores with surviving port=%s and preserves the original command', async serving => {
+    const settings = settingsStore()
+    const first = new StorybookSessions({ registry: fakeRegistry(), settings })
+    await first.start({ ...target, command: 'npm run custom-storybook', port: 24016 })
+    first.dispose()
+    const registry = fakeRegistry({ serving })
+    const restored = new StorybookSessions({ registry, settings })
+    try {
+      const results = await Promise.all([restored.refresh(...[target.agentId, target.workspaceId, target.path] as const), restored.refresh(target.agentId, target.workspaceId, target.path)])
+      expect(results[0]).toMatchObject({ state: serving ? 'running' : 'starting', port: 24016, adopted: serving })
+      expect(registry.starts).toHaveLength(serving ? 0 : 1)
+      if (!serving) expect(registry.inputs[0]).toContain('npm run custom-storybook -- --port 24016 --no-open --ci ;')
+      expect(JSON.parse((await settings.getAppConfig())!)).toEqual([{ ...target, command: 'npm run custom-storybook', port: 24016 }])
+    } finally { restored.dispose() }
+  })
+
+  it('removes an intent on explicit stop, including before the first refresh', async () => {
+    const settings = settingsStore()
+    const first = new StorybookSessions({ registry: fakeRegistry({ serving: true }), settings })
+    await first.start(target)
+    const restored = new StorybookSessions({ registry: fakeRegistry({ serving: true }), settings })
+    await restored.stop(target.agentId, target.workspaceId, target.path)
+    expect(await settings.getAppConfig()).toBe('[]')
+    const registry = fakeRegistry({ serving: true })
+    const next = new StorybookSessions({ registry, settings })
+    expect((await next.refresh(target.agentId, target.workspaceId, target.path)).state).toBe('stopped')
+    expect(registry.starts).toEqual([])
+    first.dispose()
+  })
+
+  it('waits for an online agent and attempts failed recovery only once', async () => {
+    const settings = settingsStore()
+    const first = new StorybookSessions({ registry: fakeRegistry({ serving: true }), settings })
+    await first.start(target)
+    first.dispose()
+    let online = false
+    const ptyStart = vi.fn(() => { throw new Error('launch unavailable') })
+    const restored = new StorybookSessions({ registry: fakeRegistry({ isOnline: () => online, ptyStart }), settings })
+    expect((await restored.refresh(target.agentId, target.workspaceId, target.path)).state).toBe('stopped')
+    expect(ptyStart).not.toHaveBeenCalled()
+    online = true
+    for (let i = 0; i < 2; i++) {
+      expect(await restored.refresh(target.agentId, target.workspaceId, target.path)).toMatchObject({ state: 'stopped', error: 'launch unavailable' })
+    }
+    expect(ptyStart).toHaveBeenCalledTimes(1)
+    expect(JSON.parse((await settings.getAppConfig())!)).toHaveLength(1)
+  })
+
+  it('reports asynchronous recovery failure as stopped without deleting the intent', async () => {
+    const settings = settingsStore()
+    const first = new StorybookSessions({ registry: fakeRegistry({ serving: true }), settings })
+    await first.start(target)
+    first.dispose()
+    const registry = fakeRegistry()
+    const restored = new StorybookSessions({ registry, settings })
+    await restored.refresh(target.agentId, target.workspaceId, target.path)
+    registry.emit({ t: 'pty.error', ptyId: 'storybook:ws:1', message: 'build failed' })
+    expect(await restored.refresh(target.agentId, target.workspaceId, target.path)).toMatchObject({ state: 'stopped', error: 'build failed' })
+    expect(registry.starts).toHaveLength(1)
+    expect(JSON.parse((await settings.getAppConfig())!)).toHaveLength(1)
+    restored.dispose()
+  })
+})
+
 describe('StorybookSessions', () => {
   it.each([
     [undefined, 'npm run storybook --'],
@@ -60,7 +133,7 @@ describe('StorybookSessions', () => {
       expect(result.command).toBe(`${expected} --port 24016 --no-open --ci`)
       expect(registry.inputs[0]).toContain(`${expected} --port 24016 --no-open --ci ; printf`)
     } finally {
-      sessions.stop(target.agentId, target.workspaceId, target.path)
+      await sessions.stop(target.agentId, target.workspaceId, target.path)
     }
   })
 
@@ -124,7 +197,7 @@ describe('StorybookSessions', () => {
     const registry = fakeRegistry()
     const sessions = new StorybookSessions({ registry, probeIntervalMs: 10 })
     await sessions.start(target)
-    const stopped = sessions.stop('agent-1', 'ws:1', '/repo')
+    const stopped = await sessions.stop('agent-1', 'ws:1', '/repo')
     expect(stopped.state).toBe('stopped')
     expect(registry.inputs.some((line) => line.endsWith('\x03'))).toBe(true)
     expect(registry.killed).toEqual(['storybook:ws:1'])
@@ -139,7 +212,7 @@ describe('StorybookSessions', () => {
     expect(session.adopted).toBe(true)
     expect(registry.starts).toEqual([])
     // Чужой процесс не убиваем: остановка только забывает сессию.
-    expect(sessions.stop('agent-1', 'ws:1', '/repo').state).toBe('stopped')
+    expect((await sessions.stop('agent-1', 'ws:1', '/repo')).state).toBe('stopped')
     expect(registry.killed).toEqual([])
   })
 
