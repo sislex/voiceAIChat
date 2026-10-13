@@ -59,6 +59,7 @@ export function runTests(group, { repository = root, spawn = spawnSync } = {}) {
   }
   console.log(`[test:files] ${group.path}: ${process.execPath} ${args.join(' ')}`)
   try {
+    /** @type {NodeJS.ProcessEnv} */
     const env = { ...process.env, GATE_TEST_REPORT: report, GATE_REPOSITORY_ROOT: repository }
     // A new runner must not inherit node:test's child-process sentinel.
     delete env.NODE_TEST_CONTEXT

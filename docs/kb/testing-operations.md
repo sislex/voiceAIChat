@@ -1048,7 +1048,19 @@ measurements directly. The full gate's test stage runs tooling and each workspac
 test script as separate processes, with at most three active by default; set
 `VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. Their output
 is buffered and printed in manifest order, all failing workspaces are reported,
-and `[gate:timing] tests/<workspace>` records individual durations. The ordinary
+and `[gate:timing] tests/<workspace>` records individual durations.
+Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
+file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling
+keeps the manifest command chain and gives each node:test invocation its own
+report, including prefixed package tests. Reports are collected before temporary
+files are removed; failed repository-relative paths are deduplicated across
+completed tasks. On failure, the last two lines are exactly
+`GATE-FAILED-STAGE: <stage>` followed by `GATE-FAILED-TESTS: <json array>`.
+The stage is `tests` for tooling/workspace failures, `browser-integration` for
+functional browser tests, or the other full-gate stage name. Non-test failures
+(for example, typecheck), missing reports and incomplete reports produce an
+empty file list when no failed files were identified. Success adds no markers.
+The ordinary
 `npm run test` command remains sequential for local use. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
