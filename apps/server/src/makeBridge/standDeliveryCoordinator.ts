@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { StandDelivery } from '@voicechat/shared'
+import { STAND_DELIVERY_ERROR_CODES, type StandDelivery } from '@voicechat/shared'
 import { projectModeError } from './projectAdapters.js'
 
 export interface StandDeliveryIntegration { url: string; token: string }
@@ -73,6 +73,35 @@ export function coordinatorDeliveries(value: unknown, repository: string, branch
   return [...deliveries.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
 }
 
+const refusal = z.object({ error: z.enum(STAND_DELIVERY_ERROR_CODES) }).strict()
+const refusalBodyLimit = 4 * 1024
+
+/** Bound retained bytes and stop reading at the cap; never expose upstream diagnostics. */
+async function coordinatorRefusal(response: Response): Promise<string | undefined> {
+  const reader = response.body?.getReader()
+  if (!reader) return undefined
+  const bytes = new Uint8Array(refusalBodyLimit)
+  let size = 0
+  try {
+    while (size < refusalBodyLimit) {
+      const { done, value } = await reader.read()
+      if (done) {
+        const parsed = refusal.safeParse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size))))
+        return parsed.success ? parsed.data.error : undefined
+      }
+      if (value.byteLength >= refusalBodyLimit - size) return undefined
+      bytes.set(value, size)
+      size += value.byteLength
+    }
+  } catch {
+    // Invalid, interrupted or oversized bodies retain the generic failure.
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+  return undefined
+}
+
 export class StandDeliveryCoordinator {
   private cache = new Map<string, { expires: number; value: unknown }>()
   constructor(private readonly integration = standDeliveryIntegration, private readonly fetchImpl: typeof fetch = fetch) {}
@@ -90,8 +119,11 @@ export class StandDeliveryCoordinator {
         ...(body ? { body: JSON.stringify(body) } : {})
       })
     } catch { projectModeError(503, 'stand_delivery_unavailable') }
-    // Never relay upstream bodies: they can contain credentials or internal diagnostics.
-    if (!response.ok) projectModeError(response.status === 409 ? 409 : 502, 'stand_delivery_request_failed')
+    if (!response.ok) {
+      const code = await coordinatorRefusal(response)
+      if (code && [400, 403, 409, 503].includes(response.status)) projectModeError(response.status, code)
+      projectModeError(response.status === 409 ? 409 : 502, 'stand_delivery_request_failed')
+    }
     try { return await response.json() as unknown } catch { projectModeError(502, 'invalid_delivery_response') }
   }
 

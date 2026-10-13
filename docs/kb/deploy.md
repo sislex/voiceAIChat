@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-12
-checked: 638e6775
+updated: 2026-10-13
+checked: 7abd4085
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2469,6 +2469,16 @@ and repeated apply. These checks do not commission or deploy an environment.
 (`owner_image_switches.py`, заранее явный `docker pull`).
 
 ## Managed stands
+
+Core persists Storybook session intents (agent, workspace, path, original command,
+and selected port) in app config `storybook.sessions`. After a Core restart, the
+first session refresh with an online agent adopts the recorded port when its
+`/index.json` identifies Storybook; otherwise it launches the saved command again.
+Each intent gets at most one recovery attempt per Core process. Recovery failures
+report `stopped` with an error and retain the intent for the next restart or a
+manual start. Explicit Stop removes the intent, including before recovery; closing
+Core preserves it. Opening stand Storybook uses this same recovery path (a newly
+launched process must finish becoming ready before it can be opened).
 
 `deploy/compose.stand.yml` layers over `docker-compose.yml`: Core publishes only
 `${VC_STAND_LAN_ADDRESS:-127.0.0.1}:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses

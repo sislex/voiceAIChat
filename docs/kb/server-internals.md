@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-12
-checked: 0a2cee95
+updated: 2026-10-13
+checked: 7abd4085
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -884,6 +884,14 @@ tasks may be top-level or nested under `runs`. Optional status `events` apply
 are `submitted`, `gating`, `integrated`, `rejected`; a rejected gate log tail is
 limited to 16 KiB. History is reconstructed from the coordinator after restart,
 not synthesized from local submissions.
+
+For non-success responses, Core reads a bounded error body (4 KiB cap), cancels
+the remaining stream, and accepts only a JSON object containing a single `error`
+string from Shared's `STAND_DELIVERY_ERROR_CODES`. Those refusals preserve the
+coordinator's 400/403/409/503 status. Unknown codes, extra fields, malformed or
+interrupted bodies, bodies reaching the cap, and other statuses retain
+`stand_delivery_request_failed` (409 for upstream 409, otherwise 502). No upstream
+diagnostics or other body fields are returned or logged; route shapes are unchanged.
 
 Sync runs `git fetch origin` followed, only on success, by
 `git merge --no-edit origin/dev` in the live copy. `behind` counts commits still
