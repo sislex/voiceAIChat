@@ -1488,9 +1488,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
-  // Сессии живут в памяти процесса — перезапуск сервера оставляет dev-сервер сиротой,
-  // поэтому панель показывает «остановлен» и предлагает запустить заново.
   const storybookSessions = new StorybookSessions({
+    settings: db.settings,
     registry: {
       ptyStart: (agentId, ptyId, cols, rows, cwd, emit) => agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
       ptyInput: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),

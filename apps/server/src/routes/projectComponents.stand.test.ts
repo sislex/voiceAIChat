@@ -3,7 +3,44 @@ import Fastify from 'fastify'
 import { registerProjectComponentsRoutes } from './projectComponents.js'
 import { registerMakePreviewInspector, registerReaderProxy } from '../readerBridge/proxy.js'
 import { gzipSync } from 'node:zlib'
+import { StorybookSessions, type StorybookRegistry } from '../components/storybookSessions.js'
+import { VoiceChatDb } from '../db/database.js'
 const uuid = '11111111-1111-4111-8111-111111111111'
+
+it('opens stand Storybook after Core session reconstruction using persisted settings', async () => {
+  const db = new VoiceChatDb(':memory:')
+  const workspace = 'stand:' + [uuid, uuid, uuid].join('/')
+  const registry: StorybookRegistry = {
+    ptyStart: vi.fn(), ptyInput: vi.fn(), ptyKill: vi.fn(), ptyLive: () => false,
+    isOnline: () => true, nameOf: () => 'machine',
+    http: vi.fn(async () => ({ status: 200, headers: {}, bodyBase64: Buffer.from(JSON.stringify({ entries: {} })).toString('base64') }))
+  }
+  const original = new StorybookSessions({ registry, settings: db.settings })
+  const app = Fastify()
+  const access = vi.fn(async () => ({ url: 'http://core:24016/', expiresAt: 123 }))
+  let restored: StorybookSessions | undefined
+  try {
+    await original.start({ agentId: 'machine', workspaceId: workspace, path: '/live', port: 24017 })
+    original.dispose()
+    restored = new StorybookSessions({ registry, settings: db.settings })
+    app.addHook('preHandler', async req => { req.user = { name: 'alice', role: 'developer' } as NonNullable<typeof req.user> })
+    registerProjectComponentsRoutes(app, {
+      git: { resolve: vi.fn(async () => ({ agentId: 'machine', path: '/live' })) } as never,
+      storybook: restored, tickets: {} as never, standProxy: { access }
+    })
+    const response = await app.inject({ method: 'POST', url: '/api/projects/project/components/storybook/open',
+      headers: { host: 'core:24018' }, payload: { workspace } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ kind: 'proxy', url: 'http://core:24016/' })
+    expect(access).toHaveBeenCalledWith('alice', uuid, uuid, 'core:24018', 24017, { inject: 'make-inspector' })
+    expect(registry.ptyStart).not.toHaveBeenCalled()
+  } finally {
+    original.dispose()
+    restored?.dispose()
+    await app.close()
+    await db.close()
+  }
+})
 it.each([true, false])('opens stand Storybook with proxy enabled=%s', async enabled => {
   const app = Fastify()
   app.addHook('preHandler', async req => { req.user = { name: 'alice', role: 'developer' } as NonNullable<typeof req.user> })
