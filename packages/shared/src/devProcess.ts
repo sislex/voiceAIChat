@@ -35,6 +35,20 @@ export interface DevProcessStartResult extends DevProcessStatus {
   startedAt: number
 }
 export interface DevProcessStopResult extends DevProcessTarget { state: 'stopped' }
+/**
+ * Stand-wide removal (agent 0.25+): the agent stops every component and gateway of `standId`,
+ * `<standId>-live` and `<standId>-gateway` and removes their worktrees and manifests. Older agents
+ * reject or ignore it; callers fall back to per-component `devProcess.stop`.
+ */
+export interface DevProcessStopStandRequest { standId: string }
+export interface DevProcessStopStandResult {
+  standId: string
+  state: 'stopped'
+  /** Components that were registered and are now stopped. */
+  stopped: DevProcessTarget[]
+  /** Stand ids whose gateway was stopped. */
+  gateways: string[]
+}
 export interface DevProcessLogsResult extends DevProcessTarget {
   /** Secrets must be redacted by the agent before transmission. */
   lines: Array<{ stream: 'stdout' | 'stderr'; text: string; at: number }>
@@ -47,10 +61,12 @@ export interface DevProcessRpc {
   'devProcess.stop': { request: DevProcessStopRequest; result: DevProcessStopResult }
   'devProcess.status': { request: DevProcessStatusRequest; result: DevProcessStatus }
   'devProcess.logs': { request: DevProcessLogsRequest; result: DevProcessLogsResult }
+  'devProcess.stopStand': { request: DevProcessStopStandRequest; result: DevProcessStopStandResult }
 }
 export type DevProcessMethod = keyof DevProcessRpc
 const methods = {
-  'devProcess.start': true, 'devProcess.stop': true, 'devProcess.status': true, 'devProcess.logs': true
+  'devProcess.start': true, 'devProcess.stop': true, 'devProcess.status': true, 'devProcess.logs': true,
+  'devProcess.stopStand': true
 } as const satisfies Record<DevProcessMethod, true>
 export const DEV_PROCESS_REQUEST_TYPES = Object.keys(methods) as DevProcessMethod[]
 export type DevProcessRequestMessage = {
