@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { RELEASE_STEP_ORDER, assertReleaseBranch, compareReleaseBranches, normalizeReleaseVersionInput, productionReadiness, releaseChangeGroup, releaseFailureSummary, releaseVersion, suggestNextReleaseVersion } from './release'
 
+describe('regression failure summaries', () => {
+  const tap = 'not ok 1 - test\n  ---\n  error: |-\n    assertion failed\n  ...'
+  it('skips TAP block scalars and uses the regression stage label', () => {
+    expect(releaseFailureSummary('regression', tap)).toBe('Регрессионные проверки не прошли')
+    expect(releaseFailureSummary('regression', `Regression, стадия 1/2 завершилась с ошибкой\n${tap}`)).toBe('Regression, стадия 1/2 завершилась с ошибкой')
+    expect(releaseFailureSummary('regression', `${tap}\nGATE-FAILED-STAGE: old\nGATE-FAILED-STAGE: tooling`)).toBe('GATE-FAILED-STAGE: tooling')
+  })
+  it('prefers the failed file list', () => {
+    expect(releaseFailureSummary('regression', tap, ['a.test.ts', 'b.test.ts'])).toBe('2 упавших тестов: a.test.ts, b.test.ts')
+  })
+})
+
 describe('release branch contract', () => {
   it.each([
     ['release/1.2.3', '1.2.3'],
