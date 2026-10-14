@@ -1,0 +1,240 @@
+{
+  "removed": [
+    {
+      "file": "vendor/sislex-llm-runner-0.3.1-8ec5100952c3.tgz",
+      "bytes": 43865,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislex-runner-contracts-0.1.1-8ec5100952c3.tgz",
+      "bytes": 222006,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-billing-1.2.0-9ecb733d50dd.tgz",
+      "bytes": 20186,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-billing-1.2.2-7858a8ba3bae.tgz",
+      "bytes": 25017,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-core-ui-1.0.0-e5f926d30031.tgz",
+      "bytes": 15091932,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-core-ui-1.4.3-dfd4287674a0.tgz",
+      "bytes": 15121071,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-core-ui-1.4.4-29f9fbf79e29.tgz",
+      "bytes": 15127045,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-core-ui-1.4.6-e077670f99ff.tgz",
+      "bytes": 15135942,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-core-ui-1.4.7-70d45ac42e57.tgz",
+      "bytes": 15135748,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-desktop-1.0.10-f77627d3e363.tgz",
+      "bytes": 4259798,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-desktop-1.0.2-05f2d6c971d2.tgz",
+      "bytes": 4242092,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-desktop-1.0.6-b97cc862b134.tgz",
+      "bytes": 4254269,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-desktop-1.0.7-f41eea3afbe6.tgz",
+      "bytes": 4258719,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-desktop-1.0.9-db8c2f0e995a.tgz",
+      "bytes": 4259763,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-identity-1.4.2-19ff4b194350.tgz",
+      "bytes": 343652,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-identity-1.4.2-28256e39f406.tgz",
+      "bytes": 343702,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-identity-1.4.2-c7aaebd15a60.tgz",
+      "bytes": 335236,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-make-1.2.1-10193c459dc0.tgz",
+      "bytes": 4462426,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-make-1.2.1-e4c5676feeae.tgz",
+      "bytes": 4195272,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-make-1.2.3-c57a1696f6d9.tgz",
+      "bytes": 4462425,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-playwright-reader-1.2.2-0fbdd4493852.tgz",
+      "bytes": 297226,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-playwright-reader-1.2.2-6cd0c54f0f7c.tgz",
+      "bytes": 294490,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-web-reader-1.2.1-295807f94d7c.tgz",
+      "bytes": 302054,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-web-reader-1.2.1-90b3883a7029.tgz",
+      "bytes": 4057198,
+      "sources": []
+    },
+    {
+      "file": "vendor/sislexa-web-reader-1.2.2-9ee5d078076e.tgz",
+      "bytes": 4057205,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-browser-contracts-1.1.0-6cd0c54f0f7c.tgz",
+      "bytes": 96996,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-make-contracts-1.3.0-e4c5676feeae.tgz",
+      "bytes": 61894,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-make-contracts-1.6.0-11d6f03a8356.tgz",
+      "bytes": 66145,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-playwright-reader-contracts-1.2.0-6cd0c54f0f7c.tgz",
+      "bytes": 1921,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.14-31105e990911.tgz",
+      "bytes": 290135,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.15-0a7ca72c4ebf.tgz",
+      "bytes": 293320,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.16-ff545c229566.tgz",
+      "bytes": 294327,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.17-5d599c2d4f2e.tgz",
+      "bytes": 295076,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.18-182c0773a2ae.tgz",
+      "bytes": 295727,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.19-6eb18257f30f.tgz",
+      "bytes": 296097,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.20-1654ee1de8f9.tgz",
+      "bytes": 296406,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.21-fcf5f27bcc29.tgz",
+      "bytes": 296475,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.22-2374d42bebbf.tgz",
+      "bytes": 298677,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.23-d6509beb7835.tgz",
+      "bytes": 298672,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.24-d1f695c1a28a.tgz",
+      "bytes": 301763,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.25-b9fb6f8fdc76.tgz",
+      "bytes": 301763,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.26-7117c54e28b6.tgz",
+      "bytes": 303081,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.27-39a478888a3a.tgz",
+      "bytes": 303821,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.28-28e9e61f4571.tgz",
+      "bytes": 303828,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-shared-0.1.29-7d71eb7c0230.tgz",
+      "bytes": 304984,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-web-reader-contracts-1.3.0-295807f94d7c.tgz",
+      "bytes": 11599,
+      "sources": []
+    },
+    {
+      "file": "vendor/voicechat-web-reader-contracts-1.3.0-fd44037af122.tgz",
+      "bytes": 11597,
+      "sources": []
+    }
+  ],
+  "bytes": 125372643
+}

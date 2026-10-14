@@ -116,6 +116,7 @@ describe('development readiness gate', () => {
   // QA без него не запускался вовсе — задача застревала после разработки.
   // @testCase TC-13
   // @testCase TC-BRIEF-CONTRACT
+  // @testCase TC-09
   it('requires a required UI scenario when the task touches UI', () => {
     const input = ready()
     input.uiImpact = 'existing_components'
@@ -141,6 +142,7 @@ describe('development readiness gate', () => {
   })
 
   // @testCase TC-13
+  // @testCase TC-09
   it('requires Storybook coverage or an explicit alternative for UI work', () => {
     const input = ready()
     input.uiImpact = 'new_components'
@@ -152,6 +154,7 @@ describe('development readiness gate', () => {
   })
   // @testCase TC-13
   // @testCase TC-BRIEF-CONTRACT
+  // @testCase TC-09
   it('requires non-empty coverage for explicit Storybook exclusions in schema v2', () => {
     const input = ready()
     input.schemaVersion = 2
