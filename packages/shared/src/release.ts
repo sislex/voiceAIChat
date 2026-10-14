@@ -97,11 +97,14 @@ const RELEASE_FAILURE_FALLBACK: Record<ReleaseStepKind, string> = {
   health_check: 'Production не прошёл health-check'
 }
 
-export function releaseFailureSummary(kind: string, log: string): string {
+export function releaseFailureSummary(kind: string, log: string, failedTests: readonly string[] = []): string {
   const lines = log.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-  const explicit = lines.find(line => /^(error|fatal|ошибка|не удалось|production|health-check|база знаний)/i.test(line))
+  if (failedTests.length) return `${failedTests.length} упавших тестов: ${failedTests.join(', ')}`.slice(0, 240)
+  const stage = [...lines].reverse().find(line => line.startsWith('GATE-FAILED-STAGE:'))
+    ?? lines.find(line => /^(Regression|Performance regression|System regression|Установка зависимостей Regression).*(:|завершилась)/.test(line))
+  const explicit = lines.filter(line => !/^[\w-]+:\s*[|>][+-]?\s*$/.test(line)).find(line => /^(error|fatal|ошибка|не удалось|production|health-check|база знаний)/i.test(line))
   const fallback = RELEASE_FAILURE_FALLBACK[kind as ReleaseStepKind] ?? lines[0] ?? 'Шаг релиза завершился ошибкой'
-  return (explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
+  return (stage ?? explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
 }
 
 /** Облегчённая строка списка: без шагов, логов и служебных снимков рана. */
@@ -141,6 +144,8 @@ export interface ProjectRelease {
   deletedAt?: number | null
   archivedAt?: number | null
   steps: ReleaseStep[]
+  failedTests?: string[]
+  failureTail?: string | null
   composition?: ReleaseCompositionEntry[]
 }
 export function releaseVersion(branch: string): string | null {
