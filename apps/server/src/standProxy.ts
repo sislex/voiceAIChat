@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { canInjectInspector, injectInspectorHtml, inspectorScriptUrl } from './htmlInject.js'
+import { canInjectInspector, injectInspectorHtml } from './htmlInject.js'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { REST, type DevStandAccessResponse } from '@voicechat/shared'
@@ -41,6 +41,7 @@ type Lease = Target & StandProxyAccessOptions & { user: string; projectId: strin
 export interface StandProxyDeps {
   ports: number[]
   publicHost?: string
+  publicScheme?: 'http' | 'https'
   member(user: string, project: string): Promise<boolean>
   stand(user: string, project: string, stand: string): Promise<Target>
   session(cookie: string): Promise<string | null>
@@ -83,7 +84,7 @@ export class StandProxy {
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()
-          const candidate: Lease = { ...target, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: 'http://' + hostname + ':' + port, server, sockets: new Set() }
+          const candidate: Lease = { ...target, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
           server.on('connection', socket => { candidate.sockets.add(socket); socket.on('close', () => candidate.sockets.delete(socket)) })
           server.on('request', (req, res) => { void this.forward(candidate, req, res).catch(() => res.destroy()) })
           server.on('upgrade', (req, socket, head) => {
@@ -131,7 +132,7 @@ export class StandProxy {
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
       if (res) {
         res.on('close', () => { response.destroy(); tunnel.destroy() })
-        const scriptUrl = inspectorScriptUrl(req.headers.host, Boolean((req.socket as Duplex & { encrypted?: boolean }).encrypted))
+        const scriptUrl = lease.origin + INSPECTOR_SCRIPT_PATH
         if (lease.inject === 'make-inspector' && req.method !== 'HEAD' && response.statusCode !== 204 && response.statusCode !== 304 && scriptUrl && canInjectInspector(headers, scriptUrl)) {
           void (async () => {
             const chunks: Buffer[] = []

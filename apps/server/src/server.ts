@@ -629,6 +629,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   const standProxy = new StandProxy({
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
+    publicScheme: opts.config.standProxyPublicScheme,
     session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
     connect: (machine, port) => agentRegistry.connectCoreTunnel(machine, port),
     inspectorScript: async cookie => {

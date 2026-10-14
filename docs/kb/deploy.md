@@ -2679,15 +2679,23 @@ Storybook session port when the pool is enabled; otherwise it uses the machine
 bridge. Production commissioning still requires the published port pool and
 browser WebSocket/HMR verification.
 
-Core's `POST /api/dev-stand-access` leases a same-host HTTP port to the current
+Core's `POST /api/dev-stand-access` leases a same-host public port to the current
 session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
 enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
 optional hostname override, otherwise Core uses the access request's Host
 (without its original port). Keep this hostname equal to the browser's Core
 hostname so its session cookie reaches the listener.
 
+`VC_STAND_PROXY_PUBLIC_SCHEME` accepts `http` or `https`; by default it follows
+the protocol of `VC_PUBLIC_URL`, falling back to `http` when that URL is absent.
+Make previews and inspector script tags preserve this lease origin, including
+behind TLS termination. Matching HTTPS Origin headers are rewritten to the
+HTTP loopback gateway origin just like HTTP lease origins.
+
 The optional `deploy/docker-compose.yml` overlay publishes the same host and
-container range and forwards both variables to the `voicechat` service:
+container range on `caddy`, only exposes it internally on `voicechat`, and
+forwards the proxy configuration variables to Core. The root `Caddyfile` serves
+ports 8790–8794 with `tls internal` and forwards each to the same Core port:
 
 ```sh
 VC_STAND_PROXY_PORTS=8790-8794 docker compose -f docker-compose.yml -f deploy/docker-compose.yml up -d
@@ -2705,9 +2713,10 @@ agent connection, including when Machines runs as a separate service.
 
 Operator commissioning is separate from code delivery: publish/open the chosen
 range and verify browser login, SSE and WebSocket through the actual same-host
-address. These listeners serve HTTP, as in the IP-based stand contract; an HTTPS
-Core deployment needs TLS termination on the exposed ports to preserve Secure
-session cookies and avoid mixed-content restrictions.
+address. Core listeners serve HTTP inside Compose; Caddy terminates HTTPS on
+the published ports to preserve Secure session cookies and avoid mixed content.
+Clients must trust Caddy's internal CA. Keep the configured pool aligned with
+the Caddy lease site addresses when changing the default range.
 
 Stand deliveries: `VC_STAND_DELIVERY_PROJECTS` (JSON `{projectId: {url, token}}`) is passed from `.env` to the
 `voicechat` service by `docker-compose.yml`; the coordinator must listen on an address reachable from the

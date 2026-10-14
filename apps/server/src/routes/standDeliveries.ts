@@ -18,6 +18,8 @@ export function registerStandDeliveryRoutes(app: FastifyInstance, service: Stand
     handle(reply, () => service.list(uid(req), req.params.id, req.params.standId)))
   app.post<{ Params: Params }>(base + '/deliveries', (req, reply) =>
     handle(reply, () => service.submit(uid(req), req.params.id, req.params.standId, req.body)))
+  app.get<{ Params: Params }>(base + '/sync-dev/status', (req, reply) =>
+    handle(reply, () => service.behind(uid(req), req.params.id, req.params.standId)))
   app.post<{ Params: Params }>(base + '/sync-dev', (req, reply) =>
     handle(reply, () => service.sync(uid(req), req.params.id, req.params.standId)))
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
+import { createMakeCoreDispatcher } from './coreRpc.js'
 import type { MakeCore } from '@voicechat/make-contracts'
 import { registerInternalRoutes } from '../routes/internal.js'
 
@@ -58,4 +59,20 @@ describe('/internal/make/core project methods', () => {
       expect(fn).not.toHaveBeenCalled()
     } finally { await app.close() }
   })
+})
+
+it('preserves and validates conversation worktree options over the Core RPC', async () => {
+  const result = { standId: null, hostProjectId: null, machineId: null, component: 'core-ui', branch: null,
+    workingCopyPath: null, phase: 'idle', previewUrl: null, directUrls: [], options: {
+      component: 'core-ui', repository: 'sislex/sislexa-core-ui', machines: [], stands: [{
+        standId: 's', hostProjectId: 'p', hostProjectName: 'Host', machineId: 'a', machineName: 'Agent',
+        online: true, status: 'running', componentSource: 'base', branch: null, sha: null,
+        conversationWorktree: { branch: 'make/conversation' }
+      }]
+    } }
+  const dispatch = createMakeCoreDispatcher({ makeStand: async () => result } as unknown as MakeCore)
+  const request = { method: 'makeStand', args: ['alice', 'conversation', { op: 'options' }] }
+  expect(await dispatch(request)).toEqual(result)
+  result.options.stands[0]!.conversationWorktree.branch = ''
+  await expect(dispatch(request)).rejects.toThrow()
 })

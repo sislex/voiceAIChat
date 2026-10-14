@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { shellQuote } from '../util/shell.js'
 import type { StandMachines } from './standWorkspace.js'
-import type { StandSyncResult } from '@voicechat/shared'
+import type { StandSyncResult, StandSyncStatus } from '@voicechat/shared'
 
 // Fixed program; paths and refs travel as JSON, never shell source.
 export const STAND_DELIVERY_PROGRAM = String.raw`
@@ -30,6 +30,9 @@ try {
   if (a.action === 'head') {
     git(['check-ref-format', '--branch', a.branch]);
     result = { headSha: git(['rev-parse', '--verify', 'HEAD^{commit}']).output.trim() };
+  } else if (a.action === 'behind') {
+    git(['fetch', 'origin', 'dev'], false, 'stand_fetch_failed');
+    result = { behind: Number(git(['rev-list', '--count', 'HEAD..origin/dev']).output.trim()) };
   } else {
     // Unmerged entries belong to a previous conflicted sync and are reported as conflicts below.
     const status = git(['status', '--porcelain', '--untracked-files=no']).output.split('\n').filter(Boolean);
@@ -54,8 +57,8 @@ const sync = z.object({ merged: z.boolean(), behind: z.number().int().nonnegativ
 export interface StandDeliveryWorkspace { agentId: string; root: string; allowedRoot: string; repository: string }
 export async function standDeliveryCommand(
   machines: StandDeliveryMachines, user: string, workspace: StandDeliveryWorkspace,
-  operation: { action: 'head'; branch: string } | { action: 'sync' }
-): Promise<{ headSha: string } | StandSyncResult> {
+  operation: { action: 'head'; branch: string } | { action: 'sync' } | { action: 'behind' }
+): Promise<{ headSha: string } | StandSyncResult | StandSyncStatus> {
   const payload = Buffer.from(JSON.stringify({ ...workspace, ...operation })).toString('base64')
   let result: Awaited<ReturnType<StandDeliveryMachines['exec']>>
   try {
@@ -75,7 +78,7 @@ export async function standDeliveryCommand(
     const code = error.success ? error.data.error : 'stand_git_failed'
     throw Object.assign(new Error(code), { statusCode: code === 'stand_git_timeout' ? 504 : 409 })
   }
-  const parsed = (operation.action === 'head' ? head : sync).safeParse(value)
+  const parsed = (operation.action === 'head' ? head : operation.action === 'behind' ? sync.pick({ behind: true }) : sync).safeParse(value)
   if (!parsed.success) throw Object.assign(new Error('invalid_stand_agent_response'), { statusCode: 502 })
   return parsed.data
 }

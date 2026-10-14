@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-14
-checked: 4641d42b
+checked: 6fb7eb5279b2ef6448d9877cff1c217612609bd6
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -812,6 +812,13 @@ proxy lease service directly.
 Options match the project's GitHub repository against `DEV_COMPONENT_REGISTRY`.
 They include the conversation project's stands and other accessible projects'
 stands containing that component, with machine names and live branch/head.
+For online, authorized host machines, each option also includes
+`conversationWorktree?: { branch }` when the read-only agent `inspect` action
+finds a registered `<reposRoot>/make-worktrees/<conversationId>` via
+`git worktree list --porcelain`. Inspection does not fetch, clone or create a
+worktree; missing, detached or unavailable worktrees omit the field. Core's
+RPC compatibility adapter preserves and validates this extension with older
+Make contracts. The Make consumer must support the field to display it.
 Details are requested in parallel and only for stands on online machines:
 Kanban holds a details request for an offline machine for about 30 seconds,
 longer than Make's 15-second Core timeout. Offline stands come from the stand
@@ -866,7 +873,15 @@ Core owns the concrete routes registered by `routes/standDeliveries.ts`:
 `POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
 `{branch, title}` and returns the coordinator's `{runId, taskId}`;
 `GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
-`POST .../sync-dev` returns `StandSyncResult`. Both contracts and URL builders
+`POST .../sync-dev` returns `StandSyncResult`.
+`GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
+`git fetch origin dev` and `git rev-list --count HEAD..origin/dev`, without
+merging or modifying the working tree. It permits read access, including dirty
+trees, checks the same machine/repository/path boundaries, and shares the
+per-machine/root busy lock with sync and delivery submission. Fetch failures
+retain `stand_fetch_failed`. Git push sets the branch upstream to
+`origin/<branch>` on success, replacing an inherited `origin/dev` upstream so
+Repository ahead/behind counters compare against the pushed branch. Both contracts and URL builders
 are exported from Shared. These exact routes take precedence over the Kanban proxy.
 
 `makeBridge/standDeliveries.ts` checks project access, repository write permission

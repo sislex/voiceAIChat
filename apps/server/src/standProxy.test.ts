@@ -39,6 +39,12 @@ describe('stand proxy policy', () => {
     expect(standHeaders({ cookie: 'vc_csrf=core-token', 'x-vc-csrf': 'core-token' }, 'key', 'http://core', 9000)['x-vc-csrf']).toBeUndefined()
     expect(standCookies(['vc_session=x; Domain=core; Path=/; HttpOnly; SameSite=Lax', '__Secure-vc_session=y; Secure'], 'key')).toEqual(['sxs_key_vc_session=x; Path=/; HttpOnly; SameSite=Lax', 'sxs_key___Secure-vc_session=y; Secure'])
   })
+  it('rewrites only the exact HTTPS lease Origin to the HTTP gateway', () => {
+    expect(standHeaders({ origin: 'https://core:8790' }, 'key', 'https://core:8790', 9000).origin).toBe('http://127.0.0.1:9000')
+    for (const origin of ['http://core:8790', 'https://core:8791', 'https://foreign']) {
+      expect(standHeaders({ origin }, 'key', 'https://core:8790', 9000).origin).toBe(origin)
+    }
+  })
   it('checks membership before Kanban, fails disabled, registers outside projects', async () => {
     const d = deps(); d.ports = []; const proxy = new StandProxy(d); cleanup.push(() => proxy.close())
     d.member.mockResolvedValue(false)
@@ -52,7 +58,7 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
-  it('rewrites only opted-in HTML leases and preserves other upstream bytes and headers', async () => {
+  it.each(['http', 'https'] as const)('injects the %s lease origin behind TLS termination and preserves other responses', async publicScheme => {
     const html = '<html><head></head><body>Привет</body></html>'
     const gateway = createServer((req, res) => {
       const path = req.url!
@@ -70,14 +76,16 @@ describe('stand proxy listeners', () => {
     await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
     cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
     const inspectorScript = vi.fn(async (cookie: string) => ({ statusCode: 200, headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' }, body: Buffer.from('window.__inspector=' + JSON.stringify(cookie)) }))
-    const proxy = new StandProxy({ ...deps(), ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript })
+    const proxy = new StandProxy({ ...deps(), publicScheme, ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript })
     cleanup.push(() => proxy.close())
     const ordinary = await proxy.access('alice', 'p', 's', '127.0.0.1')
     const opted = await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })
     expect(opted.url).not.toBe(ordinary.url)
+    expect(opted.url).toBe(publicScheme + '://127.0.0.1:' + ports[1] + '/')
     expect((await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
     const read = (base: string, path: string) => new Promise<{ body: Buffer; headers: import('node:http').IncomingHttpHeaders; status: number | undefined }>((resolve, reject) => {
-      const req = request(new URL(path, base), { headers: { cookie: 'vc_session=alice', host: 'incoming.example:24016' } }, res => {
+      // Caddy terminates TLS; the Core listener receives HTTP with an unrelated Host.
+      const req = request(new URL(path, base.replace(/^https:/, 'http:')), { agent: false, headers: { cookie: 'vc_session=alice', host: 'incoming.example:24016' } }, res => {
         const chunks: Buffer[] = []
         res.on('data', chunk => chunks.push(chunk)); res.on('error', reject)
         res.on('end', () => resolve({ body: Buffer.concat(chunks), headers: res.headers, status: res.statusCode }))
@@ -87,7 +95,7 @@ describe('stand proxy listeners', () => {
     for (const path of ['/', '/gzip', '/br', '/deflate', '/body', '/chunked']) {
       const result = await read(opted.url, path)
       expect(result.headers['transfer-encoding']).toBeUndefined()
-      const script = '<script src="http://incoming.example:24016/api/make/inspector.js" data-vc-make-inspector></script>'
+      const script = '<script src="' + opted.url + 'api/make/inspector.js" data-vc-make-inspector></script>'
       expect(result.body.toString()).toBe(path === '/body' ? '<body class="app">' + script + 'hello</body>' : html.replace('</head>', script + '</head>'))
       expect(result.status).toBe(200)
       expect(result.headers['content-length']).toBe(String(result.body.length))

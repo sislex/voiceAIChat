@@ -45,7 +45,18 @@ try {
   if (fs.existsSync(parent) && fs.realpathSync(parent) !== parent) fail('path_outside_working_copy');
   if (fs.existsSync(project) && fs.realpathSync(project) !== project) fail('path_outside_working_copy');
   let result;
-  if (a.action === 'prepare') {
+  if (a.action === 'inspect') {
+    result = {};
+    if (fs.existsSync(path.join(project, '.git'))) {
+      const existing = git(project, ['worktree', 'list', '--porcelain']).output.split('\n\n')
+        .find(entry => entry.split('\n').includes('worktree ' + root));
+      if (existing && fs.existsSync(root)) {
+        if (fs.realpathSync(root) !== root) fail('path_outside_working_copy');
+        const branch = existing.split('\n').find(line => line.startsWith('branch refs/heads/'))?.slice(18);
+        if (branch) result = { branch };
+      }
+    }
+  } else if (a.action === 'prepare') {
     if (!fs.existsSync(path.join(project, '.git'))) {
       if (fs.existsSync(project)) fail('operation_conflict');
       git(repos, ['clone', '--no-checkout', '--', a.repositoryUrl, project]);
