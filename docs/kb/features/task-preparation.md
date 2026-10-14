@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-10-14
-checked: 2b094a67
+updated: 2026-10-05
+checked: 8f820f9c
 
 areas:
   - packages/shared/src/qa.ts
@@ -44,8 +44,6 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
-
-Ownership note (SISL-720): the current Core checkout retains the public readiness contract and gate in `packages/shared/src/qa.ts`, but preparation execution belongs to `sislexa-kanban`; the historical Core paths `apps/server/src/kanban/preparation.ts`, `apps/server/src/kanban/module.ts`, and `apps/server/src/taskPreparation.test.ts` below are no longer present, so prompt/parser normalization changes must be implemented and verified in the Kanban owner checkout.
 
 For schema version 2, `DevelopmentReadiness.knowledgeBase` explicitly declares
 `connected` or `absent`; omitted values preserve the legacy `connected` behavior.
