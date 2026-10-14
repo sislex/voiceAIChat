@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-14
-checked: 8d9c0a5b
+checked: bd6b51c4
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -160,6 +160,23 @@ Owner checkouts live outside the Core checkout, in
 repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seeded
 by a shallow fetch from the local Core checkout instead of GitHub; an interrupted
 fetch (`shallow.lock`, `tmp_pack_*`) is cleaned only when no Git process runs.
+`prepareCoreFixture(root, checkout, coreCommit)` requires a full lowercase SHA.
+It preserves any fixture containing `package-lock.json`, including a different
+HEAD that the owner host must reject. Otherwise it checks directory safety and
+Git inactivity before removing an incomplete fixture, initializes a repository,
+keeps `https://github.com/sislex/voiceAIChat.git` as origin, fetches the supplied
+SHA through the local root's encoded file URL, and checks it out detached. Missing
+commits or readiness markers fail without a remote fallback. Preparation runs
+after owner HEAD validation and before each selected suite; errors are recorded
+in `artifacts/gate-timings/system.json` and stop later owners.
+
+Before fetching an incomplete owner checkout, cleanup removes only regular
+`shallow.lock` and `objects/pack/tmp_pack_*` files. Directory symlinks are rejected.
+The process guard conservatively refuses cleanup while any Git process is live;
+failed, empty or malformed process inspection also refuses deletion. Ready
+fixtures are preserved without inspection or fetch. `--dry-run` returns before
+cleanup or fixture preparation and retains the exact-artifact and owner plan output.
+
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
 

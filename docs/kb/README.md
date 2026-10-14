@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 83 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 44 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 89 коммит(ов) в areas после сверки: 22c9b611 docs(kb): explain production compose layers and stand ports … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 90 коммит(ов) в areas после сверки: 2a252315 fix(system-gate): keep owner checkouts outside the Core checkout … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 112 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,10 +61,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1161. Последние:
+Всего записей: 1162. Последние:
 
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md) — ui-delivery-step-diagnostics
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md) — system-gate-owner-cache
+- [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-local-sha-regression.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-local-sha-regression.md) — system-gate-local-sha-regression
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md) — stand-worktree-behind
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md) — stand-proxy-https
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md) — stand-error-codes
@@ -72,7 +73,6 @@
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md) — compose-stand-ports
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md) — agent-self-update-stopstand
 - [2026-10-13-stand-delivery-refusal-codes.md](log/2026-10-13-stand-delivery-refusal-codes.md) — 2026-10-13-stand-delivery-refusal-codes
-- [2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md](log/2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md) — stand-storybook-recovery
 
 ## Исторические планы
 
