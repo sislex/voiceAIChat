@@ -15,6 +15,19 @@ const caddyfile = readFileSync(fileURLToPath(new URL('../../../Caddyfile', impor
 const compose = readFileSync(fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url)), 'utf8')
 
 describe('Caddyfile', () => {
+  it('terminates TLS for all lease ports and proxies each port to Core', () => {
+    const addresses = [8790, 8791, 8792, 8793, 8794].map(port => 'https://{$VC_PUBLIC_HOST}:' + port).join(', ')
+    expect(caddyfile).toContain(addresses + ' {\n\ttls internal\n\treverse_proxy voicechat:{http.request.port}\n}')
+  })
+
+  it('publishes lease ports only on Caddy and exposes Core listeners internally', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../../../deploy/docker-compose.yml', import.meta.url)), 'utf8')
+    const block = (service: string) => overlay.split('\n  ' + service + ':\n')[1]?.split(/\n  [a-z][a-z-]*:\n/)[0]
+    expect(block('caddy')).toContain('ports:\n      - "${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}:${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}"')
+    expect(block('voicechat')).not.toMatch(/^    ports:/m)
+    expect(block('voicechat')).toContain('expose:\n      - "${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}"')
+    expect(block('voicechat')).toContain('VC_STAND_PROXY_PUBLIC_SCHEME: ${VC_STAND_PROXY_PUBLIC_SCHEME:-}')
+  })
   // @testCase TC3
   it('оба режима Web Reader получают операторские алиасы собственного сайта', () => {
     for (const service of ['voicechat', 'reader', 'browser-runner']) {

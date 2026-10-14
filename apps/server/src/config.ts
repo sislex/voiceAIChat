@@ -85,6 +85,7 @@ export interface ServerConfig {
   kanbanMode: 'remote' | 'off'
   standProxyPorts?: string
   standProxyPublicHost?: string
+  standProxyPublicScheme?: 'http' | 'https'
   kanbanUrl?: string
   /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
   kanbanMcpPublicBase?: string
@@ -235,6 +236,11 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const standProxyPublicScheme = env.VC_STAND_PROXY_PUBLIC_SCHEME ||
+    (env.VC_PUBLIC_URL ? new URL(env.VC_PUBLIC_URL).protocol.slice(0, -1) : 'http')
+  if (standProxyPublicScheme !== 'http' && standProxyPublicScheme !== 'https') {
+    throw new Error('Invalid VC_STAND_PROXY_PUBLIC_SCHEME: expected http or https')
+  }
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   return {
     delegatedChatEnabled: env.VC_DELEGATED_CHAT_ENABLED === 'true',
@@ -286,6 +292,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'off',
     standProxyPorts: env.VC_STAND_PROXY_PORTS,
     standProxyPublicHost: env.VC_STAND_PROXY_PUBLIC_HOST,
+    standProxyPublicScheme,
     kanbanUrl: env.VC_KANBAN_URL,
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
     machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',
