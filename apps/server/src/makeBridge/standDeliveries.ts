@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { z } from 'zod'
-import { buildGitWorkspaceId, type StandSyncResult } from '@voicechat/shared'
+import { buildGitWorkspaceId, type StandSyncStatus, type StandSyncResult } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
 import type { VoiceChatDb } from '../db/database.js'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
@@ -58,8 +58,9 @@ export class StandDeliveries {
     return this.deps.coordinator.list(project, workspace.repository, workspace.branch)
   }
 
-  private async mutate<T>(user: string, project: string, stand: string, work: (workspace: Awaited<ReturnType<StandDeliveries['workspace']>>) => Promise<T>) {
-    const workspace = await this.workspace(user, project, stand, true)
+  private async locked<T>(user: string, project: string, stand: string, work: (workspace: Awaited<ReturnType<StandDeliveries['workspace']>>) => Promise<T>, write = true) {
+    const workspace = await this.workspace(user, project, stand, write)
+    if (!this.deps.machines.isOnline(workspace.agentId)) projectModeError(409, 'machine_unavailable')
     const key = workspace.agentId + ':' + workspace.root
     if (this.busy.has(key)) projectModeError(409, 'stand_workspace_busy')
     this.busy.add(key)
@@ -69,7 +70,7 @@ export class StandDeliveries {
   async submit(user: string, project: string, stand: string, body: unknown) {
     const parsed = standDeliveryBody.safeParse(body)
     if (!parsed.success) projectModeError(400, 'invalid_stand_delivery')
-    return this.mutate(user, project, stand, async workspace => {
+    return this.locked(user, project, stand, async workspace => {
       if (parsed.data.branch !== workspace.branch) projectModeError(409, 'stand_branch_mismatch')
       const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'head', branch: parsed.data.branch })
       if (!('headSha' in result)) projectModeError(502, 'invalid_stand_agent_response')
@@ -79,8 +80,16 @@ export class StandDeliveries {
     })
   }
 
+  async behind(user: string, project: string, stand: string): Promise<StandSyncStatus> {
+    return this.locked(user, project, stand, async workspace => {
+      const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'behind' })
+      if (!('behind' in result)) projectModeError(502, 'invalid_stand_agent_response')
+      return { behind: result.behind }
+    }, false)
+  }
+
   async sync(user: string, project: string, stand: string): Promise<StandSyncResult> {
-    return this.mutate(user, project, stand, async workspace => {
+    return this.locked(user, project, stand, async workspace => {
       const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'sync' })
       if (!('merged' in result)) projectModeError(502, 'invalid_stand_agent_response')
       return result

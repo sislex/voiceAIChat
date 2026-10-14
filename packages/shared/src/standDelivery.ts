@@ -54,3 +54,11 @@ export interface StandSyncResult {
   behind: number
   conflicts: string[]
 }
+
+/** Read-only comparison with freshly fetched origin/dev. */
+export interface StandSyncStatus { behind: number }
+
+/** Core extension to each Make stand option. */
+export interface StandConversationWorktree {
+  conversationWorktree?: { branch: string }
+}

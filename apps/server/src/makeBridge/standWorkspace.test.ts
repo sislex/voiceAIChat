@@ -144,3 +144,22 @@ it('scoped Git retains original authorization and rechecks it on every operation
   resolve.mockRejectedValueOnce(new Error('permission revoked'))
   await expect(scoped.resolve('alice', 'project', 'workspace', { write: true })).rejects.toThrow('permission revoked')
 })
+
+it('inspects only the registered conversation branch without fetching or creating', () => {
+  const f = fixture()
+  expect(f.run({ action: 'inspect' })).toEqual({ exitCode: 0 })
+  expect(fs.existsSync(f.root)).toBe(false)
+  f.prepare(); f.spawnSync.mockClear()
+  expect(f.run({ action: 'inspect' })).toEqual({ exitCode: 0, branch: 'make/test' })
+  expect(f.spawnSync.mock.calls.map(([, args]) => args)).toEqual([['worktree', 'list', '--porcelain']])
+})
+
+it('inspect omits missing clones and refuses symlinked worktrees', () => {
+  const f = fixture()
+  fs.rmSync(f.project, { recursive: true })
+  expect(f.run({ action: 'inspect' })).toEqual({ exitCode: 0 })
+  expect(f.spawnSync).not.toHaveBeenCalled()
+  f.prepare()
+  fs.rmdirSync(f.root); fs.symlinkSync(f.project, f.root)
+  expect(f.run({ action: 'inspect' })).toMatchObject({ error: 'path_outside_working_copy' })
+})

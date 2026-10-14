@@ -171,3 +171,42 @@ it.each([
     expect(response.json()).toEqual({ error })
   } finally { await f.close() }
 })
+
+it('reads behind status without write permission and rechecks access', async () => {
+  const f = await fixture()
+  try {
+    f.user.role = 'viewer'
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: '{"behind":4}' })
+    const response = await f.app.inject(f.url + '/sync-dev/status')
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ behind: 4 })
+    expect(f.git.resolve).not.toHaveBeenCalled()
+    expect(f.fetchImpl).not.toHaveBeenCalled()
+    f.user.blocked = true
+    expect((await f.app.inject(f.url + '/sync-dev/status')).statusCode).toBe(403)
+    f.user.blocked = false
+    f.stand.live[0]!.workingCopyPath = '/outside'
+    expect((await f.app.inject(f.url + '/sync-dev/status')).statusCode).toBe(403)
+  } finally { await f.close() }
+})
+
+it('locks status and sync per root and releases the lock on failure', async () => {
+  const f = await fixture()
+  let release!: () => void
+  let started!: () => void
+  const ready = new Promise<void>(resolve => { started = resolve })
+  const pending = new Promise<void>(resolve => { release = resolve })
+  f.machines.exec.mockImplementationOnce(async () => {
+    started(); await pending
+    return { exitCode: 1, timedOut: false, output: '{"error":"stand_fetch_failed"}' }
+  })
+  try {
+    const first = f.app.inject(f.url + '/sync-dev/status').then(result => result)
+    await ready
+    expect((await f.app.inject(f.url + '/sync-dev/status')).json()).toEqual({ error: 'stand_workspace_busy' })
+    expect((await f.app.inject({ method: 'POST', url: f.url + '/sync-dev' })).json()).toEqual({ error: 'stand_workspace_busy' })
+    release()
+    expect((await first).statusCode).toBe(409)
+    expect((await f.app.inject(f.url + '/sync-dev/status')).statusCode).toBe(200)
+  } finally { release(); await f.close() }
+})

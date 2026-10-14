@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition } from '@voicechat/shared'
+import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition, type StandConversationWorktree } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
 import { makeStandOperationSchema, MAKE_STAND_ERROR_CODES, MAKE_STAND_MAX_FILE_BYTES, type MakeStandOperation, type MakeStandResult, type CreateTransferTaskArgs, type StandPreviewOperation, type StandPreviewResult } from '@voicechat/make-contracts'
 import { componentClone, conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
@@ -217,7 +217,16 @@ export class MakeProjectAdapters {
           for (const { host, stand } of details) {
             const live = stand.live?.find(l => l.component === component)
             const source = component ? stand.components?.[component] : undefined
-            state.options.stands.push({ standId: stand.standId, hostProjectId: host.project.id, hostProjectName: host.project.name,
+            const reposRoot = host.project.machines.find(m => m.agentId === stand.machineId && m.canUse)?.reposRoot
+            let conversation: StandConversationWorktree = {}
+            if (machines?.isOnline(stand.machineId) && reposRoot && repository) {
+              const clone = componentClone(repository)
+              const inspected = await workspaceCommand(machines, user, stand.machineId, {
+                action: 'inspect', reposRoot, repoName: clone.name, conversation: conversationId
+              }).catch(() => undefined)
+              if (inspected?.branch) conversation = { conversationWorktree: { branch: inspected.branch } }
+            }
+            state.options.stands.push({ ...conversation, standId: stand.standId, hostProjectId: host.project.id, hostProjectName: host.project.name,
               machineId: stand.machineId, machineName: machines?.nameOf(stand.machineId) ?? host.project.machines.find(m => m.agentId === stand.machineId)?.name ?? stand.machineId,
               online: machines?.isOnline(stand.machineId) ?? false, status: !(machines?.isOnline(stand.machineId) ?? false) ? 'stopped' : stand.status ?? (stand.error ? 'failed' : 'running'),
               componentSource: live ? 'live' : source?.source ?? 'base', branch: live?.branch ?? null, sha: live?.head ?? source?.sha ?? null })

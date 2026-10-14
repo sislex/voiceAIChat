@@ -195,7 +195,7 @@ export function pushScript(branch: string): GitScript {
       mark('head'),
       'git rev-parse HEAD',
       mark('push'),
-      'git push origin "HEAD:refs/heads/$VC_GIT_BRANCH"',
+      'git push --set-upstream origin "HEAD:refs/heads/$VC_GIT_BRANCH"',
       mark('remote'),
       `git ls-remote --heads origin "refs/heads/$VC_GIT_BRANCH" | awk '{print $1}'`,
       mark('done')

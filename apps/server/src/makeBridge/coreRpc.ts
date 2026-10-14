@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, standPreviewResultSchema, transferTaskResultSchema,
+  makeStandResultSchema, makeStandOptionsSchema, projectModeRpcSchemas, validateMakeStandResult,
   RpcError, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
 import type { PreviewOperation } from './projectAdapters.js'
@@ -16,6 +17,14 @@ const transferResult = transferTaskResultSchema.extend({
   branchUrl: z.string().min(1).optional(), designUrl: z.string().min(1).optional()
 })
 
+const standResult = makeStandResultSchema.extend({
+  options: makeStandOptionsSchema.extend({
+    stands: z.array(makeStandOptionsSchema.shape.stands.element.extend({
+      conversationWorktree: z.object({ branch: z.string().min(1) }).optional()
+    }))
+  }).optional()
+})
+
 export function createMakeCoreDispatcher(core: MakeCore) {
   const dispatch = createCoreRpcDispatcher(core)
   return async (request: RpcRequest): Promise<unknown> => {
@@ -26,6 +35,14 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
         const preview = core.standPreview as (user: string, project: string, op: PreviewOperation) => Promise<unknown>
         return standPreviewResultSchema.parse(await preview.apply(core, parsed.data))
+      }
+      if (request.method === 'makeStand') {
+        const parsed = projectModeRpcSchemas.makeStand.args.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        const result = standResult.parse(await core.makeStand(...parsed.data))
+        try { validateMakeStandResult(parsed.data[2], result) }
+        catch { throw new RpcError(502, 'Mismatched Make stand result') }
+        return result
       }
       if (request.method === 'createTransferTask') {
         const parsed = transferArgs.safeParse(request.args)

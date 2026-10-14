@@ -132,7 +132,7 @@ describe('состав скриптов', () => {
 
   it('push отправляет ветку и обязательно сверяет SHA в origin', () => {
     const { script } = pushScript('feature/x')
-    expect(script).toContain('git push origin "HEAD:refs/heads/$VC_GIT_BRANCH"')
+    expect(script).toContain('git push --set-upstream origin "HEAD:refs/heads/$VC_GIT_BRANCH"')
     expect(script).toContain('git ls-remote --heads origin "refs/heads/$VC_GIT_BRANCH"')
     expect(script).not.toContain('--force')
   })
