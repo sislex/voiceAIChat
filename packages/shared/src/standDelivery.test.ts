@@ -14,3 +14,7 @@ it('lists unique stand and Storybook error codes', async () => {
     'stand_agent_timeout', 'machine_unavailable', 'machine_offline', 'storybook_no_free_port']))
   expect(PROJECT_STORYBOOK_ERROR_CODES).toEqual(expect.arrayContaining(['storybook_exit_nonzero', 'storybook_exited_before_ready', 'pty_error', 'storybook_port_busy']))
 })
+
+it('encodes the read-only dev status route', () => {
+  expect(REST.projectDevStandSyncDevStatus('p/a', 's?b')).toBe('/api/projects/p%2Fa/dev-stands/s%3Fb/sync-dev/status')
+})

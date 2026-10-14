@@ -70,3 +70,9 @@ https://caddy {
 		reverse_proxy voicechat:8787
 	}
 }
+
+# Stand leases terminate TLS here; Core listeners remain HTTP inside Compose.
+https://{$VC_PUBLIC_HOST}:8790, https://{$VC_PUBLIC_HOST}:8791, https://{$VC_PUBLIC_HOST}:8792, https://{$VC_PUBLIC_HOST}:8793, https://{$VC_PUBLIC_HOST}:8794 {
+	tls internal
+	reverse_proxy voicechat:{http.request.port}
+}

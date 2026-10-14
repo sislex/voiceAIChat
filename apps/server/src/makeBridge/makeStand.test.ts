@@ -162,7 +162,7 @@ describe('makeStand concrete Kanban and agent adapters', () => {
       stands: [{ ...identity, hostProjectName: 'Sislexa', machineId: 'agent', machineName: 'Live Mac', online: true,
         status: 'running', componentSource: 'live', branch: 'make/test', sha: 'live-sha' }],
       machines: [{ agentId: 'agent', name: 'Live Mac', online: true, canCreate: true }] })
-    expect(f.machines.exec).not.toHaveBeenCalled()
+    expect(f.machines.exec).toHaveBeenCalledTimes(1)
   })
 
   it.each(['https://github.com/sislex/sislexa-core-ui.git', 'ssh://git@github.com/sislex/sislexa-core-ui.git', 'sislex/sislexa-core-ui'])('normalizes repository %s', async repository => {
@@ -209,9 +209,9 @@ describe('makeStand concrete Kanban and agent adapters', () => {
 
   it('requests an inspector lease through the concrete Make preview adapter', async () => {
     const f = fixture(); f.bind()
-    const access = vi.fn(async () => ({ url: 'http://core.test:24032/', expiresAt: 123 }))
+    const access = vi.fn(async () => ({ url: 'https://core.test:24032/', expiresAt: 123 }))
     f.deps.previewAccess = makeStandPreviewAccess({ access }, 'core.test')
-    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ previewUrl: 'http://core.test:24032/' })
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ previewUrl: 'https://core.test:24032/' })
     expect(access).toHaveBeenCalledWith('alice', 'host', 'stand', 'core.test', undefined, { inject: 'make-inspector' })
   })
 
@@ -341,4 +341,18 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     await expect(f.call({ op: 'attach', ...identity })).rejects.toMatchObject({ statusCode: 403 })
     expect(f.machines.exec).not.toHaveBeenCalled()
   })
+})
+
+it('exposes inspected conversation worktrees independently of the live stand branch', async () => {
+  const f = fixture()
+  f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ branch: 'make/conversation' }) })
+  expect((await f.call({ op: 'options' })).options?.stands[0]).toMatchObject({
+    branch: null, conversationWorktree: { branch: 'make/conversation' }
+  })
+  const command = f.machines.exec.mock.calls[0]![1]
+  const args = JSON.parse(Buffer.from(command.match(/'([A-Za-z0-9+/=]+)'$/)![1]!, 'base64').toString())
+  expect(args).toEqual({ action: 'inspect', reposRoot: '/work/repos', repoName: 'sislexa-core-ui', conversation: 'conversation' })
+  f.machines.isOnline.mockReturnValue(false); f.machines.exec.mockClear()
+  expect((await f.call({ op: 'options' })).options?.stands[0]).not.toHaveProperty('conversationWorktree')
+  expect(f.machines.exec).not.toHaveBeenCalled()
 })
