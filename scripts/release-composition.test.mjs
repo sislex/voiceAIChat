@@ -140,6 +140,18 @@ test('manifestFromCore publishes exactly the pinned bytes at the tool commit', (
   assert.deepEqual(files, [join(core, 'vendor', pinned.asset)])
 })
 
+test('owner publication reads the replacement after composition removes the last old pin', () => {
+  const { core, pinned } = fixture()
+  const { dir, pkg } = published()
+  applyComposition(core, dir)
+  const { manifest, files } = manifestFromCore(REPO, core)
+  assert.equal(existsSync(join(core, 'vendor', pinned.asset)), false)
+  assert.deepEqual(files, [join(core, 'vendor', pkg.asset)])
+  assert.equal(manifest.commit, NEW)
+  assert.equal(manifest.packages[0].asset, pkg.asset)
+  assert.equal(manifest.packages[0].sha256, archiveDigests(readFileSync(files[0])).sha256)
+})
+
 test('publishing creates the tag once and never reuses a version for another commit', async () => {
   const { core } = fixture()
   const { manifest, files } = manifestFromCore(REPO, core)
