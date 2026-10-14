@@ -3,7 +3,8 @@
 // сообщения exec.* уходят в реестр. Ping каждые 30с поддерживает last_seen.
 
 import type { WebSocket } from 'ws'
-import type { AgentToServer, ServerToAgent } from '@sislexa/agent-contracts'
+import { compareVersions, type AgentToServer, type ServerToAgent } from '@sislexa/agent-contracts'
+import { servedAgent } from './agentScript.js'
 import { hashAgentToken, type VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from './registry.js'
 
@@ -18,6 +19,7 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
   let agentId: string | null = null
   let owner: string | null = null
   let pingTimer: NodeJS.Timeout | null = null
+  let updateOffered = false
 
   const send = (msg: ServerToAgent): void => {
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg))
@@ -65,6 +67,18 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
           /* закрывается */
         }
       }, PING_INTERVAL_MS)
+      // Self-update (stand-https-v1 C01): only a supervised agent (systemd/launchd restarts it) older
+      // than the served bundle gets agent.update, once per connection. Unsupervised and legacy agents
+      // keep the agent.updateAvailable hint sent by the registry version checks.
+      if ((msg.supervisor === 'systemd' || msg.supervisor === 'launchd') && !updateOffered) {
+        let served: ReturnType<typeof servedAgent> | null = null
+        try { served = servedAgent() } catch { /* bundle unreadable: no update offer */ }
+        if (served && compareVersions(served.version, msg.version ?? '0.1.0') > 0) {
+          updateOffered = true
+          send({ t: 'agent.update', version: served.version, sha256: served.sha256 })
+          if (rec.userId) await db.identity.logSecurityEvent({ user: rec.userId, type: 'agent_update_sent', ip, details: `${rec.name} v${msg.version ?? '0.1.0'} → v${served.version} (${msg.supervisor})` })
+        }
+      }
       return
     }
 

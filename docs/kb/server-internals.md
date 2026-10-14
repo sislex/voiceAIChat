@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-14
-checked: 6fb7eb5279b2ef6448d9877cff1c217612609bd6
+checked: 38a54c5b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -378,6 +378,24 @@ Web Reader требует API ядра >=1.1.0; старое ядро без `co
 artifacts привязанного хранилища через обратный вызов ядра `chatArtifacts` (хранилища разговора — знание
 ядра). Гейт `machines/boundary.test.ts`: `server.ts` не собирает машины сам, `AgentRegistry` импортируют
 только модуль машин и его части. План выделения в отдельный процесс — `docs/plans/machines-service.md`.
+
+**Self-update of supervised agents (stand-https-v1 C01, 2026-10-14).** `agents/agentScript.ts`
+`servedAgent()` returns `{version, sha256}` of the bundle served at `/api/agents/script` (version from the
+`@sislexa/agent` manifest, SHA-256 over the exact bytes, computed once per process); the route sends those raw
+bytes and `GET /api/agents/version` returns the served version. After `agent.registered`, `agents/wsAgent.ts`
+sends `agent.update {version, sha256}` at most once per connection when the agent reported
+`supervisor: 'systemd' | 'launchd'` in `agent.register` and the served version is newer (`compareVersions`), and
+logs the security event `agent_update_sent` (group `machines`). Equal/newer versions and unsupervised or legacy
+agents receive no update; they keep the `agent.updateAvailable` hint from the registry version checks. The
+registry stores the last `agent.updateResult` per agent in memory across reconnects (`updateStatusOf`), and
+`GET /api/agents` lists it as `updateStatus: {status, message, at}`.
+
+**Dev-process relay.** `registry.devProcess(agentId, method, request)` forwards the methods of the Shared
+`DevProcessRpc` registry: `devProcess.start|stop|status|logs` and, for agent 0.25+, `devProcess.stopStand
+{standId}` → `{standId, state: 'stopped', stopped, gateways}` (older agents answer with `devProcess.error`).
+Only response types from `DEV_PROCESS_RESPONSE_TYPES` are treated as dev results. Kanban calls it through
+`POST /internal/kanban/core` with `{method: 'machines.devProcess', args: [agentId, '<devProcess method>',
+request]}`; the dispatcher (`kanbanBridge/internal.ts`) rejects other method names with 400.
 
 **Режим `VC_MACHINES_MODE=remote` (2026-09-07).** Реестр живёт в отдельном процессе машин
 (`machines/standalone/index.ts`, `buildMachinesServer`, порт 8793, compose-профиль `machines`), а ядро

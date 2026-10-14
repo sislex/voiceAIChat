@@ -51,6 +51,10 @@ describe('createKanbanCoreRpcDispatcher', () => {
     const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize: async () => true, closed: async () => {} } })
     expect(await dispatch({ method: 'machines.devProcess', args: ['m1', 'devProcess.status', { standId: 's', component: 'make' }] })).toEqual({ agentId: 'm1', method: 'devProcess.status' })
     expect(core.machines.devProcess).toHaveBeenCalledWith('m1', 'devProcess.status', { standId: 's', component: 'make' })
+    expect(await dispatch({ method: 'machines.devProcess', args: ['m1', 'devProcess.stopStand', { standId: 's' }] })).toEqual({ agentId: 'm1', method: 'devProcess.stopStand' })
+    expect(core.machines.devProcess).toHaveBeenCalledWith('m1', 'devProcess.stopStand', { standId: 's' })
+    await expect(dispatch({ method: 'machines.devProcess', args: ['m1', 'exec.start', {}] })).rejects.toMatchObject({ status: 400 })
+    expect(core.machines.devProcess).toHaveBeenCalledTimes(2)
   })
 
   it('dispatches KB module registration to the Core module port', async () => {

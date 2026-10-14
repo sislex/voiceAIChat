@@ -123,7 +123,7 @@ describe('dev stand REST and agent wire contracts', () => {
     expect(DEV_STAND_ERROR_STATUS.readiness_timeout).toBe(504)
   })
   it('keeps RPC registries, envelopes and exported agent unions synchronized', () => {
-    expect(DEV_PROCESS_REQUEST_TYPES).toEqual(['devProcess.start', 'devProcess.stop', 'devProcess.status', 'devProcess.logs'])
+    expect(DEV_PROCESS_REQUEST_TYPES).toEqual(['devProcess.start', 'devProcess.stop', 'devProcess.status', 'devProcess.logs', 'devProcess.stopStand'])
     expect(DEV_PROCESS_RESPONSE_TYPES).toEqual([...DEV_PROCESS_REQUEST_TYPES.map(t => t + '.result'), 'devProcess.error'])
     expectTypeOf<DevProcessRequestMessage>().toMatchTypeOf<ServerToAgent>()
     expectTypeOf<DevProcessResponseMessage>().toMatchTypeOf<AgentToServer>()

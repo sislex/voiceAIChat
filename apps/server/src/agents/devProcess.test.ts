@@ -56,4 +56,32 @@ describe('dev process forwarding', () => {
     expect(await result).toEqual(status)
     registry.unregister('m1')
   })
+
+  it('relays a stand-wide stop and resolves with the stopped components and gateways', async () => {
+    const registry = new AgentRegistry(), send = vi.fn()
+    registry.register('m1', 'M1', { send, close: vi.fn() }, undefined, AGENT_VERSION)
+    const stopped = registry.devProcess('m1', 'devProcess.stopStand', { standId: 'stand' })
+    const request = JSON.parse(send.mock.calls[0][0]) as { t: string; requestId: string; standId: string }
+    expect(request).toEqual({ t: 'devProcess.stopStand', requestId: request.requestId, standId: 'stand' })
+    const result = { standId: 'stand', state: 'stopped', stopped: [target], gateways: ['stand-gateway'] }
+    await answer(registry, 'm1', { t: 'devProcess.stopStand.result', requestId: request.requestId, result })
+    expect(await stopped).toEqual(result)
+    const rejected = registry.devProcess('m1', 'devProcess.stopStand', { standId: 'old' })
+    const { requestId } = JSON.parse(send.mock.calls[1][0]) as { requestId: string }
+    await answer(registry, 'm1', { t: 'devProcess.error', requestId, method: 'devProcess.stopStand', code: 'invalid_request', message: 'unknown type' })
+    await expect(rejected).rejects.toThrow('invalid_request: unknown type')
+    registry.unregister('m1')
+  })
+
+  it('ignores unknown devProcess responses instead of treating them as dev results', async () => {
+    const registry = new AgentRegistry(), send = vi.fn()
+    registry.register('m1', 'M1', { send, close: vi.fn() }, undefined, AGENT_VERSION)
+    const result = registry.devProcess('m1', 'devProcess.status', target)
+    const { requestId } = JSON.parse(send.mock.calls[0][0]) as { requestId: string }
+    await answer(registry, 'm1', { t: 'devProcess.bogus.result', requestId, result: {} })
+    const status = { ...target, state: 'ready' }
+    await answer(registry, 'm1', { t: 'devProcess.status.result', requestId, result: status })
+    expect(await result).toEqual(status)
+    registry.unregister('m1')
+  })
 })
