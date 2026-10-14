@@ -22,11 +22,11 @@
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-09-02 | ⚠ 300 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 443 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 69 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
-| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-09-30 | ⚠ 28 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
+| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ✓ |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 84 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 45 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 95 коммит(ов) в areas после сверки: ad4efc81 Merge pull request #645 from sislex/fix/ks-b02-system-gate … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 98 коммит(ов) в areas после сверки: 3b651104 docs(kb): remove broken make-browser plan link … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 113 коммит(ов) в areas после сверки: 4f58601d kanban-speed-v1 B04 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-14, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,8 +61,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1164. Последние:
+Всего записей: 1165. Последние:
 
+- [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md) — make-browser-link
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-vendor-archive-publication.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-vendor-archive-publication.md) — vendor-archive-publication
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md) — ui-delivery-step-diagnostics
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-process-diagnostics.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-process-diagnostics.md) — system-gate-process-diagnostics
@@ -72,7 +73,6 @@
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md) — stand-error-codes
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-release-failure-summary.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-release-failure-summary.md) — release-failure-summary
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-machines-ws-update-status.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-machines-ws-update-status.md) — machines-ws-update-status
-- [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md) — compose-stand-ports
 
 ## Исторические планы
 
