@@ -134,3 +134,64 @@ it.each(['embedded', 'remote'] as const)('injects only Make bridge sessions (%s)
     try { expect((await app.inject({ url, headers })).rawPayload).toEqual(original) } finally { now.mockRestore() }
   } finally { await app.close() }
 })
+
+it.each([
+  [404, 'stand_not_found'],
+  [503, 'stand_proxy_unavailable'],
+  [502, 'invalid_stand_response']
+])('keeps the stand proxy status %i and code %s', async (statusCode, code) => {
+  const app = Fastify()
+  app.addHook('preHandler', async req => { req.user = { name: 'alice', role: 'developer' } as NonNullable<typeof req.user> })
+  const access = vi.fn(async () => { throw Object.assign(new Error(code), { statusCode }) })
+  registerProjectComponentsRoutes(app, {
+    git: { resolve: vi.fn(async () => ({ agentId: 'machine', path: '/live' })) } as never,
+    storybook: { refresh: vi.fn(async () => ({ state: 'running', port: 6008 })) } as never, tickets: {} as never,
+    standProxy: { access }
+  })
+  try {
+    const response = await app.inject({ method: 'POST', url: '/api/projects/project/components/storybook/open',
+      payload: { workspace: 'stand:' + [uuid, uuid, uuid].join('/') } })
+    expect(response.statusCode).toBe(statusCode)
+    expect(response.json()).toMatchObject({ error: code, code })
+  } finally { await app.close() }
+})
+
+it.each([
+  ['offline machine', { isOnline: () => false }, 409, 'machine_offline'],
+  ['no free port', {}, 409, 'storybook_no_free_port']
+] as const)('reports Storybook start refusal for an %s', async (_name, overrides, statusCode, code) => {
+  const app = Fastify()
+  app.addHook('preHandler', async req => { req.user = { name: 'alice', role: 'developer' } as NonNullable<typeof req.user> })
+  const registry: StorybookRegistry = {
+    ptyStart: vi.fn(), ptyInput: vi.fn(), ptyKill: vi.fn(), ptyLive: () => true,
+    isOnline: () => true, nameOf: () => 'machine', http: vi.fn(async () => { throw new Error('closed') }), ...overrides
+  }
+  const storybook = new StorybookSessions({ registry })
+  registerProjectComponentsRoutes(app, {
+    git: { resolve: vi.fn(async (_user: string, _project: string, workspace: string) => ({ agentId: 'machine', path: '/' + workspace })) } as never,
+    storybook, tickets: {} as never
+  })
+  try {
+    if (code === 'storybook_no_free_port') {
+      for (let i = 0; i <= 40; i++) await storybook.start({ agentId: 'machine', workspaceId: `ws${i}`, path: `/ws${i}` })
+    }
+    const response = await app.inject({ method: 'POST', url: '/api/projects/project/components/storybook',
+      payload: { workspace: 'extra', action: 'start' } })
+    expect(response.statusCode).toBe(statusCode)
+    expect(response.json()).toMatchObject({ error: code, code })
+  } finally { storybook.dispose(); await app.close() }
+})
+
+it('keeps components_failed for errors without a status', async () => {
+  const app = Fastify()
+  app.addHook('preHandler', async req => { req.user = { name: 'alice', role: 'developer' } as NonNullable<typeof req.user> })
+  registerProjectComponentsRoutes(app, {
+    git: { resolve: vi.fn(async () => { throw new Error('boom') }) } as never,
+    storybook: {} as never, tickets: {} as never
+  })
+  try {
+    const response = await app.inject({ method: 'GET', url: '/api/projects/project/components/storybook?workspace=repo' })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ error: 'components_failed', message: 'boom' })
+  } finally { await app.close() }
+})
