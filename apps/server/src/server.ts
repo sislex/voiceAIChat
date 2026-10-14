@@ -1553,7 +1553,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             online: online.has(a.id),
             version: agentRegistry.versionOf(a.id),
             telemetry: agentRegistry.telemetryOf(a.id),
-            imageHost: agentRegistry.imageHostOf(a.id)
+            imageHost: agentRegistry.imageHostOf(a.id),
+            updateStatus: agentRegistry.updateStatusOf?.(a.id)
           }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
