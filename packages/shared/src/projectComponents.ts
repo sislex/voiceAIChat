@@ -46,6 +46,16 @@ export interface ProjectComponentsListing {
   truncated: boolean
 }
 
+/** Machine-readable reason of a `failed` Storybook session. */
+export const PROJECT_STORYBOOK_ERROR_CODES = [
+  'storybook_exit_nonzero',
+  'storybook_exited_before_ready',
+  'storybook_ready_timeout',
+  'pty_error',
+  'storybook_port_busy'
+] as const
+export type ProjectStorybookErrorCode = typeof PROJECT_STORYBOOK_ERROR_CODES[number]
+
 export interface ProjectStorybookSession {
   workspaceId: string
   agentId: string
@@ -58,6 +68,8 @@ export interface ProjectStorybookSession {
   readyAt: number | null
   /** Причина отказа для `failed` — текст показывается пользователю как есть. */
   error: string | null
+  /** Code of the `error`; `null` without a failure, absent from an older Core. */
+  errorCode?: ProjectStorybookErrorCode | null
   /** Хвост вывода процесса без ANSI: без него «не запустилось» невозможно объяснить. */
   log: string
   /**

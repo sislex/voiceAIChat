@@ -156,3 +156,18 @@ it('does not cache coordinator failures or expose upstream diagnostics', async (
     expect((await f.app.inject(f.url + '/deliveries')).statusCode).toBe(200)
   } finally { await f.close() }
 })
+
+it.each([
+  ['agent timeout', async () => ({ exitCode: -1, timedOut: true, output: '' }), 504, 'stand_agent_timeout'],
+  ['dropped agent', async () => { throw new Error('agent_disconnected') }, 409, 'machine_unavailable'],
+  ['dirty tree', async () => ({ exitCode: 1, timedOut: false, output: JSON.stringify({ error: 'stand_worktree_dirty' }) }), 409, 'stand_worktree_dirty'],
+  ['fetch failure', async () => ({ exitCode: 1, timedOut: false, output: JSON.stringify({ error: 'stand_fetch_failed' }) }), 409, 'stand_fetch_failed']
+] as const)('sync-dev reports a %s with a specific code', async (_name, exec, status, error) => {
+  const f = await fixture()
+  try {
+    f.machines.exec.mockImplementationOnce(exec as never)
+    const response = await f.app.inject({ method: 'POST', url: f.url + '/sync-dev' })
+    expect(response.statusCode).toBe(status)
+    expect(response.json()).toEqual({ error })
+  } finally { await f.close() }
+})

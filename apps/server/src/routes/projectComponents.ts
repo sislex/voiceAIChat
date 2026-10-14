@@ -29,6 +29,15 @@ async function handle<T>(reply: FastifyReply, work: () => Promise<T> | T): Promi
     if (error instanceof GitError) {
       return reply.code(error.status).send({ error: error.code, code: error.code, message: error.message })
     }
+    // Stand proxy, adapter and Storybook errors carry an HTTP status and a stable code
+    // (`stand_not_found`, `stand_proxy_unavailable`, `machine_offline`, ...); keep both.
+    const status = (error as { statusCode?: unknown } | null)?.statusCode
+    if (typeof status === 'number' && Number.isInteger(status) && status >= 400 && status < 600) {
+      const message = error instanceof Error ? error.message : String(error)
+      const raw = (error as { code?: unknown }).code
+      const code = typeof raw === 'string' && /^[a-z][a-z0-9_]*$/.test(raw) ? raw : message
+      return reply.code(status).send({ error: code, code, message })
+    }
     return reply.code(409).send({ error: 'components_failed', message: error instanceof Error ? error.message : String(error) })
   }
 }
