@@ -1,6 +1,6 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-07
+updated: 2026-10-14
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -458,6 +458,9 @@ macOS молча не работала: в `~/voicechat-update.log` было `co
 (`admin:updateMachine`), как требует граница admin-app. Тесты — `AgentFleetUpdate.dom.test.tsx`.
 
 ## Версии и гейтинг возможностей
+
+`GET /api/agents/version` sends `Cache-Control: no-store` so update checks do not
+reuse a cached version response. Its JSON body remains `{ version }`.
 
 `@sislexa/agent-contracts` owns `AGENT_VERSION`, reported by the companion and
 served publicly by Core at `/api/agents/version`. The pinned release is 0.21.0 (environment links: `tunnel.listen` host/port, `tunnel.pause`/`tunnel.resume`, capability `environment-link`);
