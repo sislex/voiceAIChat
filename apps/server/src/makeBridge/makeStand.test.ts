@@ -209,9 +209,9 @@ describe('makeStand concrete Kanban and agent adapters', () => {
 
   it('requests an inspector lease through the concrete Make preview adapter', async () => {
     const f = fixture(); f.bind()
-    const access = vi.fn(async () => ({ url: 'http://core.test:24032/', expiresAt: 123 }))
+    const access = vi.fn(async () => ({ url: 'https://core.test:24032/', expiresAt: 123 }))
     f.deps.previewAccess = makeStandPreviewAccess({ access }, 'core.test')
-    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ previewUrl: 'http://core.test:24032/' })
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ previewUrl: 'https://core.test:24032/' })
     expect(access).toHaveBeenCalledWith('alice', 'host', 'stand', 'core.test', undefined, { inject: 'make-inspector' })
   })
 
