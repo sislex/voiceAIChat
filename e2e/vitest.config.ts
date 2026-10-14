@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config'
 
 // E2E Make в реальном Chromium (playwright из node_modules). Запуск: `npm run e2e:make`.
-// Не входит в `npm test`: нужны собранный node_modules/@sislexa/core-ui/web и установленный браузер.
+// Requires the built node_modules/@sislexa/core-ui/web; global setup installs Chromium if missing.
 export default defineConfig({
   test: {
+    globalSetup: ['./scripts/ensure-playwright-browser.mjs'],
     include: ['e2e/**/*.e2e.test.ts'],
     testTimeout: 120_000,
     hookTimeout: 120_000,
