@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-14
-checked: 4641d42b
+checked: 4cd27520
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -2667,6 +2667,36 @@ and end-to-end creation/removal) remains an operator/integration step.
 
 <!-- release-train:20f8fcbc-e2a1-4c2a-ab5b-fc4b322575bd -->
 - sislex/make: 1.4.3
+
+## Production Compose layers and stand lease ports
+
+Production combines the root `docker-compose.yml`, selected repository overlays
+`deploy/compose.*.yml`, and host overrides `/etc/voicechat/*.yml` (including
+nested environment/release overrides). These are groups, not a fixed file list
+or a rule for their ordering. Read the exact applied list, in order, from the
+`com.docker.compose.project.config_files` label of `voiceaichat-voicechat-1`:
+
+```sh
+docker inspect voiceaichat-voicechat-1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'
+```
+
+The production label and effective port bindings were checked on 2026-10-14.
+The applied host layer `/etc/voicechat/make-stand.yml` publishes TCP ports
+8790–8794 on `caddy`; `voicechat` uses internal `expose: ["8790-8794"]` for
+this range, not host port publication. Other services using the same internal
+port numbers do not thereby publish stand ports. The root Compose file alone
+cannot describe the resulting production configuration.
+
+Caddy terminates HTTPS with `tls internal` and proxies each lease port to
+`voicechat:{http.request.port}` over HTTP. Lease URLs use the same host and
+certificate as the main HTTPS endpoint on port 443; live certificate SHA-256
+fingerprints matched on 443 and all five lease ports during the check.
+Before opening a preview, visit `https://<host>` and confirm the internal-CA
+certificate once in the same browser context, then open the preview on that
+same host. A different host, browser context or renewed certificate may require
+confirmation again; browser preview behavior still needs verification in that
+context. See [Core dev stand access ports](#core-dev-stand-access-ports) for
+lease configuration and commissioning checks.
 
 ## Core dev stand access ports
 
