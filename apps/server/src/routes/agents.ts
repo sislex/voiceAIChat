@@ -11,11 +11,11 @@ import { REST, MACHINE_STORAGE_FORMAT_VERSION, chatStorageDirectories, type Chat
 import { AGENT_VERSION, type FsCopyResult, type AgentInfo, type AgentPolicy, BATCH_MAX_MACHINES, BATCH_OUTPUT_LIMIT, type BatchExecItem, type BatchExecResult, LOGIN_ENROLLMENT_TTL_MS, loginEnrollmentDeepLink } from '@sislexa/agent-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from "@sislexa/identity/server/users/auth"
-import type { AgentRegistry } from '../agents/registry.js'
+import type { AgentRegistry, AgentUpdateStatus } from '../agents/registry.js'
 import type { MachinesService } from '../machines/service.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'
 import type { CommandGate } from '../agents/commandGate.js'
-import { buildAgentScript } from '../agents/agentScript.js'
+import { buildAgentScript, servedAgent } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '@sislexa/agent/installers'
 import { buildWindowsInstallScript } from '@sislexa/agent/installers'
 import { buildUnixInstallScript } from '@sislexa/agent/installers'
@@ -129,6 +129,9 @@ export async function updateAgentOnMachine(registry: MachinesService, id: string
   }
 }
 
+/** Machines list row: the public `AgentInfo` plus Core's last agent self-update outcome. */
+export type AgentListItem = AgentInfo & { updateStatus?: AgentUpdateStatus }
+
 export async function registerAgentRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
@@ -138,7 +141,7 @@ export async function registerAgentRoutes(
 ): Promise<void> {
   registry.vpnService = new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY)
   registerVpnRoutes(app, registry.vpnService)
-  const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentInfo[]> => {
+  const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentListItem[]> => {
     const online = registry.onlineIds()
     return await Promise.all(agents.map(async (a) => ({
       ...a,
@@ -148,11 +151,13 @@ export async function registerAgentRoutes(
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
       vpn: vpnMachineView(registry.telemetryOf(a.id)),
-      imageHost: registry.imageHostOf(a.id)
+      imageHost: registry.imageHostOf(a.id),
+      // Last self-update outcome (stand-https-v1 C01); absent until a supervised agent reports one.
+      updateStatus: registry.updateStatusOf(a.id)
     })))
   }
 
-  app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
+  app.get(REST.agents, async (req): Promise<AgentListItem[]> =>
     withLiveStatus(await db.machines.listAgents(uid(req)), uid(req))
   )
 
@@ -405,7 +410,10 @@ export async function registerAgentRoutes(
     await db.machines.canUseAgent(userId, id, projectId)
 
   // Последняя доступная версия агента (публично — трей проверяет обновления).
-  app.get(REST.agentLatestVersion, async () => ({ version: AGENT_VERSION }))
+  // The served bundle version (falls back to the contracts constant when the bundle is unreadable).
+  app.get(REST.agentLatestVersion, async () => {
+    try { return { version: servedAgent().version } } catch { return { version: AGENT_VERSION } }
+  })
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>
