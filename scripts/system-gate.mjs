@@ -1,6 +1,8 @@
 // Run owner-maintained scenarios against the exact dependencies of a Core release.
 import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 export function systemPlan(matrix, coreCommit) {
@@ -79,8 +81,17 @@ export function prepareCoreFixture(root, checkout, coreCommit, assertIdle = asse
   return fixture
 }
 
+// Owner checkouts are Git repositories; keeping them inside the Core checkout
+// makes task workspaces contain nested repositories, which delivery workspace
+// guards reject. The per-checkout hash keeps parallel Core checkouts isolated.
+export function systemOwnersRoot(root, env = process.env, home = homedir()) {
+  if (env.SISLEXA_SYSTEM_OWNERS_DIR) return resolve(env.SISLEXA_SYSTEM_OWNERS_DIR)
+  return join(home, '.cache/sislexa/system-owners', createHash('sha256').update(resolve(root)).digest('hex').slice(0, 16))
+}
+
 export function main(args = process.argv.slice(2), {
   root = resolve(import.meta.dirname, '..'),
+  ownersRoot = systemOwnersRoot(root),
   spawn = spawnSync,
   prepareFixture = prepareCoreFixture,
   cleanOwner = cleanOwnerGitResidue,
@@ -116,7 +127,7 @@ export function main(args = process.argv.slice(2), {
     if (result.error || result.status !== 0) throw Object.assign(result.error ?? Error(`System stage failed: ${command} ${args.join(' ')}`), { exitCode: result.status || 1 })
   }
   executeSystemPlan(plan, owner => {
-    const started = Date.now(), checkout = join(root, '.cache/system-owners', owner.repository, owner.commit)
+    const started = Date.now(), checkout = join(ownersRoot, owner.repository, owner.commit)
     let exitCode = 0
     try {
       if (!existsSync(join(checkout, '.git'))) {

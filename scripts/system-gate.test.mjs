@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { systemPlan, executeSystemPlan, selectSystemOwners, prepareCoreFixture, cleanOwnerGitResidue, assertNoActiveGit, main } from './system-gate.mjs'
+import { systemPlan, executeSystemPlan, selectSystemOwners, prepareCoreFixture, cleanOwnerGitResidue, assertNoActiveGit, systemOwnersRoot, main } from './system-gate.mjs'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -129,18 +129,23 @@ function orchestrationFixture(t, snapshot = false) {
     packages: config.owners.map((row, index) => ({ repository: 'https://github.com/sislex/' + row.repository, commit: row.commit, name: ['@sislexa/web-reader', '@sislexa/playwright-reader', '@sislexa/core-ui'][index] })),
   }))
   git(root, 'add', '.'); git(root, 'commit', '-qm', 'matrix')
-  return { ...context, commit: git(root, 'rev-parse', 'HEAD'), config }
+  return { ...context, ownersRoot: join(context.directory, 'owners'), commit: git(root, 'rev-parse', 'HEAD'), config }
 }
 
 // @testCase TC4
 test('selected owners clean before fetch and prepare before suites, after exact artifacts', t => {
   for (const selected of [[], ['--owners', 'webreader']]) {
-    const { root, checkout, commit, config } = orchestrationFixture(t, true)
+    const { root, checkout, commit, config, ownersRoot } = orchestrationFixture(t, true)
     const calls = []
     const plan = selectSystemOwners(systemPlan(config, commit), selected)
-    for (const row of plan) residue(join(root, '.cache/system-owners', row.repository, row.commit))
+    for (const row of plan) {
+      const path = join(ownersRoot, row.repository, row.commit)
+      mkdirSync(path, { recursive: true }); git(path, 'init', '--quiet')
+      residue(path)
+    }
     main(selected, {
       root,
+      ownersRoot,
       cleanOwner: path => { calls.push('clean'); cleanOwnerGitResidue(path, idle) },
       prepareFixture: (core, path, sha) => {
         assert.equal(git(path, 'rev-parse', 'HEAD'), plan[0].commit)
@@ -167,6 +172,9 @@ test('selected owners clean before fetch and prepare before suites, after exact 
       },
     })
     assert.deepEqual(calls, ['exact', ...plan.flatMap(() => ['clean', 'fetch', 'prepare', 'suite'])])
+    // Owner checkouts must stay outside the Core checkout: task workspaces reject nested repositories.
+    assert.equal(existsSync(join(root, '.cache')), false)
+    for (const row of plan) assert.equal(existsSync(join(ownersRoot, row.repository, row.commit, '.git')), true)
     const report = JSON.parse(readFileSync(join(root, 'artifacts/gate-timings/system.json')))
     assert.deepEqual(report.results.map(row => row.repository), plan.map(row => row.repository))
     assert.ok(report.results.every(row => row.exitCode === 0))
@@ -175,10 +183,11 @@ test('selected owners clean before fetch and prepare before suites, after exact 
 
 // @testCase TC4
 test('local fetch failure prevents the suite and all later owners and records failure', t => {
-  const { root, checkout, config } = orchestrationFixture(t)
+  const { root, checkout, config, ownersRoot } = orchestrationFixture(t)
   let preparations = 0, suites = 0
   assert.throws(() => main([], {
     root,
+    ownersRoot,
     prepareFixture: (core, path, sha) => { preparations++; prepareCoreFixture('/missing-local-core', path, sha) },
     spawn: (command, args, options) => {
       if (command === 'npm') { suites++; return { status: 0 } }
@@ -197,13 +206,14 @@ test('local fetch failure prevents the suite and all later owners and records fa
 // @testCase TC3
 test('unsafe owner cleanup stops before fetch, fixture preparation and suites', t => {
   for (const inspect of [() => '/usr/bin/git', () => { throw Error('ps denied') }]) {
-    const { root, commit, config } = orchestrationFixture(t)
+    const { root, commit, config, ownersRoot } = orchestrationFixture(t)
     const row = config.owners[0]
-    const checkout = join(root, '.cache/system-owners', row.repository, row.commit)
+    const checkout = join(ownersRoot, row.repository, row.commit)
     git(root, 'init', '--quiet', checkout)
     const { files } = residue(checkout)
     assert.throws(() => main([], {
       root,
+      ownersRoot,
       cleanOwner: path => cleanOwnerGitResidue(path, directory => assertNoActiveGit(directory, inspect)),
       prepareFixture: () => assert.fail('prepared after unsafe cleanup'),
       spawn: () => assert.fail('executed after unsafe cleanup'),
@@ -219,11 +229,11 @@ test('unsafe owner cleanup stops before fetch, fixture preparation and suites', 
 // @testCase TC4
 test('dry-run preserves exact output and does no preparation, cleanup or execution', t => {
   for (const snapshot of [false, true]) for (const selected of [[], ['--owners', 'webreader']]) {
-    const { root, commit, config } = orchestrationFixture(t, snapshot)
+    const { root, commit, config, ownersRoot } = orchestrationFixture(t, snapshot)
     const output = [], originalLog = console.log
     console.log = value => output.push(value)
     const unexpected = () => assert.fail('dry-run performed a mutation')
-    try { main(['--dry-run', ...selected], { root, spawn: unexpected, prepareFixture: unexpected, cleanOwner: unexpected }) }
+    try { main(['--dry-run', ...selected], { root, ownersRoot, spawn: unexpected, prepareFixture: unexpected, cleanOwner: unexpected }) }
     finally { console.log = originalLog }
     const expected = []
     if (snapshot) expected.push(JSON.stringify({ subject: 'exact-artifacts', command: [process.execPath, '--import', 'tsx', 'scripts/shared-chat-gate.mjs'] }))
@@ -233,6 +243,14 @@ test('dry-run preserves exact output and does no preparation, cleanup or executi
     assert.equal(existsSync(join(root, 'artifacts')), false)
     assert.equal(git(root, 'status', '--porcelain'), '')
   }
+})
+
+test('owner checkouts default outside the Core checkout and honour an override', () => {
+  const home = join(tmpdir(), 'home'), first = systemOwnersRoot('/work/core-a', {}, home)
+  assert.ok(first.startsWith(join(home, '.cache/sislexa/system-owners') + '/'))
+  assert.equal(systemOwnersRoot('/work/core-a', {}, home), first)
+  assert.notEqual(systemOwnersRoot('/work/core-b', {}, home), first)
+  assert.equal(systemOwnersRoot('/work/core-a', { SISLEXA_SYSTEM_OWNERS_DIR: '/var/cache/owners' }, home), '/var/cache/owners')
 })
 
 test('owner selection preserves exact commits and rejects missing or unknown owners', () => {
