@@ -46,7 +46,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-08 | ⚠ 9 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-14 | ⚠ 6 коммит(ов) в areas после сверки: b6857379 chore(kanban): pin Kanban 0.2.18 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-14 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -61,9 +61,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1160. Последние:
+Всего записей: 1161. Последние:
 
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md) — ui-delivery-step-diagnostics
+- [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md) — system-gate-owner-cache
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md) — stand-worktree-behind
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md) — stand-proxy-https
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md) — stand-error-codes
@@ -72,7 +73,6 @@
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md) — agent-self-update-stopstand
 - [2026-10-13-stand-delivery-refusal-codes.md](log/2026-10-13-stand-delivery-refusal-codes.md) — 2026-10-13-stand-delivery-refusal-codes
 - [2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md](log/2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md) — stand-storybook-recovery
-- [2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-full-gate-failed-test-reports.md](log/2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-full-gate-failed-test-reports.md) — full-gate-failed-test-reports
 
 ## Исторические планы
 

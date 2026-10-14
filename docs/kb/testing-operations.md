@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-14
-checked: 5bc06302
+checked: 8d9c0a5b
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -154,6 +154,12 @@ Owner `test:system` uses a pinned Core commit as an isolated fixture and overlay
 a freshly built owner package. `gate:release`/`pack:release` include it. Core
 `gate:system` uses `system-tests/owners.json` to run those owner-maintained scenarios
 against the exact dependency artifacts in its own lockfile; `gate:release` runs the Core gate, Web/Desktop performance budgets, then that matrix. Development gates never fetch owner source.
+Owner checkouts live outside the Core checkout, in
+`~/.cache/sislexa/system-owners/<checkout hash>/<owner>/<commit>` (override with
+`SISLEXA_SYSTEM_OWNERS_DIR`): delivery task workspaces reject nested Git
+repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seeded
+by a shallow fetch from the local Core checkout instead of GitHub; an interrupted
+fetch (`shallow.lock`, `tmp_pack_*`) is cleaned only when no Git process runs.
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
 
