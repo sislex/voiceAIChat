@@ -171,6 +171,7 @@ export const REST = {
   projectDevStand: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}`,
   projectDevStandDeliveries: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/deliveries`,
   projectDevStandSyncDev: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/sync-dev`,
+  projectDevStandSyncDevStatus: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/sync-dev/status`,
   projectDevStandComponent: (id: string, standId: string, component: import('./devStand').DevComponentId) =>
     `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/components/${encodeURIComponent(component)}`,
   uiPerformance: '/api/ui-performance',

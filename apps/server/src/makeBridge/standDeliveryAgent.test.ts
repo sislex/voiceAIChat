@@ -3,7 +3,7 @@ import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { STAND_DELIVERY_PROGRAM, standDeliveryCommand } from './standDeliveryAgent.js'
 
-function run(action: 'head' | 'sync', options: { conflict?: boolean; fetchFails?: boolean; mergeFails?: boolean; status?: string; timeoutOn?: string; escape?: boolean } = {}) {
+function run(action: 'head' | 'sync' | 'behind', options: { conflict?: boolean; fetchFails?: boolean; mergeFails?: boolean; status?: string; timeoutOn?: string; escape?: boolean } = {}) {
   const calls: string[][] = []
   const root = '/repos/make-worktrees/conversation'
   let output = ''
@@ -94,4 +94,17 @@ describe('standDeliveryCommand error mapping', () => {
   it('keeps invalid output as invalid_stand_agent_response', async () => {
     expect(await failure(async () => ({ exitCode: 0, timedOut: false, output: 'not json' }))).toEqual({ code: 'invalid_stand_agent_response', status: 502 })
   })
+})
+
+it('counts behind dev on a dirty tree without merging or changing files', () => {
+  const r = run('behind', { status: ' M dirty.ts', conflict: true })
+  expect(r.result).toEqual({ behind: 3 })
+  expect(r.calls.slice(-2)).toEqual([['fetch', 'origin', 'dev'], ['rev-list', '--count', 'HEAD..origin/dev']])
+  expect(r.calls.some(args => ['merge', 'status', 'checkout', 'reset', 'push'].includes(args[0]!))).toBe(false)
+})
+it('behind enforces paths and propagates fetch failures', () => {
+  expect(run('behind', { escape: true }).calls).toEqual([])
+  const r = run('behind', { fetchFails: true })
+  expect(r.result).toEqual({ error: 'stand_fetch_failed' })
+  expect(r.calls.some(args => args[0] === 'rev-list')).toBe(false)
 })
