@@ -62,18 +62,44 @@ def release(value):
     return value is None or isinstance(value, str) and re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[a-f0-9]{40}', value)
 
 
+# The step currently executed by main(). The rejection line names only the
+# step and the exception class, never paths, tokens or command output.
+STEP = 'start'
+
+
+def step(name):
+    global STEP
+    STEP = name
+
+
+class CommandFailed(Exception):
+    """A child command failed; keeps its exit code and bounded stderr tail."""
+
+    def __init__(self, returncode, stderr):
+        super().__init__(f'exit {returncode}: {stderr}')
+        self.returncode, self.stderr = returncode, stderr
+
+
+class CommandOutputTooLarge(Exception):
+    pass
+
+
 def command(argv, env, payload=None, timeout=120):
     # Keep output private and bounded without buffering arbitrary child output.
-    with tempfile.TemporaryFile() as output:
-        result = subprocess.run(argv, input=payload, stdout=output, stderr=subprocess.DEVNULL,
+    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+        result = subprocess.run(argv, input=payload, stdout=output, stderr=errors,
                                 env=env, timeout=timeout, pass_fds=(9,))
-        size = output.tell()
-        assert result.returncode == 0 and size <= 1024 * 1024
+        if result.returncode != 0:
+            errors.seek(max(0, errors.tell() - 4096))
+            raise CommandFailed(result.returncode, errors.read().decode(errors='replace'))
+        if output.tell() > 1024 * 1024:
+            raise CommandOutputTooLarge()
         output.seek(0)
         return output.read().decode()
 
 
 def main():
+    step('lock')
     mode, argument = sys.argv[1:]
     lock = pathlib.Path(os.environ.get('VC_DEPLOY_LOCK', '/var/lock/voicechat-deploy.lock'))
     held, actual = os.fstat(9), lock.lstat()
@@ -85,12 +111,14 @@ def main():
         protected(root.parent, directory=True)
         root.mkdir(mode=0o700)
     protected(root, directory=True, private=True)
+    step('journal')
     journal_path = root / 'journal.json'
     journal = json.loads(journal_path.read_text()) if journal_path.exists() else {'epoch': 0, 'active': None, 'operations': {}}
     if mode == 'delivery-status':
         assert identifier(argument)
         print(canonical(journal['operations'][argument])); return
     assert mode == 'delivery'
+    step('envelope')
     path = protected(argument, private=True)
     assert path.stat().st_size <= 16384
     envelope = json.loads(path.read_text())
@@ -132,17 +160,21 @@ def main():
         verify()
         return command([docker, *args], process_env)
 
+    step('verify')
     verify()
+    step('journal')
     ident = operation['id']
     identity = digest({'operation': operation, **{k: lease[k] for k in ('runId', 'environment', 'releaseSetId')}})
     record = journal['operations'].get(ident)
     assert lease['epoch'] >= journal['epoch'] and (not journal['active'] or journal['active'] == ident)
     assert record is None or record['identity'] == identity
     assert record is not None or lease['action'] == 'deploy'
+    step('container')
     container = invoke('compose', 'ps', '-q', 'voicechat').strip()
     assert re.fullmatch('[a-f0-9]{64}', container)
     container_identity = invoke('inspect', '--format', '{{.Id}} {{.Image}} {{.State.StartedAt}} {{.State.Running}}', container).strip()
     assert re.fullmatch(container + r' sha256:[a-f0-9]{64} \S+ true', container_identity)
+    step('contract')
     contract = json.loads(invoke('exec', '--user', 'node', container, 'node', '--import', 'tsx', 'scripts/browser-ui-release.mjs', 'describe'))
     assert contract == {'schemaVersion': 1, 'kind': 'sislexa-browser-ui-owner', 'version': 2, 'intentBoundGeneration': True, 'manifestBytes': True}
     health_url = os.environ.get('VC_HEALTH_URL', 'http://127.0.0.1:8787/api/health')
@@ -161,12 +193,14 @@ def main():
         assert invoke('inspect', '--format', '{{.Id}} {{.Image}} {{.State.StartedAt}} {{.State.Running}}', container).strip() == container_identity
         return observed
 
+    step('preflight')
     before = inspect()
     if record is None:
         assert before['runtime']['generation'] == operation['expectedGeneration'] and before['runtime']['active'] == operation['expectedActive']
         record = {'schemaVersion': 1, 'operationId': ident, 'manifestHash': operation['manifestHash'], 'identity': identity,
                   'operation': operation, 'coreContainer': container_identity, 'state': 'prepared'}
         journal['operations'][ident] = record
+    step('journal')
     assert record['coreContainer'] == container_identity
     journal['epoch'] = lease['epoch']; journal['active'] = ident
     durable(journal_path, journal)
@@ -181,6 +215,7 @@ def main():
             else:
                 args = ['activate', '--release', operation['targetRelease'] or 'bundled']
                 if operation['action'] == 'install':
+                    step('staging')
                     source = protected(operation['sourceDirectory'], directory=True)
                     for item in source.rglob('*'):
                         protected(item, directory=item.is_dir())
@@ -189,15 +224,18 @@ def main():
                     staging = invoke('exec', '--user', 'node', container, 'mktemp', '-d', '/tmp/browser-ui.XXXXXXXX').strip()
                     assert re.fullmatch(r'/tmp/browser-ui\.[a-zA-Z0-9]{8}', staging)
                     record['staging'] = staging; durable(journal_path, journal)
+                    step('copy')
                     invoke('cp', str(source) + '/.', container + ':' + staging + '/')
                     invoke('exec', container, 'chown', '-R', '-h', 'node:node', staging)
                     args = ['install', '--directory', staging, '--manifest-sha256', operation['manifestSha256'], '--target-release', operation['targetRelease']]
+                step('activation')
                 verify()
                 record['state'] = 'activation-started'; durable(journal_path, journal)
                 output = json.loads(invoke('exec', '--user', 'node', container, 'node', '--import', 'tsx', 'scripts/browser-ui-release.mjs', *args,
                     '--expected-generation', canonical(operation['expectedGeneration']), '--expected-active', canonical(operation['expectedActive']), '--actor', actor))
                 assert output['active'] == operation['targetRelease'] and output['actor'] == actor
                 record['generation'] = output['generation']; record['state'] = 'activated'; durable(journal_path, journal)
+        step('observation')
         after = inspect()
         runtime, activation = after['runtime'], after['activation']
         if record['state'] != 'noop':
@@ -226,6 +264,7 @@ def main():
         if terminal_verified and record['state'] in ('succeeded', 'noop', 'recovered') and record['cleanup'] == 'complete':
             journal['active'] = None
         durable(journal_path, journal)
+    step('cleanup')
     assert record['cleanup'] == 'complete'
     print(canonical(record))
 
@@ -233,6 +272,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception:
-        sys.stderr.write('ui_delivery_rejected; inspect operation before retrying\n')
+    except Exception as error:
+        # Child stderr stays on the captured exception; it is not printed because
+        # it may contain paths or tokens. Inspect the operation before retrying.
+        sys.stderr.write(f'ui_delivery_rejected: step={STEP}: {type(error).__name__}\n')
         sys.exit(1)

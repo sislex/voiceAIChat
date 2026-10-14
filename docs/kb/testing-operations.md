@@ -1,6 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-07
+updated: 2026-10-14
+checked: 5bc06302
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -438,6 +439,20 @@ builds the panels; `npm run -w @voicechat/web-recorder build` and
 a new action and cause a relay timeout even when direct iframe tests pass. The
 application gate performs the required builds; this distinction matters when
 running a focused browser test manually before the gate.
+
+### Playwright browser preparation
+
+Browser suites using `e2e/vitest.config.ts` (including `gate:quick`,
+`test:browser` and `gate:all`) run `scripts/ensure-playwright-browser.mjs`
+as global setup. It checks Playwright 1.62's Chromium headless-shell registry
+entry (`chromium_headless_shell-<revision>`), the executable used by default
+`chromium.launch()`, rather than the full Chromium executable. If missing,
+it runs `npx playwright install chromium` once per setup invocation with the
+inherited environment, including `PLAYWRIGHT_BROWSERS_PATH`, then checks again.
+An existing shell needs no download. With `VC_PLAYWRIGHT_OFFLINE=1` or
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, a missing shell fails immediately without
+spawning an installer. Install failures include the captured output tail.
+Injected unit tests run in `test:tooling` without downloading or launching browsers.
 
 ### Fast-stage затронутых тестов
 
@@ -1034,7 +1049,19 @@ measurements directly. The full gate's test stage runs tooling and each workspac
 test script as separate processes, with at most three active by default; set
 `VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. Their output
 is buffered and printed in manifest order, all failing workspaces are reported,
-and `[gate:timing] tests/<workspace>` records individual durations. The ordinary
+and `[gate:timing] tests/<workspace>` records individual durations.
+Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
+file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling
+keeps the manifest command chain and gives each node:test invocation its own
+report, including prefixed package tests. Reports are collected before temporary
+files are removed; failed repository-relative paths are deduplicated across
+completed tasks. On failure, the last two lines are exactly
+`GATE-FAILED-STAGE: <stage>` followed by `GATE-FAILED-TESTS: <json array>`.
+The stage is `tests` for tooling/workspace failures, `browser-integration` for
+functional browser tests, or the other full-gate stage name. Non-test failures
+(for example, typecheck), missing reports and incomplete reports produce an
+empty file list when no failed files were identified. Success adds no markers.
+The ordinary
 `npm run test` command remains sequential for local use. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
