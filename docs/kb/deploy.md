@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-13
-checked: 7abd4085
+updated: 2026-10-14
+checked: 4641d42b
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -448,6 +448,16 @@ container identity and the exact healthy Core commit. The broker still owns arch
 provenance, gateway asset evidence and authenticated acceptance. See the
 [controlled UI protocol](../delivery-release-adapter.md#controlled-browser-ui-owner-entrypoint).
 This owner change alone is not production deployment or completion of B06.
+
+Any failure exits 1 with a single stderr line
+`ui_delivery_rejected: step=<step>: <ExceptionClass>` (steps: `lock`, `journal`,
+`envelope`, `verify`, `container`, `contract`, `preflight`, `staging`, `copy`,
+`activation`, `observation`, `cleanup`). It never prints paths, tokens or child
+output; a failed child command raises `CommandFailed` that keeps its exit code and
+stderr tail only on the in-process exception. Inspect the operation with
+`delivery-status` before retrying. `scripts/browser-ui-release.test.mjs` runs the
+owner with python3 fake `docker`/`verify` commands and a 120 s per-command budget;
+a failing command reports `code`, `signal`, `killed`, `stderr` and `stdout`.
 
 ## Independent browser release rollout (2026-09-22)
 
