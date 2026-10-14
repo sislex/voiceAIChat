@@ -388,7 +388,9 @@ sends `agent.update {version, sha256}` at most once per connection when the agen
 logs the security event `agent_update_sent` (group `machines`). Equal/newer versions and unsupervised or legacy
 agents receive no update; they keep the `agent.updateAvailable` hint from the registry version checks. The
 registry stores the last `agent.updateResult` per agent in memory across reconnects (`updateStatusOf`), and
-`GET /api/agents` lists it as `updateStatus: {status, message, at}`.
+`GET /api/agents` lists it as `updateStatus: {status, message, at}`. The machines WebSocket
+feed includes the same outcome in its initial list and subsequent registry change notifications.
+Machines without a reported outcome omit the field; stored outcomes remain visible while offline.
 
 **Dev-process relay.** `registry.devProcess(agentId, method, request)` forwards the methods of the Shared
 `DevProcessRpc` registry: `devProcess.start|stop|status|logs` and, for agent 0.25+, `devProcess.stopStand

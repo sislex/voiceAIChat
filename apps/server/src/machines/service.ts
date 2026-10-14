@@ -10,7 +10,7 @@ import type { EnvironmentLink, EnvironmentLinkInput } from '../db/repos/environm
 // `ptyLive`, `ptyBufferText`, `ptyContextOf`) нарочно остаются синхронными: их десятки в горячих путях, и
 // удалённая реализация отвечает из зеркала, которое процесс машин обновляет пушем.
 import type { AgentHttpRequest, AgentHttpResponse, AgentImageHost, AgentPolicy, AgentTelemetry, FsResult, GitAccessRequest, GitAccessResult, MachineCommandRecord, PtyContext } from '@sislexa/agent-contracts'
-import type { ExecMeta, ExecResult, PtyEvent } from '../agents/registry.js'
+import type { AgentUpdateStatus, ExecMeta, ExecResult, PtyEvent } from '../agents/registry.js'
 
 export type { ExecMeta, ExecResult, PtyEvent }
 
@@ -27,6 +27,8 @@ export interface MachinesService extends Pick<VpnService, 'ensureEnvironmentGran
   onlineIds(): Set<string>
   nameOf(agentId: string): string | undefined
   versionOf(agentId: string): string | undefined
+  /** Available when the backing registry exposes self-update outcomes. */
+  updateStatusOf?(agentId: string): AgentUpdateStatus | undefined
   platformOf(agentId: string): string | undefined
   policyOf(agentId: string): AgentPolicy | undefined
   telemetryOf(agentId: string): AgentTelemetry | undefined
