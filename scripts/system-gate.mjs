@@ -27,14 +27,18 @@ export function selectSystemOwners(plan, args) {
 }
 // Fail closed: process arguments cannot reliably identify repositories (GIT_DIR,
 // -C, helpers and inherited cwd). Any live Git process makes deletion unsafe.
-export function assertNoActiveGit(checkout, inspect = () => execFileSync('ps', ['-axo', 'comm='], { encoding: 'utf8' })) {
+export function assertNoActiveGit(checkout, inspect = () => execFileSync('ps', ['-axo', 'pid=,comm='], { encoding: 'utf8' })) {
   let processes
   try { processes = inspect() } catch (cause) {
     throw Error(`Cannot establish Git inactivity for ${checkout}`, { cause })
   }
   if (typeof processes !== 'string' || !processes.trim()) throw Error(`Cannot establish Git inactivity for ${checkout}`)
-  if (processes.split('\n').some(command => /(?:^|\/)git(?:-[^/\s]+)?(?:\s|$)/.test(command.trim()))) {
-    throw Error(`Active Git process; refusing cleanup of ${checkout}`)
+  for (const line of processes.trim().split('\n')) {
+    const match = line.trim().match(/^[1-9]\d*\s+(.+)$/)
+    if (!match) throw Error(`Cannot establish Git inactivity for ${checkout}`)
+    if (/(?:^|\/)git(?:-[^/\s]+)?(?:\s|$)/.test(match[1])) {
+      throw Error(`Active Git process; refusing cleanup of ${checkout}`)
+    }
   }
 }
 

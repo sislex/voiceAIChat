@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { once } from 'node:events'
 import { pathToFileURL } from 'node:url'
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim()
-const idle = checkout => assertNoActiveGit(checkout, () => '/usr/bin/node\n/usr/bin/ps')
+const idle = checkout => assertNoActiveGit(checkout, () => '1 /usr/bin/node\n2 /usr/bin/ps')
 function fixture(t) {
   const directory = mkdtempSync(join(realpathSync(tmpdir()), 'system gate # '))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
@@ -65,7 +65,7 @@ test('cleans only stale owner residues and fails closed for active or unknown Gi
   const { root, checkout, commit, target } = fixture(t)
   git(checkout, 'init', '--quiet')
   const { files, ordinary } = residue(checkout)
-  for (const inspect of [() => '/usr/bin/git\n/usr/bin/node', () => '/usr/lib/git-core/git-index-pack', () => '', () => { throw Error('ps denied') }]) {
+  for (const inspect of [() => '1 /usr/bin/git\n2 /usr/bin/node', () => '1 /usr/lib/git-core/git-index-pack', () => 'unparseable process output', () => '', () => { throw Error('ps denied') }]) {
     const guard = path => assertNoActiveGit(path, inspect)
     assert.throws(() => cleanOwnerGitResidue(checkout, guard), /Git/)
     residue(target)
@@ -109,6 +109,28 @@ test('unavailable local SHA fails without remote fallback and can be retried', t
   const target = prepareCoreFixture(root, checkout, commit, idle)
   assert.equal(git(target, 'rev-parse', 'HEAD'), commit)
   assert.throws(() => prepareCoreFixture(root, checkout, '../escape'), /immutable/)
+})
+
+// @testCase TC1
+test('a local commit without the readiness marker fails preparation', t => {
+  const { root, checkout } = fixture(t)
+  git(root, 'rm', 'package-lock.json')
+  git(root, 'commit', '-qm', 'missing marker')
+  const commit = git(root, 'rev-parse', 'HEAD')
+  assert.throws(() => prepareCoreFixture(root, checkout, commit), /missing package-lock.json/)
+})
+
+// @testCase TC2
+test('a ready fixture with a different HEAD is preserved for owner-host validation', t => {
+  const { root, checkout, commit } = fixture(t)
+  const target = prepareCoreFixture(root, checkout, commit)
+  git(target, 'config', 'user.email', 'test@example.com')
+  git(target, 'config', 'user.name', 'System gate test')
+  git(target, 'commit', '--allow-empty', '-qm', 'different HEAD')
+  const different = git(target, 'rev-parse', 'HEAD')
+  prepareCoreFixture(root, checkout, commit, () => assert.fail('ready fixture inspected'))
+  assert.equal(git(target, 'rev-parse', 'HEAD'), different)
+  assert.notEqual(different, commit)
 })
 
 const owner = { repository: 'webreader', commit: 'a'.repeat(40) }
@@ -205,7 +227,7 @@ test('local fetch failure prevents the suite and all later owners and records fa
 
 // @testCase TC3
 test('unsafe owner cleanup stops before fetch, fixture preparation and suites', t => {
-  for (const inspect of [() => '/usr/bin/git', () => { throw Error('ps denied') }]) {
+  for (const inspect of [() => '1 /usr/bin/git', () => 'unparseable process output', () => { throw Error('ps denied') }]) {
     const { root, commit, config, ownersRoot } = orchestrationFixture(t)
     const row = config.owners[0]
     const checkout = join(ownersRoot, row.repository, row.commit)
