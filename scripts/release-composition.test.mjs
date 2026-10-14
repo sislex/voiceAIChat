@@ -57,6 +57,7 @@ function published(overrides = {}) {
   return { dir, pkg, manifest }
 }
 
+// @testCase TC-03
 test('apply rewrites every Core pin surface and drops the replaced archive', () => {
   const { core, pinned } = fixture()
   const { dir, pkg } = published()
@@ -79,6 +80,7 @@ test('apply rewrites every Core pin surface and drops the replaced archive', () 
   assert.deepEqual(currentComposition(core).map(({ repository, version, commit }) => ({ repository, version, commit })), [{ repository: REPO, version: '1.1.0', commit: NEW }])
 })
 
+// @testCase TC-03
 test('apply refuses bytes, commits and targets that do not match the published release', () => {
   const cases = [
     [published({ tampered: Buffer.from('not the archive') }), /байты не совпадают/],
@@ -95,6 +97,22 @@ test('apply refuses bytes, commits and targets that do not match the published r
     // Отказ проверки не оставляет чекаут наполовину переписанным.
     assert.deepEqual(snapshot(core), before)
   }
+})
+
+// @testCase TC-03
+test('release replacement preserves a nested lock consumer until its last reference disappears', () => {
+  const { core, pinned } = fixture()
+  const { dir, pkg } = published()
+  const other = join(core, 'examples/nested/package-lock.json')
+  write(other, { resolved: 'file:../../vendor/' + pinned.asset })
+  applyComposition(core, dir)
+  assert.ok(existsSync(join(core, 'vendor', pinned.asset)))
+  assert.ok(existsSync(join(core, 'vendor', pkg.asset)))
+  applyComposition(core, dir)
+  assert.ok(existsSync(join(core, 'vendor', pinned.asset)))
+  write(other, {})
+  applyComposition(core, dir)
+  assert.equal(existsSync(join(core, 'vendor', pinned.asset)), false)
 })
 
 test('a new package or a second release of the same repository is not a composition change', () => {
@@ -120,6 +138,18 @@ test('manifestFromCore publishes exactly the pinned bytes at the tool commit', (
     packages: [{ name: '@sislexa/make', version: '1.0.0', asset: pinned.asset, sha256: pinned.sha256, integrity: pinned.integrity, size: readFileSync(join(core, 'vendor', pinned.asset)).length }],
     images: [{ name: 'ghcr.io/sislex/make-api' }], tools: ['make'] })
   assert.deepEqual(files, [join(core, 'vendor', pinned.asset)])
+})
+
+test('owner publication reads the replacement after composition removes the last old pin', () => {
+  const { core, pinned } = fixture()
+  const { dir, pkg } = published()
+  applyComposition(core, dir)
+  const { manifest, files } = manifestFromCore(REPO, core)
+  assert.equal(existsSync(join(core, 'vendor', pinned.asset)), false)
+  assert.deepEqual(files, [join(core, 'vendor', pkg.asset)])
+  assert.equal(manifest.commit, NEW)
+  assert.equal(manifest.packages[0].asset, pkg.asset)
+  assert.equal(manifest.packages[0].sha256, archiveDigests(readFileSync(files[0])).sha256)
 })
 
 test('publishing creates the tag once and never reuses a version for another commit', async () => {

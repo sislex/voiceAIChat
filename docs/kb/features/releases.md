@@ -38,6 +38,8 @@ areas:
 
 ## Source-owned tool releases
 
+Keep only referenced archives in `vendor/`: pin replacement removes an old archive after its last package manifest, lockfile, artifact inventory or script reference disappears, and `scripts/vendor-archives.test.mjs` enforces this rule in `test:tooling`.
+
 Make, Playwright Reader, Web Reader, Voice and Image Studio publish their own tagged source archives
 and own their API/UI release metadata. Core pins the archive integrity and source
 commit through direct immutable archives. Owner repositories run complete checks
