@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-09-30
-checked: 0c960b4e
+updated: 2026-10-15
+checked: 3b651104
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -12,10 +12,11 @@ areas:
 # Make: браузер ассистента
 
 План: `make-browser-v1`. Этот срез делает первую часть
-задач B01 и C01.
+задач B01 и C01. В Core нет локального `docs/plans/make-browser.md`, поэтому имя
+плана приведено как текст, без относительной ссылки.
 
-Исполнитель и браузер разделены. Claude или Codex выполняет ход, а страница
-открывается в браузере привязанного чата Web Reader или Playwright Reader того же
+Этот файл — тема Core для поиска сведений о make-browser. Исполнитель и браузер
+разделены. Claude или Codex выполняет ход, а страница открывается в браузере привязанного чата Web Reader или Playwright Reader того же
 пользователя. Чат Make хранит ссылку на такой чат в `conversations.make_browser_session`
 (`Conversation.makeBrowserSessionId`).
 
