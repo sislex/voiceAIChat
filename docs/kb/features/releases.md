@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-09-23
-checked: 6543b798
+updated: 2026-10-14
+checked: 1c02df75
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -319,3 +319,10 @@ cross into the browser or companion-agent command. Install, rollback and bundled
 fallback operations are idempotent and audited in
 `browser_ui_release_operations`; success also requires an unchanged Core
 container ID and start timestamp.
+
+**Причина провала регрессии (2026-10-14, release-reliability-v1).** Регрессию гоняет Kanban: при падении `gate:all`
+он разбирает последние строки `GATE-FAILED-STAGE:` и `GATE-FAILED-TESTS:` (их печатает `scripts/full-gate.mjs`), один раз
+повторяет 1–20 упавших файлов через `npm run test:files` и при зелёном повторе считает регрессию пройденной. Релиз
+несёт необязательные `failedTests` и `failureTail` (последние 80 строк без ANSI). `releaseFailureSummary` в
+`packages/shared/src/release.ts` пропускает YAML/TAP-строки вида `error: |-` (раньше причиной провала становилось `|-`),
+предпочитает «N упавших тестов: …», затем строку `GATE-FAILED-STAGE:` или метку стадии регрессии.
