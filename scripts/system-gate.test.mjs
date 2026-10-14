@@ -42,6 +42,23 @@ test('seeds a detached Core fixture exclusively from a local URL', t => {
   assert.equal(readFileSync(join(target, 'package-lock.json'), 'utf8'), '{}\n')
   assert.ok(readFileSync(join(target, '.git/FETCH_HEAD'), 'utf8').includes(' of ' + pathToFileURL(root).href))
   assert.equal(git(target, 'rev-parse', '--is-shallow-repository'), 'true')
+  assert.equal(git(target, 'status', '--porcelain'), '')
+  assert.equal(git(root, 'status', '--porcelain'), '')
+})
+
+// @testCase TC1
+test('seeds the requested local commit even when Core HEAD has advanced', t => {
+  const { root, checkout, commit } = fixture(t)
+  writeFileSync(join(root, 'package-lock.json'), '{"version":"later"}\n')
+  git(root, 'add', '.'); git(root, 'commit', '-qm', 'later Core')
+  const current = git(root, 'rev-parse', 'HEAD')
+  const target = prepareCoreFixture(root, checkout, commit)
+  assert.notEqual(current, commit)
+  assert.equal(git(target, 'rev-parse', 'HEAD'), commit)
+  assert.equal(readFileSync(join(target, 'package-lock.json'), 'utf8'), '{}\n')
+  assert.equal(git(target, 'status', '--porcelain'), '')
+  assert.equal(git(root, 'rev-parse', 'HEAD'), current)
+  assert.equal(git(root, 'status', '--porcelain'), '')
 })
 
 // @testCase TC2
