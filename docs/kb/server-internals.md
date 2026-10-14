@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-13
-checked: 7abd4085
+updated: 2026-10-14
+checked: 4641d42b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -552,6 +552,21 @@ invocations it inserts `--` before these flags unless the command already has
 a standalone separator, including a trailing `--`. Other launch commands keep
 their existing argument forwarding.
 
+Errors of the components routes (`routes/projectComponents.ts` `handle`) keep
+the `statusCode` and code of errors that carry them: stand proxy
+`stand_not_found` 404, `stand_proxy_unavailable` 503, adapter
+`invalid_stand_response` 502, and Storybook start refusals 409
+`machine_offline` (machine not connected) and 409 `storybook_no_free_port`
+(every port 6006–6046 used by sessions on that machine). The body is
+`{error, code, message}`; errors without a status remain 409
+`components_failed`. A `failed` Storybook session carries `errorCode`
+(`ProjectStorybookErrorCode`): `storybook_exit_nonzero` (sentinel exit code
+≠ 0), `storybook_exited_before_ready` (exit 0 or PTY exit before readiness),
+`pty_error` (PTY error or session gone during probes),
+`storybook_ready_timeout`, and `storybook_port_busy` when the log shows
+`EADDRINUSE` or `port N is already in use/not available`, which overrides the
+exit codes. A successful start clears `errorCode`.
+
 ### Project mode в Core (2026-10-07)
 
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
@@ -867,6 +882,16 @@ project's allowed directory and selected repository. Submission reads the exact
 HEAD and verifies the current branch, but never pushes or fetches. Core forwards
 `{repository, branch, targetBranch:'dev', headSha, title, author}` to
 `POST /v1/candidates/branch`; author is the authenticated Core user.
+
+Stand failures use the specific codes listed in Shared `STAND_ERROR_CODES`.
+`sync-dev` first runs `git status --porcelain --untracked-files=no`: tracked
+changes fail with 409 `stand_worktree_dirty` before any fetch or merge, while
+unmerged entries of a previous conflicted sync still return `conflicts`. A
+failed `git fetch origin` is `stand_fetch_failed`; a Git spawn hitting its
+60-second limit is 504 `stand_git_timeout`. Core checks `timedOut` of the agent
+command before parsing its output (504 `stand_agent_timeout`), and a rejected
+`machines.exec` (dropped agent) is 409 `machine_unavailable`. Other program
+codes stay 409; unparseable output stays 502 `invalid_stand_agent_response`.
 
 Outbound Delivery Control credentials are configured separately from Core's
 hashed inbound integration tokens. `VC_STAND_DELIVERY_PROJECTS` is a JSON object
