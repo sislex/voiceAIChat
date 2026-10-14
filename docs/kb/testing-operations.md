@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-14
-checked: 5bc06302
+checked: 2b094a67
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -86,6 +86,8 @@ and Tailscale reachability on the assigned gateway port.
 ## Core UI test ownership
 
 ### Shared chat exact-artifact acceptance (U10)
+
+Keep only vendor archives referenced by repository package manifests/lockfiles, owner/snapshot/UI inventories (`asset`), or scripts; `vendor-archives.mjs` supplies the same fail-closed reachability check for `test:tooling` and all pin cleanup paths, which remove replaced archives only after successful reference updates and disappearance of the last consumer.
 
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
 committed Shared contract as version 0.1.11 with bounded Identity

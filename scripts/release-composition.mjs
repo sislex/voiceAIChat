@@ -9,13 +9,14 @@
 // владельца: `vendor/*.tgz`, три манифеста архивов, `package.json`/`package-lock.json`,
 // `deploy/tools.lock.json` и образы в compose. Результат — чистая замена закреплений: регрессия
 // релиза узнаёт её (`scripts/owner-pins.mjs`) и идёт суженным планом.
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease } from '../packages/shared/src/releaseComposition.ts'
 import { archiveDigests, rowCommit, rowRepository } from './owner-release-publish.mjs'
 import { assertReleaseVersions } from './release-version.mjs'
+import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
 
 const MANIFESTS = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -108,6 +109,7 @@ export function checkRelease(core, manifest, dir, { inspect = inspectArchive } =
 /** Закрепить один проверенный выпуск; файлы архивов лежат в `dir`. Возвращает, что поменялось. */
 export function applyRelease(core, manifest, dir) {
   assertReleaseVersions(manifest, 'Release composition')
+  const candidates = analyzeVendorArchives(core).archives.map(row => row.file)
   const changes = []
   for (const pkg of manifest.packages) {
     let previous = null
@@ -154,7 +156,6 @@ export function applyRelease(core, manifest, dir) {
       }
       writeJson(lockPath, lock)
     }
-    if (previous.asset !== pkg.asset && !stillReferenced(core, previous.asset)) rmSync(join(core, 'vendor', previous.asset), { force: true })
     changes.push({ package: pkg.name, from: previous.version, to: pkg.version })
   }
   const toolsPath = join(core, 'deploy/tools.lock.json')
@@ -173,11 +174,8 @@ export function applyRelease(core, manifest, dir) {
       if (next !== text) writeFileSync(path, next)
     }
   }
+  removeUnusedVendorArchives(core, candidates)
   return { repository: manifest.repository, version: manifest.version, commit: manifest.commit, packages: changes, tools: manifest.tools, images: manifest.images.map((image) => image.name) }
-}
-
-function stillReferenced(core, asset) {
-  return MANIFESTS.some((file) => existsSync(join(core, file)) && readFileSync(join(core, file), 'utf8').includes(`"${asset}"`))
 }
 
 /** Все выпуски из каталога: по подкаталогу на выпуск. Один репозиторий — один выпуск. */
