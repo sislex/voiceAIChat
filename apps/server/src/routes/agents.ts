@@ -411,7 +411,8 @@ export async function registerAgentRoutes(
 
   // Последняя доступная версия агента (публично — трей проверяет обновления).
   // The served bundle version (falls back to the contracts constant when the bundle is unreadable).
-  app.get(REST.agentLatestVersion, async () => {
+  app.get(REST.agentLatestVersion, async (_req, reply) => {
+    reply.header('Cache-Control', 'no-store')
     try { return { version: servedAgent().version } } catch { return { version: AGENT_VERSION } }
   })
 
