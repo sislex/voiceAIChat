@@ -57,6 +57,7 @@ function published(overrides = {}) {
   return { dir, pkg, manifest }
 }
 
+// @testCase TC-03
 test('apply rewrites every Core pin surface and drops the replaced archive', () => {
   const { core, pinned } = fixture()
   const { dir, pkg } = published()
@@ -79,6 +80,7 @@ test('apply rewrites every Core pin surface and drops the replaced archive', () 
   assert.deepEqual(currentComposition(core).map(({ repository, version, commit }) => ({ repository, version, commit })), [{ repository: REPO, version: '1.1.0', commit: NEW }])
 })
 
+// @testCase TC-03
 test('apply refuses bytes, commits and targets that do not match the published release', () => {
   const cases = [
     [published({ tampered: Buffer.from('not the archive') }), /байты не совпадают/],
@@ -95,6 +97,22 @@ test('apply refuses bytes, commits and targets that do not match the published r
     // Отказ проверки не оставляет чекаут наполовину переписанным.
     assert.deepEqual(snapshot(core), before)
   }
+})
+
+// @testCase TC-03
+test('release replacement preserves a nested lock consumer until its last reference disappears', () => {
+  const { core, pinned } = fixture()
+  const { dir, pkg } = published()
+  const other = join(core, 'examples/nested/package-lock.json')
+  write(other, { resolved: 'file:../../vendor/' + pinned.asset })
+  applyComposition(core, dir)
+  assert.ok(existsSync(join(core, 'vendor', pinned.asset)))
+  assert.ok(existsSync(join(core, 'vendor', pkg.asset)))
+  applyComposition(core, dir)
+  assert.ok(existsSync(join(core, 'vendor', pinned.asset)))
+  write(other, {})
+  applyComposition(core, dir)
+  assert.equal(existsSync(join(core, 'vendor', pinned.asset)), false)
 })
 
 test('a new package or a second release of the same repository is not a composition change', () => {
