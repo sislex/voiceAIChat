@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, copyFi
 import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n')
 function run(command, args, cwd) {
@@ -40,6 +42,7 @@ function manifests(root) {
 }
 
 function pin(root, archive, entry) {
+  const candidates = analyzeVendorArchives(root).archives.map(row => row.file)
   const vendor = join(root, 'vendor')
   mkdirSync(vendor, { recursive: true })
   const target = join(vendor, entry.asset)
@@ -64,6 +67,7 @@ function pin(root, archive, entry) {
     write(file, manifest)
   }
   run('npm', ['install', '--package-lock-only', '--ignore-scripts', '--strict-peer-deps', '--no-audit', '--no-fund'], root)
+  removeUnusedVendorArchives(root, candidates)
 }
 
 export function releaseContracts(options, { core = process.cwd(), log = console.log } = {}) {

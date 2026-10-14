@@ -362,6 +362,7 @@ describe('REST: утилиты машины (exec/fs)', () => {
   it('GET /api/agents/version публичен и отдаёт версию', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
+    expect(res.headers['cache-control']).toBe('no-store')
     expect(res.json()).toEqual({ version: servedAgent().version })
     expect(servedAgent().sha256).toMatch(/^[0-9a-f]{64}$/)
   })

@@ -52,13 +52,17 @@ function fixture(t) {
   return { root, source, core, git, repo, options: { name, version: '2.0.0', source, commit: git(source, 'rev-parse', 'HEAD') } }
 }
 
+// @testCase TC-03
 test('Core pins every manifest, lock, archive hashes and provenance from a detached commit', t => {
   const f = fixture(t)
   // A later clean HEAD must not leak into the selected release.
   put(f.source, 'packages/contracts/index.js', 'export const version = 3\n')
   f.git(f.source, 'add', '.')
   f.git(f.source, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'later')
+  put(f.core, 'vendor/old.tgz', 'obsolete')
+  put(f.core, 'vendor/owner-artifacts.json', { packages: [{ name, asset: 'old.tgz' }] })
   const result = releaseContracts(f.options, { core: f.core, log() {} })
+  assert.equal(existsSync(join(f.core, 'vendor/old.tgz')), false)
   assert.equal(result.ok, true, JSON.stringify(result.results))
   const entry = result.entry
   assert.match(entry.asset, /^voicechat-make-contracts-2\.0\.0-[a-f0-9]{12}\.tgz$/)
@@ -78,6 +82,28 @@ test('Core pins every manifest, lock, archive hashes and provenance from a detac
   assert.equal(snapshot.packages[0].name, 'unrelated')
   assert.deepEqual(snapshot.packages[1], entry)
   assert.deepEqual(read(join(f.core, 'vendor/owner-artifacts.json')).packages, [entry])
+})
+
+// @testCase TC-03
+test('contract replacement distinguishes same-version bytes and preserves another consumer', t => {
+  const f = fixture(t)
+  const first = releaseContracts(f.options, { core: f.core, log() {} })
+  assert.equal(first.ok, true)
+  put(f.core, 'examples/nested/package-lock.json', { resolved: 'file:../../vendor/' + first.entry.asset })
+  put(f.source, 'packages/contracts/index.js', 'export const version = 99\n')
+  f.git(f.source, 'add', '.')
+  f.git(f.source, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'different bytes')
+  const next = releaseContracts({ ...f.options, commit: f.git(f.source, 'rev-parse', 'HEAD') }, { core: f.core, log() {} })
+  assert.equal(next.ok, true)
+  assert.equal(next.entry.version, first.entry.version)
+  assert.notEqual(next.entry.asset, first.entry.asset)
+  assert.ok(existsSync(join(f.core, 'vendor', first.entry.asset)))
+  assert.ok(existsSync(join(f.core, 'vendor', next.entry.asset)))
+  put(f.core, 'examples/nested/package-lock.json', {})
+  const repeated = releaseContracts({ ...f.options, commit: f.git(f.source, 'rev-parse', 'HEAD') }, { core: f.core, log() {} })
+  assert.equal(repeated.ok, true)
+  assert.equal(existsSync(join(f.core, 'vendor', first.entry.asset)), false)
+  assert.ok(existsSync(join(f.core, 'vendor', repeated.entry.asset)))
 })
 
 test('consumer pins exact peers and performs a clean real npm ci', t => {

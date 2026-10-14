@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-14
-checked: 5bc06302
+checked: f62aeb55
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -87,6 +87,8 @@ and Tailscale reachability on the assigned gateway port.
 
 ### Shared chat exact-artifact acceptance (U10)
 
+Keep only vendor archives referenced by repository package manifests/lockfiles, owner/snapshot/UI inventories (`asset`), or scripts; `vendor-archives.mjs` supplies the same fail-closed reachability check for `test:tooling` and all pin cleanup paths, which remove replaced archives only after successful reference updates and disappearance of the last consumer.
+
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
 committed Shared contract as version 0.1.11 with bounded Identity
 `>=1.4.2 <1.5.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
@@ -154,6 +156,15 @@ Owner `test:system` uses a pinned Core commit as an isolated fixture and overlay
 a freshly built owner package. `gate:release`/`pack:release` include it. Core
 `gate:system` uses `system-tests/owners.json` to run those owner-maintained scenarios
 against the exact dependency artifacts in its own lockfile; `gate:release` runs the Core gate, Web/Desktop performance budgets, then that matrix. Development gates never fetch owner source.
+Owner checkouts live outside the Core checkout, in
+`~/.cache/sislexa/system-owners/<checkout hash>/<owner>/<commit>` (override with
+`SISLEXA_SYSTEM_OWNERS_DIR`): delivery task workspaces reject nested Git
+repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seeded
+by a shallow fetch from the local Core checkout instead of GitHub. Interrupted
+fetch residues (`shallow.lock`, `tmp_pack_*`) are cleaned only when no Git process
+runs; process inspection is skipped when there is no residue to clean.
+An identified Git process takes diagnostic precedence over unknown process rows;
+unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
 

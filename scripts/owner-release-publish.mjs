@@ -77,6 +77,8 @@ const COMPOSE_FILES = () => ['docker-compose.yml', ...(existsSync(join(root, 'de
 export const rowRepository = (row) => row.repository ?? row.provenance?.repository ?? row.source?.repository
 export const rowCommit = (row) => row.commit ?? row.provenance?.commit ?? row.source?.commit
 
+// Pin replacement and unused vendor archive cleanup belong to release-composition.mjs;
+// publication reads the remaining pinned bytes without changing the checkout.
 /** Манифест и файлы выпуска из того, что сейчас закреплено в Core. */
 export function manifestFromCore(repository, core = root) {
   const all = new Map()
