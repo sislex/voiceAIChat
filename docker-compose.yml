@@ -184,7 +184,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:c5d6eed64693a81883ea426d8a659a8d8cf8ba48}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:8938b041d593186ab0496a47e1b69c2943aa7904}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -254,7 +254,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:d54cda8a26ff018ea569c93f67762804644cc9a1}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:d1d9616edd44852c5f20c713a75c9dc35bd5d4cd}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:

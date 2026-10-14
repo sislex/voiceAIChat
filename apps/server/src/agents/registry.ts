@@ -8,7 +8,7 @@ import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 
 import { randomUUID } from 'node:crypto'
 import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@sislexa/agent-contracts'
-import type { DevProcessMethod, DevProcessResponseMessage, DevProcessRpc } from '@voicechat/shared'
+import { DEV_PROCESS_RESPONSE_TYPES, type DevProcessMethod, type DevProcessResponseMessage, type DevProcessRpc } from '@voicechat/shared'
 import { evaluateAgentCommand, isToolAllowed, requiredVersion, AGENT_VERSION, DEFAULT_AGENT_POLICY, type AgentHttpRequest, type AgentHttpResponse, type AgentImageHost, type AgentPolicy, type AgentTelemetry, type AgentToServer, type FsOp, type FsResult, type GitAccessRequest, type GitAccessResult, type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@sislexa/agent-contracts'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
@@ -154,6 +154,14 @@ export const TUNNEL_RELAY_HIGH_WATER_MARK = 8 * 1024 * 1024
 export const TUNNEL_RELAY_LOW_WATER_MARK = 2 * 1024 * 1024
 const TUNNEL_RELAY_POLL_MS = 25
 
+/** Last self-update outcome reported by an agent (`agent.updateResult`, stand-https-v1 C01). */
+export interface AgentUpdateStatus {
+  status: Extract<AgentToServer, { t: 'agent.updateResult' }>['status']
+  message: string
+  /** Unix milliseconds when Core received the result. */
+  at: number
+}
+
 /** Кто и откуда запустил команду — попадает в журнал команд машины. */
 export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
 
@@ -168,6 +176,8 @@ export class AgentRegistry {
   private readonly pendingVpn = new Map<string, { agentId: string; timer: NodeJS.Timeout; resolve: (o: VpnObservation) => void; reject: (e: Error) => void }>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
+  // Kept across reconnects: an applied update restarts the agent, so the result outlives the connection.
+  private readonly updateStatuses = new Map<string, AgentUpdateStatus>()
   private readonly coreTunnels = new Map<string, { agentId: string; stream: CoreTunnel }>()
   private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
@@ -243,6 +253,11 @@ export class AgentRegistry {
   /** Версия подключённого агента (undefined — офлайн). */
   versionOf(agentId: string): string | undefined {
     return this.online.get(agentId)?.version
+  }
+
+  /** Last reported self-update outcome (undefined — none reported since Core started). */
+  updateStatusOf(agentId: string): AgentUpdateStatus | undefined {
+    return this.updateStatuses.get(agentId)
   }
 
   /** Последняя телеметрия онлайн-агента (undefined — нет данных/офлайн). */
@@ -1082,6 +1097,12 @@ export class AgentRegistry {
     // Agent 0.24.0 reports dev stand recovery after a restart; Core has no consumer yet
     // (stand reconciliation belongs to Kanban), so the events are not exec traffic.
     if (isDevProcessRecovery(msg)) return
+    // Agent 0.25 reports the outcome of an `agent.update` sent after registration (stand-https-v1 C01).
+    if (msg.t === 'agent.updateResult') {
+      this.updateStatuses.set(agentId, { status: msg.status, message: String(msg.message ?? '').slice(0, 2000), at: Date.now() })
+      this.emitChange()
+      return
+    }
     const p = this.pending.get(msg.execId)
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {
@@ -1137,8 +1158,10 @@ export class AgentRegistry {
 
 // Agent contracts 1.3.0 include dev process responses in the agent message union; the guard
 // narrows them out so the exec handling below keeps its `execId` messages.
-function isDevProcessResponse(msg: { t: string }): msg is DevProcessResponseMessage {
-  return msg.t.startsWith('devProcess.') && 'requestId' in msg
+type AgentDevProcessResponse = DevProcessResponseMessage | Extract<AgentToServer, { t: `devProcess.${string}`; requestId: string }>
+const DEV_PROCESS_RESPONSES = new Set<string>(DEV_PROCESS_RESPONSE_TYPES)
+function isDevProcessResponse(msg: { t: string }): msg is AgentDevProcessResponse {
+  return DEV_PROCESS_RESPONSES.has(msg.t) && 'requestId' in msg
 }
 
 type DevProcessRecovery = Extract<AgentToServer, { t: 'devProcess.recovered' | 'devProcess.recoveryFailed' }>
