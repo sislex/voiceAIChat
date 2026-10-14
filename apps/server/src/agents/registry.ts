@@ -1082,6 +1082,8 @@ export class AgentRegistry {
     // Agent 0.24.0 reports dev stand recovery after a restart; Core has no consumer yet
     // (stand reconciliation belongs to Kanban), so the events are not exec traffic.
     if (isDevProcessRecovery(msg)) return
+    // Agent 0.25 reports self-update outcomes; Core records them once it sends agent.update (stand-https-v1 C01).
+    if (msg.t === 'agent.updateResult') return
     const p = this.pending.get(msg.execId)
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {
@@ -1137,7 +1139,8 @@ export class AgentRegistry {
 
 // Agent contracts 1.3.0 include dev process responses in the agent message union; the guard
 // narrows them out so the exec handling below keeps its `execId` messages.
-function isDevProcessResponse(msg: { t: string }): msg is DevProcessResponseMessage {
+type AgentDevProcessResponse = DevProcessResponseMessage | Extract<AgentToServer, { t: `devProcess.${string}`; requestId: string }>
+function isDevProcessResponse(msg: { t: string }): msg is AgentDevProcessResponse {
   return msg.t.startsWith('devProcess.') && 'requestId' in msg
 }
 
