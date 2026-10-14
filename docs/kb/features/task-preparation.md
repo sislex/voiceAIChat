@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-10-05
-checked: 8f820f9c
+updated: 2026-10-14
+checked: 7b9de429
 
 areas:
   - packages/shared/src/qa.ts
@@ -44,6 +44,21 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+Current ownership: preparation prompt, complete-response parsing and normalization
+live in `sislex/sislexa-kanban`, not in Core's `apps/server/src/kanban` (which
+contains only ports). Core verifies the exact Kanban commit pinned in compose
+with `node --test scripts/development-readiness.test.mjs`; this uses the existing
+`kanban-stand-prepare` cache and the owner's fake-LLM preparation pipeline.
+TC-07 checks one JSON object with numeric `schemaVersion=2`, rejecting prose,
+fences, multiple objects and replacement questions; TC-08 checks compatible
+normalization, preservation and idempotence without guessing or filling missing
+data; TC-09 checks strict types, enums, decision links, coverage and conditional
+UI requirements. The runner fails on a missing, renamed, skipped or failing
+selected scenario and rejects a dirty or differently pinned owner checkout.
+A cold cache requires Git access and dependency installation; no production
+service, real LLM, deployment or dependency-pin change is involved. Historical
+Core implementation paths below refer to the code now owned by Kanban.
 
 For schema version 2, `DevelopmentReadiness.knowledgeBase` explicitly declares
 `connected` or `absent`; omitted values preserve the legacy `connected` behavior.

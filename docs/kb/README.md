@@ -12,10 +12,10 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-09 | ⚠ 8 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 53 коммит(ов) в areas после сверки: 9b604f2f chore: pin agent 0.25.0 (contracts 1.5.0) and Make 1.7.4 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-04 | ⚠ 54 коммит(ов) в areas после сверки: 516629bc SISL-720: remove unused vendor archives and share pin cleanup checks … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 27 коммит(ов) в areas после сверки: 369c0dd5 stand-https-v1 B02 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-08 | ⚠ 6 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-14 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-14 | ⚠ 1 коммит(ов) в areas после сверки: 516629bc SISL-720: remove unused vendor archives and share pin cleanup checks |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 123 коммит(ов) в areas после сверки: b6857379 chore(kanban): pin Kanban 0.2.18 … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 12 коммит(ов) в areas после сверки: 70d7238c refactor: remove embedded Kanban from Core … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 52 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 … |
@@ -26,13 +26,13 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 83 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 44 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 89 коммит(ов) в areas после сверки: 22c9b611 docs(kb): explain production compose layers and stand ports … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 112 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
-| [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-05, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 91 коммит(ов) в areas после сверки: 7b9de429 SISL-720: limit changes to vendor archive cleanup … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 114 коммит(ов) в areas после сверки: 7b9de429 SISL-720: limit changes to vendor archive cleanup … |
+| [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-14, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 5 коммит(ов) в areas после сверки: b6857379 chore(kanban): pin Kanban 0.2.18 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 47 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-05 | ⚠ 90 коммит(ов) в areas после сверки: fdf3943a stand-https-v1 B01 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-14 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ⚠ 3 коммит(ов) в areas после сверки: 593220a9 docs(kb): glossary of roles, services, stands, delivery and technical terms … |
@@ -43,10 +43,10 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-08 | ⚠ 7 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-08 | ⚠ код изменён 2026-10-14, сверка 2026-10-08 (по датам: правки того же дня не видны — поставь checked) |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-14 | ⚠ 1 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-08 | ⚠ 9 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-08 | ⚠ 11 коммит(ов) в areas после сверки: 7b9de429 SISL-720: limit changes to vendor archive cleanup … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-14 | ⚠ 6 коммит(ов) в areas после сверки: b6857379 chore(kanban): pin Kanban 0.2.18 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-14 | ⚠ 1 коммит(ов) в areas после сверки: 516629bc SISL-720: remove unused vendor archives and share pin cleanup checks |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-14, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -61,18 +61,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1160. Последние:
+Всего записей: 1161. Последние:
 
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-ui-delivery-step-diagnostics.md) — ui-delivery-step-diagnostics
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md) — stand-worktree-behind
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md) — stand-proxy-https
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md) — stand-error-codes
+- [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-sisl-720-readiness-coverage.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-sisl-720-readiness-coverage.md) — sisl-720-readiness-coverage
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-release-failure-summary.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-release-failure-summary.md) — release-failure-summary
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-compose-stand-ports.md) — compose-stand-ports
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-agent-self-update-stopstand.md) — agent-self-update-stopstand
 - [2026-10-13-stand-delivery-refusal-codes.md](log/2026-10-13-stand-delivery-refusal-codes.md) — 2026-10-13-stand-delivery-refusal-codes
 - [2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md](log/2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-stand-storybook-recovery.md) — stand-storybook-recovery
-- [2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-full-gate-failed-test-reports.md](log/2026-10-13-alexeys-macbook-air-tailae39a6-ts-net-full-gate-failed-test-reports.md) — full-gate-failed-test-reports
 
 ## Исторические планы
 
