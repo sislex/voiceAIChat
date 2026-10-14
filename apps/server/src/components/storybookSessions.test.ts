@@ -229,7 +229,61 @@ describe('StorybookSessions', () => {
 
   it('офлайн-машину не пытается запустить', async () => {
     const sessions = new StorybookSessions({ registry: fakeRegistry({ isOnline: () => false }) })
-    await expect(sessions.start(target)).rejects.toThrow('не в сети')
+    await expect(sessions.start(target)).rejects.toMatchObject({ statusCode: 409, code: 'machine_offline', message: expect.stringContaining('не в сети') })
+  })
+
+  describe('errorCode of a failed session', () => {
+    const sentinelExit = (registry: Fake, code: number) => {
+      const sentinel = registry.inputs[0]!.match(/(__VCSB_[a-z0-9]+_)%d__/)![1]
+      registry.emit({ t: 'pty.output', ptyId: 'storybook:ws:1', data: `\n${sentinel}${code}__\n` })
+    }
+    it.each([
+      ['storybook_exit_nonzero', (registry: Fake) => sentinelExit(registry, 1)],
+      ['storybook_exited_before_ready', (registry: Fake) => sentinelExit(registry, 0)],
+      ['storybook_exited_before_ready', (registry: Fake) => registry.emit({ t: 'pty.exit', ptyId: 'storybook:ws:1' })],
+      ['pty_error', (registry: Fake) => registry.emit({ t: 'pty.error', ptyId: 'storybook:ws:1', message: 'pty closed' })],
+      ['storybook_port_busy', (registry: Fake) => {
+        registry.emit({ t: 'pty.output', ptyId: 'storybook:ws:1', data: 'Error: listen EADDRINUSE: address already in use :::6006\n' })
+        sentinelExit(registry, 1)
+      }],
+      ['storybook_port_busy', (registry: Fake) => {
+        registry.emit({ t: 'pty.output', ptyId: 'storybook:ws:1', data: 'Port 6006 is not available\n' })
+        registry.emit({ t: 'pty.exit', ptyId: 'storybook:ws:1' })
+      }]
+    ] as const)('reports %s', async (code, failure) => {
+      const registry = fakeRegistry({ index: 'error' })
+      const sessions = new StorybookSessions({ registry })
+      try {
+        await sessions.start(target)
+        failure(registry)
+        expect(sessions.snapshot(target.agentId, target.workspaceId, target.path)).toMatchObject({ state: 'failed', errorCode: code })
+      } finally { sessions.dispose() }
+    })
+
+    it('reports storybook_ready_timeout and clears the code on a successful start', async () => {
+      vi.useFakeTimers()
+      let now = 0
+      const registry = fakeRegistry({ index: 'error' })
+      const sessions = new StorybookSessions({ registry, probeIntervalMs: 10, readyTimeoutMs: 50, now: () => now })
+      try {
+        await sessions.start(target)
+        now = 100
+        await vi.advanceTimersByTimeAsync(20)
+        expect(sessions.snapshot(target.agentId, target.workspaceId, target.path)).toMatchObject({ state: 'failed', errorCode: 'storybook_ready_timeout' })
+        registry.index = { status: 200 }
+        expect(await sessions.start(target)).toMatchObject({ state: 'starting', errorCode: null })
+        await vi.advanceTimersByTimeAsync(20)
+        expect(sessions.snapshot(target.agentId, target.workspaceId, target.path)).toMatchObject({ state: 'running', errorCode: null, error: null })
+      } finally { sessions.dispose(); vi.useRealTimers() }
+    })
+  })
+
+  it('refuses with storybook_no_free_port when every port of the range is taken', async () => {
+    const sessions = new StorybookSessions({ registry: fakeRegistry() })
+    try {
+      for (let i = 0; i <= 40; i++) await sessions.start({ ...target, workspaceId: `ws:${i}` })
+      await expect(sessions.start({ ...target, workspaceId: 'ws:extra' })).rejects.toMatchObject({ statusCode: 409, code: 'storybook_no_free_port' })
+    } finally { sessions.dispose() }
   })
 
   it('индекс отдаёт только у готовой сессии', async () => {
