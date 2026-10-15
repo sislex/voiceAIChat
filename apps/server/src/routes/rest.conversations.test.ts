@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { buildUnixInstallScript } from '@sislexa/agent/installers'
 import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -789,6 +790,40 @@ describe('REST: conversations/messages/settings', () => {
     const desktop = await inj({ method: 'GET', url: '/api/app/desktop' })
     expect(desktop.statusCode).toBe(404)
   })
+
+  // @testCase TC-1
+  it('all three agent downloads return exactly no-store, including repeated public requests', async () => {
+    for (const url of ['/api/agents/install-linux.sh', '/api/agents/install-macos.sh', '/api/agents/script']) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await app.inject({ method: 'GET', url })
+        expect(res.statusCode).toBe(200)
+        expect(res.headers['cache-control']).toBe('no-store')
+      }
+    }
+  }, 30_000)
+
+  // @testCase TC-2
+  it('agent downloads preserve exact bodies and content headers for fixed request inputs', async () => {
+    const bundle = readFileSync(createRequire(import.meta.url).resolve('@sislexa/agent/voicechat-agent.cjs'), 'utf8')
+    for (const { headers, base } of [
+      { headers: { host: 'downloads.example:8787' }, base: 'http://downloads.example:8787' },
+      { headers: { host: 'internal.example:8787', 'x-forwarded-host': 'agents.example', 'x-forwarded-proto': 'https' }, base: 'https://agents.example' }
+    ]) {
+      for (const [url, body, contentType] of [
+        ['/api/agents/install-linux.sh', buildUnixInstallScript(base, 'linux'), 'text/x-shellscript; charset=utf-8'],
+        ['/api/agents/install-macos.sh', buildUnixInstallScript(base, 'macos'), 'text/x-shellscript; charset=utf-8'],
+        ['/api/agents/script', bundle, 'application/javascript; charset=utf-8']
+      ]) {
+        const res = await app.inject({ method: 'GET', url, headers })
+        expect(res.statusCode).toBe(200)
+        expect(res.rawPayload).toEqual(Buffer.from(body!))
+        expect(res.headers['content-type']).toBe(contentType)
+        if (url === '/api/agents/script') {
+          expect(res.headers['content-disposition']).toBe('attachment; filename="voicechat-agent.cjs"')
+        }
+      }
+    }
+  }, 30_000)
 
   it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
     const res = await inj({ method: 'GET', url: '/api/agents/script' })

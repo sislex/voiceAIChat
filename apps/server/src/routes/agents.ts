@@ -475,6 +475,7 @@ export async function registerAgentRoutes(
     try {
       const script = await buildAgentScript()
       return reply
+        .header('cache-control', 'no-store')
         .header('content-type', 'application/javascript; charset=utf-8')
         .header('content-disposition', 'attachment; filename="voicechat-agent.cjs"')
         .send(script)
@@ -508,11 +509,13 @@ export async function registerAgentRoutes(
   )
   app.get(REST.agentInstallLinux, async (req, reply) =>
     reply
+      .header('cache-control', 'no-store')
       .header('content-type', 'text/x-shellscript; charset=utf-8')
       .send(buildUnixInstallScript(externalBase(req), 'linux'))
   )
   app.get(REST.agentInstallMacos, async (req, reply) =>
     reply
+      .header('cache-control', 'no-store')
       .header('content-type', 'text/x-shellscript; charset=utf-8')
       .send(buildUnixInstallScript(externalBase(req), 'macos'))
   )
