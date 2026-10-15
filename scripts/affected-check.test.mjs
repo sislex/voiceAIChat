@@ -15,6 +15,42 @@ const protectedTemporaryBase = () => process.env.DELIVERY_ATTEMPT_ROOT ? join(pr
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+// Allow detached fixture processes to make progress on busy delivery hosts.
+const hostTimeoutMs = 60_000
+
+async function waitUntil(predicate, message) {
+  const deadline = performance.now() + hostTimeoutMs
+  while (!predicate()) {
+    assert.ok(performance.now() < deadline, message)
+    await delay(20)
+  }
+}
+
+function barrierStart(events, width) {
+  let active = 0
+  let maxActive = 0
+  let waiting = []
+  return {
+    start(pkg, script, { maxWorkers }) {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      events.push({ type: 'start', pkg: pkg.id, script, maxWorkers })
+      const done = new Promise((resolve) => {
+        waiting.push(resolve)
+        if (waiting.length === width) {
+          const batch = waiting
+          waiting = []
+          for (const release of batch) release()
+        }
+      }).then(() => {
+        active -= 1
+        events.push({ type: 'end', pkg: pkg.id, script })
+      })
+      return { done, stop() {} }
+    },
+    maxActive: () => maxActive
+  }
+}
 
 function timedStart(events, { fail } = {}) {
   let active = 0
@@ -185,8 +221,11 @@ test('диагностика молчит на быстром успехе, да
   })
   hanging.append('first line\nlast active test')
   now = 31_000
-  await delay(15)
-  hanging.stopped('timeout')
+  try {
+    await waitUntil(() => info.length > 0, 'Expected a heartbeat while the command is running')
+  } finally {
+    hanging.stopped('timeout')
+  }
   assert.match(info.at(-1), /active package: server \/ test; elapsed: 31s; stage: running/)
   assert.match(errors.at(-1), /timeout: server \/ test[\s\S]*last active test/)
 })
@@ -209,24 +248,26 @@ test('relatedArgs согласует min/max workers для fast-stage Vitest', 
   )
 })
 
-test('runPackageGates ограничивает два независимых гейта и замеряет ускорение', async () => {
+test('runPackageGates ограничивает два независимых гейта и запускает их одновременно', { timeout: hostTimeoutMs }, async () => {
   const packages = [{ id: 'one' }, { id: 'two' }]
 
   const sequentialEvents = []
-  const sequentialRunner = timedStart(sequentialEvents)
-  const sequentialStarted = Date.now()
+  const sequentialRunner = barrierStart(sequentialEvents, 1)
   await runPackageGates(packages, { jobs: 1, start: sequentialRunner.start })
-  const sequentialMs = Date.now() - sequentialStarted
 
   const parallelEvents = []
-  const parallelRunner = timedStart(parallelEvents)
-  const parallelStarted = Date.now()
+  const parallelRunner = barrierStart(parallelEvents, 2)
   await runPackageGates(packages, { jobs: 2, start: parallelRunner.start })
-  const parallelMs = Date.now() - parallelStarted
 
   assert.equal(sequentialRunner.maxActive(), 1)
   assert.equal(parallelRunner.maxActive(), 2)
-  assert.ok(parallelMs < sequentialMs, `parallel ${parallelMs}ms must be faster than sequential ${sequentialMs}ms`)
+  for (const script of ['typecheck', 'test']) {
+    assert.deepEqual(
+      parallelEvents.filter((event) => event.script === script).map(({ type, pkg }) => [type, pkg]),
+      [['start', 'one'], ['start', 'two'], ['end', 'one'], ['end', 'two']],
+      `${script}: both packages must start before either finishes`
+    )
+  }
   const parallelTests = parallelEvents.filter((event) => event.type === 'start' && event.script === 'test')
   const sequentialTests = sequentialEvents.filter((event) => event.type === 'start' && event.script === 'test')
   // Раньше здесь стояла жёсткая единица, и `packages/ui` в параллельном режиме
@@ -417,11 +458,11 @@ esac
     let metadata = '', applicationMetadata = ''
     // The detached child writes the two files sequentially. Observing the first
     // one does not mean the second has been created yet.
-    for (let attempt = 0; attempt < 500 && (!metadata || !applicationMetadata); attempt += 1) {
-      await delay(20)
+    await waitUntil(() => {
       try { metadata = readFileSync(marker, 'utf8') } catch {}
       try { applicationMetadata = readFileSync(marker + '.application', 'utf8') } catch {}
-    }
+      return Boolean(metadata && applicationMetadata)
+    }, 'Detached deployment did not write both metadata files')
     assert.equal(metadata, '0.1.42|protected-release|abcdef123456')
     assert.equal(applicationMetadata, '0.1.42|1.1.0|1.0.0|abcdef123456abcdef123456abcdef123456abcdef')
     assert.match(readFileSync(log, 'utf8'), /version=0\.1\.42 .*source=protected-release/)
@@ -690,16 +731,15 @@ test('controlled deployment pins a commit, persists detached completion and neve
         lease: { id: 'one', epoch: 1, leaseId: 'fixture-lease', expiresAt: Date.now() + 60000, action: 'deploy', runId: 'fixture', environment: 'staging', releaseSetId: 'candidate', manifestHash: 'c'.repeat(64) },
         verifyLeaseCommand: [process.execPath, verifier, root, fencePath], environment: {} }), { mode: 0o600 })
     }
-    const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: 10000 })
+    const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: hostTimeoutMs })
     const start = run('--operation-id', 'one', '--expected-commit', head, ...(fence ? ['--delivery-fence', fencePath] : []))
     assert.equal(start.status, 0, start.stderr)
     assert.equal(JSON.parse(start.stdout).state, 'accepted')
     let record
-    for (let n = 0; n < 500; n++) {
+    await waitUntil(() => {
       record = JSON.parse(readFileSync(join(state, 'one.json'), 'utf8'))
-      if (!['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))) break
-      await delay(20)
-    }
+      return !['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))
+    }, 'Detached deployment did not finish or reach the simulated SIGKILL')
     try { await check({ root, state, record, run, fencePath, calls: () => existsSync(calls) ? readFileSync(calls, 'utf8') : '' }) }
     finally { rmSync(root, { recursive: true, force: true }); if (protectedRoot) rmSync(protectedRoot, { recursive: true, force: true }) }
   }
