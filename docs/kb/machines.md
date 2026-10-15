@@ -1,6 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-14
+updated: 2026-10-15
+checked: c40a87c4
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -364,6 +365,23 @@ stderr (включая ошибки `dyld`) остаётся видимым. Н�
 в `apps/server/src/agents/installSyntax.test.ts` закрепляют обе политики выбора,
 полное чтение потока, переиспользование системного Node, восстановление после dyld
 и отказ для невалидного или слишком старого скачанного бинарника.
+
+<!-- @testCase TC-4: agent installation HTTP contract, verified against routes and tests. -->
+Successful GET responses from `/api/agents/install-linux.sh`,
+`/api/agents/install-macos.sh` and `/api/agents/script` set exactly
+`Cache-Control: no-store`, including repeated requests. The Unix installers keep
+`text/x-shellscript; charset=utf-8` and use `externalBase(req)`, including
+forwarded host/protocol headers. The bundle keeps
+`application/javascript; charset=utf-8` and
+`Content-Disposition: attachment; filename="voicechat-agent.cjs"`.
+The generators, their arguments and the artifact body remain unchanged.
+If `buildAgentScript()` fails, the route still returns status 500 and its
+existing JSON `error` message, without the successful download headers.
+`apps/server/src/routes/rest.conversations.test.ts` covers repeated no-store
+responses (TC-1), exact body bytes and content headers for fixed Host and
+X-Forwarded-* inputs (TC-2), and both Error and non-Error failures (TC-3).
+This policy is local to the three routes in `apps/server/src/routes/agents.ts`;
+Android, Windows and other downloads are unaffected.
 
 **Android/Termux дополнительно готовит нативную сборку npm-модулей.**
 Установщик `apps/server/src/agents/androidInstall.ts` ставит `clang`, `make`,

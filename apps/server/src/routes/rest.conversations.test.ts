@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { buildUnixInstallScript } from '@sislexa/agent/installers'
+import * as agentScript from '../agents/agentScript.js'
 import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -789,6 +790,22 @@ describe('REST: conversations/messages/settings', () => {
     expect(agent.json().error).toContain('не собрано')
     const desktop = await inj({ method: 'GET', url: '/api/app/desktop' })
     expect(desktop.statusCode).toBe(404)
+  })
+
+  // @testCase TC-3
+  it.each([new Error('bundle unavailable'), 'bundle unavailable'])('agent script preserves the JSON error response when building fails: %s', async (failure) => {
+    const build = vi.spyOn(agentScript, 'buildAgentScript').mockRejectedValueOnce(failure)
+    try {
+      const res = await app.inject({ method: 'GET', url: '/api/agents/script' })
+      expect(build).toHaveBeenCalledTimes(1)
+      expect(res.statusCode).toBe(500)
+      expect(res.json()).toEqual({ error: 'Не удалось собрать агента: bundle unavailable' })
+      expect(res.headers['content-type']).toBe('application/json; charset=utf-8')
+      expect(res.headers['content-disposition']).toBeUndefined()
+      expect(res.headers['cache-control']).toBeUndefined()
+    } finally {
+      build.mockRestore()
+    }
   })
 
   // @testCase TC-1
