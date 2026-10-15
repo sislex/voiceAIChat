@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-14
-checked: 38a54c5b
+updated: 2026-10-15
+checked: 0bbc1d6a
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -114,8 +114,14 @@ it. Disabling clears the reason. Nothing is persisted, so restart starts writabl
 
 The global `onRequest` hook returns HTTP 503 `{error: "read_only", reason}` for
 non-GET/HEAD/OPTIONS requests to `/api` and `/api/*`, before route handlers,
-authentication or proxy forwarding. Reads and `/api/health` stay available;
-health adds top-level `readOnly` and `reason`. Internal maintenance remains
+authentication or proxy forwarding. Reads and `/api/health` stay available.
+`GET /api/health` always returns HTTP 200 with `Cache-Control: no-store`,
+including while maintenance is enabled. Its JSON contract is unchanged: the live
+`readOnly` and `reason` come from the process-local maintenance snapshot,
+`application` comes from `applicationRuntimeMetadata('core', process.env)`, and
+`ok` plus release metadata retain their existing sources in `server.ts`.
+`maintenance.test.ts` verifies the complete body, status and cache header in
+both writable and read-only modes (TC-1/TC-2). Internal maintenance remains
 reachable for rollback.
 
 `attachWs` checks the same live state on existing and new chat connections,

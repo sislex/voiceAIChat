@@ -580,15 +580,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       .send(httpDiagnostics.prometheus())
   )
 
-  app.get(REST.health, async (): Promise<HealthResponse & { readOnly: boolean; reason: string }> => ({
-    ...maintenance.snapshot(),
-    application: applicationRuntimeMetadata('core', process.env),
-    ok: true,
-    version: VERSION,
-    releasedAt: RELEASED_AT,
-    commit: RELEASE_COMMIT,
-    task: RELEASE_TASK
-  }))
+  app.get(REST.health, async (_req, reply): Promise<HealthResponse & { readOnly: boolean; reason: string }> => {
+    reply.header('cache-control', 'no-store')
+    return {
+      ...maintenance.snapshot(),
+      application: applicationRuntimeMetadata('core', process.env),
+      ok: true,
+      version: VERSION,
+      releasedAt: RELEASED_AT,
+      commit: RELEASE_COMMIT,
+      task: RELEASE_TASK
+    }
+  })
 
   const runnerFs =
     opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
