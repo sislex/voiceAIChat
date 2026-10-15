@@ -41,6 +41,26 @@ describe('синхронизация общей базовой ветки пер
     return { root, origin, seed, checkout, head: git('-C', seed, 'rev-parse', 'HEAD'), git }
   }
 
+  // @testCase TC-3
+  it('prepares a conversation checkout from origin/dev while main has a different history', () => {
+    const { root, seed, checkout, head, git } = seedSharedCheckout('vc-dev-base-')
+    try {
+      git('-C', seed, 'checkout', '-b', 'dev')
+      writeFileSync(join(seed, 'dev.txt'), 'dev')
+      git('-C', seed, 'add', '.')
+      git('-C', seed, 'commit', '-m', 'dev')
+      git('-C', seed, 'push', 'origin', 'dev')
+      const dev = git('-C', seed, 'rev-parse', 'HEAD')
+      const output = execSync(projectMainRefreshScript(checkout, 'dev'), { shell: '/bin/sh', encoding: 'utf8' })
+      expect(output).toContain(`BASE_SHA=${dev}`)
+      expect(git('-C', checkout, 'rev-parse', 'HEAD')).toBe(dev)
+      expect(git('-C', checkout, 'rev-parse', 'origin/main')).toBe(head)
+      git('-C', checkout, 'checkout', '-b', 'TASK-DEV', 'origin/dev')
+      expect(git('-C', checkout, 'rev-parse', 'HEAD')).toBe(dev)
+      expect(() => execSync(projectMainRefreshScript(checkout, 'missing'), { shell: '/bin/sh', stdio: 'pipe' })).toThrow()
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
   it('грязную копию лечит автоматически: правки уезжают в stash, синхронизация продолжается', () => {
     const { root, checkout, head, git } = seedSharedCheckout('vc-main-dirty-')
     try {
