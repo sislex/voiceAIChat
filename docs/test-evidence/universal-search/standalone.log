@@ -1,0 +1,138 @@
+
+> voicechat-monorepo@0.1.0 test:files
+> node scripts/test-files.mjs e2e/universalSearch.e2e.test.ts
+
+[test:files] e2e: /usr/local/bin/node /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/node_modules/vitest/vitest.mjs run e2e/universalSearch.e2e.test.ts --config e2e/vitest.config.ts --reporter=default --reporter=json --outputFile.json=/Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/gate-quick/run-vIE9Jy/results.json
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 400 ({"error":"invalid_search_cursor"}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":184,"filled":191,"request":419,"response":423,"total":427}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 503 ({"error":"search_unavailable"}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":116,"filled":142,"request":421,"response":425,"total":429}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 200 ({"groups":[{"source":"chats","status":"unavailable","hits":[]}]}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":140,"filled":155,"request":412,"response":416,"total":420}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 200 ({"groups":[{"source":"chats","status":"ok","hits":[]}]}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":115,"filled":120,"request":416,"response":424,"total":428}
+
+stdout | e2e/universalSearch.e2e.test.ts > reports a missing expected hit and an aborted browser request separately
+[palette:timing] {"query":"PaletteNeedle","opened":99,"filled":135,"request":414,"response":415,"total":416}
+
+stdout | e2e/universalSearch.e2e.test.ts > reports a missing expected hit and an aborted browser request separately
+[palette:timing] {"query":"PaletteNeedle","opened":7,"filled":9,"request":363,"total":369}
+
+stdout | e2e/universalSearch.e2e.test.ts > does not treat local command options as readiness for a delayed search response
+[palette:diagnostic] localOptionsBeforeSearchResponse=1
+
+stdout | e2e/universalSearch.e2e.test.ts > does not treat local command options as readiness for a delayed search response
+[palette:timing] {"query":"Настройки","opened":109,"filled":138,"request":479,"response":523,"options":543,"total":543}
+
+stdout | e2e/universalSearch.e2e.test.ts > waits for a visible expected option after the successful real response
+[palette:timing] {"query":"PaletteNeedle","opened":113,"filled":140,"request":376,"response":443,"options":478,"total":478}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":15,"filled":44,"request":250,"response":297,"options":315,"total":315}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":17,"filled":19,"request":316,"response":366,"options":380,"total":380}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":8,"filled":33,"request":241,"response":296,"options":308,"total":308}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":27,"filled":30,"request":250,"response":316,"options":328,"total":328}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":28,"request":232,"response":272,"options":283,"total":283}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":28,"request":234,"response":304,"options":316,"total":316}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":29,"request":236,"response":281,"options":296,"total":296}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":78,"filled":82,"request":339,"response":385,"options":398,"total":398}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":27,"request":298,"response":366,"options":377,"total":377}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":29,"request":238,"response":285,"options":296,"total":296}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":28,"request":232,"response":299,"options":310,"total":310}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":28,"filled":32,"request":251,"response":318,"options":329,"total":329}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":27,"request":316,"response":382,"options":392,"total":392}
+
+stdout | e2e/universalSearch.e2e.test.ts > opens a kanban message by its explicit context after reload
+[palette:timing] {"query":"KanbanMessageNeedle","opened":10,"filled":12,"request":341,"response":383,"options":386,"total":386}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates chats through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":20,"filled":46,"request":276,"response":340,"options":345,"total":345}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates chats through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"chats","throughReload":474}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates messages through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":27,"filled":30,"request":321,"response":377,"options":382,"total":382}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates messages through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"messages","throughReload":552}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates projects through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":11,"filled":38,"request":387,"response":451,"options":456,"total":456}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates projects through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"projects","throughReload":551}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates tasks through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":55,"filled":134,"request":417,"response":483,"options":487,"total":487}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates tasks through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"tasks","throughReload":582}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates files through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":53,"filled":80,"request":298,"response":362,"options":366,"total":366}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates files through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"files","throughReload":921}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates kb through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":31,"filled":58,"request":294,"response":336,"options":343,"total":343}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates kb through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"kb","throughReload":505}
+
+ ✓ e2e/universalSearch.e2e.test.ts (18 tests) 16815ms
+   ✓ diagnoses search response 400 ({"error":"invalid_search_cursor"}) before waiting for options 525ms
+   ✓ diagnoses search response 503 ({"error":"search_unavailable"}) before waiting for options 545ms
+   ✓ diagnoses search response 200 ({"groups":[{"source":"chats","status":"unavailable","hits":[]}]}) before waiting for options 538ms
+   ✓ diagnoses search response 200 ({"groups":[{"source":"chats","status":"ok","hits":[]}]}) before waiting for options 538ms
+   ✓ reports a missing expected hit and an aborted browser request separately 896ms
+   ✓ does not treat local command options as readiness for a delayed search response 647ms
+   ✓ waits for a visible expected option after the successful real response 578ms
+   ✓ checks unchanged input and reopening on the published client 1766ms
+   ✓ keeps keyboard, touch, focus and geometry usable at all five sizes in both themes 4343ms
+   ✓ opens a kanban message by its explicit context after reload 579ms
+   ✓ navigates chats through the real palette and retains the deep link after reload 476ms
+   ✓ navigates messages through the real palette and retains the deep link after reload 554ms
+   ✓ navigates projects through the real palette and retains the deep link after reload 552ms
+   ✓ navigates tasks through the real palette and retains the deep link after reload 585ms
+   ✓ navigates files through the real palette and retains the deep link after reload 924ms
+   ✓ navigates kb through the real palette and retains the deep link after reload 507ms
+
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+   Start at  18:57:47
+   Duration  17.98s (transform 541ms, setup 0ms, collect 920ms, tests 16.82s, environment 0ms, prepare 27ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/gate-quick/run-vIE9Jy/results.json

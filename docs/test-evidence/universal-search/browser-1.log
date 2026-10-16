@@ -1,0 +1,234 @@
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+ ✓ e2e/browserUiRelease.e2e.test.ts (1 test) 724ms
+   ✓ switches and rolls back without losing old-tab lazy assets, drafts or Core API availability 347ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  18:50:22
+   Duration  3.39s (transform 1.50s, setup 0ms, collect 2.40s, tests 724ms, environment 0ms, prepare 29ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/universal-search-acceptance/browser-1.tests.json
+[gate:browser] e2e/browserUiRelease.e2e.test.ts: 3.78s, 1 worker(s), exit 0
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+ ✓ e2e/externalChat.e2e.test.ts (2 tests) 1146ms
+   ✓ runs two real SDK browser clients across origins, including history, settings, upload and revocation 552ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  18:50:26
+   Duration  3.98s (transform 1.59s, setup 0ms, collect 2.54s, tests 1.15s, environment 0ms, prepare 33ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/universal-search-acceptance/browser-1.tests.json
+[gate:browser] e2e/externalChat.e2e.test.ts: 4.4s, 1 worker(s), exit 0
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+ ✓ e2e/routeResources.e2e.test.ts (5 tests | 2 skipped) 46393ms
+   ✓ records comparable cold/warm request counts, transferred bytes and content/data times for the Core routes 20037ms
+   ✓ keeps routes navigable in both themes at all five sizes with touch and keyboard input 23163ms
+   ✓ keeps Account identity and navigation usable while an offline block retries 1469ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed | 2 skipped (5)
+   Start at  18:50:30
+   Duration  46.96s (transform 34ms, setup 0ms, collect 265ms, tests 46.39s, environment 0ms, prepare 35ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/universal-search-acceptance/browser-1.tests.json
+[gate:browser] e2e/routeResources.e2e.test.ts: 47.38s, 1 worker(s), exit 0
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+ ✓ e2e/settings.e2e.test.ts (5 tests | 1 skipped) 21724ms
+   ✓ Настройки E2E: релиз не сбрасывает выбор > выбор темы доезжает до сервера и переживает перезагрузку 553ms
+   ✓ Настройки E2E: релиз не сбрасывает выбор > падение сервера не превращает настройки в дефолты, а возвращение подхватывается само 1389ms
+   ✓ Настройки E2E: релиз не сбрасывает выбор > keeps onboarding navigation and actions reachable across themes, touch and keyboard 16157ms
+   ✓ Настройки E2E: релиз не сбрасывает выбор > persists onboarding across server restart and resets only its state 1775ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed | 1 skipped (5)
+   Start at  18:51:17
+   Duration  22.17s (transform 28ms, setup 0ms, collect 208ms, tests 21.72s, environment 0ms, prepare 27ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/universal-search-acceptance/browser-1.tests.json
+[gate:browser] e2e/settings.e2e.test.ts: 22.54s, 1 worker(s), exit 0
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 400 ({"error":"invalid_search_cursor"}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":281,"filled":310,"request":646,"response":648,"total":650}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 503 ({"error":"search_unavailable"}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":166,"filled":211,"request":427,"response":429,"total":430}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 200 ({"groups":[{"source":"chats","status":"unavailable","hits":[]}]}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":147,"filled":162,"request":429,"response":433,"total":442}
+
+stdout | e2e/universalSearch.e2e.test.ts > diagnoses search response 200 ({"groups":[{"source":"chats","status":"ok","hits":[]}]}) before waiting for options
+[palette:timing] {"query":"PaletteNeedle","opened":141,"filled":169,"request":495,"response":496,"total":498}
+
+stdout | e2e/universalSearch.e2e.test.ts > reports a missing expected hit and an aborted browser request separately
+[palette:timing] {"query":"PaletteNeedle","opened":129,"filled":169,"request":382,"response":384,"total":386}
+
+stdout | e2e/universalSearch.e2e.test.ts > reports a missing expected hit and an aborted browser request separately
+[palette:timing] {"query":"PaletteNeedle","opened":11,"filled":15,"request":231,"total":234}
+
+stdout | e2e/universalSearch.e2e.test.ts > does not treat local command options as readiness for a delayed search response
+[palette:diagnostic] localOptionsBeforeSearchResponse=1
+
+stdout | e2e/universalSearch.e2e.test.ts > does not treat local command options as readiness for a delayed search response
+[palette:timing] {"query":"Настройки","opened":132,"filled":226,"request":455,"response":481,"options":641,"total":641}
+
+stdout | e2e/universalSearch.e2e.test.ts > waits for a visible expected option after the successful real response
+[palette:timing] {"query":"PaletteNeedle","opened":204,"filled":223,"request":572,"response":642,"options":682,"total":682}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":17,"filled":43,"request":244,"response":305,"options":324,"total":324}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":24,"filled":29,"request":231,"response":307,"options":328,"total":328}
+
+stdout | e2e/universalSearch.e2e.test.ts > checks unchanged input and reopening on the published client
+[palette:timing] {"query":"PaletteNeedle","opened":22,"filled":29,"request":231,"response":283,"options":303,"total":303}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":28,"filled":32,"request":267,"response":333,"options":349,"total":349}
+
+ ✓ e2e/projects.e2e.test.ts (6 tests) 10776ms
+   ✓ Проекты E2E > проект создаётся окном с каскадом типов; «Общий проект» получает короткую доску 922ms
+   ✓ Проекты E2E > в проекте «Разработка ПО» вкладка релизов на месте 387ms
+   ✓ Проекты E2E > приглашение уходит письмом, ссылка из него открывает экран приглашения 876ms
+   ✓ Проекты E2E > приглашённый принимает приглашение из сайдбара и получает проект 1196ms
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":31,"request":233,"response":300,"options":317,"total":317}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":27,"filled":31,"request":246,"response":296,"options":314,"total":314}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":30,"filled":33,"request":241,"response":294,"options":312,"total":312}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":27,"filled":31,"request":233,"response":286,"options":304,"total":304}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":28,"filled":31,"request":256,"response":309,"options":325,"total":325}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":28,"request":231,"response":283,"options":313,"total":313}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":25,"filled":28,"request":231,"response":279,"options":296,"total":296}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":28,"request":245,"response":295,"options":309,"total":309}
+
+stdout | e2e/universalSearch.e2e.test.ts > keeps keyboard, touch, focus and geometry usable at all five sizes in both themes
+[palette:timing] {"query":"PaletteNeedle","opened":26,"filled":28,"request":306,"response":360,"options":375,"total":375}
+
+stdout | e2e/universalSearch.e2e.test.ts > opens a kanban message by its explicit context after reload
+[palette:timing] {"query":"KanbanMessageNeedle","opened":14,"filled":40,"request":351,"response":400,"options":404,"total":404}
+
+ ✓ e2e/sessions.e2e.test.ts (3 tests) 3758ms
+   ✓ Сессии и устройства E2E > завершение чужой сессии убирает карточку и отбирает доступ у того устройства 482ms
+stdout | e2e/universalSearch.e2e.test.ts > navigates chats through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":32,"filled":62,"request":318,"response":367,"options":373,"total":373}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates chats through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"chats","throughReload":523}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates messages through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":33,"filled":64,"request":283,"response":336,"options":342,"total":342}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates messages through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"messages","throughReload":546}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates projects through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":17,"filled":46,"request":260,"response":313,"options":319,"total":319}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates projects through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"projects","throughReload":419}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates tasks through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":77,"filled":106,"request":360,"response":405,"options":411,"total":411}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates tasks through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"tasks","throughReload":509}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates files through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":78,"filled":82,"request":371,"response":416,"options":426,"total":426}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates files through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"files","throughReload":1659}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates kb through the real palette and retains the deep link after reload
+[palette:timing] {"query":"PaletteNeedle","opened":130,"filled":140,"request":346,"response":421,"options":436,"total":436}
+
+stdout | e2e/universalSearch.e2e.test.ts > navigates kb through the real palette and retains the deep link after reload
+[palette:navigation] {"source":"kb","throughReload":727}
+
+ ✓ e2e/universalSearch.e2e.test.ts (18 tests) 18926ms
+   ✓ observes only a new matching browser request, including a response before action completion 318ms
+   ✓ diagnoses search response 400 ({"error":"invalid_search_cursor"}) before waiting for options 758ms
+   ✓ diagnoses search response 503 ({"error":"search_unavailable"}) before waiting for options 566ms
+   ✓ diagnoses search response 200 ({"groups":[{"source":"chats","status":"unavailable","hits":[]}]}) before waiting for options 569ms
+   ✓ diagnoses search response 200 ({"groups":[{"source":"chats","status":"ok","hits":[]}]}) before waiting for options 613ms
+   ✓ reports a missing expected hit and an aborted browser request separately 738ms
+   ✓ does not treat local command options as readiness for a delayed search response 804ms
+   ✓ waits for a visible expected option after the successful real response 941ms
+   ✓ checks unchanged input and reopening on the published client 1721ms
+   ✓ keeps keyboard, touch, focus and geometry usable at all five sizes in both themes 4456ms
+   ✓ opens a kanban message by its explicit context after reload 700ms
+   ✓ navigates chats through the real palette and retains the deep link after reload 525ms
+   ✓ navigates messages through the real palette and retains the deep link after reload 549ms
+   ✓ navigates projects through the real palette and retains the deep link after reload 421ms
+   ✓ navigates tasks through the real palette and retains the deep link after reload 515ms
+   ✓ navigates files through the real palette and retains the deep link after reload 1664ms
+   ✓ navigates kb through the real palette and retains the deep link after reload 731ms
+ ✓ e2e/webReaderProject.e2e.test.ts (2 tests) 10946ms
+   ✓ Reader embedded: вход на собственную страницу проекта > форма входа работает при cookie-сессии внешнего Reader и открывает deep link 2523ms
+   ✓ Reader remote: вход на собственную страницу проекта > форма входа работает при cookie-сессии внешнего Reader и открывает deep link 2669ms
+ ✓ e2e/webReaderOwnProject.e2e.test.ts (10 tests) 2268ms
+   ✓ Reader: текущее приложение по постоянному адресу > передаёт бинарное тело PATCH без JSON-перекодирования 415ms
+ ✓ e2e/gitPane.e2e.test.ts (4 tests) 10312ms
+   ✓ Панель кода E2E > вкладка «Код» есть у проекта с git и ведёт на свой маршрут 522ms
+   ✓ Панель кода E2E > на телефоне страница остаётся одной колонкой без горизонтальной прокрутки 1046ms
+ ✓ e2e/toolIntegration.e2e.test.ts (4 tests) 3394ms
+   ✓ loads the published 'make' panel through authenticated Core routing 1245ms
+   ✓ loads the published 'web-recorder' panel through authenticated Core routing 1094ms
+
+ Test Files  7 passed (7)
+      Tests  47 passed (47)
+   Start at  18:51:40
+   Duration  37.51s (transform 2.58s, setup 0ms, collect 7.58s, tests 60.38s, environment 1ms, prepare 326ms)
+
+JSON report written to /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579/artifacts/universal-search-acceptance/browser-1.tests.json
+[gate:browser] e2e/gitPane.e2e.test.ts, e2e/projects.e2e.test.ts, e2e/sessions.e2e.test.ts, e2e/toolIntegration.e2e.test.ts, e2e/universalSearch.e2e.test.ts, e2e/webReaderOwnProject.e2e.test.ts, e2e/webReaderProject.e2e.test.ts: 37.92s, 2 worker(s), exit 0
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+(node:40147) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+(node:40247) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+(node:43100) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | e2e/toolIntegration.e2e.test.ts > loads the published 'make' panel through authenticated Core routing
+{"event":"api_request_problem","requestId":"ed2bed36-c679-4c85-afac-bb252ecdd823","method":"GET","route":"/api/tts/voices","status":500,"durationMs":4}
+
+stderr | e2e/toolIntegration.e2e.test.ts > loads the published 'images' panel through authenticated Core routing
+{"event":"api_request_problem","requestId":"9da65f3a-42ab-46b2-b2e1-5f4903740f10","method":"POST","route":"/api/analytics/activity","status":503,"durationMs":1}
+
+stderr | e2e/toolIntegration.e2e.test.ts > loads the published 'playwright-reader' panel through authenticated Core routing
+{"event":"api_request_problem","requestId":"3a27c387-8d13-4acb-91f1-6fb30fdf505a","method":"POST","route":"/api/analytics/activity","status":503,"durationMs":0}
+
+stderr | e2e/toolIntegration.e2e.test.ts > loads the published 'web-recorder' panel through authenticated Core routing
+{"event":"api_request_problem","requestId":"17f35cd4-a01b-46dd-ab44-b4c96cef81ca","method":"POST","route":"/api/analytics/activity","status":503,"durationMs":0}
+
+stderr | e2e/toolIntegration.e2e.test.ts > loads the published 'web-recorder' panel through authenticated Core routing
+{"event":"api_request_problem","requestId":"0f97333a-a722-4e4c-a438-964b2f2eb3d4","method":"POST","route":"/api/browser/:id/screenshot","status":502,"durationMs":38}
