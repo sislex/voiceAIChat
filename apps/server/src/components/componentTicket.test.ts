@@ -6,11 +6,11 @@ import { ComponentTicketService, ticketBranchName } from './componentTicket.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import type { VoiceChatDb } from '../db/database.js'
 
-function harness(overrides: { push?: () => never; commit?: () => never } = {}) {
+function harness(overrides: { push?: () => never; commit?: () => never; baseBranch?: string } = {}) {
   const calls: string[] = []
   const git = {
     resolve: () => ({ agentId: 'agent-1', path: '/repo', kind: 'project-worktree' }),
-    createBranch: async (_u: string, _p: string, _w: string, name: string) => { calls.push(`branch:${name}`); return {} },
+    createBranch: async (_u: string, _p: string, _w: string, name: string, from?: string) => { calls.push(`branch:${name}:${from}`); return {} },
     commit: async (_u: string, _p: string, _w: string, input: { message: string; paths?: string[] }) => {
       calls.push(`commit:${input.message}:${(input.paths ?? []).join(',')}`)
       if (overrides.commit) overrides.commit()
@@ -27,7 +27,7 @@ function harness(overrides: { push?: () => never; commit?: () => never } = {}) {
   const created: { branch?: string; sha?: string; pushed?: boolean } = {}
   const db = {
     projects: {
-      getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git', ciBaseBranch: 'main', ciBranchTemplate: undefined })
+      getProject: () => ({ id: 'p1', name: 'Chat AI', gitUrl: 'git@example:repo.git', ciBaseBranch: overrides.baseBranch, ciBranchTemplate: undefined })
     },
     tasks: {
       getBoard: () => ({ columns: [{ id: 'col-wait', semanticType: 'awaiting_merge' }], tasks: [] }),
@@ -56,13 +56,21 @@ describe('ticketBranchName', () => {
 })
 
 describe('ComponentTicketService', () => {
+  // @testCase TC-3
+  it.each(['dev', 'main', '', undefined])('creates a task branch from origin using base %s', async baseBranch => {
+    const { service, calls } = harness({ baseBranch })
+    await service.create('admin', 'p1', { workspaceId: 'project:agent-1', title: 'Feature', paths: ['a.tsx'] })
+    expect(calls[0]).toBe(`branch:CA-42:origin/${baseBranch || 'main'}`)
+    expect(calls.at(-1)).toBe(`checkout:${baseBranch || 'main'}`)
+  })
+
   it('делает ветку, коммит, push, пишет ревизию и возвращает копию на main', async () => {
     const { service, calls, created } = harness()
     const result = await service.create('admin', 'p1', {
       workspaceId: 'project:agent-1', title: 'Кнопка шире', paths: ['src/Button.tsx', 'src/Button.tsx']
     })
     expect(calls).toEqual([
-      'branch:CA-42',
+      'branch:CA-42:origin/main',
       'commit:CA-42 Кнопка шире:src/Button.tsx',
       'push:CA-42',
       'checkout:main'
