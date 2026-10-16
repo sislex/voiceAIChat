@@ -184,7 +184,7 @@ export class GitWorkspaceService {
       throw error
     }
     if (ref.released) return this.emptyStatus(userId, projectId, ref, 'workspace_released', null)
-    const baseBranch = (await this.deps.db.projects.getProject(userId, projectId))?.ciBaseBranch ?? 'main'
+    const baseBranch = (await this.deps.db.projects.getProject(userId, projectId))?.ciBaseBranch || 'main'
     const result = await this.run(userId, projectId, ref, statusScript(baseBranch), READ_TIMEOUT_MS)
     const sections = splitGitSections(result.output)
     if (!sections.repo || !/true/.test(sections.repo)) {
@@ -673,7 +673,7 @@ export class GitWorkspaceService {
     return {
       ref, problem, detail,
       gitUrl: project?.gitUrl ?? null,
-      baseBranch: project?.ciBaseBranch ?? 'main',
+      baseBranch: project?.ciBaseBranch || 'main',
       branch: null, detached: false, head: null, upstream: null,
       ahead: 0, behind: 0, changes: [], changesTruncated: false, commitsAhead: [], mergeBase: null
     }

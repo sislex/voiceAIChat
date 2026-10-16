@@ -1,0 +1,461 @@
+From d2318452732d7d2688862dfcd99de6deae7d7bd2 Mon Sep 17 00:00:00 2001
+From: alexeyrozhnov <Aliaksei.Razhnou@piarainc.com>
+Date: Thu, 15 Oct 2026 23:08:55 +0300
+Subject: [PATCH] fix(preparation): validate complete briefs before
+ normalization
+
+---
+ apps/server/src/kanban/module.ts              |  16 +--
+ apps/server/src/kanban/preparation.ts         |  30 ++---
+ .../kanban/preparationDocumentation.test.ts   |   2 +-
+ .../src/kanban/preparationEnvelope.test.ts    |  14 ++-
+ apps/server/src/taskPreparation.test.ts       | 119 +++++++++++++++---
+ docs/kb/features/task-preparation.md          |  33 ++++-
+ 6 files changed, 162 insertions(+), 52 deletions(-)
+
+diff --git a/apps/server/src/kanban/module.ts b/apps/server/src/kanban/module.ts
+index a07087f..6a7e564 100644
+--- a/apps/server/src/kanban/module.ts
++++ b/apps/server/src/kanban/module.ts
+@@ -346,7 +346,7 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
+       }
+       for (const key of ['id', 'name', 'exclusionReason', 'alternativeVerification']) requireString(component, key, `${path}.${key}`)
+       requireBoolean(component, 'reusable', `${path}.reusable`)
+-      if (component.storybookStoryId !== null && typeof component.storybookStoryId !== 'string') issues.push(`${path}.storybookStoryId должен быть строкой или null`)
++      if (component.storybookStoryId !== null && (typeof component.storybookStoryId !== 'string' || !component.storybookStoryId.trim())) issues.push(`${path}.storybookStoryId должен быть строкой или null`)
+       if (component.coverage !== null && !record(component.coverage)) issues.push(`${path}.coverage должен быть объектом или null`)
+     }
+     if (root.schemaVersion === 2) {
+@@ -386,9 +386,10 @@ async function createKanbanModuleImpl(deps: KanbanDeps) {
+         requireString(decision, 'id', `${path}.id`)
+         requireString(decision, 'text', `${path}.text`)
+         requireString(decision, 'rationale', `${path}.rationale`)
+-        // Null unambiguously means no question link; never invent an identifier.
+-        if (decision.questionId === null) delete decision.questionId
+-        if (decision.questionId !== undefined && typeof decision.questionId !== 'string') issues.push(`${path}.questionId должен быть строкой`)
++        if (decision.questionId !== undefined) {
++          if (typeof decision.questionId !== 'string' || !decision.questionId.trim()) issues.push(`${path}.questionId должен быть непустой строкой`)
++          else if (!Array.isArray(root.openQuestions) || !root.openQuestions.some((question) => record(question)?.questionId === decision.questionId)) issues.push(`${path}.questionId должен ссылаться на указанный вопрос`)
++        }
+       }
+       for (const [index, item] of (Array.isArray(root.assumptions) ? root.assumptions : []).entries()) {
+         const assumption = record(item)
+@@ -540,7 +541,7 @@ ${preparationDesignNote(task?.designs ?? [], preparationMakeSources)}
+ ${task ? taskReworkContext(task, await db.tasks.taskReworkCycles(userId, projectId, taskId) ?? [], await db.tasks.taskAttachments(userId, projectId, taskId, 'source') ?? []) : ''}`
+     const basePrompt = `${researchDirective}
+ 
+-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект schemaVersion=2. Даже «Подготовка завершена» и «Исправленный Development Brief» вне объекта запрещены. Первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Это отдельный промежуточный запрос уточнения, а не Development Brief: он не завершает подготовку и не заменяет DevelopmentReadiness schemaVersion=2. Если решения не ссылаются на вопрос, опусти decisions[].questionId; не передавай null или выдуманную ссылку вместо необязательной строки. Не добавляй сообщение об успешной подготовке перед объектом или после него. Не отправляй промежуточные сообщения о прогрессе подготовки. Все требования и пробелы БЗ помещай только в предусмотренные поля объекта; содержательный текст вне JSON не может быть безопасно нормализован. Нормализация не исправляет формат ответа: однозначные совместимые значения полей проверяются только после разбора всего единственного JSON-объекта, без догадок, удаления обёрток или заполнения пропущенных требований. Перед отправкой проверь весь ответ как JSON, а не найденный в нём фрагмент: один корневой объект, schemaVersion числом 2, обязательные поля и условные UI-требования сохранены. Обработчик отклоняет любые обёртки, включая известные префиксы и Markdown: они не нормализуются и не удаляются. Имена полей внутри каждого объекта должны быть уникальны: повторяющиеся ключи отклоняются, а не заменяют ранее заданные требования или сведения об источниках. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 (версия — число 2, не строка) со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Все правила формата выше относятся только к твоему ответу и не являются требованиями задачи: не добавляй в scope, acceptanceCriteria и testCases работы по формату ответа, prompt, схеме, нормализации, валидатору или обработчику Development Brief, если сама задача ниже прямо их не требует. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
++Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект schemaVersion=2. Даже «Подготовка завершена» и «Исправленный Development Brief» вне объекта запрещены. Первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Это отдельный промежуточный запрос уточнения, а не Development Brief: он не завершает подготовку и не заменяет DevelopmentReadiness schemaVersion=2. Если решения не ссылаются на вопрос, опусти decisions[].questionId; не передавай null или выдуманную ссылку вместо необязательной строки. Не добавляй сообщение об успешной подготовке перед объектом или после него. Не отправляй промежуточные сообщения о прогрессе подготовки. Все требования и пробелы БЗ помещай только в предусмотренные поля объекта; содержательный текст вне JSON не может быть безопасно нормализован. Нормализация не исправляет формат ответа: однозначные совместимые значения полей проверяются только после разбора всего единственного JSON-объекта, без догадок, удаления обёрток или заполнения пропущенных требований. Перед отправкой проверь весь ответ как JSON, а не найденный в нём фрагмент: один корневой объект, schemaVersion числом 2, обязательные поля и условные UI-требования сохранены. Обработчик отклоняет любые обёртки, включая известные префиксы и Markdown: они не нормализуются и не удаляются. Это правило действует на полный ответ всех провайдеров, включая все сообщения Codex; последний JSON-фрагмент не извлекается. Имена полей внутри каждого объекта должны быть уникальны: повторяющиеся ключи отклоняются, а не заменяют ранее заданные требования или сведения об источниках. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 (версия — число 2, не строка) со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. testType принимает только ui|api|integration|negative|regression|manual. Если uiImpact не равен none, среди testCases обязателен хотя бы один с required=true и testType=ui — по нему запускается этап Component QA, и без него задача встанет после разработки. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale с необязательным questionId:string, ссылающимся на questionId в openQuestions; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Все правила формата выше относятся только к твоему ответу и не являются требованиями задачи: не добавляй в scope, acceptanceCriteria и testCases работы по формату ответа, prompt, схеме, нормализации, валидатору или обработчику Development Brief, если сама задача ниже прямо их не требует. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+     const ordinaryResponses: string[] = []
+ 
+     const terminalValidationFailure = async (message: string, text: string, recoveryDetail?: string): Promise<void> => {
+@@ -613,12 +614,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
+           taskPreparationHandles.delete(run.id)
+           if ((await db.tasks.getTaskPreparationRun(userId, run.id))?.status !== 'running') return
+           const text = finalAgentMessage(provider, fullText, lastChunk)
+-          if (text !== fullText) await db.tasks.appendTaskPreparationLog(run.id, '\n[система] Ответ Codex содержит промежуточные сообщения; разбирается только последнее сообщение модели.\n')
+           ordinaryResponses[attempt - 1] = text
+           try {
+-            const questionRaw = text.trim()
++            const questionRaw = preparationEnvelope(text)
+             if (!questionRaw.startsWith('{') || !questionRaw.endsWith('}')) throw new Error('Ожидался чистый JSON-объект')
+-            const candidate = JSON.parse(questionRaw) as { question?: unknown; material?: unknown }
++            const candidate = preparationJsonObject(questionRaw) as { question?: unknown; material?: unknown }
+             if (typeof candidate.question === 'string' && candidate.question.trim()) {
+               const question = await db.tasks.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
+               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
+diff --git a/apps/server/src/kanban/preparation.ts b/apps/server/src/kanban/preparation.ts
+index 69cd8ad..5cfb4ae 100644
+--- a/apps/server/src/kanban/preparation.ts
++++ b/apps/server/src/kanban/preparation.ts
+@@ -4,16 +4,15 @@ import { DEFAULT_CODEX_MODEL, type AcceptanceCriterionSnapshot, type LlmProvider
+ 
+ /** Preserve the complete response: even familiar prose can hide requirements. */
+ export function preparationEnvelope(text: string): string {
+-  return text.trim()
++  return text.replace(/^[\x20\t\r\n]+|[\x20\t\r\n]+$/g, '')
+ }
+ 
+ /** Parse the entire response before normalizing compatible field values. */
+ export function preparationJsonObject(text: string): Record<string, unknown> {
+-  const raw = text.trim()
++  const raw = preparationEnvelope(text)
+   if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
+-  const value = JSON.parse(raw) as Record<string, unknown>
+-  // JSON.parse silently keeps the last duplicate key. Reject that ambiguity
+-  // before normalization can hide a requirement or a source status.
++  // Check decoded member names before constructing objects: JSON.parse would
++  // otherwise discard duplicate requirements and source statuses.
+   const scopes: Array<Set<string> | null> = []
+   const tokens = /"(?:\\[\s\S]|[^"\\])*"|[{}\[\]]/g
+   for (const token of raw.matchAll(tokens)) {
+@@ -28,11 +27,7 @@ export function preparationJsonObject(text: string): Record<string, unknown> {
+       keys?.add(key)
+     }
+   }
+-  // Null means no reference only for this optional field; other nulls survive.
+-  if (Array.isArray(value.decisions)) for (const decision of value.decisions) {
+-    if (decision && typeof decision === 'object' && !Array.isArray(decision) && decision.questionId === null) delete decision.questionId
+-  }
+-  return value
++  return JSON.parse(raw) as Record<string, unknown>
+ }
+ 
+ export function parseQaPreparationResponse(text: string): AcceptanceCriterionSnapshot[] {
+@@ -94,16 +89,7 @@ export function taskPreparationFailure(provider: LlmProvider, userId: string, me
+     : `${head} завершилась ошибкой: ${message}`
+ }
+ 
+-/**
+- * `codex exec --json` reports every agent message and the Codex sink concatenates them, so a
+- * progress note («Проверю базу знаний…») ends up glued before the final JSON. Claude reports
+- * only the final message. For Codex take the last complete agent message when it is the tail of
+- * the response and is itself valid JSON; otherwise keep the full text and the strict format rules.
+- */
+-export function finalAgentMessage(provider: string, fullText: string, lastChunk: string): string {
+-  if (provider !== 'codex' || !lastChunk || lastChunk === fullText || !fullText.endsWith(lastChunk)) return fullText
+-  const candidate = lastChunk.trim()
+-  if (!candidate.startsWith('{') || !candidate.endsWith('}')) return fullText
+-  try { JSON.parse(candidate) } catch { return fullText }
+-  return candidate
++/** Every provider must validate the full response, including earlier messages. */
++export function finalAgentMessage(_provider: string, fullText: string, _lastChunk: string): string {
++  return fullText
+ }
+diff --git a/apps/server/src/kanban/preparationDocumentation.test.ts b/apps/server/src/kanban/preparationDocumentation.test.ts
+index 0410a65..46929dc 100644
+--- a/apps/server/src/kanban/preparationDocumentation.test.ts
++++ b/apps/server/src/kanban/preparationDocumentation.test.ts
+@@ -14,7 +14,7 @@ it('keeps the existing preparation article consistent with executable strict-for
+   const fence = String.fromCharCode(96).repeat(3)
+   for (const wrapped of ['Ready. ' + json, json + '\nDone.', fence + 'json\n' + json + '\n' + fence, json + json]) expect(() => preparationJsonObject(wrapped)).toThrow()
+   const normalized = preparationJsonObject(json)
+-  expect(normalized).toEqual({ ...original, decisions: [{ id: 'D1', text: 'Keep scope', rationale: 'Confirmed' }] })
++  expect(normalized).toEqual(original)
+   expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+ })
+ 
+diff --git a/apps/server/src/kanban/preparationEnvelope.test.ts b/apps/server/src/kanban/preparationEnvelope.test.ts
+index 4fdc46e..260206c 100644
+--- a/apps/server/src/kanban/preparationEnvelope.test.ts
++++ b/apps/server/src/kanban/preparationEnvelope.test.ts
+@@ -1,6 +1,18 @@
+-import { expect, it } from 'vitest'
++import { expect, it, vi } from 'vitest'
+ import { preparationEnvelope, preparationJsonObject } from './preparation.js'
+ 
++// @testCase TC-3
++it('rejects duplicate decoded names before JSON.parse constructs the root object', () => {
++  const raw = '{"sources":[{"status":"absent","\\u0073tatus":"available"}]}'
++  const parse = vi.spyOn(JSON, 'parse')
++  try {
++    expect(() => preparationJsonObject(raw)).toThrow('повторяющееся имя поля')
++    expect(parse).not.toHaveBeenCalledWith(raw)
++  } finally {
++    parse.mockRestore()
++  }
++})
++
+ // @testCase TC-10
+ it('preserves the complete object and only trims surrounding whitespace', () => {
+   const original = { schemaVersion: 2, scope: ['Keep {braces}, "quotes", null and true'], nested: { enabled: true, missing: null } }
+diff --git a/apps/server/src/taskPreparation.test.ts b/apps/server/src/taskPreparation.test.ts
+index b88fa14..ccdc8d4 100644
+--- a/apps/server/src/taskPreparation.test.ts
++++ b/apps/server/src/taskPreparation.test.ts
+@@ -24,7 +24,7 @@ it('keeps the documented complete-response rule executable', () => {
+   expect(documentation).toContain('questionId')
+   const original = { schemaVersion: 2, scope: ['Preserve every requirement'], decisions: [{ questionId: null, text: 'No change' }] }
+   const normalized = preparationJsonObject(JSON.stringify(original))
+-  expect(normalized).toEqual({ ...original, decisions: [{ text: 'No change' }] })
++  expect(normalized).toEqual(original)
+   for (const prefix of ['Подготовка завершена.\n', 'Исправленный Development Brief:\n']) {
+     expect(() => preparationJsonObject(prefix + JSON.stringify(original))).toThrow()
+   }
+@@ -35,11 +35,10 @@ it('keeps the documented complete-response rule executable', () => {
+ it('preserves a canonical brief through the complete preparation pipeline and states the normalization boundary', async () => {
+   const { project, task } = await taskInBacklog()
+   const original = JSON.parse(compatibleReadiness())
+-  original.decisions = [{ id: 'D1', text: 'Keep the queued run id', rationale: 'Preserve identity', questionId: null }]
++  original.decisions = [{ id: 'D1', text: 'Keep the queued run id', rationale: 'Preserve identity' }]
+   claudeAnswer = () => ({ text: JSON.stringify(original) })
+   const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+   const expected = structuredClone(original)
+-  delete expected.decisions[0].questionId
+   expect(run.readiness).toMatchObject(expected)
+   expect(preparationJsonObject(JSON.stringify(expected))).toEqual(expected)
+   expect(claudeCalls[0].prompt).toContain('Не отправляй промежуточные сообщения')
+@@ -100,14 +99,13 @@ it('preserves repeated names in independent objects and punctuation inside strin
+ // @testCase T9
+ // @testCase TC-BRIEF-2
+ // @testCase TC-11
+-it('normalizes only absent decision references and preserves compatible nulls and requirements', () => {
++it('preserves decision references, nulls and requirements for runtime validation', () => {
+   const original = JSON.parse(READINESS)
+   original.scope = ['Keep columnId as status', 'Keep onMoveTask(taskId, columnId, afterId, beforeId)', 'Keep autoPilot=true and autoPilotRequiresManualQa=false']
+   original.decisions = [{ id: 'D1', text: 'Preserve {braces} and "quotes"', rationale: 'No scope changes', questionId: null }]
+   original.openQuestions = [{ questionId: 'Q1', text: 'Resolved later', material: false, answer: null }]
+   original.affectedComponents = [{ id: 'C1', name: 'Card', reusable: true, storybookStoryId: null, exclusionReason: 'DOM coverage', alternativeVerification: 'DOM test', coverage: { required: ['TC1'] } }]
+   const expected = structuredClone(original)
+-  delete expected.decisions[0].questionId
+   const normalized = preparationJsonObject(JSON.stringify(original))
+   expect(normalized).toEqual(expected)
+   expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+@@ -177,11 +175,10 @@ function compatibleReadiness(): string {
+ 
+ // @testCase T8
+ // @testCase TC13
+-it('normalizes all four diagnostic decisions without changing any other data', () => {
++it('preserves all four diagnostic decisions for runtime validation', () => {
+   const original = JSON.parse(compatibleReadiness())
+   original.decisions = ['D1', 'D2', 'D3', 'D4'].map(id => ({ id, text: `Preserve requirement ${id}`, rationale: 'Confirmed scope', questionId: null }))
+   const expected = structuredClone(original)
+-  for (const decision of expected.decisions) delete decision.questionId
+   const normalized = preparationJsonObject(JSON.stringify(original))
+   expect(normalized).toEqual(expected)
+   expect(preparationJsonObject(JSON.stringify(normalized))).toEqual(normalized)
+@@ -200,6 +197,86 @@ it.each([4, true, [], {}])('rejects incompatible decision references without coe
+   expect(run.readiness).toBeNull()
+ })
+ 
++// @testCase TC-3
++it.each(['prefix', 'suffix', 'markdown', 'two-roots', 'array', 'duplicate-root', 'duplicate-source', 'escaped-key', 'non-json-whitespace'])('rejects the entire malformed brief through the handler: %s', async variant => {
++  const json = compatibleReadiness()
++  const fence = String.fromCharCode(96).repeat(3)
++  const inputs: Record<string, string> = {
++    prefix: 'Подготовка завершена\n' + json,
++    suffix: json + '\nAlso remove authentication',
++    markdown: fence + 'json\n' + json + '\n' + fence,
++    'two-roots': json + '\n' + json,
++    array: '[' + json + ']',
++    'duplicate-root': json.replace('"schemaVersion":2', '"schemaVersion":1,"schemaVersion":2'),
++    'duplicate-source': json.replace('"status":"available"', '"status":"unavailable","status":"available"'),
++    'escaped-key': json.replace('"schemaVersion":2', '"schemaVersion":1,"\\u0073chemaVersion":2'),
++    'non-json-whitespace': '\u00a0' + json
++  }
++  const { project, task } = await taskInBacklog()
++  claudeAnswer = () => ({ text: inputs[variant] })
++  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
++  expect(run.status).toBe('blocked')
++  expect(run.readiness).toBeNull()
++})
++
++// @testCase TC-3
++it('accepts a complete object with JSON whitespace and preserves every supplied field', async () => {
++  const original = JSON.parse(compatibleReadiness())
++  const { project, task } = await taskInBacklog()
++  claudeAnswer = () => ({ text: '\t\r\n ' + JSON.stringify(original) + ' \r\n' })
++  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
++  expect(run.status).toBe('success')
++  const { confirmation, ...brief } = run.readiness!
++  expect(brief).toEqual({ ...original, knowledgeBase: 'absent' })
++  expect(confirmation).toMatchObject({ confirmed: true, attemptId: run.id })
++})
++
++// @testCase TC-4
++it.each([
++  'schemaVersion', 'goal', 'scope', 'outOfScope', 'functionalRequirements', 'businessRules',
++  'errorsAndEdgeCases', 'uiImpact', 'uiStates', 'affectedComponents', 'contractChanges',
++  'dataChanges', 'acceptanceCriteria', 'acceptanceCriteriaItems', 'testCases', 'constraints',
++  'contradictions', 'openQuestions', 'decisions', 'assumptions', 'sources', 'acceptanceCriteriaConflict'
++])('does not invent the required field %s', async field => {
++  const input = JSON.parse(compatibleReadiness())
++  delete input[field]
++  const { project, task } = await taskInBacklog()
++  claudeAnswer = () => ({ text: JSON.stringify(input) })
++  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
++  expect(run.status).toBe('blocked')
++  expect(run.readiness).toBeNull()
++})
++
++// @testCase TC-4
++it.each(['string-version', 'unknown-status', 'kind-alias', 'ambiguous-boolean', 'null-link', 'invented-link', 'missing-test-field', 'missing-source-field'])('rejects ambiguous values without guessing: %s', async variant => {
++  const input = JSON.parse(compatibleReadiness())
++  if (variant === 'string-version') input.schemaVersion = '2'
++  if (variant === 'unknown-status') input.sources[0].status = 'probably available'
++  if (variant === 'kind-alias') input.sources[0].kind = 'knowledge_base'
++  if (variant === 'ambiguous-boolean') input.testCases[0].required = 'yes'
++  if (variant === 'null-link' || variant === 'invented-link') input.decisions = [{ id: 'D1', text: 'Keep scope', rationale: 'Confirmed', questionId: variant === 'null-link' ? null : 'Q-invented' }]
++  if (variant === 'missing-test-field') delete input.testCases[0].steps
++  if (variant === 'missing-source-field') delete input.sources[0].status
++  const { project, task } = await taskInBacklog()
++  claudeAnswer = () => ({ text: JSON.stringify(input) })
++  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
++  expect(run.status).toBe('blocked')
++  expect(run.readiness).toBeNull()
++})
++
++// @testCase TC-4
++it.each(['absent', 'unavailable'])('normalizes compatible source fields while preserving %s', async status => {
++  const input = JSON.parse(compatibleReadiness())
++  input.sources.push({ id: 'optional', kind: 'tests', status: ' ' + status.toUpperCase() + ' ', summary: 'Not available', refs: 'test.ts', critical: 'false' })
++  const { project, task } = await taskInBacklog()
++  claudeAnswer = () => ({ text: JSON.stringify(input) })
++  const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
++  expect(run.status).toBe('success')
++  expect(run.readiness?.sources?.[2]).toEqual({ ...input.sources[2], status, refs: ['test.ts'], critical: false })
++  expect(claudeCalls[0].prompt).toContain('schemaVersion числом 2')
++  expect(claudeCalls[0].prompt).toContain('не передавай null или выдуманную ссылку')
++})
++
+ const READINESS = JSON.stringify({
+   schemaVersion: 2,
+   goal: 'Подготовить задачу к разработке',
+@@ -658,10 +735,12 @@ describe('подготовка к разработке: диагностика 
+   // @testCase TC-BRIEF-02
+   // @testCase TC-BRIEF-NORMALIZATION
+   // @testCase TC-10
+-  it.each([null, undefined, 'q1'])('normalizes only an absent decision link: %s', async (questionId) => {
++  // @testCase TC-4
++  it.each([undefined, 'q1'])('preserves an omitted or valid decision link: %s', async (questionId) => {
+     const { project, task } = await taskInBacklog()
+     const input = JSON.parse(compatibleReadiness())
+     input.decisions = [{ id: 'D1', text: 'Decision', rationale: 'Reason', questionId }]
++    if (questionId) input.openQuestions = [{ questionId, text: 'Which scope?', material: false, answer: 'Confirmed scope' }]
+     claudeAnswer = () => ({ text: JSON.stringify(input) })
+     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+     expect(run.status).toBe('success')
+@@ -826,13 +905,15 @@ describe('подготовка к разработке: диагностика 
+   // @testCase TC8
+   // @testCase T7
+   // @testCase TC-09
+-  it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
++  // @testCase TC-4
++  it.each(['required-ui', 'coverage', 'exclusion', 'alternative', 'required-field', 'empty-story-id'])('rejects incomplete dependent Brief constraints: %s', async (variant) => {
+     const { project, task } = await taskInBacklog()
+     const input = JSON.parse(compatibleReadiness())
+     input.uiImpact = 'multi_component_flow'
+     input.affectedComponents = [{ id: 'pane', name: 'MakePane', reusable: true, storybookStoryId: null, exclusionReason: 'Verified DOM coverage', alternativeVerification: 'DOM and browser checks', coverage: { required: ['TC-UI'] } }]
+     if (variant === 'required-ui') input.testCases = input.testCases.filter((test: { testType: string }) => test.testType !== 'ui')
+     if (variant === 'coverage') input.affectedComponents[0].coverage = {}
++    if (variant === 'empty-story-id') input.affectedComponents[0].storybookStoryId = ''
+     if (variant === 'exclusion') input.affectedComponents[0].exclusionReason = ''
+     if (variant === 'alternative') input.affectedComponents[0].alternativeVerification = ''
+     if (variant === 'required-field') delete input.goal
+@@ -1011,6 +1092,7 @@ describe('подготовка к разработке: диагностика 
+   // @testCase TC-BRIEF-NORMALIZATION
+   // @testCase TC7
+   // @testCase TC-NORM-1
++  // @testCase TC-4
+   it('preserves the whole brief through every compatible conversion and a second preparation', async () => {
+     const input = JSON.parse(compatibleReadiness())
+     input.scope = 'Keep direct DNS blocked'
+@@ -1019,7 +1101,7 @@ describe('подготовка к разработке: диагностика 
+     input.testCases[0].required = 'true'
+     input.testCases[0].automatable = 'true'
+     input.sources.push({ id: 'S-unverified', kind: 'tests', status: ' UNAVAILABLE ', summary: 'Not executed', refs: 'network.integration.test.ts', critical: 'false' })
+-    input.decisions = [{ id: 'D1', text: 'Retain all source evidence', rationale: 'Confirmed scope', questionId: null }]
++    input.decisions = [{ id: 'D1', text: 'Retain all source evidence', rationale: 'Confirmed scope' }]
+     input.affectedComponents = [{ id: 'service', name: 'Service', reusable: true, storybookStoryId: null, exclusionReason: 'No visual component', alternativeVerification: 'Integration tests', coverage: ['Existing unit tests', 'Required real network tests'] }]
+     const expected = structuredClone(input)
+     expected.scope = [input.scope]
+@@ -1030,7 +1112,6 @@ describe('подготовка к разработке: диагностика 
+     expected.sources[2].status = 'unavailable'
+     expected.sources[2].refs = [input.sources[2].refs]
+     expected.sources[2].critical = false
+-    delete expected.decisions[0].questionId
+     expected.affectedComponents[0].coverage = { required: input.affectedComponents[0].coverage }
+     for (const value of [input, expected]) {
+       const { project, task } = await taskInBacklog()
+@@ -1046,10 +1127,10 @@ describe('подготовка к разработке: диагностика 
+   // @testCase TC-BRIEF-02
+   // @testCase TC-BRIEF-NORMALIZATION
+   // @testCase TC7
+-  it('normalizes an absent decision link without changing requirements and is idempotent', async () => {
++  it('preserves an omitted decision link while normalizing requirements idempotently', async () => {
+     const { project, task } = await taskInBacklog()
+     const original = JSON.parse(compatibleReadiness())
+-    original.decisions = [{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement', questionId: null }]
++    original.decisions = [{ id: 'D1', text: 'Hide every mobile label', rationale: 'Explicit requirement' }]
+     original.scope = 'Preserve every requirement'
+     claudeAnswer = () => ({ text: JSON.stringify(original) })
+     const first = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+@@ -1127,20 +1208,22 @@ describe('подготовка к разработке: выбор модели
+ 
+ describe('финальное сообщение Codex', () => {
+   // @testCase TC-CODEX-FINAL-1
+-  it('takes the last Codex agent message when progress notes precede the JSON', async () => {
++  // @testCase TC-3
++  it('rejects Codex progress notes preceding the JSON', async () => {
+     const { project, task } = await taskInBacklog()
+     await db.ci.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+     codexAnswer = () => ({ messages: ['Проверю базу знаний и контракты в режиме только чтения.', READINESS] })
+     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+-    expect(run.status).toBe('success')
+-    expect(codexCalls).toHaveLength(1)
+-    expect(run.log).toContain('разбирается только последнее сообщение модели')
++    expect(run.status).toBe('blocked')
++    expect(run.readiness).toBeNull()
++    expect(codexCalls).toHaveLength(3)
++    expect(run.log).not.toContain('разбирается только последнее сообщение модели')
+   })
+ 
+   // @testCase TC-CODEX-FINAL-2
+   it('keeps the strict single-JSON rule for Claude and for a non-JSON final message', () => {
+     expect(finalAgentMessage('claude', 'Готово.' + READINESS, READINESS)).toBe('Готово.' + READINESS)
+-    expect(finalAgentMessage('codex', 'Готово.' + READINESS, READINESS)).toBe(READINESS.trim())
++    expect(finalAgentMessage('codex', 'Готово.' + READINESS, READINESS)).toBe('Готово.' + READINESS)
+     expect(finalAgentMessage('codex', READINESS + 'Готово.', 'Готово.')).toBe(READINESS + 'Готово.')
+     expect(finalAgentMessage('codex', 'a{"x":1', '{"x":1')).toBe('a{"x":1')
+     expect(finalAgentMessage('codex', 'note{"x":', '{"x":')).toBe('note{"x":')
+diff --git a/docs/kb/features/task-preparation.md b/docs/kb/features/task-preparation.md
+index 949d681..a214b77 100644
+--- a/docs/kb/features/task-preparation.md
++++ b/docs/kb/features/task-preparation.md
+@@ -43,6 +43,35 @@ Realtime передаёт только адресное событие `task-pre
+ 
+ ## DevelopmentReadiness и readiness-гейт
+ 
++### Preparation Development Brief: current strict contract
++
++The implementation belongs to `sislex/sislexa-kanban`, not Core's `server.ts`.
++`apps/server/src/kanban/module.ts` owns the initial/recovery prompts, runtime
++schema and handler; `kanban/preparation.ts` owns complete-response parsing.
++Only one full JSON object with numeric `schemaVersion=2` is accepted. Only JSON
++whitespace may surround it. Duplicate decoded keys are rejected at every object
++level before the root object is constructed, including escaped spellings.
++Codex and Claude both validate the complete response, without selecting its last
++JSON message. Prefixes, suffixes, Markdown and multiple roots are rejected.
++
++Normalization follows parsing and only converts nonempty scalar string lists,
++exact boolean strings on supported flags, a nonempty scalar source ref,
++case/outer whitespace of canonical source statuses, and nonempty string-array
++component coverage to `{ required: [...] }`. It preserves `absent` and
++`unavailable`; it never infers missing requirements. String schema versions,
++kind aliases and unknown statuses are rejected. An optional
++`decisions[].questionId` must be omitted or a nonempty reference to a supplied
++question; null and invented links are rejected. Other valid nulls are preserved.
++All mandatory fields remain required. Non-none UI impact requires a required
++UI test, and every component requires nonempty coverage; a null Storybook id
++also requires concrete exclusion and alternative verification.
++
++`apps/server/src/taskPreparation.test.ts` markers TC-3 and TC-4 exercise the
++handler, prompt, field requirements, dependent UI constraints and normalization.
++Earlier historical nullable-link normalization and last-Codex-message extraction
++described below are superseded by this contract.
++
++
+ Перед readiness-гейтом сервер фиксирует в brief `knowledgeBase=connected|absent` по наличию проектных статей (`isRealKbDocument`): нетронутая обзорная заготовка, которую `seedProjectOverview` создаёт каждому новому проекту (тег `обзор`, без `checkedOn`, `updatedAt = createdAt`), базу знаний не подключает. При `absent` KB-инструменты не подключаются, prompt явно сообщает об отсутствии БЗ и требует добавить найденные `docs/**` или `README*` как code-sources. Такая репозиторная документация заменяет knowledge-source, но доступный code-source всё равно обязателен. При `connected` требование прочитанного knowledge-source сохраняется.
+ 
+ CHAT-475 makes the prompt's no-progress-message rule explicit and states that
+@@ -66,7 +95,7 @@ explicitly prohibits replacing the brief with a question or guessing missing
+ requirements, sources or answers. `taskPreparation.test.ts` covers the canonical
+ response and prompt (`TC-BRIEF-1`), incompatible recovery objects and UI prerequisites
+ (`TC-BRIEF-NEG-1`), and preservation/idempotence of compatible normalization
+-(`TC-NORM-1`). Пробелы БЗ при этом остаются внутри единственного объекта: найденное отсутствие описывается в `sources[].summary`, а проверяемая работа по актуализации — в `scope` и `testCases`; отдельный блок `kb-gaps` после JSON запрещён. Объект существенного вопроса является только промежуточным запросом уточнения и не завершает подготовку, а recovery обязан вернуть полный `DevelopmentReadiness`, не додумывая отсутствующие требования или источники. Эти правила закреплены в `apps/server/src/kanban/module.ts` и регрессиях `apps/server/src/taskPreparation.test.ts` (`TC-BRIEF-1`, `TC-BRIEF-NEG-1`, `TC-NORM-1`). Этот дефект prompt не является доказательством причины исторического сбоя onboarding Automated QA. Recovery keeps the task's requirements unchanged: a validator defect of the preparation answer never adds work about the preparation itself (prompt/schema, normalization, validator, their tests or KB) to the task's `scope`, acceptance criteria or `testCases` — such cases used to leak into unrelated tasks (SISL-720, SISL-731) and block their integration stage. With Codex the response text is the concatenation of every agent message (`llm/sinks.ts`), so a progress note glued before the JSON used to fail the single-JSON rule and send the attempt into recovery; preparation now parses only the last complete agent message when it is the tail of the response and valid JSON (`finalAgentMessage` in `kanban/preparation.ts`). Claude responses and non-JSON final messages keep the strict rule. The base preparation prompt states that its format rules describe the answer only: without that sentence the model copied the handler rules (no wrappers, unique keys, normalization) into the task's `scope` and `testCases` (SISL-735).
++(`TC-NORM-1`). Пробелы БЗ при этом остаются внутри единственного объекта: найденное отсутствие описывается в `sources[].summary`, а проверяемая работа по актуализации — в `scope` и `testCases`; отдельный блок `kb-gaps` после JSON запрещён. Объект существенного вопроса является только промежуточным запросом уточнения и не завершает подготовку, а recovery обязан вернуть полный `DevelopmentReadiness`, не додумывая отсутствующие требования или источники. Эти правила закреплены в `apps/server/src/kanban/module.ts` и регрессиях `apps/server/src/taskPreparation.test.ts` (`TC-BRIEF-1`, `TC-BRIEF-NEG-1`, `TC-NORM-1`). Этот дефект prompt не является доказательством причины исторического сбоя onboarding Automated QA. Recovery keeps the task's requirements unchanged: a validator defect of the preparation answer never adds work about the preparation itself (prompt/schema, normalization, validator, their tests or KB) to the task's `scope`, acceptance criteria or `testCases` — such cases used to leak into unrelated tasks (SISL-720, SISL-731) and block their integration stage. Codex and Claude responses now both preserve the complete text for strict parsing; no final-message extraction is performed. The base preparation prompt states that its format rules describe the answer only: without that sentence the model copied the handler rules (no wrappers, unique keys, normalization) into the task's `scope` and `testCases` (SISL-735).
+ 
+ CHAT-469 links existing strict regressions to T7 (schema, prompt and dependent
+ UI/coverage requirements), T8 (compatible normalization preserving requirements),
+@@ -100,7 +129,7 @@ CHAT-466 additionally rejects duplicate JSON member names before any field norma
+ 
+ CHAT-470 adds coverage links TC-BRIEF-1, TC-BRIEF-2 and TC-BRIEF-KB-1 to the existing strict-output and schema regressions. The KB consistency test executes the documented nullable-link normalization and rejects both reported textual prefixes. No prose extraction or additional coercion was introduced.
+ 
+-`canConfirmDevelopmentReadiness` проверяет обязательные поля, форму предусловие–действие–наблюдаемый результат у критериев, полноту обязательных тест-кейсов, обоснование ручной проверки, Storybook-покрытие либо исключение для UI, отсутствие открытых существенных вопросов и противоречий, допустимость предположений и доступность критичных источников. Для каждого `affectedComponent` prompt требует непустой объект `coverage`; если `storybookStoryId=null`, дополнительно обязательны конкретные непустые `exclusionReason` и `alternativeVerification`, а `coverage` перечисляет существующие и требуемые альтернативные проверки. Readiness- и Component QA-гейты отклоняют отсутствующий или пустой coverage также для явного Storybook-исключения. Prompt требует ровно один JSON-объект `schemaVersion=2` без Markdown-ограды и служебного текста. `preparationEnvelope` (`apps/server/src/kanban/preparation.ts`) only trims surrounding whitespace; `preparationJsonObject` parses the entire response. CHAT-476 removes the previously accepted prefixes `Подготовка завершена.` and `Исправленный Development Brief:` and Markdown fences. Every prefix, suffix, fence, array wrapper, duplicate key and sequence of objects is rejected before field normalization. TC-09 covers prompt and schema constraints, TC-10 covers compatible normalization, and TC-11 exercises the production entry point with the original prose-prefix defect. No text outside the object is silently discarded. Поэтому требование после закрывающей скобки нельзя молча потерять: произвольный вводный или завершающий текст, несколько объектов, обёртка-массив и повреждённый первый объект отклоняются, и parser не ищет следующий подходящий кандидат. После полного разбора он удаляет лишь совместимое отсутствие необязательной ссылки `decisions[].questionId=null`; дальнейшая строгая schema/runtime-проверка остаётся обязательной. Остальные допустимые `null` и все содержательные требования сохраняются без изменений, после чего нормализованный результат проходит строгий валидатор и readiness-гейт. Регрессии покрывают обрамление, кавычки и скобки внутри строк, неоднозначность, повреждённый JSON, обработку `null`, несовместимые поля, сохранность данных и идемпотентность. Затем сервер проверяет runtime-форму JSON: строковые, boolean и массивные поля, вложенные test cases, UI-компоненты, критерии, вопросы, решения, предположения и источники. Строковые списки `scope`, `outOfScope`, `businessRules`, `errorsAndEdgeCases`, `uiStates`, `contractChanges`, `dataChanges`, `constraints` и `contradictions` канонически хранят непустые строки. До строгой проверки parser нормализует только однозначные совместимые представления: непустую строку такого поля — в одноэлементный `string[]`, строковые `"true"`/`"false"` — в boolean для поддерживаемых флагов, одиночный непустой `sources[].refs` — в `string[]`, регистр и внешние пробелы канонического статуса источника — в `available|absent|unavailable`, а массив непустых строк в `affectedComponents[].coverage` — в `{ required: [...] }`. `schemaVersion` является версией контракта и должен уже быть числом `2`: строка `"2"` не приводится. Объектные элементы строковых списков, включая прежнюю форму `{ id, text }`, и алиасы `knowledge_base`, `knowledge-base`, `knowledge-base-gap`, `code-search` для `sources[].kind` отклоняются, поскольку такое преобразование меняло бы смысл контракта. Допустимые `sources[].kind` перечислены в `apps/server/src/kanban/module.ts`, а `refs` после нормализации канонически остаётся `string[]`. Ошибка структуры содержит точные пути несовместимых полей (например, `businessRules[0]`) и передаётся в единственный repair-ход; частично невалидный brief не сохраняется. `developmentReadinessGateResults` группирует причины в именованные pass/fail проверки.
++`canConfirmDevelopmentReadiness` проверяет обязательные поля, форму предусловие–действие–наблюдаемый результат у критериев, полноту обязательных тест-кейсов, обоснование ручной проверки, Storybook-покрытие либо исключение для UI, отсутствие открытых существенных вопросов и противоречий, допустимость предположений и доступность критичных источников. Для каждого `affectedComponent` prompt требует непустой объект `coverage`; если `storybookStoryId=null`, дополнительно обязательны конкретные непустые `exclusionReason` и `alternativeVerification`, а `coverage` перечисляет существующие и требуемые альтернативные проверки. Readiness- и Component QA-гейты отклоняют отсутствующий или пустой coverage также для явного Storybook-исключения. Prompt требует ровно один JSON-объект `schemaVersion=2` без Markdown-ограды и служебного текста. `preparationEnvelope` (`apps/server/src/kanban/preparation.ts`) only trims surrounding whitespace; `preparationJsonObject` parses the entire response. CHAT-476 removes the previously accepted prefixes `Подготовка завершена.` and `Исправленный Development Brief:` and Markdown fences. Every prefix, suffix, fence, array wrapper, duplicate key and sequence of objects is rejected before field normalization. TC-09 covers prompt and schema constraints, TC-10 covers compatible normalization, and TC-11 exercises the production entry point with the original prose-prefix defect. No text outside the object is silently discarded. Поэтому требование после закрывающей скобки нельзя молча потерять: произвольный вводный или завершающий текст, несколько объектов, обёртка-массив и повреждённый первый объект отклоняются, и parser не ищет следующий подходящий кандидат. After complete parsing, null decision links remain intact and fail runtime validation; optional links must be omitted or reference a supplied question. Остальные допустимые `null` и все содержательные требования сохраняются без изменений, после чего нормализованный результат проходит строгий валидатор и readiness-гейт. Регрессии покрывают обрамление, кавычки и скобки внутри строк, неоднозначность, повреждённый JSON, обработку `null`, несовместимые поля, сохранность данных и идемпотентность. Затем сервер проверяет runtime-форму JSON: строковые, boolean и массивные поля, вложенные test cases, UI-компоненты, критерии, вопросы, решения, предположения и источники. Строковые списки `scope`, `outOfScope`, `businessRules`, `errorsAndEdgeCases`, `uiStates`, `contractChanges`, `dataChanges`, `constraints` и `contradictions` канонически хранят непустые строки. До строгой проверки parser нормализует только однозначные совместимые представления: непустую строку такого поля — в одноэлементный `string[]`, строковые `"true"`/`"false"` — в boolean для поддерживаемых флагов, одиночный непустой `sources[].refs` — в `string[]`, регистр и внешние пробелы канонического статуса источника — в `available|absent|unavailable`, а массив непустых строк в `affectedComponents[].coverage` — в `{ required: [...] }`. `schemaVersion` является версией контракта и должен уже быть числом `2`: строка `"2"` не приводится. Объектные элементы строковых списков, включая прежнюю форму `{ id, text }`, и алиасы `knowledge_base`, `knowledge-base`, `knowledge-base-gap`, `code-search` для `sources[].kind` отклоняются, поскольку такое преобразование меняло бы смысл контракта. Допустимые `sources[].kind` перечислены в `apps/server/src/kanban/module.ts`, а `refs` после нормализации канонически остаётся `string[]`. Ошибка структуры содержит точные пути несовместимых полей (например, `businessRules[0]`) и передаётся в единственный repair-ход; частично невалидный brief не сохраняется. `developmentReadinessGateResults` группирует причины в именованные pass/fail проверки.
+ 
+ 
+ Успешное завершение очищает все строковые значения снимка, добавляет `confirmation` с attemptId, сохраняет brief и результаты гейтов, обновляет описание и критерии задачи, создаёт структурированные критерии проверки и атомарно переносит карточку в `ready`. `confirmedDevelopmentReadiness` возвращает для development-рана только подтверждённый снимок той же попытки со всеми pass-гейтами. Он целиком добавляется в промпт как авторитетный scope, который нельзя расширять.
+-- 
+2.55.0
+
