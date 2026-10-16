@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
 
 export const requiredSources = Object.freeze({
-  '@sislexa/identity': ['sislex/identity', 'e33958be66c7a1f44b3cb4c6b4619f7c2fefe322'],
+  '@sislexa/identity': ['sislex/identity', '8020aa2dc89f1e6b7934bcb5b07e1bf1d38ab31d'],
   '@sislexa/billing': ['sislex/billing', '41263c7c20f8e852b508bbd76220245fbb62bd10'],
   '@sislex/llm-runner': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
   '@sislex/runner-contracts': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
