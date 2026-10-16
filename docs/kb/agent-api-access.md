@@ -1,6 +1,6 @@
 ---
 title: External agent access through API tokens
-updated: 2026-10-16
+updated: 2026-10-17
 areas:
   - packages/shared/src/protocol.ts
   - apps/server/src/routes/rest.apiTokens.test.ts
@@ -43,6 +43,13 @@ in `kanban:README.md` (its `docs/kb` index; see [module ownership](modules.md)).
 Delivery Control uses `/integrations/v1` with its separate project integration
 tokens and scopes; see [project integration tokens](data-auth.md#project-integration-tokens).
 User API tokens do not replace those integration credentials.
+
+## Ограничения
+
+- A token acts as its user, with that user's current role and project membership.
+- The `read` access mode restricts only HTTP methods: GET, HEAD and OPTIONS.
+- Token expiration is fixed; activity does not extend it.
+- An API token cannot issue another API token; creation requires an ordinary authenticated session.
 
 ## Limits, permissions and revocation
 
