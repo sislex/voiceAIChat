@@ -1489,7 +1489,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined })
+  registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined, internalToken: opts.config.internalToken })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
   const storybookSessions = new StorybookSessions({

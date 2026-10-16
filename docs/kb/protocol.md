@@ -1,6 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-08
+updated: 2026-10-16
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -440,6 +440,20 @@ parameter because the browser WebSocket API cannot set a custom header.
 
 ### Multi-project integration tokens
 
+`POST /integrations/v1/projects/:id/tasks/:taskId/actions` requires `tasks:control`
+and an allowed project. Token issuance accepts this scope alone or with
+`tasks:read` and `tasks:external`; none of these scopes implies another.
+The shared `BoardCardActionRequest` has `action` (`retry_stage`,
+`restart_development`, `move`, `comment`, or `set_engine_result`), optional
+`stage` (QA stage), `column` (column semantic type), `text`, and `result`.
+The result contains `status` (`done` or `failed`), `branch`, `sha`, `summary`,
+and `evidenceUrl`. `BoardCardActionResponse` is `{ ok, runId?, error? }`.
+Core forwards the body to `POST /internal/kanban/projects/:id/tasks/:taskId/actions`
+using internal Bearer authorization and preserves upstream status, body and
+content type. Missing/invalid/revoked tokens return 401; scope/project failures
+return 403, missing board URL/internal token returns 503, and transport failures
+return 502. The external board validates actions and owns their execution.
+
 `POST /api/projects/:id/integration-tokens` accepts the existing `name` and
 `scopes` plus optional `projectIds` (1–50 unique ids). The list must contain
 `:id`, and the authenticated caller must own every listed project. Responses
@@ -451,6 +465,30 @@ An integration principal returned by `/internal/whoami` has
 `projectId` remains the first entry. Integration ingress authorizes its URL
 project by membership in `projectIds`; token listing and revocation remain
 anchored to `projectId`.
+
+`GET /integrations/v1/projects/:id/tasks/state` requires an integration token
+with `tasks:read` and `:id` in its `projectIds`. Missing, invalid or revoked
+credentials return 401; a missing scope or foreign project returns 403 before
+contacting the board. Token creation accepts `tasks:read` alone or together with
+`tasks:external`; read permission does not authorize external task upserts.
+Core forwards the request to the external board's
+`GET /internal/kanban/projects/:id/tasks/state` with its internal Bearer token,
+preserving the response body, status and content type. Missing board configuration
+or internal credential returns 503; transport failures return 502.
+
+The response is `BoardCardsSnapshot` (`packages/shared/src/integrations.ts`):
+`{ generatedAt, tasks: [{ id, seq, key, title, column: { id, name, semanticType },
+autoPilot, autoPilotFixCycles, updatedAt, labels, development, qa, merge,
+decisionReason }] }`. Timestamps are Unix milliseconds and labels are strings.
+`development` is null or `{ runId, status, startedAt, finishedAt, failedStep }`,
+with nullable start/finish times and a nullable failed step
+`{ title, exitCode, tail }` (exitCode may be null). The board supplies `tail` as
+the last at most 40 redacted lines joined into a string. `qa` contains
+`{ stage, status, failedSummary }`; `merge` is null or
+`{ runId, status, targetBranch, failedSummary }`. Failure summaries and
+`decisionReason` are nullable strings. Snapshot assembly, status derivation,
+log truncation and redaction belong to the external board; Core only authorizes
+and forwards the request.
 
 Core stores tenant ownership on projects and conversations. The public transfer
 boundary is `PUT REST.projectTenant(id)` with `{ tenantId }`; only a project

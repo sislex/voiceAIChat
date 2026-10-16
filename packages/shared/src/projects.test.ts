@@ -4,6 +4,31 @@ import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compa
   designPromptLines, taskMakeSources, type TaskDesignLink, type Task, type TaskStatus
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
+import { DEFAULT_QA_STAGES, QA_STAGES, normalizeQaStages } from './projects'
+
+describe('normalizeQaStages', () => {
+  it('defines the pipeline order and defaults to no QA stages', () => {
+    expect(QA_STAGES).toEqual(['component_qa', 'integration_tests', 'automated_qa', 'manual_qa'])
+    expect(DEFAULT_QA_STAGES).toEqual([])
+    expect(normalizeQaStages([])).toEqual([])
+  })
+
+  it.each([undefined, null, false, 1, 'manual_qa', { manual_qa: true }])('rejects non-array input %j', (value) => {
+    expect(normalizeQaStages(value)).toEqual([])
+  })
+
+  it('drops unknown values, deduplicates and restores pipeline order without mutating input', () => {
+    const input = Object.freeze(['manual_qa', null, 'automated_qa', 'unknown', 'component_qa', 'manual_qa', 'integration_tests', 1, {}])
+    expect(normalizeQaStages(input)).toEqual(QA_STAGES)
+  })
+
+  it('preserves selected subsets and is idempotent', () => {
+    const normalized = normalizeQaStages(['manual_qa', 'integration_tests', 'integration_tests'])
+    expect(normalized).toEqual(['integration_tests', 'manual_qa'])
+    expect(normalizeQaStages(normalized)).toEqual(normalized)
+    expect(normalizeQaStages(['development', 'awaiting_merge', 'MANUAL_QA', ' manual_qa'])).toEqual([])
+  })
+})
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000
