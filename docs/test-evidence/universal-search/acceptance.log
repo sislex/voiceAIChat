@@ -1,0 +1,17 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v2.1.9 /Users/alexeyrozhnov/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/tasks/cbc93e7d-da5b-4e1e-bcfc-69c27d2a14ff/environments/test/temporary/repository/SISL-579
+
+stdout | e2e/universalSearch.e2e.test.ts > acceptance: three consecutive complete browser gates with two workers
+acceptance browser run 1: exit 0; universalSearch passed with two workers
+acceptance browser run 2: exit 0; universalSearch passed with two workers
+acceptance browser run 3: exit 0; universalSearch passed with two workers
+
+ ✓ e2e/universalSearch.e2e.test.ts (20 tests | 18 skipped) 368294ms
+   ✓ acceptance: three consecutive complete browser gates with two workers 348321ms
+   ✓ acceptance: quick gate for the actual task diff 19973ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 18 skipped (20)
+   Start at  18:50:20
+   Duration  369.51s (transform 565ms, setup 0ms, collect 958ms, tests 368.29s, environment 0ms, prepare 29ms)

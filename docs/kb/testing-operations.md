@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-14
-checked: f62aeb55
+updated: 2026-10-16
+checked: c0c04ab3
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -717,6 +717,64 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 **`--root <пакет>` не заменяет запуск из каталога пакета:** он меняет корень Vitest, но не `cwd`. Тесты, читающие файлы относительно рабочего каталога (`packages/ui/src/architecture.test.ts`, `src/store/preferenceKeys.test.ts` — оба сканируют `src` через `readdirSync`), падают с `ENOENT: scandir '<репозиторий>/src'`. Для замеров и покрытия зовите `npm run -w <пакет> test -- --coverage`; `--root` годится только когда в выборке нет cwd-зависимых тестов.
 
 ### Development gate: `npm run gate:fast`
+
+Universal search browser synchronization is implemented in
+`e2e/universalSearch.e2e.test.ts`. Its observer is registered before opening
+and typing, captures a new main-frame POST request to the current stand's exact
+`/api/universal-search` URL with the requested query, and accepts only that
+request's completed response. API fixture calls, previous in-flight requests,
+other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
+groups, missing expected IDs/deep links and request cancellation have distinct
+failures. The helper then waits for each requested source/title option to become
+visible. Search observation and option waits retain bounded 10-second limits;
+there is no readiness sleep.
+
+The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
+resets its query on reopening and does not retrigger its search effect for an
+unchanged mounted input. The E2E verifies this behavior in Chromium. Calling
+the helper again with the same mounted value explicitly clears the input before
+arming a fresh search. A controlled delayed-response case demonstrates why
+counting arbitrary options is insufficient: local command options for
+`Настройки` already exist while the search response is withheld. Another case
+keeps the expected option hidden after a successful real response and verifies
+that readiness waits for visibility. Negative cases cover old and unrelated
+responses, a response before the triggering action completes, HTTP 400/503,
+unavailable sources, missing hits and aborted requests.
+
+Navigation remains six separate `it.each(SEARCH_SOURCES)` cases, each checking
+the deep link after reload, plus the kanban-message context case. Existing
+authentication, secret exclusion, keyboard, touch, focus and geometry checks
+remain in the same suite. `[palette:timing]` logs opening, fill, request,
+completed response and visible-option elapsed times; `[palette:navigation]`
+records each source through reload.
+
+The opt-in acceptance tests in the same file carry TC-3 and TC-4 markers.
+Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
+`npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
+Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
+required by the environment. Child runs disable acceptance mode to prevent
+recursion. TC-3 runs the complete `browser-gate.mjs --integration` three times
+sequentially with `VC_E2E_WORKERS=2`, stops on failure, verifies the full batch
+inventory and all universalSearch cases, and retains separate logs, exit codes,
+Vitest results and batch reports under `artifacts/universal-search-acceptance/`.
+TC-4 runs the quick gate against the supplied base. Ordinary browser runs keep
+their normal case inventory. The parallel allowlist includes sessions, projects,
+gitPane, universalSearch, both Web Reader suites and toolIntegration; other
+integration suites remain serial. The normal `browser.json` is overwritten,
+so its single latest result is insufficient evidence of three runs.
+
+On 2026-10-16, three consecutive complete integration runs on MacBook passed
+with two workers in the parallel batch and all 18 universalSearch cases passing
+without retries or skips. In 51 ordinary searches across these runs, opening took
+10–130 ms, fill-to-request 201–336 ms, request-to-completed-response 39–75 ms,
+and response-to-visible-option 3–34 ms. Total search readiness was 289–498 ms;
+the 18 source navigations through reload took 419–1,659 ms. These observations
+identify client debounce/scheduling as the largest search-wait component on this
+stand, and demonstrate why response and DOM readiness are separate conditions.
+The historical October 6 timeout was not reproduced; the measurements do not
+establish a cold-FTS or port-conflict explanation. Per-run evidence is preserved
+in `docs/test-evidence/universal-search/`; the source SHA-256 is recorded in
+each exit report.
 
 Task acceptance uses `npm run gate:quick -- --base <sha>`. It reuses
 `application-gate.mjs` ownership, diff (including untracked files), and contract

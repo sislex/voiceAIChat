@@ -1,10 +1,12 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import { chromium, type Browser, type Page, type Request, type Response } from 'playwright'
 import { VoiceChatDb } from '../apps/server/src/db/database.js'
 import { SEARCH_SOURCES, SEARCH_LABELS, type SearchHit, type UniversalSearchResult } from '../packages/shared/src/universalSearch'
 
@@ -29,41 +31,155 @@ async function api(path: string, method = 'GET', body?: unknown) {
   expect(response.ok, await response.clone().text()).toBe(true)
   return response
 }
-async function open(query = 'PaletteNeedle') {
-  // Wait for the authenticated host and focus its document after each navigation;
-  // keyboard shortcuts belong to the host even when the sidebar is collapsed.
-  if (!await page.getByRole('dialog', { name: 'Командная палитра' }).isVisible()) {
-    await page.locator('.cmdk-open').waitFor({ state: 'attached' })
-    await page.locator('#app-content').focus()
-    await page.keyboard.press('Control+k')
+const SEARCH_TIMEOUT = 10_000
+
+function matchesSearch(request: Request, target: Page, query: string) {
+  if (request.url() !== base + '/api/universal-search' || request.method() !== 'POST'
+    || request.frame() !== target.mainFrame()) return false
+  try { return request.postDataJSON()?.query === query } catch { return false }
+}
+
+// Observe request identity as well as its payload: an older in-flight response
+// with the same query cannot complete a newly armed search.
+async function observeSearch(target: Page, query: string, action: () => Promise<void>,
+  mark: (stage: string) => void = () => {}, timeout = SEARCH_TIMEOUT) {
+  let current: Request | undefined
+  let resolveResponse!: (response: Response) => void
+  let rejectResponse!: (error: Error) => void
+  const response = new Promise<Response>((resolve, reject) => {
+    resolveResponse = resolve; rejectResponse = reject
+  })
+  const onRequest = (request: Request) => {
+    if (!current && matchesSearch(request, target, query)) {
+      current = request; mark('request')
+    }
   }
-  const dialog = page.getByRole('dialog', { name: 'Командная палитра' })
-  await dialog.waitFor()
-  // Subscribe before typing: opening also searches recent items, whose options
-  // must not satisfy readiness for this query. Await the real debounced request.
-  const [response] = await Promise.all([
-    page.waitForResponse(response => {
-      const request = response.request()
-      return response.url() === base + '/api/universal-search'
-        && request.method() === 'POST'
-        && request.postDataJSON()?.query === query
-    }),
-    dialog.getByRole('combobox').fill(query)
-  ])
-  expect(response.ok(), 'Palette search HTTP status: ' + response.status()).toBe(true)
-  const result = await response.json() as UniversalSearchResult
-  expect(result.groups.filter(group => group.status !== 'ok'), 'Unavailable search sources').toEqual([])
-  const hits = result.groups.flatMap(group => group.hits)
-  expect(hits.length, 'No search results for ' + query).toBeGreaterThan(0)
-  // The response can precede React's commit; wait for its actual result titles.
-  for (const hit of hits) {
-    await dialog.getByRole('group', { name: SEARCH_LABELS[hit.source], exact: true })
-      .getByRole('option').filter({ hasText: hit.title }).first().waitFor()
+  const onResponse = (value: Response) => {
+    if (current && value.request() === current) {
+      void value.finished().then(error => {
+        if (error) rejectResponse(new Error('Search response failed: ' + error.message))
+        else { mark('response'); resolveResponse(value) }
+      }, rejectResponse)
+    }
   }
-  return dialog
+  const onFailed = (request: Request) => {
+    if (request === current) rejectResponse(new Error('Search request failed: ' + request.failure()?.errorText))
+  }
+  target.on('request', onRequest)
+  target.on('response', onResponse)
+  target.on('requestfailed', onFailed)
+  const timer = setTimeout(() => rejectResponse(new Error(
+    'Search "' + query + '" timed out waiting for ' + (current ? 'response' : 'browser request')
+  )), timeout)
+  try {
+    const [value] = await Promise.all([response, action()])
+    return value
+  } finally {
+    clearTimeout(timer)
+    target.off('request', onRequest)
+    target.off('response', onResponse)
+    target.off('requestfailed', onFailed)
+  }
+}
+
+async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
+  const started = performance.now()
+  const stages: Record<string, number> = {}
+  const mark = (stage: string) => { stages[stage] = Math.round(performance.now() - started) }
+  const dialog = target.getByRole('dialog', { name: 'Командная палитра' })
+  try {
+    // A mounted input with the same value does not retrigger the published
+    // client's effect. Clear it explicitly before arming a fresh query.
+    if (await dialog.isVisible() && await dialog.getByRole('combobox').inputValue() === query) {
+      await dialog.getByRole('combobox').fill('', { timeout: SEARCH_TIMEOUT })
+    }
+    const response = await observeSearch(target, query, async () => {
+      if (!await dialog.isVisible()) {
+        await target.locator('.cmdk-open').waitFor({ state: 'attached', timeout: SEARCH_TIMEOUT })
+        await target.locator('#app-content').focus()
+        await target.keyboard.press('Control+k')
+      }
+      await dialog.waitFor({ timeout: SEARCH_TIMEOUT })
+      mark('opened')
+      await dialog.getByRole('combobox').fill(query, { timeout: SEARCH_TIMEOUT })
+      mark('filled')
+    }, mark)
+    const body = await response.text()
+    expect(response.ok(), 'Search "' + query + '" HTTP ' + response.status() + ': ' + body).toBe(true)
+    const result = JSON.parse(body) as UniversalSearchResult
+    expect(result.groups.filter(group => group.status !== 'ok'), 'Unavailable search sources for ' + query).toEqual([])
+    const hits = result.groups.flatMap(group => group.hits)
+    expect(hits.length, 'No search results for ' + query).toBeGreaterThan(0)
+    for (const hit of wanted) {
+      expect(hits.some(value => value.id === hit.id && value.href === hit.href),
+        'Missing expected search hit: ' + hit.source + '/' + hit.title).toBe(true)
+      // A successful response precedes React's commit; wait for the specific option.
+      await dialog.getByRole('group', { name: SEARCH_LABELS[hit.source], exact: true })
+        .getByRole('option').filter({ hasText: hit.title }).first().waitFor({ timeout: SEARCH_TIMEOUT })
+    }
+    mark('options')
+    return dialog
+  } finally {
+    console.log('[palette:timing] ' + JSON.stringify({ query, ...stages, total: Math.round(performance.now() - started) }))
+  }
+}
+
+// Explicit acceptance mode avoids recursively running gates during ordinary E2E.
+// Run with VC_SEARCH_ACCEPTANCE=1 and Vitest -t '^acceptance:'.
+const acceptance = process.env.VC_SEARCH_ACCEPTANCE === '1'
+if (acceptance) {
+  const evidence = resolve(ROOT, 'artifacts/universal-search-acceptance')
+  const sourceHash = () => createHash('sha256').update(readFileSync(join(ROOT, 'e2e/universalSearch.e2e.test.ts'))).digest('hex')
+  const revision = sourceHash()
+  const run = (name: string, command: string, args: string[], extra: Record<string, string> = {}) => {
+    mkdirSync(evidence, { recursive: true })
+    const result = spawnSync(command, args, {
+      cwd: ROOT, env: { ...process.env, VC_SEARCH_ACCEPTANCE: '0', ...extra },
+      encoding: 'utf8', timeout: 900_000, maxBuffer: 32 * 1024 * 1024
+    })
+    writeFileSync(join(evidence, name + '.log'), (result.stdout ?? '') + (result.stderr ?? ''))
+    writeFileSync(join(evidence, name + '.exit.json'), JSON.stringify({
+      command: [command, ...args], sourceSha256: revision,
+      exitCode: result.status, signal: result.signal, error: result.error?.message ?? null
+    }, null, 2))
+    expect(result.status, name + ' failed; see ' + evidence).toBe(0)
+    expect(sourceHash(), 'Acceptance source changed during the run').toBe(revision)
+  }
+
+  // @testCase TC-3
+  it('acceptance: three consecutive complete browser gates with two workers', async () => {
+    const { integrationBrowserFiles } = await import('../scripts/browser-gate.mjs')
+    for (let index = 1; index <= 3; index++) {
+      const name = 'browser-' + index
+      const report = join(evidence, name + '.tests.json')
+      run(name, process.execPath, ['scripts/browser-gate.mjs', '--integration'], {
+        VC_E2E_WORKERS: '2', GATE_TEST_REPORT: report
+      })
+      copyFileSync(join(ROOT, 'artifacts/gate-timings/browser.json'), join(evidence, name + '.batches.json'))
+      const batches = JSON.parse(readFileSync(join(evidence, name + '.batches.json'), 'utf8')).results
+      expect(batches.flatMap((batch: { files: string[] }) => batch.files).sort()).toEqual(integrationBrowserFiles().sort())
+      expect(batches.every((batch: { exitCode: number }) => batch.exitCode === 0)).toBe(true)
+      expect(batches.find((batch: { files: string[] }) => batch.files.includes('e2e/universalSearch.e2e.test.ts')).workers).toBe(2)
+      const search = JSON.parse(readFileSync(report, 'utf8')).testResults
+        .find((file: { name: string }) => file.name.endsWith('/e2e/universalSearch.e2e.test.ts'))
+      expect(search?.status).toBe('passed')
+      expect(search.assertionResults.length).toBeGreaterThanOrEqual(18)
+      expect(search.assertionResults.every((result: { status: string; retryReasons?: unknown[] }) =>
+        result.status === 'passed' && !result.retryReasons?.length)).toBe(true)
+      console.log('acceptance browser run ' + index + ': exit 0; universalSearch passed with two workers')
+    }
+  }, 2_700_000)
+
+  // @testCase TC-4
+  it('acceptance: quick gate for the actual task diff', () => {
+    const baseSha = process.env.VC_SEARCH_BASE ?? ''
+    expect(baseSha).toMatch(/^[0-9a-f]{40}$/)
+    run('quick', 'npm', ['run', 'gate:quick', '--', '--base', baseSha])
+  }, 900_000)
 }
 
 beforeAll(async () => {
+  if (acceptance) return
   dataDir = await mkdtemp(join(tmpdir(), 'vc-palette-e2e-'))
   const reservation = createServer()
   await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve))
@@ -110,7 +226,8 @@ beforeAll(async () => {
   expected = (await (await api('/api/universal-search', 'POST', { query: 'PaletteNeedle' })).json() as UniversalSearchResult).groups.flatMap(group => group.hits)
   expect(new Set(expected.map(hit => hit.source)).size).toBe(6)
   browser = await chromium.launch({ args: ['--no-sandbox'] })
-  page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', hasTouch: true })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', hasTouch: true })
+  page = await context.newPage()
   await page.addInitScript(value => {
     // Seed once: re-injecting a migrated legacy token races cookie/CSRF refresh on reload.
     if (!sessionStorage.getItem('qa-palette-auth-seeded')) {
@@ -142,6 +259,142 @@ it('checks the running application health, authenticated search and anonymous de
   const body = await (await api('/api/universal-search', 'POST', { query: 'never-return-this' })).text()
   expect(body).not.toContain('never-return-this')
   expect((JSON.parse(body) as UniversalSearchResult).groups.every(group => !group.hits.length)).toBe(true)
+})
+
+// @testCase TC-2
+it('observes only a new matching browser request, including a response before action completion', async () => {
+  const probe = await page.context().newPage()
+  const pending: import('playwright').Route[] = []
+  try {
+    await probe.goto(base + '/#/chat/' + chatId)
+    await probe.route('**/api/universal-search', route => { pending.push(route) })
+    const send = (query: string, origin = base, method = 'POST') => probe.evaluate(
+      ({ query, origin, method }) => { void fetch(origin + '/api/universal-search', {
+        method, ...(method === 'POST' ? { body: JSON.stringify({ query }) } : {})
+      }).catch(() => {}) }, { query, origin, method })
+    // This request predates observation; its otherwise identical response is stale.
+    await send('PaletteNeedle')
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    let completed = false
+    let actionRelease!: () => void
+    const actionBarrier = new Promise<void>(resolve => { actionRelease = resolve })
+    const observed = observeSearch(probe, 'PaletteNeedle', async () => {
+      await send('different-query')
+      await send('PaletteNeedle', base.replace('127.0.0.1', 'localhost'))
+      await send('PaletteNeedle', base, 'GET')
+      await send('PaletteNeedle')
+      await actionBarrier
+    }).then(response => { completed = true; return response })
+    await vi.waitFor(() => expect(pending).toHaveLength(5))
+    for (const route of pending.slice(0, 4)) {
+      const received = probe.waitForResponse(response => response.request() === route.request())
+      await route.fulfill({ status: 200, body: '{"groups":[]}', headers: { 'access-control-allow-origin': '*' } })
+      await received
+    }
+    expect(completed).toBe(false)
+    const current = pending[4]
+    const received = probe.waitForResponse(response => response.request() === current.request())
+    await current.fulfill({ status: 200, body: '{"groups":[]}' })
+    await received
+    actionRelease()
+    expect((await observed).request()).toBe(current.request())
+  } finally { await probe.close() }
+})
+
+// @testCase TC-2
+it.each([
+  [400, { error: 'invalid_search_cursor' }, /HTTP 400.*invalid_search_cursor/],
+  [503, { error: 'search_unavailable' }, /HTTP 503.*search_unavailable/],
+  [200, { groups: [{ source: 'chats', status: 'unavailable', hits: [] }] }, /Unavailable search sources/],
+  [200, { groups: [{ source: 'chats', status: 'ok', hits: [] }] }, /No search results/],
+] as const)('diagnoses search response %s (%j) before waiting for options', async (status, body, message) => {
+  const probe = await page.context().newPage()
+  try {
+    await probe.goto(base + '/#/chat/' + chatId)
+    await probe.route('**/api/universal-search', route => route.fulfill({
+      status, contentType: 'application/json', body: JSON.stringify(body)
+    }))
+    await expect(open('PaletteNeedle', expected, probe)).rejects.toThrow(message)
+  } finally { await probe.close() }
+})
+
+// @testCase TC-2
+it('reports a missing expected hit and an aborted browser request separately', async () => {
+  const probe = await page.context().newPage()
+  try {
+    await probe.goto(base + '/#/chat/' + chatId)
+    await probe.route('**/api/universal-search', route => route.fulfill({
+      json: { groups: [{ source: 'chats', status: 'ok', hits: [expected.find(hit => hit.source === 'chats')] }] }
+    }))
+    await expect(open('PaletteNeedle', [expected.find(hit => hit.source === 'messages')!], probe))
+      .rejects.toThrow('Missing expected search hit: messages/')
+    await probe.unroute('**/api/universal-search')
+    await probe.route('**/api/universal-search', route => route.abort('aborted'))
+    await expect(open('PaletteNeedle', expected, probe)).rejects.toThrow('Search request failed:')
+  } finally { await probe.close() }
+})
+
+// @testCase TC-2
+it('does not treat local command options as readiness for a delayed search response', async () => {
+  const probe = await page.context().newPage()
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  let intercepted = false
+  let completed = false
+  try {
+    await probe.goto(base + '/#/chat/' + chatId)
+    await probe.route('**/api/universal-search', async route => {
+      if (route.request().postDataJSON()?.query !== 'Настройки') return route.continue()
+      intercepted = true
+      await held
+      await route.fulfill({ json: {
+        groups: SEARCH_SOURCES.map(source => ({ source, status: 'ok', hits: expected.filter(hit => hit.source === source) })),
+        nextCursor: null
+      } })
+    })
+    const opened = open('Настройки', expected, probe).then(dialog => { completed = true; return dialog })
+    await vi.waitFor(() => expect(intercepted).toBe(true))
+    const dialog = probe.getByRole('dialog', { name: 'Командная палитра' })
+    const localOptions = await dialog.getByRole('option').count()
+    expect(localOptions).toBeGreaterThan(0)
+    expect(completed).toBe(false)
+    console.log('[palette:diagnostic] localOptionsBeforeSearchResponse=' + localOptions)
+    release()
+    await opened
+  } finally { release(); await probe.close() }
+})
+
+// @testCase TC-2
+it('waits for a visible expected option after the successful real response', async () => {
+  const probe = await page.context().newPage()
+  try {
+    await probe.goto(base + '/#/chat/' + chatId)
+    const style = await probe.addStyleTag({ content: '.cmdk-item { display: none !important; }' })
+    let completed = false
+    const response = probe.waitForResponse(value => matchesSearch(value.request(), probe, 'PaletteNeedle'))
+    const opened = open('PaletteNeedle', expected, probe).then(dialog => { completed = true; return dialog })
+    expect((await response).ok()).toBe(true)
+    const option = probe.getByRole('dialog', { name: 'Командная палитра' }).locator('.cmdk-item').filter({ hasText: expected[0].title }).first()
+    await option.waitFor({ state: 'attached', timeout: SEARCH_TIMEOUT })
+    expect(await option.isVisible()).toBe(false)
+    expect(completed).toBe(false)
+    await style.evaluate(node => node.remove())
+    await opened
+  } finally { await probe.close() }
+})
+
+// @testCase TC-2
+it('checks unchanged input and reopening on the published client', async () => {
+  await page.goto(base + '/#/chat/' + chatId)
+  const dialog = await open()
+  // Negative bounded observation: unchanged React state sends no request.
+  await expect(observeSearch(page, 'PaletteNeedle',
+    () => dialog.getByRole('combobox').fill('PaletteNeedle'), () => {}, 750))
+    .rejects.toThrow('timed out waiting for browser request')
+  await open()
+  await page.keyboard.press('Escape')
+  await open()
+  await page.keyboard.press('Escape')
 })
 
 // @testCase TC-UI
@@ -196,6 +449,7 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
   }
 })
 
+// @testCase TC-1
 // @testCase TC-NAV
 it('opens a kanban message by its explicit context after reload', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -203,7 +457,7 @@ it('opens a kanban message by its explicit context after reload', async () => {
   const response = await (await api('/api/universal-search', 'POST', { query: 'KanbanMessageNeedle' })).json() as UniversalSearchResult
   const hit = response.groups.flatMap(group => group.hits).find(hit => hit.source === 'messages')!
   expect(hit.href).toContain('scope=kanban')
-  const dialog = await open('KanbanMessageNeedle')
+  const dialog = await open('KanbanMessageNeedle', [hit])
   await dialog.getByRole('group', { name: SEARCH_LABELS.messages }).getByRole('option').first().click()
   await expect.poll(() => page.url()).toContain(hit.href)
   await page.getByText('KanbanMessageNeedle', { exact: true }).waitFor()
@@ -211,6 +465,7 @@ it('opens a kanban message by its explicit context after reload', async () => {
   await page.getByText('KanbanMessageNeedle', { exact: true }).waitFor()
 })
 
+// @testCase TC-1
 // @testCase TC-NAV
 // One case per source: each navigates, reloads and waits for its page, so a single case for all
 // sources ran past the per-test timeout on a loaded release machine.
@@ -218,7 +473,8 @@ it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the d
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(base + '/#/chat/' + chatId)
   const hit = expected.find(hit => hit.source === source)!
-  const dialog = await open()
+  const navigationStarted = performance.now()
+  const dialog = await open('PaletteNeedle', [hit])
   await dialog.getByRole('group', { name: SEARCH_LABELS[source], exact: true }).getByRole('option').filter({ hasText: hit.title }).first().click()
   await expect.poll(() => page.url()).toContain(hit.href)
   await page.reload()
@@ -232,6 +488,7 @@ it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the d
   } else if (source !== 'projects' && source !== 'tasks') {
     await page.getByText(hit.title, { exact: false }).first().waitFor()
   }
-  // Проект и задачу рисует сервис канбана, которого в стенде ядра нет: ядру здесь важна глубокая ссылка.
+  console.log('[palette:navigation] ' + JSON.stringify({ source, throughReload: Math.round(performance.now() - navigationStarted) }))
+  // Projects and tasks are rendered by Kanban; Core verifies their deep links.
 })
 
