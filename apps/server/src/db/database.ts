@@ -329,6 +329,9 @@ export class VoiceChatDb {
       await add('device_secret', 'device_secret TEXT')
       await add('two_factor', 'two_factor INTEGER NOT NULL DEFAULT 0')
       await add('end_reason', 'end_reason TEXT')
+      // Identity 1.5.0: API tokens are sessions of kind 'api' with a read/full access level.
+      await add('kind', "kind TEXT NOT NULL DEFAULT 'session'")
+      await add('access', "access TEXT NOT NULL DEFAULT 'full'")
       await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
     }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
