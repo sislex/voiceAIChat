@@ -17,7 +17,7 @@ test('published Shared contracts resolve the S4 Identity and SDK releases', () =
   assert.equal(manifest.name, '@voicechat/shared')
   assert.equal(manifest.version, '0.1.11')
   assert.equal(source.commit, commit)
-  assert.equal(manifest.peerDependencies['@sislexa/identity'], '>=1.4.2 <1.5.0')
+  assert.equal(manifest.peerDependencies['@sislexa/identity'], '>=1.4.2 <1.6.0')
   assert.equal(manifest.peerDependencies['@sislexa/sdk'], '>=1.2.0 <1.4.0')
   assert.equal(manifest.peerDependencies['@sislexa/voice'], lock.packages['node_modules/@sislexa/voice'].version)
 })
