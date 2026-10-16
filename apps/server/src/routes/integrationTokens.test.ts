@@ -120,6 +120,15 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect((await app.inject({ url: '/', headers: { authorization: 'Bearer ' + token } })).statusCode).toBe(403)
     })
 
+    it('issues and resolves read-only and combined task scopes', async () => {
+      for (const scopes of [['tasks:read'], ['tasks:external', 'tasks:read']]) {
+        const response = await app.inject({ method: 'POST', url: path(), headers: headers(), payload: { name: 'Watch', scopes } })
+        expect(response.statusCode).toBe(201)
+        expect(await db.projects.resolveIntegrationToken(`Bearer ${response.json().token}`)).toMatchObject({ projectIds: [projectId], scopes })
+      }
+      expect((await app.inject({ method: 'POST', url: path(), headers: headers(), payload: { name: 'Duplicate', scopes: ['tasks:read', 'tasks:read'] } })).statusCode).toBe(400)
+    })
+
     it('validates names and scopes without creating tokens', async () => {
       for (const payload of [{}, { name: ' ' }, { name: 'Sync', scopes: [] }, { name: 'Sync', scopes: ['admin'] }, { name: 'Sync', scopes: ['tasks:external', 'tasks:external'] }, { name: 'x'.repeat(201), scopes: ['tasks:external'] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [otherId] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: [projectId, projectId] }, { name: 'Sync', scopes: ['tasks:external'], projectIds: Array.from({ length: 51 }, (_, index) => `p${index}`) }]) {
         expect((await app.inject({ method: 'POST', url: path(), headers: headers(), payload })).statusCode).toBe(400)

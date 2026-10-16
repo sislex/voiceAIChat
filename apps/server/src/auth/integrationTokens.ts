@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-export type { IntegrationPrincipal } from '@voicechat/shared'
+export type { IntegrationPrincipal, IntegrationTokenScope } from '@voicechat/shared'
 
 /** Integration ingress: the only non-internal paths an integration token may call. */
 export const INTEGRATION_PREFIX = '/integrations/v1/'
