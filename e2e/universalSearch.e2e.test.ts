@@ -39,8 +39,27 @@ async function open(query = 'PaletteNeedle') {
   }
   const dialog = page.getByRole('dialog', { name: 'Командная палитра' })
   await dialog.waitFor()
-  await dialog.getByRole('combobox').fill(query)
-  await expect.poll(() => dialog.locator('[role="option"]').count()).toBeGreaterThan(0)
+  // Subscribe before typing: opening also searches recent items, whose options
+  // must not satisfy readiness for this query. Await the real debounced request.
+  const [response] = await Promise.all([
+    page.waitForResponse(response => {
+      const request = response.request()
+      return response.url() === base + '/api/universal-search'
+        && request.method() === 'POST'
+        && request.postDataJSON()?.query === query
+    }),
+    dialog.getByRole('combobox').fill(query)
+  ])
+  expect(response.ok(), 'Palette search HTTP status: ' + response.status()).toBe(true)
+  const result = await response.json() as UniversalSearchResult
+  expect(result.groups.filter(group => group.status !== 'ok'), 'Unavailable search sources').toEqual([])
+  const hits = result.groups.flatMap(group => group.hits)
+  expect(hits.length, 'No search results for ' + query).toBeGreaterThan(0)
+  // The response can precede React's commit; wait for its actual result titles.
+  for (const hit of hits) {
+    await dialog.getByRole('group', { name: SEARCH_LABELS[hit.source], exact: true })
+      .getByRole('option').filter({ hasText: hit.title }).first().waitFor()
+  }
   return dialog
 }
 
