@@ -24,9 +24,9 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 70 коммит(ов) в areas после сверки: e87c0ab1 fix(core): disable caching for health responses … |
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ 1 коммит(ов) в areas после сверки: e87c0ab1 fix(core): disable caching for health responses |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 85 коммит(ов) в areas после сверки: e87c0ab1 fix(core): disable caching for health responses … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-09-29 | ⚠ 46 коммит(ов) в areas после сверки: e87c0ab1 fix(core): disable caching for health responses … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 36 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 100 коммит(ов) в areas после сверки: 0ab44721 docs(kb): update after merge 488770d9-3720-4ec5-953f-9f2c403c7739 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 101 коммит(ов) в areas после сверки: 4a4253ec fix(agents): prevent caching downloads and preserve brief companion fix … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 114 коммит(ов) в areas после сверки: e87c0ab1 fix(core): disable caching for health responses … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-14, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -40,9 +40,9 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-14 | ⚠ код изменён 2026-10-15, сверка 2026-10-14 (по датам: правки того же дня не видны — поставь checked) |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-08 | ⚠ 7 коммит(ов) в areas после сверки: 3a73a77a feat(chat): thread context usage and conversation thread reset (chat-history-v2 B01) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-15 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-08 | ⚠ код изменён 2026-10-15, сверка 2026-10-08 (по датам: правки того же дня не видны — поставь checked) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-15 | ⚠ 1 коммит(ов) в areas после сверки: 8b6a5a7a fix(agents): prevent caching installer downloads |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-15 | ⚠ 1 коммит(ов) в areas после сверки: 4a4253ec fix(agents): prevent caching downloads and preserve brief companion fix |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-08 | ⚠ 9 коммит(ов) в areas после сверки: 94915425 stand-https-v1 C01 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-15, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
@@ -61,9 +61,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1167. Последние:
+Всего записей: 1168. Последние:
 
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-sisl-735-agent-downloads-brief.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-sisl-735-agent-downloads-brief.md) — sisl-735-agent-downloads-brief
+- [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-merge-target-persistence.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-merge-target-persistence.md) — merge-target-persistence
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md) — make-browser-link
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-health-no-store.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-health-no-store.md) — health-no-store
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-vendor-archive-publication.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-vendor-archive-publication.md) — vendor-archive-publication
@@ -72,7 +73,6 @@
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-system-gate-owner-cache.md) — system-gate-owner-cache
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-worktree-behind.md) — stand-worktree-behind
 - [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-https.md) — stand-proxy-https
-- [2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md](log/2026-10-14-alexeys-macbook-air-tailae39a6-ts-net-stand-error-codes.md) — stand-error-codes
 
 ## Исторические планы
 
