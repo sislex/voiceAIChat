@@ -1649,7 +1649,7 @@ export class CiRepo extends BaseRepo {
         WHERE t.id=? AND t.project_id=?`, [userId, taskId, projectId])) as (TaskRow & { semantic_type: string; ci_base_branch: string; default_agent_id: string | null; role: string }) | undefined
       if (!row) throw new Error('task not found')
       if (row.semantic_type !== 'awaiting_merge' && row.semantic_type !== 'merge') throw new Error('task must be in awaiting_merge or merge')
-      if ((row.ci_base_branch || 'main') !== 'main') throw new Error('merge target must be main')
+      const targetBranch = row.ci_base_branch || 'main'
 
       const workspace = (await this.sql.get(`SELECT branch,commit_sha,agent_id FROM ci_workspaces WHERE task_id=? AND project_id=? AND pushed=1 AND branch IS NOT NULL ORDER BY created_at DESC LIMIT 1`, [taskId, projectId])) as { branch: string; commit_sha: string | null; agent_id: string | null } | undefined
       if (!workspace?.branch || !workspace.commit_sha || !/^(?!-)(?!.*\.\.)(?!.*[~^:?*\\[\\]\\\\])[A-Za-z0-9._/-]+$/.test(workspace.branch)) throw new Error('prepared task branch or pushed source SHA not found')
@@ -1681,7 +1681,7 @@ export class CiRepo extends BaseRepo {
 
       const id = this.newId(), now = this.now()
       await this.sql.run(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_engine_id,llm_provider,llm_model,requested_llm_provider,requested_llm_model,llm_fallback_reason,stage,started_at,created_at,log)
-        VALUES (?,?,?,'queued',?,?,'main',?,?,?,?,?,?,?,?,'queued',?,?,?)`, [id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, engine.engine?.id ?? null, provider, model, requestedProvider, requestedModel || null, fallbackReason, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`])
+        VALUES (?,?,?,'queued',?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?)`, [id, projectId, taskId, userId, workspace.branch, targetBranch, workspace.commit_sha, agentId, engine.engine?.id ?? null, provider, model, requestedProvider, requestedModel || null, fallbackReason, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`])
       await this.repos.tasks.placeTaskInSemanticColumn(projectId, taskId, 'merge', now)
       return await this.mapMergeRun((await this.sql.get(`SELECT * FROM merge_runs WHERE id=?`, [id])) as Record<string, unknown>)
     })
@@ -1825,7 +1825,7 @@ export class CiRepo extends BaseRepo {
   private async mapMergeRun(r: Record<string, unknown>): Promise<MergeRun> {
     return {
       id: String(r.id), projectId: String(r.project_id), taskId: String(r.task_id), status: r.status as MergeRun['status'],
-      triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: 'main',
+      triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: String(r.target_branch),
       sourceSha: r.source_sha as string | null, targetSha: r.target_sha as string | null, mergeSha: r.merge_sha as string | null,
       revertSha: r.revert_sha as string | null, agentId: String(r.agent_id), llmEngineId: r.llm_engine_id as string | null,
       llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''),

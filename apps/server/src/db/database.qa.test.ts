@@ -161,6 +161,49 @@ describe.skipIf(ON_POSTGRES)('manual QA persistence and workflow', () => {
     expect((await db.qa.getQaTaskState('owner', project.id, task.id))?.sessions.find((item) => item.id === session.id)?.status).toBe('stale')
   })
 
+  async function mergeFixture(baseBranch?: string) {
+    const project = await db.projects.createProject('owner', { name: 'Merge target' })
+    if (baseBranch !== undefined) await db.projects.updateProject('owner', project.id, { ciBaseBranch: baseBranch })
+    const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = (await db.tasks.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' }))!
+    const agent = await db.machines.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown; get(...values: unknown[]): { target_branch: string } } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('ws-target', project.id, task.id, agent.id, '/repos/task', 'TASK-1', '1'.repeat(40), 1, 'released', 1)
+    return { project, task, raw }
+  }
+
+  // @testCase TC-1
+  it('persists dev and returns it from creation, reads and lists', async () => {
+    const { project, task, raw } = await mergeFixture('dev')
+    const run = await db.ci.startMergeRun('owner', project.id, task.id)
+    expect(run.targetBranch).toBe('dev')
+    expect(raw.prepare('SELECT target_branch FROM merge_runs WHERE id=?').get(run.id).target_branch).toBe('dev')
+    expect((await db.ci.getMergeRun('owner', run.id))?.targetBranch).toBe('dev')
+    expect((await db.ci.getMergeRunRaw(run.id))?.targetBranch).toBe('dev')
+    expect((await db.ci.listMergeRuns('owner', project.id, task.id)).map(item => item.targetBranch)).toEqual(['dev'])
+    expect((await db.ci.listActiveMergeRuns()).map(item => item.targetBranch)).toEqual(['dev'])
+  })
+
+  // @testCase TC-2
+  it.each([undefined, '', 'main'])('defaults merge target to main for %s', async baseBranch => {
+    const { project, task, raw } = await mergeFixture(baseBranch)
+    const run = await db.ci.startMergeRun('owner', project.id, task.id)
+    expect(run.targetBranch).toBe('main')
+    expect(raw.prepare('SELECT target_branch FROM merge_runs WHERE id=?').get(run.id).target_branch).toBe('main')
+    expect((await db.ci.getMergeRun('owner', run.id))?.targetBranch).toBe('main')
+    expect((await db.ci.listMergeRuns('owner', project.id, task.id))[0].targetBranch).toBe('main')
+  })
+
+  // @testCase TC-5
+  it('preserves the active run target after project settings change', async () => {
+    const { project, task } = await mergeFixture('dev')
+    const first = await db.ci.startMergeRun('owner', project.id, task.id)
+    await db.projects.updateProject('owner', project.id, { ciBaseBranch: 'main' })
+    const repeated = await db.ci.startMergeRun('owner', project.id, task.id)
+    expect(repeated).toMatchObject({ id: first.id, targetBranch: 'dev' })
+    expect((await db.ci.claimQueuedMergeRun(first.id))?.targetBranch).toBe('dev')
+  })
+
   it.skipIf(ON_POSTGRES)('uses the pushed workspace machine for a merge run instead of the project default', async () => {
     const project = await db.projects.createProject('owner', { name: 'Merge' })
     const awaiting = (await db.tasks.getBoard('owner', project.id))!.columns.find((column) => column.semanticType === 'awaiting_merge')!

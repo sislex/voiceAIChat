@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-16
-checked: 7e048553
+updated: 2026-10-15
+checked: 9f17e9b1
 
 areas:
   - packages/shared/src/projects.ts
@@ -61,6 +61,21 @@ or an all-hidden list without a match. It does not reorder or mutate columns.
 The caller owns board ordering and handling the absence of a display column.
 REST query serialization and the helper have focused shared tests.
 Server/UI rollout remains separate from these shared contracts.
+
+### Merge target persistence
+
+Core `CiRepo.startMergeRun` snapshots `ci_base_branch || 'main'` into
+`merge_runs.target_branch`. Creation, reads and lists return that stored value;
+the shared `MergeRun.targetBranch` contract accepts a string. Reusing an active
+run preserves its original target after project settings change. Empty or
+omitted settings retain `main`; historical rows are not rewritten.
+
+Execution belongs to `sislex/sislexa-kanban`, and the settings and merge UI
+belong to `sislex/sislexa-core-ui`. The SISL-736 owner changes use the saved target for readiness, fetch, merge,
+push reconciliation and publication. Task branches use the configured remote
+base; an absent remote target fails rather than falling back to main.
+Promotion from dev to main remains a separate step. The three owner commits
+must be delivered together; changing project settings is an operator action.
 
 Module details: `kanban:README.md`
 Module details: `core-ui:README.md`
