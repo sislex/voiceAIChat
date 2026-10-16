@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-10-04
-checked: dc8f9628
+updated: 2026-10-16
+checked: ec1cc3a3
 areas:
   - package.json
   - packages/ui/vitest.config.ts
@@ -11,6 +11,14 @@ areas:
 ---
 
 # Конвенции: код, тесты, гейты, коммиты
+
+## Ветки задач канбана
+
+A Kanban task branch is created from the project's remote base branch
+(`origin/<ciBaseBranch>`). Sislexa projects use `ciBaseBranch = dev`, so task
+branches start from `origin/dev`. The merge run merges the task branch into
+that same base branch (`dev`). Moving changes from `dev` to `main` is a separate
+step through promotion or a pull request.
 
 ## Перенёс правки на свежий main — прогони гейт заново
 
