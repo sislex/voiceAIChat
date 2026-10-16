@@ -577,6 +577,12 @@ export interface IpcInvokeMap {
       doneRetentionDays?: number | null
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
       automatedQaMode?: import('./qa').AutomatedQaMode
+      /**
+       * Enabled QA stages; the board service owns persistence and routing.
+       * An empty list sends development straight to `awaiting_merge`.
+       * Columns of disabled stages are hidden.
+       */
+      qaStages?: import('./projects').QaStage[]
       automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
     }
     result: ProjectDetail
