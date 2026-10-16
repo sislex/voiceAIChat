@@ -1,3 +1,17 @@
+export type QaStage = 'component_qa' | 'integration_tests' | 'automated_qa' | 'manual_qa'
+
+export const QA_STAGES: readonly QaStage[] = [
+  'component_qa', 'integration_tests', 'automated_qa', 'manual_qa'
+]
+
+export const DEFAULT_QA_STAGES: QaStage[] = []
+
+/** Keep only known stages, once each, in pipeline order. */
+export function normalizeQaStages(value: unknown): QaStage[] {
+  if (!Array.isArray(value)) return []
+  return QA_STAGES.filter((stage) => value.includes(stage))
+}
+
 export const MACHINE_STORAGE_FORMAT_VERSION = 1
 
 export type MachineStorageStatus = 'ready' | 'read-only' | 'offline' | 'unavailable'
@@ -666,6 +680,12 @@ export interface ProjectSummary {
   automatedQaCommand?: string
   /** Способ исполнения этапа Automated QA; по умолчанию `command`. */
   automatedQaMode?: import('./qa').AutomatedQaMode
+  /**
+   * Enabled QA stages; the board service owns persistence and routing.
+   * An empty list sends development straight to `awaiting_merge`.
+   * Columns of disabled stages are hidden.
+   */
+  qaStages?: QaStage[]
   /**
    * Сценарии браузерной проверки для режима `playwright`. Набор, а не один:
    * «много автотестов» упиралось именно в единственный сценарий на проект.
