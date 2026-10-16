@@ -33,7 +33,7 @@ export interface MergeRun {
   status: MergeRunStatus
   triggeredBy: string
   sourceBranch: string
-  targetBranch: 'main'
+  targetBranch: string
   sourceSha: string | null
   targetSha: string | null
   mergeSha: string | null
