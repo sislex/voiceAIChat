@@ -208,6 +208,8 @@ export const REST = {
   sessionLogout: '/api/session/logout',
   /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
   sessionList: '/api/session/list',
+  sessionApiTokens: '/api/session/api-tokens',
+  sessionApiToken: (sid: string) => `/api/session/api-tokens/${encodeURIComponent(sid)}`,
   /** Bearer → HttpOnly cookie-сессия + CSRF (auth-roadmap п.5). */
   sessionCookie: '/api/session/cookie',
   /** Второй фактор TOTP (auth-roadmap п.6): код после пароля, настройка и отключение. */

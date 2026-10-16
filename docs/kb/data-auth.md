@@ -1,7 +1,6 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-08
-checked: 344fab15
+updated: 2026-10-16
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -20,6 +19,13 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## Project integration tokens
+
+User API tokens are separate Identity sessions for external agent REST/WS
+access. They use bearer authentication without CSRF, retain current user
+permissions, support fixed expiration and read-only access, and can be revoked.
+See [External agent access through API tokens](agent-api-access.md) for issuance,
+administrative management and limits. Core verifies the pinned Identity
+integration in `apps/server/src/routes/rest.apiTokens.test.ts`.
 
 Core owns `integration_tokens` through `db.projects` and the table ownership
 manifest. Bootstrap adds the table and project index to existing SQLite and

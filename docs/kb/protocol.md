@@ -23,6 +23,17 @@ areas:
 
 # Контракт клиент↔сервер (REST, WS, мосты)
 
+## External agent API tokens
+
+`REST.sessionApiTokens` maps GET/POST `/api/session/api-tokens`;
+`REST.sessionApiToken(sid)` maps DELETE `/api/session/api-tokens/:sid`
+with an encoded session identifier. Identity owns these handlers. API callers
+send `Authorization: Bearer <token>` without cookies or CSRF; `/ws` accepts
+the URL-encoded token in its `token` query parameter. Read-only tokens reject
+REST mutations with 403; revoked tokens return 401. Issuance, permissions,
+revocation and owner route maps are documented in
+[External agent access through API tokens](agent-api-access.md).
+
 ## Subproject board contracts (board-subproject-view-v1 B01)
 
 Shared defines `ProjectSummary.parentProjectId: string | null` and
