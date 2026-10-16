@@ -23,6 +23,16 @@ author: alexeyrozhnov
 
 - docs/kb/conventions.md
 
+## Automated QA follow-up
+
+- Automated QA reported an `@fastify/static` startup timeout in
+  `apps/server/src/session.test.ts` (one failed test).
+- Reran `npm run test:files -- apps/server/src/session.test.ts`: all 31 tests
+  passed, exit code 0. The reported test passed in 1112 ms; the file took 45.86 s.
+- The timeout did not reproduce in this targeted run. This does not establish
+  its root cause or replace the subsequent automated QA stage.
+- Retained the documentation-only scope; no runtime or test code was changed.
+
 ## Remaining workflow
 
 - The runner publishes the task branch; the merge run must target `dev`.
