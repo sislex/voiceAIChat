@@ -115,7 +115,7 @@ export class ProjectsRepo extends BaseRepo {
     const normalizedProjectIds = [projectId, ...projectIds.filter(id => id !== projectId)]
     for (const id of normalizedProjectIds) if (!await this.isProjectOwner(userId, id)) return null
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 200
-      || !Array.isArray(scopes) || !scopes.length || scopes.some(scope => scope !== 'tasks:external')
+      || !Array.isArray(scopes) || !scopes.length || scopes.some(scope => scope !== 'tasks:external' && scope !== 'tasks:read')
       || new Set(scopes).size !== scopes.length) throw new Error('invalid_integration_token')
     const token = 'sit_' + randomBytes(32).toString('base64url')
     const view: IntegrationTokenView = { id: this.newId(), projectId, projectIds: normalizedProjectIds, name: name.trim(), scopes, createdAt: this.now(), lastUsedAt: null }
