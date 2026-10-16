@@ -26,7 +26,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 88 коммит(ов) в areas после сверки: 56904351 kanban-convergence-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 5 коммит(ов) в areas после сверки: 56904351 kanban-convergence-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 38 коммит(ов) в areas после сверки: 56904351 kanban-convergence-v1 B01 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 111 коммит(ов) в areas после сверки: 66092b43 chore(shared): pin Shared 0.1.32 archive (qaStages, executionEngine, board integrations) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 112 коммит(ов) в areas после сверки: e3ba723b test(e2e): correlate palette searches and verify parallel gates … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 117 коммит(ов) в areas после сверки: 02183acc Merge remote-tracking branch 'origin/main' into sync/main-into-dev-2026-10-16 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-14, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -61,9 +61,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1174. Последние:
+Всего записей: 1175. Последние:
 
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-synchronization.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-synchronization.md) — universal-search-synchronization
+- [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-browser-synchronization.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-browser-synchronization.md) — universal-search-browser-synchronization
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-32.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-32.md) — pin-shared-0-1-32
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-31.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-31.md) — pin-shared-0-1-31
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-task-branches.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-task-branches.md) — kanban-task-branches
@@ -72,7 +73,6 @@
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-sisl-735-agent-downloads-brief.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-sisl-735-agent-downloads-brief.md) — sisl-735-agent-downloads-brief
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-merge-target-persistence.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-merge-target-persistence.md) — merge-target-persistence
 - [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-make-browser-link.md) — make-browser-link
-- [2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-health-no-store.md](log/2026-10-15-alexeys-macbook-air-tailae39a6-ts-net-health-no-store.md) — health-no-store
 
 ## Исторические планы
 

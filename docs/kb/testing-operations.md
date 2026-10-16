@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-16
-checked: c0c04ab3
+checked: e3ba723b
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -718,6 +718,8 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 
 ### Development gate: `npm run gate:fast`
 
+#### Universal search browser synchronization
+
 Universal search browser synchronization is implemented in
 `e2e/universalSearch.e2e.test.ts`. Its observer is registered before opening
 and typing, captures a new main-frame POST request to the current stand's exact
@@ -762,6 +764,8 @@ their normal case inventory. The parallel allowlist includes sessions, projects,
 gitPane, universalSearch, both Web Reader suites and toolIntegration; other
 integration suites remain serial. The normal `browser.json` is overwritten,
 so its single latest result is insufficient evidence of three runs.
+
+#### Universal search browser-gate diagnostics
 
 On 2026-10-16, three consecutive complete integration runs on MacBook passed
 with two workers in the parallel batch and all 18 universalSearch cases passing
