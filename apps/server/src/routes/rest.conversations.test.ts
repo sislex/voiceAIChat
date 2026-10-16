@@ -1,3 +1,4 @@
+import { buildUnixInstallScript } from '@sislexa/agent/installers'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
@@ -790,11 +791,14 @@ describe('REST: conversations/messages/settings', () => {
     expect(desktop.statusCode).toBe(404)
   })
 
+  // @testCase TC-1
+  // @testCase TC-2
   it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
     const res = await inj({ method: 'GET', url: '/api/agents/script' })
     expect(res.statusCode).toBe(200)
-    expect(res.headers['content-type']).toContain('javascript')
-    expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.headers['content-type']).toBe('application/javascript; charset=utf-8')
+    expect(res.headers['content-disposition']).toBe('attachment; filename="voicechat-agent.cjs"')
     expect(res.body).toBe(readFileSync(createRequire(import.meta.url).resolve('@sislexa/agent/voicechat-agent.cjs'), 'utf8'))
   }, 30_000)
 
@@ -814,6 +818,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.headers['content-type']).toContain('powershell')
     expect(res.body).toContain('/api/agents/script')
     expect(res.body).toContain('nodejs.org')
+  })
+
+  // @testCase TC-1
+  // @testCase TC-2
+  it.each([
+    { headers: { host: 'agents.example:8787' }, base: 'http://agents.example:8787' },
+    {
+      headers: {
+        host: 'internal.example:8787',
+        'x-forwarded-host': 'agents.example, internal.example:8787',
+        'x-forwarded-proto': 'https, http'
+      },
+      base: 'https://agents.example'
+    }
+  ])('Unix installer responses preserve the full generator output for $base', async ({ headers, base }) => {
+    for (const platform of ['linux', 'macos'] as const) {
+      const res = await app.inject({ method: 'GET', url: `/api/agents/install-${platform}.sh`, headers })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.headers['content-type']).toBe('text/x-shellscript; charset=utf-8')
+      expect(res.body).toBe(buildUnixInstallScript(base, platform))
+    }
   })
 
   it('установщики Linux и macOS публичны, отдают bash и разные скрипты', async () => {
