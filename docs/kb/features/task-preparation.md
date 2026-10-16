@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-10-05
-checked: 8f820f9c
+updated: 2026-10-15
+checked: 8b6a5a7a
 
 areas:
   - packages/shared/src/qa.ts
@@ -44,6 +44,26 @@ Realtime передаёт только адресное событие `task-pre
 Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
+
+### Current implementation ownership
+
+Preparation prompts, runtime validation and complete-response parsing belong to
+`sislex/sislexa-kanban`: `apps/server/src/kanban/module.ts` and
+`apps/server/src/kanban/preparation.ts`. Core's `server.ts` only selects remote
+or offline Kanban; `apps/server/src/kanbanBridge/proxy.ts` forwards
+`/api/task-preparation`. Core's `kanban/boundary.test.ts` explicitly prohibits
+embedding the preparation implementation. Historical local implementation paths
+below refer to the extracted Kanban repository, not files in this Core checkout.
+
+The SISL-735 companion patch in `docs/patches/SISL-735-kanban.patch` contains
+the owner-repository implementation, TC-3/TC-4 regressions and its existing KB
+section update. Applying a Core commit does not apply that companion patch to
+the separately versioned Kanban service. The patch requires complete JSON for
+all providers, checks duplicate decoded keys before constructing the root
+object, and rejects null or invented decision links. Only explicitly compatible
+field normalization follows full parsing; mandatory and conditional UI
+requirements remain enforced.
+
 
 For schema version 2, `DevelopmentReadiness.knowledgeBase` explicitly declares
 `connected` or `absent`; omitted values preserve the legacy `connected` behavior.
