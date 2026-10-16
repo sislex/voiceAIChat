@@ -19,7 +19,7 @@
     "@sislexa/agent": "file:../../vendor/sislexa-agent-0.25.0-a4c1407f5494.tgz",
     "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.5.0-3117b819912f.tgz",
     "@sislexa/component-runtime": "*",
-    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.4.2-0207bffe45ba.tgz",
+    "@sislexa/identity": "file:../../vendor/sislexa-identity-1.5.0-1a2671c0252c.tgz",
     "@sislexa/image-studio": "file:../../vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "file:../../vendor/sislexa-make-1.7.5-a903548f5f4b.tgz",
     "@sislexa/playwright-reader": "file:../../vendor/sislexa-playwright-reader-1.2.5-c2d51a7ffb4f.tgz",
