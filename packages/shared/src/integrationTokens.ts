@@ -1,4 +1,4 @@
-export type IntegrationTokenScope = 'tasks:external' | 'tasks:read' | 'releases:automate'
+export type IntegrationTokenScope = 'tasks:external' | 'tasks:read' | 'tasks:control' | 'releases:automate'
 
 export interface IntegrationPrincipal {
   kind: 'integration'

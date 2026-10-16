@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { VoiceChatDb } from '../db/database.js'
 import { registerIntegrationTokenGuard } from '../auth/integrationTokens.js'
 import { registerIntegrationIngress } from './integrationIngress.js'
-import type { BoardCardsSnapshot } from '@voicechat/shared'
+import type { BoardCardActionRequest, BoardCardsSnapshot } from '@voicechat/shared'
 
 describe('integration ingress', () => {
   let db: VoiceChatDb
@@ -35,6 +35,67 @@ describe('integration ingress', () => {
 
   const state = (project: string, token?: string) => app.inject({
     url: `/integrations/v1/projects/${project}/tasks/state`, headers: token ? { authorization: `Bearer ${token}` } : {}
+  })
+
+  const action = (project: string, token?: string, payload: BoardCardActionRequest = { action: 'restart_development' }) => app.inject({
+    method: 'POST', url: `/integrations/v1/projects/${project}/tasks/task%3A1/actions`,
+    headers: token ? { authorization: `Bearer ${token}` } : {}, payload
+  })
+
+  it('forwards every card action unchanged with internal authorization', async () => {
+    const { token } = (await db.projects.createIntegrationToken('owner', projectId, 'Control', ['tasks:control'], [projectId, otherId]))!
+    const payloads: BoardCardActionRequest[] = [
+      { action: 'retry_stage', stage: 'component_qa' }, { action: 'restart_development' },
+      { action: 'move', column: 'decision_required' }, { action: 'comment', text: 'Review needed' },
+      { action: 'set_engine_result', result: { status: 'done', branch: 'task/1', sha: 'abc', summary: 'Done', evidenceUrl: 'https://example.test/evidence' } }
+    ]
+    for (const payload of payloads) {
+      fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, runId: 'run' }), { status: 202 }))
+      const response = await action(otherId, token, payload)
+      expect(response.statusCode).toBe(202)
+      expect(response.json()).toEqual({ ok: true, runId: 'run' })
+      expect(fetchImpl).toHaveBeenLastCalledWith(`http://kanban:8789/internal/kanban/projects/${otherId}/tasks/task%3A1/actions`, {
+        method: 'POST', headers: { authorization: 'Bearer service-token', 'content-type': 'application/json' },
+        body: JSON.stringify(payload), signal: expect.any(AbortSignal)
+      })
+    }
+    expect((await state(projectId, token)).statusCode).toBe(403)
+    expect((await put(projectId, `Bearer ${token}`)).statusCode).toBe(403)
+  })
+
+  it('requires control scope and an allowed project before forwarding actions', async () => {
+    const control = (await db.projects.createIntegrationToken('owner', projectId, 'Control', ['tasks:control']))!
+    expect((await action(projectId)).statusCode).toBe(401)
+    expect((await action(projectId, 'sit_unknown')).statusCode).toBe(401)
+    for (const scope of ['tasks:read', 'tasks:external'] as const) {
+      const limited = (await db.projects.createIntegrationToken('owner', projectId, 'Limited', [scope]))!
+      expect((await action(projectId, limited.token)).statusCode).toBe(403)
+    }
+    expect((await action(otherId, control.token)).statusCode).toBe(403)
+    await db.projects.revokeIntegrationToken('owner', projectId, control.id)
+    expect((await action(projectId, control.token)).statusCode).toBe(401)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('preserves action errors and fails closed when the board is unavailable', async () => {
+    const { token } = (await db.projects.createIntegrationToken('owner', projectId, 'Control', ['tasks:control']))!
+    fetchImpl.mockResolvedValueOnce(new Response('{"ok":false,"error":"invalid_transition"}', { status: 409, headers: { 'content-type': 'application/json' } }))
+    const response = await action(projectId, token)
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({ ok: false, error: 'invalid_transition' })
+    expect(response.headers['content-type']).toContain('application/json')
+    fetchImpl.mockRejectedValueOnce(new Error('unreachable'))
+    expect((await action(projectId, token)).statusCode).toBe(502)
+    fetchImpl.mockClear()
+    for (const opts of [{}, { kanbanUrl: 'http://kanban:8789' }, { internalToken: 'service-token' }]) {
+      const offline = Fastify()
+      try {
+        registerIntegrationIngress(offline, db, { ...opts, fetchImpl })
+        expect((await offline.inject({ method: 'POST', url: `/integrations/v1/projects/${projectId}/tasks/task/actions`,
+          headers: { authorization: `Bearer ${token}` }, payload: { action: 'comment', text: 'Hello' } })).statusCode).toBe(503)
+      } finally { await offline.close() }
+    }
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('forwards the board snapshot unchanged using internal authorization for an allowed project', async () => {

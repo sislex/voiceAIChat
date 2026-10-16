@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-15
-checked: 9f17e9b1
+updated: 2026-10-16
+checked: 9deb50b1
 
 areas:
   - packages/shared/src/projects.ts
@@ -25,6 +25,15 @@ areas:
 ---
 
 # Проекты и канбан-доска
+
+## Execution engine contract
+
+`ExecutionEngine` is `'board' | 'worker'`. `ProjectDetail` and the project update
+contract expose optional `executionEngine`; `Task.executionEngine` additionally
+accepts `null` to inherit the project engine. The external board owns persistence,
+engine selection and execution. Core exposes these contracts and forwards card
+actions through the integration ingress; no worker or board orchestration is
+implemented in Core. See the integration action contract in `protocol.md`.
 
 ## Enabled project QA stages
 

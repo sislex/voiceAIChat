@@ -1,3 +1,6 @@
+/** Selects the board-owned runner or an external worker. */
+export type ExecutionEngine = 'board' | 'worker'
+
 export type QaStage = 'component_qa' | 'integration_tests' | 'automated_qa' | 'manual_qa'
 
 export const QA_STAGES: readonly QaStage[] = [
@@ -820,6 +823,7 @@ export interface ProjectSubprojectSummary {
 export type Project = ProjectDetail
 
 export interface ProjectDetail extends ProjectSummary {
+  executionEngine?: ExecutionEngine
   members: ProjectMember[]
   /** Машины проекта с папками. */
   machines: ProjectMachine[]
@@ -1099,6 +1103,8 @@ export interface CreateTaskReworkCycleInput {
 
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
+  /** Null inherits the project execution engine. */
+  executionEngine?: ExecutionEngine | null
   id: string
   projectId: string
   external?: TaskExternalRef

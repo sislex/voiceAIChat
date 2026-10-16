@@ -440,6 +440,20 @@ parameter because the browser WebSocket API cannot set a custom header.
 
 ### Multi-project integration tokens
 
+`POST /integrations/v1/projects/:id/tasks/:taskId/actions` requires `tasks:control`
+and an allowed project. Token issuance accepts this scope alone or with
+`tasks:read` and `tasks:external`; none of these scopes implies another.
+The shared `BoardCardActionRequest` has `action` (`retry_stage`,
+`restart_development`, `move`, `comment`, or `set_engine_result`), optional
+`stage` (QA stage), `column` (column semantic type), `text`, and `result`.
+The result contains `status` (`done` or `failed`), `branch`, `sha`, `summary`,
+and `evidenceUrl`. `BoardCardActionResponse` is `{ ok, runId?, error? }`.
+Core forwards the body to `POST /internal/kanban/projects/:id/tasks/:taskId/actions`
+using internal Bearer authorization and preserves upstream status, body and
+content type. Missing/invalid/revoked tokens return 401; scope/project failures
+return 403, missing board URL/internal token returns 503, and transport failures
+return 502. The external board validates actions and owns their execution.
+
 `POST /api/projects/:id/integration-tokens` accepts the existing `name` and
 `scopes` plus optional `projectIds` (1–50 unique ids). The list must contain
 `:id`, and the authenticated caller must own every listed project. Responses

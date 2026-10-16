@@ -1,3 +1,26 @@
+import type { KanbanColumnSemanticType, QaStage } from './projects'
+
+/** POST /integrations/v1/projects/:id/tasks/:taskId/actions; validated by the board. */
+export interface BoardCardActionRequest {
+  action: 'retry_stage' | 'restart_development' | 'move' | 'comment' | 'set_engine_result'
+  stage?: QaStage
+  column?: KanbanColumnSemanticType
+  text?: string
+  result?: {
+    status: 'done' | 'failed'
+    branch: string
+    sha: string
+    summary: string
+    evidenceUrl: string
+  }
+}
+
+export interface BoardCardActionResponse {
+  ok: boolean
+  runId?: string
+  error?: string
+}
+
 /** Board-owned snapshot; Core forwards it without deriving board state. */
 export interface BoardCardsSnapshot {
   /** Unix timestamp in milliseconds. */
