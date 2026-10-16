@@ -80,7 +80,7 @@ export class ComponentTicketService {
     const branch = ticketBranchName(project.ciBranchTemplate, project.name, task)
     const message = `${issueKey(project.name, task)} ${title}`
     try {
-      await this.deps.git.createBranch(userId, projectId, input.workspaceId, branch, baseBranch)
+      await this.deps.git.createBranch(userId, projectId, input.workspaceId, branch, `origin/${baseBranch}`)
       const commit = await this.deps.git.commit(userId, projectId, input.workspaceId, { message, paths })
       const push = await this.deps.git.push(userId, projectId, input.workspaceId, branch)
       // Запись ревизии делает сам сервис только для копий задач (`ws:`); для общей копии
