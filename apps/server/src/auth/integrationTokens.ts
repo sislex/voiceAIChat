@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+/** Includes tasks:control for board card actions; Shared owns scope names. */
 export type { IntegrationPrincipal, IntegrationTokenScope } from '@voicechat/shared'
 
 /** Integration ingress: the only non-internal paths an integration token may call. */

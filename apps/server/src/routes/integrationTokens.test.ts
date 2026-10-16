@@ -121,7 +121,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
     })
 
     it('issues and resolves read-only and combined task scopes', async () => {
-      for (const scopes of [['tasks:read'], ['tasks:external', 'tasks:read']]) {
+      for (const scopes of [['tasks:read'], ['tasks:control'], ['tasks:external', 'tasks:read', 'tasks:control']]) {
         const response = await app.inject({ method: 'POST', url: path(), headers: headers(), payload: { name: 'Watch', scopes } })
         expect(response.statusCode).toBe(201)
         expect(await db.projects.resolveIntegrationToken(`Bearer ${response.json().token}`)).toMatchObject({ projectIds: [projectId], scopes })
