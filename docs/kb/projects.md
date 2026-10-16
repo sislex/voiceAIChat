@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-15
-checked: 9f17e9b1
+updated: 2026-10-16
+checked: 9deb50b1
 
 areas:
   - packages/shared/src/projects.ts
@@ -25,6 +25,29 @@ areas:
 ---
 
 # Проекты и канбан-доска
+
+## Execution engine contract
+
+`ExecutionEngine` is `'board' | 'worker'`. `ProjectDetail` and the project update
+contract expose optional `executionEngine`; `Task.executionEngine` additionally
+accepts `null` to inherit the project engine. The external board owns persistence,
+engine selection and execution. Core exposes these contracts and forwards card
+actions through the integration ingress; no worker or board orchestration is
+implemented in Core. See the integration action contract in `protocol.md`.
+
+## Enabled project QA stages
+
+`ProjectDetail` (through `ProjectSummary`) and the project update contract expose
+optional `qaStages: QaStage[]` next to `automatedQaMode`. `QA_STAGES` defines the
+pipeline order: `component_qa`, `integration_tests`, `automated_qa`, `manual_qa`.
+`DEFAULT_QA_STAGES` is empty. `normalizeQaStages(value)` returns an empty array
+for non-array input; for arrays it drops unknown values and duplicates and
+returns the selected stages in pipeline order without mutating the input.
+
+The external board service owns persistence and routing. An empty stage list
+means development goes straight to `awaiting_merge`; columns of disabled stages
+are hidden. Core supplies the shared contract and normalization only; the board
+cluster remains outside Core, as enforced by `apps/server/src/kanban/boundary.test.ts`.
 
 ## Subproject board selection (board-subproject-view-v1 B01)
 
