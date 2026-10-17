@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-14
-checked: 4cd27520
+updated: 2026-10-17
+checked: 2b16726f
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -735,6 +735,21 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 `/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
+
+**Board assistant Delivery Control credential.** The `kanban` service reads
+`DELIVERY_CONTROL_ASSISTANT_TOKEN_FILE` (default
+`/run/kanban-secrets/delivery-control-assistant.token`). This file holds a
+Delivery Control coordinator operator credential scoped to the intended project.
+The operator provisions that credential through the coordinator's credential
+management procedure and securely installs it as `delivery-control-assistant.token`
+in `VC_KANBAN_SECRETS_DIR` (default `/etc/voicechat/kanban`), with mode `0400`
+and ownership allowing the Kanban process to read it. Never print the credential
+or include its contents in commands, logs, or documentation. Compose already mounts
+this directory read-only at `/run/kanban-secrets`; an overridden file path must be
+readable inside the container. Configure `DELIVERY_CONTROL_URL` for the coordinator.
+Without the assistant credential, the assistant only reports that Delivery Control
+is not connected. Provisioning the credential and commissioning the connection are
+operator steps; adding this Compose setting does not perform them.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
