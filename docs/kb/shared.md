@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-16
-checked: 229bb8a2
+updated: 2026-10-17
+checked: 894499fd
 areas:
   - packages/shared/src
 ---
@@ -171,6 +171,7 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 
 0.1.29 (`voicechat-shared-0.1.29-7d71eb7c0230.tgz`, contracts commit `3eb9ed21`) adds the conversation summary contract (`Conversation.summary`, `REST.conversationSummary`/`conversationSummaryRefresh`, chat-history-v1 B02), the bounded cold start helper (B01) and the `mcp-history` context toggle (B04).
 
+0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.
 0.1.32 (`voicechat-shared-0.1.32-7a8e1732ddcf.tgz`, contracts commit `8cb7aaa1`) adds `qaStages`/`normalizeQaStages` (enabled QA stages of a project, default none), `executionEngine` (`board` | `worker`) on projects and tasks, and `integrations.ts` with the board cards snapshot and card actions contracts (`tasks:read`, `tasks:control`).
 0.1.31 (`voicechat-shared-0.1.31-cf6eccb367da.tgz`, contracts commit `bc0fafa2`) changes `MergeRun.targetBranch` from the literal `main` to `string`: merge runs store the project base branch (`ciBaseBranch`) as their target (SISL-736).
