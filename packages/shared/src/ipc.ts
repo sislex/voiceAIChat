@@ -577,6 +577,8 @@ export interface IpcInvokeMap {
       doneRetentionDays?: number | null
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
       executionEngine?: import('./projects').ExecutionEngine
+      operatorAssistant?: import('./projects').OperatorAssistantMode
+      operatorAssistantLimits?: Partial<import('./projects').OperatorAssistantLimits>
       automatedQaMode?: import('./qa').AutomatedQaMode
       /**
        * Enabled QA stages; the board service owns persistence and routing.
