@@ -141,8 +141,79 @@ export const ENVIRONMENT_SETTINGS: readonly EnvironmentSettingDefinition[] = [
     "secret": false,
     "required": false,
     "generated": false
+  },
+  {
+    "key": "VC_LLM_RUNNER_CLAUDE_URL",
+    "label": "Адрес LLM Runner для Claude",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_LLM_RUNNER_CODEX_URL",
+    "label": "Адрес LLM Runner для Codex",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_LLM_RUNNER_HEALTH_URL",
+    "label": "Адрес проверки LLM Runner",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_MCP_PUBLIC_BASE",
+    "label": "Адрес MCP ядра для исполнителя",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_KANBAN_MCP_PUBLIC_BASE",
+    "label": "Адрес MCP канбана для исполнителя",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_MAKE_MCP_PUBLIC_BASE",
+    "label": "Адрес MCP Make для исполнителя",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
+    "key": "VC_READER_MCP_PUBLIC_BASE",
+    "label": "Адрес MCP Reader для исполнителя",
+    "secret": false,
+    "required": false,
+    "generated": false
   }
 ]
+
+/**
+ * URL settings that point a stand at an external LLM runner and tell that runner where the
+ * stand's MCP endpoints are. With both runner URLs set, the stand starts no local runners.
+ */
+export const ENVIRONMENT_URL_SETTINGS: readonly string[] = [
+  'VC_LLM_RUNNER_CLAUDE_URL', 'VC_LLM_RUNNER_CODEX_URL', 'VC_LLM_RUNNER_HEALTH_URL',
+  'VC_MCP_PUBLIC_BASE', 'VC_KANBAN_MCP_PUBLIC_BASE', 'VC_MAKE_MCP_PUBLIC_BASE', 'VC_READER_MCP_PUBLIC_BASE'
+]
+
+/** An http(s) URL without credentials, query or fragment. */
+export function isEnvironmentServiceUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash
+  } catch { return false }
+}
+
+/** Local runner containers are needed unless both model providers use an external runner. */
+export function usesExternalLlmRunner(settings: ReadonlyMap<string, string | null | undefined>): boolean {
+  return ['VC_LLM_RUNNER_CLAUDE_URL', 'VC_LLM_RUNNER_CODEX_URL'].every(key => !!settings.get(key))
+}
 
 /** Computed by provisioning; never accepted from users. */
 export const RESERVED_ENVIRONMENT_SETTINGS: readonly string[] = [
@@ -389,7 +460,7 @@ export function parseEnvironmentSettingsPatch(value: unknown): EnvironmentSettin
     if (!ENVIRONMENT_SETTINGS.some(setting => setting.key === key)) throw new Error(`Unknown environment setting: ${key}`)
     if (seen.has(key)) throw new Error(`Duplicate environment setting: ${key}`)
     seen.add(key)
-    if (value !== null && (typeof value !== 'string' || value.length < 1 || value.length > 4096 || /['\r\n\0]/.test(value) || (key === 'VC_ADMIN_PASSWORD' && value.length < 12))) throw new Error(`Invalid value for ${key}`)
+    if (value !== null && (typeof value !== 'string' || value.length < 1 || value.length > 4096 || /['\r\n\0]/.test(value) || (key === 'VC_ADMIN_PASSWORD' && value.length < 12) || (ENVIRONMENT_URL_SETTINGS.includes(key) && !isEnvironmentServiceUrl(value)))) throw new Error(`Invalid value for ${key}`)
     return { key, value: value as string | null }
   })
 }
