@@ -248,18 +248,18 @@
     },
     {
       "name": "@voicechat/shared",
-      "version": "0.1.33",
-      "filename": "voicechat-shared-0.1.33.tgz",
-      "asset": "voicechat-shared-0.1.33-eb9abc5a5763.tgz",
-      "sha256": "eb9abc5a5763cef7c2e49f53629d5cf3a1e97b9a5b919dc93a0833b9c5cf4ac6",
+      "version": "0.1.34",
+      "filename": "voicechat-shared-0.1.34.tgz",
+      "asset": "voicechat-shared-0.1.34-c3ff9d49a8d4.tgz",
+      "sha256": "c3ff9d49a8d4ecbf522f9f187b8b969b23e1ea3c13c5f0f5bc6db599f73cdd58",
       "repository": "https://github.com/sislex/voiceAIChat",
-      "commit": "b33170a609e474e86f9efeeb7de166ff156c1c39",
+      "commit": "a8d667716453567c43b21a61fd92a15f5cb346e1",
       "provenance": {
         "repository": "https://github.com/sislex/voiceAIChat",
-        "commit": "b33170a609e474e86f9efeeb7de166ff156c1c39",
-        "version": "0.1.33"
+        "commit": "a8d667716453567c43b21a61fd92a15f5cb346e1",
+        "version": "0.1.34"
       },
-      "integrity": "sha512-ACG2dWPyPZo5xvte3INsrNmXMiA+bEfqC9SO1maeXgdxlm+2FunnI0ksUyH8znBOBXmbU6o8rTwH4QG9Aav6SA=="
+      "integrity": "sha512-1W3FTNGXpIGmr+mCqlWunVkJYXHNN5JqRY5xA8d9E28AVaadM8ZvhQlVlrms34x7dKn9ftBHgOOSkIZOZBxYhA=="
     }
   ]
 }
