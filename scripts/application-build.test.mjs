@@ -82,10 +82,12 @@ test('external library build requests identify the independent owner', () => {
 
 test('Kanban Compose service consumes an owner image instead of building Core source', () => {
   const compose = readFileSync(new URL('../docker-compose.yml', import.meta.url), 'utf8')
-  const kanban = compose.match(/^  kanban:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|$)/m)?.[1]
+  const kanban = compose.match(/^  kanban:\n([\s\S]*?)(?=^  [a-z][a-z0-9-]*:\n|(?![\s\S]))/m)?.[1]
   assert.ok(kanban)
   assert.match(kanban, /^    image: \$\{SISLEXA_KANBAN_IMAGE:-ghcr\.io\/sislex\/sislexa-kanban:[a-f0-9]{40}\}$/m)
   assert.doesNotMatch(kanban, /^    build:/m)
+  assert.match(kanban, /^      DELIVERY_CONTROL_ASSISTANT_TOKEN_FILE: \$\{DELIVERY_CONTROL_ASSISTANT_TOKEN_FILE:-\/run\/kanban-secrets\/delivery-control-assistant\.token\}$/m)
+  assert.match(kanban, /^      - \$\{VC_KANBAN_SECRETS_DIR:-\/etc\/voicechat\/kanban\}:\/run\/kanban-secrets:ro$/m)
   const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')
   assert.doesNotMatch(dockerfile, /\bAS kanban-runtime\b/)
 })
