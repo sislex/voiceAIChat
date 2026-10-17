@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-09-02
-checked: 1222584c
+updated: 2026-10-17
+checked: 1855419b
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -105,6 +105,14 @@ areas:
 (`auto` по умолчанию), мост `kanbanAssistant:setAutonomy` → `POST
 /api/conversations/:id/assistant-autonomy`, тумблер «Автопилот» в шапке
 `KanbanAssistant`. Одна точка политики — `allowMutation` в `kanbanMcp.ts`:
+
+Промпт хода следует тому же режиму: при `auto` инструкция чата `taskLaunch`
+(«спроси разрешение перед изменением проекта» и блоки `task-launch`) в ход
+канбан-ассистента не попадает — `turnChatInstructions` в
+`apps/server/src/prompt/chatInstructionFilter.ts`, общий для хода и инспектора
+контекста. Иначе ассистент с «Автопилотом» и прямой просьбой «разрули сам»
+останавливался перед каждым действием оператора (прод, 2026-10-17). В `confirm`
+правило остаётся. Фильтр серверный, поэтому выпуск Shared не нужен.
 
 - режим «План» (`ro=1`) запрещает любые изменения — но только **явный** `permissionMode: 'plan'`
   этого разговора (`kanbanExplicitPlan` в `turns.ts`); принудительный plan хода без машины
