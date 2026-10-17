@@ -14,7 +14,8 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import { conversationContextUsage } from '@voicechat/shared'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
+import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -690,10 +691,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Фильтр по виду чата — общий с инспектором контекста
     // (`instructionsForAssistantKind` в `@voicechat/shared`): пока он жил здесь
     // двумя `.filter`, предпросмотр показывал подсказки, которых в этом чате
-    // не будет.
-    const instructions = instructionsForAssistantKind(
+    // не будет. Канбан-ассистент с «Автопилотом» действует сам — task-launch
+    // ему не даём (`turnChatInstructions`).
+    const instructions = turnChatInstructions(
       effectiveChatInstructions(req.delegation ? [] : settings.chatInstructions, disabledContext),
-      conv?.assistantKind ?? null
+      conv,
+      kanbanTurn
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
