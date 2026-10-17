@@ -1,7 +1,6 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-16
-checked: 9deb50b1
+updated: 2026-10-17
 
 areas:
   - packages/shared/src/projects.ts
@@ -25,6 +24,36 @@ areas:
 ---
 
 # Проекты и канбан-доска
+
+## Operator assistant limits
+
+Project detail and update contracts accept optional `operatorAssistant`
+(`off | answers | full`, absent means `off`) and partial
+`operatorAssistantLimits`. `OPERATOR_ACTIONS_BY_MODE` permits no actions in
+`off`, only `answer`, `comment`, `escalate` in `answers`, and all seven
+`OperatorActionKind` actions in `full`.
+
+| Limit | Default | Inclusive range |
+| --- | --- | --- |
+| `actionsPerCardPerDay` | 3 | 0–50 |
+| `stepRetries` | 1 | 0–5 |
+| `discardRetries` | 1 | 0–5 |
+| `developmentRestarts` | 1 | 0–5 |
+| `answersPerRun` | 3 | 0–20 |
+
+`DEFAULT_OPERATOR_ASSISTANT_LIMITS.disabledActions` is empty.
+`OPERATOR_ASSISTANT_LIMIT_RANGES` exports numeric `{ min, max }` bounds.
+`normalizeOperatorAssistantLimits(value)` fills missing or malformed values
+with defaults, truncates finite numbers to integers and clamps them to these
+bounds (zero is preserved). It does not coerce strings or booleans; non-finite
+numbers use defaults. Unknown disabled actions are dropped; recognized actions
+are deduplicated in the full mode table order. The result and its action array
+are fresh and the input is unchanged.
+
+Core owns only the contract and pure normalization. The external Kanban service
+owns persistence, enforcement and operator execution; adding these fields does
+not commission an operator. `apps/server/src/kanban/boundary.test.ts` guards this
+ownership boundary.
 
 ## Execution engine contract
 

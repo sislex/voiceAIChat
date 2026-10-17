@@ -1,6 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-16
+updated: 2026-10-17
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -22,6 +22,20 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Operator assistant project contract
+
+`projects.ts` exports `OperatorAssistantMode` (`off | answers | full`) and
+`OPERATOR_ASSISTANT_MODES`. `ProjectDetail` and the `projects:update` patch in
+`ipc.ts` expose optional `operatorAssistant` and
+`operatorAssistantLimits: Partial<OperatorAssistantLimits>`. An absent mode
+means `off`; `normalizeOperatorAssistant` also maps unknown input to `off`.
+
+`OperatorActionKind` and `OPERATOR_ACTIONS_BY_MODE` define the action contract:
+`off` allows none; `answers` allows `answer`, `comment`, `escalate`; `full` also
+allows `retry_step`, `discard_and_retry`, `restart_development`, `move_ready`.
+See [project limits](projects.md#operator-assistant-limits) for defaults and
+normalization. Execution and persistence belong to the external Kanban service.
 
 ## External agent API tokens
 

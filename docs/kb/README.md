@@ -41,8 +41,8 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-14 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-16 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-16 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-17 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-17 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-15 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-16 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ✓ |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1178. Последние:
+Всего записей: 1179. Последние:
 
+- [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-operator-assistant-contract.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-operator-assistant-contract.md) — operator-assistant-contract
 - [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-agent-api-limits.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-agent-api-limits.md) — agent-api-limits
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-synchronization.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-synchronization.md) — universal-search-synchronization
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-browser-synchronization.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-universal-search-browser-synchronization.md) — universal-search-browser-synchronization
@@ -73,7 +74,6 @@
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-task-branches.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-task-branches.md) — kanban-task-branches
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-card-actions-execution-engine.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-card-actions-execution-engine.md) — kanban-card-actions-execution-engine
 - [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-board-cards-state.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-kanban-board-cards-state.md) — kanban-board-cards-state
-- [2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-agent-api-tokens.md](log/2026-10-16-alexeys-macbook-air-tailae39a6-ts-net-agent-api-tokens.md) — agent-api-tokens
 
 ## Исторические планы
 
