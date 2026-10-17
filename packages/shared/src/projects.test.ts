@@ -5,6 +5,73 @@ import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compa
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 import { DEFAULT_QA_STAGES, QA_STAGES, normalizeQaStages } from './projects'
+import {
+  DEFAULT_OPERATOR_ASSISTANT_LIMITS, OPERATOR_ACTIONS_BY_MODE,
+  OPERATOR_ASSISTANT_LIMIT_RANGES, OPERATOR_ASSISTANT_MODES,
+  normalizeOperatorAssistant, normalizeOperatorAssistantLimits
+} from './projects'
+
+describe('operator assistant contract', () => {
+  it('defines modes and their exact allowed actions', () => {
+    expect(OPERATOR_ASSISTANT_MODES).toEqual(['off', 'answers', 'full'])
+    expect(OPERATOR_ACTIONS_BY_MODE).toEqual({
+      off: [],
+      answers: ['answer', 'comment', 'escalate'],
+      full: ['answer', 'comment', 'retry_step', 'discard_and_retry', 'restart_development', 'move_ready', 'escalate']
+    })
+    for (const mode of OPERATOR_ASSISTANT_MODES) expect(normalizeOperatorAssistant(mode)).toBe(mode)
+  })
+
+  it.each([undefined, null, '', 'FULL', ' full', 'unknown', 1, true, {}, ['full']])('disables invalid mode %j', value => {
+    expect(normalizeOperatorAssistant(value)).toBe('off')
+  })
+
+  it('defines default counts and inclusive ranges', () => {
+    expect(DEFAULT_OPERATOR_ASSISTANT_LIMITS).toEqual({
+      actionsPerCardPerDay: 3, stepRetries: 1, discardRetries: 1,
+      developmentRestarts: 1, answersPerRun: 3, disabledActions: []
+    })
+    expect(OPERATOR_ASSISTANT_LIMIT_RANGES).toEqual({
+      actionsPerCardPerDay: { min: 0, max: 50 }, stepRetries: { min: 0, max: 5 },
+      discardRetries: { min: 0, max: 5 }, developmentRestarts: { min: 0, max: 5 },
+      answersPerRun: { min: 0, max: 20 }
+    })
+  })
+
+  it.each([undefined, null, false, 3, 'limits', [], {}])('defaults malformed or empty limits %j', value => {
+    expect(normalizeOperatorAssistantLimits(value)).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+  })
+
+  it('fills partial limits and returns independent objects and arrays', () => {
+    const result = normalizeOperatorAssistantLimits({ stepRetries: 0 })
+    expect(result).toEqual({ ...DEFAULT_OPERATOR_ASSISTANT_LIMITS, stepRetries: 0 })
+    result.disabledActions.push('answer')
+    result.answersPerRun = 0
+    expect(normalizeOperatorAssistantLimits({})).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+    expect(DEFAULT_OPERATOR_ASSISTANT_LIMITS.disabledActions).toEqual([])
+  })
+
+  for (const [key, { min, max }] of Object.entries(OPERATOR_ASSISTANT_LIMIT_RANGES)) {
+    it(`clamps ${key}, truncates fractions and defaults non-finite or nonnumeric values`, () => {
+      for (const [value, expected] of [[-100, min], [0, min], [max, max], [max + 100, max], [2.9, 2]]) {
+        expect(normalizeOperatorAssistantLimits({ [key]: value })).toHaveProperty(key, expected)
+      }
+      for (const value of [NaN, Infinity, -Infinity, '2', null, true, {}, []]) {
+        expect(normalizeOperatorAssistantLimits({ [key]: value })).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+      }
+    })
+  }
+
+  it('filters and deduplicates disabled actions without mutating input and is idempotent', () => {
+    const input = Object.freeze({ disabledActions: Object.freeze(['escalate', 'unknown', null, 1, 'answer', 'answer']) })
+    const result = normalizeOperatorAssistantLimits(input)
+    expect(result.disabledActions).toEqual(['answer', 'escalate'])
+    expect(normalizeOperatorAssistantLimits(result)).toEqual(result)
+    expect(normalizeOperatorAssistantLimits({ disabledActions: OPERATOR_ACTIONS_BY_MODE.full }).disabledActions)
+      .toEqual(OPERATOR_ACTIONS_BY_MODE.full)
+    expect(normalizeOperatorAssistantLimits({ disabledActions: 'answer' }).disabledActions).toEqual([])
+  })
+})
 
 describe('normalizeQaStages', () => {
   it('defines the pipeline order and defaults to no QA stages', () => {

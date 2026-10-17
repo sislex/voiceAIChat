@@ -37,7 +37,8 @@ export function registerIntegrationIngress(app: FastifyInstance, db: Pick<VoiceC
     const target = `${opts.kanbanUrl.replace(/\/+$/, '')}/internal/kanban/projects/${encodeURIComponent(req.params.id)}/tasks/${encodeURIComponent(req.params.taskId)}/actions`
     try {
       const response = await (opts.fetchImpl ?? fetch)(target, {
-        method: 'POST', headers: { authorization: `Bearer ${opts.internalToken}`, 'content-type': 'application/json' },
+        // The board deduplicates card actions by Idempotency-Key and rejects requests without it.
+        method: 'POST', headers: { authorization: `Bearer ${opts.internalToken}`, 'content-type': 'application/json', ...(typeof req.headers['idempotency-key'] === 'string' ? { 'idempotency-key': req.headers['idempotency-key'] } : {}) },
         body: JSON.stringify(req.body), signal: AbortSignal.timeout(opts.timeoutMs ?? 15_000)
       })
       const text = await response.text()
