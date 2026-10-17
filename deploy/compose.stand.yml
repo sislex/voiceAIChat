@@ -11,8 +11,10 @@ services:
     # Modules run on this machine only when Kanban lists their profile; one placed on
     # another machine is reached through an agent link (environments-v3).
     depends_on: !override
-      runner-work: {condition: service_started}
-      runner-personal: {condition: service_started}
+      # Local LLM runners run only under the `local-runner` profile; Kanban omits it when the
+      # environment points VC_LLM_RUNNER_CLAUDE_URL/CODEX_URL at an external runner.
+      runner-work: {condition: service_started, required: false}
+      runner-personal: {condition: service_started, required: false}
       tts-runner: {condition: service_started}
       stt-runner: {condition: service_started}
       automation-runner: {condition: service_started}
@@ -31,8 +33,8 @@ services:
     extra_hosts: *stand-extra-hosts
   kanban:
     depends_on: !override
-      runner-work: {condition: service_started}
-      runner-personal: {condition: service_started}
+      runner-work: {condition: service_started, required: false}
+      runner-personal: {condition: service_started, required: false}
       browser-runner: {condition: service_started, required: false}
     extra_hosts: *stand-extra-hosts
   machines:
@@ -43,6 +45,10 @@ services:
     depends_on: !override
       playwright-reader: {condition: service_started, required: false}
     extra_hosts: *stand-extra-hosts
+  runner-work:
+    profiles: ["local-runner"]
+  runner-personal:
+    profiles: ["local-runner"]
   browser-runner:
     profiles: ["playwright-reader"]
     extra_hosts: *stand-extra-hosts

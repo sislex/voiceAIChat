@@ -52,6 +52,14 @@ test('Core launcher requires stand data and sends external components through th
   assert.equal(env.VC_DATA_DIR, '/stand/data'); assert.equal(env.VC_DB_URL, 'postgres://stand/db')
   assert.equal(env.VC_KANBAN_URL, 'http://stand'); assert.equal(env.VC_MAKE_MODE, 'remote')
 })
+test('Core launcher keeps the swapped base container configuration and takes the runner port', () => {
+  const env = componentEnvironment({ SISLEXA_STAND_URL: 'http://stand', VC_DATA_DIR: '/stand/data', VC_DB_URL: 'postgres://stand/db', PORT: '24002',
+    VC_KANBAN_URL: 'http://127.0.0.1:41002', VC_ADMIN_MODE: 'embedded', VC_LLM_RUNNER_CODEX_URL: 'http://127.0.0.1:18790' })
+  assert.equal(env.PORT, '24002'); assert.equal(env.VC_PORT, '24002')
+  assert.equal(env.VC_KANBAN_URL, 'http://127.0.0.1:41002'); assert.equal(env.VC_ADMIN_MODE, 'embedded')
+  assert.equal(env.VC_LLM_RUNNER_CODEX_URL, 'http://127.0.0.1:18790'); assert.equal(env.VC_LLM_RUNNER_CLAUDE_URL, 'http://stand')
+  assert.equal(env.VC_MAKE_URL, 'http://stand')
+})
 test('composition, owner pins and Desktop provenance reject development versions', async () => {
   const version = '1.2.3-dev.aaaaaaaaaaaa'
   assert.throws(() => checkRelease('', { version }, ''), /development build/)

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: db1b36ae
+checked: db75c6d1
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -280,6 +280,18 @@ That URL must be the base stand's Caddy entry, not the overriding gateway, to
 avoid forwarding Core's own delegated requests back into itself. No data copy,
 database provisioning, credential setup or persistent service installation is
 performed by these commands. The owner supplies those resources before launch.
+Values already present in the environment win (`??=`): Kanban's container swap
+(`environments/devSwap.ts` in sislexa-kanban) passes the stopped base Core
+container's own configuration with service URLs on the stand's `127.0.0.1` access
+bridge, so only unspecified components fall back to `SISLEXA_STAND_URL`. `PORT`
+from the agent is accepted when `VC_PORT` is absent.
+
+Stand LLM runners (stand-dev-v1): `runner-work` and `runner-personal` belong to the
+`local-runner` profile in `compose.stand.yml`, and Core/Kanban depend on them with
+`required: false`. `scripts/prod/environment_stand.py` adds `local-runner` on the
+primary unless both `VC_LLM_RUNNER_CLAUDE_URL` and `VC_LLM_RUNNER_CODEX_URL` are
+set (Kanban environment settings), so stands written by an older Kanban keep their
+runners and an external runner leaves none running locally.
 
 Release composition rejects B01 `isDevBuildVersion` versions before parsing or
 writing pins, including package/archive versions. Owner pin checks also reject
