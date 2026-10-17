@@ -25,6 +25,13 @@ areas:
 
 ## Operator assistant project contract
 
+`ProjectDetail` and the `projects:update` patch also expose optional
+`operatorAssistantModel: OperatorAssistantModel`. The shared contract exports
+`OperatorAssistantExecution`, `DEFAULT_OPERATOR_ASSISTANT_MODEL` and
+`normalizeOperatorAssistantModel`; see [model normalization](projects.md#operator-assistant-model).
+`LlmRequest.toolOnly?: boolean` (also inherited by `LlmRunBody`) requests only
+MCP tools; no shell, file or web tools. Enforcement belongs to the runner adapters.
+
 `projects.ts` exports `OperatorAssistantMode` (`off | answers | full`) and
 `OPERATOR_ASSISTANT_MODES`. `ProjectDetail` and the `projects:update` patch in
 `ipc.ts` expose optional `operatorAssistant` and

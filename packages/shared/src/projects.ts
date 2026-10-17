@@ -3,6 +3,38 @@ export type ExecutionEngine = 'board' | 'worker'
 
 export type OperatorAssistantMode = 'off' | 'answers' | 'full'
 
+export type OperatorAssistantExecution = 'mcp_only' | 'unrestricted'
+
+export interface OperatorAssistantModel {
+  source: 'run' | 'custom'
+  provider?: 'claude' | 'codex'
+  model?: string
+  llmEngineId?: string | null
+  execution: OperatorAssistantExecution
+}
+
+export const DEFAULT_OPERATOR_ASSISTANT_MODEL: OperatorAssistantModel = {
+  source: 'run', execution: 'mcp_only'
+}
+
+/** Invalid configuration inherits the run model with MCP-only execution. */
+export function normalizeOperatorAssistantModel(value: unknown): OperatorAssistantModel {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  }
+  const input = value as Record<string, unknown>
+  if (input.source !== 'run' && input.source !== 'custom') return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  const execution = input.execution === 'unrestricted' ? 'unrestricted' : 'mcp_only'
+  if (input.source === 'run') return { source: 'run', execution }
+  const model = typeof input.model === 'string' ? input.model.trim().slice(0, 200).trim() : ''
+  if ((input.provider !== 'claude' && input.provider !== 'codex') || !model) {
+    return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  }
+  const result: OperatorAssistantModel = { source: 'custom', provider: input.provider, model, execution }
+  if (typeof input.llmEngineId === 'string' || input.llmEngineId === null) result.llmEngineId = input.llmEngineId
+  return result
+}
+
 export const OPERATOR_ASSISTANT_MODES: readonly OperatorAssistantMode[] = ['off', 'answers', 'full']
 
 /** Missing or unrecognized configuration disables the operator assistant. */
@@ -889,6 +921,7 @@ export interface ProjectDetail extends ProjectSummary {
   executionEngine?: ExecutionEngine
   /** Absent means off. */
   operatorAssistant?: OperatorAssistantMode
+  operatorAssistantModel?: OperatorAssistantModel
   operatorAssistantLimits?: Partial<OperatorAssistantLimits>
   members: ProjectMember[]
   /** Машины проекта с папками. */

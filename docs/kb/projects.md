@@ -25,6 +25,21 @@ areas:
 
 # Проекты и канбан-доска
 
+## Operator assistant model
+
+Project detail and update contracts accept optional `operatorAssistantModel`.
+`OperatorAssistantModel` selects `source: 'run' | 'custom'`, optional
+`provider: 'claude' | 'codex'`, `model`, `llmEngineId: string | null`, and
+`execution: OperatorAssistantExecution` (`mcp_only | unrestricted`).
+`DEFAULT_OPERATOR_ASSISTANT_MODEL` inherits the run model with `mcp_only` execution.
+`normalizeOperatorAssistantModel` returns a fresh default for malformed input,
+unknown sources, or custom selections without a valid provider and nonempty model.
+Custom model names are trimmed and truncated to 200 characters; malformed engine
+IDs are omitted. Missing or unknown execution selects `mcp_only`. Run selections
+discard custom provider, model and engine fields. Normalization does not mutate input.
+Persistence and execution remain owned by external Kanban and LLM Runner;
+this contract alone does not commission the operator.
+
 ## Operator assistant limits
 
 Project detail and update contracts accept optional `operatorAssistant`

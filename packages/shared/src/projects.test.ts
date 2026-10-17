@@ -8,8 +8,47 @@ import { DEFAULT_QA_STAGES, QA_STAGES, normalizeQaStages } from './projects'
 import {
   DEFAULT_OPERATOR_ASSISTANT_LIMITS, OPERATOR_ACTIONS_BY_MODE,
   OPERATOR_ASSISTANT_LIMIT_RANGES, OPERATOR_ASSISTANT_MODES,
-  normalizeOperatorAssistant, normalizeOperatorAssistantLimits
+  normalizeOperatorAssistant, normalizeOperatorAssistantLimits,
+  DEFAULT_OPERATOR_ASSISTANT_MODEL, normalizeOperatorAssistantModel
 } from './projects'
+
+describe('operator assistant model', () => {
+  it.each([undefined, null, false, 1, 'custom', [], {}, { source: 'unknown', execution: 'unrestricted' }])('defaults invalid input %j', value => {
+    expect(normalizeOperatorAssistantModel(value)).toEqual({ source: 'run', execution: 'mcp_only' })
+  })
+
+  it.each(['claude', 'codex'] as const)('normalizes a custom %s model', provider => {
+    const input = { source: 'custom', provider, model: '  model-name  ', execution: 'unrestricted', llmEngineId: 'engine-1' }
+    const result = normalizeOperatorAssistantModel(input)
+    expect(result).toEqual({ ...input, model: 'model-name' })
+    expect(input.model).toBe('  model-name  ')
+    expect(normalizeOperatorAssistantModel(result)).toEqual(result)
+  })
+
+  it.each([
+    {}, { provider: 'other', model: 'model' }, { provider: 'codex' },
+    { model: 'model' }, { provider: 'claude', model: '  ' }, { provider: 'codex', model: 42 }
+  ])('falls back for incomplete custom model %j', fields => {
+    expect(normalizeOperatorAssistantModel({ source: 'custom', execution: 'unrestricted', ...fields })).toEqual(DEFAULT_OPERATOR_ASSISTANT_MODEL)
+  })
+
+  it('caps trimmed model names and sanitizes optional values', () => {
+    const input = { source: 'custom', provider: 'codex', model: `  ${'x'.repeat(201)}  ` }
+    expect(normalizeOperatorAssistantModel({ ...input, execution: 'invalid', llmEngineId: 1 })).toEqual({
+      source: 'custom', provider: 'codex', model: 'x'.repeat(200), execution: 'mcp_only'
+    })
+    expect(normalizeOperatorAssistantModel({ ...input, llmEngineId: null }).llmEngineId).toBeNull()
+    expect(normalizeOperatorAssistantModel(input)).not.toHaveProperty('llmEngineId')
+  })
+
+  it('strips custom settings from run selection and returns fresh defaults', () => {
+    expect(normalizeOperatorAssistantModel({ source: 'run', execution: 'unrestricted', provider: 'codex', model: 'ignored', llmEngineId: 'ignored' })).toEqual({ source: 'run', execution: 'unrestricted' })
+    const result = normalizeOperatorAssistantModel(undefined)
+    result.execution = 'unrestricted'
+    expect(normalizeOperatorAssistantModel({ source: 'run' })).toEqual({ source: 'run', execution: 'mcp_only' })
+    expect(DEFAULT_OPERATOR_ASSISTANT_MODEL.execution).toBe('mcp_only')
+  })
+})
 
 describe('operator assistant contract', () => {
   it('defines modes and their exact allowed actions', () => {

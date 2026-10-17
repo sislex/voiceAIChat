@@ -578,6 +578,7 @@ export interface IpcInvokeMap {
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
       executionEngine?: import('./projects').ExecutionEngine
       operatorAssistant?: import('./projects').OperatorAssistantMode
+      operatorAssistantModel?: import('./projects').OperatorAssistantModel
       operatorAssistantLimits?: Partial<import('./projects').OperatorAssistantLimits>
       automatedQaMode?: import('./qa').AutomatedQaMode
       /**
