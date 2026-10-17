@@ -214,7 +214,11 @@ class Stand:
             raise ValueError('release mismatch')
         if self.public:
             profiles.add('public')
-            v['COMPOSE_PROFILES'] = ','.join(sorted(profiles))
+        # Local LLM runners unless both providers use an external runner; a stand written by an
+        # older Kanban (no `local-runner` profile) keeps its runners.
+        if self.role == 'primary' and not (v.get('VC_LLM_RUNNER_CLAUDE_URL') and v.get('VC_LLM_RUNNER_CODEX_URL')):
+            profiles.add('local-runner')
+        v['COMPOSE_PROFILES'] = ','.join(sorted(profiles))
         upstreams = parse_upstreams(v.get('VC_STAND_UPSTREAMS', ''))
         if upstreams:
             lb = write_load_balancer(upstreams, v)
