@@ -1,0 +1,35 @@
+# operator-assistant-model-v1 — выбор модели и режима исполнения ассистента-оператора
+
+Ран `operator-assistant-model-v1`. Ветка задач — `dev`. Задачи выполняют воркеры MacBook (M2); M1 выключен.
+
+## Что случилось
+
+После выката ассистента-оператора (board-operator-assistant-v2, Kanban 0.2.26, Core 0.1.472) первый же ход упал: ход
+оператора выполняется моделью из снимка рана карточки (`model_work` = Codex `gpt-6-astra`), а `operatorTurn` в
+`apps/server/src/ci/modelHooks.ts` сервиса доски намеренно отказывает Codex («Operator tool-only execution unavailable
+for Codex»): раннер Codex (`src/cli/codexCli.ts` в `sislex/llm-runner`) воспринимает `executionDisabled` только как
+подсказку в промпте и не соблюдает `disallowedTools`. Владелец 2026-10-17 поручил: в настройках ассистента выбирать
+модель, в том числе модели Claude; Claude может работать без ограничений; должен быть режим работы только через MCP.
+
+Целевое поведение:
+
+- Настройка проекта `operatorAssistantModel`: `{ source: 'run' | 'custom', provider?: 'claude' | 'codex', model?: string,
+  llmEngineId?: string | null, execution: 'mcp_only' | 'unrestricted' }`. По умолчанию `{ source: 'run', execution:
+  'mcp_only' }` — модель рана, только инструменты MCP оператора.
+- `mcp_only`: модель не может выполнять shell и работать с файлами, у неё есть только MCP-сервер оператора. Для Claude —
+  `disallowedTools` как сейчас; для Codex — новый режим раннера `toolOnly`.
+- `unrestricted`: встроенные инструменты модели разрешены (shell и файлы в отдельном рабочем каталоге хода оператора, не
+  в рабочей копии карточки), MCP оператора тоже доступен. Доступно для Claude и для Codex.
+- В настройках ассистента в Core UI — выбор «Модель рана» или конкретной модели (список моделей Claude и Codex из того же
+  каталога, что и настройка модели проекта) и выбор режима «Только через MCP» / «Без ограничений».
+
+## Задачи интегратора (Claude, вне манифеста)
+
+- После B01: выпуск Shared и закрепление в Core, Kanban, Core UI. После B02: выпуск llm-runner (образ), закрепление образа
+  в Core. После всех: выпуск Kanban и Core UI, закрепления, релиз Core, деплой; проверка на проде: ход оператора на Codex в
+  `mcp_only` отвечает на вопрос рана, ход на Claude в `unrestricted` выполняет действие.
+
+| B01 | Core | — | Contract for the operator assistant model (self-contained, repository `sislex/voiceAIChat`, branch `dev`): in `packages/shared/src/projects.ts` next to `OperatorAssistantMode` add `OperatorAssistantExecution = 'mcp_only' \| 'unrestricted'`, `OperatorAssistantModel { source: 'run' \| 'custom'; provider?: 'claude' \| 'codex'; model?: string; llmEngineId?: string \| null; execution: OperatorAssistantExecution }`, `DEFAULT_OPERATOR_ASSISTANT_MODEL = { source: 'run', execution: 'mcp_only' }`, `normalizeOperatorAssistantModel(value)` (unknown values fall back to the default, `custom` without provider or model falls back to `run`, model names are trimmed and at most 200 characters) and the optional field `operatorAssistantModel?: OperatorAssistantModel` on the project detail and patch types; in `packages/shared/src/llm*.ts` (where `LlmRequest`-like run options are declared for runners, if present) add the optional flag `toolOnly?: boolean` with a doc comment «only MCP tools; no shell, file or web tools»; unit tests for the helper; document in `docs/kb/protocol.md` and `docs/kb/projects.md`. |
+| B02 | llm-runner | — | Tool-only execution for Codex (self-contained, repository `sislex/llm-runner`, branch `dev`): add `toolOnly?: boolean` to `LlmRequest` in `packages/contracts` and honour it in `src/cli/codexCli.ts` `codexInvocation`: when `toolOnly` is set, run `codex exec` with `--sandbox read-only` in a fresh empty temporary working directory (never `req.cwd`), disable the shell and file tools through Codex configuration overrides if the pinned Codex CLI supports them (check `codex --help` and the config reference in the repository docs; prefer `-c` overrides such as disabling the shell tool and web search), strip environment variables except the minimal profile (`cliProfileEnv`), attach only the MCP servers passed in the request, and prepend a short instruction that only MCP tools may be used; if the CLI cannot disable the shell tool, keep read-only sandbox plus empty directory and report `toolOnly: 'sandboxed'` in the run result metadata; for Claude (`src/cli/claudeCli.ts`) map `toolOnly` to the existing disallowed built-in tools list; tests for the argv of both CLIs with and without `toolOnly`, including that `-C req.cwd` is not passed; document in the runner KB topic about CLI invocation and bump nothing (the integrator releases). |
+| B03 | Kanban | — | Operator assistant model setting (self-contained, repository `sislex/sislexa-kanban`, branch `dev`): persist `projects.operator_assistant_model` (JSON) exposed in project details and accepted by the settings PATCH (owner only, normalized with a local mirror of `normalizeOperatorAssistantModel` from `@voicechat/shared` declared in `packages/shared/core-source.json` `divergent` until the next shared copy); in `apps/server/src/operator/assistant.ts` choose the turn model from the setting — `source: 'run'` keeps the run snapshot, `custom` uses the configured provider, model and engine; in `apps/server/src/ci/modelHooks.ts` `operatorTurn` replace the Codex refusal: `execution: 'mcp_only'` sends `toolOnly: true` (Codex and Claude) plus the current `disallowedTools` for Claude; `execution: 'unrestricted'` sends neither `executionDisabled` nor `disallowedTools`, runs in a dedicated temporary directory for the turn (not the card work tree) and keeps the operator MCP server; if the LLM runner reports that it does not support `toolOnly` (older runner version, unknown option error) the `mcp_only` turn fails closed with the comment «Ассистент-оператор: раннер не поддерживает режим только через MCP»; tests with fake clients for the four combinations (claude/codex × mcp_only/unrestricted), the run-snapshot default and the fail-closed path; document in `docs/kb/ci-qa-merge.md` and `docs/operator-playbook.md`. |
+| B04 | core-ui | — | Model and execution of the operator assistant in the interface (self-contained, repository `sislex/sislexa-core-ui`, branch `dev`): in `packages/ui/src/modules/projects/components/ProjectSettings.tsx`, in the «Ассистент-оператор» section, add «Модель ассистента» with the choices «Модель рана карточки» (`source: 'run'`) and a concrete model (`source: 'custom'`) picked from the same model catalogue component that the project LLM settings use, listing Claude and Codex models with the provider, and «Режим исполнения» with «Только через MCP» (`mcp_only`) and «Без ограничений» (`unrestricted`, with a short warning that the model may run shell commands in a temporary directory); bind to the optional project field `operatorAssistantModel` and save through the existing update path; dom tests for both selectors, the default display when the field is absent and the warning; a story for the section. |
