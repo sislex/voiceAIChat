@@ -70,6 +70,8 @@ export interface LlmRequest {
   executionDisabled?: boolean
   /** Enforced tool-free CLI invocation for untrusted preview generation. */
   textOnly?: boolean
+  /** only MCP tools; no shell, file or web tools */
+  toolOnly?: boolean
   /**
    * true — remote-инструменты доступны, но только для чтения (фаза плана CI):
    * модель исследует рабочую копию на машине, но ничего в ней не меняет.
