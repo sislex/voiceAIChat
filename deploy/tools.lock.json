@@ -61,8 +61,8 @@
       "package": "@sislex/llm-runner",
       "workspace": ".",
       "repository": "https://github.com/sislex/llm-runner",
-      "version": "0.3.5",
-      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a"
+      "version": "0.3.7",
+      "commit": "f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379"
     },
     "analytics": {
       "package": "@sislexa/analytics",
@@ -75,8 +75,8 @@
       "package": "@sislexa/kanban",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/sislexa-kanban",
-      "version": "0.2.26",
-      "commit": "b725dd2692bf02afcb2db62f1cca00ee5139ebcf"
+      "version": "0.2.27",
+      "commit": "b63512443abb23d20d541fb4822bb534b9aff226"
     }
   }
 }
