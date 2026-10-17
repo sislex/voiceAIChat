@@ -254,7 +254,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:b725dd2692bf02afcb2db62f1cca00ee5139ebcf}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:b63512443abb23d20d541fb4822bb534b9aff226}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -482,7 +482,7 @@ services:
     restart: unless-stopped
 
   runner-work:
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:849f1397930d68685855517f0fc791d010eb361d}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -500,7 +500,7 @@ services:
     restart: unless-stopped
 
   runner-personal:
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:849f1397930d68685855517f0fc791d010eb361d}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
