@@ -316,6 +316,28 @@ describe('turns: канбан-ассистент', () => {
     db.close()
   })
 
+  it('с «Автопилотом» канбан-ассистенту не даётся task-launch, без него — даётся', async () => {
+    const db = await freshDb()
+    const project = await db.projects.createProject(U, { name: 'Board' })
+    const conv = (await db.chat.ensureKanbanAssistantConversation(U, project.id))!
+    const context = { version: 1 as const, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: null, selection: null, recentActions: [] }
+    const rec = recorder()
+    const turns = createTurnManager({ db: await db, claude: rec.client, kanbanMcpBaseUrl: 'http://127.0.0.1:8787/mcp/kanban?k=secret' })
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Разрули упавшие карточки' }], assistantContext: context, execTarget: 'none' })
+    })
+    await run()
+    expect(rec.last()?.prompt).not.toContain('task-launch')
+    expect(rec.last()?.prompt).toContain('```questions')
+
+    await db.chat.setConversationAutonomy(U, conv.id, 'confirm')
+    await run()
+    expect(rec.last()?.prompt).toContain('task-launch')
+    await turns.idle()
+    db.close()
+  })
+
   it('без базы MCP канбан-ход остаётся в режиме предложений', async () => {
     const db = await freshDb()
     const project = await db.projects.createProject(U, { name: 'Board' })

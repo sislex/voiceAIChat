@@ -1,12 +1,13 @@
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
+import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -563,8 +564,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   const previewBlocks = buildContextBlocks({
     personalization: disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
     // Фильтр по виду чата общий с ходом: в «Консоли с ассистентом» не уходит
-    // подсказка про терминал, в Make — про терминал и заведение задачи.
-    instructions: instructionsForAssistantKind(effectiveChatInstructions(settings.chatInstructions, disabled), conversation.assistantKind ?? null),
+    // подсказка про терминал, в Make — про терминал и заведение задачи, у
+    // канбан-ассистента с «Автопилотом» — task-launch.
+    instructions: turnChatInstructions(effectiveChatInstructions(settings.chatInstructions, disabled), conversation, conversation.assistantKind === 'kanban'),
     project: disabled.has('project-binding') ? null : project,
     projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
     taskContext: await taskContext,
@@ -596,7 +598,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Инструкция включена, но в чате этого вида не применяется. Раньше человек
   // видел её в списке «уйдёт» и не понимал, почему модель ведёт себя иначе.
   const skippedByKind = effectiveChatInstructions(settings.chatInstructions, disabled)
-    .filter((item) => !instructionsForAssistantKind([item], conversation.assistantKind ?? null).length)
+    .filter((item) => !turnChatInstructions([item], conversation, conversation.assistantKind === 'kanban').length)
   if (skippedByKind.length) {
     warnings.push({
       itemId: null,
