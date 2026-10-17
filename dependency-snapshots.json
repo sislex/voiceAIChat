@@ -8,35 +8,35 @@
   "packages": [
     {
       "name": "@sislexa/make",
-      "version": "1.7.5",
-      "filename": "sislexa-make-1.7.5.tgz",
-      "asset": "sislexa-make-1.7.5-a903548f5f4b.tgz",
-      "sha256": "a903548f5f4b66e270ae32b873a407549f45f5f6605439c3fb474a9e8b791a9e",
-      "integrity": "sha512-CKwqXPejNODmvMsCjBjSBOIRqjNVLrD3YwXWxZbeIMPx1RvkLw91Rhxq52g/DsCRXk1Ekv24ko+KG/SihRnpJA==",
+      "version": "1.8.0",
+      "filename": "sislexa-make-1.8.0.tgz",
+      "asset": "sislexa-make-1.8.0-aacee31445bc.tgz",
+      "sha256": "aacee31445bcc1ef35dc6c509fc82ea3eef3a3edc30a96d424402fb28148f2fc",
+      "integrity": "sha512-hi5CNdABCudouRwa5QhNblGz0AbP3lzL/NBj7y5XZthlLUhrWkNwfDNG/T7UWm+VA8uG6R5ZgCaqRsCoynoOPg==",
       "repository": "https://github.com/sislex/make",
-      "commit": "6c9e8450b5253d5b0a5232152f5c343c600375b2",
+      "commit": "25246655ecdd6879ab8b2edfb91bdd3be178e85b",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "version": "1.7.5",
-        "commit": "6c9e8450b5253d5b0a5232152f5c343c600375b2"
+        "version": "1.8.0",
+        "commit": "25246655ecdd6879ab8b2edfb91bdd3be178e85b"
       }
     },
     {
       "name": "@voicechat/make-contracts",
-      "version": "1.7.1",
-      "filename": "voicechat-make-contracts-1.7.1.tgz",
-      "asset": "voicechat-make-contracts-1.7.1-7a6e8d4db200.tgz",
-      "sha256": "7a6e8d4db200c4db9fe1edda198f9e8cf3631f42f1d0e0f6d48f2d7303390196",
-      "integrity": "sha512-GVfBpZmt34UgBnkqSFaorpvtZSO9yTaEDb7eRa/vAZlDhEKygMxjLPGzYk3yBXk89fUyGLw010M7imFAiE8dEg==",
+      "version": "1.8.0",
+      "filename": "voicechat-make-contracts-1.8.0.tgz",
+      "asset": "voicechat-make-contracts-1.8.0-f5b1094babdd.tgz",
+      "sha256": "f5b1094babdd36e4ff0436b8de5ba335eff494b50109cac7cf4c6fe77a371ca9",
+      "integrity": "sha512-8Htet6/ta/pmhwDCqHV/cfEuBOdwt+510QpcH4kQZ4GKrZg+U3AcqyrlYQlglQMJDhNC1sQw4Oul3/v2/01L5A==",
       "repository": "https://github.com/sislex/make",
-      "commit": "6c9e8450b5253d5b0a5232152f5c343c600375b2",
+      "commit": "25246655ecdd6879ab8b2edfb91bdd3be178e85b",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "commit": "6c9e8450b5253d5b0a5232152f5c343c600375b2",
+        "commit": "25246655ecdd6879ab8b2edfb91bdd3be178e85b",
         "name": "@voicechat/make-contracts",
-        "version": "1.7.1",
+        "version": "1.8.0",
         "dirty": false,
         "command": "npm pack -w @voicechat/make-contracts"
       }
@@ -123,17 +123,17 @@
     },
     {
       "name": "@sislexa/core-ui",
-      "version": "1.5.18",
-      "filename": "sislexa-core-ui-1.5.18.tgz",
-      "asset": "sislexa-core-ui-1.5.18-7459e7ec1247.tgz",
-      "sha256": "7459e7ec124728a6761d0cfdbac2bb5b82cec41d3e0244b6835f682b9d053981",
-      "integrity": "sha512-AqbBJfhNxPGqVObROZwfZmgVF5ksxtIcR/7/dgVbeWplkHW7cR9Viaw7Nd5kFTCh18hSzQGQxfcqSh6HAPA7fw==",
+      "version": "1.5.20",
+      "filename": "sislexa-core-ui-1.5.20.tgz",
+      "asset": "sislexa-core-ui-1.5.20-85a3b619fe0b.tgz",
+      "sha256": "85a3b619fe0b59e9bfbce0945406f6e3e2de44fd9fdde04d39b41111127c5378",
+      "integrity": "sha512-gyxLhWkIVLFQrsgZYzQEVGlmoiWVOo9jDn4p9OuemcNuSYqOLCYMIoXnclTnQL3WNa246KMuEvOma6iss4akAA==",
       "repository": "https://github.com/sislex/sislexa-core-ui",
-      "commit": "f0bfac5c48b281e5c4c6f60ab1710bb50e5accda",
+      "commit": "38096664cc56bffa67fa6022838614fae24733e2",
       "provenance": {
         "repository": "https://github.com/sislex/sislexa-core-ui",
-        "version": "1.5.18",
-        "commit": "f0bfac5c48b281e5c4c6f60ab1710bb50e5accda",
+        "version": "1.5.20",
+        "commit": "38096664cc56bffa67fa6022838614fae24733e2",
         "dirty": false,
         "requires": {
           "coreApi": "^1.0.0",
@@ -144,17 +144,17 @@
     },
     {
       "name": "@sislexa/desktop",
-      "version": "1.0.36",
-      "filename": "sislexa-desktop-1.0.36.tgz",
-      "asset": "sislexa-desktop-1.0.36-077f54824339.tgz",
-      "sha256": "077f548243391592ce96af50c33ad89f6655bcf5cd345bb4763183844fc4347e",
-      "integrity": "sha512-kQUNhMSGXdmjWYYweapRbMGn9z/vd8J6qvJX5i9Mybq18DcyBVRS7JvXCLZ4Dwx3piulIrUg11NnTA7tUcbrJA==",
+      "version": "1.0.38",
+      "filename": "sislexa-desktop-1.0.38.tgz",
+      "asset": "sislexa-desktop-1.0.38-b8f4fdf5c56d.tgz",
+      "sha256": "b8f4fdf5c56d649d4d51c63d793f836edb82b69e51bfcf6d37ae0ad0ea023c5d",
+      "integrity": "sha512-GZcSy0yTR9dJFfCizyQatexZC0fui58veE587QnCmztsqITeExP8I21o8EUGWX8SO/QIZoleeIedQa2VYXLKrg==",
       "repository": "https://github.com/sislex/desktop",
-      "commit": "4de6e596f49bd66b16f6eb8684f2cc62f01feca6",
+      "commit": "8c812400e0abf5fb07cebacc3577a6da30edb017",
       "provenance": {
         "repository": "https://github.com/sislex/desktop",
-        "commit": "4de6e596f49bd66b16f6eb8684f2cc62f01feca6",
-        "version": "1.0.36",
+        "commit": "8c812400e0abf5fb07cebacc3577a6da30edb017",
+        "version": "1.0.38",
         "apiVersion": "1.0.0",
         "requires": {
           "coreApi": "^1.0.0",
@@ -248,18 +248,18 @@
     },
     {
       "name": "@voicechat/shared",
-      "version": "0.1.32",
-      "filename": "voicechat-shared-0.1.32.tgz",
-      "asset": "voicechat-shared-0.1.32-7a8e1732ddcf.tgz",
-      "sha256": "7a8e1732ddcf9ffdc3db1edacb97e44e6764ac44a70862fb9a1b7a0342a70414",
-      "integrity": "sha512-cpfV/FUwOMoP2hcUZ+pg+uGfUjWwJpY3sgx639jX7yKWjzMiNnHE1sfvPCED2hcSf2hn4FA4FG2MxLVGO9/l7A==",
+      "version": "0.1.33",
+      "filename": "voicechat-shared-0.1.33.tgz",
+      "asset": "voicechat-shared-0.1.33-eb9abc5a5763.tgz",
+      "sha256": "eb9abc5a5763cef7c2e49f53629d5cf3a1e97b9a5b919dc93a0833b9c5cf4ac6",
       "repository": "https://github.com/sislex/voiceAIChat",
-      "commit": "8cb7aaa18e60f6cfedfe4f3ed73c78c5e80e6db5",
+      "commit": "b33170a609e474e86f9efeeb7de166ff156c1c39",
       "provenance": {
         "repository": "https://github.com/sislex/voiceAIChat",
-        "commit": "8cb7aaa18e60f6cfedfe4f3ed73c78c5e80e6db5",
-        "version": "0.1.32"
-      }
+        "commit": "b33170a609e474e86f9efeeb7de166ff156c1c39",
+        "version": "0.1.33"
+      },
+      "integrity": "sha512-ACG2dWPyPZo5xvte3INsrNmXMiA+bEfqC9SO1maeXgdxlm+2FunnI0ksUyH8znBOBXmbU6o8rTwH4QG9Aav6SA=="
     }
   ]
 }

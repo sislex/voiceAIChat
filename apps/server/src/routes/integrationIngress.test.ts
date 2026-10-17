@@ -63,6 +63,16 @@ describe('integration ingress', () => {
     expect((await put(projectId, `Bearer ${token}`)).statusCode).toBe(403)
   })
 
+  it('forwards the Idempotency-Key of a card action to the board', async () => {
+    const { token } = (await db.projects.createIntegrationToken('owner', projectId, 'Control', ['tasks:control'], [projectId]))!
+    fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+    const response = await app.inject({ method: 'POST', url: `/integrations/v1/projects/${projectId}/tasks/task%3A1/actions`,
+      headers: { authorization: `Bearer ${token}`, 'idempotency-key': 'card-result-1' }, payload: { action: 'restart_development' } })
+    expect(response.statusCode).toBe(200)
+    expect(fetchImpl).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
+      headers: { authorization: 'Bearer service-token', 'content-type': 'application/json', 'idempotency-key': 'card-result-1' } }))
+  })
+
   it('requires control scope and an allowed project before forwarding actions', async () => {
     const control = (await db.projects.createIntegrationToken('owner', projectId, 'Control', ['tasks:control']))!
     expect((await action(projectId)).statusCode).toBe(401)

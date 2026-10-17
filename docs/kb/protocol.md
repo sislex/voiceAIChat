@@ -1,6 +1,6 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-16
+updated: 2026-10-17
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -22,6 +22,31 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Operator assistant project contract
+
+`projects.ts` exports `OperatorAssistantMode` (`off | answers | full`) and
+`OPERATOR_ASSISTANT_MODES`. `ProjectDetail` and the `projects:update` patch in
+`ipc.ts` expose optional `operatorAssistant` and
+`operatorAssistantLimits: Partial<OperatorAssistantLimits>`. An absent mode
+means `off`; `normalizeOperatorAssistant` also maps unknown input to `off`.
+
+`OperatorActionKind` and `OPERATOR_ACTIONS_BY_MODE` define the action contract:
+`off` allows none; `answers` allows `answer`, `comment`, `escalate`; `full` also
+allows `retry_step`, `discard_and_retry`, `restart_development`, `move_ready`.
+See [project limits](projects.md#operator-assistant-limits) for defaults and
+normalization. Execution and persistence belong to the external Kanban service.
+
+## External agent API tokens
+
+`REST.sessionApiTokens` maps GET/POST `/api/session/api-tokens`;
+`REST.sessionApiToken(sid)` maps DELETE `/api/session/api-tokens/:sid`
+with an encoded session identifier. Identity owns these handlers. API callers
+send `Authorization: Bearer <token>` without cookies or CSRF; `/ws` accepts
+the URL-encoded token in its `token` query parameter. Read-only tokens reject
+REST mutations with 403; revoked tokens return 401. Issuance, permissions,
+revocation and owner route maps are documented in
+[External agent access through API tokens](agent-api-access.md).
 
 ## Subproject board contracts (board-subproject-view-v1 B01)
 

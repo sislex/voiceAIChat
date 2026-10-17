@@ -1,6 +1,69 @@
 /** Selects the board-owned runner or an external worker. */
 export type ExecutionEngine = 'board' | 'worker'
 
+export type OperatorAssistantMode = 'off' | 'answers' | 'full'
+
+export const OPERATOR_ASSISTANT_MODES: readonly OperatorAssistantMode[] = ['off', 'answers', 'full']
+
+/** Missing or unrecognized configuration disables the operator assistant. */
+export function normalizeOperatorAssistant(value: unknown): OperatorAssistantMode {
+  return value === 'answers' || value === 'full' ? value : 'off'
+}
+
+export type OperatorActionKind = 'answer' | 'comment' | 'retry_step' | 'discard_and_retry'
+  | 'restart_development' | 'move_ready' | 'escalate'
+
+export const OPERATOR_ACTIONS_BY_MODE: Readonly<Record<OperatorAssistantMode, readonly OperatorActionKind[]>> = {
+  off: [],
+  answers: ['answer', 'comment', 'escalate'],
+  full: ['answer', 'comment', 'retry_step', 'discard_and_retry', 'restart_development', 'move_ready', 'escalate']
+}
+
+export interface OperatorAssistantLimits {
+  actionsPerCardPerDay: number
+  stepRetries: number
+  discardRetries: number
+  developmentRestarts: number
+  answersPerRun: number
+  disabledActions: OperatorActionKind[]
+}
+
+export const DEFAULT_OPERATOR_ASSISTANT_LIMITS: OperatorAssistantLimits = {
+  actionsPerCardPerDay: 3,
+  stepRetries: 1,
+  discardRetries: 1,
+  developmentRestarts: 1,
+  answersPerRun: 3,
+  disabledActions: []
+}
+
+export const OPERATOR_ASSISTANT_LIMIT_RANGES = {
+  actionsPerCardPerDay: { min: 0, max: 50 },
+  stepRetries: { min: 0, max: 5 },
+  discardRetries: { min: 0, max: 5 },
+  developmentRestarts: { min: 0, max: 5 },
+  answersPerRun: { min: 0, max: 20 }
+} as const
+
+/** Normalize finite numeric counts to integers; malformed values use defaults. */
+export function normalizeOperatorAssistantLimits(value: unknown): OperatorAssistantLimits {
+  const input = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {}
+  const limits = { ...DEFAULT_OPERATOR_ASSISTANT_LIMITS, disabledActions: [] as OperatorActionKind[] }
+  for (const key of Object.keys(OPERATOR_ASSISTANT_LIMIT_RANGES) as (keyof typeof OPERATOR_ASSISTANT_LIMIT_RANGES)[]) {
+    const count = input[key]
+    const { min, max } = OPERATOR_ASSISTANT_LIMIT_RANGES[key]
+    if (typeof count === 'number' && Number.isFinite(count)) {
+      limits[key] = Math.min(max, Math.max(min, Math.trunc(count)))
+    }
+  }
+  const disabled = input.disabledActions
+  if (Array.isArray(disabled)) {
+    limits.disabledActions = OPERATOR_ACTIONS_BY_MODE.full.filter(action => disabled.includes(action))
+  }
+  return limits
+}
+
 export type QaStage = 'component_qa' | 'integration_tests' | 'automated_qa' | 'manual_qa'
 
 export const QA_STAGES: readonly QaStage[] = [
@@ -824,6 +887,9 @@ export type Project = ProjectDetail
 
 export interface ProjectDetail extends ProjectSummary {
   executionEngine?: ExecutionEngine
+  /** Absent means off. */
+  operatorAssistant?: OperatorAssistantMode
+  operatorAssistantLimits?: Partial<OperatorAssistantLimits>
   members: ProjectMember[]
   /** Машины проекта с папками. */
   machines: ProjectMachine[]

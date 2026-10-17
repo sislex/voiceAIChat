@@ -1,0 +1,51 @@
+{
+  "startedAt": "2026-10-16T15:50:22.049Z",
+  "results": [
+    {
+      "files": [
+        "e2e/browserUiRelease.e2e.test.ts"
+      ],
+      "workers": 1,
+      "seconds": 3.78,
+      "exitCode": 0
+    },
+    {
+      "files": [
+        "e2e/externalChat.e2e.test.ts"
+      ],
+      "workers": 1,
+      "seconds": 4.4,
+      "exitCode": 0
+    },
+    {
+      "files": [
+        "e2e/routeResources.e2e.test.ts"
+      ],
+      "workers": 1,
+      "seconds": 47.38,
+      "exitCode": 0
+    },
+    {
+      "files": [
+        "e2e/settings.e2e.test.ts"
+      ],
+      "workers": 1,
+      "seconds": 22.54,
+      "exitCode": 0
+    },
+    {
+      "files": [
+        "e2e/gitPane.e2e.test.ts",
+        "e2e/projects.e2e.test.ts",
+        "e2e/sessions.e2e.test.ts",
+        "e2e/toolIntegration.e2e.test.ts",
+        "e2e/universalSearch.e2e.test.ts",
+        "e2e/webReaderOwnProject.e2e.test.ts",
+        "e2e/webReaderProject.e2e.test.ts"
+      ],
+      "workers": 2,
+      "seconds": 37.92,
+      "exitCode": 0
+    }
+  ]
+}
