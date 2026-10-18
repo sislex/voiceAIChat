@@ -347,17 +347,21 @@
     },
     {
       "name": "@voicechat/shared",
-      "version": "0.1.10",
-      "filename": "voicechat-shared-0.1.10.tgz",
-      "asset": "voicechat-shared-0.1.10-be3a958dba78.tgz",
-      "sha256": "be3a958dba787f1d8b3a8c3ce6af14b8dd6e4680556de8a0fcd9e7f5dab6cd33",
-      "integrity": "sha512-M3snUarhpwtqF+sgqP4K6T/IJSogZon30NnkiApoGMrWK6NQXO3fRJ8OOfqHQIgq5EcVbJ9k5tZGGzz2SsvE4g==",
+      "version": "0.1.36",
+      "filename": "voicechat-shared-0.1.36.tgz",
+      "asset": "voicechat-shared-0.1.36-49cb0852b0b5.tgz",
+      "sha256": "49cb0852b0b5698cb1c293dbd02dcd0018897f802aedc75a274261ab58b4d054",
+      "integrity": "sha512-niypyKhHUH76fZSf6UXGS3i+VvkYlMjheSfXmSmb3PsQDu5ohK9qZLWxjLcQVvIWWKnwYRx+0T5rNE3Nfvw7CQ==",
       "repository": "https://github.com/sislex/voiceAIChat",
-      "commit": "5123d6dcd0bf608e95ad8375b45aa83fcde2456c",
+      "commit": "8d2647352b7a6e89c592aea840f649de4fe5ac93",
       "provenance": {
+        "schemaVersion": 1,
         "repository": "https://github.com/sislex/voiceAIChat",
-        "commit": "5123d6dcd0bf608e95ad8375b45aa83fcde2456c",
-        "version": "0.1.10"
+        "commit": "8d2647352b7a6e89c592aea840f649de4fe5ac93",
+        "name": "@voicechat/shared",
+        "version": "0.1.36",
+        "dirty": false,
+        "command": "npm run build:core-contracts"
       }
     }
   ]
