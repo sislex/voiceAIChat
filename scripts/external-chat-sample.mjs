@@ -4,14 +4,16 @@ import { createHash } from 'node:crypto'
 import { createGunzip } from 'node:zlib'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { ensureVendorArchive } from './vendor-store.mjs'
 import tar from 'tar-stream'
 
 // E02 is an immutable consumer fixture, not an upgrade of Core's owner packages.
-const archive = new URL('../vendor/sislexa-sdk-e02-7f45178ee737.tgz', import.meta.url)
+const asset = 'sislexa-sdk-e02-7f45178ee737.tgz'
 const digest = '629530a3a2a4256502b8e8c6b5b43d8fba01e412b5430690da6e82e75a027ab4'
 export async function createExternalChatSampleServer() {
-  const bytes = await readFile(archive)
+  // Fetched from the `vendor` release (archives are not committed) and checked against the digest below.
+  const bytes = await ensureVendorArchive(fileURLToPath(new URL('..', import.meta.url)), asset, { sha256: digest })
   if (createHash('sha256').update(bytes).digest('hex') !== digest) throw Error('E02 SDK artifact mismatch')
   const modules = new Map()
   const extract = tar.extract()
