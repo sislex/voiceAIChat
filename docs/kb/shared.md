@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-19
-checked: 97095fdfe
+checked: 0a851f7b8
 areas:
   - packages/shared/src
 ---
@@ -180,6 +180,7 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 
 0.1.29 (`voicechat-shared-0.1.29-7d71eb7c0230.tgz`, contracts commit `3eb9ed21`) adds the conversation summary contract (`Conversation.summary`, `REST.conversationSummary`/`conversationSummaryRefresh`, chat-history-v1 B02), the bounded cold start helper (B01) and the `mcp-history` context toggle (B04).
 
+0.1.38 (`voicechat-shared-0.1.38-ca752c856bd8.tgz`, contracts commit `0a851f7b`) publishes the Core-side peers as optional `"*"` ranges (exact Core versions in `release-source.json` `corePeers`); no contract changes.
 0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
 0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.
