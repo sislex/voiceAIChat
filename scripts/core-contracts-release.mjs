@@ -33,10 +33,13 @@ for (const name of Object.keys(source.dependencies)) {
   if (compatible && version !== compatible.locked) throw Error('Review changed peer baseline: ' + name)
   peerDependencies[name] = compatible?.range ?? version
 }
+// Core-side peers are only needed by the subpaths that re-export them. Services consume
+// Shared without these private packages, so every peer is optional (npm must not fetch them).
+const peerDependenciesMeta = Object.fromEntries(Object.keys(peerDependencies).map(name => [name, { optional: true }]))
 writeFileSync(join(output, 'package.json'), JSON.stringify({
   name: '@voicechat/shared', version, type: 'module', main: './src/index.ts', types: './src/index.ts',
   exports: { '.': './src/index.ts', './*.js': './src/*.ts', './*': './src/*.ts', './release-source.json': './release-source.json' },
-  files: ['src', 'release-source.json'], peerDependencies
+  files: ['src', 'release-source.json'], peerDependencies, peerDependenciesMeta
 }, null, 2) + '\n')
 writeFileSync(join(output, 'release-source.json'), JSON.stringify({ repository: 'https://github.com/sislex/voiceAIChat', commit, version }, null, 2) + '\n')
 execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', output], { cwd: output, stdio: 'inherit' })
