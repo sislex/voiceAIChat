@@ -17,7 +17,7 @@ import { RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease } from '../pac
 import { archiveDigests, rowCommit, rowRepository } from './owner-release-publish.mjs'
 import { assertReleaseVersions } from './release-version.mjs'
 import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
-import { publishVendorArchives } from './vendor-store.mjs'
+import { ghVendorPublisher, publishVendorArchives } from './vendor-store.mjs'
 
 const MANIFESTS = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -197,7 +197,7 @@ export function applyComposition(core, dir, options) {
   return releases.map(({ dir: releaseDir, manifest }) => applyRelease(core, manifest, releaseDir))
 }
 
-export function main(args = process.argv.slice(2), core = resolve(import.meta.dirname, '..')) {
+export function main(args = process.argv.slice(2), core = resolve(import.meta.dirname, '..'), publisher = args.includes('--publish') ? ghVendorPublisher() : null) {
   const command = args[0]
   if (command === 'current') { console.log(JSON.stringify(currentComposition(core))); return }
   if (command === 'apply') {
@@ -205,11 +205,13 @@ export function main(args = process.argv.slice(2), core = resolve(import.meta.di
     if (index < 0) throw new Error('Нужен --dir <каталог с выпусками>')
     const result = applyComposition(core, resolve(args[index + 1]))
     // Archives are not committed: new pins must exist in the `vendor` release before `npm ci` can install them.
-    if (!args.includes('--no-publish')) publishVendorArchives(core)
+    // Uploading is an explicit opt-in (`--publish`); without it the operator runs `npm run vendor:publish`.
+    if (args.includes('--publish')) publishVendorArchives(core, publisher)
+    else console.error('vendor: новые архивы не загружены в релиз vendor — запустите apply с --publish или npm run vendor:publish')
     console.log(JSON.stringify(result))
     return
   }
-  throw new Error('Команды: current | apply --dir <каталог> [--no-publish]')
+  throw new Error('Команды: current | apply --dir <каталог> [--publish]')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
