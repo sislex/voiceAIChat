@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { systemPlan, executeSystemPlan, selectSystemOwners, prepareCoreFixture, cleanOwnerGitResidue, assertNoActiveGit, systemOwnersRoot, main } from './system-gate.mjs'
+import { systemPlan, executeSystemPlan, selectSystemOwners, prepareCoreFixture, cleanOwnerGitResidue, assertNoActiveGit, systemOwnersRoot, main, retryGitFetch, TRANSIENT_GIT_FAILURE } from './system-gate.mjs'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -319,4 +319,61 @@ test('one owner failure prevents later system stages', () => {
   const calls = []
   assert.throws(() => executeSystemPlan([owner, owner], row => { calls.push(row); throw Error('browser failed') }), /browser failed/)
   assert.equal(calls.length, 1)
+})
+
+test('git fetch retries transient GitHub transport failures with backoff and cleanup', () => {
+  const results = [
+    { status: 128, stderr: 'fetch-pack: unexpected disconnect while reading sideband packet\nfatal: fetch-pack: invalid index-pack output\n' },
+    { status: 128, stderr: 'error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502\n' },
+    { status: 0, stderr: '' },
+  ]
+  const sleeps = [], cleans = []
+  retryGitFetch(() => results.shift(), { sleep: ms => sleeps.push(ms), clean: () => cleans.push(true), log: () => {} })
+  assert.deepEqual(sleeps, [5000, 10000])
+  assert.equal(cleans.length, 2)
+  assert.equal(results.length, 0)
+})
+
+test('git fetch does not retry permanent failures and keeps the final message', () => {
+  let calls = 0
+  assert.throws(() => retryGitFetch(() => { calls++; return { status: 128, stderr: "fatal: couldn't find remote ref deadbeef\n" } }, { sleep: () => assert.fail('slept'), log: () => {} }),
+    /couldn't find remote ref/)
+  assert.equal(calls, 1)
+})
+
+test('git fetch gives up after four transient attempts', () => {
+  let calls = 0
+  const sleeps = []
+  assert.throws(() => retryGitFetch(() => { calls++; return { status: 128, stderr: 'fatal: the remote end hung up unexpectedly\n' } }, { sleep: ms => sleeps.push(ms), log: () => {} }),
+    error => /remote end hung up/.test(error.message) && error.exitCode === 128)
+  assert.equal(calls, 4)
+  assert.deepEqual(sleeps, [5000, 10000, 20000])
+})
+
+test('transient pattern covers the documented transport failures only', () => {
+  for (const text of ['early EOF', 'Could not resolve host: github.com', 'Connection reset by peer', 'Connection timed out', 'HTTP 503']) assert.match(text, TRANSIENT_GIT_FAILURE)
+  for (const text of ["couldn't find remote ref", 'Authentication failed', 'Permission denied (publickey)']) assert.doesNotMatch(text, TRANSIENT_GIT_FAILURE)
+})
+
+test('system gate retries a dropped owner fetch before running the suite', t => {
+  const { root, checkout, ownersRoot } = orchestrationFixture(t)
+  let fetches = 0
+  const sleeps = []
+  main([], {
+    root,
+    ownersRoot,
+    sleep: ms => sleeps.push(ms),
+    prepareFixture: () => {},
+    spawn: (command, args, options) => {
+      if (command === 'npm') return { status: 0 }
+      if (args[0] === 'fetch') {
+        fetches++
+        if (fetches === 1) return { status: 128, stderr: 'fatal: fetch-pack: invalid index-pack output\n' }
+        return spawnSync(command, [args[0], args[1], pathToFileURL(checkout).href, args[3]], options)
+      }
+      return spawnSync(command, args, options)
+    },
+  })
+  assert.equal(sleeps[0], 5000)
+  assert.ok(fetches >= 2)
 })
