@@ -10,6 +10,13 @@ export const ENVIRONMENT_SETTINGS: readonly EnvironmentSettingDefinition[] = [
     "generated": false
   },
   {
+    "key": "VC_STAND_USERS_PASSWORD",
+    "label": "Общий пароль всех пользователей стенда (тестовый, например 1234)",
+    "secret": false,
+    "required": false,
+    "generated": false
+  },
+  {
     "key": "VC_PG_PASSWORD",
     "label": "Пароль PostgreSQL",
     "secret": true,

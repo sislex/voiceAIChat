@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: eebfc4c1
+checked: c224e5c8
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -206,6 +206,14 @@ Identity's `scrypt$<saltHex>$<hashHex>` format (node:crypto scrypt defaults, 16-
 salt, 32-byte key); until 2026-10-10 the script used pgcrypto bcrypt, which Identity
 never accepts, so no password opened a stand. `ensureAdmin` at Core startup uses
 `INSERT OR IGNORE` and does not change an existing `admin` password.
+
+The optional environment setting `VC_STAND_USERS_PASSWORD` (owner decision
+2026-10-18, for example `1234`) gives every stand user, the administrator included,
+that one test password after sanitization: `must_change_password = 0`, TOTP cleared,
+unblocked. Absent or empty keeps the behaviour above. It is a deliberately public
+test value, not a secret: the stand script does not mask it in stage logs. It only
+exists on the stand provisioning path (`sanitize_sql` in `environment_stand.py`);
+production never runs the sanitize step.
 
 To set a user's password on a stand, compute the hash with the stand's own Identity
 code inside its Core container and update `users` (never production), for example
