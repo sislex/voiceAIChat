@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-09
-checked: 03c516bc
+updated: 2026-10-18
+checked: 25dce159
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -73,9 +73,18 @@ so a keystroke re-renders only the composer (a 360-message Make chat spent ~440 
 1.5.9 fixes the phone task modal (title row with ⋯ and ✕, wrapping description) and project header tabs, makes external task cards readable, loads the board when the subprojects endpoint is absent, and adds the `SISLEXA_STORYBOOK_HMR=0` Storybook mode for Make's machine-bridge frames (mobile-fixes-v1, stand-fixes-v1, followup-fixes-v1/v2, storybook-bridge-v1/v2).
 1.5.6 adds the release disk preflight with the «Разобраться в чате» cleanup chat in Release Center (release-disk-preflight-v1 C02), asynchronous dev stand operations with gateway urls (dev-lane-v2 B02) and shared 0.1.26.
 Desktop 1.0.28 (owner commit `1b3afd4a`, agent 0.23.0, agent contracts 1.3.0) embeds the same renderer;
-`scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
+`scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one, unless Desktop is frozen. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
+
+**Desktop is frozen (since 2026-10-18).** Nobody uses Desktop now, so the owner froze its development and
+testing. The Desktop rows in `dependency-snapshots.json` and `vendor/owner-artifacts.json` carry
+`frozen: {since, reason}`. While frozen, the pinned Desktop archive (1.0.41) stays installed and served, but
+`verifySnapshot` skips the Desktop renderer provenance and embedded-renderer checks, and a Desktop pin
+change selects only pin-integrity checks in the application gate (no frontend browser suites). Core UI
+releases therefore no longer require a Desktop release: release Core UI and pin only Core UI. Electron
+QA stays opt-in (`VC_ELECTRON_TESTS=1`). To unfreeze, remove the `frozen` keys, release Desktop with the
+current Core UI and pin it; the renderer checks apply again.
 
 Core browser integration uses the published Core UI renderer, Desktop preload and its own Electron
 test dependency, with no `npm ci --prefix apps/desktop`. Desktop's owner gate

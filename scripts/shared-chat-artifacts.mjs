@@ -11,6 +11,15 @@ export const root = resolve(import.meta.dirname, '..')
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 export const requiredPackages = Object.freeze(['@sislexa/make', '@sislexa/web-reader', '@sislexa/playwright-reader', '@sislexa/core-ui', '@sislexa/desktop', '@sislexa/chat-ui', '@voicechat/chat-app', '@voicechat/ui-foundation', '@voicechat/shared', '@voicechat/make-contracts', '@voicechat/web-reader-contracts', '@voicechat/playwright-reader-contracts', '@voicechat/browser-contracts'])
 
+/**
+ * A frozen owner artifact stays pinned and installed, but is no longer re-released or
+ * re-verified against newer siblings. Desktop is frozen while nobody uses it: Core UI
+ * releases must not force a Desktop release just to re-embed the renderer.
+ */
+export const isFrozenArtifact = row => !!row?.frozen
+export const desktopFrozen = (snapshot = JSON.parse(readFileSync(join(root, 'dependency-snapshots.json')))) =>
+  isFrozenArtifact(snapshot.packages?.find(row => row.name === '@sislexa/desktop'))
+
 export function verifyDesktopRendererProvenance(desktop, ui) {
   assertReleaseVersions(desktop, 'Desktop renderer provenance')
   assertReleaseVersions(ui, 'Core UI provenance')
@@ -51,13 +60,16 @@ export async function verifySnapshot(snapshot, directory = root) {
     if (installed && !installed.link && (installed.resolved !== 'file:vendor/' + row.asset || installed.integrity !== row.integrity || installed.version !== row.version)) throw Error('Lockfile artifact mismatch: ' + row.name)
     archives.set(row.name, files)
   }
-  const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
-  const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
-  verifyDesktopRendererProvenance(desktop, ui)
+  const frozenDesktop = desktopFrozen(snapshot)
+  if (!frozenDesktop) {
+    const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
+    const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
+    verifyDesktopRendererProvenance(desktop, ui)
+  }
   const manifest = JSON.parse(archives.get('@sislexa/core-ui').get('manifest.json'))
   for (const [name, hash] of Object.entries(manifest.files)) {
     if (digest(archives.get('@sislexa/core-ui').get(name)) !== hash) throw Error('Core UI asset mismatch')
-    if (name.startsWith('renderer/')) {
+    if (name.startsWith('renderer/') && !frozenDesktop) {
       const embedded = archives.get('@sislexa/desktop').get('out/' + name)
       if (!embedded || digest(embedded) !== hash) throw Error('Desktop embeds different renderer: ' + name)
     }
