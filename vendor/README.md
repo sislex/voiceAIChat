@@ -14,6 +14,7 @@ This directory keeps only the manifests (`owner-artifacts.json`, `ui-libraries.j
   `~/.cache/sislexa/vendor`, override `SISLEXA_VENDOR_CACHE`), verified by sha256/integrity. Pin and
   provenance tools call this themselves when they need the bytes.
 - `npm run vendor:publish` — upload local archives the release lacks (needs `gh` auth with write
-  access). `release-composition apply` and `contracts-release` publish new pins automatically;
-  assets are immutable and never replaced.
+  access). Publishing is always an explicit opt-in: `release-composition apply --publish` or
+  `contracts-release ... --publish`. The GitHub adapter refuses to run inside a test runner; tests
+  inject fake publishers. Assets are immutable and never replaced.
 - `npm run vendor:check` — fails if any archive is tracked in git.

@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { VENDOR_URL, ensureVendorArchive, fetchVendorArchives, isVendorRef, pinnedArchives, publishVendorArchives, trackedVendorArchives, vendorAssetFromRef, vendorRef } from './vendor-store.mjs'
+import { VENDOR_URL, ensureVendorArchive, fetchVendorArchives, ghVendorPublisher, isVendorRef, pinnedArchives, publishVendorArchives, trackedVendorArchives, underTestRunner, vendorAssetFromRef, vendorRef } from './vendor-store.mjs'
 
 const asset = 'sislexa-demo-1.0.0-abcdef012345.tgz'
 const bytes = Buffer.from('demo archive bytes')
@@ -80,14 +80,28 @@ test('pinned archives come from the lockfile and owner manifests', async () => {
   } finally { srv.close(); rmSync(root, { recursive: true, force: true }) }
 })
 
-test('publish uploads only archives missing from the release', () => {
+test('publish uploads only archives missing from the release, through the injected publisher', () => {
   const root = fixture()
   writeFileSync(join(root, 'vendor', asset), bytes)
   writeFileSync(join(root, 'vendor', 'kept-1.0.0.tgz'), bytes)
   const uploads = []
-  assert.deepEqual(publishVendorArchives(root, { assets: new Set(['kept-1.0.0.tgz']), upload: file => uploads.push(file) }), [asset])
+  const fake = { assets: () => new Set(['kept-1.0.0.tgz']), upload: file => uploads.push(file) }
+  assert.deepEqual(publishVendorArchives(root, fake), [asset])
   assert.deepEqual(uploads, [join(root, 'vendor', asset)])
+  assert.throws(() => publishVendorArchives(root), /explicit publisher/)
   rmSync(root, { recursive: true, force: true })
+})
+
+test('the real GitHub publisher refuses to run under a test runner and never execs gh', () => {
+  assert.ok(underTestRunner(), 'node:test sets NODE_TEST_CONTEXT for this file')
+  const calls = []
+  const exec = (...args) => { calls.push(args); throw Error('gh must not be called from tests') }
+  const real = ghVendorPublisher({ exec })
+  assert.throws(() => real.assets(), /Refusing to touch the public vendor release/)
+  assert.throws(() => real.upload('/tmp/x.tgz'), /Refusing to touch the public vendor release/)
+  assert.deepEqual(calls, [])
+  for (const marker of [{ VITEST: 'true' }, { NODE_ENV: 'test' }, { JEST_WORKER_ID: '1' }]) assert.ok(underTestRunner(marker))
+  assert.equal(underTestRunner({}), false)
 })
 
 test('archives are never tracked in git, including this repository', () => {

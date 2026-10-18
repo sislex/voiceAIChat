@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: 2f3f592d
+checked: 4c4514f6
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -783,8 +783,11 @@ Release Center, stands, agents, Delivery Control workers) downloads and checks l
 extra step (`.npmrc` retries 5×). The repository had grown to ~866 MB from 272 committed archive versions;
 large clones broke on GitHub `fetch-pack` disconnects. `scripts/vendor-store.mjs` (`npm run vendor:fetch|publish|check`)
 fills `vendor/` from the cache `~/.cache/sislexa/vendor` for tools that read archive bytes (A07, shared-chat
-artifacts, owner-release-publish `--from-core`); `release-composition apply` and `contracts-release` upload new
-pins to the release (`--no-publish` skips it; needs `gh` write auth) before the lockfile points at them.
+artifacts, owner-release-publish `--from-core`). Uploading is an explicit opt-in: `release-composition apply --publish`,
+`contracts-release ... --publish` (required for a Core pin) or `npm run vendor:publish`; it needs `gh` write auth.
+The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner (`NODE_TEST_CONTEXT`, `VITEST`,
+`JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
+uploaded fixture archives to the real release (removed by the coordinator).
 Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
 `vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
 is rewritten.
