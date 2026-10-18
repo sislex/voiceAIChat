@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { archiveFiles } from './shared-chat-artifacts.mjs'
 import { requiredSources, requireSources } from './a07-composition.mjs'
+import { ensureVendorArchive, vendorRef } from './vendor-store.mjs'
 
 const root = new URL('..', import.meta.url).pathname
 const readJson = path => JSON.parse(readFileSync(join(root, path)))
@@ -35,7 +36,7 @@ test('S3 provider pins have verified source, bytes and consumer lock entries', a
   for (const row of manifest.providers) {
     assert.match(row.asset, /^[\w.-]+\.tgz$/)
     assert.match(row.commit, /^[a-f0-9]{40}$/)
-    const bytes = readFileSync(join(root, 'vendor', row.asset))
+    const bytes = await ensureVendorArchive(root, row.asset, { sha256: row.sha256, integrity: row.integrity })
     assert.equal(createHash('sha256').update(bytes).digest('hex'), row.sha256)
     assert.equal('sha512-' + createHash('sha512').update(bytes).digest('base64'), row.integrity)
     const files = await archiveFiles(bytes)
@@ -51,10 +52,10 @@ test('S3 provider pins have verified source, bytes and consumer lock entries', a
     assert.equal(pinned?.sha256, row.sha256)
     assert.equal(pinned?.commit, row.commit)
     const installed = lock.packages['node_modules/' + row.name]
-    assert.equal(installed?.resolved, 'file:vendor/' + row.asset)
+    assert.equal(installed?.resolved, vendorRef(row.asset))
     assert.equal(installed?.integrity, row.integrity)
     assert.equal(installed?.version, row.version)
-    assert(packageFiles.some(file => Object.values(readJson(file).dependencies ?? {}).concat(Object.values(readJson(file).devDependencies ?? {})).includes('file:' + (file === 'package.json' ? 'vendor/' : '../../vendor/') + row.asset)))
+    assert(packageFiles.some(file => Object.values(readJson(file).dependencies ?? {}).concat(Object.values(readJson(file).devDependencies ?? {})).includes(vendorRef(row.asset))))
   }
   for (const [tool, name] of [['identity', '@sislexa/identity'], ['billing', '@sislexa/billing'], ['llm-runner', '@sislex/llm-runner']]) {
     const row = manifest.providers.find(item => item.name === name)

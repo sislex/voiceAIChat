@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
+import { ensureVendorArchive, isVendorRef } from './vendor-store.mjs'
 
 export const requiredSources = Object.freeze({
   '@sislexa/identity': ['sislex/identity', '8020aa2dc89f1e6b7934bcb5b07e1bf1d38ab31d'],
@@ -37,7 +38,7 @@ export async function verifyA07Composition(directory = root) {
   for (const name of Object.keys(requiredSources)) {
     const row = inventory.packages.find(item => item.name === name)
     if (!/^[\w.-]+\.tgz$/.test(row.asset)) throw Error('Invalid archive name: ' + name)
-    const bytes = readFileSync(join(directory, 'vendor', row.asset))
+    const bytes = await ensureVendorArchive(directory, row.asset, { sha256: row.sha256, integrity: row.integrity })
     if (digest(bytes) !== row.sha256 || 'sha512-' + createHash('sha512').update(bytes).digest('base64') !== row.integrity) {
       throw Error('Artifact integrity mismatch: ' + name)
     }
@@ -48,7 +49,7 @@ export async function verifyA07Composition(directory = root) {
     // Runner is also installed as a dev dependency for exact-composition acceptance.
     {
       const installed = lock['node_modules/' + name]
-      if (installed?.resolved !== 'file:vendor/' + row.asset || installed?.integrity !== row.integrity
+      if (!isVendorRef(installed?.resolved, row.asset) || installed?.integrity !== row.integrity
         || installed?.version !== row.version) throw Error('Consumer lock mismatch: ' + name)
       for (const [file, content] of files) {
         if (digest(readFileSync(join(directory, 'node_modules', name, file))) !== digest(content)) {
