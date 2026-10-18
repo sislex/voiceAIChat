@@ -195,6 +195,17 @@ test('a Core UI replacement measures route budgets; an unproven replacement stay
   assert.equal(planApplicationChecks(['dependency-snapshots.json', 'apps/server/src/turns.ts'], { pins: { packages: ['@sislexa/core-ui'], tools: [], images: false, archives: [] } }).onlyPins, false)
 })
 
+test('a frozen Desktop pin keeps pin integrity checks but skips the frontend browser suites', () => {
+  const pins = { packages: ['@sislexa/desktop'], tools: [], images: false, archives: [] }
+  const frozen = planApplicationChecks(['dependency-snapshots.json'], { pins, frozenDesktop: true })
+  assert.equal(frozen.full, false)
+  assert.equal(frozen.verifyArtifacts, true)
+  assert.equal(frozen.pinChecks, true)
+  for (const suite of FRONTEND_E2E_FILES) assert.ok(!frozen.e2eFiles.includes(suite))
+  const active = planApplicationChecks(['dependency-snapshots.json'], { pins, frozenDesktop: false })
+  for (const suite of FRONTEND_E2E_FILES) assert.ok(active.e2eFiles.includes(suite))
+})
+
 test('root lock changes are explained only by the pinned packages', () => {
   const root = (spec, extra = {}) => ({ '': { name: 'r', devDependencies: { '@sislexa/core-ui': spec, ...extra } }, 'node_modules/@sislexa/core-ui': { version: '1', integrity: spec } })
   const before = { lockfileVersion: 3, packages: root('a') }, after = { lockfileVersion: 3, packages: root('b') }

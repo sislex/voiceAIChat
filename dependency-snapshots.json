@@ -151,6 +151,10 @@
       "integrity": "sha512-De5qjigZQVQx7PK61O6ANBn6U/8yeUwunEHQtiFSkJksmkvcCFiNYLH1zCD9JMeuvp39MqUKPaR8dsSo0EjkjQ==",
       "repository": "https://github.com/sislex/desktop",
       "commit": "c364b3925fcd63df3350429c18346600d7a15115",
+      "frozen": {
+        "since": "2026-10-18",
+        "reason": "Desktop is not used now; owner froze its development and testing. Keep the pinned archive; Core UI releases do not re-release Desktop."
+      },
       "provenance": {
         "repository": "https://github.com/sislex/desktop",
         "commit": "c364b3925fcd63df3350429c18346600d7a15115",

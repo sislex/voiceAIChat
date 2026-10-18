@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import './model-speed-artifacts.test.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { archiveFiles, verifySnapshot } from './shared-chat-artifacts.mjs'
+import { archiveFiles, verifySnapshot, desktopFrozen, verifyDesktopRendererProvenance } from './shared-chat-artifacts.mjs'
 import { pack } from 'tar-stream'
 import { gzipSync } from 'node:zlib'
 const snapshot = JSON.parse(readFileSync(new URL('../dependency-snapshots.json', import.meta.url)))
@@ -23,4 +23,20 @@ test('consumer extraction rejects links and traversal', async () => {
     stream.entry(header, ''); stream.finalize(); await done
     await assert.rejects(archiveFiles(gzipSync(Buffer.concat(chunks))), /Unsafe/)
   }
+})
+test('a frozen Desktop is pinned but not re-verified against the current Core UI renderer', async () => {
+  const frozenRow = { name: '@sislexa/desktop', frozen: { since: '2026-10-18', reason: 'unused' } }
+  assert.equal(desktopFrozen({ packages: [frozenRow] }), true)
+  assert.equal(desktopFrozen({ packages: [{ name: '@sislexa/desktop' }] }), false)
+  assert.equal(desktopFrozen({ packages: [] }), false)
+  if (!desktopFrozen(snapshot)) return
+  const archives = await verifySnapshot(snapshot)
+  const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
+  const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
+  let matches = true
+  try { verifyDesktopRendererProvenance(desktop, ui) } catch { matches = false }
+  // While frozen the pinned Desktop may embed an older renderer; unfreezing restores the check.
+  const unfrozen = structuredClone(snapshot)
+  delete unfrozen.packages.find(row => row.name === '@sislexa/desktop').frozen
+  if (!matches) await assert.rejects(verifySnapshot(unfrozen), /Desktop/)
 })
