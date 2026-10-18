@@ -38,7 +38,8 @@ authorization, transport and browser integration checks. See
 ## Commands
 
 ```bash
-npm install                  # Core workspaces only
+npm install                  # Core workspaces only; pinned owner archives install from the `vendor` release URL
+npm run vendor:fetch         # put pinned archives into vendor/ for pin/provenance tools (never commit *.tgz)
 npm run dev:web              # Core :8787 and published UI proxy :5273
 npm run gate:quick -- --base <sha> # task typecheck/build and affected tests
 npm run test:files -- <files> # rerun failed repository-relative test files

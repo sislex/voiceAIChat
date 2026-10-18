@@ -17,6 +17,7 @@ import { RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease } from '../pac
 import { archiveDigests, rowCommit, rowRepository } from './owner-release-publish.mjs'
 import { assertReleaseVersions } from './release-version.mjs'
 import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+import { publishVendorArchives } from './vendor-store.mjs'
 
 const MANIFESTS = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -202,10 +203,13 @@ export function main(args = process.argv.slice(2), core = resolve(import.meta.di
   if (command === 'apply') {
     const index = args.indexOf('--dir')
     if (index < 0) throw new Error('Нужен --dir <каталог с выпусками>')
-    console.log(JSON.stringify(applyComposition(core, resolve(args[index + 1]))))
+    const result = applyComposition(core, resolve(args[index + 1]))
+    // Archives are not committed: new pins must exist in the `vendor` release before `npm ci` can install them.
+    if (!args.includes('--no-publish')) publishVendorArchives(core)
+    console.log(JSON.stringify(result))
     return
   }
-  throw new Error('Команды: current | apply --dir <каталог>')
+  throw new Error('Команды: current | apply --dir <каталог> [--no-publish]')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
