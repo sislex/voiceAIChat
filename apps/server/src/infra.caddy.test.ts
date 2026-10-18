@@ -67,14 +67,14 @@ describe('Caddyfile', () => {
       expect(block).toMatch(/handle \/internal\/\* \{\s*respond 404/)
     }
     expect(compose).toMatch(/^  make:\n/m)
-    expect(compose).toContain('VC_MAKE_MODE: remote')
+    expect(compose).toContain('VC_MAKE_MODE: ${VC_MAKE_MODE:-remote}')
   })
 
   it('API Playwright Reader на обоих хостах идёт в отдельное приложение', () => {
     expect(caddyfile.match(/reverse_proxy playwright-reader:8797/g)).toHaveLength(2)
     expect(caddyfile.match(/@playwright_reader path \/api\/browser \/api\/browser\/\*/g)).toHaveLength(2)
     expect(compose).toMatch(/^  playwright-reader:\n/m)
-    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: remote')
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: ${VC_PLAYWRIGHT_READER_MODE:-remote}')
     // Stands may override the address (environments-v3 placement); production keeps the default.
     expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}')
   })

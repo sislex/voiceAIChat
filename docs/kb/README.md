@@ -11,12 +11,12 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ⚠ код изменён 2026-10-18, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-18 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-19 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-18 | ⚠ 344 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 170 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 637 коммит(ов) в areas после сверки: ea038d11b fix(kanban-assistant): skip task-launch rule when autopilot is on … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-18 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-18 | ⚠ 573 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 1480 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 784 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 903 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 922 коммит(ов) в areas после сверки: ea038d11b fix(kanban-assistant): skip task-launch rule when autopilot is on … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2148 коммит(ов) в areas после сверки: e24cd9254 fix(shared): mark Core-side Shared peers optional … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2149 коммит(ов) в areas после сверки: ef60becdf chore: pin Shared 0.1.37 (optional Core-side peers) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1083 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1199. Последние:
+Всего записей: 1200. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md) — shared-optional-peers
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md) — pin-shared-0-1-37
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md) — pin-shared-0-1-36
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-deployment-profiles-c01.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-deployment-profiles-c01.md) — deployment-profiles-c01
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-vendor-publish-opt-in.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-vendor-publish-opt-in.md) — vendor-publish-opt-in
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-vendor-archives-out-of-git.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-vendor-archives-out-of-git.md) — vendor-archives-out-of-git
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-system-gate-fetch-retry.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-system-gate-fetch-retry.md) — system-gate-fetch-retry
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md) — stand-users-password
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md) — stand-runner-profile-dev-core
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-32.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-32.md) — pin-kanban-0-2-32
-- [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md) — pin-kanban-0-2-31
 
 ## Исторические планы
 

@@ -1,6 +1,6 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-18
+updated: 2026-10-19
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -18,6 +18,25 @@ Module details: `playwright-reader:README.md`
 Module details: `core-ui:README.md`
 
 ## Core frontend ownership
+
+### Deployment application selection
+
+Core reads the B01 `VC_APPLICATIONS` selector and `VC_CORE_ID` in `config.ts`.
+An absent selector preserves legacy module modes. An explicit list enables only
+its application IDs; `id=https://host` enables an external application. Make,
+Web Reader, Playwright Reader and Image Studio accept `embedded|remote|off`;
+Projects retains `remote|off`. External applications use off local adapters:
+Core starts neither their module nor their UI proxy or MCP registration.
+Their delegation and one-use ticket endpoints remain available.
+
+`GET /api/system/applications` exposes the deployment manifest to authenticated
+clients. Disabled application routes and external application UI prefixes return
+`404 { error: 'application_disabled' }`, including `/applications/:id/*` assets.
+Core authentication intersects tenant capabilities with enabled applications;
+queued turns apply the same intersection when refreshing tenant entitlements.
+Voice STT/TTS capabilities belong to Chat. External applications retain tenant
+capabilities but do not appear in local runner MCP inventories. Identity login
+remains Core infrastructure even in a chat-only deployment.
 
 `sislex/sislexa-core-ui` owns the Core browser client, renderer, UI modules, stories and internal UI gates. Generic UI Kit/Foundation remain in `sislex/sielexa-ui`. Core consumes a versioned static archive with source provenance and per-file hashes; there is no local compatibility workspace. API contracts remain authored in Core and are exported from an exact committed SHA for UI consumption. Changes to an owner package reach consumers only through an explicit pinned archive upgrade and compatibility checks.
 

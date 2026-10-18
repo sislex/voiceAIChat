@@ -1,7 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-18
-checked: 2220955a
+updated: 2026-10-19
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -39,6 +38,39 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## Deployment application profiles
+
+`VC_APPLICATIONS=chat` selects a chat-only Core. Other examples are
+`chat,make`, `chat,make=https://make.example.org`, and
+`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
+tickets. External URLs must be HTTPS without credentials, query or fragment.
+No selector preserves legacy Core modes.
+
+`python3 scripts/prod/compose_env.py applications --file .env` prints derived
+`COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the
+Compose environment before invoking root Compose, or use
+`python3 scripts/prod/compose_env.py run -- up --build -d`. `npm run docker`, the
+deployment script and the stand lifecycle apply this automatically in memory.
+With no selector, the generator preserves the former
+default local services; existing explicit stand module profiles remain selective.
+Local applications enable their service profiles; external applications do not.
+Local LLM runners are omitted when both provider URLs are supplied. Voice runners
+belong to local Chat; browser runners belong to local Playwright Reader.
+Optional service dependencies use `required: false`.
+
+Local Projects enables Kanban and Postgres. When Projects is off or external,
+the stand no longer requires those profiles or a database URL; SQLite remains
+available. Restoring a Postgres snapshot still requires its profile explicitly.
+External application credentials continue to use the B01 per-application token
+settings; the generator does not create or modify credentials.
+
+Before merge, the operator must validate the four application combinations on
+`dev-m2`: inspect the manifest, authenticate, check disabled prefixes and runner
+MCP inventories, redeem an external Make ticket, and inspect Compose services.
+This commissioning is separate from repository tests and has not been performed
+by C01's sandbox worker (deployment is prohibited in that task).
+
 
 # Деплой: Docker, HTTPS, прод-сервер, env
 
