@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-19
-checked: 4291f52a7
+checked: 97095fdfe
 areas:
   - packages/shared/src
 ---
@@ -47,6 +47,15 @@ with scripts disabled when a lockfile exists, and runs `npm pack -w <package>`.
 Shared uses the selected commit's `build:core-contracts` script, which derives
 its peer baseline from that commit's lockfile. No source checkout is switched or
 version-bumped. The packed name and version are verified before Core is changed.
+
+Since 0.1.38 the Core-side peers of the packed Shared (Identity, SDK, Voice, agent,
+browser, image-studio and make contracts) are published as optional `"*"` ranges
+(`peerDependenciesMeta.optional`): services own other versions of these private
+packages and must never fetch them from the public registry. The exact Core
+versions stay in the archive's `release-source.json` (`corePeers`). Consumers that
+also depend on packages with exact Shared or component-runtime peers (chat-ui,
+Identity) add root overrides `"$<name>"` for `@voicechat/shared`,
+`@sislexa/component-runtime` and `@sislexa/agent-contracts`.
 
 Archives use a SHA-256 prefix of 12 characters in the asset name. Every tracked
 source `package.json` reference is updated to the relative vendor archive;
