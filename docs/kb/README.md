@@ -16,8 +16,8 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 10 коммит(ов) в areas после сверки: c8a9b96c chore(vendor): move pinned owner archives out of git into the vendor release … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 30 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-16 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-18 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 148 коммит(ов) в areas после сверки: e1cb0701 chore: pin Kanban 0.2.31 (assistant run siblings, stand runner, dev overrides) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-18 | ⚠ 1 коммит(ов) в areas после сверки: 74719b63 chore: pin Kanban 0.2.32 (stand users password, dev swap fixes) |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 149 коммит(ов) в areas после сверки: 74719b63 chore: pin Kanban 0.2.32 (stand users password, dev swap fixes) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 13 коммит(ов) в areas после сверки: a189b2a3 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 57 коммит(ов) в areas после сверки: c0d0b635 operator-assistant-model-v1 B01 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on |
@@ -27,11 +27,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 92 коммит(ов) в areas после сверки: c0d0b635 operator-assistant-model-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 10 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 42 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 134 коммит(ов) в areas после сверки: fd843ad4 fix(vendor): publish to the vendor release only on explicit opt-in, never from tests … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 135 коммит(ов) в areas после сверки: 74719b63 chore: pin Kanban 0.2.32 (stand users password, dev swap fixes) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 118 коммит(ов) в areas после сверки: b33170a6 chore: pin Identity 1.5.0 (API tokens for external agents) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 9 коммит(ов) в areas после сверки: c8a9b96c chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 30 коммит(ов) в areas после сверки: b6bf6476 chore(desktop): freeze Desktop so Core UI releases no longer require it … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 31 коммит(ов) в areas после сверки: 74719b63 chore: pin Kanban 0.2.32 (stand users password, dev swap fixes) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 52 коммит(ов) в areas после сверки: c0d0b635 operator-assistant-model-v1 B01 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-17, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ⚠ 2 коммит(ов) в areas после сверки: c8a9b96c chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-17 | ⚠ 4 коммит(ов) в areas после сверки: 2f3f592d Merge pull request #727 from sislex/feat/stand-users-password … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-18, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-16 | ⚠ 16 коммит(ов) в areas после сверки: fd843ad4 fix(vendor): publish to the vendor release only on explicit opt-in, never from tests … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-16 | ⚠ 17 коммит(ов) в areas после сверки: 74719b63 chore: pin Kanban 0.2.32 (stand users password, dev swap fixes) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-18, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-17, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
