@@ -1,7 +1,7 @@
 import { readFileSync, lstatSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { validateCoreId, type ClientMessage, type ServerMessage, type TrustedCoreEntry, type CoreUsage, type CoreLimits, type SharedServiceSession, type EnterTicketRedeemRequest, type EnterTicketRedeemResponse } from '@voicechat/shared'
+import { isEnterTicketRedeemResponse, validateCoreId, type ClientMessage, type ServerMessage, type TrustedCoreEntry, type CoreUsage, type CoreLimits, type SharedServiceSession, type EnterTicketRedeemRequest } from '@voicechat/shared'
 
 export class CoreServiceError extends Error {
   constructor(readonly code: string, readonly statusCode = 502) { super(code) }
@@ -82,9 +82,10 @@ export class TrustedCoreRegistry {
         const body = await response.json().catch(() => ({})) as { error?: string }
         throw new CoreServiceError(['ticket_invalid', 'ticket_used', 'application_disabled', 'core_unknown'].includes(body.error ?? '') ? body.error! : 'ticket_invalid', response.status)
       }
-      const body = await response.json() as EnterTicketRedeemResponse
-      if (!body.user?.name || !Array.isArray(body.capabilities) || !body.capabilities.every(c => typeof c === 'string') || !Number.isFinite(body.expiresAt) || body.expiresAt <= Date.now() || !(body.tenantId === null || typeof body.tenantId === 'string')) throw new CoreServiceError('ticket_invalid', 401)
-      return { user: body.user, tenantId: body.tenantId, capabilities: body.capabilities, expiresAt: body.expiresAt, coreId }
+      const body: unknown = await response.json().catch(() => null)
+      if (!isEnterTicketRedeemResponse(body)) throw new CoreServiceError('ticket_invalid', 401)
+      return { user: body.user, tenantId: body.tenantId, capabilities: body.capabilities, expiresAt: body.expiresAt,
+        delegation: { token: body.delegation.token, expiresAt: body.delegation.expiresAt }, coreId }
     }
     throw new CoreServiceError('core_unavailable', 503)
   }
@@ -109,15 +110,19 @@ export function coreDataPath(root: string, coreId: string, ...parts: string[]): 
   return path
 }
 
-/** The Identity grant is the same grant consumed by Core ChatDelegation/turns.ts. */
+/**
+ * Without an explicit grant the client uses the Core-issued delegation from the redeemed ticket; Core accepts it only
+ * next to this service's own credential. An explicit Identity grant keeps the user-only path of Core ChatDelegation.
+ */
 export class CoreDelegationClient {
-  constructor(private readonly registry: TrustedCoreRegistry, private readonly session: SharedServiceSession, private readonly grant: string) {}
+  constructor(private readonly registry: TrustedCoreRegistry, private readonly session: SharedServiceSession, private readonly grant?: string) {}
   request(path: string, init: RequestInit = {}): Promise<Response> {
-    if (this.session.expiresAt <= Date.now()) throw new CoreServiceError('session_expired', 401)
+    const expiresAt = this.grant === undefined ? Math.min(this.session.expiresAt, this.session.delegation?.expiresAt ?? 0) : this.session.expiresAt
+    if (expiresAt <= Date.now()) throw new CoreServiceError('session_expired', 401)
     const headers = new Headers(init.headers)
-    headers.set('x-sislexa-delegation', this.grant)
+    headers.set('x-sislexa-delegation', this.grant ?? this.session.delegation.token)
     if (this.session.tenantId) headers.set('x-sislexa-tenant-id', this.session.tenantId)
-    return this.registry.request(this.session, path, { ...init, headers }, 5000, false)
+    return this.registry.request(this.session, path, { ...init, headers }, 5000, this.grant === undefined)
   }
   chatSession(conversationId: string): Promise<Response> { return this.request('/api/chat/session?conversationId=' + encodeURIComponent(conversationId), { method: 'POST' }) }
 
@@ -155,7 +160,8 @@ export class CoreDelegationClient {
     })
     const send = (message: ClientMessage) => {
       this.registry.resolve(this.session)
-      if (this.session.expiresAt <= Date.now() || exchange.expiresAt! <= Date.now()) { socket.close(); throw new CoreServiceError('session_expired', 401) }
+      if (this.session.expiresAt <= Date.now() || exchange.expiresAt! <= Date.now()
+        || this.grant === undefined && this.session.delegation.expiresAt <= Date.now()) { socket.close(); throw new CoreServiceError('session_expired', 401) }
       socket.send(JSON.stringify(message))
     }
     send({ t: 'chat.connect', v: 1, conversationId })

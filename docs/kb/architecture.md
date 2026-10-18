@@ -1,6 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-19
+checked: eb3d97be2
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -362,13 +363,16 @@ URLs. `coreDataPath(root, coreId, ...segments)` rejects traversal and existing
 symlinks. Keep the root and its ancestors operator-owned; this helper does not
 replace race-free file creation permissions.
 
-`CoreDelegationClient.chatSession` exchanges the existing Identity delegation grant
-at the session's Core. `connect` uses the returned scoped WS handle, sends the
+`CoreDelegationClient.chatSession` exchanges a delegation at the session's Core: by
+default the Core-issued `session.delegation.token` from the redeemed ticket, sent with
+the service credential; an explicit Identity grant passed to the constructor keeps the
+user-only path without a service bearer. `connect` uses the returned scoped WS handle, sends the
 existing `ClientMessage` contract and delivers `ServerMessage` notifications and
 `claude.usage` billing events. Core `turns.ts` remains responsible for grant checks,
 model execution, Billing admission and settlement. Service credentials never become
-user credentials. Applications still acquire an Identity grant separately; an enter
-ticket does not mint a delegation grant.
+user credentials. `redeem()` rejects responses without a valid delegation that
+outlives neither the session nor the current time (`isEnterTicketRedeemResponse`).
+See data-auth.md «Core-issued ticket delegation».
 
 Use `registry.account(coreId, delta)` before allocating resources; all counters and
 returned usage records carry `coreId`. Optional limits are `diskBytes`, `workshops`,

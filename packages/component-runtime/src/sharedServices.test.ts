@@ -30,10 +30,11 @@ describe('shared services', () => {
     } finally { rmSync(root, { recursive: true }) }
   })
   it('retries one transient error and preserves session core; never retries used tickets', async () => {
-    const transport = vi.fn<typeof fetch>().mockRejectedValueOnce(Error('network')).mockResolvedValueOnce(Response.json({ user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000 }))
+    const transport = vi.fn<typeof fetch>().mockRejectedValueOnce(Error('network')).mockResolvedValueOnce(Response.json({ user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt: Date.now() + 60000 } }))
     const registry = new TrustedCoreRegistry(() => 'secret', transport)
     registry.add(entry('core-a'))
-    expect((await registry.redeem('core-a', { ticket: 'opaque', application: 'make' })).coreId).toBe('core-a')
+    const session = await registry.redeem('core-a', { ticket: 'opaque', application: 'make' })
+    expect(session.coreId).toBe('core-a'); expect(session.delegation.token).toBe('sxd_' + 'd'.repeat(43))
     expect(transport).toHaveBeenCalledTimes(2)
     transport.mockReset().mockResolvedValue(Response.json({ error: 'ticket_used' }, { status: 401 }))
     await expect(registry.redeem('core-a', { ticket: 'opaque', application: 'make' })).rejects.toThrow('ticket_used')
@@ -43,12 +44,27 @@ describe('shared services', () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}))
     const registry = new TrustedCoreRegistry(() => 'secret', transport)
     registry.add(entry('core-a'))
-    const client = new CoreDelegationClient(registry, { coreId: 'core-a', user: { name: 'alice', role: 'admin' }, tenantId: 'tenant', capabilities: [], expiresAt: Date.now() + 60000 }, 'grant')
+    const client = new CoreDelegationClient(registry, { coreId: 'core-a', user: { name: 'alice', role: 'admin' }, tenantId: 'tenant', capabilities: [], expiresAt: Date.now() + 60000, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt: Date.now() + 60000 } }, 'grant')
     await client.chatSession('conversation')
     const headers = new Headers(transport.mock.calls[0][1]?.headers)
     expect(headers.get('authorization')).toBeNull()
     expect(headers.get('x-sislexa-delegation')).toBe('grant')
     expect(String(transport.mock.calls[0][0])).toBe('https://core-a.example.org/api/chat/session?conversationId=conversation')
+  })
+  it('rejects a redeem response without a Core delegation', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000 }))
+    const registry = new TrustedCoreRegistry(() => 'secret', transport); registry.add(entry('core-a'))
+    await expect(registry.redeem('core-a', { ticket: 'opaque', application: 'make' })).rejects.toThrow('ticket_invalid')
+  })
+  it('defaults to the ticket delegation and sends it with the service credential', async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}))
+    const registry = new TrustedCoreRegistry(() => 'secret', transport); registry.add(entry('core-a'))
+    const session = { coreId: 'core-a', user: { name: 'alice', role: 'admin' as const }, tenantId: 'tenant', capabilities: [], expiresAt: Date.now() + 60000, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt: Date.now() + 60000 } }
+    await new CoreDelegationClient(registry, session).chatSession('conversation')
+    const headers = new Headers(transport.mock.calls[0][1]?.headers)
+    expect(headers.get('authorization')).toBe('Bearer secret')
+    expect(headers.get('x-sislexa-delegation')).toBe(session.delegation.token)
+    expect(() => new CoreDelegationClient(registry, { ...session, delegation: { ...session.delegation, expiresAt: Date.now() - 1 } }).chatSession('conversation')).toThrow('session_expired')
   })
   it('serves authenticated per-core usage', async () => {
     const registry = new TrustedCoreRegistry(); registry.add(entry('core-a'))
@@ -79,7 +95,7 @@ describe('shared services', () => {
   it('sends existing turn frames and receives billing and notifications from the session core', async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ socketUrl: '/ws?session=scoped', expiresAt: Date.now() + 60000 }))
     const registry = new TrustedCoreRegistry(() => 'secret', transport); registry.add(entry('core-a'))
-    const client = new CoreDelegationClient(registry, { coreId: 'core-a', user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000 }, 'grant')
+    const client = new CoreDelegationClient(registry, { coreId: 'core-a', user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt: Date.now() + 60000 } }, 'grant')
     const socket = Object.assign(new EventTarget(), { send: vi.fn(), close: vi.fn() })
     const notification = vi.fn(); const billing = vi.fn()
     const factory = vi.fn((url: string) => { setTimeout(() => socket.dispatchEvent(new Event('open')), 0); return socket as unknown as WebSocket })

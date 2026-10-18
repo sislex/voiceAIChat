@@ -32,7 +32,10 @@ describe('application tickets', () => {
       const redeem = (token: string, application = 'make') => app.inject({ method: 'POST', url: '/internal/v1/tickets/redeem', headers: { authorization: `Bearer ${token}` }, payload: { ticket: url.searchParams.get('ticket'), application } })
       expect((await redeem('projects-secret')).statusCode).toBe(401)
       expect((await redeem('projects-secret', 'projects')).json()).toEqual({ error: 'ticket_invalid' })
-      expect((await redeem('make-secret')).json().user.name).toBe('alice')
+      const session = (await redeem('make-secret')).json()
+      expect(session.user.name).toBe('alice')
+      expect(session.delegation.token).toMatch(/^sxd_/)
+      expect(session.delegation.expiresAt).toBe(session.expiresAt)
       expect((await redeem('make-secret')).json()).toEqual({ error: 'ticket_used' })
     } finally { await app.close() }
   })

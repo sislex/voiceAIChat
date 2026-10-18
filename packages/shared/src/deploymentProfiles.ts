@@ -30,7 +30,25 @@ export function serializeApplications(applications: DeploymentApplication[]): st
   return value
 }
 export interface EnterTicketRedeemRequest { ticket: string; application: ApplicationId }
-export interface EnterTicketRedeemResponse { user: SessionUser; tenantId: string | null; capabilities: string[]; expiresAt: number }
+/**
+ * Core-issued delegation returned with a redeemed ticket. The service sends it as `x-sislexa-delegation`
+ * together with its own service credential (`authorization: Bearer …`) to act for the user in that core.
+ */
+export interface EnterTicketDelegation { token: string; expiresAt: number }
+export interface EnterTicketRedeemResponse { user: SessionUser; tenantId: string | null; capabilities: string[]; expiresAt: number; delegation: EnterTicketDelegation }
+export const TICKET_DELEGATION_PREFIX = 'sxd_'
+export function isTicketDelegationToken(value: unknown): value is string {
+  return typeof value === 'string' && /^sxd_[A-Za-z0-9_-]{43}$/.test(value)
+}
+/** Shape check for a redeem response; the delegation must not outlive the session it belongs to. */
+export function isEnterTicketRedeemResponse(value: unknown, now = Date.now()): value is EnterTicketRedeemResponse {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Partial<EnterTicketRedeemResponse>
+  return typeof v.user?.name === 'string' && !!v.user.name && Array.isArray(v.capabilities) && v.capabilities.every(c => typeof c === 'string')
+    && (v.tenantId === null || typeof v.tenantId === 'string') && Number.isSafeInteger(v.expiresAt) && v.expiresAt! > now
+    && !!v.delegation && isTicketDelegationToken(v.delegation.token) && Number.isSafeInteger(v.delegation.expiresAt)
+    && v.delegation.expiresAt > now && v.delegation.expiresAt <= v.expiresAt!
+}
 export interface CoreLimits { diskBytes?: number; workshops?: number; machines?: number }
 export interface TrustedCoreEntry { coreId: string; url: string; credentialRef: string; limits?: CoreLimits }
 export interface CoreUsage { coreId: string; diskBytes: number; workshops: number; machines: number }
