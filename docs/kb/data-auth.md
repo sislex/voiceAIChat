@@ -1,6 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-18
+updated: 2026-10-19
+checked: eb3d97be2
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -960,7 +961,7 @@ Each application has its own server-side `VC_APPLICATION_<ID>_TOKEN`, with upper
 ids and hyphens replaced by underscores (for example `VC_APPLICATION_WEB_READER_TOKEN`).
 `POST /internal/v1/tickets/redeem` accepts `{ ticket, application }`, authenticates
 that application's bearer credential, and returns only
-`{ user, tenantId, capabilities, expiresAt }`. The common `VC_INTERNAL_TOKEN` does
+`{ user, tenantId, capabilities, expiresAt, delegation: { token, expiresAt } }`. The common `VC_INTERNAL_TOKEN` does
 not authenticate this endpoint. Configure the matching service registry secret
 separately; no credentials are generated or changed by this feature. Replies are
 `no-store`; do not log bodies, Authorization, or entry URLs containing tickets.
@@ -970,5 +971,27 @@ limits each attempt to five seconds, and retries once only for transport/5xx err
 A lost success response may result in `ticket_used` on retry: obtain a fresh ticket,
 never replay its authority. The returned session carries the selected `coreId`.
 Consumers must revalidate their local session against that Core on subsequent
-requests and enforce their own cookie/CSRF policy. `expiresAt` is the ticket's
-remaining authorization deadline, not an independently extended service session.
+requests and enforce their own cookie/CSRF policy. The ticket itself lives 60 seconds;
+the redeemed session `expiresAt` is `SHARED_SESSION_TTL_MS` (8 hours) after redemption.
+
+### Core-issued ticket delegation
+
+Redemption also issues a Core delegation (`apps/server/src/auth/ticketDelegation.ts`):
+an opaque `sxd_` + 256-bit token, stored only as a SHA-256 digest in memory and bound
+to user, tenant, application, `coreId`, the issuing Core session id and that session's
+Billing reference. It expires with the redeemed session and is revoked when the issuing
+session is revoked, when the application is no longer an enabled external application
+with a credential, or by restart (the service re-enters with a fresh ticket).
+
+The service sends it as `x-sislexa-delegation` together with its own
+`authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>`; Core rejects it with another
+application's credential, without a credential, or with cookies. It is accepted on the
+same delegated routes as Identity grants (`/api/chat/session`, `/api/chat/context`,
+`/api/conversations/*` reads and the exchanged `/ws`). `ChatDelegation` authorizes
+read/write/execute on conversations the delegated user owns in the delegated tenant
+(and their project's tenant), without Identity introspection; `/api/chat/session`
+requires an explicit `conversationId`. Delegated turns are admitted through the
+issuing user session's Billing reference with application attribution
+`{ originApplicationId: <application>, executorApplicationId: 'core', delegationId: null }`;
+a build without Billing runs them like the user's own turns. Identity grants keep
+their existing behaviour.

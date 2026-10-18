@@ -423,8 +423,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
         if (req.attachments?.length || req.assistantContext) throw Error('delegation_denied')
         await deps.delegation.authorize(req.delegation, 'execute', conversationId)
-        // Applications must use live delegated Billing admission, never the legacy fallback.
-        if (!deps.accounting) throw Error('delegation_billing_required')
+        // Applications must use live delegated Billing admission, never the legacy fallback. Core ticket
+        // delegations act within the user's own build and follow its billing like the user's own turns.
+        if (!deps.accounting && !deps.delegation.referenceTicket(req.delegation)) throw Error('delegation_billing_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
         // takeQueuedTurn removes the row before admission. Retain rejected work
@@ -532,8 +533,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const selectedClient = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
-      delegatedAuthorization: req.delegation ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
+    // A ticket delegation is admitted through the issuing user session, attributed to its application.
+    const ticket = req.delegation ? deps.delegation!.referenceTicket(req.delegation) : undefined
+    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: ticket ? ticket.billingSession : req.billingSession,
+      delegatedAuthorization: req.delegation && !ticket ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
       application: req.delegation ? deps.delegation!.attribution(req.delegation) : undefined,
       authorize: req.delegation ? () => deps.delegation!.authorize(req.delegation!, 'execute', conversationId) : undefined,
       originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient

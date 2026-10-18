@@ -8,9 +8,9 @@ import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
-import { applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
+import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
-import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS } from '@voicechat/shared'
+import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
 import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
 import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/index'
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
@@ -36,7 +36,7 @@ import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
@@ -87,6 +87,8 @@ import { SessionHub } from "@sislexa/identity/server/users/sessionHub"
  * имён по схеме в `users/auth.ts`), по http — `vc_session`. Защищённое имя
  * приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
  */
+const sameSecret = (value: string | undefined, expected: string) =>
+  timingSafeEqual(createHash('sha256').update(value ?? '').digest(), createHash('sha256').update(expected).digest())
 function cookieToken(header: string | undefined): string | undefined {
   if (!header) return undefined
   let plain: string | undefined
@@ -486,6 +488,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const billingSessions = new BillingSessions()
   const revokeBillingSession = sessionHub.onChange(event => {
     if (event.revokedSid) billingSessions.revoke(event.user, event.revokedSid)
+    if (event.revokedSid) ticketStore.delegations.revoke({ userId: event.user, sid: event.revokedSid })
   })
   app.addHook('onClose', async () => revokeBillingSession())
   // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
@@ -498,8 +501,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegationClient = opts.config.delegatedChatEnabled ? opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
     url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
   }) : undefined) : undefined
-  const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now,
-    component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy') : undefined
+  // External applications with a service credential receive Core-issued delegations from redeemed tickets.
+  const ticketStore = ticketOptions.tickets ?? new ApplicationTickets()
+  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'external')
+    && !!ticketOptions.credentials[id]
+  const ticketDelegation = deployment.applications.some(a => ticketApplications(a.id))
+    ? { delegations: ticketStore.delegations, enabled: ticketApplications } : undefined
+  const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
+    component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
   const makeRequests = new MakeRequestAuthority(async userId => {
@@ -529,10 +538,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     try {
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
       if (!/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      if (isTicketDelegationToken(grant)) {
+        // Ticket delegations are bearer-bound to the issuing application's own service credential.
+        const ticket = delegation.ticketGrant(grant)
+        const credential = ticket && ticketOptions.credentials[ticket.applicationId]
+        if (!credential || req.headers.cookie || !sameSecret(req.headers.authorization, `Bearer ${credential}`)) throw new DelegationDenied()
+      }
       const user = await delegation.user(grant)
       const tenant = req.headers['x-sislexa-tenant-id']
       if (tenant !== undefined && tenant !== user.account?.tenantId) throw new DelegationDenied()
-      if (req.headers.authorization || req.headers.cookie) {
+      if (!isTicketDelegationToken(grant) && (req.headers.authorization || req.headers.cookie)) {
         const session = await sessionAuthenticate(req)
         if (!session.ok || !sameAccountContext(user, session.user)) throw new DelegationDenied()
       }
@@ -1504,7 +1519,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment })
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, issuer: req => {
+    const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
+    const sid = verifyToken(token, sessionSecret)?.sid ?? null
+    const billingSession = token && req.user ? billingSessions.register(req.user, sid, token) : undefined
+    return { sid, ...(billingSession ? { billingSession } : {}) }
+  } })
   registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined, internalToken: opts.config.internalToken })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.

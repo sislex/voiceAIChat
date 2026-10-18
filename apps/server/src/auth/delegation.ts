@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { isDelegationIntrospection, permitsDelegatedAction, type DelegationIntrospectionClient, type DelegatedPrincipal, type DelegationScope } from '@sislexa/identity/contracts/index'
-import { createVerifiedChatApplicationContext, type ChatConnectionSnapshot, type ChatPermission, type SessionUser, type ChatDelegationReference, type ChatApplicationAttribution } from '@voicechat/shared'
+import { createVerifiedChatApplicationContext, isTicketDelegationToken, type ApplicationId, type ChatConnectionSnapshot, type ChatPermission, type SessionUser, type ChatDelegationReference, type ChatApplicationAttribution } from '@voicechat/shared'
+import type { TicketDelegationGrant, TicketDelegations } from './ticketDelegation.js'
 import { accountContext } from '@sislexa/identity/server/users/productPolicy'
 import type { VoiceChatDb } from '../db/database.js'
 
@@ -16,11 +17,14 @@ export function rejectsAttribution(value: unknown): boolean {
   return Object.entries(value).some(([key, item]) => reserved.has(key) || rejectsAttribution(item))
 }
 
+/** Core-issued ticket delegations are honoured only while their application stays enabled. */
+export interface TicketDelegationAuthority { delegations: TicketDelegations; enabled: (application: ApplicationId) => boolean }
+
 /** Tokens stay in memory. Persisted queue references fail closed after a restart. */
 export class ChatDelegation {
   private credentials = new Map<string, { token: string; principal: DelegatedPrincipal; billingUserId: string }>()
-  constructor(private client: DelegationIntrospectionClient, private db: VoiceChatDb, private now = Date.now,
-    private environmentId = 'legacy') {}
+  constructor(private client: DelegationIntrospectionClient | undefined, private db: VoiceChatDb, private now = Date.now,
+    private environmentId = 'legacy', private tickets?: TicketDelegationAuthority) {}
   /** Resolve the live subject through Identity, never through caller attribution. */
   async user(token: string): Promise<SessionUser> {
     return this.account(await this.verify(token))
@@ -65,7 +69,25 @@ export class ChatDelegation {
     return Object.freeze(reference)
   }
   release(reference: ChatDelegationReference): void { this.credentials.delete(reference.id) }
+  /** A live Core-issued delegation behind this token, or undefined for Identity grants. */
+  ticketGrant(token: string): TicketDelegationGrant | undefined {
+    const grant = this.tickets?.delegations.lookup(token)
+    return grant && this.tickets!.enabled(grant.applicationId) ? grant : undefined
+  }
+  /** The ticket grant bound to a reference; queued turns use its billing session instead of Identity admission. */
+  referenceTicket(reference: ChatDelegationReference): TicketDelegationGrant | undefined {
+    const stored = this.credentials.get(reference.id)
+    return stored && isTicketDelegationToken(stored.token) ? this.ticketGrant(stored.token) : undefined
+  }
   private async verify(token: string): Promise<DelegatedPrincipal> {
+    if (isTicketDelegationToken(token)) {
+      const grant = this.ticketGrant(token)
+      if (!grant?.tenantId) throw new DelegationDenied()
+      // Ticket authority covers the user's own conversations; ownership is checked per resource in authorize().
+      return { kind: 'delegated', userId: grant.userId, tenantId: grant.tenantId, applicationId: grant.applicationId,
+        grantId: grant.grantId, audience: 'core', permissions: [], issuedAt: grant.issuedAt, expiresAt: grant.expiresAt }
+    }
+    if (!this.client) throw new DelegationDenied()
     const verdict = await this.client.introspect({ token, audience: 'core' })
     const now = this.now()
     if (!isDelegationIntrospection(verdict) || !verdict.active || verdict.principal.audience !== 'core'
@@ -93,11 +115,14 @@ export class ChatDelegation {
       principal: { userId: stored.billingUserId, tenantId: reference.tenantId, delegationId: reference.grantId } }
   }
   attribution(reference: ChatDelegationReference): ChatApplicationAttribution {
-    return { version: 1, originApplicationId: reference.applicationId, executorApplicationId: 'core', tokenId: null, delegationId: reference.grantId }
+    // Billing admits ticket turns through the user's own session, so they carry no Identity delegation id.
+    return { version: 1, originApplicationId: reference.applicationId, executorApplicationId: 'core', tokenId: null,
+      delegationId: this.referenceTicket(reference) ? null : reference.grantId }
   }
   async authorize(reference: ChatDelegationReference, scope: DelegationScope, conversationId?: string, projectId?: string): Promise<void> {
     const principal = await this.current(reference)
     if (!conversationId && !projectId) throw new DelegationDenied()
+    if (this.referenceTicket(reference)) return this.authorizeOwned(reference, conversationId, projectId)
     if (conversationId) {
       const conversation = await this.db.chat.getConversation(reference.userId, conversationId)
       if (!conversation || conversation.tenantId !== reference.tenantId) throw new DelegationDenied()
@@ -116,6 +141,16 @@ export class ChatDelegation {
       if (tenant?.id !== reference.tenantId || !permitsDelegatedAction({ version: 1, active: true, principal }, 'core',
         { tenantId: reference.tenantId, type: 'project', id: projectId }, scope, this.now())) throw new DelegationDenied()
     }
+  }
+  /** Read, write and execute on resources the delegated user owns inside the delegated tenant. */
+  private async authorizeOwned(reference: ChatDelegationReference, conversationId?: string, projectId?: string): Promise<void> {
+    if (conversationId) {
+      const conversation = await this.db.chat.getConversation(reference.userId, conversationId)
+      if (!conversation || conversation.tenantId !== reference.tenantId) throw new DelegationDenied()
+      if (projectId && projectId !== conversation.projectId) throw new DelegationDenied()
+      projectId = conversation.projectId ?? undefined
+    }
+    if (projectId && (await this.db.projects.projectTenant(projectId))?.id !== reference.tenantId) throw new DelegationDenied()
   }
 }
 
