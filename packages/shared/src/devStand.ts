@@ -1,9 +1,11 @@
 /** Defaults describe local development; stand allocation supplies actual ports. */
 export const DEV_COMPONENT_REGISTRY = {
-  core: { repository: 'sislex/voiceAIChat', defaultPort: 8787, routePrefixes: ['/api', '/ws'], readinessPath: '/api/health' },
+  // `/internal` must reach Core: Core UI serves `/`, so an unlisted path would land in Vite.
+  core: { repository: 'sislex/voiceAIChat', defaultPort: 8787, routePrefixes: ['/api', '/ws', '/internal'], readinessPath: '/api/health' },
   'core-ui': { repository: 'sislex/sislexa-core-ui', defaultPort: 5273, routePrefixes: ['/'], readinessPath: '/' },
   make: { repository: 'sislex/make', defaultPort: 8788, routePrefixes: ['/api/make', '/api/preview/make', '/api/preview/make-shared', '/p/', '/s/'], readinessPath: '/api/health' },
-  kanban: { repository: 'sislex/sislexa-kanban', defaultPort: 8789, routePrefixes: [], readinessPath: '/api/health' },
+  // Kanban is swapped behind its Compose alias (no gateway routes); it answers health on /v1/health.
+  kanban: { repository: 'sislex/sislexa-kanban', defaultPort: 8789, routePrefixes: [], readinessPath: '/v1/health' },
   'playwright-reader': { repository: 'sislex/playwrightreader', defaultPort: 8797, routePrefixes: ['/api/browser'], readinessPath: '/api/health' },
   'image-studio': { repository: 'sislex/image-studio', defaultPort: 8796, routePrefixes: ['/api/image-studio', '/g/'], readinessPath: '/api/health' }
 } as const
