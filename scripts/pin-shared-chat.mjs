@@ -5,6 +5,7 @@ import { archiveFiles } from './shared-chat-artifacts.mjs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+import { vendorRef } from './vendor-store.mjs'
 
 export async function pinSharedChat(input, root = resolve(import.meta.dirname, '..')) {
 if (!input) throw Error('Expected assigned artifact directory')
@@ -35,7 +36,7 @@ const lock = json(join(root, 'package-lock.json'))
 for (const file of manifests) {
   const pkg = json(join(root, file))
   for (const section of ['dependencies', 'devDependencies']) for (const row of packages) {
-    if (row.name !== '@voicechat/shared' && pkg[section]?.[row.name]) pkg[section][row.name] = 'file:' + (file === 'package.json' ? '' : '../../') + 'vendor/' + row.asset
+    if (row.name !== '@voicechat/shared' && pkg[section]?.[row.name]) pkg[section][row.name] = vendorRef(row.asset)
   }
   save(join(root, file), pkg)
   const key = file === 'package.json' ? '' : file.replace('/package.json', '')
@@ -48,7 +49,7 @@ for (const row of packages) {
   } else copyFileSync(row.file, target)
   const entry = lock.packages['node_modules/' + row.name] ?? (row.name === '@voicechat/shared' ? undefined : (lock.packages['node_modules/' + row.name] = { dev: true }))
   if (entry && !entry.link) {
-    entry.version = row.version; entry.resolved = 'file:vendor/' + row.asset; entry.integrity = row.integrity
+    entry.version = row.version; entry.resolved = vendorRef(row.asset); entry.integrity = row.integrity
     for (const key of ['dependencies', 'peerDependencies', 'peerDependenciesMeta', 'engines', 'optionalDependencies', 'bin']) {
       if (row.pkg[key]) entry[key] = row.pkg[key]; else delete entry[key]
     }

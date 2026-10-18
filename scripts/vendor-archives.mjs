@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync, lstatSync, unlinkSync, existsSync 
 import { execFileSync } from 'node:child_process'
 import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { vendorAssetFromRef } from './vendor-store.mjs'
 
 const inventories = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 function walk(root, dir = '') {
@@ -53,6 +54,7 @@ export function analyzeVendorArchives(root) {
       }
       const visit = value => {
         if (typeof value === 'string' && value.startsWith('file:')) add(resolve(root, dirname(file), value.slice(5)), file)
+        else if (typeof value === 'string' && vendorAssetFromRef(value)) add(resolve(root, 'vendor', vendorAssetFromRef(value)), file)
         else if (Array.isArray(value)) value.forEach(visit)
         else if (value && typeof value === 'object') Object.values(value).forEach(visit)
       }

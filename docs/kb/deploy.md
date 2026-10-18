@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: c224e5c8
+checked: 2f3f592d
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -775,6 +775,19 @@ readable inside the container. Configure `DELIVERY_CONTROL_URL` for the coordina
 Without the assistant credential, the assistant only reports that Delivery Control
 is not connected. Provisioning the credential and commissioning the connection are
 operator steps; adding this Compose setting does not perform them.
+
+**Pinned archives are not in git (2026-10-18).** `vendor/*.tgz` moved to the immutable assets of the public
+GitHub release `vendor` of sislex/voiceAIChat; `package.json`/`package-lock.json` reference
+`https://github.com/sislex/voiceAIChat/releases/download/vendor/<asset>.tgz`, so `npm ci` (local, Dockerfile,
+Release Center, stands, agents, Delivery Control workers) downloads and checks lockfile `integrity` with no
+extra step (`.npmrc` retries 5×). The repository had grown to ~866 MB from 272 committed archive versions;
+large clones broke on GitHub `fetch-pack` disconnects. `scripts/vendor-store.mjs` (`npm run vendor:fetch|publish|check`)
+fills `vendor/` from the cache `~/.cache/sislexa/vendor` for tools that read archive bytes (A07, shared-chat
+artifacts, owner-release-publish `--from-core`); `release-composition apply` and `contracts-release` upload new
+pins to the release (`--no-publish` skips it; needs `gh` write auth) before the lockfile points at them.
+Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
+`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
+is rewritten.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
