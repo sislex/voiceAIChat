@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 784 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 903 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 922 коммит(ов) в areas после сверки: ea038d11b fix(kanban-assistant): skip task-launch rule when autopilot is on … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2148 коммит(ов) в areas после сверки: e24cd9254 fix(shared): mark Core-side Shared peers optional … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2149 коммит(ов) в areas после сверки: ef60becdf chore: pin Shared 0.1.37 (optional Core-side peers) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1083 коммит(ов) в areas после сверки: 8d2647352 deployment-profiles-v1 B01 … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1199. Последние:
+Всего записей: 1200. Последние:
 
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md) — shared-peers-any-range
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md) — shared-optional-peers
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md) — pin-shared-0-1-37
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md) — pin-shared-0-1-36
@@ -73,7 +74,6 @@
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md) — stand-users-password
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md) — stand-runner-profile-dev-core
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-32.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-32.md) — pin-kanban-0-2-32
-- [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md) — pin-kanban-0-2-31
 
 ## Исторические планы
 
