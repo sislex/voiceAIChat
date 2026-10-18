@@ -373,11 +373,20 @@ class StandTest(unittest.TestCase):
         self.assertIn('deploy/compose.stand-lb.yml', call['chain'])
         self.assertEqual(call['make_url'], 'http://module-lb:8788')
 
+    def test_local_runner_profile_unless_both_runner_urls_are_external(self):
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertTrue(all('local-runner' in c['profiles'].split(',') for c in calls if c.get('profiles')))
+        self.values.update(VC_LLM_RUNNER_CLAUDE_URL='http://host.docker.internal:18790', VC_LLM_RUNNER_CODEX_URL='http://host.docker.internal:18790')
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertTrue(all('local-runner' not in c['profiles'].split(',') for c in calls if c.get('profiles')))
+
     def test_stage4_public_requires_opt_in_and_primary(self):
         self.values.update(VC_STAND_PUBLIC='1', VC_PUBLIC_HOST='stand.example.com')
         code, _, calls = self.invoke()
         self.assertEqual(code, 0)
-        self.assertTrue(any(c['profiles'] == 'kanban,postgres,public' for c in calls))
+        self.assertTrue(any(c['profiles'] == 'kanban,local-runner,postgres,public' for c in calls))
         self.assertIn(['pull', 'caddy:2'], [c['args'] for c in calls])
         config = (ROOT / 'deploy/Caddyfile.stand-public').read_text()
         self.assertNotIn('tls internal', config)
@@ -525,6 +534,10 @@ class StandComposeTest(unittest.TestCase):
             self.assertEqual(services('postgres', 'kanban') & modules, set())
             self.assertEqual(services('postgres', 'kanban', 'reader') & modules, {'reader'})
             self.assertEqual(services('postgres', 'kanban', 'make', 'playwright-reader') & modules, {'make', 'playwright-reader', 'browser-runner'})
+            # Local LLM runners only under `local-runner`; an external runner leaves them out.
+            runners = {'runner-work', 'runner-personal'}
+            self.assertEqual(services('postgres', 'kanban') & runners, set())
+            self.assertEqual(services('postgres', 'kanban', 'local-runner') & runners, runners)
 
 
 if __name__ == '__main__':
