@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: eebfc4c1
+checked: c224e5c8
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -285,6 +285,11 @@ Values already present in the environment win (`??=`): Kanban's container swap
 container's own configuration with service URLs on the stand's `127.0.0.1` access
 bridge, so only unspecified components fall back to `SISLEXA_STAND_URL`. `PORT`
 from the agent is accepted when `VC_PORT` is absent.
+
+The gateway routes `/internal` to Core as well as `/api` and `/ws`: Core UI owns `/`,
+so with a dev Core UI an unlisted `/internal/kanban/core` request reached Vite (404)
+and a dev Kanban using the gateway as its Core lost its RPC. Kanban's readiness path
+in `DEV_COMPONENT_REGISTRY` is `/v1/health` (it has no `/api/health`).
 
 Stand LLM runners (stand-dev-v1): `runner-work` and `runner-personal` belong to the
 `local-runner` profile in `compose.stand.yml`, and Core/Kanban depend on them with
