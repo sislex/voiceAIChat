@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: db75c6d1
+checked: eebfc4c1
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
