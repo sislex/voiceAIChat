@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { applyComposition, currentComposition } from './release-composition.mjs'
+import { applyComposition, currentComposition, main } from './release-composition.mjs'
 import { archiveDigests, manifestFromCore, publishGithubRelease } from './owner-release-publish.mjs'
 import { releasePackageAsset } from '../packages/shared/src/releaseComposition.ts'
 
@@ -189,4 +189,21 @@ test('an image-only release (a service without npm archives) moves its tool and 
   assert.match(readFileSync(join(core, 'docker-compose.yml'), 'utf8'), new RegExp(`make-api:${NEW}`))
   // Архив пакета не тронут: выпуск его не содержит.
   assert.equal(read(join(core, 'vendor/owner-artifacts.json')).packages[0].asset, pinned.asset)
+})
+
+// No test may reach the public `vendor` release: `apply` uploads only with an explicit --publish and only via
+// the publisher it is given.
+test('apply publishes new archives only with --publish and only through the injected publisher', () => {
+  const quiet = console.log, warn = console.error
+  console.log = () => {}; console.error = () => {}
+  try {
+    const refuse = { assets() { throw Error('no network in tests') }, upload() { throw Error('no network in tests') } }
+    const first = fixture(), one = published()
+    main(['apply', '--dir', one.dir], first.core, refuse)
+    const uploads = []
+    const fake = { assets: () => new Set(), upload: file => uploads.push(file) }
+    const second = fixture(), two = published()
+    main(['apply', '--dir', two.dir, '--publish'], second.core, fake)
+    assert.ok(uploads.some(file => file.endsWith(two.pkg.asset)))
+  } finally { console.log = quiet; console.error = warn }
 })

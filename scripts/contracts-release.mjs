@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+import { ghVendorPublisher, publishVendorArchives, vendorRef } from './vendor-store.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n')
@@ -18,8 +19,11 @@ function run(command, args, cwd) {
 const git = (cwd, ...args) => run('git', args, cwd).trim()
 
 export function parseArgs(args) {
-  const [name, ...rest] = args
+  const [name, ...flags] = args
   const options = { name }
+  // `--publish` (no value) opts in to uploading the new Core pin to the public `vendor` release.
+  const rest = flags.filter(flag => flag !== '--publish')
+  if (rest.length !== flags.length) options.publish = true
   for (let i = 0; i < rest.length; i += 2) {
     const flag = rest[i]
     if (!['--version', '--source', '--commit', '--consumers'].includes(flag) || !rest[i + 1] || rest[i + 1].startsWith('--') || options[flag.slice(2)])
@@ -41,18 +45,22 @@ function manifests(root) {
     .map(path => join(root, path))
 }
 
-function pin(root, archive, entry) {
+// Core references pinned archives by the `vendor` release URL (they are not committed), so the archive is
+// uploaded before the lockfile is refreshed; consumer repositories keep their own `file:` vendor copies.
+function pin(root, archive, entry, { core = false, publisher = null } = {}) {
+  // `core` — Core with archives in the `vendor` release; false keeps committed `file:` copies (consumers, offline tests).
   const candidates = analyzeVendorArchives(root).archives.map(row => row.file)
   const vendor = join(root, 'vendor')
   mkdirSync(vendor, { recursive: true })
   const target = join(vendor, entry.asset)
   copyFileSync(archive, target)
+  if (core) publishVendorArchives(root, publisher)
   for (const path of manifests(root)) {
     const manifest = read(path)
     let changed = false
     for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
       if (!Object.hasOwn(manifest[field] ?? {}, entry.name)) continue
-      manifest[field][entry.name] = field === 'peerDependencies' ? entry.version : `file:${relative(dirname(path), target).split('\\').join('/')}`
+      manifest[field][entry.name] = field === 'peerDependencies' ? entry.version : core ? vendorRef(entry.asset) : `file:${relative(dirname(path), target).split('\\').join('/')}`
       changed = true
     }
     if (changed) write(path, manifest)
@@ -70,7 +78,9 @@ function pin(root, archive, entry) {
   removeUnusedVendorArchives(root, candidates)
 }
 
-export function releaseContracts(options, { core = process.cwd(), log = console.log } = {}) {
+export function releaseContracts(options, { core = process.cwd(), log = console.log, publisher = null, coreRelease = true } = {}) {
+  // A Core pin points at the public `vendor` release, so it needs an explicit publisher (CLI `--publish`).
+  if (coreRelease && !publisher) throw Error('Core pin needs --publish (uploads the archive to the vendor release) or coreRelease: false')
   const { name, version, commit } = options
   const source = realpathSync(resolve(options.source))
   core = realpathSync(core)
@@ -124,7 +134,7 @@ export function releaseContracts(options, { core = process.cwd(), log = console.
     const results = []
     for (const { label, root } of [{ label: 'core', root: core }, ...consumers]) {
       try {
-        pin(root, archive, entry)
+        pin(root, archive, entry, { core: coreRelease && root === core, publisher })
         if (root !== core) run('npm', ['ci', '--ignore-scripts', '--strict-peer-deps', '--no-audit', '--no-fund'], root)
         results.push({ consumer: label, status: 'pass' })
       } catch (error) {
@@ -140,6 +150,9 @@ export function releaseContracts(options, { core = process.cwd(), log = console.
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try { if (!releaseContracts(parseArgs(process.argv.slice(2))).ok) process.exitCode = 1 }
+  try {
+    const options = parseArgs(process.argv.slice(2))
+    if (!releaseContracts(options, { publisher: options.publish ? ghVendorPublisher() : null }).ok) process.exitCode = 1
+  }
   catch (error) { console.error(error.message); process.exitCode = 1 }
 }

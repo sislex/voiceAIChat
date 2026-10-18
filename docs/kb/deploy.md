@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-18
-checked: eebfc4c1
+checked: 2220955a
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -207,6 +207,14 @@ salt, 32-byte key); until 2026-10-10 the script used pgcrypto bcrypt, which Iden
 never accepts, so no password opened a stand. `ensureAdmin` at Core startup uses
 `INSERT OR IGNORE` and does not change an existing `admin` password.
 
+The optional environment setting `VC_STAND_USERS_PASSWORD` (owner decision
+2026-10-18, for example `1234`) gives every stand user, the administrator included,
+that one test password after sanitization: `must_change_password = 0`, TOTP cleared,
+unblocked. Absent or empty keeps the behaviour above. It is a deliberately public
+test value, not a secret: the stand script does not mask it in stage logs. It only
+exists on the stand provisioning path (`sanitize_sql` in `environment_stand.py`);
+production never runs the sanitize step.
+
 To set a user's password on a stand, compute the hash with the stand's own Identity
 code inside its Core container and update `users` (never production), for example
 the operator helper `sislexa-stand-password [compose-project] [user]`: it reads the
@@ -285,6 +293,11 @@ Values already present in the environment win (`??=`): Kanban's container swap
 container's own configuration with service URLs on the stand's `127.0.0.1` access
 bridge, so only unspecified components fall back to `SISLEXA_STAND_URL`. `PORT`
 from the agent is accepted when `VC_PORT` is absent.
+
+The gateway routes `/internal` to Core as well as `/api` and `/ws`: Core UI owns `/`,
+so with a dev Core UI an unlisted `/internal/kanban/core` request reached Vite (404)
+and a dev Kanban using the gateway as its Core lost its RPC. Kanban's readiness path
+in `DEV_COMPONENT_REGISTRY` is `/v1/health` (it has no `/api/health`).
 
 Stand LLM runners (stand-dev-v1): `runner-work` and `runner-personal` belong to the
 `local-runner` profile in `compose.stand.yml`, and Core/Kanban depend on them with
@@ -762,6 +775,22 @@ readable inside the container. Configure `DELIVERY_CONTROL_URL` for the coordina
 Without the assistant credential, the assistant only reports that Delivery Control
 is not connected. Provisioning the credential and commissioning the connection are
 operator steps; adding this Compose setting does not perform them.
+
+**Pinned archives are not in git (2026-10-18).** `vendor/*.tgz` moved to the immutable assets of the public
+GitHub release `vendor` of sislex/voiceAIChat; `package.json`/`package-lock.json` reference
+`https://github.com/sislex/voiceAIChat/releases/download/vendor/<asset>.tgz`, so `npm ci` (local, Dockerfile,
+Release Center, stands, agents, Delivery Control workers) downloads and checks lockfile `integrity` with no
+extra step (`.npmrc` retries 5×). The repository had grown to ~866 MB from 272 committed archive versions;
+large clones broke on GitHub `fetch-pack` disconnects. `scripts/vendor-store.mjs` (`npm run vendor:fetch|publish|check`)
+fills `vendor/` from the cache `~/.cache/sislexa/vendor` for tools that read archive bytes (A07, shared-chat
+artifacts, owner-release-publish `--from-core`). Uploading is an explicit opt-in: `release-composition apply --publish`,
+`contracts-release ... --publish` (required for a Core pin) or `npm run vendor:publish`; it needs `gh` write auth.
+The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner (`NODE_TEST_CONTEXT`, `VITEST`,
+`JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
+uploaded fixture archives to the real release (removed by the coordinator).
+Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
+`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
+is rewritten.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
