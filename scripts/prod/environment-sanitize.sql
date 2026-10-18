@@ -10,5 +10,9 @@ WITH first_admin AS (
 UPDATE users SET role = 'admin', password_hash = :'admin_password_hash',
   must_change_password = 0, blocked = 0
 WHERE name = (SELECT name FROM first_admin);
+-- Optional shared test password for every stand user (VC_STAND_USERS_PASSWORD), admin included.
+UPDATE users SET password_hash = :'users_password_hash', must_change_password = 0,
+  totp_secret = NULL, blocked = 0
+WHERE :'users_password_hash' <> '';
 UPDATE app_config SET value = '' WHERE key ILIKE '%smtp%' OR key ILIKE '%integration%'
   OR key ILIKE '%webhook%' OR key ILIKE '%external%';

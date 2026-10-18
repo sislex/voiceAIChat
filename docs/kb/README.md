@@ -64,6 +64,7 @@
 
 Всего записей: 1190. Последние:
 
+- [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-users-password.md) — stand-users-password
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md) — stand-runner-profile-dev-core
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md) — pin-kanban-0-2-31
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-30.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-30.md) — pin-kanban-0-2-30

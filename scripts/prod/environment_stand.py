@@ -143,6 +143,20 @@ START_ATTEMPTS = 3
 START_RETRY_SECONDS = float(os.environ.get('VC_STAND_START_RETRY_SECONDS', '5'))
 
 
+PUBLIC_SETTINGS = frozenset({'VC_STAND_USERS_PASSWORD'})
+
+
+def sanitize_sql(values):
+    """psql input for sanitizing a restored production copy; stand provisioning only."""
+    password = values.get('VC_ADMIN_PASSWORD', '')
+    if not password:
+        raise ValueError('missing admin password')
+    users = values.get('VC_STAND_USERS_PASSWORD', '')
+    header = "\\set admin_password_hash '" + scrypt_password_hash(password) + "'\n"
+    header += "\\set users_password_hash '" + (scrypt_password_hash(users) if users else '') + "'\n"
+    return header.encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+
+
 class Stand:
     def __init__(self, action, role='primary'):
         self.stage = 'config' if action == 'provision' else 'down'
@@ -154,7 +168,9 @@ class Stand:
         self.failure = ''
 
     def emit(self, status, message=''):
-        for value in sorted(set(self.values.values()), key=len, reverse=True):
+        # VC_STAND_USERS_PASSWORD is a deliberately public test value (for example "1234");
+        # masking it would mangle every matching number in the stage log.
+        for value in sorted({v for k, v in self.values.items() if k not in PUBLIC_SETTINGS}, key=len, reverse=True):
             if value:
                 message = message.replace(value, '[redacted]')
         print(json.dumps(dict(stage=self.stage, status=status, log=message)), flush=True)
@@ -364,10 +380,7 @@ class Stand:
             with os.fdopen(descriptor, 'wb') as out:
                 out.write(result.stderr[-65536:])
             raise ValueError('restore failed')
-        password = self.values.get('VC_ADMIN_PASSWORD', '')
-        if not password:
-            raise ValueError('missing admin password')
-        sql = ("\\set admin_password_hash '" + scrypt_password_hash(password) + "'\n").encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+        sql = sanitize_sql(self.values)
         with io.BytesIO(sql) as source:
             result = subprocess.run([self.docker, 'compose', 'exec', '-T', 'postgres', 'psql',
                 '-U', 'voicechat', '-d', 'voicechat'], env=self.env,

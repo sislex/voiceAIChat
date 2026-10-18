@@ -19,7 +19,7 @@ describe('environment settings', () => {
     const input = ENVIRONMENT_SETTINGS.map(({ key }) => ({ key, value: ENVIRONMENT_URL_SETTINGS.includes(key) ? 'http://host.docker.internal:18790' : 'literal-$`\\value' }))
     expect(parseEnvironmentSettingsPatch(input)).toEqual(input)
     expect(parseEnvironmentSettingsPatch(input)[0]).not.toBe(input[0])
-    expect(parseEnvironmentSettingsPatch(input.map(item => ({ ...item, value: null })))).toHaveLength(27)
+    expect(parseEnvironmentSettingsPatch(input.map(item => ({ ...item, value: null })))).toHaveLength(28)
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value: 'x'.repeat(4096) }])[0].value).toHaveLength(4096)
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(12) }])).toHaveLength(1)
   })
@@ -42,8 +42,12 @@ describe('environment settings', () => {
   it.each(RESERVED_ENVIRONMENT_SETTINGS)('rejects reserved %s', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow(`Reserved environment setting: ${key}`))
   it.each(['', 'x'.repeat(4097), "a'b", 'a\rb', 'a\nb', 'a\0b', undefined, 123, {}, []])('rejects unsafe value %j', value => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value }])).toThrow('Invalid value for VC_PUBLIC_URL'))
   it('rejects short administrator passwords', () => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(11) }])).toThrow('Invalid value for VC_ADMIN_PASSWORD'))
+  it('accepts a short public stand users password', () => {
+    expect(parseEnvironmentSettingsPatch([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])).toEqual([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])
+    expect(ENVIRONMENT_SETTINGS.find(item => item.key === 'VC_STAND_USERS_PASSWORD')).toMatchObject({ secret: false, required: false, generated: false })
+  })
   it('keeps catalog flags and reserved keys disjoint', () => {
-    expect(new Set(ENVIRONMENT_SETTINGS.map(item => item.key)).size).toBe(27)
+    expect(new Set(ENVIRONMENT_SETTINGS.map(item => item.key)).size).toBe(28)
     expect(ENVIRONMENT_URL_SETTINGS.every(key => ENVIRONMENT_SETTINGS.some(item => item.key === key && !item.secret && !item.generated))).toBe(true)
     expect(ENVIRONMENT_SETTINGS.filter(item => item.required).map(item => item.key)).toEqual(['VC_ADMIN_PASSWORD'])
     expect(ENVIRONMENT_SETTINGS.filter(item => item.generated)).toHaveLength(8)
