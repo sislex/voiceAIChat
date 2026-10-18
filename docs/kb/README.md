@@ -13,7 +13,7 @@
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ✓ |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-07 | ⚠ код изменён 2026-10-17, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-09 | ⚠ 11 коммит(ов) в areas после сверки: 7dddeedc kanban-watch-v2 B01 … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 8 коммит(ов) в areas после сверки: 1ba3c1a3 chore(ui): pin Core UI 1.5.22 and Desktop 1.0.40 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 9 коммит(ов) в areas после сверки: d39b5668 chore(ui): pin Core UI 1.5.23 and Desktop 1.0.41 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 30 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-16 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-18 | ✓ |
@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 92 коммит(ов) в areas после сверки: c0d0b635 operator-assistant-model-v1 B01 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 10 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 42 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 126 коммит(ов) в areas после сверки: 1f54a6fd chore: pin Kanban 0.2.30 (assistant coordinator contract fix) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 127 коммит(ов) в areas после сверки: 2df667c9 feat(stands): local-runner profile, external runner settings and a swappable dev Core … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 118 коммит(ов) в areas после сверки: b33170a6 chore: pin Identity 1.5.0 (API tokens for external agents) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-14, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 7 коммит(ов) в areas после сверки: 263b9c55 fix(release-gate): verified base from where the production release branch forked … |
@@ -44,10 +44,10 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-17 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-17 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-15 | ⚠ 10 коммит(ов) в areas после сверки: 4f4512c5 fix(kanban-assistant): skip task-launch rule when autopilot is on … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-17 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-17 | ⚠ 1 коммит(ов) в areas после сверки: 2df667c9 feat(stands): local-runner profile, external runner settings and a swappable dev Core |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-18, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-16 | ⚠ 8 коммит(ов) в areas после сверки: 1f54a6fd chore: pin Kanban 0.2.30 (assistant coordinator contract fix) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-16 | ⚠ 9 коммит(ов) в areas после сверки: 2df667c9 feat(stands): local-runner profile, external runner settings and a swappable dev Core … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-18, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-17, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,9 +62,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1187. Последние:
+Всего записей: 1188. Последние:
 
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-stand-runner-profile-dev-core.md) — stand-runner-profile-dev-core
+- [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-31.md) — pin-kanban-0-2-31
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-30.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-30.md) — pin-kanban-0-2-30
 - [2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-29.md](log/2026-10-18-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-29.md) — pin-kanban-0-2-29
 - [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-28.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-28.md) — pin-kanban-0-2-28
@@ -73,7 +74,6 @@
 - [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-operator-assistant-contract.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-operator-assistant-contract.md) — operator-assistant-contract
 - [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-kanban-autopilot-no-task-launch.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-kanban-autopilot-no-task-launch.md) — kanban-autopilot-no-task-launch
 - [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-assistant-credential.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-delivery-control-assistant-credential.md) — delivery-control-assistant-credential
-- [2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-agent-api-limits.md](log/2026-10-17-alexeys-macbook-air-tailae39a6-ts-net-agent-api-limits.md) — agent-api-limits
 
 ## Исторические планы
 
