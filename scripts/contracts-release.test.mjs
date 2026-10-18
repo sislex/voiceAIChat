@@ -136,7 +136,7 @@ test('reports the peer conflict chain and continues with subsequent consumers', 
 test('dirty source is refused before changing Core', t => {
   const f = fixture(t)
   put(f.source, 'untracked', 'dirty')
-  assert.throws(() => releaseContracts(f.options, { core: f.core }), /Dirty source refused/)
+  assert.throws(() => releaseContracts(f.options, { core: f.core, coreRelease: false }), /Dirty source refused/)
   assert.equal(existsSync(join(f.core, 'vendor')), false)
 })
 
@@ -158,4 +158,19 @@ test('Shared invokes the committed build:core-contracts adapter', t => {
 test('rejects malformed CLI inputs', () => {
   assert.throws(() => parseArgs([name, '--version', '2.0.0']), /Expected --version/)
   assert.throws(() => parseArgs(['@sislexa/make']), /owner/)
+})
+
+// No test may reach the public `vendor` release: a Core pin without an explicit publisher stops before any work.
+test('Core pin without an explicit publisher is refused before touching GitHub or the checkout', t => {
+  const f = fixture(t)
+  const before = readFileSync(join(f.core, 'package.json'), 'utf8')
+  assert.throws(() => releaseContracts(f.options, { core: f.core, log() {} }), /needs --publish/)
+  assert.equal(readFileSync(join(f.core, 'package.json'), 'utf8'), before)
+  assert.equal(existsSync(join(f.core, 'vendor')), false)
+})
+
+test('--publish is a valueless opt-in flag', () => {
+  const sha = 'a'.repeat(40)
+  assert.equal(parseArgs([name, '--version', '2.0.0', '--source', '/tmp/src', '--commit', sha]).publish, undefined)
+  assert.equal(parseArgs([name, '--publish', '--version', '2.0.0', '--source', '/tmp/src', '--commit', sha]).publish, true)
 })

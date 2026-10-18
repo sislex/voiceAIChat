@@ -117,14 +117,41 @@ export async function fetchVendorArchives(root, options) {
   return [...archives.keys()]
 }
 
-/** Assets already in the release (needs `gh` auth for the listing only). */
-function releaseAssets() {
-  const out = execFileSync('gh', ['release', 'view', VENDOR_RELEASE, '-R', VENDOR_REPOSITORY, '--json', 'assets', '--jq', '.assets[].name'], { encoding: 'utf8' })
-  return new Set(out.split('\n').filter(Boolean))
+/** Test runners Core uses; publishing to the real release is refused under any of them. */
+export function underTestRunner(env = process.env) {
+  return Boolean(env.NODE_TEST_CONTEXT || env.VITEST || env.VITEST_WORKER_ID || env.JEST_WORKER_ID || env.NODE_ENV === 'test')
 }
 
-/** Upload local archives the release lacks. Existing assets are immutable and never replaced. */
-export function publishVendorArchives(root, { assets = releaseAssets(), upload = file => execFileSync('gh', ['release', 'upload', VENDOR_RELEASE, file, '-R', VENDOR_REPOSITORY], { stdio: 'inherit' }) } = {}) {
+/**
+ * The only adapter that talks to GitHub. Callers must opt in explicitly (CLI `--publish`,
+ * `npm run vendor:publish`); it refuses to run inside a test runner so fixtures can never reach
+ * the public release (2026-10-18 a test run uploaded fixture archives there).
+ */
+export function ghVendorPublisher({ env = process.env, exec = execFileSync } = {}) {
+  const guard = () => {
+    if (underTestRunner(env)) throw Error('Refusing to touch the public vendor release from a test run; inject a fake publisher')
+  }
+  return {
+    assets() {
+      guard()
+      const out = exec('gh', ['release', 'view', VENDOR_RELEASE, '-R', VENDOR_REPOSITORY, '--json', 'assets', '--jq', '.assets[].name'], { encoding: 'utf8' })
+      return new Set(String(out).split('\n').filter(Boolean))
+    },
+    upload(file) {
+      guard()
+      exec('gh', ['release', 'upload', VENDOR_RELEASE, file, '-R', VENDOR_REPOSITORY], { stdio: 'inherit' })
+    }
+  }
+}
+
+/**
+ * Upload local archives the release lacks. Existing assets are immutable and never replaced.
+ * The publisher is a required dependency: there is no implicit network default.
+ */
+export function publishVendorArchives(root, publisher) {
+  if (!publisher || typeof publisher.upload !== 'function' || typeof publisher.assets !== 'function') throw Error('publishVendorArchives needs an explicit publisher (ghVendorPublisher() only after an opt-in)')
+  const assets = publisher.assets()
+  const upload = file => publisher.upload(file)
   const dir = join(root, 'vendor')
   const uploaded = []
   for (const file of existsSync(dir) ? readdirSync(dir).filter(name => name.endsWith('.tgz')).sort() : []) {
@@ -147,7 +174,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     const assets = await fetchVendorArchives(root)
     console.log(`vendor: ${assets.length} archives present`)
   } else if (command === 'publish') {
-    const uploaded = publishVendorArchives(root)
+    const uploaded = publishVendorArchives(root, ghVendorPublisher())
     console.log(uploaded.length ? 'vendor: uploaded ' + uploaded.join(', ') : 'vendor: release already has every local archive')
   } else if (command === 'check') {
     const tracked = trackedVendorArchives(root)
