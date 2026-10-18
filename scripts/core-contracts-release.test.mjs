@@ -20,4 +20,6 @@ test('published Shared contracts resolve the S4 Identity and SDK releases', () =
   assert.equal(manifest.peerDependencies['@sislexa/identity'], '>=1.4.2 <1.6.0')
   assert.equal(manifest.peerDependencies['@sislexa/sdk'], '>=1.2.0 <1.4.0')
   assert.equal(manifest.peerDependencies['@sislexa/voice'], lock.packages['node_modules/@sislexa/voice'].version)
+  assert.deepEqual(Object.keys(manifest.peerDependenciesMeta).sort(), Object.keys(manifest.peerDependencies).sort())
+  for (const meta of Object.values(manifest.peerDependenciesMeta)) assert.deepEqual(meta, { optional: true })
 })
