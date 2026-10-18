@@ -1,3 +1,5 @@
+import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
+import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
 import { standProxyKanban } from './standProxyKanban.js'
 import { StandProxy, proxyPorts, registerStandProxy } from './standProxy.js'
 import { clientEvent } from './serviceData.js'
@@ -341,6 +343,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     routerOptions: { maxParamLength: 1024 },
     genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
   })
+  const ticketOptions = opts.applicationTickets ?? applicationTicketOptions(process.env, opts.config.publicUrl)
+  const deployment = opts.config.deployment ?? ticketOptions.manifest
+  registerDeploymentApplications(app, deployment)
   await registerHttpCompression(app)
   const maintenance = new Maintenance()
   maintenance.register(app)
@@ -363,12 +368,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? component.dependency('image-studio', { timeoutMs: IMAGE_STUDIO_GENERATION_TIMEOUT_MS }) : undefined
   const managedStt = configuredDependency('stt-runner')
   const managedTts = configuredDependency('tts-runner')
-  if (managedStudio) { opts.config.imageStudioMode = 'remote'; opts.config.imageStudioUrl = managedStudio.url }
+  if (managedStudio && localApplication(deployment, 'image-studio')) { opts.config.imageStudioMode = 'remote'; opts.config.imageStudioUrl = managedStudio.url }
   if (managedStt) { opts.config.sttRunnerUrl = managedStt.url; opts.config.sttRunnerToken = managedStt.token }
   if (managedTts) { opts.config.ttsRunnerUrl = managedTts.url; opts.config.ttsRunnerToken = managedTts.token }
-  if (managedMake) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
-  if (managedPlaywright) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
-  if (managedReader) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
+  if (managedMake && localApplication(deployment, 'make')) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
+  if (managedPlaywright && localApplication(deployment, 'playwright-reader')) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
+  if (managedReader && localApplication(deployment, 'web-reader')) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
   if (component && ((opts.config.makeMode === 'remote' && !managedMake) || (opts.config.playwrightReaderMode === 'remote' && !managedPlaywright) || (opts.config.readerMode === 'remote' && !managedReader))) {
     component.close()
     throw new Error('Managed remote tools require declared component dependencies')
@@ -501,7 +506,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const user = await db.identity.getUser(userId)
     return user && !user.blocked ? { name: user.name, role: user.role } : null
   })
-  const authenticate: AuthenticateFn = async req => {
+  const authenticateRaw: AuthenticateFn = async req => {
     const makeRequest = await makeRequests.authenticate(req)
     if (makeRequest) return makeRequest
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
@@ -533,6 +538,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       return { ok: true, user }
     } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+  }
+  const authenticate: AuthenticateFn = async req => {
+    const verdict = await authenticateRaw(req)
+    return verdict.ok ? { ...verdict, user: effectiveUser(verdict.user, deployment) } : verdict
   }
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
     ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
@@ -598,6 +607,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const runnerFs =
     opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
       ? new RunnerFsClient({
+          mcpFilter: name => enabledMcp(name, deployment),
           claudeBaseUrl: opts.config.llmRunnerClaudeUrl,
           codexBaseUrl: opts.config.llmRunnerCodexUrl,
           ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {})
@@ -876,7 +886,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeMcpBaseUrl = makeRemote
     ? `${(opts.config.makeMcpPublicBase ?? opts.config.makeUrl!).replace(/\/+$/, '')}${MAKE_MCP_PATH}?k=${mcpSecret}`
     : buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
-  const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = makeRemote
+  const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = opts.config.makeMode === 'off' ? disabledMake() : makeRemote
     ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: managedMake?.token ?? opts.config.internalToken!, fetchImpl: managedMake?.fetchImpl, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
@@ -913,7 +923,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? `${opts.config.imageStudioUrl!.replace(/\/+$/, '')}${IMAGE_STUDIO_MCP_PATH}?k=${mcpSecret}`
     : buildPublicMcpUrl(opts.config, IMAGE_STUDIO_MCP_PATH, mcpSecret)
   // В remote ядро не открывает файлы галерей: единственный владелец — процесс студии.
-  const imageStudio = imageStudioRemote
+  const imageStudio = opts.config.imageStudioMode === 'off' ? { service: disabledImageStudio } : imageStudioRemote
     ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: managedStudio?.token ?? opts.config.internalToken!, fetchImpl: managedStudio?.fetchImpl }) }
     : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore, mcpSecret })
   if ('register' in imageStudio) imageStudio.register(app)
@@ -1358,6 +1368,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void reconcile()
   }
   const turnManager = createTurnManager({
+    deployment,
     delegation,
     accounting,
     db,
@@ -1413,10 +1424,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
     historyMcpBaseUrl,
-    previewMcpBaseUrl,
+    previewMcpBaseUrl: opts.config.readerMode === 'off' ? undefined : previewMcpBaseUrl,
     consoleMcpBaseUrl,
-    makeMcpBaseUrl,
-    imageStudioMcpBaseUrl,
+    makeMcpBaseUrl: opts.config.makeMode === 'off' ? undefined : makeMcpBaseUrl,
+    imageStudioMcpBaseUrl: opts.config.imageStudioMode === 'off' ? undefined : imageStudioMcpBaseUrl,
     kanbanMcpBaseUrl,
     widgetContexts,
     make: make.service,
@@ -1464,7 +1475,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     logBrowserShot: (...args) => readerCore.logBrowserShot(...args)
   })
   let playwrightReader: PlaywrightReaderService
-  if (opts.config.playwrightReaderMode === 'remote') {
+  if (opts.config.playwrightReaderMode === 'off') {
+    playwrightReader = disabledPlaywrightReader
+  } else if (opts.config.playwrightReaderMode === 'remote') {
     if (!(opts.config.playwrightReaderUrl && (managedPlaywright || opts.config.internalToken))) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL и VC_INTERNAL_TOKEN')
     playwrightReader = createRemotePlaywrightReader({ baseUrl: opts.config.playwrightReaderUrl, token: managedPlaywright?.token ?? opts.config.internalToken!, fetchImpl: managedPlaywright?.fetchImpl })
     registerPlaywrightReaderProxy(app, { baseUrl: opts.config.playwrightReaderUrl, fetchImpl: managedPlaywright?.publicFetchImpl })
@@ -1475,7 +1488,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   registerMakePreviewInspector(app)
   if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl!, fetchImpl: managedReader?.publicFetchImpl })
-  else createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
+  else if (opts.config.readerMode === 'embedded') createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
   // Register internal RPC only when a managed provider or legacy migration credential is configured.
   if (opts.config.internalToken || component) {
     registerInternalRoutes(app, {
@@ -1491,7 +1504,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerApplicationTickets(app, opts.applicationTickets ?? applicationTicketOptions(process.env, opts.config.publicUrl))
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment })
   registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined, internalToken: opts.config.internalToken })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
@@ -1787,7 +1800,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
-  if(managedIdentity){
+  if(managedIdentity && localApplication(deployment, 'identity')){
     for(const prefix of ['/login/','/account/']){
       const proxy=async(req:import('fastify').FastifyRequest,reply:import('fastify').FastifyReply)=>{
         const response=await managedIdentity.publicFetchImpl(new URL(req.url,managedIdentity.url),{redirect:'error'})
@@ -1796,10 +1809,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, opts.config.applicationFrontends)
+  registerApplicationFrontends(app, Object.fromEntries(Object.entries(opts.config.applicationFrontends ?? {}).filter(([id]) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'local'))))
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
-  if (opts.config.readerMode !== 'remote') {
+  if (opts.config.readerMode === 'embedded') {
     const recorderDir = opts.config.webRecorderDir && existsSync(opts.config.webRecorderDir)
       ? opts.config.webRecorderDir
       : dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/recorder/index.html'))

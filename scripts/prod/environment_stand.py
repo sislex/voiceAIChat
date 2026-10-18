@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 import time
-from compose_env import read_env
+from compose_env import read_env, application_settings
 
 
 def scrypt_password_hash(password, salt=None):
@@ -190,7 +190,10 @@ class Stand:
     def config(self):
         self.values = read_env(Path('.env'))
         v = self.values
-        if any(not v.get(key) for key in RESERVED):
+        if self.role == 'primary':
+            v.update(application_settings(v))
+        optional = {'VC_DB_URL', 'COMPOSE_PROFILES'} if v.get('VC_KANBAN_MODE') == 'off' else set()
+        if any(not v.get(key) for key in RESERVED if key not in optional):
             raise ValueError('missing settings')
         project = v['COMPOSE_PROJECT_NAME']
         if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project) or project in ('voicechat', 'voiceaichat'):
@@ -214,9 +217,9 @@ class Stand:
             host = v['VC_PUBLIC_HOST']
             if not valid_hostname(host) or '.' not in host or host.replace('.', '').isdigit():
                 raise ValueError('public host must be a DNS name')
-        profiles = set(v['COMPOSE_PROFILES'].split(','))
+        profiles = set(filter(None, v.get('COMPOSE_PROFILES', '').split(',')))
         module_profiles = {'make', 'image-studio', 'reader', 'playwright-reader'}
-        if (self.role == 'primary' and (not {'postgres', 'kanban'} <= profiles or '*' in profiles or ('public' in profiles and not self.public))) or \
+        if (self.role == 'primary' and ((v.get('VC_KANBAN_MODE', 'remote') != 'off' and not {'postgres', 'kanban'} <= profiles) or '*' in profiles or ('public' in profiles and not self.public))) or \
                 (self.role == 'module' and (not profiles or not profiles <= module_profiles)):
             raise ValueError('invalid profiles')
         if v['COMPOSE_PARALLEL_LIMIT'] != '1' or v['COMPOSE_BAKE'] != 'false':
@@ -232,7 +235,7 @@ class Stand:
             profiles.add('public')
         # Local LLM runners unless both providers use an external runner; a stand written by an
         # older Kanban (no `local-runner` profile) keeps its runners.
-        if self.role == 'primary' and not (v.get('VC_LLM_RUNNER_CLAUDE_URL') and v.get('VC_LLM_RUNNER_CODEX_URL')):
+        if self.role == 'primary' and 'VC_APPLICATIONS' not in v and not (v.get('VC_LLM_RUNNER_CLAUDE_URL') and v.get('VC_LLM_RUNNER_CODEX_URL')):
             profiles.add('local-runner')
         v['COMPOSE_PROFILES'] = ','.join(sorted(profiles))
         upstreams = parse_upstreams(v.get('VC_STAND_UPSTREAMS', ''))
@@ -268,7 +271,7 @@ class Stand:
                         VC_APPLICATION_DATA_VERSION=str(release['dataVersion']))
         self.model = json.loads(self.compose('config', '--format', 'json').stdout)
         services = self.model['services']
-        expected_builds = {'voicechat', 'automation-runner'} if self.role == 'primary' else set()
+        expected_builds = ({'voicechat'} | ({'automation-runner'} if 'automation-runner' in services else set())) if self.role == 'primary' else set()
         if {name for name, service in services.items() if service.get('build')} != expected_builds:
             raise ValueError('unexpected build services')
         if self.model.get('name') != project:
@@ -353,6 +356,8 @@ class Stand:
         return all(name in seen for name, service in self.model['services'].items() if self.active(service))
 
     def restore(self, snapshot):
+        if 'postgres' not in self.values['COMPOSE_PROFILES'].split(','):
+            raise ValueError('database restore requires the postgres profile')
         self.begin('restore', 28)
         self.compose('up', '-d', '--no-build', '--pull', 'never', 'postgres')
         # A freshly created database container accepts connections only after initdb;
@@ -413,7 +418,9 @@ class Stand:
     def provision(self, snapshot=None, files_archives=None):
         self.begin('build', 25)
         for name in (('voicechat', 'automation-runner') if self.role == 'primary' else ()):
-            self.compose('build', name)
+            service = self.model['services'].get(name)
+            if service and self.active(service):
+                self.compose('build', name)
         self.emit('passed')
         self.begin('pull', 20)
         images = {s['image'] for s in self.model['services'].values() if self.active(s) and not s.get('build')}

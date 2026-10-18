@@ -110,6 +110,15 @@ class StandTest(unittest.TestCase):
         calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()]
         return result.returncode, rows, calls
 
+    def test_chat_only_accepts_no_kanban_or_postgres(self):
+        self.values.update(VC_APPLICATIONS='chat', COMPOSE_PROFILES='', VC_DB_URL='')
+        del self.model['services']['postgres']
+        del self.model['services']['automation-runner']
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertTrue(any(c.get('profiles') == 'local-runner,voice-runner' for c in calls))
+        self.assertFalse(any(c['args'][:2] == ['compose', 'build'] and 'automation-runner' in c['args'] for c in calls))
+
     def test_success_stages_metadata_and_sequential_builds(self):
         code, rows, calls = self.invoke(COMPOSE_FILE='production.yml', VC_DATA_VOLUME='voicechat-server-data')
         self.assertEqual(code, 0)
@@ -388,7 +397,7 @@ class StandTest(unittest.TestCase):
         self.values.update(VC_STAND_PUBLIC='1', VC_PUBLIC_HOST='stand.example.com')
         code, _, calls = self.invoke()
         self.assertEqual(code, 0)
-        self.assertTrue(any(c['profiles'] == 'kanban,local-runner,postgres,public' for c in calls))
+        self.assertTrue(any(set(c['profiles'].split(',')) == {'kanban', 'local-runner', 'postgres', 'public', 'voice-runner', 'automation-runner'} for c in calls if c.get('profiles')))
         self.assertIn(['pull', 'caddy:2'], [c['args'] for c in calls])
         config = (ROOT / 'deploy/Caddyfile.stand-public').read_text()
         self.assertNotIn('tls internal', config)

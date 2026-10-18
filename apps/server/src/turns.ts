@@ -1,3 +1,4 @@
+import { effectiveCapabilities } from './deploymentApplications.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
@@ -44,6 +45,7 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
   db: VoiceChatDb
@@ -450,6 +452,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
     const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
+    if (entitlements && deps.deployment) entitlements.capabilities = effectiveCapabilities(entitlements.capabilities, deps.deployment)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
       return

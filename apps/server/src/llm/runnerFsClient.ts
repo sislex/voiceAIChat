@@ -26,6 +26,7 @@ interface SsePayload<T> {
 }
 
 export interface RunnerFsClientOptions {
+  mcpFilter?: (name: string) => boolean
   claudeBaseUrl?: string
   codexBaseUrl?: string
   token?: string
@@ -100,8 +101,9 @@ export class RunnerFsClient {
     return this.getJson<LoginStatusMap>(url, AUTH_STATUS_PATH, { userId })
   }
 
-  listMcpServers(userId: string): Promise<import('@voicechat/shared').McpServer[]> {
-    return this.getJson(this.requireClaudeUrl(), '/v1/mcp/servers', { userId })
+  async listMcpServers(userId: string): Promise<import('@voicechat/shared').McpServer[]> {
+    const servers = await this.getJson<import('@voicechat/shared').McpServer[]>(this.requireClaudeUrl(), '/v1/mcp/servers', { userId })
+    return servers.filter(server => this.opts.mcpFilter?.(server.name) ?? true)
   }
 
   listCcProjects(userId: string): Promise<CcProject[]> {

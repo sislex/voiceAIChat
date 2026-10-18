@@ -15,9 +15,9 @@ services:
       # environment points VC_LLM_RUNNER_CLAUDE_URL/CODEX_URL at an external runner.
       runner-work: {condition: service_started, required: false}
       runner-personal: {condition: service_started, required: false}
-      tts-runner: {condition: service_started}
-      stt-runner: {condition: service_started}
-      automation-runner: {condition: service_started}
+      tts-runner: {condition: service_started, required: false}
+      stt-runner: {condition: service_started, required: false}
+      automation-runner: {condition: service_started, required: false}
       make: {condition: service_started, required: false}
       playwright-reader: {condition: service_started, required: false}
       image-studio: {condition: service_started, required: false}

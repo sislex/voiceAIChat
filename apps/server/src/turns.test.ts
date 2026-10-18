@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
-import { imageBlock } from '@voicechat/shared'
+import { imageBlock, parseApplications } from '@voicechat/shared'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
@@ -20,6 +20,21 @@ import type { ChatAccounting } from './billing/chatAccounting.js'
 const fixtureCredential1 = randomUUID()
 
 const U = 'admin'
+
+it('denies a disabled application on fresh turn admission despite tenant entitlement', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Make', 'make', null, 'make')
+    expect((await db.identity.getAccountAccess(U))?.capabilities).toContain('make.use')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client,
+      deployment: { coreId: 'test-core', applications: parseApplications('chat') },
+    })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Build a page' }] })
+    await turns.idle()
+    expect(rec.last()).toBeNull()
+  } finally { await db.close() }
+})
 
 it('persists token-only text as a distinct message before execution without REST write access', async () => {
   const { ChatDelegation } = await import('./auth/delegation.js')

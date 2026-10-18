@@ -2,7 +2,7 @@
 # во внутренних контейнерах-исполнителях runner-work и runner-personal.
 #
 # Запуск:
-#   docker compose up --build
+#   python3 scripts/prod/compose_env.py run -- up --build
 #   → открыть http://localhost:8787
 #
 # `runner-work` получает прежние тома `vc-claude` / `vc-codex`, поэтому после
@@ -45,18 +45,20 @@ services:
     ports:
       - "8787:8787"
     depends_on:
-      - make
-      - playwright-reader
-      - image-studio
-      - runner-work
-      - runner-personal
-      - tts-runner
-      - stt-runner
-      - automation-runner
-      - browser-runner
+      make: {condition: service_started, required: false}
+      playwright-reader: {condition: service_started, required: false}
+      image-studio: {condition: service_started, required: false}
+      runner-work: {condition: service_started, required: false}
+      runner-personal: {condition: service_started, required: false}
+      tts-runner: {condition: service_started, required: false}
+      stt-runner: {condition: service_started, required: false}
+      automation-runner: {condition: service_started, required: false}
+      browser-runner: {condition: service_started, required: false}
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
+      VC_APPLICATIONS: ${VC_APPLICATIONS-chat,make,projects,web-reader,playwright-reader,image-studio,identity}
+      VC_CORE_ID: ${VC_CORE_ID:-localhost}
       VC_DATA_DIR: /data
       # Enable only for controlled S3 acceptance with verified provider artifacts.
       VC_DELEGATED_CHAT_ENABLED: ${VC_DELEGATED_CHAT_ENABLED:-false}
@@ -70,10 +72,10 @@ services:
       # профиле `postgres` ниже) и перенеси данные: docs/kb/data-auth.md#схема.
       # Пусто — SQLite в /data/voicechat.db, как раньше.
       VC_DB_URL: ${VC_DB_URL:-}
-      VC_IMAGE_STUDIO_MODE: remote
+      VC_IMAGE_STUDIO_MODE: ${VC_IMAGE_STUDIO_MODE:-remote}
       VC_IMAGE_STUDIO_URL: ${VC_IMAGE_STUDIO_URL:-http://image-studio:8796}
-      VC_MAKE_MODE: remote
-      VC_PLAYWRIGHT_READER_MODE: remote
+      VC_MAKE_MODE: ${VC_MAKE_MODE:-remote}
+      VC_PLAYWRIGHT_READER_MODE: ${VC_PLAYWRIGHT_READER_MODE:-remote}
       VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}
       VC_MAKE_URL: ${VC_MAKE_URL:-http://make:8788}
       VC_MAKE_MCP_PUBLIC_BASE: ${VC_MAKE_MCP_PUBLIC_BASE:-http://make:8788}
@@ -184,6 +186,7 @@ services:
   # Make (веб-проект с ассистентом) отдельным процессом: релизится и перезапускается
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
+    profiles: ["make"]
     image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:25246655ecdd6879ab8b2edfb91bdd3be178e85b}
     mem_limit: 512m
     environment:
@@ -207,10 +210,11 @@ services:
   # Playwright Reader владеет REST-сессиями и действиями модели. БД и том ему не нужны:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
+    profiles: ["playwright-reader"]
     image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
     mem_limit: 256m
     depends_on:
-      - browser-runner
+      browser-runner: {condition: service_started, required: false}
     environment:
       HOST: 0.0.0.0
       PORT: "8797"
@@ -230,6 +234,7 @@ services:
 
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
+    profiles: ["image-studio"]
     image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c7a49a428d856e73476c39179ce7044598c4196e}
     mem_limit: 512m
     environment:
@@ -258,9 +263,9 @@ services:
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
-      - runner-work
-      - runner-personal
-      - browser-runner
+      runner-work: {condition: service_started, required: false}
+      runner-personal: {condition: service_started, required: false}
+      browser-runner: {condition: service_started, required: false}
     environment:
       VC_ENVIRONMENT_SECRET_KEY: ${VC_ENVIRONMENT_SECRET_KEY:-}
       HOST: 0.0.0.0
@@ -382,7 +387,7 @@ services:
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
-      - playwright-reader
+      playwright-reader: {condition: service_started, required: false}
     environment:
       HOST: 0.0.0.0
       PORT: "8795"
@@ -390,7 +395,7 @@ services:
       VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       VC_INTERNAL_TOKEN: ${VC_INTERNAL_TOKEN:-voicechat-internal-local-token}
       VC_MCP_SECRET: ${VC_MCP_SECRET:-voicechat-mcp-local-secret}
-      VC_PLAYWRIGHT_READER_MODE: remote
+      VC_PLAYWRIGHT_READER_MODE: ${VC_PLAYWRIGHT_READER_MODE:-remote}
       VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}
       VC_RELEASE_VERSION: ${VC_RELEASE_VERSION:-}
       # Shown in the Make browser route; empty means «неизвестно».
@@ -405,6 +410,7 @@ services:
     restart: unless-stopped
 
   stt-runner:
+    profiles: ["voice-runner"]
     image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
     mem_limit: 6g
     cpus: 2
@@ -428,6 +434,7 @@ services:
   # Изолированный Chromium: Playwright Reader и этап автотестов. Наружу не
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
+    profiles: ["browser-runner"]
     image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
     environment:
       HOST: 0.0.0.0
@@ -462,6 +469,7 @@ services:
     logging: *default-logging
 
   automation-runner:
+    profiles: ["automation-runner"]
     build:
       context: .
       target: automation-runner-runtime
@@ -483,6 +491,7 @@ services:
     restart: unless-stopped
 
   runner-work:
+    profiles: ["local-runner"]
     image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
     environment:
       HOST: 0.0.0.0
@@ -501,6 +510,7 @@ services:
     restart: unless-stopped
 
   runner-personal:
+    profiles: ["local-runner"]
     image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
     environment:
       HOST: 0.0.0.0
@@ -516,6 +526,7 @@ services:
     restart: unless-stopped
 
   tts-runner:
+    profiles: ["voice-runner"]
     image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
     environment:
       HOST: 0.0.0.0
