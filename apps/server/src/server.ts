@@ -6,6 +6,7 @@ import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
+import { applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS } from '@voicechat/shared'
 import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
@@ -192,6 +193,7 @@ const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 export interface BuildOptions {
+  applicationTickets?: ApplicationTicketOptions
   /** Embedded hosts supply the same authenticated transport as managed Billing. */
   billingTransport?: { url: string; fetchImpl: typeof fetch; environmentId: string }
   delegationClient?: DelegationIntrospectionClient
@@ -1489,6 +1491,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
+  registerApplicationTickets(app, opts.applicationTickets ?? applicationTicketOptions(process.env, opts.config.publicUrl))
   registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined, internalToken: opts.config.internalToken })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.

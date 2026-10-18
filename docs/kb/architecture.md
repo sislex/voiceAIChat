@@ -1,6 +1,6 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-07
+updated: 2026-10-18
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -317,3 +317,47 @@ Runtime requirements and source commits are recorded in each archive. Core retai
 only compatibility reexports of machine contracts required by already released
 consumers, plus server/host integration coverage. See [clients.md](clients.md)
 for independent setup and packaging.
+
+## Deployment profiles and shared services
+
+`packages/shared/src/deploymentProfiles.ts` defines `APPLICATION_IDS`,
+`parseApplications`, `serializeApplications`, `validateCoreId`, `DeploymentManifest`,
+`EnterTicketRedeemRequest/Response`, `TrustedCoreEntry`, `CoreLimits`, `CoreUsage`
+and `SharedServiceSession`. `VC_APPLICATIONS` is comma-separated `id` (local) or
+`id=https://service` (external). Missing ids are disabled; an unset variable enables
+all seven applications. Empty means all disabled. Invalid/duplicate ids and unsafe
+external URLs fail configuration. This parser does not impose a UI policy on chat.
+`VC_CORE_ID` defaults to the public URL hostname (`localhost` for local development)
+and must match `^[a-z0-9][a-z0-9.-]{1,62}$`.
+
+Builds sharing one database MUST share one `VC_CORE_ID`: shared database means shared
+data. A different hostname is not a separate data boundary for that database.
+
+`@sislexa/component-runtime` exports `TrustedCoreRegistry`. Load an array of
+`{ coreId, url, credentialRef, limits? }` from JSON with `fromFile`, or use `fromEnv`
+for `VC_CORE_URL` + `VC_INTERNAL_TOKEN` (optional `VC_CORE_ID`). File references are
+server-side secret files; consumers may inject their own secret resolver and fetch
+transport. `add`/`remove` update the live registry; `resolve(session)` returns only
+public metadata. Resolve on each request, never select a core from untrusted request
+URLs. `coreDataPath(root, coreId, ...segments)` rejects traversal and existing
+symlinks. Keep the root and its ancestors operator-owned; this helper does not
+replace race-free file creation permissions.
+
+`CoreDelegationClient.chatSession` exchanges the existing Identity delegation grant
+at the session's Core. `connect` uses the returned scoped WS handle, sends the
+existing `ClientMessage` contract and delivers `ServerMessage` notifications and
+`claude.usage` billing events. Core `turns.ts` remains responsible for grant checks,
+model execution, Billing admission and settlement. Service credentials never become
+user credentials. Applications still acquire an Identity grant separately; an enter
+ticket does not mint a delegation grant.
+
+Use `registry.account(coreId, delta)` before allocating resources; all counters and
+returned usage records carry `coreId`. Optional limits are `diskBytes`, `workshops`,
+`machines`; a failed multi-counter update changes nothing. Release allocations with
+negative deltas. Counters are process-local: owners must initialize them from their
+durable resource inventory on startup and serialize allocation through the owning
+service instance. `registerCoreServiceErrors` emits HTTP 409
+`{ error: 'core_limit_exceeded', limit, used }`. `registerUsageRoute(app, authorize)`
+exposes authenticated `GET /internal/v1/cores/:coreId/usage`; the caller supplies the
+service's administrator authorization policy. Runtime registry mutations are local;
+operators maintain the startup JSON separately.

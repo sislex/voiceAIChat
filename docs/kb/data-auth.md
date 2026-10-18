@@ -1,6 +1,6 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-16
+updated: 2026-10-18
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -944,3 +944,31 @@ The `identity.core` callback exposes only `loginNewDeviceEmails` from user setti
 and only `signup.enabled`, `signup.role`, and `sessions.maxPerUser` from application
 configuration. Credentials, model settings and private user instructions are not
 returned through that callback. Contract tests reject other configuration keys.
+
+## Cross-domain application enter tickets
+
+`POST /api/applications/:id/enter` requires an ordinary Core user session and an
+enabled external application. It returns `{ url }` with
+`/_sislexa/enter?core=<coreId>&ticket=<opaque>`. Core stores only a SHA-256 digest of
+the random 256-bit ticket plus its bound user/account snapshot, application and
+core id. Tickets expire after 60 seconds and are consumed synchronously once.
+Wrong application/core bindings do not consume them. Expiry returns `ticket_invalid`;
+a replay before expiry returns `ticket_used`. Restart invalidates outstanding tickets;
+route redemption to the issuing Core process when running multiple replicas.
+
+Each application has its own server-side `VC_APPLICATION_<ID>_TOKEN`, with uppercase
+ids and hyphens replaced by underscores (for example `VC_APPLICATION_WEB_READER_TOKEN`).
+`POST /internal/v1/tickets/redeem` accepts `{ ticket, application }`, authenticates
+that application's bearer credential, and returns only
+`{ user, tenantId, capabilities, expiresAt }`. The common `VC_INTERNAL_TOKEN` does
+not authenticate this endpoint. Configure the matching service registry secret
+separately; no credentials are generated or changed by this feature. Replies are
+`no-store`; do not log bodies, Authorization, or entry URLs containing tickets.
+
+`TrustedCoreRegistry.redeem` uses an origin-bound request, disallows redirects,
+limits each attempt to five seconds, and retries once only for transport/5xx errors.
+A lost success response may result in `ticket_used` on retry: obtain a fresh ticket,
+never replay its authority. The returned session carries the selected `coreId`.
+Consumers must revalidate their local session against that Core on subsequent
+requests and enforce their own cookie/CSRF policy. `expiresAt` is the ticket's
+remaining authorization deadline, not an independently extended service session.
