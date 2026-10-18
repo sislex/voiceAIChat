@@ -11,6 +11,13 @@ import {
 import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
 import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
 import { isOwnerPinFile, ownerPinChanges } from './owner-pins.mjs'
+
+// Mirrors `desktopFrozen` in shared-chat-artifacts.mjs without loading archive tooling at plan time.
+const desktopFrozen = () => {
+  const path = resolve(root, 'dependency-snapshots.json')
+  if (!existsSync(path)) return false
+  return !!JSON.parse(readFileSync(path, 'utf8')).packages?.find(row => row.name === '@sislexa/desktop')?.frozen
+}
 const root = resolve(import.meta.dirname, '..')
 const git = (...args) =>
   execFileSync('git', args, {
@@ -148,7 +155,7 @@ export function coreCodeSummary(files) {
 
 export function planApplicationChecks(
   files,
-  { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins } = {}
+  { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins, frozenDesktop = desktopFrozen() } = {}
 ) {
   validateApplicationCatalog(catalog)
   const selected = new Map(),
@@ -228,7 +235,8 @@ export function planApplicationChecks(
         if (app.kind === 'frontend' && app.id !== 'web') e2eFiles.add('e2e/toolIntegration.e2e.test.ts')
         if (app.id === 'web') for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite)
       }
-      if (name === '@sislexa/desktop') { verifyArtifacts = true; for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite) }
+      // A frozen Desktop pin only needs the pin-integrity checks, not the frontend browser suites.
+      if (name === '@sislexa/desktop') { verifyArtifacts = true; if (!frozenDesktop) for (const suite of FRONTEND_E2E_FILES) e2eFiles.add(suite) }
     }
   }
   for (const file of files) {
