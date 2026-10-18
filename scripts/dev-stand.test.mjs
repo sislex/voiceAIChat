@@ -45,6 +45,14 @@ test('longest component prefix wins; inactive components fall back to Caddy', ()
   for (const [path, expected] of [['/api/make/x?q=1', 'make'], ['/api/makex', 'core'], ['/api/browser/x', 'base'], ['/ws', 'core'], ['/assets/x', 'core-ui'], ['/p/x', 'make']])
     assert.equal(targetFor(value, path, 'http://base'), `http://${expected}`)
 })
+test('internal Core calls never fall into a dev Core UI', () => {
+  const value = manifest()
+  value.components['core-ui'] = { ...value.components['core-ui'], source: 'dev', url: 'http://core-ui' }
+  assert.equal(targetFor(value, '/internal/kanban/core', 'http://base'), 'http://base')
+  value.components.core = { ...value.components.core, source: 'dev', url: 'http://core' }
+  assert.equal(targetFor(value, '/internal/kanban/core', 'http://base'), 'http://core')
+  assert.equal(DEV_COMPONENT_REGISTRY.kanban.readinessPath, '/v1/health')
+})
 test('Core launcher requires stand data and sends external components through the stand', () => {
   assert.throws(() => componentEnvironment({}), /stand allocation/)
   const env = componentEnvironment({ SISLEXA_STAND_URL: 'http://stand', VC_DATA_DIR: '/stand/data', VC_DB_URL: 'postgres://stand/db', VC_PORT: '24001' })

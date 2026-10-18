@@ -114,9 +114,10 @@ describe('dev stand REST and agent wire contracts', () => {
     expect(DEV_COMPONENT_IDS).toEqual(['core', 'core-ui', 'make', 'kanban', 'playwright-reader', 'image-studio'])
     expect(DEV_COMPONENT_REGISTRY.make.routePrefixes).toEqual(['/api/make', '/api/preview/make', '/api/preview/make-shared', '/p/', '/s/'])
     expect(DEV_COMPONENT_REGISTRY.kanban.routePrefixes).toEqual([])
+    expect(DEV_COMPONENT_REGISTRY.core.routePrefixes).toEqual(['/api', '/ws', '/internal'])
     for (const id of DEV_COMPONENT_IDS) {
       expect(DEV_COMPONENT_REGISTRY[id].defaultPort).toBeGreaterThan(1024)
-      expect(DEV_COMPONENT_REGISTRY[id].readinessPath).toBe(id === 'core-ui' ? '/' : '/api/health')
+      expect(DEV_COMPONENT_REGISTRY[id].readinessPath).toBe(id === 'core-ui' ? '/' : id === 'kanban' ? '/v1/health' : '/api/health')
     }
     expect(DEV_STAND_ERROR_CODES).toEqual(Object.keys(DEV_STAND_ERROR_STATUS))
     expect(DEV_STAND_ERROR_STATUS.operation_conflict).toBe(409)
