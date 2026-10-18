@@ -1,4 +1,6 @@
 """Stand lifecycle contracts; no daemon or listener is started."""
+import contextlib
+import io
 import json
 import os
 import pathlib
@@ -11,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from environment_stand import Stand, RESERVED, scrypt_password_hash
+from environment_stand import Stand, RESERVED, scrypt_password_hash, sanitize_sql
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -469,6 +471,25 @@ class AdminPasswordHashTest(unittest.TestCase):
         self.assertIn(":'admin_password_hash'", sql)
         self.assertNotIn('crypt(', sql)
         self.assertNotIn('pgcrypto', sql)
+
+    def test_stand_users_password_is_optional_and_applies_to_every_user(self):
+        plain = sanitize_sql({'VC_ADMIN_PASSWORD': 'stand-only-password'}).decode()
+        self.assertIn("\\set users_password_hash ''", plain)
+        shared = sanitize_sql({'VC_ADMIN_PASSWORD': 'stand-only-password', 'VC_STAND_USERS_PASSWORD': '1234'}).decode()
+        line = next(l for l in shared.splitlines() if l.startswith('\\set users_password_hash'))
+        self.assertRegex(line, r"'scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}'")
+        self.assertIn("WHERE :'users_password_hash' <> ''", shared)
+        with self.assertRaises(ValueError):
+            sanitize_sql({'VC_STAND_USERS_PASSWORD': '1234'})
+
+    def test_public_stand_password_is_not_masked_in_stage_logs(self):
+        stand = Stand('provision')
+        stand.values = {'VC_ADMIN_PASSWORD': 'stand-only-password', 'VC_STAND_USERS_PASSWORD': '1234'}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            stand.emit('passed', 'port 12345 stand-only-password')
+        log = json.loads(out.getvalue())['log']
+        self.assertIn('12345', log)
+        self.assertNotIn('stand-only-password', log)
 
 
 class StandComposeTest(unittest.TestCase):
