@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-16
-checked: e3ba723b
+updated: 2026-10-18
+checked: f34a9ae1
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -163,6 +163,10 @@ repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seede
 by a shallow fetch from the local Core checkout instead of GitHub. Interrupted
 fetch residues (`shallow.lock`, `tmp_pack_*`) are cleaned only when no Git process
 runs; process inspection is skipped when there is no residue to clean.
+The shallow owner fetch from GitHub is retried up to four times (5/10/20 s
+backoff) only for transient transport failures (`fetch-pack`, unexpected
+disconnect, early EOF, RPC failed, remote hang-up, DNS, connection reset/timeout,
+HTTP 5xx); residues are cleaned between attempts and other failures stop at once.
 An identified Git process takes diagnostic precedence over unknown process rows;
 unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout

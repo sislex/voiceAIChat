@@ -71,6 +71,24 @@ export function cleanOwnerGitResidue(checkout, assertIdle = assertNoActiveGit) {
   for (const file of residues) rmSync(file)
 }
 
+// GitHub intermittently drops large or shallow packs; only transport failures are retried.
+export const TRANSIENT_GIT_FAILURE = /fetch-pack|unexpected disconnect|early EOF|RPC failed|remote end hung up|Could not resolve host|Connection (?:reset|timed out)|Operation timed out|returned error: 5\d\d|HTTP 5\d\d/i
+const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+
+export function retryGitFetch(fetch, { delays = [5000, 10000, 20000], sleep = sleepSync, clean = () => {}, log = message => console.error(message) } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const result = fetch()
+    if (!result.error && result.status === 0) return
+    const stderr = String(result.stderr ?? '')
+    if (attempt > delays.length || !TRANSIENT_GIT_FAILURE.test(stderr)) {
+      throw Object.assign(result.error ?? Error(`git fetch failed: ${stderr.trim().split('\n').slice(-3).join(' | ') || `exit ${result.status}`}`), { exitCode: result.status || 1 })
+    }
+    log(`[system-gate] transient git fetch failure (attempt ${attempt}/${delays.length + 1}); retrying in ${delays[attempt - 1] / 1000}s`)
+    clean()
+    sleep(delays[attempt - 1])
+  }
+}
+
 export function prepareCoreFixture(root, checkout, coreCommit, assertIdle = assertNoActiveGit) {
   if (!/^[a-f0-9]{40}$/.test(coreCommit)) throw Error('Expected immutable Core commit')
   const fixture = join(checkout, '.cache/core-system', coreCommit)
@@ -104,6 +122,7 @@ export function main(args = process.argv.slice(2), {
   spawn = spawnSync,
   prepareFixture = prepareCoreFixture,
   cleanOwner = cleanOwnerGitResidue,
+  sleep = sleepSync,
 } = {}) {
   // Exercise the exact local artifact set before the existing owner system suites.
   // This check also accepts uncommitted delivery patches; owner release suites
@@ -145,7 +164,11 @@ export function main(args = process.argv.slice(2), {
       }
       if (!existsSync(join(checkout, 'package.json'))) {
         cleanOwner(checkout)
-        run('git', ['fetch', '--depth=1', 'origin', owner.commit], checkout)
+        retryGitFetch(() => {
+          const result = spawn('git', ['fetch', '--depth=1', 'origin', owner.commit], { cwd: checkout, env: process.env, stdio: ['ignore', 'inherit', 'pipe'], encoding: 'utf8' })
+          if (result.stderr) process.stderr.write(result.stderr)
+          return result
+        }, { sleep, clean: () => cleanOwner(checkout) })
         run('git', ['checkout', '--detach', owner.commit], checkout)
       }
       if (execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim() !== owner.commit) throw Error('System owner commit mismatch')
