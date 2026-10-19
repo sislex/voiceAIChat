@@ -520,6 +520,9 @@ class StandComposeTest(unittest.TestCase):
                 if voice == 'on':
                     expected.update({'stt-runner', 'tts-runner'})
                 self.assertEqual(set(model['services']), expected)
+                caddy = model['services']['caddy']['environment']
+                for kind in ('MAKE', 'PLAYWRIGHT_READER', 'IMAGE_STUDIO'):
+                    self.assertEqual(caddy['VC_CADDY_' + kind + '_UPSTREAM'], 'voicechat:8787')
                 core = model['services']['voicechat']['environment']
                 for kind in ('STT', 'TTS'):
                     self.assertEqual(core['VC_' + kind + '_RUNNER_URL'],

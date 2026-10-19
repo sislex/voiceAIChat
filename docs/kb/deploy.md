@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: d3bce4a94
+checked: fa8d59472
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -71,6 +71,20 @@ and both external LLM runner URLs select only Core, Postgres and Caddy. Use the
 Compose wrapper above so the generated settings reach Compose. Browser runners
 belong to local Playwright Reader.
 Optional service dependencies use `required: false`.
+
+The selector also derives `VC_CADDY_MAKE_UPSTREAM`,
+`VC_CADDY_PLAYWRIGHT_READER_UPSTREAM` and `VC_CADDY_IMAGE_STUDIO_UPSTREAM`.
+Local applications retain their direct service upstreams. Disabled and external
+applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
+return Core's `404 application_disabled` instead of proxying to absent services.
+Without a selector, the original direct Caddy upstream defaults are preserved.
+
+Operator verification on 2026-10-19 used a separate Docker project and disposable
+Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
+Postgres and Caddy, accepted an administrator login, exposed the chat-only
+manifest and returned the expected disabled responses over certificate-verified
+HTTPS. This isolated check does not replace the complete four-profile acceptance
+or the final production-snapshot release validation below.
 
 Local Projects enables Kanban and Postgres. When Projects is off or external,
 the stand no longer requires those profiles or a database URL; SQLite remains

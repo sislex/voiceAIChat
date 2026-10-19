@@ -561,6 +561,9 @@ services:
       # Публичный адрес стенда: подставляется в Caddyfile. Без него Caddy
       # поднимется с пустым хостом и не ответит ни на один запрос.
       VC_PUBLIC_HOST: ${VC_PUBLIC_HOST:?нужен VC_PUBLIC_HOST в .env — адрес, по которому стенд виден снаружи}
+      VC_CADDY_MAKE_UPSTREAM: ${VC_CADDY_MAKE_UPSTREAM:-make:8788}
+      VC_CADDY_PLAYWRIGHT_READER_UPSTREAM: ${VC_CADDY_PLAYWRIGHT_READER_UPSTREAM:-playwright-reader:8797}
+      VC_CADDY_IMAGE_STUDIO_UPSTREAM: ${VC_CADDY_IMAGE_STUDIO_UPSTREAM:-image-studio:8796}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Локальный CA и выписанные сертификаты — переживают пересоздание.

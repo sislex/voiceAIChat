@@ -23,6 +23,20 @@ class ApplicationProfiles(unittest.TestCase):
         self.assertEqual(result['COMPOSE_PROFILES'], 'public,voice-runner')
         self.assertEqual(result['VC_READER_MODE'], 'off')
 
+    def test_caddy_routes_disabled_and_external_applications_through_core(self):
+        upstreams = {'make': ('MAKE', 'make:8788'),
+                     'playwright-reader': ('PLAYWRIGHT_READER', 'playwright-reader:8797'),
+                     'image-studio': ('IMAGE_STUDIO', 'image-studio:8796')}
+        for app, (key, upstream) in upstreams.items():
+            for selector, expected in [('chat', 'voicechat:8787'),
+                    ('chat,' + app, upstream),
+                    ('chat,' + app + '=https://service.example.org', 'voicechat:8787')]:
+                with self.subTest(app=app, selector=selector):
+                    result = application_settings({'VC_APPLICATIONS': selector,
+                        'VC_CADDY_' + key + '_UPSTREAM': 'stale:1234'})
+                    self.assertEqual(result['VC_CADDY_' + key + '_UPSTREAM'], expected)
+        self.assertFalse(any(key.startswith('VC_CADDY_') for key in application_settings({})))
+
     def test_legacy(self):
         result = application_settings({})
         self.assertNotIn('VC_MAKE_MODE', result)

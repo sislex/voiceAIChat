@@ -21,6 +21,9 @@ def application_settings(values: Dict[str, str]) -> Dict[str, str]:
              'playwright-reader': 'PLAYWRIGHT_READER', 'image-studio': 'IMAGE_STUDIO'}
     profiles_by_app = {'make': 'make', 'projects': 'kanban', 'web-reader': 'reader',
                        'playwright-reader': 'playwright-reader', 'image-studio': 'image-studio'}
+    caddy_upstreams = {'make': ('MAKE', 'make:8788'),
+                       'playwright-reader': ('PLAYWRIGHT_READER', 'playwright-reader:8797'),
+                       'image-studio': ('IMAGE_STUDIO', 'image-studio:8796')}
     managed = set(profiles_by_app.values()) | {'local-runner', 'voice-runner', 'browser-runner', 'automation-runner'}
     profiles = set(filter(None, values.get('COMPOSE_PROFILES', '').split(',')))
     if voice == 'off':
@@ -54,6 +57,10 @@ def application_settings(values: Dict[str, str]) -> Dict[str, str]:
         result['VC_' + mode + '_MODE'] = 'remote' if local else 'off'
         if local:
             profiles.add(profiles_by_app[name])
+    # Disabled/external UI paths must reach Core's application-disabled handler,
+    # rather than a missing local service. Legacy deployments keep Caddy defaults.
+    for name, (key, upstream) in caddy_upstreams.items():
+        result['VC_CADDY_' + key + '_UPSTREAM'] = upstream if selected.get(name) else 'voicechat:8787'
     if selected.get('projects'):
         profiles.add('postgres')
     if selected.get('chat') and voice == 'on':
