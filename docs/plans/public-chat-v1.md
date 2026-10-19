@@ -1,6 +1,6 @@
 # Sislexa Chat v1 public launch
 
-Status: implementation and acceptance in progress, 2026-10-19. This is a launch
+Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
 plan, not a claim that the public site or all listed changes are deployed.
 
 ## Approved scope
@@ -59,10 +59,10 @@ A read-only sandbox by itself does not establish user-data isolation.
 | Registration and recovery | New ordinary account, one-use verification/reset links, closed signup rejects existing links, no account enumeration | Owner gate and two-user stand acceptance passed with Mailpit; live mail pending |
 | Model selection | Exactly Luna/Terra/Sol visible and enforced at execution; a real answer from each | All three real Core/Runner/Billing responses and saved history passed; exact three-model browser catalog confirmed |
 | Daily quota | Below-limit admission, final overage, next request blocked, midnight reset, no parallel/tenant/restart bypass | Owner gate and real stand overage/rejection/restart checks passed |
-| Chat lifecycle | First answer, streaming, cancel, retry, reload and history; network interruption does not double-charge | Reconnect and subsequent turn passed; background Stop implementation and required gate passed, real stand acceptance pending |
-| Public UI | Chat navigation only, visible spending/reset and clear quota errors, desktop/mobile acceptance | Desktop quota/reset/overage explanation and Russian rejection passed; voice onboarding and mobile model-menu fixes passed owner gates, combined release acceptance pending |
+| Chat lifecycle | First answer, streaming, cancel, retry, reload and history; network interruption does not double-charge | Reconnect, background Stop with measured settlement, blocked concurrent admission and subsequent turn passed; default-machine fix deployed; protocol/accounting and final ordinary-user browser acceptance passed |
+| Public UI | Chat navigation only, visible spending/reset and clear quota errors, desktop/mobile acceptance | Desktop quota/reset/overage explanation, first selected model, absent voice onboarding and mobile three-model menu passed; presentation follow-ups remain |
 | User isolation | Two synthetic users cannot access each other's chats, files or sessions; CLI exposes no host tools | Owner sandbox probes and two-user stand API/file/symlink/session checks passed |
-| Release operations | Clean immutable owner pins, full gates, restore drill, health/metrics and rollback evidence | Final owner/Core composition gates and 156-table restore drill passed; live acceptance, review and official release pending |
+| Release operations | Clean immutable owner pins, full gates, restore drill, health/metrics and rollback evidence | Final owner/Core composition gates and 156-table restore drill passed; Core machine-policy fix passed review and quick gate; official release pending |
 | Public commissioning | Domain/TLS, real mail delivery, verification/recovery links use the canonical domain | Awaiting public-site setup |
 
 Kanban epic: `de61c6e3-d53e-4a3c-be93-458164edb646`; its nine child tasks carry
@@ -137,8 +137,10 @@ models rechecked before public commissioning.
 
 ## Stand acceptance after cutover
 
-Core candidate `3b7a10082838a31207c97572418f130d7789ea77`, Identity `bd5dcc9`,
-Billing `cf8df21` and Runner `e3acfdd` are running on the existing dev-m2 stand.
+The initial stand acceptance used Core `3b7a10082838a31207c97572418f130d7789ea77`,
+Identity `bd5dcc9`, Billing `cf8df21` and Runner `e3acfdd`. Core was subsequently
+updated to `22efc2c227279ec999e096ed53237acfa479b118` for final UI and background-Stop
+acceptance, preserving both settled spending and the unresolved legacy hold.
 All three actual Core-to-Runner-to-Billing requests returned the synthetic
 acceptance text: Luna 3.890 s, Terra 4.320 s, Sol 5.315 s. History survived and a
 second account could not read the conversations.
@@ -164,9 +166,11 @@ credential now authenticates Core; its subsequent receipts settle automatically.
 Master administration remains separate. No ledger/outbox rows were deleted or
 edited to release a hold.
 
-The voice onboarding popup was still visible with both voice services absent.
+The baseline voice onboarding popup appeared with both voice services absent.
 The fix adds explicit configured-module information in the Core contract and an
-owner UI visibility check; final browser acceptance awaits that pinned artifact.
+owner UI visibility check. Live Chrome acceptance on the pinned final artifact
+confirmed both the automatic popup and manual first-run launcher absent, while
+the fresh account remained `onboarded: false`.
 Core commit `0e050cbcdc0ecffa1c2fc8263f50f10b6f10cd42` passed the required expanded
 full gate (2187 server and 57 enabled browser checks, plus shared/tooling checks).
 The published Shared 0.1.42 contract carries optional `configured` independently
@@ -184,7 +188,11 @@ in the background for actual-cost accounting. New requests remain blocked until
 settlement. Implementation passed 568 related server tests and the 129-test
 changed-file rerun. The queue remains paused after Stop until explicit manual
 continuation; a competing admission cannot discard queued text. Real stand
-acceptance is pending; the previous uncertain test hold must remain intact. Reconnect checks already passed
+acceptance passed on Core `22efc2c2`: Stop acknowledged immediately, the executor
+continued in the background, one measured $0.003095 settlement completed, no late
+output or history change appeared, and the next request succeeded only after
+settlement. A blocked request created no reservation. The previous uncertain
+test hold and earlier settled costs remained intact. Reconnect checks also passed
 with one saved answer, stable spending and a successful subsequent turn.
 
 There is no supported metadata-only Docker adoption endpoint for the managed
@@ -199,8 +207,9 @@ catalog contains only the approved three models, and an exhausted request shows
 the Russian quota error. At a 360-by-800 mobile viewport the quota error and
 composer fit, but the model trigger is visually empty and menu labels wrap into
 an excessively narrow column. The menu opens and exposes all three choices;
-this is a layout defect, not evidence of a missing model. Mobile acceptance is
-not complete until the corrected artifact is deployed and rechecked. The owner
+this was a layout defect, not evidence of a missing model. Live acceptance on
+the final artifact confirmed a visible trigger and readable Luna/Terra/Sol rows
+at the same 360-by-800 viewport. The owner
 fix adds a visible mobile model icon, readable model columns and a composer-bound
 popup. Its regression failed on the old UI and passed on the fix at mobile, wide
 desktop and narrow desktop viewports. The complete mobile owner gate passed
@@ -238,16 +247,64 @@ The required combined Core gate (`gate:quick -- --base 0e050cbcdc0ecffa1c2fc8263
 expanded to `gate:all`) exited 0: 2210 server tests, 1287 shared tests, the other
 workspace/tooling checks, and 58 enabled browser checks passed. Existing opt-in
 skips remain unchanged. The downloaded vendor archive hash and actual Shared
-0.1.42 compatibility metadata were verified before the gate. Final stand
-acceptance remains pending; source validation alone does not establish the
-deployed behavior.
+0.1.42 compatibility metadata were verified before the gate. Live Chrome
+acceptance then confirmed default Luna, selection of Terra before the first
+message, an actual Terra response in 4.2 seconds, saved history and a measured
+$0.017064 charge. This browser journey created an empty conversation before
+selection; the unsaved-draft path is covered by the owner regression suite.
+
+The ordinary non-admin journey exposed an additional Core defect: a missing
+execution machine emitted `claude.error` before a successful `claude.start`,
+incorrectly clearing UI streaming state. The server-authoritative text-only
+policy now skips machine resolution and Git/remote preflight while keeping
+commands disabled. Other modes and Billing/model admission retain their checks.
+Commit `20d27f61b3b134167f58d2a9684e0d7f7c267979` passed independent review,
+typecheck/build, 565 related tests and 8 focused regressions. An unrelated voice
+shutdown timeout passed its isolated rerun and the complete repeated quick gate
+without code changes.
+
+The final stand image is Core `20d27f61b3b134167f58d2a9684e0d7f7c267979`
+(`sha256:f0668a269b06b73801bcbac70e00662ce7f94520209d7320d1de7674cd873f63`).
+A fresh 514,137,595-byte PostgreSQL dump, Core data and a consistent Billing
+snapshot preceded a Core-only restart. Health and exact prior ledger rows were
+verified after cutover; all nine original users and blank stand passwords remain
+unchanged.
+
+A non-admin account then created two conversations without any settings patch:
+machine, workdir, project and model overrides remained null. Actual start and
+active snapshots selected Luna with a null target, and no machine error appeared.
+Stop produced one measured $0.003076 settlement; concurrent admission was denied
+without another reservation, and a subsequent request completed for $0.001528.
+There was no late stopped output or saved-history change. A separate read-only
+completion audit verified both unique settlements, unchanged earlier C/B ledger
+rows and inherited settings. The original acceptance script's last immediate
+assertion saw the global Runner count at one after settlement; its failed journal
+is retained alongside the successful completion audit, which observed Runner
+idle. The transient global count remains unexplained: the deployed Runner's
+aggregate does not retain member IDs and access logging was off. Historical
+metadata contains exactly the two expected receipts and Codex sessions; an
+additional paid request is not established. Preserve this diagnostic follow-up
+for release/load validation instead of rewriting the failed journal or masking
+it with a wait.
+
+Final native Chrome acceptance created another ordinary-user conversation with
+all overrides still null. The UI retained its pending state and Stop control,
+then displayed the Luna answer in 3.8 seconds without the machine warning.
+Exactly one integer Billing settlement of $0.001434 was recorded. The response
+still includes fallback notices about legacy inherited provider/model defaults;
+these are tracked with the other presentation follow-ups below.
 
 
 ## Observed UI polish before public commissioning
 
 The stand still exposes legacy ChatAI / voice-chat branding, account plan rows
 for modules outside the enabled chat composition, and an unconfigured analytics
-section that polls a 503 endpoint. These are observed presentation/integration
+section that polls a 503 endpoint. The answer-level TTS control is still visible
+without a configured voice service; first default answers expose legacy model
+fallback notices even though the selector already displays Luna; a conversation
+without a workdir polls a
+404 storage endpoint, and the hidden mobile sidebar retains keyboard focus.
+These are observed presentation/integration
 follow-ups, not evidence that those product apps are enabled. Record their
 resolution or an explicit launch disposition before calling the public UI fully
 polished; do not conflate successful chat acceptance with completion of every
