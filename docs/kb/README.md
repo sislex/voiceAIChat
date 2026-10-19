@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 787 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 906 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 923 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2156 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2157 коммит(ов) в areas после сверки: d55b96536 chore: pin Shared 0.1.40 (deployment-profiles-v2 B17 shared-service RPC and MCP) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1086 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1206. Последние:
+Всего записей: 1207. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md) — shared-service-rpc-mcp
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md) — shared-peers-any-range
@@ -72,8 +72,8 @@
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-38.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-38.md) — pin-shared-0-1-38
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-37.md) — pin-shared-0-1-37
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-36.md) — pin-shared-0-1-36
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-external-kanban-core.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-external-kanban-core.md) — external-kanban-core
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-deployment-profiles-c01.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-deployment-profiles-c01.md) — deployment-profiles-c01
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-b02-ticket-delegation.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-b02-ticket-delegation.md) — b02-ticket-delegation
 
 ## Исторические планы
 
