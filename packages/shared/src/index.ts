@@ -115,3 +115,4 @@ export type { DevStandAccessRequest, DevStandAccessResponse } from './devStandAc
 export * from './standDelivery'
 
 export * from './integrations'
+export * from './deploymentProfiles.js'

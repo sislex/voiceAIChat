@@ -50,6 +50,12 @@ export function parseRunArgs(args) {
 }
 
 /** Knowledge topics (`<kbDir>/*.md` frontmatter `areas`) that cover any of the given repository files. */
+/** Owners that keep several workspace versions in lockstep (Make) publish a `set-version` script;
+ * it validates and rewrites manifests and the lock itself, so the train must not bump them directly. */
+export function ownerVersionCommand(pkg, version) {
+  return pkg.scripts?.['set-version'] ? ['npm', ['run', 'set-version', '--', version]] : null
+}
+
 export function topicsCoveringFiles(kbDir, files) {
   if (!existsSync(kbDir)) return []
   const covers = (area, file) => area === file || file.startsWith(area.replace(/\/+$/, '') + '/')
@@ -58,6 +64,15 @@ export function topicsCoveringFiles(kbDir, files) {
     const areas = /(?:^|\n)areas:\n((?:[ \t]+- .*\n?)*)/.exec(front)?.[1] ?? ''
     return areas.split('\n').map(line => line.replace(/^[ \t]+- /, '').trim()).filter(Boolean).some(area => files.some(file => covers(area, file)))
   })
+}
+
+// Some owner KB contracts require full SHAs, while the shared touch CLI abbreviates HEAD.
+export function recordFullKnowledgeCommit(path, commit) {
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw Error('Knowledge review requires a full commit SHA')
+  const source = readFileSync(path, 'utf8'), front = /^---\n([\s\S]*?)\n---/.exec(source)
+  if (!front || !/^checked: [a-f0-9]{7,40}$/m.test(front[1])) throw Error('Knowledge review metadata missing or invalid')
+  const metadata = front[0].replace(/^checked: [a-f0-9]{7,40}$/m, `checked: ${commit}`)
+  writeFileSync(path, metadata + source.slice(front[0].length))
 }
 
 export function createJournal(plan, options, repository) {
@@ -187,20 +202,29 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     const lock = json(join(repository, 'deploy/tools.lock.json'))
     if (action === 'prepare') {
       clone(`https://github.com/${owner.repository}.git`, owner.source, cwd)
-      const files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
-      for (const file of files) { const pkg = json(join(cwd, file)); pkg.version = owner.version; write(join(cwd, file), pkg) }
+      let files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
       const pkg = json(join(cwd, 'package.json')), kb = Boolean(pkg.scripts?.['kb:check'])
+      const ownerBump = ownerVersionCommand(pkg, owner.version)
+      if (!ownerBump) for (const file of files) { const manifest = json(join(cwd, file)); manifest.version = owner.version; write(join(cwd, file), manifest) }
       // Topics must be fresh before the bump; afterwards only topics whose areas cover the bumped
       // manifests are re-checked, because a version-only commit does not change their content.
-      if (kb) { run('npm', ['ci', '--ignore-scripts'], cwd); run('npm', ['run', 'kb:check'], cwd) }
-      run('npm', ['install', '--package-lock-only'], cwd)
+      if (kb || ownerBump) run('npm', ['ci', '--ignore-scripts'], cwd)
+      if (kb) run('npm', ['run', 'kb:check'], cwd)
+      if (ownerBump) {
+        run(...ownerBump, cwd)
+        files = [...new Set([...files, ...git(cwd, 'diff', '--name-only').split('\n').filter(file => file.endsWith('package.json'))])]
+      } else run('npm', ['install', '--package-lock-only'], cwd)
       git(cwd, 'add', '--', ...files, 'package-lock.json')
       if (git(cwd, 'diff', '--cached', '--name-only')) git(cwd, 'commit', '-m', `Release ${owner.version}`)
       if (kb) {
         const kbDir = join(cwd, existsSync(join(cwd, 'kb.config.json')) ? json(join(cwd, 'kb.config.json')).kbDir ?? 'docs/kb' : 'docs/kb')
         const topics = topicsCoveringFiles(kbDir, [...files, 'package-lock.json'])
         const touch = existsSync(join(cwd, 'scripts/kb.mjs')) ? ['node', ['scripts/kb.mjs', 'touch']] : ['npx', ['--no-install', 'sislexa-kb', 'touch']]
-        for (const topic of topics) run(touch[0], [...touch[1], topic], cwd)
+        const reviewedCommit = git(cwd, 'rev-parse', 'HEAD')
+        for (const topic of topics) {
+          run(touch[0], [...touch[1], topic], cwd)
+          recordFullKnowledgeCommit(join(kbDir, topic), reviewedCommit)
+        }
         if (topics.length) {
           if (pkg.scripts['kb:index']) run('npm', ['run', 'kb:index'], cwd)
           git(cwd, 'add', '--all', '--', relative(cwd, kbDir))

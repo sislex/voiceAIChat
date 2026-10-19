@@ -6,6 +6,14 @@ import test from 'node:test'
 
 const root = resolve(import.meta.dirname, '..')
 
+test('Core workspace resolves the published Shared subpaths used by embedded Identity', async () => {
+  for (const path of ['types', 'projectTypes', 'admin', 'llmAccess', 'rateLimit', 'protocol']) {
+    const plain = await import('@voicechat/shared/' + path)
+    const extension = await import('@voicechat/shared/' + path + '.js')
+    assert.equal(plain, extension)
+  }
+})
+
 test('published Shared contracts resolve the S4 Identity and SDK releases', () => {
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
   execFileSync('node', ['scripts/core-contracts-release.mjs', '--version', '0.1.11', '--commit', commit], { cwd: root, stdio: 'pipe' })
@@ -17,7 +25,11 @@ test('published Shared contracts resolve the S4 Identity and SDK releases', () =
   assert.equal(manifest.name, '@voicechat/shared')
   assert.equal(manifest.version, '0.1.11')
   assert.equal(source.commit, commit)
-  assert.equal(manifest.peerDependencies['@sislexa/identity'], '>=1.4.2 <1.6.0')
-  assert.equal(manifest.peerDependencies['@sislexa/sdk'], '>=1.2.0 <1.4.0')
-  assert.equal(manifest.peerDependencies['@sislexa/voice'], lock.packages['node_modules/@sislexa/voice'].version)
+  // Published peers are optional and non-binding; the exact Core versions are kept in provenance.
+  for (const range of Object.values(manifest.peerDependencies)) assert.equal(range, '*')
+  assert.equal(source.corePeers['@sislexa/identity'], '>=1.4.2 <1.6.0')
+  assert.equal(source.corePeers['@sislexa/sdk'], '>=1.2.0 <1.4.0')
+  assert.equal(source.corePeers['@sislexa/voice'], lock.packages['node_modules/@sislexa/voice'].version)
+  assert.deepEqual(Object.keys(manifest.peerDependenciesMeta).sort(), Object.keys(manifest.peerDependencies).sort())
+  for (const meta of Object.values(manifest.peerDependenciesMeta)) assert.deepEqual(meta, { optional: true })
 })

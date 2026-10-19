@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-16
-checked: e3ba723b
+updated: 2026-10-19
+checked: 21ab54d5
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -91,11 +91,17 @@ Keep only vendor archives referenced by repository package manifests/lockfiles, 
 
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
 committed Shared contract as version 0.1.11 with bounded Identity
-`>=1.4.2 <1.5.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
-must still contain the accepted 1.4.2/1.2.0 baseline; other peers remain exact.
+`>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
+must contain the reviewed 1.5.1/1.2.0 baseline; other peers remain exact.
 The release-tool test checks the packed manifest and source commit. Consumer
 owners must install and gate against the actual released archives without
 disabling npm peer resolution.
+
+The Core Shared workspace exposes the same `./*` and `./*.js` source subpaths as
+the published contracts. Embedded Identity 1.5.1 uses those public subpaths;
+its standalone owner gate cannot detect missing exports in Core's local workspace.
+The release-tool test imports both forms, and Core typechecking covers the installed
+owner consumer against the workspace contracts.
 
 `dependency-snapshots.json` pins the 13 supplied S2 owner archives by package,
 version, source commit, SHA-256 and npm integrity. Content-addressed archives live
@@ -163,6 +169,10 @@ repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seede
 by a shallow fetch from the local Core checkout instead of GitHub. Interrupted
 fetch residues (`shallow.lock`, `tmp_pack_*`) are cleaned only when no Git process
 runs; process inspection is skipped when there is no residue to clean.
+The shallow owner fetch from GitHub is retried up to four times (5/10/20 s
+backoff) only for transient transport failures (`fetch-pack`, unexpected
+disconnect, early EOF, RPC failed, remote hang-up, DNS, connection reset/timeout,
+HTTP 5xx); residues are cleaned between attempts and other failures stop at once.
 An identified Git process takes diagnostic precedence over unknown process rows;
 unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout

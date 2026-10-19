@@ -179,6 +179,16 @@ FENCE_PYTHON
 # Every Docker invocation, including a detached child's mutations, checks live
 # authority. The original host flock remains held by this launcher and Docker.
 docker() { delivery_authority verify && command docker "$@"; }
+# Compose with profiles and modes derived from VC_APPLICATIONS (compose_env.py next to this script). The
+# derived variables are exported in a subshell and Compose still runs through the fenced docker() above.
+COMPOSE_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose_env.py"
+app_compose() {
+  (
+    settings=$(python3 "$COMPOSE_ENV" applications) || exit $?
+    while IFS= read -r line; do [[ -n $line ]] && export "$line"; done <<<"$settings"
+    docker compose "$@"
+  )
+}
 
 # Embedded in the content-addressed shell copy: git pull cannot replace journal
 # code midway through a detached operation. No credential or raw health body is stored.
@@ -276,7 +286,7 @@ if [[ $operation_command == reconcile ]]; then
   flock -n 9 || { echo 'Deployment still owns the host lock' >&2; exit 75; }
   cd "$REPO"
   observed=$(observed_commit)
-  docker compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null
+  app_compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null
   operation_record reconcile "$observed"
   exit
 fi
@@ -469,13 +479,13 @@ if [[ -n $operation_id ]]; then
   operation_record phase "$previous" >/dev/null
 fi
 log 'docker compose up -d --build'
-docker compose up -d --build
+app_compose up -d --build
 [[ -z $operation_id ]] || operation_record composed >/dev/null
 
 log 'ждём /api/health'
 for ((i = 1; i <= HEALTH_TRIES; i++)); do
   if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1 &&
-     docker compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
+     app_compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
     if [[ -n $expected_commit && $(observed_commit) != "$expected_commit" ]]; then
       log 'Healthy runtime does not match expected commit'; sleep 5; continue
     fi
@@ -488,6 +498,6 @@ for ((i = 1; i <= HEALTH_TRIES; i++)); do
 done
 
 log "!!! приложение не поднялось за $((HEALTH_TRIES * 5))с"
-docker compose ps -a
-docker compose logs --tail=50 voicechat || true
+app_compose ps -a
+app_compose logs --tail=50 voicechat || true
 exit 1

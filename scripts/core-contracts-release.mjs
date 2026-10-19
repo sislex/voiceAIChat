@@ -23,7 +23,7 @@ const peerDependencies = {}
 // S4 adds compatible Identity and SDK APIs without changing the Shared contract.
 // Keep the accepted baseline in the lock and bound the newer consumer versions.
 const compatiblePeers = {
-  '@sislexa/identity': { locked: '1.5.0', range: '>=1.4.2 <1.6.0' },
+  '@sislexa/identity': { locked: '1.5.1', range: '>=1.4.2 <1.6.0' },
   '@sislexa/sdk': { locked: '1.2.0', range: '>=1.2.0 <1.4.0' }
 }
 for (const name of Object.keys(source.dependencies)) {
@@ -33,10 +33,17 @@ for (const name of Object.keys(source.dependencies)) {
   if (compatible && version !== compatible.locked) throw Error('Review changed peer baseline: ' + name)
   peerDependencies[name] = compatible?.range ?? version
 }
+// Core-side peers are only needed by the subpaths that re-export them. Services consume Shared
+// without these private packages, or own other versions of the same contracts, so the published
+// peers are optional and non-binding ("*"); npm must never fetch them. The exact Core versions stay
+// in release-source.json for traceability.
+const corePeers = { ...peerDependencies }
+for (const name of Object.keys(peerDependencies)) peerDependencies[name] = '*'
+const peerDependenciesMeta = Object.fromEntries(Object.keys(peerDependencies).map(name => [name, { optional: true }]))
 writeFileSync(join(output, 'package.json'), JSON.stringify({
   name: '@voicechat/shared', version, type: 'module', main: './src/index.ts', types: './src/index.ts',
   exports: { '.': './src/index.ts', './*.js': './src/*.ts', './*': './src/*.ts', './release-source.json': './release-source.json' },
-  files: ['src', 'release-source.json'], peerDependencies
+  files: ['src', 'release-source.json'], peerDependencies, peerDependenciesMeta
 }, null, 2) + '\n')
-writeFileSync(join(output, 'release-source.json'), JSON.stringify({ repository: 'https://github.com/sislex/voiceAIChat', commit, version }, null, 2) + '\n')
+writeFileSync(join(output, 'release-source.json'), JSON.stringify({ repository: 'https://github.com/sislex/voiceAIChat', commit, version, corePeers }, null, 2) + '\n')
 execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', output], { cwd: output, stdio: 'inherit' })

@@ -1,6 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-16
+updated: 2026-10-19
+checked: 20e8599d
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -178,11 +179,23 @@ execution only when accounting is configured and the resource permits execution.
 MCP/child operations remain explicitly disabled until resource-specific adapters
 exist and cannot inherit unrestricted user authority. Legacy session billing is
 unchanged. A07 uses an exact owner composition pinned by
-`node scripts/a07-composition.mjs`: Identity `e33958be`, Billing `41263c7c`,
-Runner `097282f2`, SDK `f6313db5`, and Analytics `a85d8ff1` (full hashes are in
+`node scripts/a07-composition.mjs`: Identity 1.5.1 `ed6b4009`, Billing `41263c7c`,
+Runner `1ccbdeb4`, SDK `f6313db5`, and Analytics `a85d8ff1` (full hashes are in
 `vendor/owner-artifacts.json`). Preflight verifies source provenance, archive and
 installed bytes, consumer integrity and deployment locks. Passing it alone is
 only an artifact check.
+
+Identity's deployed service and embedded Core package must name the same owner
+release. Changing only `deploy/tools.lock.json` and Compose leaves the S3 provider
+manifest, consumer lock and archive inventory inconsistent. Apply the published
+owner archive with `release-composition.mjs`, then reconcile the S3 provider
+manifest and A07 exact source before running the Core gate. The 1.5.1 archive is
+`sislexa-identity-1.5.1-7e6a30d47be7.tgz`; validation retains the strict source and
+integrity checks.
+
+Identity 1.5.1 adds `identity_sign_in_tickets`. Core classifies it as Identity-owned
+and excludes its rows from production snapshots alongside sessions, so temporary
+stands cannot inherit one-time production sign-in tickets.
 
 `npm run gate:a07` runs a synthetic server-side SDK consumer against published
 owner implementations. Runner is a pinned development dependency and its
@@ -944,3 +957,123 @@ The `identity.core` callback exposes only `loginNewDeviceEmails` from user setti
 and only `signup.enabled`, `signup.role`, and `sessions.maxPerUser` from application
 configuration. Credentials, model settings and private user instructions are not
 returned through that callback. Contract tests reject other configuration keys.
+
+## Cross-domain application enter tickets
+
+`POST /api/applications/:id/enter` requires an ordinary Core user session and an
+enabled external application. It returns `{ url }` with
+`/_sislexa/enter?core=<coreId>&ticket=<opaque>`. Core stores only a SHA-256 digest of
+the random 256-bit ticket plus its bound user/account snapshot, application and
+core id. Tickets expire after 60 seconds and are consumed synchronously once.
+Wrong application/core bindings do not consume them. Expiry returns `ticket_invalid`;
+a replay before expiry returns `ticket_used`. Restart invalidates outstanding tickets;
+route redemption to the issuing Core process when running multiple replicas.
+
+Each application has its own server-side `VC_APPLICATION_<ID>_TOKEN`, with uppercase
+ids and hyphens replaced by underscores (for example `VC_APPLICATION_WEB_READER_TOKEN`).
+`POST /internal/v1/tickets/redeem` accepts `{ ticket, application }`, authenticates
+that application's bearer credential, and returns only
+`{ user, tenantId, capabilities, expiresAt, delegation: { token, expiresAt } }`. The common `VC_INTERNAL_TOKEN` does
+not authenticate this endpoint. Configure the matching service registry secret
+separately; no credentials are generated or changed by this feature. Replies are
+`no-store`; do not log bodies, Authorization, or entry URLs containing tickets.
+
+`TrustedCoreRegistry.redeem` uses an origin-bound request, disallows redirects,
+limits each attempt to five seconds, and retries once only for transport/5xx errors.
+A lost success response may result in `ticket_used` on retry: obtain a fresh ticket,
+never replay its authority. The returned session carries the selected `coreId`.
+Consumers must revalidate their local session against that Core on subsequent
+requests and enforce their own cookie/CSRF policy. The ticket itself lives 60 seconds;
+the redeemed session `expiresAt` is `SHARED_SESSION_TTL_MS` (8 hours) after redemption.
+
+### Core-issued ticket delegation
+
+Redemption also issues a Core delegation (`apps/server/src/auth/ticketDelegation.ts`):
+an opaque `sxd_` + 256-bit token, stored only as a SHA-256 digest in memory and bound
+to user, tenant, application, `coreId`, the issuing Core session id and that session's
+Billing reference. It expires with the redeemed session and is revoked when the issuing
+session is revoked, when the application is no longer an enabled external application
+with a credential, or by restart (the service re-enters with a fresh ticket).
+
+The service sends it as `x-sislexa-delegation` together with its own
+`authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>`; Core rejects it with another
+application's credential, without a credential, or with cookies. It is accepted on the
+same delegated routes as Identity grants (`/api/chat/session`, `/api/chat/context`,
+`/api/conversations/*` reads and the exchanged `/ws`). `ChatDelegation` authorizes
+read/write/execute on conversations the delegated user owns in the delegated tenant
+(and their project's tenant), without Identity introspection; `/api/chat/session`
+requires an explicit `conversationId`. Delegated turns are admitted through the
+issuing user session's Billing reference with application attribution
+`{ originApplicationId: <application>, executorApplicationId: 'core', delegationId: null }`;
+a build without Billing runs them like the user's own turns. Identity grants keep
+their existing behaviour.
+Identity-delegated turns go to the runner tool-free (`textOnly`). Ticket-delegated turns of a
+shared service do not: they keep that application's MCP tools (B21) and run with
+`executionDisabled` and no remote machine, because the Codex runner refuses tool-free runs
+(`preview_text_only_unavailable`, the connection closes) and a shared service needs its tools.
+
+### Shared-service RPC and MCP (deployment-profiles B17)
+
+**Service→Core.** On its own internal RPC paths an external application may present
+`authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>` instead of `VC_INTERNAL_TOKEN` or a
+component grant (`apps/server/src/auth/sharedServiceCallers.ts`, hooks in
+`routes/internal.ts`). `SHARED_SERVICE_RPC_ROUTES` in `packages/shared/src/deploymentProfiles.ts`
+maps each path to its application and each method to an authority:
+`{ user: n }` needs a live ticket delegation (`x-sislexa-delegation`) of the same application
+and `args[n]` is filled with / must equal the delegated user; `{ userField }` does the same
+for a JSON body (`/internal/image-studio/generate`); `'delegated'` needs a live delegation
+(`/internal/make/events`); `'service'` is build-level for that application (Make
+`conversationOwner`/`conversationProject`/`taskLinks`/`userExists`/`boardChanged`, Reader
+`machineOnline`, all Kanban `/internal/kanban/*`). `{ userArg: n, field }` checks and fills
+the field of an object argument (Web Reader `context` and `logBrowserEvidence`, user in
+`entry.userId`); Reader `projectResource` is `'delegated'` (the forwarded request carries
+the user's own cookie). Web Reader may also call `/internal/playwright-reader/service`
+(`execute`/`screenshot`/`control`, user filled) when Playwright Reader runs inside the core.
+Anything else is `403 method_denied` (for example Make `machineFs.*`, Reader `listPreviews`). A
+delegation of another application or an expired one is `401 delegation_denied`; a missing
+one on a user method is `401 delegation_required`. Another application's token or an
+unknown path falls through to the unchanged internal-token/component-grant check.
+Instead of a ticket delegation the service may present the core MCP token of the turn it is
+serving in `x-sislexa-mcp-token` (B21): Core verifies it with that application's
+`VC_APPLICATION_<ID>_MCP_SECRET` (`verifyCoreMcpTokenWithSecret`), requires the same
+application and this `VC_CORE_ID`, and acts for the token's `userId`; both headers at once,
+another application's or core's token, a wrong signature or an expired token are
+`401 delegation_denied`. A token with a task `scope` claim is read-only: only the route's
+`readMethods` are allowed (Make reads; writes, `projectNotesUpdate` and `/internal/make/events`
+are `403 method_denied`). This lets tools work on turns Core runs itself, where the runner
+has only the MCP URL and no ticket delegation.
+A ticket delegation may also `POST /api/conversations` with exactly its application's
+`assistantKind` (`APPLICATION_ASSISTANT_KIND`: make→`make`, image-studio→`images`,
+web-reader→`web-recorder`, playwright-reader→`playwright-reader`) and no `scope`.
+
+**Core→service.** For an external application with `VC_APPLICATION_<ID>_SERVICE_TOKEN`
+Core calls the service with `authorization: Bearer <service token>`,
+`x-sislexa-core-id: <VC_CORE_ID>` and, for user-scoped methods, an `x-sislexa-delegation`
+minted server-side in the same store (`sid: null`, 5 minutes,
+`apps/server/src/sharedServices/externalService.ts`). Today Make uses it: `promptContext`
+and `listFiles` carry the conversation owner's delegation, `adminStats`/`metrics`/`sweep`
+none; its events arrive on `/internal/make/events`. Services authenticate the call with
+`authenticateCoreRequest(registry, req)` against the entry's `serviceCredentialRef`.
+
+**MCP.** For external applications with `VC_APPLICATION_<ID>_MCP_SECRET` (Make `/mcp/make`,
+Image Studio `/mcp/image-studio`, Web Reader `/mcp/preview` — also for the Make browser on the
+bound reader conversation — and Kanban `projects` `/mcp/kanban`; `EXTERNAL_MCP_PATHS`,
+Playwright Reader has no MCP endpoint of its own), Core puts `<service url>/mcp/<app>?k=<token>` in the runner's MCP list instead
+of the build-wide `VC_MCP_SECRET` URL, on the user's own turns and on turns delegated by
+the same application only. The token is `sxm1.<base64url JSON claims>.<base64url
+HMAC-SHA256 over "sxm1.<payload>">` with claims `{ v: 1, coreId, application, userId,
+conversationId, turnId?, scope?, expiresAt }` (6 h). Services verify with
+`verifyCoreMcpToken(registry, token)` against `mcpSecretRef`. Task design sources of an
+external Make get one token per source conversation (`externalTaskMakeSources`):
+`conversationId` is the source Make conversation and `scope: { taskId, projectId, mode, paths }`
+bounds what the task run may read; the URL is `…/mcp/make?k=<token>&conv=<source>` with no
+separately signed `scope` parameter.
+
+**External Kanban.** With `projects=https://…` in `VC_APPLICATIONS` and
+`VC_APPLICATION_PROJECTS_SERVICE_TOKEN`, Core treats the shared Kanban host like the remote
+Kanban process but through the shared-service contract (`apps/server/src/server.ts`):
+`createRemoteKanban` calls the host with the service credential and `x-sislexa-core-id`
+(`externalServiceFetch`), the host's `/internal/kanban/core|events|exec-stream` calls are
+accepted with `VC_APPLICATION_PROJECTS_TOKEN` (build-level `'service'` routes), and Core does
+not proxy `/api/projects*` or the board UI (`VC_KANBAN_MODE` stays off). Without the service
+token an external Kanban stays disabled in Core as before.

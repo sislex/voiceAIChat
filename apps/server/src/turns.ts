@@ -1,3 +1,4 @@
+import { effectiveCapabilities } from './deploymentApplications.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
@@ -44,6 +45,7 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
   db: VoiceChatDb
@@ -94,6 +96,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Per-turn MCP URL of an external application signed for this core (deployment-profiles B17). */
+  externalMcpUrl?: (application: import('@voicechat/shared').ApplicationId, context: { userId: string; conversationId: string; turnId?: string }) => string | undefined
   /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
   imageStudioMcpBaseUrl?: string
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
@@ -421,8 +425,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
         if (req.attachments?.length || req.assistantContext) throw Error('delegation_denied')
         await deps.delegation.authorize(req.delegation, 'execute', conversationId)
-        // Applications must use live delegated Billing admission, never the legacy fallback.
-        if (!deps.accounting) throw Error('delegation_billing_required')
+        // Applications must use live delegated Billing admission, never the legacy fallback. Core ticket
+        // delegations act within the user's own build and follow its billing like the user's own turns.
+        if (!deps.accounting && !deps.delegation.referenceTicket(req.delegation)) throw Error('delegation_billing_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
         // takeQueuedTurn removes the row before admission. Retain rejected work
@@ -450,6 +455,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
     const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
+    if (entitlements && deps.deployment) entitlements.capabilities = effectiveCapabilities(entitlements.capabilities, deps.deployment)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
       return
@@ -480,6 +486,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         req.segments.map(segment => segment.text).join('\n'), timeHHMM())
       req.messageId = message.id
       deps.conversationSummary?.consider(userId, conversationId)
+    }
+    // A client-chosen queue key must name a stored message of this conversation: the queue row
+    // references it, and a failed insert in a later model callback would stop the process.
+    if (req.messageId && !(await deps.db.chat.hasMessage(userId, conversationId, req.messageId))) {
+      broadcast({ t: 'claude.error', conversationId, message: 'message_not_found' }, userId)
+      return
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
@@ -529,8 +541,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const selectedClient = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
-      delegatedAuthorization: req.delegation ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
+    // A ticket delegation is admitted through the issuing user session, attributed to its application.
+    const ticket = req.delegation ? deps.delegation!.referenceTicket(req.delegation) : undefined
+    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: ticket ? ticket.billingSession : req.billingSession,
+      delegatedAuthorization: req.delegation && !ticket ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
       application: req.delegation ? deps.delegation!.attribution(req.delegation) : undefined,
       authorize: req.delegation ? () => deps.delegation!.authorize(req.delegation!, 'execute', conversationId) : undefined,
       originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
@@ -670,11 +684,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // проекта, выбранном в её селекторе. Признак второго — `assistantContext`:
     // его шлёт только эта панель, обычный чат сайдбара такого поля не имеет.
     const kanbanTurn = Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
+    // An external application gets its tools on its own turns and on the user's turns; never on another application's.
+    const externalTools = (application: import('@voicechat/shared').ApplicationId, toolConversationId = conversationId) =>
+      !req.delegation || req.delegation.applicationId === application
+        ? deps.externalMcpUrl?.(application, { userId, conversationId: toolConversationId, turnId }) : undefined
+    // External Kanban (projects=https://…) serves `/mcp/kanban` with a core MCP token instead of the shared secret.
+    const externalKanban = kanbanTurn ? externalTools('projects') : undefined
     if (kanbanTurn && req.assistantContext) {
       // С инструментами канбана envelope не нужен: модель читает и меняет доску
       // сама. Без них (старый деплой, инструменты не подняты) остаётся прежний
       // режим предложений — иначе ассистент вообще ничего не сможет сделать.
-      basePrompt = deps.kanbanMcpBaseUrl
+      basePrompt = deps.kanbanMcpBaseUrl || externalKanban
         ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
         : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
@@ -892,12 +912,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewSurface: 'panel' | 'chromium' | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (!req.delegation && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
+    // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
+    const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+    const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
+    if (externalPreview) previewMcpUrl = externalPreview
+    else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // The Make turn acts on the bound reader conversation, never on the Make chat itself.
-    if (makeBrowser?.available && deps.previewMcpBaseUrl && deps.previewTurns) {
-      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId: makeBrowser.session.id }))}`
+    const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
+    if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
+      previewMcpUrl = externalMakeBrowser
+        ?? `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns!.issue({ userId, conversationId: makeBrowser.session.id }))}`
       previewSurface = makeBrowser.surface
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
@@ -909,23 +935,25 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
+    const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
+    if (conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+      makeMcpUrl = `${externalMake ?? deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
     let imageStudioMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
-      imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
+    const externalImages = conv?.assistantKind === 'images' ? externalTools('image-studio') : undefined
+    if (conv?.assistantKind === 'images' && (externalImages || (!req.delegation && deps.imageStudioMcpBaseUrl))) {
+      imageStudioMcpUrl = `${externalImages ?? deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
     }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl) {
+    if (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl)) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
-      kanbanMcpUrl = `${deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
+      kanbanMcpUrl = `${externalKanban ?? deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
@@ -1067,11 +1095,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         return
       }
     }
+    // Identity-delegated turns stay tool-free. A shared service's ticket delegation keeps that
+    // service's MCP tools (B21) and loses only shell execution: the Codex runner has no tool-free mode.
+    const ticketDelegated = Boolean(req.delegation && deps.delegation!.referenceTicket(req.delegation))
     turn.handle = client.send(
       {
-        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
+        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
-        remote: executionRemote, readOnlyRemote, executionDisabled,
+        remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),

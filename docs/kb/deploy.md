@@ -1,8 +1,12 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-18
-checked: 2220955a
+updated: 2026-10-19
+checked: 9f7d787a
 areas:
+  - scripts/prod/test_environment_stands.py
+  - scripts/prod/test_environment_scripts.py
+  - scripts/prod/test_compose_env.py
+  - scripts/prod/compose_env.py
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
   - scripts/release-train.mjs
@@ -39,6 +43,66 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## Deployment application profiles
+
+`VC_APPLICATIONS=chat` selects a chat-only Core. Other examples are
+`chat,make`, `chat,make=https://make.example.org`, and
+`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
+tickets. External URLs must be HTTPS without credentials, query or fragment.
+No selector preserves legacy Core modes.
+
+`python3 scripts/prod/compose_env.py applications --file .env` prints derived
+`COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the
+Compose environment before invoking root Compose, or use
+`python3 scripts/prod/compose_env.py run -- up --build -d`. `npm run docker`, the
+deployment script and the stand lifecycle apply this automatically in memory.
+With no selector, the generator preserves the former
+default local services; existing explicit stand module profiles remain selective.
+Local applications enable their service profiles; external applications do not.
+Local LLM runners are omitted when both provider URLs are supplied. Voice runners
+belong to local Chat by default. Set `VC_VOICE=off` to omit both STT and TTS
+containers and clear the legacy voice endpoint URLs passed to Core; `VC_VOICE=on`
+is the default. This also works without `VC_APPLICATIONS` and removes an inherited
+`voice-runner` profile. Invalid values and `VC_VOICE=off` combined with the wildcard
+`COMPOSE_PROFILES=*` fail before Compose runs. Caddy remains enabled in root Compose.
+For build A, `VC_APPLICATIONS=chat`, `VC_VOICE=off`, `COMPOSE_PROFILES=postgres`
+and both external LLM runner URLs select only Core, Postgres and Caddy. Use the
+Compose wrapper above so the generated settings reach Compose. Browser runners
+belong to local Playwright Reader.
+Optional service dependencies use `required: false`.
+
+The selector also derives `VC_CADDY_MAKE_UPSTREAM`,
+`VC_CADDY_PLAYWRIGHT_READER_UPSTREAM` and `VC_CADDY_IMAGE_STUDIO_UPSTREAM`.
+Local applications retain their direct service upstreams. Disabled and external
+applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
+return Core's `404 application_disabled` instead of proxying to absent services.
+Without a selector, the original direct Caddy upstream defaults are preserved.
+
+Operator verification on 2026-10-19 used a separate Docker project and disposable
+Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
+Postgres and Caddy, accepted an administrator login, exposed the chat-only
+manifest and returned the expected disabled responses over certificate-verified
+HTTPS. This isolated check does not replace the complete four-profile acceptance
+or the final production-snapshot release validation below.
+
+Local Projects enables Kanban and Postgres. When Projects is off or external,
+the stand no longer requires those profiles or a database URL; SQLite remains
+available. Restoring a Postgres snapshot still requires its profile explicitly.
+External application credentials continue to use the B01 per-application token
+settings; the generator does not create or modify credentials. Root Compose
+forwards `VC_APPLICATION_<ID>_TOKEN`, `VC_APPLICATION_<ID>_SERVICE_TOKEN` and
+`VC_APPLICATION_<ID>_MCP_SECRET` to Core for each application, using uppercase IDs
+with hyphens replaced by underscores. Unset credentials remain empty; they never
+fall back to the shared internal token or MCP secret. These values are not
+forwarded to local application containers.
+
+Before merge, the operator must validate the four application combinations on
+`dev-m2`: inspect the manifest, authenticate, check disabled prefixes and runner
+MCP inventories, redeem an external Make ticket, and inspect Compose services.
+This commissioning is separate from repository tests and has not been performed
+by C01's sandbox worker (deployment is prohibited in that task).
+
 
 # Деплой: Docker, HTTPS, прод-сервер, env
 
@@ -126,6 +190,12 @@ With `--apps`, only the environment prerequisites, Core refs and the selected ow
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
 
+The version bump writes the root and application manifests and refreshes the lock.
+An owner whose root `package.json` defines a `set-version` script (Make keeps
+`apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
+itself instead: the runner installs dependencies and runs
+`npm run set-version -- <version>`, then commits every manifest it changed.
+
 The runner creates private clones below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
@@ -153,7 +223,7 @@ automatically by `kb:index`; other conflicts abort the rebase and stop the train
 The journal records the rebased pin and invalidates the earlier Core gate so a
 failed gate must pass on resume before the rebased commit can be pushed.
 
-Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
+Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, records the full 40-character reviewed commit for owners that require unambiguous metadata, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
 then run `npm install --package-lock-only` (never `npm version --workspaces`).
 The runner installs dependencies in its clones and runs `gate:release` when the
 owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR
@@ -2807,3 +2877,21 @@ the Caddy lease site addresses when changing the default range.
 Stand deliveries: `VC_STAND_DELIVERY_PROJECTS` (JSON `{projectId: {url, token}}`) is passed from `.env` to the
 `voicechat` service by `docker-compose.yml`; the coordinator must listen on an address reachable from the
 production host (private link `10.77.0.2:8798`).
+
+## Published Make 1.8.1 pin (2026-10-19)
+
+Core pins Make 1.8.1 at `b04733783732b654ba02ee090f63dec564eada56` in the tools lock and
+Compose image. This owner release completed in the interrupted release train;
+its GitHub release and image provenance were verified before updating the pin.
+The subsequent train releases the remaining owners without republishing Make.
+
+<!-- release-pin:playwright-reader-1.2.6 -->
+- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+
+<!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
+- sislex/webreader: 1.3.2
+- sislex/image-studio: 1.1.3
+- sislex/identity: 1.5.1
+- sislex/sislexa-kanban: 0.2.33
+
+<!-- release-train:0e091d1f-17fa-431c-9aad-2af913d0d697 -->

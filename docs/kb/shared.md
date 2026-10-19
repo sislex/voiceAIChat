@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-17
-checked: dd167c9a
+updated: 2026-10-19
+checked: ce8eaefdd
 areas:
   - packages/shared/src
 ---
@@ -47,6 +47,15 @@ with scripts disabled when a lockfile exists, and runs `npm pack -w <package>`.
 Shared uses the selected commit's `build:core-contracts` script, which derives
 its peer baseline from that commit's lockfile. No source checkout is switched or
 version-bumped. The packed name and version are verified before Core is changed.
+
+Since 0.1.38 the Core-side peers of the packed Shared (Identity, SDK, Voice, agent,
+browser, image-studio and make contracts) are published as optional `"*"` ranges
+(`peerDependenciesMeta.optional`): services own other versions of these private
+packages and must never fetch them from the public registry. The exact Core
+versions stay in the archive's `release-source.json` (`corePeers`). Consumers that
+also depend on packages with exact Shared or component-runtime peers (chat-ui,
+Identity) add root overrides `"$<name>"` for `@voicechat/shared`,
+`@sislexa/component-runtime` and `@sislexa/agent-contracts`.
 
 Archives use a SHA-256 prefix of 12 characters in the asset name. Every tracked
 source `package.json` reference is updated to the relative vendor archive;
@@ -171,6 +180,13 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 
 0.1.29 (`voicechat-shared-0.1.29-7d71eb7c0230.tgz`, contracts commit `3eb9ed21`) adds the conversation summary contract (`Conversation.summary`, `REST.conversationSummary`/`conversationSummaryRefresh`, chat-history-v1 B02), the bounded cold start helper (B01) and the `mcp-history` context toggle (B04).
 
+0.1.38 (`voicechat-shared-0.1.38-ca752c856bd8.tgz`, contracts commit `0a851f7b`) publishes the Core-side peers as optional `"*"` ranges (exact Core versions in `release-source.json` `corePeers`); no contract changes.
+
+0.1.39 (`voicechat-shared-0.1.39-7179e01e06f2.tgz`, contracts commit `de3dd79e`) adds the Core-issued ticket delegation to `EnterTicketRedeemResponse` (`delegation: { token, expiresAt }`, `isTicketDelegationToken`, `isEnterTicketRedeemResponse`; deployment-profiles-v1 B02). The matching `@sislexa/component-runtime` 1.2.0 (`sislexa-component-runtime-1.2.0-8639602851f7.tgz`, same commit, packed with the workspace version raised only in the archive) validates it in `redeem()` and makes `CoreDelegationClient` use it by default.
+
+0.1.40 (`voicechat-shared-0.1.40-ea2ec84dac0d.tgz`, contracts commit `5a097e76`) adds the shared-service RPC authority table and MCP token contract (`SHARED_SERVICE_RPC_ROUTES`, `authorizeSharedServiceRpc`, `APPLICATION_ASSISTANT_KIND`, `CORE_ID_HEADER`, `CoreMcpTokenClaims`, `TrustedCoreEntry.serviceCredentialRef`/`mcpSecretRef`; deployment-profiles-v2 B17). The matching `@sislexa/component-runtime` 1.3.0 (`sislexa-component-runtime-1.3.0-af19f57927ad.tgz`, same commit, version raised only in the archive) adds `signCoreMcpToken`, `verifyCoreMcpToken` and `authenticateCoreRequest`.
+
+0.1.41 (`voicechat-shared-0.1.41-f6fc0d800c71.tgz`, contracts commit `ce8eaefd`) lets a shared service act for the user of the turn it serves with the core MCP token (`MCP_TOKEN_HEADER_NAME` = `x-sislexa-mcp-token`), adds the `{ userArg, field }` authority, route `readMethods` and `SharedServiceCaller.readOnly`, the Web Reader methods `context`/`logBrowserEvidence`/`projectResource` and `/internal/playwright-reader/service`, and the read-only task `scope` claim (`CoreMcpTaskScope`, `isCoreMcpTaskScope`; deployment-profiles B21). The matching `@sislexa/component-runtime` 1.4.0 (`sislexa-component-runtime-1.4.0-906e79891542.tgz`, same commit, version raised only in the archive) signs and verifies the `scope` claim and adds `verifyCoreMcpTokenWithSecret`.
 0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
 0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.

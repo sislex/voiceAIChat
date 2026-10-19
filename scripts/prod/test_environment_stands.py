@@ -110,6 +110,15 @@ class StandTest(unittest.TestCase):
         calls = [json.loads(line) for line in (self.root / 'calls').read_text().splitlines()]
         return result.returncode, rows, calls
 
+    def test_chat_only_accepts_no_kanban_or_postgres(self):
+        self.values.update(VC_APPLICATIONS='chat', COMPOSE_PROFILES='', VC_DB_URL='')
+        del self.model['services']['postgres']
+        del self.model['services']['automation-runner']
+        code, _, calls = self.invoke()
+        self.assertEqual(code, 0)
+        self.assertTrue(any(c.get('profiles') == 'local-runner,voice-runner' for c in calls))
+        self.assertFalse(any(c['args'][:2] == ['compose', 'build'] and 'automation-runner' in c['args'] for c in calls))
+
     def test_success_stages_metadata_and_sequential_builds(self):
         code, rows, calls = self.invoke(COMPOSE_FILE='production.yml', VC_DATA_VOLUME='voicechat-server-data')
         self.assertEqual(code, 0)
@@ -388,7 +397,7 @@ class StandTest(unittest.TestCase):
         self.values.update(VC_STAND_PUBLIC='1', VC_PUBLIC_HOST='stand.example.com')
         code, _, calls = self.invoke()
         self.assertEqual(code, 0)
-        self.assertTrue(any(c['profiles'] == 'kanban,local-runner,postgres,public' for c in calls))
+        self.assertTrue(any(set(c['profiles'].split(',')) == {'kanban', 'local-runner', 'postgres', 'public', 'voice-runner', 'automation-runner'} for c in calls if c.get('profiles')))
         self.assertIn(['pull', 'caddy:2'], [c['args'] for c in calls])
         config = (ROOT / 'deploy/Caddyfile.stand-public').read_text()
         self.assertNotIn('tls internal', config)
@@ -493,6 +502,59 @@ class AdminPasswordHashTest(unittest.TestCase):
 
 
 class StandComposeTest(unittest.TestCase):
+    def test_external_application_credentials_reach_only_core(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+        env.update(VC_APPLICATIONS='chat,make=https://make.example.org', VC_VOICE='off',
+                   COMPOSE_PROFILES='postgres', VC_PUBLIC_HOST='stand.test',
+                   VC_LLM_RUNNER_CLAUDE_URL='http://runner', VC_LLM_RUNNER_CODEX_URL='http://runner')
+        keys = ['VC_APPLICATION_' + application + '_' + suffix
+                for application in ('CHAT', 'MAKE', 'PROJECTS', 'WEB_READER',
+                                    'PLAYWRIGHT_READER', 'IMAGE_STUDIO', 'IDENTITY')
+                for suffix in ('TOKEN', 'SERVICE_TOKEN', 'MCP_SECRET')]
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                credentials = {key: 'test-only-' + key for key in keys} if configured else {}
+                result = subprocess.run(['python3', str(HERE / 'compose_env.py'), 'run', '--',
+                    'config', '--format', 'json'], cwd=ROOT, env={**env, **credentials},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = json.loads(result.stdout)['services']
+                self.assertEqual(set(services), {'voicechat', 'postgres', 'caddy'})
+                for key in keys:
+                    self.assertEqual(services['voicechat']['environment'][key], credentials.get(key, ''))
+                    for name, service in services.items():
+                        if name != 'voicechat':
+                            self.assertNotIn(key, service.get('environment', {}))
+
+    def test_chat_only_voice_switch_preserves_caddy_and_disables_voice_urls(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+        env.update(VC_APPLICATIONS='chat', COMPOSE_PROFILES='postgres', VC_PUBLIC_HOST='stand.test',
+                   VC_LLM_RUNNER_CLAUDE_URL='http://runner', VC_LLM_RUNNER_CODEX_URL='http://runner')
+        for voice in ('off', 'on'):
+            with self.subTest(voice=voice):
+                result = subprocess.run(['python3', str(HERE / 'compose_env.py'), 'run', '--',
+                    'config', '--format', 'json'], cwd=ROOT, env={**env, 'VC_VOICE': voice},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                model = json.loads(result.stdout)
+                expected = {'voicechat', 'postgres', 'caddy'}
+                if voice == 'on':
+                    expected.update({'stt-runner', 'tts-runner'})
+                self.assertEqual(set(model['services']), expected)
+                caddy = model['services']['caddy']['environment']
+                for kind in ('MAKE', 'PLAYWRIGHT_READER', 'IMAGE_STUDIO'):
+                    self.assertEqual(caddy['VC_CADDY_' + kind + '_UPSTREAM'], 'voicechat:8787')
+                core = model['services']['voicechat']['environment']
+                for kind in ('STT', 'TTS'):
+                    self.assertEqual(core['VC_' + kind + '_RUNNER_URL'],
+                        '' if voice == 'off' else 'http://' + kind.lower() + '-runner:8791')
+
     def test_production_defaults_match_literal_urls(self):
         docker = shutil.which('docker')
         if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
@@ -505,7 +567,7 @@ class StandComposeTest(unittest.TestCase):
             'VC_KANBAN_MCP_PUBLIC_BASE', 'VC_MAKE_MCP_PUBLIC_BASE', 'VC_READER_MCP_PUBLIC_BASE')
         legacy = source
         for variable in variables:
-            legacy = re.sub(r'\$\{' + variable + r':-([^}]+)\}', r'\1', legacy)
+            legacy = re.sub(r'\$\{' + variable + r':?-([^}]+)\}', r'\1', legacy)
         with tempfile.TemporaryDirectory() as directory:
             current = Path(directory) / 'current.yml'
             literal = Path(directory) / 'literal.yml'

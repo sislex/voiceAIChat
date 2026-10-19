@@ -797,6 +797,8 @@ export async function registerRest(
      * offline-машины.
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
+    /** Conversation kind a ticket-delegated application may create (`x-sislexa-delegation`), or undefined to refuse. */
+    delegatedAssistantKind?: (grant: string) => string | undefined
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
     conversationSummary?: () => ConversationSummaryService | undefined
@@ -924,6 +926,9 @@ export async function registerRest(
 
   app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
+    const delegated = req.headers['x-sislexa-delegation']
+    if (delegated !== undefined && (typeof delegated !== 'string' || !kind || req.body?.scope !== undefined
+      || opts.delegatedAssistantKind?.(delegated) !== kind)) return reply.code(403).send({ error: 'delegation_denied' })
     const scope = req.body?.scope === undefined
       ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : kind === 'images' ? 'images' : 'chat'
       : parseConversationScope(req.body.scope)
