@@ -41,6 +41,8 @@ authorization, transport and browser integration checks. See
 npm install                  # Core workspaces only; pinned owner archives install from the `vendor` release URL
 npm run vendor:fetch         # put pinned archives into vendor/ for pin/provenance tools (never commit *.tgz)
 npm run dev:web              # Core :8787 and published UI proxy :5273
+npm run gate:task -- --base <sha> # development feedback; full validation remains at promotion
+node scripts/dev-stand.mjs --help # attach a working copy to a managed stand without a release
 npm run gate:quick -- --base <sha> # task typecheck/build and affected tests
 npm run test:files -- <files> # rerun failed repository-relative test files
 npm run gate:fast            # changed worktree since HEAD; use during a step

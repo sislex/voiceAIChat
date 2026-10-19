@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 684db713
+checked: ae19ce2b9
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -266,6 +266,37 @@ creation. Real publication/deployment and token commissioning are operator
 actions, separate from fixture verification of the implementation.
 
 ## Dev stand gateway and Core component (C02)
+
+### Operator workflow: working copy to preview
+
+`node scripts/dev-stand.mjs start --config <private.json> --journal <new.json>`
+attaches an existing working copy through the existing asynchronous live API.
+It returns the admitted operation immediately; `--watch` observes it every two
+seconds and prints changes plus ten-second progress. No package publication,
+Docker build or gate completion is required before showing the preview.
+
+The private, owner-readable configuration contains `coreUrl`, `tokenFile`,
+`projectId`, `standId`, `component` and the absolute `workingCopyPath` on the
+stand machine. The token stays in its separate private file and is sent only in
+the authorization header; redirects are refused. The existing server checks
+project/machine authorization, repository origin and working-copy containment.
+Dependencies are prepared by the live adapter, not installed by this CLI.
+
+Use `status` with the same configuration/journal to read the operation, stand
+health, live state, exact commit and discovered LAN/Tailscale addresses. Run
+`npm run gate:task -- --base <sha>` separately in the working copy while reviewing
+the preview. The current task ceiling is 1,000 tests / 300 seconds; a preview is
+not passing gate evidence. Normal quick/full promotion gates still apply.
+
+`stop` uses a **new** journal and restores the server's saved previous component.
+Mutation journals use exclusive creation and mode 0600. A lost response or
+interrupted admission is `uncertain`, never automatically retried or reported
+as success; reconcile the existing operation before starting a new mutation.
+`status` performs GET requests only. A successful operation is reported separately
+from current stand health, since a later runtime failure must remain visible.
+
+The CLI and real HTTP fixture tests are in `scripts/dev-stand.mjs` and
+`scripts/dev-stand-cli.test.mjs`. Live host acceptance is separate from these tests.
 
 Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined in
 `packages/shared/src/devStand.ts`. Core delegates the B01 collection, single-stand
