@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: e2f56ae3a
+checked: db26d0e11
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -90,7 +90,12 @@ Local Projects enables Kanban and Postgres. When Projects is off or external,
 the stand no longer requires those profiles or a database URL; SQLite remains
 available. Restoring a Postgres snapshot still requires its profile explicitly.
 External application credentials continue to use the B01 per-application token
-settings; the generator does not create or modify credentials.
+settings; the generator does not create or modify credentials. Root Compose
+forwards `VC_APPLICATION_<ID>_TOKEN`, `VC_APPLICATION_<ID>_SERVICE_TOKEN` and
+`VC_APPLICATION_<ID>_MCP_SECRET` to Core for each application, using uppercase IDs
+with hyphens replaced by underscores. Unset credentials remain empty; they never
+fall back to the shared internal token or MCP secret. These values are not
+forwarded to local application containers.
 
 Before merge, the operator must validate the four application combinations on
 `dev-m2`: inspect the manifest, authenticate, check disabled prefixes and runner

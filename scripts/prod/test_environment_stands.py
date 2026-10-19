@@ -502,6 +502,33 @@ class AdminPasswordHashTest(unittest.TestCase):
 
 
 class StandComposeTest(unittest.TestCase):
+    def test_external_application_credentials_reach_only_core(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+        env.update(VC_APPLICATIONS='chat,make=https://make.example.org', VC_VOICE='off',
+                   COMPOSE_PROFILES='postgres', VC_PUBLIC_HOST='stand.test',
+                   VC_LLM_RUNNER_CLAUDE_URL='http://runner', VC_LLM_RUNNER_CODEX_URL='http://runner')
+        keys = ['VC_APPLICATION_' + application + '_' + suffix
+                for application in ('CHAT', 'MAKE', 'PROJECTS', 'WEB_READER',
+                                    'PLAYWRIGHT_READER', 'IMAGE_STUDIO', 'IDENTITY')
+                for suffix in ('TOKEN', 'SERVICE_TOKEN', 'MCP_SECRET')]
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                credentials = {key: 'test-only-' + key for key in keys} if configured else {}
+                result = subprocess.run(['python3', str(HERE / 'compose_env.py'), 'run', '--',
+                    'config', '--format', 'json'], cwd=ROOT, env={**env, **credentials},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = json.loads(result.stdout)['services']
+                self.assertEqual(set(services), {'voicechat', 'postgres', 'caddy'})
+                for key in keys:
+                    self.assertEqual(services['voicechat']['environment'][key], credentials.get(key, ''))
+                    for name, service in services.items():
+                        if name != 'voicechat':
+                            self.assertNotIn(key, service.get('environment', {}))
+
     def test_chat_only_voice_switch_preserves_caddy_and_disables_voice_urls(self):
         docker = shutil.which('docker')
         if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
