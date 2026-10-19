@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 9f7d787a
+checked: d1b49f14
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -249,7 +249,17 @@ the project's release APIs; the runner does not create or change credentials.
 `RELEASE_CENTER_AGENT_ID` optionally selects the build machine. Release Center
 GET `/releases/preflight` must pass before POST `/releases/branches` with the
 next patch branch based on `main`. Core moving after its merge blocks branch
-creation. With `--deploy`, POST `/releases/deploy` starts deployment and the
+creation. Release Center accepts the project's configured `ciBaseBranch` or an
+existing `release/x.y.z` branch as the base. The train explicitly requests `main`,
+so a project configured for development on `dev` rejects branch creation with
+`Разрешены только ветки release/x.y.z`, even though the destination release name
+is valid. This failure happens before preparation is admitted. For this operator
+step, record the current project setting, temporarily select `main`, resume the
+same journal, and restore the previous setting after branch creation is accepted
+(or if creation fails). The accepted preparation retains its resolved target;
+restoring the development setting does not change its source. Do not alter the
+journal or substitute an ungated development commit. With `--deploy`, POST
+`/releases/deploy` starts deployment and the
 runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
 the new version for up to ten minutes. Without that flag it stops after branch
 creation. Real publication/deployment and token commissioning are operator
