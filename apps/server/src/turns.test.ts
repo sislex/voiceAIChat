@@ -21,6 +21,26 @@ const fixtureCredential1 = randomUUID()
 
 const U = 'admin'
 
+it('refuses a client message id that is not stored in the conversation, before the model or the queue', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Chat')
+    const other = await db.chat.createConversation(U, 'Other')
+    const foreign = await db.chat.addMessage(U, other.id, 'u0', 'Elsewhere', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client })
+    const errors: string[] = []
+    turns.subscribe(message => { if (message.t === 'claude.error') errors.push(message.message) })
+    for (const messageId of [randomUUID(), foreign.id]) {
+      await turns.start({ userId: U, conversationId: conversation.id, messageId, segments: [{ speakerId: 1, text: 'Hi' }] })
+    }
+    await turns.idle()
+    expect(rec.last()).toBeNull()
+    expect(errors).toEqual(['message_not_found', 'message_not_found'])
+    expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+  } finally { await db.close() }
+})
+
 it('denies a disabled application on fresh turn admission despite tenant entitlement', async () => {
   const db = await freshDb()
   try {

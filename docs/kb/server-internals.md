@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-15
-checked: 0bbc1d6a
+updated: 2026-10-19
+checked: 3e456756e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -224,7 +224,7 @@ to discover older details through these tools.
 
 По cancel/error менеджер ходов снимает handle и очищает map. Пользовательский cancel после уже полученной дельты сохраняет partial как AI message с `meta.interrupted=true` и отправляет `done` с этим partial; поздний callback модели игнорируется. Тест не должен ждать пустой `done`, если мок успел отдать токен: такое ожидание держало Vitest до глобального 10-минутного timeout. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
 
-Очередь разговора хранится в SQLite и исполняется сервером по одному элементу в FIFO-порядке. Завершение, ручная остановка и ошибка активного LLM-хода освобождают слот и вызывают следующий ожидающий элемент. При ошибке исходная реплика сохраняется в очереди со статусом `failed`, но пауза не включается: автоматическая выборка `takeQueuedTurn` рассматривает только `queued`, поэтому ошибочный элемент остаётся видимым для пользователя, не запускается повторно и не блокирует последующие сообщения. Идемпотентность по `messageId` и авторитетные снимки очереди защищают от дублей при повторной отправке и realtime-подтверждении. Источники — `apps/server/src/turns.ts` и методы очереди в `apps/server/src/db/database.ts`.
+Очередь разговора хранится в SQLite и исполняется сервером по одному элементу в FIFO-порядке. Завершение, ручная остановка и ошибка активного LLM-хода освобождают слот и вызывают следующий ожидающий элемент. При ошибке исходная реплика сохраняется в очереди со статусом `failed`, но пауза не включается: автоматическая выборка `takeQueuedTurn` рассматривает только `queued`, поэтому ошибочный элемент остаётся видимым для пользователя, не запускается повторно и не блокирует последующие сообщения. Идемпотентность по `messageId` и авторитетные снимки очереди защищают от дублей при повторной отправке и realtime-подтверждении. A `claude.send` whose `messageId` is not a stored message of that conversation (any state) is refused with `claude.error` `message_not_found` before the model and the queue: the queue row references the message, and the failed insert from a later model callback used to stop the Core process. Источники — `apps/server/src/turns.ts` и методы очереди в `apps/server/src/db/database.ts`.
 
 Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 
