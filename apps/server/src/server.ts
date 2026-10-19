@@ -1498,12 +1498,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? { modules: () => fileKb.modules(), ensureModule: (input) => fileKb.ensureSource(input), removeModule: (id) => fileKb.removeSource(id) }
     : { modules: async () => [], ensureModule: async () => { throw new Error('kb_modules_unavailable') }, removeModule: async () => false }
   const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, kbModules, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
+  // External Kanban (`projects=https://…` in VC_APPLICATIONS) with a service credential: the shared Kanban host
+  // serves this core's tenant; it calls back on /internal/kanban/* with the application token. No UI proxy.
+  const kanbanExternalUrl = externalApplicationUrl('projects')
+  const kanbanServiceToken = ticketOptions.serviceTokens?.projects
+  const onKanbanError = (error: unknown, what: string) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался')
   const remoteKanban = kanbanRemote
-    ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
-    : null
+    ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: onKanbanError })
+    : kanbanExternalUrl && kanbanServiceToken
+      ? createRemoteKanban({ kanbanUrl: kanbanExternalUrl, token: kanbanServiceToken, onError: onKanbanError, fetchImpl: externalServiceFetch({
+        application: 'projects', coreId: deployment.coreId, serviceToken: kanbanServiceToken, delegations: ticketStore.delegations }) })
+      : null
   const kanban: { service: KanbanService } = remoteKanban ?? { service: createOfflineKanban() }
   if (remoteKanban) {
-    registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
+    if (kanbanRemote) registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
     // Зеркало машин у канбана: снимок после каждого изменения реестра (онлайн, политика, телеметрия);
     // телеметрия приходит часто, поэтому с небольшой задержкой — один пуш на пачку изменений.
     let pushTimer: NodeJS.Timeout | null = null

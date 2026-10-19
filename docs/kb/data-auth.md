@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: e273eed8b
+checked: 1a8a0ef53
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -1034,5 +1034,13 @@ HMAC-SHA256 over "sxm1.<payload>">` with claims `{ v: 1, coreId, application, us
 conversationId, turnId?, expiresAt }` (6 h). Services verify with
 `verifyCoreMcpToken(registry, token)` against `mcpSecretRef`. Task design sources of an
 external Make are signed with the same MCP secret and carry a token for
-`conversationId: task:<taskId>`. Kanban as an external application has no Core-side
-internal routes yet (`VC_KANBAN_MODE` stays off for it); its table entries are ready.
+`conversationId: task:<taskId>`.
+
+**External Kanban.** With `projects=https://…` in `VC_APPLICATIONS` and
+`VC_APPLICATION_PROJECTS_SERVICE_TOKEN`, Core treats the shared Kanban host like the remote
+Kanban process but through the shared-service contract (`apps/server/src/server.ts`):
+`createRemoteKanban` calls the host with the service credential and `x-sislexa-core-id`
+(`externalServiceFetch`), the host's `/internal/kanban/core|events|exec-stream` calls are
+accepted with `VC_APPLICATION_PROJECTS_TOKEN` (build-level `'service'` routes), and Core does
+not proxy `/api/projects*` or the board UI (`VC_KANBAN_MODE` stays off). Without the service
+token an external Kanban stays disabled in Core as before.
