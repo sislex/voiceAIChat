@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-19
-checked: de3dd79ed
+checked: 5a097e76e
 areas:
   - packages/shared/src
 ---
@@ -183,6 +183,8 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.38 (`voicechat-shared-0.1.38-ca752c856bd8.tgz`, contracts commit `0a851f7b`) publishes the Core-side peers as optional `"*"` ranges (exact Core versions in `release-source.json` `corePeers`); no contract changes.
 
 0.1.39 (`voicechat-shared-0.1.39-7179e01e06f2.tgz`, contracts commit `de3dd79e`) adds the Core-issued ticket delegation to `EnterTicketRedeemResponse` (`delegation: { token, expiresAt }`, `isTicketDelegationToken`, `isEnterTicketRedeemResponse`; deployment-profiles-v1 B02). The matching `@sislexa/component-runtime` 1.2.0 (`sislexa-component-runtime-1.2.0-8639602851f7.tgz`, same commit, packed with the workspace version raised only in the archive) validates it in `redeem()` and makes `CoreDelegationClient` use it by default.
+
+0.1.40 (`voicechat-shared-0.1.40-ea2ec84dac0d.tgz`, contracts commit `5a097e76`) adds the shared-service RPC authority table and MCP token contract (`SHARED_SERVICE_RPC_ROUTES`, `authorizeSharedServiceRpc`, `APPLICATION_ASSISTANT_KIND`, `CORE_ID_HEADER`, `CoreMcpTokenClaims`, `TrustedCoreEntry.serviceCredentialRef`/`mcpSecretRef`; deployment-profiles-v2 B17). The matching `@sislexa/component-runtime` 1.3.0 (`sislexa-component-runtime-1.3.0-af19f57927ad.tgz`, same commit, version raised only in the archive) adds `signCoreMcpToken`, `verifyCoreMcpToken` and `authenticateCoreRequest`.
 0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
 0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.
