@@ -11,27 +11,27 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ⚠ код изменён 2026-10-19, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-19 | ⚠ 6 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-18 | ⚠ 352 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 174 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 641 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 1495 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-19 | ⚠ 7 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-18 | ⚠ 353 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 175 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 642 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-19 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ⚠ 2 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 1496 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1048 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 993 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 397 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ 497 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 792 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 913 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1049 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 994 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 398 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ 498 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 793 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 914 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 925 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2191 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1091 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2192 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1092 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 1432 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 1433 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 668 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-19, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ⚠ 70 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
@@ -42,11 +42,11 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-17 | ⚠ код изменён 2026-10-19, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-19 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-19 | ⚠ 7 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-19 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-19 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 0e050cbcd Expose configured voice modules independently of availability |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1231. Последние:
+Всего записей: 1232. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md) — voice-module-configuration
