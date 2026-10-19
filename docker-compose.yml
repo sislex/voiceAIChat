@@ -258,7 +258,7 @@ services:
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
     profiles: ["image-studio"]
-    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c7a49a428d856e73476c39179ce7044598c4196e}
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c3988f22015e2a21f6e2dc255b4966eae972fbf1}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -282,7 +282,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:c3ab6a3658752ce225df3d7a9ed1aebeb1865f15}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:6227264f4c3a9362f4b8db5502cdfdfa6c37d3c1}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -406,7 +406,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:36003b199cae41c697f393ba0011b91943ae5d76}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:3bf4434e9279bd6e292fb34821dca6dbc97ee700}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:

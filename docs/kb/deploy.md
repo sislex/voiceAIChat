@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 7f9ea84ae
+checked: 2be8994b
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -2887,3 +2887,9 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-pin:playwright-reader-1.2.6 -->
 - Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+
+<!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
+- sislex/webreader: 1.3.2
+- sislex/image-studio: 1.1.3
+- sislex/identity: 1.5.1
+- sislex/sislexa-kanban: 0.2.33
