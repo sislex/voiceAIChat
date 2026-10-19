@@ -678,11 +678,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // проекта, выбранном в её селекторе. Признак второго — `assistantContext`:
     // его шлёт только эта панель, обычный чат сайдбара такого поля не имеет.
     const kanbanTurn = Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
+    // An external application gets its tools on its own turns and on the user's turns; never on another application's.
+    const externalTools = (application: import('@voicechat/shared').ApplicationId, toolConversationId = conversationId) =>
+      !req.delegation || req.delegation.applicationId === application
+        ? deps.externalMcpUrl?.(application, { userId, conversationId: toolConversationId, turnId }) : undefined
+    // External Kanban (projects=https://…) serves `/mcp/kanban` with a core MCP token instead of the shared secret.
+    const externalKanban = kanbanTurn ? externalTools('projects') : undefined
     if (kanbanTurn && req.assistantContext) {
       // С инструментами канбана envelope не нужен: модель читает и меняет доску
       // сама. Без них (старый деплой, инструменты не подняты) остаётся прежний
       // режим предложений — иначе ассистент вообще ничего не сможет сделать.
-      basePrompt = deps.kanbanMcpBaseUrl
+      basePrompt = deps.kanbanMcpBaseUrl || externalKanban
         ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
         : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
@@ -900,12 +906,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewSurface: 'panel' | 'chromium' | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (!req.delegation && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
+    // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
+    const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+    const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
+    if (externalPreview) previewMcpUrl = externalPreview
+    else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // The Make turn acts on the bound reader conversation, never on the Make chat itself.
-    if (makeBrowser?.available && deps.previewMcpBaseUrl && deps.previewTurns) {
-      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId: makeBrowser.session.id }))}`
+    const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
+    if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
+      previewMcpUrl = externalMakeBrowser
+        ?? `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns!.issue({ userId, conversationId: makeBrowser.session.id }))}`
       previewSurface = makeBrowser.surface
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
@@ -917,9 +929,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    // An external application gets its tools on its own turns and on the user's turns; never on another application's.
-    const externalTools = (application: import('@voicechat/shared').ApplicationId) =>
-      !req.delegation || req.delegation.applicationId === application ? deps.externalMcpUrl?.(application, { userId, conversationId, turnId }) : undefined
     const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
     if (conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
@@ -936,9 +945,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl) {
+    if (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl)) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
-      kanbanMcpUrl = `${deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
+      kanbanMcpUrl = `${externalKanban ?? deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null

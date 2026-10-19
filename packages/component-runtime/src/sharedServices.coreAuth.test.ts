@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TrustedCoreRegistry, authenticateCoreRequest, signCoreMcpToken, verifyCoreMcpToken } from './sharedServices.js'
+import { TrustedCoreRegistry, authenticateCoreRequest, signCoreMcpToken, verifyCoreMcpToken, verifyCoreMcpTokenWithSecret } from './sharedServices.js'
 
 const secrets: Record<string, string> = { 'a-call': 'call-a', 'a-service': 'service-a', 'a-mcp': 'mcp-a', 'b-call': 'call-b', 'b-service': 'service-b', 'b-mcp': 'mcp-b' }
 const registry = () => {
@@ -52,5 +52,22 @@ describe('core MCP tokens', () => {
     const forged = Buffer.from(JSON.stringify({ ...claims(), userId: 'mallory' })).toString('base64url')
     expect(() => verifyCoreMcpToken(r, `${prefix}.${forged}.${mac}`)).toThrow('mcp_token_invalid')
     expect(() => verifyCoreMcpToken(r, `${prefix}.${payload}`)).toThrow('mcp_token_invalid')
+  })
+  it('carry a read-only task scope that cannot be altered', () => {
+    const scope = { taskId: 'task-1', projectId: 'p1', mode: 'files' as const, paths: ['a.ts'] }
+    const token = signCoreMcpToken('mcp-a', claims({ conversationId: 'design-1', scope }))
+    expect(verifyCoreMcpToken(registry(), token).scope).toEqual(scope)
+    const [prefix, , mac] = token.split('.')
+    const widened = Buffer.from(JSON.stringify({ ...claims({ conversationId: 'design-1' }), scope: { ...scope, mode: 'whole_project', paths: [] } })).toString('base64url')
+    expect(() => verifyCoreMcpToken(registry(), `${prefix}.${widened}.${mac}`)).toThrow('mcp_token_invalid')
+    const malformed = signCoreMcpToken('mcp-a', claims({ scope: { taskId: '', projectId: 'p1', mode: 'files', paths: [] } }))
+    expect(() => verifyCoreMcpToken(registry(), malformed)).toThrow('mcp_token_invalid')
+  })
+  it('verify with the issuing secret for the core itself', () => {
+    const token = signCoreMcpToken('mcp-a', claims())
+    expect(verifyCoreMcpTokenWithSecret('mcp-a', token).userId).toBe('alice')
+    expect(() => verifyCoreMcpTokenWithSecret('mcp-b', token)).toThrow('mcp_token_invalid')
+    expect(() => verifyCoreMcpTokenWithSecret('', token)).toThrow('mcp_token_invalid')
+    expect(() => verifyCoreMcpTokenWithSecret('mcp-a', signCoreMcpToken('mcp-a', claims({ expiresAt: Date.now() - 1 })))).toThrow('mcp_token_invalid')
   })
 })

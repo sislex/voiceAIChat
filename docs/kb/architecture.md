@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-19
-checked: e273eed8b
+checked: 6afda34b1
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -376,7 +376,9 @@ See data-auth.md «Core-issued ticket delegation».
 
 Registry entries may also carry `serviceCredentialRef` (verifies Core→service calls,
 `authenticateCoreRequest`) and `mcpSecretRef` (verifies per-turn MCP tokens,
-`verifyCoreMcpToken`; `signCoreMcpToken` signs them in Core). `fromEnv` reads them from
+`verifyCoreMcpToken`; `signCoreMcpToken` signs them in Core, which checks its own tokens with
+`verifyCoreMcpTokenWithSecret`). A service serving a Core-run turn calls Core with the
+application token plus that turn's MCP token in `x-sislexa-mcp-token`. `fromEnv` reads them from
 `VC_CORE_SERVICE_TOKEN` and `VC_CORE_MCP_SECRET`; `resolve()` never returns refs. Core
 calls its own internal RPC from a shared service with the application token plus the
 ticket delegation; the method table and Core-side variables are in data-auth.md

@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { resolve, sep } from 'node:path'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { isEnterTicketRedeemResponse, validateCoreId, type ClientMessage, type ServerMessage, type TrustedCoreEntry, type CoreUsage, type CoreLimits, type SharedServiceSession, type EnterTicketRedeemRequest,
-  type CoreMcpTokenClaims, CORE_MCP_TOKEN_PREFIX, CORE_ID_HEADER, DELEGATION_HEADER_NAME, isApplicationId, isTicketDelegationToken } from '@voicechat/shared'
+  type CoreMcpTokenClaims, CORE_MCP_TOKEN_PREFIX, CORE_ID_HEADER, isCoreMcpTaskScope, DELEGATION_HEADER_NAME, isApplicationId, isTicketDelegationToken } from '@voicechat/shared'
 
 export class CoreServiceError extends Error {
   constructor(readonly code: string, readonly statusCode = 502) { super(code) }
@@ -126,8 +126,7 @@ export class TrustedCoreRegistry {
     if (!claims || !entry?.mcpSecretRef) throw new CoreServiceError('mcp_token_invalid', 401)
     let secret: string
     try { secret = this.credential(entry.mcpSecretRef) } catch { throw new CoreServiceError('mcp_token_invalid', 401) }
-    if (!sameSecret(token, signCoreMcpToken(secret, claims)) || claims.expiresAt <= now) throw new CoreServiceError('mcp_token_invalid', 401)
-    return claims
+    return verifyCoreMcpTokenWithSecret(secret, token, now)
   }
   registerUsageRoute(app: FastifyInstance, authorize: (authorization: string | undefined) => boolean): void {
     app.get<{ Params: { coreId: string } }>('/internal/v1/cores/:coreId/usage', async (req, reply) => {
@@ -225,7 +224,9 @@ const sameSecret = (actual: string, expected: string): boolean => {
 export function signCoreMcpToken(secret: string, claims: CoreMcpTokenClaims): string {
   if (!secret) throw new Error('mcp_secret_required')
   const payload = Buffer.from(JSON.stringify({ v: 1, coreId: claims.coreId, application: claims.application, userId: claims.userId,
-    conversationId: claims.conversationId, ...(claims.turnId ? { turnId: claims.turnId } : {}), expiresAt: claims.expiresAt })).toString('base64url')
+    conversationId: claims.conversationId, ...(claims.turnId ? { turnId: claims.turnId } : {}),
+    ...(claims.scope ? { scope: { taskId: claims.scope.taskId, projectId: claims.scope.projectId, mode: claims.scope.mode, paths: [...claims.scope.paths] } } : {}),
+    expiresAt: claims.expiresAt })).toString('base64url')
   const body = CORE_MCP_TOKEN_PREFIX + payload
   return body + '.' + createHmac('sha256', secret).update(body).digest('base64url')
 }
@@ -237,7 +238,7 @@ function decodeCoreMcpToken(token: unknown): CoreMcpTokenClaims | undefined {
     const c = JSON.parse(Buffer.from(parts[0]!, 'base64url').toString('utf8')) as Partial<CoreMcpTokenClaims>
     if (c.v !== 1 || typeof c.coreId !== 'string' || !isApplicationId(c.application) || typeof c.userId !== 'string' || !c.userId
       || typeof c.conversationId !== 'string' || !c.conversationId || (c.turnId !== undefined && typeof c.turnId !== 'string')
-      || !Number.isSafeInteger(c.expiresAt)) return undefined
+      || (c.scope !== undefined && !isCoreMcpTaskScope(c.scope)) || !Number.isSafeInteger(c.expiresAt)) return undefined
     validateCoreId(c.coreId)
     return c as CoreMcpTokenClaims
   } catch { return undefined }
@@ -245,6 +246,12 @@ function decodeCoreMcpToken(token: unknown): CoreMcpTokenClaims | undefined {
 /** Resolve the calling core of a Core→service request (`authorization` + `x-sislexa-core-id`). */
 export function authenticateCoreRequest(registry: TrustedCoreRegistry, req: { headers: Record<string, string | string[] | undefined> }): { coreId: string; delegation?: string } {
   return registry.authenticate(req.headers)
+}
+/** Verify an MCP token with the secret that signed it (the issuing core's own check); throws `mcp_token_invalid`. */
+export function verifyCoreMcpTokenWithSecret(secret: string, token: string, now = Date.now()): CoreMcpTokenClaims {
+  const claims = decodeCoreMcpToken(token)
+  if (!claims || !secret || !sameSecret(token, signCoreMcpToken(secret, claims)) || claims.expiresAt <= now) throw new CoreServiceError('mcp_token_invalid', 401)
+  return claims
 }
 /** Verify a core-issued MCP token: returns its core, user, conversation and application, or throws `mcp_token_invalid`. */
 export function verifyCoreMcpToken(registry: TrustedCoreRegistry, token: string, now = Date.now()): CoreMcpTokenClaims {
