@@ -1095,13 +1095,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
       value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
     }
+    // Configuration is independent of a service outage, missing model or tariff denial.
+    value.stt.configured = Boolean(sttClient || opts.sttEngine)
+    value.tts.configured = Boolean(opts.ttsClient || (opts.config.ttsRunnerUrl && opts.config.ttsRunnerToken))
     return value
   }
   app.get(REST.systemCapabilities, async (req): Promise<SystemCapabilities> => {
     await refreshSttHealth()
     const value = await capabilities()
-    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { available: false, reason: TARIFF_DENIED }
-    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { ...value.stt, available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { ...value.tts, available: false, reason: TARIFF_DENIED }
     return value
   })
 

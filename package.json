@@ -121,11 +121,11 @@
     "@sislexa/agent-contracts": "$@sislexa/agent-contracts",
     "@sislexa/chat-ui": {
       "@sislexa/identity": "$@sislexa/identity",
-      "@voicechat/shared": "0.1.41"
+      "@voicechat/shared": "0.1.42"
     },
     "sharp": "0.35.5",
     "@voicechat/chat-app": {
-      "@voicechat/shared": "0.1.41"
+      "@voicechat/shared": "0.1.42"
     }
   }
 }

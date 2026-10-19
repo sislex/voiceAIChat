@@ -55,6 +55,8 @@ export interface SttStatus {
 
 /** Доступность одной функции (STT/TTS) на этой машине/в контейнере. */
 export interface CapabilityStatus {
+  /** A voice engine or service is configured, independently of health, resources and user access. Omitted by older servers. */
+  configured?: boolean
   /** Функция разрешена (ресурсов достаточно). */
   available: boolean
   /** Причина недоступности для показа в UI ('' — если доступно). */

@@ -1,6 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-17
+updated: 2026-10-19
+checked: 3b7a10082
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -22,6 +23,20 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Voice module configuration
+
+`GET /api/system/capabilities` includes optional `configured` on both `stt`
+and `tts` statuses. Core sets it from the installed engine/client or complete
+runner URL and credential configuration, independently of health, model files,
+memory limits and the user's tariff. A connected service that is offline or
+denied by the tariff remains configured; `available` and `reason` describe its
+current usability. Older servers omit this additive field.
+
+The browser can suppress voice onboarding when both modules are unconfigured
+without treating a temporary service outage as module removal. The endpoint
+does not expose runner addresses or credentials. Server HTTP regressions live
+in `apps/server/src/system/voiceConfiguration.test.ts`.
 
 ## Operator assistant project contract
 

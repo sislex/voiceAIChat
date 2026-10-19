@@ -11,27 +11,27 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ⚠ код изменён 2026-10-19, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-19 | ⚠ 5 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-18 | ⚠ 351 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 173 коммит(ов) в areas после сверки: 6546adb96 Pin Identity 1.5.1 embedded package with its published service … |
-| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 640 коммит(ов) в areas после сверки: b66754133 Constrain public chat models and tool access … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-19 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 1494 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-19 | ⚠ 6 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-18 | ⚠ 352 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ 174 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 641 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ 1495 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1047 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 992 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 396 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ 496 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 791 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 912 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 924 коммит(ов) в areas после сверки: b66754133 Constrain public chat models and tool access … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2190 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1090 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1048 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 993 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 397 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ 497 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 792 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 913 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 925 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2191 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1091 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 1431 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 1432 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 668 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-19, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ⚠ 70 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
@@ -42,12 +42,12 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-17 | ⚠ код изменён 2026-10-19, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-17 | ⚠ код изменён 2026-10-19, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-19 | ⚠ 6 коммит(ов) в areas после сверки: c0f9d856a Require Billing for metered public chat deployments … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-19 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-19 | ⚠ 7 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-19 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-19 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 3b7a10082 Assemble public chat candidate and enforce user isolation |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,9 +62,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1230. Последние:
+Всего записей: 1231. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md) — voice-module-configuration
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md) — shared-service-rpc-mcp
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-mcp-authority.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-mcp-authority.md) — shared-service-mcp-authority
@@ -73,7 +74,6 @@
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md) — release-train-set-version
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md) — release-train-f94b5d1f-cba0-40c8-a46d-905613411854
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-base-branch.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-base-branch.md) — release-train-base-branch
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md) — release-train-0e091d1f-17fa-431c-9aad-2af913d0d697
 
 ## Исторические планы
 
