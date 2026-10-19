@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1222. Последние:
+Всего записей: 1223. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
@@ -72,8 +72,8 @@
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md) — shared-optional-peers
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md) — release-train-set-version
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md) — release-train-f94b5d1f-cba0-40c8-a46d-905613411854
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-base-branch.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-base-branch.md) — release-train-base-branch
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md) — release-train-0e091d1f-17fa-431c-9aad-2af913d0d697
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-reader-full-kb-commit.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-reader-full-kb-commit.md) — release-reader-full-kb-commit
 
 ## Исторические планы
 
