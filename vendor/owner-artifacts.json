@@ -3,13 +3,13 @@
   "packages": [
     {
       "name": "@sislexa/identity",
-      "version": "1.5.0",
-      "filename": "sislexa-identity-1.5.0.tgz",
-      "integrity": "sha512-43pb9hW8UlXzkQg51I0d+edWIjTnFpB7aSEPrVpHdd8zJxVFRbOO3iVzdTsKktuLfG3v6IaxV3dvUbr5NZDzmQ==",
-      "sha256": "1a2671c0252c08f1fffb276754cdcd5f2724c6b4a8bf8feee0f6db4351db977f",
+      "version": "1.5.1",
+      "filename": "sislexa-identity-1.5.1.tgz",
+      "integrity": "sha512-6mjcU5OpfIqNLW0JVshcJKlq30jGN9Svr7vkFQCGCtcZUbJlO1j8XIAsbkPPTyCutsyej4+oSSj12XC7PdwRbQ==",
+      "sha256": "7e6a30d47be7627751a7bfdd6633ac4a406c364c06bf22baa896406cfe764058",
       "repository": "https://github.com/sislex/identity",
-      "commit": "8020aa2dc89f1e6b7934bcb5b07e1bf1d38ab31d",
-      "asset": "sislexa-identity-1.5.0-1a2671c0252c.tgz"
+      "commit": "ed6b4009575d049582057057cc300911e3dae029",
+      "asset": "sislexa-identity-1.5.1-7e6a30d47be7.tgz"
     },
     {
       "name": "@sislexa/make",
