@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 4b9f7e81
+checked: 684db713
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -545,6 +545,9 @@ unhealthy containers, unknown command completion and Delivery Control fences
 require a different recovery procedure. The original failure and exit code are
 preserved in `operator-recoveries/<id>.json` under the private journal directory;
 the operation retains its failed exit code and does not claim Compose completed.
+Docker's nanosecond timestamps are normalized to microseconds before parsing so
+the same proof works on production hosts with Python 3.9/3.10; operation time
+boundaries remain milliseconds.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 

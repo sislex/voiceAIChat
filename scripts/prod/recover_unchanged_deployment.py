@@ -41,7 +41,11 @@ def recover_record(record, containers, health, project, expected_services):
                 or state.get('Health', {}).get('Status', 'healthy') != 'healthy'):
             raise ValueError('container_not_healthy')
         for timestamp in [container['Created'], state['StartedAt']]:
-            value = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            # Docker emits nanoseconds; Python 3.9/3.10 accept only millisecond
+            # or microsecond fractions. Journal boundaries are milliseconds.
+            normalized = re.sub(r'\.(\d+)(?=Z$|[+-]\d{2}:\d{2}$)',
+                                lambda match: '.' + match[1][:6].ljust(6, '0'), timestamp)
+            value = datetime.fromisoformat(normalized.replace('Z', '+00:00'))
             if value.tzinfo is None or value.timestamp() * 1000 >= record['createdAt']:
                 raise ValueError('container_changed_after_operation')
         services[name] = {key: container[key] for key in ['Id', 'Image', 'Created']}
