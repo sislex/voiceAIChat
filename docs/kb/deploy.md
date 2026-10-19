@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: a42bdd4fb
+checked: b66754133
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -66,7 +66,10 @@ must also be verified against the configured runner account.
 `VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. The
 runner must explicitly support this mode; an older incompatible runner rejects
 execution. Public release acceptance must verify the installed runner, isolated
-profiles and empty tool inventory before enabling registration.
+profiles and empty tool inventory before enabling registration. Set
+`VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
+to start without its Billing dependency instead of silently using legacy
+unaccounted turns. Once configured, Billing failures already deny admission.
 
 `python3 scripts/prod/compose_env.py applications --file .env` prints derived
 `COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the

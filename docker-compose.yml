@@ -60,6 +60,7 @@ services:
       VC_APPLICATIONS: ${VC_APPLICATIONS-chat,make,projects,web-reader,playwright-reader,image-studio,identity}
       VC_CHAT_MODELS: ${VC_CHAT_MODELS:-}
       VC_CHAT_TEXT_ONLY: ${VC_CHAT_TEXT_ONLY:-false}
+      VC_CHAT_REQUIRE_BILLING: ${VC_CHAT_REQUIRE_BILLING:-false}
       VC_CORE_ID: ${VC_CORE_ID:-localhost}
       # External applications use separate credentials for redemption, RPC and MCP.
       VC_APPLICATION_CHAT_TOKEN: ${VC_APPLICATION_CHAT_TOKEN:-}

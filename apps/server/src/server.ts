@@ -364,6 +364,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const configuredDependency = (id: string) => component?.config.dependencies.some(d => d.applicationId === id) ? component.dependency(id) : undefined
   const managedIdentity = configuredDependency('identity')
   const managedBilling = configuredDependency('billing')
+  if (opts.config.chatRequireBilling && !managedBilling && !opts.billingTransport) {
+    await app.close()
+    throw Error('VC_CHAT_REQUIRE_BILLING requires a configured Billing dependency')
+  }
   const managedAnalytics = configuredDependency('analytics')
   const managedMake = configuredDependency('make')
   const managedPlaywright = configuredDependency('playwright-reader')
