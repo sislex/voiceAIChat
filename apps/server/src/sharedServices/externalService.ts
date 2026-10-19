@@ -1,4 +1,4 @@
-import { CORE_ID_HEADER, CORE_MCP_TOKEN_TTL_MS, DELEGATION_HEADER_NAME, type ApplicationId } from '@voicechat/shared'
+import { CORE_ID_HEADER, CORE_MCP_TOKEN_TTL_MS, DELEGATION_HEADER_NAME, taskMakeSources, type ApplicationId, type CoreMcpTaskScope, type LlmMakeSource, type TaskDesignLink } from '@voicechat/shared'
 import { signCoreMcpToken } from '@sislexa/component-runtime'
 import type { TicketDelegations } from '../auth/ticketDelegation.js'
 
@@ -46,17 +46,39 @@ export interface ExternalMcpOptions {
   secrets: Partial<Record<ApplicationId, string>>
   now?: () => number
 }
-const MCP_PATHS: Partial<Record<ApplicationId, string>> = { make: '/mcp/make', 'image-studio': '/mcp/image-studio' }
+/**
+ * MCP endpoint of each external application. Playwright Reader has none of its own: its browser tools reach the model
+ * through Web Reader's `/mcp/preview`.
+ */
+export const EXTERNAL_MCP_PATHS: Partial<Record<ApplicationId, string>> = {
+  make: '/mcp/make', 'image-studio': '/mcp/image-studio', 'web-reader': '/mcp/preview', projects: '/mcp/kanban'
+}
+export interface ExternalMcpContext { userId: string; conversationId: string; turnId?: string; scope?: CoreMcpTaskScope }
 /** Per-turn MCP URL of an external application, signed for this core, user and conversation. */
 export function externalMcpUrls(options: ExternalMcpOptions) {
   const now = options.now ?? Date.now
-  return (application: ApplicationId, context: { userId: string; conversationId: string; turnId?: string }): string | undefined => {
+  return (application: ApplicationId, context: ExternalMcpContext): string | undefined => {
     const url = options.url(application)
     const secret = options.secrets[application]
-    const path = MCP_PATHS[application]
+    const path = EXTERNAL_MCP_PATHS[application]
     if (!url || !secret || !path) return undefined
     const token = signCoreMcpToken(secret, { v: 1, coreId: options.coreId, application, userId: context.userId,
-      conversationId: context.conversationId, ...(context.turnId ? { turnId: context.turnId } : {}), expiresAt: now() + CORE_MCP_TOKEN_TTL_MS })
+      conversationId: context.conversationId, ...(context.turnId ? { turnId: context.turnId } : {}),
+      ...(context.scope ? { scope: context.scope } : {}), expiresAt: now() + CORE_MCP_TOKEN_TTL_MS })
     return `${url}${path}?k=${encodeURIComponent(token)}`
   }
+}
+
+/**
+ * Task sources of an external Make: one MCP token per source conversation whose `scope` claim names the task and the
+ * files the run may read, so Make needs no separately signed scope document and Core accepts it only for read methods.
+ */
+export function externalTaskMakeSources(mcpUrl: ReturnType<typeof externalMcpUrls>,
+  args: { designs: TaskDesignLink[]; userId: string; projectId: string; taskId: string }): LlmMakeSource[] {
+  return taskMakeSources(args.designs).flatMap(source => {
+    const url = mcpUrl('make', { userId: args.userId, conversationId: source.conversationId,
+      scope: { taskId: args.taskId, projectId: args.projectId, mode: source.mode, paths: source.paths } })
+    return url ? [{ name: source.name, conversationId: source.conversationId, mode: source.mode, paths: source.paths,
+      mcpUrl: `${url}&conv=${encodeURIComponent(source.conversationId)}` }] : []
+  })
 }

@@ -127,7 +127,6 @@ import { machinesSnapshot } from './kanbanBridge/internal.js'
 import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
-import { buildTaskMakeSources } from '@voicechat/make-contracts'
 import { LocalMakeCore } from './makeBridge/localCore.js'
 import { MakeProjectAdapters, projectModeError } from './makeBridge/projectAdapters.js'
 import { StandDeliveries } from './makeBridge/standDeliveries.js'
@@ -136,7 +135,7 @@ import { registerStandDeliveryRoutes } from './routes/standDeliveries.js'
 import { MakeRequestAuthority } from './makeBridge/requestAuthority.js'
 import { createRemoteMake } from './makeBridge/remote.js'
 import { createSharedServiceAuthority } from './auth/sharedServiceCallers.js'
-import { externalMcpUrls, externalServiceFetch } from './sharedServices/externalService.js'
+import { externalMcpUrls, externalServiceFetch, externalTaskMakeSources } from './sharedServices/externalService.js'
 import { registerMakeProxy } from './makeBridge/proxy.js'
 import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
@@ -526,12 +525,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         return { userId: owner, tenantId: conversation?.tenantId ?? null }
       }
     }) })
-    // Task scopes of an external Make are signed with its MCP secret; each source URL carries a core MCP token.
-    const secret = ticketOptions.mcpSecrets?.make
-    remote.service.taskSources = args => {
-      const base = secret && externalMcpUrl('make', { userId: args.userId, conversationId: `task:${args.taskId}` })
-      return base ? buildTaskMakeSources({ ...args, baseUrl: base, secret }) : []
-    }
+    // Each task source of an external Make is one core MCP token for its conversation with a read-only task scope.
+    remote.service.taskSources = args => externalTaskMakeSources(externalMcpUrl, args)
     return remote
   }
   const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
@@ -1555,7 +1550,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   else if (opts.config.readerMode === 'embedded') createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
   // Register internal RPC only when a managed provider or legacy migration credential is configured.
   const sharedServices = ticketDelegation
-    ? createSharedServiceAuthority({ credentials: ticketOptions.credentials, enabled: ticketApplications, delegations: ticketStore.delegations }) : undefined
+    ? createSharedServiceAuthority({ credentials: ticketOptions.credentials, enabled: ticketApplications, delegations: ticketStore.delegations,
+      coreId: deployment.coreId, mcpSecrets: ticketOptions.mcpSecrets ?? {} }) : undefined
   if (opts.config.internalToken || component || sharedServices) {
     registerInternalRoutes(app, {
       maintenance, token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore, sharedServices,

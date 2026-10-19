@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: 1a8a0ef53
+checked: 6afda34b1
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -1008,11 +1008,24 @@ and `args[n]` is filled with / must equal the delegated user; `{ userField }` do
 for a JSON body (`/internal/image-studio/generate`); `'delegated'` needs a live delegation
 (`/internal/make/events`); `'service'` is build-level for that application (Make
 `conversationOwner`/`conversationProject`/`taskLinks`/`userExists`/`boardChanged`, Reader
-`machineOnline`, all Kanban `/internal/kanban/*`). Anything else is `403 method_denied`
-(for example Make `machineFs.*`, Reader `listPreviews`/`context`/`projectResource`). A
+`machineOnline`, all Kanban `/internal/kanban/*`). `{ userArg: n, field }` checks and fills
+the field of an object argument (Web Reader `context` and `logBrowserEvidence`, user in
+`entry.userId`); Reader `projectResource` is `'delegated'` (the forwarded request carries
+the user's own cookie). Web Reader may also call `/internal/playwright-reader/service`
+(`execute`/`screenshot`/`control`, user filled) when Playwright Reader runs inside the core.
+Anything else is `403 method_denied` (for example Make `machineFs.*`, Reader `listPreviews`). A
 delegation of another application or an expired one is `401 delegation_denied`; a missing
 one on a user method is `401 delegation_required`. Another application's token or an
 unknown path falls through to the unchanged internal-token/component-grant check.
+Instead of a ticket delegation the service may present the core MCP token of the turn it is
+serving in `x-sislexa-mcp-token` (B21): Core verifies it with that application's
+`VC_APPLICATION_<ID>_MCP_SECRET` (`verifyCoreMcpTokenWithSecret`), requires the same
+application and this `VC_CORE_ID`, and acts for the token's `userId`; both headers at once,
+another application's or core's token, a wrong signature or an expired token are
+`401 delegation_denied`. A token with a task `scope` claim is read-only: only the route's
+`readMethods` are allowed (Make reads; writes, `projectNotesUpdate` and `/internal/make/events`
+are `403 method_denied`). This lets tools work on turns Core runs itself, where the runner
+has only the MCP URL and no ticket delegation.
 A ticket delegation may also `POST /api/conversations` with exactly its application's
 `assistantKind` (`APPLICATION_ASSISTANT_KIND`: make→`make`, image-studio→`images`,
 web-reader→`web-recorder`, playwright-reader→`playwright-reader`) and no `scope`.
@@ -1026,15 +1039,19 @@ and `listFiles` carry the conversation owner's delegation, `adminStats`/`metrics
 none; its events arrive on `/internal/make/events`. Services authenticate the call with
 `authenticateCoreRequest(registry, req)` against the entry's `serviceCredentialRef`.
 
-**MCP.** For external applications with `VC_APPLICATION_<ID>_MCP_SECRET` (Make and Image
-Studio), Core puts `<service url>/mcp/<app>?k=<token>` in the runner's MCP list instead
+**MCP.** For external applications with `VC_APPLICATION_<ID>_MCP_SECRET` (Make `/mcp/make`,
+Image Studio `/mcp/image-studio`, Web Reader `/mcp/preview` — also for the Make browser on the
+bound reader conversation — and Kanban `projects` `/mcp/kanban`; `EXTERNAL_MCP_PATHS`,
+Playwright Reader has no MCP endpoint of its own), Core puts `<service url>/mcp/<app>?k=<token>` in the runner's MCP list instead
 of the build-wide `VC_MCP_SECRET` URL, on the user's own turns and on turns delegated by
 the same application only. The token is `sxm1.<base64url JSON claims>.<base64url
 HMAC-SHA256 over "sxm1.<payload>">` with claims `{ v: 1, coreId, application, userId,
-conversationId, turnId?, expiresAt }` (6 h). Services verify with
+conversationId, turnId?, scope?, expiresAt }` (6 h). Services verify with
 `verifyCoreMcpToken(registry, token)` against `mcpSecretRef`. Task design sources of an
-external Make are signed with the same MCP secret and carry a token for
-`conversationId: task:<taskId>`.
+external Make get one token per source conversation (`externalTaskMakeSources`):
+`conversationId` is the source Make conversation and `scope: { taskId, projectId, mode, paths }`
+bounds what the task run may read; the URL is `…/mcp/make?k=<token>&conv=<source>` with no
+separately signed `scope` parameter.
 
 **External Kanban.** With `projects=https://…` in `VC_APPLICATIONS` and
 `VC_APPLICATION_PROJECTS_SERVICE_TOKEN`, Core treats the shared Kanban host like the remote
