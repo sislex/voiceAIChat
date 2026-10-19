@@ -234,7 +234,7 @@ services:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
     profiles: ["playwright-reader"]
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:386b14a004ceb4cac02023984e841897b85ed26c}
     mem_limit: 256m
     depends_on:
       browser-runner: {condition: service_started, required: false}
@@ -458,7 +458,7 @@ services:
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
     profiles: ["browser-runner"]
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:96388a97ec5f7c17b20dac2f9ce14fd8d298076a}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:386b14a004ceb4cac02023984e841897b85ed26c}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"

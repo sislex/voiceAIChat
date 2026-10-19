@@ -66,6 +66,15 @@ export function topicsCoveringFiles(kbDir, files) {
   })
 }
 
+// Some owner KB contracts require full SHAs, while the shared touch CLI abbreviates HEAD.
+export function recordFullKnowledgeCommit(path, commit) {
+  if (!/^[a-f0-9]{40}$/.test(commit)) throw Error('Knowledge review requires a full commit SHA')
+  const source = readFileSync(path, 'utf8'), front = /^---\n([\s\S]*?)\n---/.exec(source)
+  if (!front || !/^checked: [a-f0-9]{7,40}$/m.test(front[1])) throw Error('Knowledge review metadata missing or invalid')
+  const metadata = front[0].replace(/^checked: [a-f0-9]{7,40}$/m, `checked: ${commit}`)
+  writeFileSync(path, metadata + source.slice(front[0].length))
+}
+
 export function createJournal(plan, options, repository) {
   for (const app of options.apps) if (!plan.applications.some(row => row.application === app)) throw Error(`Unknown app: ${app}`)
   const selected = plan.applications.filter(row => !options.apps.length || options.apps.includes(row.application))
@@ -211,7 +220,11 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         const kbDir = join(cwd, existsSync(join(cwd, 'kb.config.json')) ? json(join(cwd, 'kb.config.json')).kbDir ?? 'docs/kb' : 'docs/kb')
         const topics = topicsCoveringFiles(kbDir, [...files, 'package-lock.json'])
         const touch = existsSync(join(cwd, 'scripts/kb.mjs')) ? ['node', ['scripts/kb.mjs', 'touch']] : ['npx', ['--no-install', 'sislexa-kb', 'touch']]
-        for (const topic of topics) run(touch[0], [...touch[1], topic], cwd)
+        const reviewedCommit = git(cwd, 'rev-parse', 'HEAD')
+        for (const topic of topics) {
+          run(touch[0], [...touch[1], topic], cwd)
+          recordFullKnowledgeCommit(join(kbDir, topic), reviewedCommit)
+        }
         if (topics.length) {
           if (pkg.scripts['kb:index']) run('npm', ['run', 'kb:index'], cwd)
           git(cwd, 'add', '--all', '--', relative(cwd, kbDir))

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 000546d1e
+checked: abcc30372
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -223,7 +223,7 @@ automatically by `kb:index`; other conflicts abort the rebase and stop the train
 The journal records the rebased pin and invalidates the earlier Core gate so a
 failed gate must pass on resume before the rebased commit can be pushed.
 
-Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
+Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, records the full 40-character reviewed commit for owners that require unambiguous metadata, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
 then run `npm install --package-lock-only` (never `npm version --workspaces`).
 The runner installs dependencies in its clones and runs `gate:release` when the
 owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR
@@ -2884,3 +2884,6 @@ Core pins Make 1.8.1 at `b04733783732b654ba02ee090f63dec564eada56` in the tools 
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
+
+<!-- release-pin:playwright-reader-1.2.6 -->
+- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
