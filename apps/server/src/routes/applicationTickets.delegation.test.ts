@@ -95,6 +95,12 @@ describe('Core-issued ticket delegation', () => {
       socket.send(JSON.stringify({ t: 'chat.connect', v: 1, conversationId: own.id }))
       socket.send(JSON.stringify({ t: 'claude.send', conversationId: own.id, segments: [{ kind: 'text', text: 'hello from make' }] }))
       await vi.waitFor(() => expect(send).toHaveBeenCalledOnce(), { timeout: 5000 })
+      // The Codex runner rejects tool-free runs, and the service's MCP tools must stay available:
+      // a ticket delegation only removes shell execution.
+      const request = send.mock.calls[0]![0]
+      expect(request).toMatchObject({ executionDisabled: true, application: { originApplicationId: 'make' } })
+      expect(request.textOnly).toBeUndefined()
+      expect(request.remote).toBeUndefined()
       const messages = await db.chat.listMessages('admin', own.id)
       expect(messages.some(m => m.text === 'hello from make')).toBe(true)
     } finally { socket.terminate() }

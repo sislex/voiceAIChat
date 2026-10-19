@@ -1095,11 +1095,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         return
       }
     }
+    // Identity-delegated turns stay tool-free. A shared service's ticket delegation keeps that
+    // service's MCP tools (B21) and loses only shell execution: the Codex runner has no tool-free mode.
+    const ticketDelegated = Boolean(req.delegation && deps.delegation!.referenceTicket(req.delegation))
     turn.handle = client.send(
       {
-        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
+        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
-        remote: executionRemote, readOnlyRemote, executionDisabled,
+        remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
