@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: 6afda34b1
+checked: ad893cc14
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -995,6 +995,10 @@ issuing user session's Billing reference with application attribution
 `{ originApplicationId: <application>, executorApplicationId: 'core', delegationId: null }`;
 a build without Billing runs them like the user's own turns. Identity grants keep
 their existing behaviour.
+Identity-delegated turns go to the runner tool-free (`textOnly`). Ticket-delegated turns of a
+shared service do not: they keep that application's MCP tools (B21) and run with
+`executionDisabled` and no remote machine, because the Codex runner refuses tool-free runs
+(`preview_text_only_unavailable`, the connection closes) and a shared service needs its tools.
 
 ### Shared-service RPC and MCP (deployment-profiles B17)
 
