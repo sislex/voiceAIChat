@@ -6,6 +6,14 @@ import test from 'node:test'
 
 const root = resolve(import.meta.dirname, '..')
 
+test('Core workspace resolves the published Shared subpaths used by embedded Identity', async () => {
+  for (const path of ['types', 'projectTypes', 'admin', 'llmAccess', 'rateLimit', 'protocol']) {
+    const plain = await import('@voicechat/shared/' + path)
+    const extension = await import('@voicechat/shared/' + path + '.js')
+    assert.equal(plain, extension)
+  }
+})
+
 test('published Shared contracts resolve the S4 Identity and SDK releases', () => {
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
   execFileSync('node', ['scripts/core-contracts-release.mjs', '--version', '0.1.11', '--commit', commit], { cwd: root, stdio: 'pipe' })
