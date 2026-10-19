@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: 6546adb9
+checked: 20e8599d
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -192,6 +192,10 @@ owner archive with `release-composition.mjs`, then reconcile the S3 provider
 manifest and A07 exact source before running the Core gate. The 1.5.1 archive is
 `sislexa-identity-1.5.1-7e6a30d47be7.tgz`; validation retains the strict source and
 integrity checks.
+
+Identity 1.5.1 adds `identity_sign_in_tickets`. Core classifies it as Identity-owned
+and excludes its rows from production snapshots alongside sessions, so temporary
+stands cannot inherit one-time production sign-in tickets.
 
 `npm run gate:a07` runs a synthetic server-side SDK consumer against published
 owner implementations. Runner is a pinned development dependency and its
