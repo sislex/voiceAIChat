@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 6b3954a1
+checked: 4b9f7e81
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -532,6 +532,19 @@ Recovery is not successful release acceptance. If command completion is unknown
 operator recovery is required. Pending/uncertain records block new controlled
 operations and must not be deleted to retry. Normal legacy invocations remain
 available for existing callers; delivery-control must use the controlled form.
+
+For a known nonzero Compose exit that left **every** pre-deployment container
+unchanged, an operator can run `python3 scripts/prod/recover_unchanged_deployment.py
+--operation <id> --project <compose-project> --services <complete-prior-service-list>`.
+The default is observation only; `--apply` records `recovered`, never `succeeded`.
+It holds the existing host and journal locks, requires the deployment PID to be
+absent, verifies the exact previous Core commit and component readiness, and
+requires the complete service inventory to be running and healthy with creation
+and start times before the operation. Missing, extra, replaced, restarted or
+unhealthy containers, unknown command completion and Delivery Control fences
+require a different recovery procedure. The original failure and exit code are
+preserved in `operator-recoveries/<id>.json` under the private journal directory;
+the operation retains its failed exit code and does not claim Compose completed.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 
@@ -1703,6 +1716,13 @@ validation, release metadata setup, container replacement and component readines
 checks. Record the resulting image IDs with the release backup.
 
 ## Local owner image delivery
+
+Before rendering local image pins, `release-manager-deploy.sh` derives the same
+application profiles and modes as the detached launcher through `compose_env.py
+applications`. Inactive profiles are omitted from Compose configuration: deriving
+profiles only during deployment would leave services such as `browser-runner`
+unpinned and allow an obsolete operator override to win. Invalid application
+settings stop the wrapper before any Docker invocation.
 
 The in-product release manager has a separate mutable production checkout. Its
 default deploy command now verifies the selected branch and full commit before
