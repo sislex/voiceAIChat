@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: d1b49f14
+checked: 6b3954a1
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -1716,6 +1716,13 @@ also receives the expected full commit, so a branch moving during `git pull`
 stops before the build. This path does not need a GHCR login. Custom production
 deploy commands retain their own image-delivery policy but still receive the
 selected SHA and a checkout preflight.
+
+When both the expected full commit and explicit release version are supplied,
+the installed launcher pulls with `--no-tags --ff-only` and does not fetch all
+historical tags. Release metadata already comes from the verified request;
+conflicting old tags must neither block this deployment nor be force-updated.
+The clean-checkout and exact-commit checks still run before any Docker effect.
+Unpinned or versionless operator deployments retain tag fetching and its errors.
 
 Do not point the in-product release button at an immutable older release
 directory: the checkout switched by the manager and the checkout used by

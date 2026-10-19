@@ -689,7 +689,7 @@ test('production compose закрепляет каноническое имя se
 test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
   const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
   const head = 'a'.repeat(40), previous = 'b'.repeat(40)
-  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
+  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, tagConflict = false, releaseVersion = '0.1.77', fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'controlled-deploy-')))
     const bin = join(root, 'bin'), state = join(root, 'operations'), calls = join(root, 'calls')
     mkdirSync(bin); mkdirSync(state, { mode: 0o700 }); mkdirSync(join(root, 'apps/server'), { recursive: true })
@@ -698,7 +698,9 @@ test('controlled deployment pins a commit, persists detached completion and neve
     executable('setsid', 'exec "$@"'); executable('nohup', 'exec "$@"')
     executable('flock', busy ? 'exit 1' : 'exit 0')
     executable('sleep', 'exit 0')
-    executable('git', `case "$*" in
+    executable('git', `printf '%s\\n' "$*" >>"$FIXTURE_ROOT/git-calls"
+    case "$*" in
+      'fetch --tags origin') ${tagConflict ? "echo 'would clobber existing tag' >&2; exit 1" : 'exit 0'};;
       'status --porcelain --untracked-files=all') ${statusFailure ? 'exit 1' : dirty ? "echo '?? injected-source.js'" : 'exit 0'};;
       'rev-parse HEAD') echo ${actual};;
       'rev-parse --short HEAD'|'rev-parse --short=12 HEAD') echo ${actual.slice(0, 12)};;
@@ -710,7 +712,7 @@ test('controlled deployment pins a commit, persists detached completion and neve
       exit 0`)
     const env = { ...process.env, PATH: bin + ':' + process.env.PATH, VC_REPO_DIR: root,
       VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOG: join(root, 'log'), VC_DEPLOY_LOCK: join(root, 'lock'),
-      VC_RELEASE_VERSION: '0.1.77', VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
+      VC_RELEASE_VERSION: releaseVersion, VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
     delete env.VC_DEPLOY_CHILD
     // The operator envelope is outside the candidate checkout, with protected
     // ancestors. A conventional /tmp ancestor is intentionally not accepted.
@@ -753,6 +755,18 @@ test('controlled deployment pins a commit, persists detached completion and neve
   }))
   await t.test('a moved checkout fails before Docker', () => scenario({ actual: previous }, ({ record, calls }) => {
     assert.equal(record.state, 'failed'); assert.equal(record.exitCode, 65); assert.equal(calls(), '')
+  }))
+  await t.test('a pinned version deploys without fetching conflicting historical tags', () => scenario({ tagConflict: true }, ({ root, record, calls }) => {
+    assert.equal(record.state, 'succeeded')
+    assert.match(calls(), /compose up -d --build/)
+    const gitCalls = readFileSync(join(root, 'git-calls'), 'utf8')
+    assert.match(gitCalls, /^pull --no-tags --ff-only$/m)
+    assert.doesNotMatch(gitCalls, /^fetch /m)
+  }))
+  await t.test('without an explicit version, tag-fetch errors still stop before Docker', () => scenario({ tagConflict: true, releaseVersion: '' }, ({ root, record, calls }) => {
+    assert.equal(record.state, 'failed')
+    assert.equal(calls(), '')
+    assert.match(readFileSync(join(root, 'git-calls'), 'utf8'), /^fetch --tags origin$/m)
   }))
   for (const options of [{ dirty: true }, { statusFailure: true }]) {
     await t.test('untracked source or unreadable Git status fails before Docker: ' + JSON.stringify(options), () => scenario(options, ({ record, calls }) => {
