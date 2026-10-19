@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand } from './release-train-run.mjs'
+import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand, recordFullKnowledgeCommit } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
@@ -287,6 +287,52 @@ test('knowledge topics covering bumped manifests', t => {
   writeFileSync(join(dir, 'README.md'), '---\nareas:\n  - package.json\n---\n')
   assert.deepEqual(topicsCoveringFiles(dir, ['package.json', 'apps/make/package.json', 'package-lock.json']), ['app.md', 'deploy.md'])
   assert.deepEqual(topicsCoveringFiles(join(dir, 'missing'), ['package.json']), [])
+})
+
+test('release knowledge records full commits without changing topic content', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kb-review-')); t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'release.md'), commit = 'a'.repeat(40)
+  for (const checked of ['b'.repeat(7), 'b'.repeat(40)]) {
+    const source = `---\ntitle: Release\nchecked: ${checked}\nareas:\n  - package.json\n---\n# Release\nchecked: ccccccc\n`
+    writeFileSync(path, source)
+    recordFullKnowledgeCommit(path, commit)
+    assert.equal(readFileSync(path, 'utf8'), source.replace(`checked: ${checked}`, `checked: ${commit}`))
+  }
+  for (const source of ['# No metadata\n', '---\nchecked: invalid\n---\n']) {
+    writeFileSync(path, source)
+    assert.throws(() => recordFullKnowledgeCommit(path, commit), /metadata/)
+    assert.equal(readFileSync(path, 'utf8'), source)
+  }
+  assert.throws(() => recordFullKnowledgeCommit(path, 'a'.repeat(7)), /full commit/)
+})
+
+test('owner preparation preserves strict full-SHA knowledge metadata after touch', async t => {
+  const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+  pkg.scripts['kb:check'] = 'check'; pkg.scripts['kb:index'] = 'index'
+  put(join(f.owner, 'package.json'), pkg)
+  mkdirSync(join(f.owner, 'docs/kb'), { recursive: true })
+  const topic = `---\ntitle: Release\nchecked: ${'a'.repeat(40)}\nareas:\n  - package.json\n---\n# Release\n`
+  writeFileSync(join(f.owner, 'docs/kb/release.md'), topic)
+  f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Strict knowledge contract')
+  f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+  const journal = createJournal(f.plan, { apps: [] }, f.repository)
+  let touched = false
+  const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+    if (binary === 'npx' && args.includes('touch')) {
+      touched = true
+      writeFileSync(join(cwd, 'docs/kb/release.md'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', '--short', 'HEAD')))
+      return ''
+    }
+    if (touched && binary === 'npm' && args.join(' ') === 'run kb:check') {
+      assert.match(readFileSync(join(cwd, 'docs/kb/release.md'), 'utf8'), /^checked: [a-f0-9]{40}$/m)
+    }
+    return f.run(binary, args, cwd, options)
+  } })
+  await adapter('prepare', journal.owners[0], journal)
+  assert.equal(touched, true)
+  const cwd = join(f.directory, journal.id, 'owner-0')
+  assert.equal(readFileSync(join(cwd, 'docs/kb/release.md'), 'utf8'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', 'HEAD^')))
+  assert.equal(f.git(cwd, 'status', '--porcelain'), '')
 })
 
 test('selected owners only need their own readiness', () => {
