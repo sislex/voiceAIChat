@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-19
-checked: eb3d97be2
+checked: e273eed8b
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -373,6 +373,14 @@ model execution, Billing admission and settlement. Service credentials never bec
 user credentials. `redeem()` rejects responses without a valid delegation that
 outlives neither the session nor the current time (`isEnterTicketRedeemResponse`).
 See data-auth.md «Core-issued ticket delegation».
+
+Registry entries may also carry `serviceCredentialRef` (verifies Core→service calls,
+`authenticateCoreRequest`) and `mcpSecretRef` (verifies per-turn MCP tokens,
+`verifyCoreMcpToken`; `signCoreMcpToken` signs them in Core). `fromEnv` reads them from
+`VC_CORE_SERVICE_TOKEN` and `VC_CORE_MCP_SECRET`; `resolve()` never returns refs. Core
+calls its own internal RPC from a shared service with the application token plus the
+ticket delegation; the method table and Core-side variables are in data-auth.md
+«Shared-service RPC and MCP».
 
 Use `registry.account(coreId, delta)` before allocating resources; all counters and
 returned usage records carry `coreId`. Optional limits are `diskBytes`, `workshops`,

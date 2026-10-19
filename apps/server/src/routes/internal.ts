@@ -31,7 +31,8 @@ import {
   type KanbanEvent, type KanbanEventsRequest, type MachineSnapshot
 } from '../kanban/internal.js'
 import { serveExecStream, type ExecStreamRequest } from '../internal/execStream.js'
-import { createRpcDispatcher } from '@voicechat/shared'
+import { createRpcDispatcher, authorizeSharedServiceRpc, type SharedServiceCaller } from '@voicechat/shared'
+import type { SharedServiceAuthority } from '../auth/sharedServiceCallers.js'
 import type { ReaderCore } from '@voicechat/web-reader-contracts'
 import { INTERNAL_READER_CORE_PATH, READER_CORE_RPC_METHODS, READER_RPC_BODY_LIMIT } from '@voicechat/web-reader-contracts'
 
@@ -56,6 +57,8 @@ export const INTERNAL_COMPONENT_SCOPES: Readonly<Record<string, string>> = {
 
 export interface InternalRoutesDeps {
   maintenance?: Maintenance
+  /** External applications calling their own RPC paths with an application token and optional ticket delegation. */
+  sharedServices?: SharedServiceAuthority
   identityCore?: VoiceChatDb
   component?: ComponentRuntime
   token: string
@@ -86,8 +89,15 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
   const sendRpcError = (reply: { code(status: number): { send(body: unknown): unknown } }, error: unknown): unknown =>
     reply.code(error instanceof RpcError || error instanceof VpnError ? error.status : 500).send({ error: error instanceof Error ? error.message : String(error), ...(error instanceof VpnError ? { code: error.code } : {}) })
   app.register(async (scope) => {
+    const sharedCallers = new WeakMap<object, SharedServiceCaller>()
     scope.addHook('onRequest', async (req, reply) => {
       const path = req.url.split('?')[0]
+      const shared = deps.sharedServices?.authenticate(path, req.headers)
+      if (shared) {
+        if ('error' in shared) return reply.code(shared.status).send({ error: shared.error })
+        sharedCallers.set(req, shared.caller)
+        return
+      }
       const required = INTERNAL_COMPONENT_SCOPES[path]
       if (deps.component) {
         const verdict = required ? deps.component.authorize(req.headers.authorization, required) : { ok: false as const, status: 403 }
@@ -97,6 +107,14 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
         return reply.code(verdict.status).send({ error: 'component_access_denied' })
       }
       if (!deps.token || req.headers.authorization !== `Bearer ${deps.token}`) return reply.code(401).send({ error: 'unauthorized' })
+    })
+    // Application callers get only the methods of the authority table; user arguments come from the delegation.
+    scope.addHook('preHandler', async (req, reply) => {
+      const caller = sharedCallers.get(req)
+      if (!caller) return
+      const verdict = authorizeSharedServiceRpc(req.url.split('?')[0]!, req.body, caller)
+      if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+      req.body = verdict.body
     })
     if (deps.maintenance) scope.post('/internal/maintenance', async (req, reply) => {
       const body = req.body as { readOnly?: unknown; reason?: unknown } | null
