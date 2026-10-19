@@ -1,6 +1,6 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
-import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
+import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
@@ -1675,10 +1675,21 @@ export async function registerRest(
     const alive = new Set((await db.machines.listAgents(userId)).map((agent) => agent.id))
     const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
     const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
-    if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
     const repaired = { ...settings, execTarget, defaultAgentId }
-    await db.settings.saveSettings(userId, repaired)
-    return repaired
+    if (execTarget !== settings.execTarget || defaultAgentId !== settings.defaultAgentId) {
+      await db.settings.saveSettings(userId, repaired)
+    }
+    if (!opts.chatModels) return repaired
+    // Project the deployment's effective default without persisting a fallback
+    // over the user's preference. Engine IDs select transport, not model policy.
+    const access = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), opts.chatModels)
+    const fallback = firstAllowedProvider(access)
+    if (!fallback) return repaired
+    const provider = isProviderAllowed(access, repaired.llmProvider) ? repaired.llmProvider : fallback
+    const model = deploymentModel(access, provider, provider === 'codex' ? repaired.codexModel : repaired.model, opts.chatModels)
+    if (!model) return repaired
+    return { ...repaired, llmProvider: provider,
+      ...(provider === 'codex' ? { codexModel: model } : { model: normalizeClaudeModel(model) }) }
   }
   registerChatSettingsRoutes(app, db)
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))

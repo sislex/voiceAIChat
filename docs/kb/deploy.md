@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: c0f9d856a
+checked: dfbff9186
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -66,6 +66,21 @@ revocations still take precedence. Missing/empty configuration preserves legacy
 behavior; malformed nonempty configuration prevents startup. Compose forwards
 this value independently of the application selector. Actual model availability
 must also be verified against the configured runner account.
+
+With `VC_CHAT_MODELS`, both GET and PUT responses from `/api/settings` project
+the effective account provider and its selected model using the deployment order
+and current user restrictions. The projection does not overwrite stored model
+preferences on read or when an unrelated preference is patched. Other settings,
+including the inactive provider's model and explicit `llmEngineId`, are retained;
+the turn manager resolves engine transport separately by provider and role. If
+no model is available, clients must use the access response to disable selection
+rather than treating the retained preference as executable.
+
+Conversation overrides remain independent. For example, an allowed account Sol
+and a forbidden conversation Astra resolve that conversation to the policy's
+first permitted model (Luna), not the account's Sol. The existing conversation
+`context-snapshot` summary exposes the effective provider/model; account settings
+alone are not an authoritative fallback for a forbidden conversation override.
 
 `VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. The
 Core file-output endpoint then reads only the authenticated user's Core output
