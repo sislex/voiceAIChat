@@ -174,6 +174,8 @@ export function registerChatDelegation(app: FastifyInstance, authority?: ChatDel
     try {
       const path = req.url.split('?')[0]!
       if (path === '/api/chat/context' && req.method === 'GET' || path === '/api/chat/session' && req.method === 'POST') return
+      // A Core-issued ticket delegation may create a conversation; the route limits it to the application's kind.
+      if (path === '/api/conversations' && req.method === 'POST' && authority.referenceTicket(reference)) return
       const conversationId = /^\/api\/conversations\/([^/]+)(?:\/|$)/.exec(path)?.[1]
       // Other APIs need a resource-specific adapter before applications may call them.
       if (!conversationId || !/^\/api\/conversations\/[^/]+(?:\/(?:messages(?:\/[^/]+)?|status|settings))?$/.test(path)

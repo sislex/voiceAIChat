@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { isApplicationId, parseApplications, validateCoreId, type ApplicationId, type DeploymentManifest, type EnterTicketRedeemResponse, type LlmBillingSession, type SessionUser } from '@voicechat/shared'
+import { APPLICATION_IDS, isApplicationId, parseApplications, validateCoreId, type ApplicationId, type DeploymentManifest, type EnterTicketRedeemResponse, type LlmBillingSession, type SessionUser } from '@voicechat/shared'
 import { SHARED_SESSION_TTL_MS, TicketDelegations } from '../auth/ticketDelegation.js'
 
 const hash = (value: string) => createHash('sha256').update(value).digest()
@@ -34,14 +34,20 @@ export interface ApplicationTicketOptions {
   manifest: DeploymentManifest
   /** Per-service credentials; never use the common internal token here. */
   credentials: Partial<Record<ApplicationId, string>>
+  /** Core→service bearer for external applications (`VC_APPLICATION_<ID>_SERVICE_TOKEN`). */
+  serviceTokens?: Partial<Record<ApplicationId, string>>
+  /** HMAC key of per-turn MCP tokens for external applications (`VC_APPLICATION_<ID>_MCP_SECRET`). */
+  mcpSecrets?: Partial<Record<ApplicationId, string>>
   tickets?: ApplicationTickets
   /** Resolves the issuing user session (sid, billing reference) for the delegation bound to the ticket. */
   issuer?: (req: FastifyRequest) => TicketIssuer
 }
 export function applicationTicketOptions(env: NodeJS.ProcessEnv, publicUrl: string | null): ApplicationTicketOptions {
   return { manifest: { coreId: validateCoreId(env.VC_CORE_ID ?? new URL(publicUrl ?? 'http://localhost').hostname), applications: parseApplications(env.VC_APPLICATIONS) },
-    credentials: Object.fromEntries(['chat', 'make', 'projects', 'web-reader', 'playwright-reader', 'image-studio', 'identity'].map(id => [id, env[`VC_APPLICATION_${id.replaceAll('-', '_').toUpperCase()}_TOKEN`]])) }
+    credentials: applicationEnv(env, 'TOKEN'), serviceTokens: applicationEnv(env, 'SERVICE_TOKEN'), mcpSecrets: applicationEnv(env, 'MCP_SECRET') }
 }
+const applicationEnv = (env: NodeJS.ProcessEnv, suffix: string): Partial<Record<ApplicationId, string>> =>
+  Object.fromEntries(APPLICATION_IDS.map(id => [id, env[`VC_APPLICATION_${id.replaceAll('-', '_').toUpperCase()}_${suffix}`] || undefined]))
 export function registerApplicationTickets(app: FastifyInstance, options: ApplicationTicketOptions): void {
   const tickets = options.tickets ?? new ApplicationTickets()
   validateCoreId(options.manifest.coreId)

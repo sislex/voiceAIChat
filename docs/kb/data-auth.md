@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: eb3d97be2
+checked: e273eed8b
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -995,3 +995,44 @@ issuing user session's Billing reference with application attribution
 `{ originApplicationId: <application>, executorApplicationId: 'core', delegationId: null }`;
 a build without Billing runs them like the user's own turns. Identity grants keep
 their existing behaviour.
+
+### Shared-service RPC and MCP (deployment-profiles B17)
+
+**Service→Core.** On its own internal RPC paths an external application may present
+`authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>` instead of `VC_INTERNAL_TOKEN` or a
+component grant (`apps/server/src/auth/sharedServiceCallers.ts`, hooks in
+`routes/internal.ts`). `SHARED_SERVICE_RPC_ROUTES` in `packages/shared/src/deploymentProfiles.ts`
+maps each path to its application and each method to an authority:
+`{ user: n }` needs a live ticket delegation (`x-sislexa-delegation`) of the same application
+and `args[n]` is filled with / must equal the delegated user; `{ userField }` does the same
+for a JSON body (`/internal/image-studio/generate`); `'delegated'` needs a live delegation
+(`/internal/make/events`); `'service'` is build-level for that application (Make
+`conversationOwner`/`conversationProject`/`taskLinks`/`userExists`/`boardChanged`, Reader
+`machineOnline`, all Kanban `/internal/kanban/*`). Anything else is `403 method_denied`
+(for example Make `machineFs.*`, Reader `listPreviews`/`context`/`projectResource`). A
+delegation of another application or an expired one is `401 delegation_denied`; a missing
+one on a user method is `401 delegation_required`. Another application's token or an
+unknown path falls through to the unchanged internal-token/component-grant check.
+A ticket delegation may also `POST /api/conversations` with exactly its application's
+`assistantKind` (`APPLICATION_ASSISTANT_KIND`: make→`make`, image-studio→`images`,
+web-reader→`web-recorder`, playwright-reader→`playwright-reader`) and no `scope`.
+
+**Core→service.** For an external application with `VC_APPLICATION_<ID>_SERVICE_TOKEN`
+Core calls the service with `authorization: Bearer <service token>`,
+`x-sislexa-core-id: <VC_CORE_ID>` and, for user-scoped methods, an `x-sislexa-delegation`
+minted server-side in the same store (`sid: null`, 5 minutes,
+`apps/server/src/sharedServices/externalService.ts`). Today Make uses it: `promptContext`
+and `listFiles` carry the conversation owner's delegation, `adminStats`/`metrics`/`sweep`
+none; its events arrive on `/internal/make/events`. Services authenticate the call with
+`authenticateCoreRequest(registry, req)` against the entry's `serviceCredentialRef`.
+
+**MCP.** For external applications with `VC_APPLICATION_<ID>_MCP_SECRET` (Make and Image
+Studio), Core puts `<service url>/mcp/<app>?k=<token>` in the runner's MCP list instead
+of the build-wide `VC_MCP_SECRET` URL, on the user's own turns and on turns delegated by
+the same application only. The token is `sxm1.<base64url JSON claims>.<base64url
+HMAC-SHA256 over "sxm1.<payload>">` with claims `{ v: 1, coreId, application, userId,
+conversationId, turnId?, expiresAt }` (6 h). Services verify with
+`verifyCoreMcpToken(registry, token)` against `mcpSecretRef`. Task design sources of an
+external Make are signed with the same MCP secret and carry a token for
+`conversationId: task:<taskId>`. Kanban as an external application has no Core-side
+internal routes yet (`VC_KANBAN_MODE` stays off for it); its table entries are ready.

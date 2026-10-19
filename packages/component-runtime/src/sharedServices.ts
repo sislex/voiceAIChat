@@ -1,7 +1,9 @@
 import { readFileSync, lstatSync } from 'node:fs'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { resolve, sep } from 'node:path'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { isEnterTicketRedeemResponse, validateCoreId, type ClientMessage, type ServerMessage, type TrustedCoreEntry, type CoreUsage, type CoreLimits, type SharedServiceSession, type EnterTicketRedeemRequest } from '@voicechat/shared'
+import { isEnterTicketRedeemResponse, validateCoreId, type ClientMessage, type ServerMessage, type TrustedCoreEntry, type CoreUsage, type CoreLimits, type SharedServiceSession, type EnterTicketRedeemRequest,
+  type CoreMcpTokenClaims, CORE_MCP_TOKEN_PREFIX, CORE_ID_HEADER, DELEGATION_HEADER_NAME, isApplicationId, isTicketDelegationToken } from '@voicechat/shared'
 
 export class CoreServiceError extends Error {
   constructor(readonly code: string, readonly statusCode = 502) { super(code) }
@@ -30,14 +32,24 @@ export class TrustedCoreRegistry {
   }
   static fromEnv(env: NodeJS.ProcessEnv = process.env): TrustedCoreRegistry {
     const token = env.VC_INTERNAL_TOKEN
-    const registry = new TrustedCoreRegistry(ref => { if (ref !== 'env:VC_INTERNAL_TOKEN' || !token) throw new Error('credential_unavailable'); return token })
-    if (env.VC_CORE_URL && token) registry.add({ coreId: env.VC_CORE_ID ?? new URL(env.VC_CORE_URL).hostname, url: env.VC_CORE_URL, credentialRef: 'env:VC_INTERNAL_TOKEN' })
+    // Only these variables may back the single-core default; any other ref is refused.
+    const allowed = new Set(['VC_INTERNAL_TOKEN', 'VC_CORE_SERVICE_TOKEN', 'VC_CORE_MCP_SECRET'])
+    const registry = new TrustedCoreRegistry(ref => {
+      const name = ref.startsWith('env:') ? ref.slice(4) : ''
+      const value = allowed.has(name) ? env[name] : undefined
+      if (!value) throw new Error('credential_unavailable')
+      return value
+    })
+    if (env.VC_CORE_URL && token) registry.add({ coreId: env.VC_CORE_ID ?? new URL(env.VC_CORE_URL).hostname, url: env.VC_CORE_URL, credentialRef: 'env:VC_INTERNAL_TOKEN',
+      ...(env.VC_CORE_SERVICE_TOKEN ? { serviceCredentialRef: 'env:VC_CORE_SERVICE_TOKEN' } : {}),
+      ...(env.VC_CORE_MCP_SECRET ? { mcpSecretRef: 'env:VC_CORE_MCP_SECRET' } : {}) })
     return registry
   }
   add(entry: TrustedCoreEntry): void {
     validateCoreId(entry.coreId)
     const url = new URL(entry.url)
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/' || !entry.credentialRef) throw new Error('invalid_core_registry')
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/' || !entry.credentialRef
+      || [entry.serviceCredentialRef, entry.mcpSecretRef].some(ref => ref !== undefined && (typeof ref !== 'string' || !ref))) throw new Error('invalid_core_registry')
     for (const [key, value] of Object.entries(entry.limits ?? {})) if (!['diskBytes', 'workshops', 'machines'].includes(key) || !Number.isSafeInteger(value) || value < 0) throw new Error('invalid_core_limits')
     this.#entries.set(entry.coreId, structuredClone({ ...entry, url: url.origin }))
   }
@@ -45,7 +57,7 @@ export class TrustedCoreRegistry {
   resolve(session: Pick<SharedServiceSession, 'coreId'>): Omit<TrustedCoreEntry, 'credentialRef'> {
     const entry = this.#entries.get(validateCoreId(session.coreId))
     if (!entry) throw new CoreServiceError('core_unknown', 404)
-    const { credentialRef: _, ...publicEntry } = entry
+    const { credentialRef: _, serviceCredentialRef: _service, mcpSecretRef: _mcp, ...publicEntry } = entry
     return structuredClone(publicEntry)
   }
   usage(coreId: string): CoreUsage { this.resolve({ coreId }); return { ...(this.#usage.get(coreId) ?? { coreId, diskBytes: 0, workshops: 0, machines: 0 }) } }
@@ -88,6 +100,34 @@ export class TrustedCoreRegistry {
         delegation: { token: body.delegation.token, expiresAt: body.delegation.expiresAt }, coreId }
     }
     throw new CoreServiceError('core_unavailable', 503)
+  }
+  /**
+   * Authenticate a core's call into the service: `x-sislexa-core-id` names a registered core and the bearer must be
+   * that core's service credential. A `x-sislexa-delegation` header is passed through for user-scoped methods.
+   */
+  authenticate(headers: Record<string, string | string[] | undefined>): { coreId: string; delegation?: string } {
+    const coreId = headers[CORE_ID_HEADER]
+    const authorization = headers.authorization
+    if (typeof coreId !== 'string' || typeof authorization !== 'string') throw new CoreServiceError('unauthorized', 401)
+    let entry: TrustedCoreEntry | undefined
+    try { entry = this.#entries.get(validateCoreId(coreId)) } catch { throw new CoreServiceError('unauthorized', 401) }
+    if (!entry?.serviceCredentialRef) throw new CoreServiceError('unauthorized', 401)
+    let expected: string
+    try { expected = `Bearer ${this.credential(entry.serviceCredentialRef)}` } catch { throw new CoreServiceError('unauthorized', 401) }
+    if (!sameSecret(authorization, expected)) throw new CoreServiceError('unauthorized', 401)
+    const delegation = headers[DELEGATION_HEADER_NAME]
+    if (delegation !== undefined && !isTicketDelegationToken(delegation)) throw new CoreServiceError('unauthorized', 401)
+    return { coreId: entry.coreId, ...(delegation ? { delegation } : {}) }
+  }
+  /** Verify a core-issued MCP token against the MCP secret registered for its core. */
+  verifyMcpToken(token: string, now = Date.now()): CoreMcpTokenClaims {
+    const claims = decodeCoreMcpToken(token)
+    const entry = claims && this.#entries.get(claims.coreId)
+    if (!claims || !entry?.mcpSecretRef) throw new CoreServiceError('mcp_token_invalid', 401)
+    let secret: string
+    try { secret = this.credential(entry.mcpSecretRef) } catch { throw new CoreServiceError('mcp_token_invalid', 401) }
+    if (!sameSecret(token, signCoreMcpToken(secret, claims)) || claims.expiresAt <= now) throw new CoreServiceError('mcp_token_invalid', 401)
+    return claims
   }
   registerUsageRoute(app: FastifyInstance, authorize: (authorization: string | undefined) => boolean): void {
     app.get<{ Params: { coreId: string } }>('/internal/v1/cores/:coreId/usage', async (req, reply) => {
@@ -174,4 +214,39 @@ export class CoreDelegationClient {
       close: () => socket.close(),
     }
   }
+}
+
+const sameSecret = (actual: string, expected: string): boolean => {
+  const a = Buffer.from(actual)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+/** Sign MCP claims for one turn; the core keeps the secret, the service verifies with `verifyCoreMcpToken`. */
+export function signCoreMcpToken(secret: string, claims: CoreMcpTokenClaims): string {
+  if (!secret) throw new Error('mcp_secret_required')
+  const payload = Buffer.from(JSON.stringify({ v: 1, coreId: claims.coreId, application: claims.application, userId: claims.userId,
+    conversationId: claims.conversationId, ...(claims.turnId ? { turnId: claims.turnId } : {}), expiresAt: claims.expiresAt })).toString('base64url')
+  const body = CORE_MCP_TOKEN_PREFIX + payload
+  return body + '.' + createHmac('sha256', secret).update(body).digest('base64url')
+}
+function decodeCoreMcpToken(token: unknown): CoreMcpTokenClaims | undefined {
+  if (typeof token !== 'string' || token.length > 4096 || !token.startsWith(CORE_MCP_TOKEN_PREFIX)) return undefined
+  const parts = token.slice(CORE_MCP_TOKEN_PREFIX.length).split('.')
+  if (parts.length !== 2) return undefined
+  try {
+    const c = JSON.parse(Buffer.from(parts[0]!, 'base64url').toString('utf8')) as Partial<CoreMcpTokenClaims>
+    if (c.v !== 1 || typeof c.coreId !== 'string' || !isApplicationId(c.application) || typeof c.userId !== 'string' || !c.userId
+      || typeof c.conversationId !== 'string' || !c.conversationId || (c.turnId !== undefined && typeof c.turnId !== 'string')
+      || !Number.isSafeInteger(c.expiresAt)) return undefined
+    validateCoreId(c.coreId)
+    return c as CoreMcpTokenClaims
+  } catch { return undefined }
+}
+/** Resolve the calling core of a Core→service request (`authorization` + `x-sislexa-core-id`). */
+export function authenticateCoreRequest(registry: TrustedCoreRegistry, req: { headers: Record<string, string | string[] | undefined> }): { coreId: string; delegation?: string } {
+  return registry.authenticate(req.headers)
+}
+/** Verify a core-issued MCP token: returns its core, user, conversation and application, or throws `mcp_token_invalid`. */
+export function verifyCoreMcpToken(registry: TrustedCoreRegistry, token: string, now = Date.now()): CoreMcpTokenClaims {
+  return registry.verifyMcpToken(token, now)
 }

@@ -96,6 +96,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Per-turn MCP URL of an external application signed for this core (deployment-profiles B17). */
+  externalMcpUrl?: (application: import('@voicechat/shared').ApplicationId, context: { userId: string; conversationId: string; turnId?: string }) => string | undefined
   /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
   imageStudioMcpBaseUrl?: string
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
@@ -915,16 +917,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
+    // An external application gets its tools on its own turns and on the user's turns; never on another application's.
+    const externalTools = (application: import('@voicechat/shared').ApplicationId) =>
+      !req.delegation || req.delegation.applicationId === application ? deps.externalMcpUrl?.(application, { userId, conversationId, turnId }) : undefined
+    const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
+    if (conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+      makeMcpUrl = `${externalMake ?? deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
     let imageStudioMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
-      imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
+    const externalImages = conv?.assistantKind === 'images' ? externalTools('image-studio') : undefined
+    if (conv?.assistantKind === 'images' && (externalImages || (!req.delegation && deps.imageStudioMcpBaseUrl))) {
+      imageStudioMcpUrl = `${externalImages ?? deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
     }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.

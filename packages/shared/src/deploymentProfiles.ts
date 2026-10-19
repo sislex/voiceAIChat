@@ -50,7 +50,90 @@ export function isEnterTicketRedeemResponse(value: unknown, now = Date.now()): v
     && v.delegation.expiresAt > now && v.delegation.expiresAt <= v.expiresAt!
 }
 export interface CoreLimits { diskBytes?: number; workshops?: number; machines?: number }
-export interface TrustedCoreEntry { coreId: string; url: string; credentialRef: string; limits?: CoreLimits }
+/**
+ * A core trusted by a shared service. `credentialRef` is the service's own credential for calls into the core
+ * (`VC_APPLICATION_<ID>_TOKEN` there); `serviceCredentialRef` verifies the core's calls into the service
+ * (`VC_APPLICATION_<ID>_SERVICE_TOKEN` there); `mcpSecretRef` verifies MCP tokens the core issues for turns
+ * (`VC_APPLICATION_<ID>_MCP_SECRET` there). Refs are resolved server side and never returned.
+ */
+export interface TrustedCoreEntry { coreId: string; url: string; credentialRef: string; serviceCredentialRef?: string; mcpSecretRef?: string; limits?: CoreLimits }
 export interface CoreUsage { coreId: string; diskBytes: number; workshops: number; machines: number }
 export type DeploymentErrorCode = 'application_disabled' | 'ticket_invalid' | 'ticket_used' | 'core_unknown' | 'core_limit_exceeded'
 export interface SharedServiceSession extends EnterTicketRedeemResponse { coreId: string }
+
+/** Core→service calls name the calling core; the bearer is that core's service credential. */
+export const CORE_ID_HEADER = 'x-sislexa-core-id'
+export const DELEGATION_HEADER_NAME = 'x-sislexa-delegation'
+/**
+ * How a shared service's call into a core internal RPC path is authorised when it presents its application token:
+ * - `{ user: n }`: user-scoped; requires a live ticket delegation of the same application and `args[n]` must be the
+ *   delegated user (an empty value is filled with it);
+ * - `{ userField: f }`: the same for a JSON body field (non-RPC endpoints);
+ * - `'delegated'`: requires a live delegation of the application, no user argument;
+ * - `'service'`: build-level authority of the application, the application token alone is enough.
+ * Methods missing from the table are refused to application callers; the build-wide internal token path is unchanged.
+ */
+export type SharedRpcAuthority = { user: number } | { userField: string } | 'delegated' | 'service'
+export interface SharedServiceRpcRoute { application: ApplicationId; methods?: Readonly<Record<string, SharedRpcAuthority>>; body?: SharedRpcAuthority }
+const u0 = { user: 0 } as const
+export const SHARED_SERVICE_RPC_ROUTES: Readonly<Record<string, SharedServiceRpcRoute>> = {
+  '/internal/make/core': { application: 'make', methods: {
+    conversation: u0, isProjectViewer: u0, makeConversationIdsOf: u0, linkableTasks: u0, linkTaskDesign: u0, unlinkTaskDesign: u0,
+    taskDesigns: u0, project: u0, listProjects: u0, projectStructure: u0, projectDesign: u0, projectNotesRead: u0,
+    projectNotesUpdate: u0, projectGit: u0, standPreview: u0, makeStand: u0, createTransferTask: u0,
+    conversationOwner: 'service', conversationProject: 'service', taskLinks: 'service', userExists: 'service', boardChanged: 'service'
+  } },
+  '/internal/make/events': { application: 'make', body: 'delegated' },
+  '/internal/image-studio/core': { application: 'image-studio', methods: { conversation: u0, renameConversation: u0, readGenerated: u0 } },
+  '/internal/image-studio/generate': { application: 'image-studio', body: { userField: 'userId' } },
+  '/internal/reader/core': { application: 'web-reader', methods: {
+    canUseMachine: u0, machineHttp: u0, previewAction: u0, issuePreviewRunKey: u0, logBrowserShot: u0, machineOnline: 'service'
+  } },
+  '/internal/playwright-reader/core': { application: 'playwright-reader', methods: { conversation: u0, modelTarget: u0, issuePreviewRunKey: u0, logBrowserShot: u0 } },
+  '/internal/kanban/core': { application: 'projects', body: 'service' },
+  '/internal/kanban/events': { application: 'projects', body: 'service' },
+  '/internal/kanban/exec-stream': { application: 'projects', body: 'service' }
+}
+/** Conversation kind a delegated `POST /api/conversations` of an application may create. */
+export const APPLICATION_ASSISTANT_KIND: Readonly<Partial<Record<ApplicationId, 'make' | 'images' | 'web-recorder' | 'playwright-reader'>>> = {
+  make: 'make', 'image-studio': 'images', 'web-reader': 'web-recorder', 'playwright-reader': 'playwright-reader'
+}
+export interface SharedServiceCaller { application: ApplicationId; userId?: string; tenantId?: string | null }
+export type SharedRpcVerdict = { ok: true; body: unknown } | { ok: false; status: 401 | 403; error: 'delegation_required' | 'delegation_denied' | 'method_denied' }
+/** Apply the authority table to an application caller's request body; returns the body to dispatch. */
+export function authorizeSharedServiceRpc(path: string, body: unknown, caller: SharedServiceCaller): SharedRpcVerdict {
+  const route = SHARED_SERVICE_RPC_ROUTES[path]
+  if (!route || route.application !== caller.application) return { ok: false, status: 403, error: 'method_denied' }
+  let authority = route.body
+  let args: unknown[] | undefined
+  let method: string | undefined
+  if (route.methods) {
+    const rpc = body as { method?: unknown; args?: unknown } | null
+    if (!rpc || typeof rpc.method !== 'string' || !Array.isArray(rpc.args) || !Object.hasOwn(route.methods, rpc.method)) return { ok: false, status: 403, error: 'method_denied' }
+    method = rpc.method
+    args = [...rpc.args]
+    authority = route.methods[method]
+  }
+  if (!authority) return { ok: false, status: 403, error: 'method_denied' }
+  if (authority === 'service') return { ok: true, body }
+  if (!caller.userId) return { ok: false, status: 401, error: 'delegation_required' }
+  if (authority === 'delegated') return { ok: true, body }
+  if ('user' in authority) {
+    const value = args![authority.user]
+    if (value !== undefined && value !== null && value !== '' && value !== caller.userId) return { ok: false, status: 403, error: 'delegation_denied' }
+    args![authority.user] = caller.userId
+    return { ok: true, body: { ...(body as object), method, args } }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, status: 403, error: 'delegation_denied' }
+  const value = (body as Record<string, unknown>)[authority.userField]
+  if (value !== undefined && value !== null && value !== '' && value !== caller.userId) return { ok: false, status: 403, error: 'delegation_denied' }
+  return { ok: true, body: { ...(body as object), [authority.userField]: caller.userId } }
+}
+/**
+ * MCP credential a core issues per turn for an external application: `sxm1.<payload>.<mac>`, where payload is the
+ * base64url JSON of these claims and mac is base64url HMAC-SHA256 over `sxm1.<payload>` keyed by the application's
+ * MCP secret. Signing and verification live in `@sislexa/component-runtime` (Node only).
+ */
+export interface CoreMcpTokenClaims { v: 1; coreId: string; application: ApplicationId; userId: string; conversationId: string; turnId?: string; expiresAt: number }
+export const CORE_MCP_TOKEN_PREFIX = 'sxm1.'
+export const CORE_MCP_TOKEN_TTL_MS = 6 * 60 * 60_000
