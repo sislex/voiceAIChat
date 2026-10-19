@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-19
-checked: 21ab54d5
+checked: c0f9d856a
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -147,6 +147,17 @@ Core retains real API/browser integration (including route read-cache behavior i
 
 Baseline before the test-gate scope optimization, measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The Core log splits those 505 seconds into 6.11 seconds for typechecking, 115.30 for workspace/root tests, 0.97 for artifact verification, 171.93 for route budgets and 210.14 for remaining API/browser E2E. Browser work therefore accounts for about 76% of this full branch gate. The `gate:all` stage itself took 294.49 seconds; the branch gate added the remaining catalog E2E afterward. This full-fallback sample does not establish the duration or selection of a typical small development diff. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
 
+
+## Route-resource diagnostics
+
+`e2e/routeResources.e2e.test.ts` exercises the pinned Core UI against an isolated
+Core server under network throttling. A cold-route timeout now includes pending
+request paths and recent API reads. For a local consumer reproduction only,
+`CHAT468_WEB_DIR` can select a copied, built browser artifact; normal gates keep
+the immutable installed `@sislexa/core-ui/web` default. Re-run against the final
+published pin before accepting a release. The public-chat quota error-body fix
+was reproduced this way without importing owner source or weakening network
+settling checks.
 
 ## Extracted application test ownership
 

@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-19
-checked: ce8eaefdd
+checked: c0f9d856a
 areas:
   - packages/shared/src
 ---
@@ -384,3 +384,18 @@ ReaderProjectRequest/Response и проверки адресов. readerProjectU
 path/query/hash. isReaderProjectPath исключает служебные RPC/MCP и рекурсию preview.
 Контракт ресурса содержит только method/path/headers/bodyBase64, адрес транспорта
 ему не передаётся. Он одинаков для встроенного Reader и отдельного процесса.
+
+## Workspace and published contract versions
+
+Core owns the Shared sources in `packages/shared`. The public-chat composition
+aligns the workspace manifest with published contract version 0.1.41; its release
+commit `ce8eaefd` is already an ancestor of this source. Identity's actual
+`>=0.1.38 <0.2.0` peer requirement is therefore satisfied without stale lock
+metadata. The older Chat UI and Chat App archives still declare exact 0.1.10
+peers; Core's root overrides select the current 0.1.41 workspace for these two
+consumers. Their integration remains covered by the complete Core gate.
+
+Owner archive pin replacement alone does not refresh dependencies or peers in
+an existing lock entry. Regenerate that entry from the new archive and verify a
+clean `npm ci` before accepting a composition. Never hide a peer mismatch with
+`--legacy-peer-deps`; align the owner declaration or the selected contract.

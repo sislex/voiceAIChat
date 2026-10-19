@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: a42bdd4fb
+checked: c0f9d856a
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -363,6 +363,13 @@ messages. A daily threshold is a separate Billing policy; it does not change
 Core's rejection of unsupported hard monetary bounds. Enabling daily admission
 requires a Billing owner release with that feature, managed installation and
 end-to-end verification; a Core-only update cannot enable it.
+
+Legacy WebSocket `claude.cancel` without a conversation ID enumerates only the
+authenticated user's active turns and checks each conversation against the
+selected tenant before cancellation. It must never call the process-global
+`TurnManager.cancel()` with an absent ID. Addressed cancellation retains the same
+user/tenant checks. The real WebSocket account-access test holds simultaneous
+personal, team and foreign-user turns to verify this boundary.
 
 ## Personal tenants, tariffs and product capabilities
 

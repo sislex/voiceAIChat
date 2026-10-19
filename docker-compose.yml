@@ -518,7 +518,7 @@ services:
 
   runner-work:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:e3acfddd49f4d1709f99a7af086f6445191f3b0e}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -537,7 +537,7 @@ services:
 
   runner-personal:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:e3acfddd49f4d1709f99a7af086f6445191f3b0e}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"

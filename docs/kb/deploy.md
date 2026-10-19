@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: b66754133
+checked: c0f9d856a
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -46,7 +46,11 @@ areas:
 
 ## Deployment application profiles
 
-`VC_APPLICATIONS=chat` selects a chat-only Core. Other examples are
+`VC_APPLICATIONS=chat` selects a chat-only Core. A public chat with account settings and
+quota display uses `VC_APPLICATIONS=chat,identity`; Identity provides the
+personal account UI while other product applications remain disabled. Candidate dependency audits are
+recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
+pins and distinguish installed packages from reachable runtime services. Other examples are
 `chat,make`, `chat,make=https://make.example.org`, and
 `chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
 tickets. External URLs must be HTTPS without credentials, query or fragment.
@@ -64,12 +68,25 @@ this value independently of the application selector. Actual model availability
 must also be verified against the configured runner account.
 
 `VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. The
+Core file-output endpoint then reads only the authenticated user's Core output
+directories: saved working directories, shared upload roots and runner filesystem
+proxies do not grant access. This prevents a user-supplied workdir from becoming
+filesystem authority in a public chat deployment. The
 runner must explicitly support this mode; an older incompatible runner rejects
 execution. Public release acceptance must verify the installed runner, isolated
 profiles and empty tool inventory before enabling registration. Set
 `VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
 to start without its Billing dependency instead of silently using legacy
 unaccounted turns. Once configured, Billing failures already deny admission.
+
+The Billing Compose layer forwards optional `BILLING_DAILY_USER_MICRO_USD`
+and `BILLING_DAILY_USER_TIME_ZONE` without inventing empty defaults. For the
+approved public launch set them to `5000000` and `Europe/Minsk`. Billing persists
+the policy with its ledger: removing environment variables later does not disable
+an established limit. Invalid or conflicting settings prevent startup. The limit
+admits an answer while that user's settled daily spend is below $5; that answer
+may cross the threshold, after which new requests are denied until the next day.
+Do not substitute this admission policy for a hard per-response monetary bound.
 
 `python3 scripts/prod/compose_env.py applications --file .env` prints derived
 `COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the
@@ -2650,7 +2667,10 @@ four content-addressed archives: Identity, Billing, LLM Runner, and Runner
 Contracts. `deploy/s3-provider-artifacts.json` records each owner repository,
 exact source commit, archive digest, provided interface, and consumer task.
 `vendor/owner-artifacts.json`, `deploy/tools.lock.json`, and the npm lockfile
-carry the matching pins. `scripts/s3-provider-artifacts.test.mjs` verifies the
+carry the matching pins. Refresh this provider inventory when promoting newer
+owner archives, together with the exact source allowlist in
+`scripts/a07-composition.mjs`; retaining the historical source values causes the composition
+gate to reject an otherwise valid pin update. `scripts/s3-provider-artifacts.test.mjs` verifies the
 archive bytes and embedded release provenance before Core accepts them.
 Core's database ownership manifest also assigns the provider's three new
 application registry tables to Identity so SQLite and PostgreSQL schema checks

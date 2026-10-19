@@ -729,6 +729,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
     chatModels: opts.config.chatModels,
+    chatTextOnly: opts.config.chatTextOnly,
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),

@@ -19,10 +19,11 @@ const componentCredential = randomUUID()
 
 const cleanup: Array<() => void | Promise<void>> = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
-async function fixture() {
+async function fixture(dailyLimit?: number) {
   const dir = mkdtempSync(join(tmpdir(), 'chat-accounting-'))
   cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
-  const ledger = new BillingStore(join(dir, 'billing.sqlite'))
+  const ledger = new BillingStore(join(dir, 'billing.sqlite'), Date.now, dailyLimit === undefined ? undefined : {
+    limitMicroUsd: dailyLimit, timeZone: 'Europe/Minsk' })
   let revoked = false, loseSettlement = false, revokeAfterReserve = false, revokeAfterStart = false, foreignAccount = false
   const delegatedHeaders: Headers[] = []
   const billing = buildBillingServer(ledger, { environmentId: 'test',
@@ -94,7 +95,7 @@ async function fixture() {
   const delegation = await authority.bind(delegatedCredential.slice(7), 'login', 'tenant')
   const accounting = new ChatAccounting(options)
   cleanup.push(() => accounting.shutdown())
-  return { authority, delegation, delegatedHeaders, revokeAfterStart: () => { revokeAfterStart = true }, revokeAfterReserve: () => { revokeAfterReserve = true },
+  return { billingUrl, authority, delegation, delegatedHeaders, revokeAfterStart: () => { revokeAfterStart = true }, revokeAfterReserve: () => { revokeAfterReserve = true },
     foreignAccount: () => { foreignAccount = true }, ledger, outbox, sessions, session, client, options, accounting, receipts,
     runs: () => runs, lastRequest: () => lastRequest, revoke: () => { revoked = true }, loseSettlement: () => { loseSettlement = true } }
 }
@@ -227,4 +228,23 @@ it('settles delegated usage after revocation and denies replay when the in-memor
     Date.now()-60_000, Date.now()+60_000)).toMatchObject({
     applications: [{ applicationId: application.originApplicationId, events: 1, actualMicroUsd: 600 }]
   })
+})
+
+it('lets the admitted response cross the daily threshold and blocks the next runner dispatch', async () => {
+  const f = await fixture(5_000_000)
+  const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
+  const seed = f.ledger.reserve(principal, { operationId: 'earlier-today', maxMicroUsd: 0,
+    executionBound: 'unbounded', expiresAt: Date.now() + 60_000 })
+  f.ledger.transition(principal, seed.id, 'start')
+  f.ledger.settle(principal, seed.id, 'earlier-cost', 4_999_500)
+
+  expect(await execute(f)).toEqual({ text: 'done' })
+  expect(f.runs()).toBe(1)
+  const account = await fetch(f.billingUrl + '/api/billing/account', { headers: { authorization: userCredential } })
+  expect(account.status).toBe(200)
+  expect(await account.json()).toMatchObject({ dailyUser: { limitMicroUsd: 5_000_000,
+    spentMicroUsd: 5_000_100, remainingMicroUsd: 0, active: 0, timeZone: 'Europe/Minsk' } })
+  expect((await execute(f)).error).toContain('Дневной лимит')
+  expect(f.runs()).toBe(1)
+  expect(f.outbox.pending()).toHaveLength(0)
 })
