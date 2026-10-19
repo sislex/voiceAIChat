@@ -2858,3 +2858,10 @@ the Caddy lease site addresses when changing the default range.
 Stand deliveries: `VC_STAND_DELIVERY_PROJECTS` (JSON `{projectId: {url, token}}`) is passed from `.env` to the
 `voicechat` service by `docker-compose.yml`; the coordinator must listen on an address reachable from the
 production host (private link `10.77.0.2:8798`).
+
+## Published Make 1.8.1 pin (2026-10-19)
+
+Core pins Make 1.8.1 at `b04733783732b654ba02ee090f63dec564eada56` in the tools lock and
+Compose image. This owner release completed in the interrupted release train;
+its GitHub release and image provenance were verified before updating the pin.
+The subsequent train releases the remaining owners without republishing Make.

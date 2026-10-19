@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 789 коммит(ов) в areas после сверки: bf4e22fab feat(shared-services): act for the turn user by core MCP token; reader routes and external MCP paths … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 910 коммит(ов) в areas после сверки: cb2ad5b0d fix(turns): ticket-delegated turns keep MCP tools instead of a tool-free run … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 923 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2166 коммит(ов) в areas после сверки: 6239009d2 Allow chat deployments without voice runners … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2167 коммит(ов) в areas после сверки: 0772f19f7 Reconcile deployment knowledge after optional voice change … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1088 коммит(ов) в areas после сверки: bf4e22fab feat(shared-services): act for the turn user by core MCP token; reader routes and external MCP paths … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1213. Последние:
+Всего записей: 1214. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
