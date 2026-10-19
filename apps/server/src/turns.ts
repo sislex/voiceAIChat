@@ -487,6 +487,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       req.messageId = message.id
       deps.conversationSummary?.consider(userId, conversationId)
     }
+    // A client-chosen queue key must name a stored message of this conversation: the queue row
+    // references it, and a failed insert in a later model callback would stop the process.
+    if (req.messageId && !(await deps.db.chat.hasMessage(userId, conversationId, req.messageId))) {
+      broadcast({ t: 'claude.error', conversationId, message: 'message_not_found' }, userId)
+      return
+    }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.

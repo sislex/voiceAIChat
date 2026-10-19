@@ -557,6 +557,12 @@ export class ChatRepo extends BaseRepo {
     return row !== undefined
   }
 
+  /** Whether the owned conversation stores this message in any state (queued messages included). */
+  async hasMessage(userId: string, conversationId: string, messageId: string): Promise<boolean> {
+    if (!(await this.ownsConversation(userId, conversationId))) return false
+    return (await this.sql.get(`SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])) !== undefined
+  }
+
   async moveProjectToTenant(projectId: string, tenantId: string): Promise<void> {
     await this.sql.run('UPDATE conversations SET tenant_id = ? WHERE project_id = ?', [tenantId, projectId])
   }
