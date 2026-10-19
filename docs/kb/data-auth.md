@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: c0f9d856a
+checked: 0e050cbcd
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -339,6 +339,24 @@ unknown-price or incomplete-usage work retains its hold. Codex usage is the
 per-turn delta from the runner's authoritative pre-spawn cumulative baseline, with
 cached input separated once. Settlements remain deliverable after user logout.
 Back up the outbox together with Core data, Billing's ledger and runner receipts.
+
+In a server configured with `VC_CHAT_TEXT_ONLY=true`, Stop on an ordinary Chat
+turn stops display immediately and preserves the visible partial answer. After
+dispatch, Core keeps the executor stream open and does not send DELETE or abort:
+the computation finishes in the background and Billing settles its authoritative
+final usage. Late text, session, init, activity and usage callbacks are suppressed;
+the hidden answer never replaces the saved partial. The selected model's hidden
+continuation can remain in the runner's thread history. New requests remain
+blocked for the same stable user across conversations and tenants until settlement.
+The queue stays paused after Stop and requires an explicit resume after settlement;
+attempts to resume early preserve its messages. Missing final usage keeps the
+uncertain hold. Graceful Core shutdown waits for these executions and their
+reconciliation before closing its outbox. A stop before dispatch reconciles the
+authoritative no-spawn zero charge. Other server modes, internal modules and
+delegated application turns retain hard cancellation; a request's `textOnly`
+field cannot enable the public Stop policy. Regression evidence is in
+`billing/chatAccounting.test.ts` and the public queue case in `turns.test.ts`.
+
 Billing 1.2.0 exposes finalized personal usage reports derived from durable
 settlements. Analytics 1.2.0 owns active-time intervals and combines those reports
 with deduplicated module activity. Core forwards `/api/analytics/account` and

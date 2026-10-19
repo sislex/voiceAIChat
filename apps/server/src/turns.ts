@@ -28,7 +28,7 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
-import type { ChatAccounting } from './billing/chatAccounting.js'
+import { ACCOUNTING_PENDING_MESSAGE, type ChatAccounting } from './billing/chatAccounting.js'
 import type { LlmBillingSession } from '@voicechat/shared'
 
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
@@ -265,6 +265,8 @@ export interface StartTurnRequest {
   conversationId: string
   /** Сохранённое пользовательское сообщение — идемпотентность очереди. */
   messageId?: string
+  /** Internal queue dispatch marker; never accepted from the public WS request. */
+  fromQueue?: boolean
   segments: SttSegmentWire[]
   attachments?: string[]
   verbose?: boolean
@@ -372,6 +374,8 @@ interface TurnState {
   /** Токен бинарного файлового контекста remote:image. */
   remoteFileToken: string | null
   source: StartTurnRequest
+  /** Stop pauses public chat output and its queue until the paid execution settles. */
+  backgroundStop?: boolean
 }
 
 /** Кэп на число записей активности, хранимых у одного хода. */
@@ -457,6 +461,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     const conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
+    const backgroundStop = !!deps.chatTextOnly && !!conv &&
+      deps.accounting?.stopsInBackground(billingOriginForConversation(conv), !!req.delegation) === true
     const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
     if (entitlements && deps.deployment) entitlements.capabilities = effectiveCapabilities(entitlements.capabilities, deps.deployment)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
@@ -497,6 +503,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    if (backgroundStop && !turns.has(conversationId) && (!entitlements.userId || deps.accounting!.hasPendingUser(entitlements.userId))) {
+      // Another conversation can reserve this user after dispatchNext's check and
+      // before this admission. Restore the extracted work without marking it failed.
+      if (req.fromQueue && req.messageId) {
+        await restoreQueuedTurn(req)
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
+      }
+      broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
+      return
+    }
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
     if (turns.has(conversationId) || starting.has(conversationId)) {
@@ -1057,7 +1074,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       kbToolToken,
       historyToolGrantId,
       remoteFileToken,
-      source: req
+      source: req,
+      backgroundStop
     }
     starting.delete(conversationId)
     turns.set(conversationId, turn)
@@ -1318,17 +1336,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           const lostThread = provider === 'codex' && !!sessionId && isLostCodexThread(message)
           if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {
-            await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
-              segments: req.segments,
-              attachments: req.attachments,
-              verbose: req.verbose,
-              execTarget: req.execTarget,
-              assistantContext: req.assistantContext,
-              delegation: req.delegation,
-              billingSession: req.billingSession
-            }, false)
+            const pendingAdmission = backgroundStop && message === ACCOUNTING_PENDING_MESSAGE
+            if (pendingAdmission && req.fromQueue) await restoreQueuedTurn(req)
+            else {
+              await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
+                segments: req.segments,
+                attachments: req.attachments,
+                verbose: req.verbose,
+                execTarget: req.execTarget,
+                assistantContext: req.assistantContext,
+                delegation: req.delegation,
+                billingSession: req.billingSession
+              }, false)
+            }
             if (!lostThread) {
-              await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
+              if (!pendingAdmission) await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
               await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
             }
             await emitQueue(userId, conversationId)
@@ -1374,18 +1396,45 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
   }
 
+  async function restoreQueuedTurn(req: StartTurnRequest): Promise<void> {
+    if (!req.messageId) return
+    const queue = await deps.db.chat.enqueueTurn(req.userId, req.conversationId, req.messageId, {
+      segments: req.segments, attachments: req.attachments, verbose: req.verbose,
+      execTarget: req.execTarget, assistantContext: req.assistantContext,
+      delegation: req.delegation, billingSession: req.billingSession
+    })
+    const restored = queue.find(item => item.messageId === req.messageId)
+    if (restored) await deps.db.chat.prioritizeQueuedTurn(req.userId, req.conversationId, restored.id)
+  }
+
+  async function pendingPublicAccounting(userId: string, conversationId: string, delegated = false): Promise<boolean> {
+    if (!deps.chatTextOnly || !deps.accounting || delegated) return false
+    const conversation = await deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation || !deps.accounting.stopsInBackground(billingOriginForConversation(conversation), false)) return false
+    const account = await deps.db.identity.getAccountAccess(userId, conversation.tenantId)
+    return !account?.userId || deps.accounting.hasPendingUser(account.userId)
+  }
+
   async function dispatchNext(userId: string, conversationId: string): Promise<void> {
     if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId)) {
+      await emitQueue(userId, conversationId)
+      return
+    }
+    const queued = deps.chatTextOnly && deps.accounting
+      ? (await deps.db.chat.listQueuedTurns(userId, conversationId)).find(item => item.status === 'queued') : undefined
+    const payload = queued ? await deps.db.chat.queuedTurnPayload(userId, conversationId, queued.id) : undefined
+    if (queued && await pendingPublicAccounting(userId, conversationId, !!payload?.delegation)) {
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
       await emitQueue(userId, conversationId)
       return
     }
     const next = await deps.db.chat.takeQueuedTurn(userId, conversationId)
     await emitQueue(userId, conversationId, next?.message)
     if (!next) return
-    queueMicrotask(() => track(start({ userId, conversationId, messageId: next.messageId, ...next.payload })))
+    queueMicrotask(() => track(start({ userId, conversationId, messageId: next.messageId, ...next.payload, fromQueue: true })))
   }
 
-  /** Остановка сохраняет partial и затем автоматически продвигает очередь. */
+  /** Stop preserves partial output; public paid chat requires an explicit queue resume. */
   async function cancelTurn(conversationId: string, notify: boolean): Promise<TurnState | undefined> {
     const turn = turns.get(conversationId)
     if (!turn) return undefined
@@ -1393,7 +1442,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.done = true
     releaseTurnTools(turn)
     turn.handle.cancel()
-    await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, false)
+    await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, turn.backgroundStop === true)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
@@ -1441,6 +1490,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
   async function sendQueuedNow(userId: string, conversationId: string, id: string): Promise<void> {
     const turn = turns.get(conversationId)
+    const queued = await deps.db.chat.queuedTurnPayload(userId, conversationId, id)
+    if (await pendingPublicAccounting(userId, conversationId, !!queued?.delegation)) {
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+      await emitQueue(userId, conversationId)
+      broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
+      return
+    }
     if (restarting.has(conversationId)) {
       await emitQueue(userId, conversationId)
       return
@@ -1500,7 +1556,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         userId,
         conversationId,
         messageId: merged.message.id,
-        ...merged.payload
+        ...merged.payload,
+        fromQueue: true
       }).catch(async (error: unknown) => {
         await deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
         await deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)

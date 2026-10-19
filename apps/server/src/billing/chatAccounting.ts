@@ -13,6 +13,8 @@ export interface ChatAccountingOptions {
   sessions: BillingSessions
   billing: Transport
   environmentId: string
+  /** Public chat Stop hides output while the dispatched executor finishes its paid work. */
+  finishStoppedChatInBackground?: boolean
   resolveRunner(target: AccountingJob['target']): Promise<RemoteLlmClient | undefined>
   now?: () => number
 }
@@ -28,13 +30,14 @@ export interface AccountingTurn {
 class AdmissionError extends Error {
   constructor(readonly status: number, readonly reason: string) { super(reason) }
 }
+export const ACCOUNTING_PENDING_MESSAGE = 'Дождитесь завершения текущего ответа и учёта его стоимости, прежде чем отправлять новый запрос.'
 const messages: Record<string, string> = {
   execution_cost_not_bounded: 'Для этого тарифа нужен исполнитель с жёстким ограничением стоимости. Текущий CLI его не поддерживает.',
   request_limit_reached: 'Достигнут лимит запросов вашего тарифа.',
   concurrency_limit_reached: 'Достигнут лимит одновременно выполняемых запросов. Дождитесь завершения текущих.',
   budget_exhausted: 'Бюджет на этот месяц исчерпан.',
   daily_user_budget_exhausted: 'Дневной лимит расходов исчерпан. Новые запросы будут доступны после начала следующих суток.',
-  daily_user_operation_active: 'Дождитесь завершения текущего ответа и учёта его стоимости, прежде чем отправлять новый запрос.'
+  daily_user_operation_active: ACCOUNTING_PENDING_MESSAGE
 }
 
 /** A single durable outbox bridges Core, Billing and executor receipts without sharing their databases. */
@@ -42,9 +45,16 @@ export class ChatAccounting {
   private active = new Set<string>()
   private reconciling = new Map<string, Promise<void>>()
   private admissions = new Set<Promise<void>>()
+  private executions = new Set<Promise<void>>()
   private stopping = false
   private now: () => number
   constructor(private opts: ChatAccountingOptions) { this.now = opts.now ?? Date.now }
+  stopsInBackground(originModuleId: string, delegated: boolean): boolean {
+    return this.opts.finishStoppedChatInBackground === true && originModuleId === 'chat' && !delegated
+  }
+  hasPendingUser(userId: string): boolean {
+    return this.opts.store.pending().some(job => job.session.userId === userId)
+  }
   private async call<T>(path: string, body?: unknown, authorization?: string, delegated = false): Promise<T> {
     const response = await this.opts.billing.fetchImpl(this.opts.billing.url+'/v1/billing/'+path, {
       method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
@@ -73,13 +83,24 @@ export class ChatAccounting {
   wrap(client: LlmClient, turn: AccountingTurn): LlmClient {
     return { send: (request, handlers) => {
       let cancelled = false, inner: ReturnType<LlmClient['send']> | undefined, job: AccountingJob | undefined
+      const backgroundStop = this.stopsInBackground(turn.originModuleId, !!turn.application || !!turn.delegatedAuthorization)
+      let terminal = false
+      let finishExecution: (() => void) | undefined
+      let execution: Promise<void> | undefined
       const error = (message: string) => { if (!cancelled) handlers.onError(message) }
       const complete = async (fn: () => void) => {
-        if (job) {
-          this.active.delete(job.id)
-          try { await this.reconcile(job.id) } catch { /* The durable outbox retries independently. */ }
+        if (terminal) return
+        terminal = true
+        try {
+          if (job) {
+            this.active.delete(job.id)
+            try { await this.reconcile(job.id) } catch { /* The durable outbox retries independently. */ }
+          }
+          if (!cancelled) fn()
+        } finally {
+          finishExecution?.()
+          if (execution) this.executions.delete(execution)
         }
-        if (!cancelled) fn()
       }
       const admission = (async () => {
         try {
@@ -122,7 +143,16 @@ export class ChatAccounting {
           if (delegated && (!dispatchAuthority || !isDeepStrictEqual(dispatchAuthority.principal, principal))) throw Error('billing_principal_mismatch')
           if (cancelled) return
           job.state = 'dispatching'; this.opts.store.save(job)
-          const forwarded: LlmStreamHandlers = { ...handlers,
+          if (backgroundStop) {
+            execution = new Promise(resolve => { finishExecution = resolve })
+            this.executions.add(execution)
+          }
+          const forwarded: LlmStreamHandlers = {
+            onDelta: text => { if (!cancelled) handlers.onDelta(text) },
+            onSession: id => { if (!cancelled) handlers.onSession(id) },
+            onInit: info => { if (!cancelled) handlers.onInit?.(info) },
+            onActivity: entry => { if (!cancelled) handlers.onActivity?.(entry) },
+            onUsage: usage => { if (!cancelled) handlers.onUsage?.(usage) },
             onDone: (text, meta) => { void complete(() => handlers.onDone(text, meta)) },
             onError: message => { void complete(() => handlers.onError(message)) } }
           inner = client.send({ ...request, accounting: this.context(job) }, forwarded)
@@ -133,16 +163,24 @@ export class ChatAccounting {
           error(failure instanceof AdmissionError ? messages[failure.reason] ?? 'Сервис учёта отклонил запуск. Проверьте доступ или повторите позже.' :
             'Не удалось подтвердить учёт расхода. Запрос не будет запущен повторно автоматически.')
         } finally {
-          if (job && (!inner || cancelled)) {
+          if (job && (!inner || (cancelled && !backgroundStop))) {
             this.active.delete(job.id)
-            void this.reconcile(job.id).catch(() => {})
+            try { await this.reconcile(job.id) } catch { /* Restart retries the durable outbox. */ }
+          }
+          if (!inner) {
+            finishExecution?.()
+            if (execution) this.executions.delete(execution)
           }
         }
       })()
       this.admissions.add(admission)
       void admission.finally(() => { this.admissions.delete(admission) }).catch(() => {})
       return { cancel: () => {
-        cancelled = true; inner?.cancel()
+        if (cancelled) return
+        cancelled = true
+        if (terminal) return
+        if (backgroundStop && inner) return
+        inner?.cancel()
         if (job && inner) { this.active.delete(job.id); void this.reconcile(job.id).catch(() => {}) }
       } }
     } }
@@ -156,6 +194,8 @@ export class ChatAccounting {
   async shutdown(): Promise<void> {
     this.stopping = true
     await Promise.allSettled([...this.admissions])
+    // Do not close the outbox while a stopped public turn still needs its final receipt.
+    await Promise.allSettled([...this.executions])
     await Promise.allSettled([...this.reconciling.values()])
     for (const job of this.opts.store.pending()) {
       try { await this.reconcile(job.id) } catch { /* Restart continues from this outbox. */ }

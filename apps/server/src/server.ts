@@ -1407,6 +1407,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
       billing: billingTransport, environmentId: billingTransport.environmentId,
+      finishStoppedChatInBackground: opts.config.chatTextOnly,
       resolveRunner: async target => {
         if (target.engineId) {
           const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')
