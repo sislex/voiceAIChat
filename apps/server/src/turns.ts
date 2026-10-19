@@ -1,4 +1,5 @@
 import { effectiveCapabilities } from './deploymentApplications.js'
+import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
@@ -16,7 +17,7 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -45,6 +46,8 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  chatModels?: ChatModelPolicy
+  chatTextOnly?: boolean
   deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
@@ -526,7 +529,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? await deps.db.ci.getCiLlmConfig('project', conv.projectId) ?? await deps.db.ci.ciLlmDefaultsForUser(userId)
       : null
     const wantProvider = conv?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-    const access = await deps.db.identity.getUserLlmAccess(userId)
+    const access = deploymentModelAccess(await deps.db.identity.getUserLlmAccess(userId), deps.chatModels)
     const fallbackProvider = firstAllowedProvider(access)
     if (!fallbackProvider) {
       starting.delete(conversationId)
@@ -554,7 +557,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const requestedModel = provider === 'codex'
       ? (selectedModel ?? settings.codexModel)
       : normalizeClaudeModel(selectedModel || settings.model)
-    const permittedModel = clampModel(access, provider, requestedModel)
+    const permittedModel = deploymentModel(access, provider, requestedModel, deps.chatModels)
     if (!permittedModel) {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'WARNING: Для выбранного движка нет доступных моделей.' }, userId)
@@ -1101,6 +1104,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
+        ...(deps.chatTextOnly ? { textOnly: true } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(attachments.length ? { attachments } : {}),

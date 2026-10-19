@@ -724,6 +724,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
+    chatModels: opts.config.chatModels,
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
@@ -1418,6 +1419,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void reconcile()
   }
   const turnManager = createTurnManager({
+    chatTextOnly: opts.config.chatTextOnly,
+    chatModels: opts.config.chatModels,
     deployment,
     delegation,
     accounting,

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: ae19ce2b9
+checked: a42bdd4fb
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -51,6 +51,22 @@ areas:
 `chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
 tickets. External URLs must be HTTPS without credentials, query or fragment.
 No selector preserves legacy Core modes.
+
+`VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
+`provider:model-id` entries from the shared model catalog. For the first public
+chat deployment, use
+`codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`.
+The first permitted entry is the fallback for stale saved model IDs. Core applies
+this restriction both to personal model access responses and to execution; user
+revocations still take precedence. Missing/empty configuration preserves legacy
+behavior; malformed nonempty configuration prevents startup. Compose forwards
+this value independently of the application selector. Actual model availability
+must also be verified against the configured runner account.
+
+`VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. The
+runner must explicitly support this mode; an older incompatible runner rejects
+execution. Public release acceptance must verify the installed runner, isolated
+profiles and empty tool inventory before enabling registration.
 
 `python3 scripts/prod/compose_env.py applications --file .env` prints derived
 `COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the

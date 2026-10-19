@@ -32,7 +32,9 @@ const messages: Record<string, string> = {
   execution_cost_not_bounded: 'Для этого тарифа нужен исполнитель с жёстким ограничением стоимости. Текущий CLI его не поддерживает.',
   request_limit_reached: 'Достигнут лимит запросов вашего тарифа.',
   concurrency_limit_reached: 'Достигнут лимит одновременно выполняемых запросов. Дождитесь завершения текущих.',
-  budget_exhausted: 'Бюджет на этот месяц исчерпан.'
+  budget_exhausted: 'Бюджет на этот месяц исчерпан.',
+  daily_user_budget_exhausted: 'Дневной лимит расходов исчерпан. Новые запросы будут доступны после начала следующих суток.',
+  daily_user_operation_active: 'Дождитесь завершения текущего ответа и учёта его стоимости, прежде чем отправлять новый запрос.'
 }
 
 /** A single durable outbox bridges Core, Billing and executor receipts without sharing their databases. */

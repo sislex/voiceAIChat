@@ -1,3 +1,4 @@
+import { parseChatModelPolicy } from './chatModelPolicy.js'
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread } from './turns.js'
@@ -2089,5 +2090,42 @@ describe('ProjectMainSnapshotCoordinator', () => {
     expect(updated).toBe(false)
     reader.release(); reader.release()
     expect((await update).baseSha).toBe(shas[1])
+  })
+})
+
+
+describe('deployment model allowlist at execution', () => {
+  const chatModels = parseChatModelPolicy('codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol')
+  it.each(['unknown-model', 'gpt-5.6-sol'])('narrows a saved model %s before sending to the runner', async requested => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      await db.chat.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'codex', requested)
+      const claude = recorder(), codex = recorder()
+      const turns = createTurnManager({ db, claude: claude.client, codex: codex.client, chatModels, chatTextOnly: true })
+      await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+      await turns.idle()
+      expect(codex.last()?.model).toBe(requested === 'unknown-model' ? 'gpt-5.6-luna' : requested)
+      expect(codex.last()?.textOnly).toBe(true)
+      expect(claude.last()).toBeNull()
+    } finally { await db.close() }
+  })
+
+  it.each(['missing-runner', 'user-denied'])('never falls back to a forbidden provider when %s', async scenario => {
+    const db = await freshDb()
+    try {
+      if (scenario === 'user-denied') await db.identity.setUserLlmAccess(U, [{ provider: 'codex', modelId: '*' }])
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      const claude = recorder(), codex = recorder()
+      const turns = createTurnManager({ db, claude: claude.client,
+        ...(scenario === 'missing-runner' ? {} : { codex: codex.client }), chatModels })
+      const errors: string[] = []
+      turns.subscribe(message => { if (message.t === 'claude.error') errors.push(message.message) })
+      await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+      await turns.idle()
+      expect(claude.last()).toBeNull()
+      expect(codex.last()).toBeNull()
+      expect(errors).toHaveLength(1)
+    } finally { await db.close() }
   })
 })

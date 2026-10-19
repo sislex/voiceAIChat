@@ -27,16 +27,16 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 789 коммит(ов) в areas после сверки: bf4e22fab feat(shared-services): act for the turn user by core MCP token; reader routes and external MCP paths … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 910 коммит(ов) в areas после сверки: cb2ad5b0d fix(turns): ticket-delegated turns keep MCP tools instead of a tool-free run … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-09-22 | ⚠ 923 коммит(ов) в areas после сверки: 0e8fa648c feat(shared-services): session-bound service RPC and per-turn MCP for external applications (deployment-profiles-v2 B17) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2187 коммит(ов) в areas после сверки: 3d8fbee49 fix(deploy): parse Docker nanoseconds on older Python hosts … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-06 | ⚠ 2188 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1088 коммит(ов) в areas после сверки: bf4e22fab feat(shared-services): act for the turn user by core MCP token; reader routes and external MCP paths … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-14 | ⚠ 1429 коммит(ов) в areas после сверки: caf973317 fix: avoid historical tag conflicts in pinned deployments … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 668 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-19, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
-| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
+| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-10 | ⚠ 70 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ⚠ 124 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-05 | ⚠ 125 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-14 | ⚠ код изменён 2026-10-19, сверка 2026-10-14 (по датам: правки того же дня не видны — поставь checked) |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-19 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-19 | ⚠ 4 коммит(ов) в areas после сверки: 3d8fbee49 fix(deploy): parse Docker nanoseconds on older Python hosts … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-19 | ⚠ 5 коммит(ов) в areas после сверки: a1ef4edbe Add journaled operator workflow for live development stands … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-19, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-09-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1227. Последние:
+Всего записей: 1228. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id

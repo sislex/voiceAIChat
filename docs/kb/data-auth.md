@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: 20e8599d
+checked: a42bdd4fb
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -356,6 +356,13 @@ As checked on 2026-09-21, the [official Codex configuration reference](https://l
 describes `features.rollout_budget` as token tracking under development; it does
 not establish a strict monetary cap. Treating that feature alone as a prepaid
 spending guarantee would therefore be an unsupported assumption.
+
+Core recognizes Billing's `daily_user_budget_exhausted` and
+`daily_user_operation_active` admission errors and returns actionable chat
+messages. A daily threshold is a separate Billing policy; it does not change
+Core's rejection of unsupported hard monetary bounds. Enabling daily admission
+requires a Billing owner release with that feature, managed installation and
+end-to-end verification; a Core-only update cannot enable it.
 
 ## Personal tenants, tariffs and product capabilities
 
