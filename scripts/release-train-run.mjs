@@ -50,6 +50,12 @@ export function parseRunArgs(args) {
 }
 
 /** Knowledge topics (`<kbDir>/*.md` frontmatter `areas`) that cover any of the given repository files. */
+/** Owners that keep several workspace versions in lockstep (Make) publish a `set-version` script;
+ * it validates and rewrites manifests and the lock itself, so the train must not bump them directly. */
+export function ownerVersionCommand(pkg, version) {
+  return pkg.scripts?.['set-version'] ? ['npm', ['run', 'set-version', '--', version]] : null
+}
+
 export function topicsCoveringFiles(kbDir, files) {
   if (!existsSync(kbDir)) return []
   const covers = (area, file) => area === file || file.startsWith(area.replace(/\/+$/, '') + '/')
@@ -187,13 +193,18 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     const lock = json(join(repository, 'deploy/tools.lock.json'))
     if (action === 'prepare') {
       clone(`https://github.com/${owner.repository}.git`, owner.source, cwd)
-      const files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
-      for (const file of files) { const pkg = json(join(cwd, file)); pkg.version = owner.version; write(join(cwd, file), pkg) }
+      let files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
       const pkg = json(join(cwd, 'package.json')), kb = Boolean(pkg.scripts?.['kb:check'])
+      const ownerBump = ownerVersionCommand(pkg, owner.version)
+      if (!ownerBump) for (const file of files) { const manifest = json(join(cwd, file)); manifest.version = owner.version; write(join(cwd, file), manifest) }
       // Topics must be fresh before the bump; afterwards only topics whose areas cover the bumped
       // manifests are re-checked, because a version-only commit does not change their content.
-      if (kb) { run('npm', ['ci', '--ignore-scripts'], cwd); run('npm', ['run', 'kb:check'], cwd) }
-      run('npm', ['install', '--package-lock-only'], cwd)
+      if (kb || ownerBump) run('npm', ['ci', '--ignore-scripts'], cwd)
+      if (kb) run('npm', ['run', 'kb:check'], cwd)
+      if (ownerBump) {
+        run(...ownerBump, cwd)
+        files = [...new Set([...files, ...git(cwd, 'diff', '--name-only').split('\n').filter(file => file.endsWith('package.json'))])]
+      } else run('npm', ['install', '--package-lock-only'], cwd)
       git(cwd, 'add', '--', ...files, 'package-lock.json')
       if (git(cwd, 'diff', '--cached', '--name-only')) git(cwd, 'commit', '-m', `Release ${owner.version}`)
       if (kb) {

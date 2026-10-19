@@ -158,6 +158,12 @@ With `--apps`, only the environment prerequisites, Core refs and the selected ow
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
 
+The version bump writes the root and application manifests and refreshes the lock.
+An owner whose root `package.json` defines a `set-version` script (Make keeps
+`apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
+itself instead: the runner installs dependencies and runs
+`npm run set-version -- <version>`, then commits every manifest it changed.
+
 The runner creates private clones below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
