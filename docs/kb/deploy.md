@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-19
-checked: dfbff9186
+updated: 2026-10-20
+checked: 22efc2c22
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -82,8 +82,15 @@ first permitted model (Luna), not the account's Sol. The existing conversation
 `context-snapshot` summary exposes the effective provider/model; account settings
 alone are not an authoritative fallback for a forbidden conversation override.
 
-`VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. The
-Core file-output endpoint then reads only the authenticated user's Core output
+`VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. It
+ignores saved and request-level machine preferences, skips machine availability
+checks and Git preflight, and supplies no remote machine transport. Requests
+carry `textOnly: true` and `executionDisabled: true` with plan permissions, even
+for administrators. This prevents a harmless chat from emitting a preliminary
+machine error or being blocked by a stale offline target. Only the server's
+configured policy enables this behavior; request flags cannot bypass ordinary
+machine checks or preflight refusals. Saved machine preferences are not rewritten.
+The Core file-output endpoint then reads only the authenticated user's Core output
 directories: saved working directories, shared upload roots and runner filesystem
 proxies do not grant access. This prevents a user-supplied workdir from becoming
 filesystem authority in a public chat deployment. The

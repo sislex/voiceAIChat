@@ -772,11 +772,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
-    const machine = makeChat ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
+    // The server's tool-free policy needs neither a machine nor Git preflight,
+    // regardless of saved or request-level machine preferences.
+    const machine = makeChat || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
       ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
-    const executionDisabled = machine?.source === 'disabled'
+    const executionDisabled = deps.chatTextOnly === true || machine?.source === 'disabled'
     if (machine?.error === 'unavailable') {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'Выбранная машина больше недоступна для этого чата' }, userId)
