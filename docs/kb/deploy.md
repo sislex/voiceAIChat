@@ -1,8 +1,12 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 3dca41ba3
+checked: e2f56ae3a
 areas:
+  - scripts/prod/test_environment_stands.py
+  - scripts/prod/test_environment_scripts.py
+  - scripts/prod/test_compose_env.py
+  - scripts/prod/compose_env.py
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
   - scripts/release-train.mjs
@@ -57,8 +61,30 @@ With no selector, the generator preserves the former
 default local services; existing explicit stand module profiles remain selective.
 Local applications enable their service profiles; external applications do not.
 Local LLM runners are omitted when both provider URLs are supplied. Voice runners
-belong to local Chat; browser runners belong to local Playwright Reader.
+belong to local Chat by default. Set `VC_VOICE=off` to omit both STT and TTS
+containers and clear the legacy voice endpoint URLs passed to Core; `VC_VOICE=on`
+is the default. This also works without `VC_APPLICATIONS` and removes an inherited
+`voice-runner` profile. Invalid values and `VC_VOICE=off` combined with the wildcard
+`COMPOSE_PROFILES=*` fail before Compose runs. Caddy remains enabled in root Compose.
+For build A, `VC_APPLICATIONS=chat`, `VC_VOICE=off`, `COMPOSE_PROFILES=postgres`
+and both external LLM runner URLs select only Core, Postgres and Caddy. Use the
+Compose wrapper above so the generated settings reach Compose. Browser runners
+belong to local Playwright Reader.
 Optional service dependencies use `required: false`.
+
+The selector also derives `VC_CADDY_MAKE_UPSTREAM`,
+`VC_CADDY_PLAYWRIGHT_READER_UPSTREAM` and `VC_CADDY_IMAGE_STUDIO_UPSTREAM`.
+Local applications retain their direct service upstreams. Disabled and external
+applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
+return Core's `404 application_disabled` instead of proxying to absent services.
+Without a selector, the original direct Caddy upstream defaults are preserved.
+
+Operator verification on 2026-10-19 used a separate Docker project and disposable
+Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
+Postgres and Caddy, accepted an administrator login, exposed the chat-only
+manifest and returned the expected disabled responses over certificate-verified
+HTTPS. This isolated check does not replace the complete four-profile acceptance
+or the final production-snapshot release validation below.
 
 Local Projects enables Kanban and Postgres. When Projects is off or external,
 the stand no longer requires those profiles or a database URL; SQLite remains

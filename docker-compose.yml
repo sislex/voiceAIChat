@@ -111,9 +111,10 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: ${VC_LLM_RUNNER_CLAUDE_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_CODEX_URL: ${VC_LLM_RUNNER_CODEX_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
-      VC_TTS_RUNNER_URL: ${VC_TTS_RUNNER_URL:-http://tts-runner:8791}
+      # An explicit empty URL disables an unconfigured voice client.
+      VC_TTS_RUNNER_URL: ${VC_TTS_RUNNER_URL-http://tts-runner:8791}
       VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
-      VC_STT_RUNNER_URL: ${VC_STT_RUNNER_URL:-http://stt-runner:8791}
+      VC_STT_RUNNER_URL: ${VC_STT_RUNNER_URL-http://stt-runner:8791}
       VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Playwright Reader и этап автотестов: без этих переменных сервер отвечает
       # 501, а панель показывает «изолированный Chromium недоступен».
@@ -560,6 +561,9 @@ services:
       # Публичный адрес стенда: подставляется в Caddyfile. Без него Caddy
       # поднимется с пустым хостом и не ответит ни на один запрос.
       VC_PUBLIC_HOST: ${VC_PUBLIC_HOST:?нужен VC_PUBLIC_HOST в .env — адрес, по которому стенд виден снаружи}
+      VC_CADDY_MAKE_UPSTREAM: ${VC_CADDY_MAKE_UPSTREAM:-make:8788}
+      VC_CADDY_PLAYWRIGHT_READER_UPSTREAM: ${VC_CADDY_PLAYWRIGHT_READER_UPSTREAM:-playwright-reader:8797}
+      VC_CADDY_IMAGE_STUDIO_UPSTREAM: ${VC_CADDY_IMAGE_STUDIO_UPSTREAM:-image-studio:8796}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Локальный CA и выписанные сертификаты — переживают пересоздание.

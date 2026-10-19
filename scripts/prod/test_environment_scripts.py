@@ -236,6 +236,7 @@ class ComposeEnvTest(unittest.TestCase):
 
 # Include stand lifecycle contracts in the existing tooling gate.
 from test_environment_stands import StandTest, StandComposeTest
+from test_compose_env import ApplicationProfiles
 
 
 if __name__ == "__main__":

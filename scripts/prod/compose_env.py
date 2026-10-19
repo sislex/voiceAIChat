@@ -13,20 +13,33 @@ from urllib.parse import urlsplit
 
 def application_settings(values: Dict[str, str]) -> Dict[str, str]:
     """Derive local services; an external application never activates a container."""
+    voice = values.get('VC_VOICE', 'on')
+    if voice not in ('on', 'off'):
+        raise ValueError('invalid_voice')
+    result = {'VC_STT_RUNNER_URL': '', 'VC_TTS_RUNNER_URL': ''} if voice == 'off' else {}
     modes = {'make': 'MAKE', 'projects': 'KANBAN', 'web-reader': 'READER',
              'playwright-reader': 'PLAYWRIGHT_READER', 'image-studio': 'IMAGE_STUDIO'}
     profiles_by_app = {'make': 'make', 'projects': 'kanban', 'web-reader': 'reader',
                        'playwright-reader': 'playwright-reader', 'image-studio': 'image-studio'}
+    caddy_upstreams = {'make': ('MAKE', 'make:8788'),
+                       'playwright-reader': ('PLAYWRIGHT_READER', 'playwright-reader:8797'),
+                       'image-studio': ('IMAGE_STUDIO', 'image-studio:8796')}
     managed = set(profiles_by_app.values()) | {'local-runner', 'voice-runner', 'browser-runner', 'automation-runner'}
     profiles = set(filter(None, values.get('COMPOSE_PROFILES', '').split(',')))
+    if voice == 'off':
+        if '*' in profiles:
+            raise ValueError('voice_off_conflicts_with_all_profiles')
+        profiles.discard('voice-runner')
     if 'VC_APPLICATIONS' not in values:
         # Preserve the former unprofiled services for legacy deployments.
-        profiles.update({'voice-runner', 'automation-runner'})
+        profiles.add('automation-runner')
+        if voice == 'on':
+            profiles.add('voice-runner')
         if 'compose.stand' not in values.get('COMPOSE_FILE', ''):
             profiles.update({'make', 'image-studio', 'playwright-reader', 'browser-runner'})
         if not (values.get('VC_LLM_RUNNER_CLAUDE_URL') and values.get('VC_LLM_RUNNER_CODEX_URL')):
             profiles.add('local-runner')
-        return {'COMPOSE_PROFILES': ','.join(sorted(profiles))}
+        return {**result, 'COMPOSE_PROFILES': ','.join(sorted(profiles))}
     selected = {}
     for item in values['VC_APPLICATIONS'].split(',') if values['VC_APPLICATIONS'] else []:
         name, separator, url = item.partition('=')
@@ -39,15 +52,18 @@ def application_settings(values: Dict[str, str]) -> Dict[str, str]:
                 raise ValueError('invalid_application_url')
         selected[name] = not separator
     profiles -= managed
-    result = {}
     for name, mode in modes.items():
         local = selected.get(name, False)
         result['VC_' + mode + '_MODE'] = 'remote' if local else 'off'
         if local:
             profiles.add(profiles_by_app[name])
+    # Disabled/external UI paths must reach Core's application-disabled handler,
+    # rather than a missing local service. Legacy deployments keep Caddy defaults.
+    for name, (key, upstream) in caddy_upstreams.items():
+        result['VC_CADDY_' + key + '_UPSTREAM'] = upstream if selected.get(name) else 'voicechat:8787'
     if selected.get('projects'):
         profiles.add('postgres')
-    if selected.get('chat'):
+    if selected.get('chat') and voice == 'on':
         profiles.add('voice-runner')
     if any(selected.get(name) for name in ('chat', 'make', 'projects', 'image-studio')) and not (values.get('VC_LLM_RUNNER_CLAUDE_URL') and values.get('VC_LLM_RUNNER_CODEX_URL')):
         profiles.add('local-runner')
