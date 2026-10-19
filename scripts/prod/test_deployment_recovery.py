@@ -51,6 +51,14 @@ class UnchangedDeploymentRecoveryTest(unittest.TestCase):
             with self.subTest(changes=changes), patch.dict(self.record, changes), self.assertRaises(ValueError):
                 self.recover()
 
+    def test_docker_nanosecond_timestamps_on_older_host_python(self):
+        self.containers[0]['Created'] = '2025-01-01T00:00:00.880113768Z'
+        self.containers[0]['State']['StartedAt'] = '2025-01-02T00:00:00.964297217Z'
+        self.assertEqual(self.recover()['state'], 'recovered')
+        self.containers[0]['State']['StartedAt'] = '2026-01-01T00:00:00.964297217Z'
+        with self.assertRaisesRegex(ValueError, 'container_changed_after_operation'):
+            self.recover()
+
     def test_changed_or_unhealthy_runtime_is_refused(self):
         for changes in [
             {'Running': False}, {'Paused': True}, {'Restarting': True},
