@@ -1,6 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
+checked: 6089e0c71
 areas:
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
@@ -157,6 +158,12 @@ test these adapters without contacting real owners.
 With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
+
+The version bump writes the root and application manifests and refreshes the lock.
+An owner whose root `package.json` defines a `set-version` script (Make keeps
+`apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
+itself instead: the runner installs dependencies and runs
+`npm run set-version -- <version>`, then commits every manifest it changed.
 
 The runner creates private clones below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at

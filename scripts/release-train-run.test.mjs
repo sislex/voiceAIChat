@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies } from './release-train-run.mjs'
+import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
@@ -384,4 +384,11 @@ test('preflight blocks branch creation, and an active journal lock blocks execut
   assert.equal(f.calls.filter(call => call.url?.endsWith('/branches') && call.method === 'POST').length, 0)
   writeFileSync(join(f.directory, journal.id + '.json.lock'), '')
   await assert.rejects(executeJournal(journal, f.directory, () => assert.fail('locked')), /EEXIST/)
+})
+
+test('owners with a set-version script bump their own lockstep versions', () => {
+  assert.deepEqual(ownerVersionCommand({ scripts: { 'set-version': 'node scripts/set-version.mjs' } }, '1.8.1'),
+    ['npm', ['run', 'set-version', '--', '1.8.1']])
+  assert.equal(ownerVersionCommand({ scripts: { test: 'vitest' } }, '1.8.1'), null)
+  assert.equal(ownerVersionCommand({}, '1.8.1'), null)
 })
