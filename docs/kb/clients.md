@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-18
-checked: 25dce159
+updated: 2026-10-19
+checked: 8a928747a
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -18,6 +18,27 @@ Module details: `agent:README.md`
 ## Core UI distribution
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
+
+The public-chat candidate pins Core UI 1.5.25 from
+`dca609d41698c42e577a4c9bef75c9116ddeeaf3`. Its daily quota panel shows settled
+spend, remaining allowance and the Europe/Minsk reset. Voice onboarding uses
+optional `CapabilityStatus.configured` from Shared 0.1.42: explicit absence hides
+both automatic and manual launchers without changing saved onboarding progress.
+Legacy servers fall back to availability only when configuration is unspecified;
+unknown or failed capability reads do not block chat readiness. A configured but
+unhealthy voice module remains discoverable for diagnosis. The owner also fixes
+the mobile model trigger and popup geometry. Core keeps artifact and browser
+integration checks; the implementation and responsive regressions live in the
+Core UI owner repository. Candidate stand evidence and remaining public
+commissioning work are recorded in `docs/plans/public-chat-v1.md`.
+
+The first-chat model picker uses effective account settings supplied by Core.
+The access response is a deny-list, so its entries and shared catalog order
+cannot determine deployment fallback. A denied conversation override resolves
+through the authoritative conversation context snapshot; unresolved access or
+snapshot reads keep selection unavailable. Selecting a model before a draft
+has a conversation persists only model fields, and sending waits for that save.
+Failures preserve the draft; navigation and unmount guards prevent stale sends.
 
 
 ## Independent browser chat hosts
@@ -49,8 +70,8 @@ tests and source directories are removed from Core. Both owners install and gate
 without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
-own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.5.9, owner commit `2919342e1583eeefca45ec084169feb5c12a2244`. Since 1.4.12
+own repository. Desktop does not compile Core UI source. The current renderer pin is documented above; the following entries describe
+earlier owner releases. Since 1.4.12
 it recovers the project list when the browser read cache supersedes the startup request
 (retry once, then an error state with retry instead of an endless load); 1.4.13 also
 never strands detail-only project tabs (Release Center, settings, code) behind their

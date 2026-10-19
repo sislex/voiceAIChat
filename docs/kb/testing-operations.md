@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-19
-checked: c0f9d856a
+checked: 8a928747a
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -84,6 +84,18 @@ allocates a copied database/data directory, writes the manifest and checks LAN
 and Tailscale reachability on the assigned gateway port.
 
 ## Core UI test ownership
+
+Settings/onboarding browser integration distinguishes missing voice modules
+from configured but unavailable ones. `e2e/settings.e2e.test.ts` starts a
+loopback STT fixture that returns 503 for the existing diagnostic and progress
+scenarios; the real Core capability response must still report `configured:
+true`. Its chat-only scenario restarts Core with both voice endpoints absent
+and verifies that the published UI hides automatic and manual onboarding while
+preserving `onboarded: false`, saved progress and the selected theme. Positive
+theme and TTS diagnostic assertions prove that settings and capabilities reached
+the renderer before checking absence; navigation buttons alone are not a load
+barrier. Do not restore unconditional wizard visibility to satisfy an
+unconfigured fixture.
 
 ### Shared chat exact-artifact acceptance (U10)
 
