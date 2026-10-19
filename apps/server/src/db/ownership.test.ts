@@ -29,6 +29,8 @@ describe('владение таблицами (db/ownership.ts)', () => {
     const file = readFileSync(join(dbDir, '../../../../scripts/prod/snapshot-exclude.txt'), 'utf8')
       .split(/\r?\n/).filter(Boolean).sort()
     expect(file).toEqual(classified)
+    expect(SNAPSHOT_EXCLUDED_TABLES).toContain('identity_sign_in_tickets')
+    expect(ownerOf.get('identity_sign_in_tickets')).toBe('identity')
     for (const table of classified) expect(ownerOf.has(table), table).toBe(true)
   })
   it('у каждой таблицы схемы ровно один владелец, и в манифесте нет мёртвых таблиц', () => {

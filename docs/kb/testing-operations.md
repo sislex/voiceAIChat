@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-18
-checked: f34a9ae1
+updated: 2026-10-19
+checked: 21ab54d5
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -91,11 +91,17 @@ Keep only vendor archives referenced by repository package manifests/lockfiles, 
 
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
 committed Shared contract as version 0.1.11 with bounded Identity
-`>=1.4.2 <1.5.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
-must still contain the accepted 1.4.2/1.2.0 baseline; other peers remain exact.
+`>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
+must contain the reviewed 1.5.1/1.2.0 baseline; other peers remain exact.
 The release-tool test checks the packed manifest and source commit. Consumer
 owners must install and gate against the actual released archives without
 disabling npm peer resolution.
+
+The Core Shared workspace exposes the same `./*` and `./*.js` source subpaths as
+the published contracts. Embedded Identity 1.5.1 uses those public subpaths;
+its standalone owner gate cannot detect missing exports in Core's local workspace.
+The release-tool test imports both forms, and Core typechecking covers the installed
+owner consumer against the workspace contracts.
 
 `dependency-snapshots.json` pins the 13 supplied S2 owner archives by package,
 version, source commit, SHA-256 and npm integrity. Content-addressed archives live

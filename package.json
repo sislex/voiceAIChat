@@ -88,7 +88,7 @@
   "devDependencies": {
     "@sislex/runner-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-runner-contracts-0.1.1-1ccbdeb47b04.tgz",
     "@sislexa/billing": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-billing-1.2.2-54901a743aae.tgz",
-    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.0-1a2671c0252c.tgz",
+    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.1-7e6a30d47be7.tgz",
     "@sislexa/image-studio": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-make-1.8.0-aacee31445bc.tgz",
     "@sislexa/playwright-reader": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-playwright-reader-1.2.5-c2d51a7ffb4f.tgz",

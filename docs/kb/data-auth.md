@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-19
-checked: ad893cc14
+checked: 20e8599d
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -179,11 +179,23 @@ execution only when accounting is configured and the resource permits execution.
 MCP/child operations remain explicitly disabled until resource-specific adapters
 exist and cannot inherit unrestricted user authority. Legacy session billing is
 unchanged. A07 uses an exact owner composition pinned by
-`node scripts/a07-composition.mjs`: Identity `e33958be`, Billing `41263c7c`,
-Runner `097282f2`, SDK `f6313db5`, and Analytics `a85d8ff1` (full hashes are in
+`node scripts/a07-composition.mjs`: Identity 1.5.1 `ed6b4009`, Billing `41263c7c`,
+Runner `1ccbdeb4`, SDK `f6313db5`, and Analytics `a85d8ff1` (full hashes are in
 `vendor/owner-artifacts.json`). Preflight verifies source provenance, archive and
 installed bytes, consumer integrity and deployment locks. Passing it alone is
 only an artifact check.
+
+Identity's deployed service and embedded Core package must name the same owner
+release. Changing only `deploy/tools.lock.json` and Compose leaves the S3 provider
+manifest, consumer lock and archive inventory inconsistent. Apply the published
+owner archive with `release-composition.mjs`, then reconcile the S3 provider
+manifest and A07 exact source before running the Core gate. The 1.5.1 archive is
+`sislexa-identity-1.5.1-7e6a30d47be7.tgz`; validation retains the strict source and
+integrity checks.
+
+Identity 1.5.1 adds `identity_sign_in_tickets`. Core classifies it as Identity-owned
+and excludes its rows from production snapshots alongside sessions, so temporary
+stands cannot inherit one-time production sign-in tickets.
 
 `npm run gate:a07` runs a synthetic server-side SDK consumer against published
 owner implementations. Runner is a pinned development dependency and its
