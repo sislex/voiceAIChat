@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-16 | ⚠ код изменён 2026-10-19, сверка 2026-10-16 (по датам: правки того же дня не видны — поставь checked) |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ код изменён 2026-10-19, сверка 2026-09-29 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-19 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 57c9a3d7 Pin release train f94b5d1f-cba0-40c8-a46d-905613411854 |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-19 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-09-28 | ⚠ код изменён 2026-10-19, сверка 2026-09-28 (по датам: правки того же дня не видны — поставь checked) |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ код изменён 2026-10-15, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ код изменён 2026-10-17, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1221. Последние:
+Всего записей: 1222. Последние:
 
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
@@ -72,8 +72,8 @@
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-optional-peers.md) — shared-optional-peers
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-set-version.md) — release-train-set-version
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-f94b5d1f-cba0-40c8-a46d-905613411854.md) — release-train-f94b5d1f-cba0-40c8-a46d-905613411854
+- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-0e091d1f-17fa-431c-9aad-2af913d0d697.md) — release-train-0e091d1f-17fa-431c-9aad-2af913d0d697
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-reader-full-kb-commit.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-release-reader-full-kb-commit.md) — release-reader-full-kb-commit
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-41.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-pin-shared-0-1-41.md) — pin-shared-0-1-41
 
 ## Исторические планы
 
