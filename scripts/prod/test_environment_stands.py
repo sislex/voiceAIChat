@@ -502,6 +502,29 @@ class AdminPasswordHashTest(unittest.TestCase):
 
 
 class StandComposeTest(unittest.TestCase):
+    def test_chat_only_voice_switch_preserves_caddy_and_disables_voice_urls(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        env = {k: v for k, v in os.environ.items() if not k.startswith(('COMPOSE_', 'VC_'))}
+        env.update(VC_APPLICATIONS='chat', COMPOSE_PROFILES='postgres', VC_PUBLIC_HOST='stand.test',
+                   VC_LLM_RUNNER_CLAUDE_URL='http://runner', VC_LLM_RUNNER_CODEX_URL='http://runner')
+        for voice in ('off', 'on'):
+            with self.subTest(voice=voice):
+                result = subprocess.run(['python3', str(HERE / 'compose_env.py'), 'run', '--',
+                    'config', '--format', 'json'], cwd=ROOT, env={**env, 'VC_VOICE': voice},
+                    capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                model = json.loads(result.stdout)
+                expected = {'voicechat', 'postgres', 'caddy'}
+                if voice == 'on':
+                    expected.update({'stt-runner', 'tts-runner'})
+                self.assertEqual(set(model['services']), expected)
+                core = model['services']['voicechat']['environment']
+                for kind in ('STT', 'TTS'):
+                    self.assertEqual(core['VC_' + kind + '_RUNNER_URL'],
+                        '' if voice == 'off' else 'http://' + kind.lower() + '-runner:8791')
+
     def test_production_defaults_match_literal_urls(self):
         docker = shutil.which('docker')
         if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
@@ -514,7 +537,7 @@ class StandComposeTest(unittest.TestCase):
             'VC_KANBAN_MCP_PUBLIC_BASE', 'VC_MAKE_MCP_PUBLIC_BASE', 'VC_READER_MCP_PUBLIC_BASE')
         legacy = source
         for variable in variables:
-            legacy = re.sub(r'\$\{' + variable + r':-([^}]+)\}', r'\1', legacy)
+            legacy = re.sub(r'\$\{' + variable + r':?-([^}]+)\}', r'\1', legacy)
         with tempfile.TemporaryDirectory() as directory:
             current = Path(directory) / 'current.yml'
             literal = Path(directory) / 'literal.yml'

@@ -111,9 +111,10 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: ${VC_LLM_RUNNER_CLAUDE_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_CODEX_URL: ${VC_LLM_RUNNER_CODEX_URL:-http://runner-work:8790}
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
-      VC_TTS_RUNNER_URL: ${VC_TTS_RUNNER_URL:-http://tts-runner:8791}
+      # An explicit empty URL disables an unconfigured voice client.
+      VC_TTS_RUNNER_URL: ${VC_TTS_RUNNER_URL-http://tts-runner:8791}
       VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
-      VC_STT_RUNNER_URL: ${VC_STT_RUNNER_URL:-http://stt-runner:8791}
+      VC_STT_RUNNER_URL: ${VC_STT_RUNNER_URL-http://stt-runner:8791}
       VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Playwright Reader и этап автотестов: без этих переменных сервер отвечает
       # 501, а панель показывает «изолированный Chromium недоступен».

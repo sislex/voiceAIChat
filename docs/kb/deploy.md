@@ -1,8 +1,12 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-19
-checked: 6089e0c71
+checked: 9a3bbae8a
 areas:
+  - scripts/prod/test_environment_stands.py
+  - scripts/prod/test_environment_scripts.py
+  - scripts/prod/test_compose_env.py
+  - scripts/prod/compose_env.py
   - scripts/contracts-release.mjs
   - scripts/contracts-release.test.mjs
   - scripts/release-train.mjs
@@ -57,7 +61,15 @@ With no selector, the generator preserves the former
 default local services; existing explicit stand module profiles remain selective.
 Local applications enable their service profiles; external applications do not.
 Local LLM runners are omitted when both provider URLs are supplied. Voice runners
-belong to local Chat; browser runners belong to local Playwright Reader.
+belong to local Chat by default. Set `VC_VOICE=off` to omit both STT and TTS
+containers and clear the legacy voice endpoint URLs passed to Core; `VC_VOICE=on`
+is the default. This also works without `VC_APPLICATIONS` and removes an inherited
+`voice-runner` profile. Invalid values and `VC_VOICE=off` combined with the wildcard
+`COMPOSE_PROFILES=*` fail before Compose runs. Caddy remains enabled in root Compose.
+For build A, `VC_APPLICATIONS=chat`, `VC_VOICE=off`, `COMPOSE_PROFILES=postgres`
+and both external LLM runner URLs select only Core, Postgres and Caddy. Use the
+Compose wrapper above so the generated settings reach Compose. Browser runners
+belong to local Playwright Reader.
 Optional service dependencies use `required: false`.
 
 Local Projects enables Kanban and Postgres. When Projects is off or external,

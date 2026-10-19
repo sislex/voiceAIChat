@@ -32,6 +32,45 @@ class ApplicationProfiles(unittest.TestCase):
         stand = application_settings({'COMPOSE_FILE': 'docker-compose.yml:deploy/compose.stand.yml', 'COMPOSE_PROFILES': 'postgres,kanban'})
         self.assertNotIn('make', stand['COMPOSE_PROFILES'].split(','))
 
+    def test_voice_off_removes_stale_voice_profiles_and_legacy_endpoints(self):
+        for applications in (None, 'chat', 'chat,make'):
+            with self.subTest(applications=applications):
+                values = {'VC_VOICE': 'off', 'COMPOSE_PROFILES': 'postgres,public,voice-runner',
+                          'VC_STT_RUNNER_URL': 'http://stt-runner:8791',
+                          'VC_TTS_RUNNER_URL': 'http://tts-runner:8791'}
+                if applications is not None:
+                    values['VC_APPLICATIONS'] = applications
+                result = application_settings(values)
+                profiles = set(result['COMPOSE_PROFILES'].split(','))
+                self.assertNotIn('voice-runner', profiles)
+                self.assertTrue({'postgres', 'public'} <= profiles)
+                self.assertEqual(result['VC_STT_RUNNER_URL'], '')
+                self.assertEqual(result['VC_TTS_RUNNER_URL'], '')
+
+    def test_chat_only_without_voice_uses_only_the_explicit_postgres_profile(self):
+        result = application_settings({'VC_APPLICATIONS': 'chat', 'VC_VOICE': 'off',
+                                       'COMPOSE_PROFILES': 'postgres',
+                                       'VC_LLM_RUNNER_CLAUDE_URL': 'http://runner',
+                                       'VC_LLM_RUNNER_CODEX_URL': 'http://runner'})
+        self.assertEqual(result['COMPOSE_PROFILES'], 'postgres')
+
+    def test_voice_defaults_on_and_explicit_on_preserves_endpoints(self):
+        for voice in (None, 'on'):
+            with self.subTest(voice=voice):
+                values = {'VC_APPLICATIONS': 'chat'}
+                if voice is not None:
+                    values['VC_VOICE'] = voice
+                result = application_settings(values)
+                self.assertIn('voice-runner', result['COMPOSE_PROFILES'].split(','))
+                self.assertNotIn('VC_STT_RUNNER_URL', result)
+                self.assertNotIn('VC_TTS_RUNNER_URL', result)
+
+    def test_invalid_voice_and_wildcard_conflict_are_rejected(self):
+        for values in ({'VC_VOICE': 'false'}, {'VC_VOICE': ''},
+                       {'VC_VOICE': 'off', 'COMPOSE_PROFILES': '*'}):
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                application_settings(values)
+
     def test_compose_adapter_passes_generated_settings_without_shell_evaluation(self):
         with patch('sys.argv', ['compose_env.py', 'run', '--', 'config', '--services']), \
                 patch('compose_env.read_env', return_value={'VC_APPLICATIONS': 'chat,make=https://make.example.org'}), \
