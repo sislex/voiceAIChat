@@ -43,34 +43,34 @@
     },
     {
       "name": "@sislexa/web-reader",
-      "version": "1.3.1",
-      "filename": "sislexa-web-reader-1.3.1.tgz",
-      "asset": "sislexa-web-reader-1.3.1-8a5ddee3aab3.tgz",
-      "sha256": "8a5ddee3aab3f724606ba7d42f1bc4c621a96fcd145c6b822e9b0fb61ca0df7d",
-      "integrity": "sha512-saWXtbftBFS74BgfebQ7/6w0ASS5JvG2CFItPDT9Mxz15DKw8u6wIHUeDtvSX0tK5rkWlxlVHmK1rBo8A4N/Dw==",
+      "version": "1.3.3",
+      "filename": "sislexa-web-reader-1.3.3.tgz",
+      "asset": "sislexa-web-reader-1.3.3-ef2383f75487.tgz",
+      "sha256": "ef2383f75487c9b85711db140dffdd19824406b376551743f6b73ed1af1450ff",
+      "integrity": "sha512-KOw/1bCLhxBlgvde4HEZHUKGDM5mVa3OZd4E2WWyfypHPcJ4jpIa+CE/J53LkVGDAusuwbW7ciCy76VAc8Oy8A==",
       "repository": "https://github.com/sislex/webreader",
-      "commit": "36003b199cae41c697f393ba0011b91943ae5d76",
+      "commit": "d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/webreader",
-        "version": "1.3.1",
-        "commit": "36003b199cae41c697f393ba0011b91943ae5d76"
+        "version": "1.3.3",
+        "commit": "d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666"
       }
     },
     {
       "name": "@voicechat/web-reader-contracts",
       "version": "1.3.0",
       "filename": "voicechat-web-reader-contracts-1.3.0.tgz",
-      "asset": "voicechat-web-reader-contracts-1.3.0-24820422c483.tgz",
-      "sha256": "24820422c4830ed2bba6befafea99061d9666620593637886d942b877aa6737d",
-      "integrity": "sha512-F1IZuq5q60yQSnAxoTbC+jg2gaaLlO8K1dRw94qlGrhz1Q2yL7AZBPuoBw38vEaJriuEq8+z7HyhaKghKwWFWw==",
+      "asset": "voicechat-web-reader-contracts-1.3.0-dada5e91f107.tgz",
+      "sha256": "dada5e91f1072b529b8d959c9c66f2eb5397526705a47bce663678c159f7674d",
+      "integrity": "sha512-Mr+rfyhR/MVuRyqfqvpKlC1ZR/JzNsxf1393QvIEAgara8bFfn4IkBWgabXsRmB9JhAuHbRgNoN8GGekGoMZtg==",
       "repository": "https://github.com/sislex/webreader",
-      "commit": "36003b199cae41c697f393ba0011b91943ae5d76",
+      "commit": "d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/webreader",
         "version": "1.3.0",
-        "commit": "36003b199cae41c697f393ba0011b91943ae5d76"
+        "commit": "d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666"
       }
     },
     {

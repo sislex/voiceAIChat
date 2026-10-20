@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-20
-checked: cc52ce88c
+checked: a19140220
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -134,6 +134,38 @@ for a root development dependency, review the lockfile delta, then run `npm ci`.
 For Runner 0.3.8, the lock entry must require runner-contracts 0.1.3; retaining
 the old 0.1.2 edge makes npm look for that private package in the public registry.
 Do not bypass peer resolution or replace the immutable URL with an unpinned range.
+
+A passing owner-overlay system run does not prove that npm can install a new
+Core composition. The owner fixture installs the pinned Core lockfile first,
+then extracts the candidate package into `node_modules`; this extraction does
+not resolve the candidate's peer dependencies. Validate the composed lockfile
+with ordinary `npm ci`, with peer resolution enabled, before the Core gate and
+installed-owner system acceptance. Check peer ranges against the version of the
+package actually resolved by Core, including linked workspaces. A separately
+published archive version does not change the linked workspace's version.
+Historical runtime exports raised versions in the archive only; align the
+workspace metadata with its verified published capabilities and update incompatible
+consumer peers through reviewed immutable owner releases. Do not lower capability
+requirements or use npm overrides, `--force`, or `--legacy-peer-deps` to conceal
+a composition mismatch.
+
+When immutable pin application leaves stale workspace or owner metadata in the
+lockfile, compare those entries with the workspace manifest and verified archive
+manifests. Correct only the mismatched version/dependency fields, preserving
+resolved URLs, integrity and the rest of the graph. Then run ordinary
+`npm install --package-lock-only --ignore-scripts --strict-peer-deps` and
+`npm ci --strict-peer-deps`; review the resulting lock delta. This bootstrap
+does not replace npm resolution or authorize unrelated dependency updates.
+
+Reader upload acceptance must cover the complete MCP transport, not only the
+decoded file validator. An 8 MiB file produces a larger base64/JSON envelope:
+the embedded SDK transport and shared MCP route both need the finite 16 MiB
+command limit. The decoded file limit remains 8 MiB, and unrelated preview
+routes retain their smaller body limit. The owner's native Chromium test
+accepts the exact boundary and rejects one additional decoded byte even when
+both payloads have the same encoded length, preserving the previously selected
+file. Core's installed-owner system gate exercises the actual pinned transport.
+
 The current S3 provider inventory, `deploy/s3-provider-artifacts.json`, must also
 match Identity, Billing, Runner and runner-contracts owner pins. Composition does
 not rewrite this inventory automatically. Update its artifact identity fields from
@@ -432,7 +464,12 @@ root script tests and workspace tests, owner frontend artifact verification, Web
 build, Core Storybook build, an unconditional `npm ci --prefix apps/desktop`,
 Desktop build, and `frontend:route-gates`, in that order. `build:frontends`
 verifies published owner manifests, provenance and asset integrity; it no longer
-compiles owner applications. Owner unit suites are outside Core workspaces.
+compiles owner applications. An owner archive and its embedded frontend may have
+independent versions. Core binds the owner package name to the application catalog
+and its version to the adjacent release provenance, while binding the frontend
+manifest version to the embedded package next to its `dist` directory. The
+frontend and owner source commit must still match, and every entry/style asset
+must retain its published integrity. Owner unit suites are outside Core workspaces.
 Core keeps bridge and host integration tests for those applications.
 
 A direct `gate:all` invocation differs from the full fallback of `gate` or

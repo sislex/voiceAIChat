@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-20
-checked: 55bbb8649
+checked: a19140220
 areas:
   - packages/shared/src
 ---
@@ -187,6 +187,15 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.40 (`voicechat-shared-0.1.40-ea2ec84dac0d.tgz`, contracts commit `5a097e76`) adds the shared-service RPC authority table and MCP token contract (`SHARED_SERVICE_RPC_ROUTES`, `authorizeSharedServiceRpc`, `APPLICATION_ASSISTANT_KIND`, `CORE_ID_HEADER`, `CoreMcpTokenClaims`, `TrustedCoreEntry.serviceCredentialRef`/`mcpSecretRef`; deployment-profiles-v2 B17). The matching `@sislexa/component-runtime` 1.3.0 (`sislexa-component-runtime-1.3.0-af19f57927ad.tgz`, same commit, version raised only in the archive) adds `signCoreMcpToken`, `verifyCoreMcpToken` and `authenticateCoreRequest`.
 
 0.1.41 (`voicechat-shared-0.1.41-f6fc0d800c71.tgz`, contracts commit `ce8eaefd`) lets a shared service act for the user of the turn it serves with the core MCP token (`MCP_TOKEN_HEADER_NAME` = `x-sislexa-mcp-token`), adds the `{ userArg, field }` authority, route `readMethods` and `SharedServiceCaller.readOnly`, the Web Reader methods `context`/`logBrowserEvidence`/`projectResource` and `/internal/playwright-reader/service`, and the read-only task `scope` claim (`CoreMcpTaskScope`, `isCoreMcpTaskScope`; deployment-profiles B21). The matching `@sislexa/component-runtime` 1.4.0 (`sislexa-component-runtime-1.4.0-906e79891542.tgz`, same commit, version raised only in the archive) signs and verifies the `scope` claim and adds `verifyCoreMcpTokenWithSecret`.
+The current component-runtime workspace is version 1.4.0, matching the published
+1.4.0 implementation: all eight source files are byte-identical to that archive.
+Earlier packaging raised the version only inside the archive and left the
+workspace at 1.0.1. That stale workspace label caused peer resolution failures
+when installing newer owners into Core. Historical published 1.0.1 lacks the
+shared-service and Core MCP token APIs; do not lower a consumer's minimum to
+1.0.1 merely because a newer Core checkout once retained that label. Validate
+both the published implementation and the normal consumer `npm ci` resolution.
+
 0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
 0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.

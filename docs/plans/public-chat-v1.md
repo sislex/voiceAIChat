@@ -148,6 +148,42 @@ assertions; each viewport starts a fresh document so the restored mobile drawer
 does not leak into the next case. Final combined Core validation and coordinated
 stand cutover remain required after this source freeze.
 
+At the historical Core checkpoint `a191402201fdda825fb1278b6bbb782f6344731b`, the combined
+gate passed 2,231 server, 1,287 shared and 59 enabled browser checks. Native performance
+passed eight scenarios and 48 budget comparisons with zero violations or runtime errors.
+Installed-owner system acceptance then stopped at Playwright Reader: 28 of 29 checks passed;
+the valid 8 MiB upload returned HTTP 413 because its base64/JSON envelope exceeded the SDK's
+default 4 MiB limit. The shared Reader path also retained a 1 MiB parser limit. Web Reader
+1.3.3 from `d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666` applies the existing finite 16 MiB
+command bound to both paths and authenticates shared MCP requests before buffering. Its
+canonical pack passed 561 API, 25 contracts, 151 UI, 218 recorder, two runtime, 688 browser,
+11 tooling/KB/artifact and 31 system checks on immutable Core `a1914022`. Real HTTP MCP
+through Chromium accepted 8 MiB and rejected one additional decoded byte with the same
+encoded length, preserving the selected file. Contracts 1.3.0 payload bytes are unchanged;
+only archive provenance changes. Frontend 1.3.1 remains independently versioned. Official
+[Web Reader 1.3.3](https://github.com/sislex/webreader/releases/tag/v1.3.3) publication and
+downloaded artifact verification are complete. Final Core composition, renewed release gates
+and coordinated stand acceptance remain pending; these historical checkpoints do not
+establish completion of that composition.
+
+The normal Core dependency refresh subsequently exposed a separate metadata
+mismatch: Core linked component-runtime 1.0.1, while the selected Web Reader
+requires newer runtime capabilities already published as 1.4.0. All eight
+archived runtime `src/` files, including tests, match Core byte for byte. The
+selected correction aligns Core's workspace version to 1.4.0 and replaces
+Billing's exact 1.0.1 runtime peer through a reviewed owner release; Web Reader
+1.3.3 stays immutable. [Billing 1.2.4](https://github.com/sislex/billing/releases/tag/v1.2.4)
+is published from `db6000b7a87cfb200bf7cc697dbafafde6a60171`, with the verified
+`>=1.0.1 <2.0.0` runtime peer and unchanged implementation, ledger and standalone
+dependency pins. Its owner gate and ordinary consumer installation/HTTP authority
+checks passed with runtime 1.4.0; the official archive and AMD64 image were
+downloaded and verified. The earlier 31
+Web Reader owner-system passes used a package overlay after the old Core install
+and therefore do not demonstrate that the new dependency graph installs. A
+strict lockfile refresh and `npm ci --strict-peer-deps` now pass for the composed
+dependencies, with the lockfile unchanged by the clean installation. Renewed Core
+gates and installed-owner acceptance remain required after final pins are frozen.
+
 Runner's separate synthetic concurrency check used fake CLI responses, not paid
 provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
 zero duplicate executions or unexpected errors. Eight cancellation and eight
