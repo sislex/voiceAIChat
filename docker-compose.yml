@@ -58,6 +58,9 @@ services:
       HOST: 0.0.0.0
       PORT: "8787"
       VC_APPLICATIONS: ${VC_APPLICATIONS-chat,make,projects,web-reader,playwright-reader,image-studio,identity}
+      VC_CHAT_MODELS: ${VC_CHAT_MODELS:-}
+      VC_CHAT_TEXT_ONLY: ${VC_CHAT_TEXT_ONLY:-false}
+      VC_CHAT_REQUIRE_BILLING: ${VC_CHAT_REQUIRE_BILLING:-false}
       VC_CORE_ID: ${VC_CORE_ID:-localhost}
       # External applications use separate credentials for redemption, RPC and MCP.
       VC_APPLICATION_CHAT_TOKEN: ${VC_APPLICATION_CHAT_TOKEN:-}
@@ -406,7 +409,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:3bf4434e9279bd6e292fb34821dca6dbc97ee700}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:e0ff32cee8ee80da2953bbfe71c982ecec563cd5}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -515,7 +518,7 @@ services:
 
   runner-work:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -534,7 +537,7 @@ services:
 
   runner-personal:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:f857e6b23d9c0269083b4ac3ef5a0d9a1dbc9379}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"

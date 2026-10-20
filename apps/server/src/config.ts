@@ -1,4 +1,5 @@
 import { parseApplications, validateCoreId, type DeploymentManifest, type ApplicationId } from '@voicechat/shared'
+import { parseChatModelPolicy, type ChatModelPolicy } from './chatModelPolicy.js'
 // Конфигурация сервера из окружения.
 
 import { existsSync, readdirSync } from 'node:fs'
@@ -7,6 +8,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface ServerConfig {
+  chatModels?: ChatModelPolicy
+  chatTextOnly?: boolean
+  chatRequireBilling?: boolean
   deployment?: DeploymentManifest
   /** Explicit opt-in for delegated external applications; disabled until S3 acceptance. */
   delegatedChatEnabled: boolean
@@ -266,6 +270,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       ...(env.VC_CORS_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean)
     ])],
     smtpUrl: env.VC_SMTP_URL ?? null,
+    chatModels: parseChatModelPolicy(env.VC_CHAT_MODELS || undefined),
+    chatTextOnly: env.VC_CHAT_TEXT_ONLY === 'true',
+    chatRequireBilling: env.VC_CHAT_REQUIRE_BILLING === 'true',
     mailFrom: env.VC_MAIL_FROM ?? null,
     publicUrl: env.VC_PUBLIC_URL ?? null,
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),

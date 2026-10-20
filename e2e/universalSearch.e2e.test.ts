@@ -404,6 +404,9 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
     await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
     for (const [width, height] of [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]) {
       await page.setViewportSize({ width: width!, height: height! })
+      // A same-hash navigation retains the drawer left open after focus restoration.
+      // Start each viewport from a fresh document while retaining authenticated storage.
+      await page.goto('about:blank')
       await page.goto(base + '/#/chat/' + chatId)
       // Mobile opens the existing sidebar before the same touch control.
       if (width! <= 720) {

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-19
-checked: ae19ce2b9
+updated: 2026-10-20
+checked: a1015514c
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -44,13 +44,150 @@ areas:
   - packages/shared/src/kb.ts
 ---
 
+## Public chat deployment isolation
+
+The limited `sislexa.by` installation is a separate deployment of **sislexa**.
+It does not change the product's default application catalog, model access,
+execution modes or voice policy. The owner's 2026-10-20 instruction preserves
+`http://89.125.68.35/` on its existing full-feature version: no deployment,
+restart, configuration change or data migration there is part of this launch.
+Domain DNS, real mail and the public Codex service account remain commissioning
+work; a passing local candidate is not an already provisioned public target.
+
+The read-only baseline on 2026-10-20 is Core `0.1.480`, commit
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, image `voicechat-server` at
+`sha256:bdef5fdf0080423e188bb9794968196cfdb7ea47b5f271ab4660f1fe1dc20913`.
+HTTP port 80 returns a Caddy 301 to HTTPS; the direct port 8787 health endpoint
+returns 200. A local client's missing TLS issuer is not evidence of an app outage.
+Authenticated `/api/system/applications` reports `coreId=localhost` and all seven
+local apps enabled. Docker inspection confirms Make, Projects, readers, Image
+Studio, Identity, Billing, Analytics and both voice services remain running.
+
+| Boundary | Existing full installation (preserve) | Local public-chat candidate | New public installation (required, not yet provisioned) |
+| --- | --- | --- | --- |
+| Address / Compose project | `89.125.68.35`, `voiceaichat` | M2 `127.0.0.1:23001`, `sx-dev-m2-07fb81fd` | `https://sislexa.by`, distinct target and project |
+| Core / component identity | `localhost` / `production` | `stand-dev-m2-public-chat` for both | Distinct `VC_CORE_ID` and component `environmentId` |
+| Core data | `voicechat-server-data` volume | Stand `dev-864e75ef-dd2/voicechat-data` bind | Dedicated data root/volume and outbox |
+| PostgreSQL / Billing | `voiceaichat_vc-postgres` / `voiceaichat_vc-billing-data` | Stand PostgreSQL / operator `public-chat-v1/billing-data` | Separate database, ledger and backup set |
+| Component state | `/etc/voicechat/components-s3-0.1.334` | Operator `public-chat-v1/components` | New registries, directional grants and session secrets |
+| Listening ports | Existing Caddy 80/443 and Core 8787 | Gateway 23001, Core 17801, loopback only | Own bindings; do not replace/reload the old Caddy |
+
+A new Compose project name alone does **not** isolate Core data: root Compose
+fixes `volumes.vc-data.name` to `voicechat-server-data`. The new installation must
+explicitly override that name or bind a dedicated Core data directory. Inspect
+the fully resolved Compose mount sources, database destination, component roots,
+runner profiles and port bindings before any start. Never copy provider registries,
+stand empty-password policy or the M2 personal Codex login into the public site.
+Internal service names such as `/run/sislexa/provider` can match inside containers;
+their host mount sources and issuance environments must be separate.
+
+The explicit public configuration is `VC_APPLICATIONS=chat,identity`,
+`VC_CHAT_MODELS=codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`,
+`VC_CHAT_TEXT_ONLY=true`, `VC_CHAT_REQUIRE_BILLING=true`, `VC_VOICE=off`, and the
+separate Billing ledger's `5000000` / `Europe/Minsk` daily policy. Unset model
+policy, false text-only/required-Billing flags and default voice-on behavior
+remain available to other deployments. Do not put these public restrictions in
+shared defaults or change the existing production ledger's persisted policy.
+
+Publication and deployment are separate. The existing Release Center project
+`e3dea006-b6f7-45ea-8fa3-97502501456d` targets the old production agent
+`02729d2e-be0f-4621-ac2b-8fd1ff39ff93` and `/usr/local/bin/voicechat-deploy`.
+Do not use that target for this launch, edit its production settings, or invoke
+the installed deploy wrapper. `release-train run` without `--deploy` still merges
+PRs and submits release-branch preparation to that Release Center;
+`run --resume` preserves a journal's original deploy intent and target.
+Consequently neither command is a publication-only shortcut here. Use reviewed
+owner/Core PRs and clean immutable artifact publication, then stop before any
+release-environment operation until a distinct public target is configured.
+See the [reviewed publication sequence](../plans/public-chat-v1.md#reviewed-publication-sequence).
+
 ## Deployment application profiles
 
-`VC_APPLICATIONS=chat` selects a chat-only Core. Other examples are
+`VC_APPLICATIONS=chat` selects a chat-only Core. A public chat with account settings and
+quota display uses `VC_APPLICATIONS=chat,identity`; Identity provides the
+personal account UI while other product applications remain disabled. Candidate dependency audits are
+recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
+pins and distinguish installed packages from reachable runtime services. Other examples are
 `chat,make`, `chat,make=https://make.example.org`, and
 `chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
 tickets. External URLs must be HTTPS without credentials, query or fragment.
 No selector preserves legacy Core modes.
+
+`VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
+`provider:model-id` entries from the shared model catalog. For the first public
+chat deployment, use
+`codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`.
+The first permitted entry is the fallback for stale saved model IDs. Core applies
+this restriction both to personal model access responses and to execution; user
+revocations still take precedence. Missing/empty configuration preserves legacy
+behavior; malformed nonempty configuration prevents startup. Compose forwards
+this value independently of the application selector. Actual model availability
+must also be verified against the configured runner account.
+
+With `VC_CHAT_MODELS`, both GET and PUT responses from `/api/settings` project
+the effective account provider and its selected model using the deployment order
+and current user restrictions. The projection does not overwrite stored model
+preferences on read or when an unrelated preference is patched. Other settings,
+including the inactive provider's model and explicit `llmEngineId`, are retained;
+the turn manager resolves engine transport separately by provider and role. If
+no model is available, clients must use the access response to disable selection
+rather than treating the retained preference as executable.
+
+Conversation overrides remain independent. For example, an allowed account Sol
+and a forbidden conversation Astra resolve that conversation to the policy's
+first permitted model (Luna), not the account's Sol. The existing conversation
+`context-snapshot` summary exposes the effective provider/model; account settings
+alone are not an authoritative fallback for a forbidden conversation override.
+
+Under an explicit model policy, a turn using inherited account defaults does
+not prepend a substitution warning for those projected defaults. Explicit
+conversation/project provider or model substitutions still warn, as does an
+unavailable engine transport. Without `VC_CHAT_MODELS`, legacy warnings remain
+unchanged; `VC_CHAT_TEXT_ONLY` alone does not suppress them. Selection, access
+enforcement, execution metadata and stored preferences are unaffected.
+
+The capabilities endpoint reports `analytics.configured` from the managed
+Analytics dependency, independently of health. Clients hide Analytics UI and
+skip activity/report requests only when the value is explicitly false; a
+configured service outage must remain visible. An omitted field preserves
+older-server behavior. See [the capability contract](protocol.md#analytics-module-configuration).
+
+`VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. It
+ignores saved and request-level machine preferences, skips machine availability
+checks and Git preflight, and supplies no remote machine transport. Requests
+carry `textOnly: true` and `executionDisabled: true` with plan permissions, even
+for administrators. This prevents a harmless chat from emitting a preliminary
+machine error or being blocked by a stale offline target. Only the server's
+configured policy enables this behavior; request flags cannot bypass ordinary
+machine checks or preflight refusals. Saved machine preferences are not rewritten.
+The Core file-output endpoint then reads only the authenticated user's Core output
+directories: saved working directories, shared upload roots and runner filesystem
+proxies do not grant access. This prevents a user-supplied workdir from becoming
+filesystem authority in a public chat deployment. The
+runner must explicitly support this mode; an older incompatible runner rejects
+execution. Public release acceptance must verify the installed runner, isolated
+profiles and empty tool inventory before enabling registration. Set
+`VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
+to start without its Billing dependency instead of silently using legacy
+unaccounted turns. Once configured, Billing failures already deny admission.
+
+The same trusted text-only policy also disables auxiliary model work that has
+no Billing admission: semantic KB reranking, automatic/manual conversation
+summaries, project research, image retouch/Image Studio generation, and the
+Anthropic-compatible gateway. KB lexical search and stored summary reads remain
+available. Explicit runner/backend settings cannot re-enable these features in
+public mode. See [the auxiliary boundary](llm.md) and include ambiguous KB input
+and a denied daily-budget admission in release regression; a successful main-turn
+settlement alone does not prove that no auxiliary call was dispatched.
+
+The Billing Compose layer forwards optional `BILLING_DAILY_USER_MICRO_USD`
+and `BILLING_DAILY_USER_TIME_ZONE` without inventing empty defaults. For the
+approved public launch set them to `5000000` and `Europe/Minsk`. Billing persists
+the policy with its ledger: removing environment variables later does not disable
+an established limit. Invalid or conflicting settings prevent startup. The limit
+admits an answer while that user's settled daily spend is below $5; that answer
+may cross the threshold, after which new requests are denied until the next day.
+Do not substitute this admission policy for a hard per-response monetary bound.
 
 `python3 scripts/prod/compose_env.py applications --file .env` prints derived
 `COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the
@@ -341,7 +478,7 @@ Stand runtime files are located as follows:
 - development processes and worktrees are under
   `~/.voicechat/dev-processes/`, whose registry is `registry.json`;
 - the base environment's Compose directory is
-  `<ChatAI data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
+  `<sislexa data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
 
 `npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
 `SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
@@ -579,6 +716,17 @@ the operation retains its failed exit code and does not claim Compose completed.
 Docker's nanosecond timestamps are normalized to microseconds before parsing so
 the same proof works on production hosts with Python 3.9/3.10; operation time
 boundaries remain milliseconds.
+Recovery also binds the operation's health endpoint to the selected `voicechat`
+container before reading health or writing a receipt. Docker must use a local
+Unix socket; the recorded URL must be plain HTTP on a literal loopback address
+at `/api/health`, without credentials, query or fragment. Its host port and IP
+family must match a published binding of Core's configured `PORT` (8787 by
+default). Health requests bypass proxies and reject redirects. A DNS name,
+reverse proxy, host networking, remote Docker daemon or another stack's published
+port cannot provide this proof and requires a different recovery procedure.
+Matching Core commits alone cannot link one stack's health to another stack's
+container inventory. Rejected target checks preserve the uncertain journal and
+create no recovery receipt.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 
@@ -1358,7 +1506,7 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
 **Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с
-compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='sislexa <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
 
 ## Почта на проде (настроено 29.08.2026)
 
@@ -2631,7 +2779,10 @@ four content-addressed archives: Identity, Billing, LLM Runner, and Runner
 Contracts. `deploy/s3-provider-artifacts.json` records each owner repository,
 exact source commit, archive digest, provided interface, and consumer task.
 `vendor/owner-artifacts.json`, `deploy/tools.lock.json`, and the npm lockfile
-carry the matching pins. `scripts/s3-provider-artifacts.test.mjs` verifies the
+carry the matching pins. Refresh this provider inventory when promoting newer
+owner archives, together with the exact source allowlist in
+`scripts/a07-composition.mjs`; retaining the historical source values causes the composition
+gate to reject an otherwise valid pin update. `scripts/s3-provider-artifacts.test.mjs` verifies the
 archive bytes and embedded release provenance before Core accepts them.
 Core's database ownership manifest also assigns the provider's three new
 application registry tables to Identity so SQLite and PostgreSQL schema checks

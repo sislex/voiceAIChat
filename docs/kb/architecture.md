@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-19
-checked: 6afda34b1
+updated: 2026-10-20
+checked: 55bbb8649
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
@@ -64,12 +64,17 @@ exports. This does not complete the remaining application adapter removals.
 
 ## Project identity
 
-The owner selected **Sislexa** as the project name and confirmed purchasing a
-domain with the `sislexa` label. The purchased TLD has not been specified, so
-neither `sislexa.com` nor `sislexa.ai` is documented as the confirmed domain.
-Use Sislexa when referring to the project. Existing `voiceAIChat`, `ChatAI`, and
-`@voicechat/*` technical identifiers remain in the repository; this naming
-decision does not establish a new deployment URL or rename those identifiers.
+The product name is **sislexa**, written in lowercase in current product copy and
+knowledge topics. The confirmed public chat domain is `sislexa.by`; its limited
+application/model policy is deployment configuration, not a rename or restriction
+of the full product. The existing `http://89.125.68.35/` installation remains on
+its previous full-feature release and configuration. See
+[deployment isolation](deploy.md#public-chat-deployment-isolation) and the
+[public launch plan](../plans/public-chat-v1.md).
+
+Existing repository paths, API/package IDs such as `voiceAIChat` and `@voicechat/*`,
+and historical quoted output or commit titles retain their original spelling.
+Brand copy changes do not rename those identifiers or establish a new deployment.
 
 The proposed move to independently hosted application repositories, shared user
 identity, delegated API access, and cross-application usage accounting is tracked
@@ -224,7 +229,7 @@ credential-file and grant settings. Static metadata/grant endpoints avoid startu
 cycles; readiness and outbound calls enforce compatibility. Provider-local token
 registries are separate from application data and outgoing credentials. This is
 an infrastructure authorization boundary; the immutable user/delegation/billing
-migration in the Sislexa plan remains separate.
+migration in the sislexa plan remains separate.
 
 ### Voice and Image Studio ownership
 
