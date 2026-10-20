@@ -31,7 +31,7 @@ export interface InjOpts {
   headers?: Record<string, string>
 }
 
-export function setupRestHarness(options: { now?: () => number } = {}) {
+export function setupRestHarness(options: { now?: () => number; env?: NodeJS.ProcessEnv } = {}) {
   const sentMails: Array<{ to: string; subject: string; text: string; html?: string }> = []
   const triggerDeploy = vi.fn<() => Promise<{ status: 'accepted' | 'running'; message: string }>>()
 
@@ -75,6 +75,7 @@ export function setupRestHarness(options: { now?: () => number } = {}) {
       // Место входа: тесты не ходят в сеть, но проверяют, что ответ доезжает до сессии.
       geo: { resolve: async () => ({ country: 'RU', city: 'Москва', label: 'Москва, RU' }) },
       config: loadConfig({
+        ...options.env,
         PORT: '0',
         VC_DATA_DIR: harness.dataDir,
         VC_MODELS_DIR: join(harness.dataDir, 'models'),

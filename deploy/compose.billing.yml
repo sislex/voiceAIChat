@@ -1,12 +1,15 @@
 # Append after Identity; its provider grants must include this Billing installation.
 services:
   billing:
-    image: ${SISLEXA_BILLING_IMAGE:-ghcr.io/sislex/billing:9ecb733d50ddc96774ddf382268918f6c2f5459e}
+    image: ${SISLEXA_BILLING_IMAGE:-ghcr.io/sislex/billing:db6000b7a87cfb200bf7cc697dbafafde6a60171}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
       PORT: "8800"
       BILLING_DATA_DIR: /data
+      # Unset stays absent; an explicit empty/invalid value is rejected by Billing.
+      BILLING_DAILY_USER_MICRO_USD:
+      BILLING_DAILY_USER_TIME_ZONE:
       SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
     volumes:
       - vc-billing-data:/data

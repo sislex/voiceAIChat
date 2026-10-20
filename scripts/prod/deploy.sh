@@ -332,11 +332,18 @@ if [[ -n $delivery_fence ]]; then
 fi
 log "=== деплой начат, HEAD $(git rev-parse --short HEAD) ==="
 
-log 'git pull --ff-only и git fetch --tags'
 delivery_authority verify
-git pull --ff-only
-delivery_authority verify
-git fetch --tags origin
+if [[ -n $expected_commit && -n ${VC_RELEASE_VERSION:-} ]]; then
+  # The release manager supplies both identities. Unrelated historical tags
+  # must not block this pinned deployment or be overwritten to make it pass.
+  log 'git pull --no-tags --ff-only for the pinned release'
+  git pull --no-tags --ff-only
+else
+  log 'git pull --ff-only and git fetch --tags for release metadata'
+  git pull --ff-only
+  delivery_authority verify
+  git fetch --tags origin
+fi
 log "HEAD после pull: $(git rev-parse --short HEAD)"
 
 if [[ -n $expected_commit ]]; then

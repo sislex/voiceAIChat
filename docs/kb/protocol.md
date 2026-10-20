@@ -1,6 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-17
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -22,6 +23,31 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Voice module configuration
+
+`GET /api/system/capabilities` includes optional `configured` on both `stt`
+and `tts` statuses. Core sets it from the installed engine/client or complete
+runner URL and credential configuration, independently of health, model files,
+memory limits and the user's tariff. A connected service that is offline or
+denied by the tariff remains configured; `available` and `reason` describe its
+current usability. Older servers omit this additive field.
+
+The browser can suppress voice onboarding when both modules are unconfigured
+without treating a temporary service outage as module removal. The endpoint
+does not expose runner addresses or credentials. Server HTTP regressions live
+in `apps/server/src/system/voiceConfiguration.test.ts`.
+
+## Analytics module configuration
+
+`SystemCapabilities.analytics?: { configured: boolean }` is an additive
+deployment signal on `GET /api/system/capabilities`. Core sets it from the
+managed Analytics dependency, without probing service health or exposing
+addresses, credentials or the user's report permissions. Explicit false means
+no module was configured; true includes an offline configured service. Clients
+preserve legacy behavior when older servers omit the field. HTTP regressions
+use actual component configuration in
+`apps/server/src/system/analyticsConfiguration.test.ts`.
 
 ## Operator assistant project contract
 
@@ -960,7 +986,7 @@ Make 1.3.1 enforces 256 MiB per project (`MAKE_LIMITS.maxProjectBytes`) and 2 Gi
 
 **Rate-limit импорта (п.39).** `POST /api/make/:id/import` и `/import-url` ограничены на пользователя скользящим окном (`apps/server/src/make/rateLimit.ts`, `SlidingWindowLimiter`): 10 ZIP-импортов и 20 импортов по URL за 10 минут; сверх — 429 `{ error }` с заголовком `Retry-After` (секунды). Лимитеры подменяются через `MakeRoutesDeps.importLimiter/importUrlLimiter`; счётчик в памяти процесса — перезапуск сервера его сбрасывает.
 
-**Read-only ссылка внутри ChatAI (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState` из `packages/shared/src/make.ts`; кроме прежних `token`, `owner`, `title`, `role`, `conversationId`, `files`, `snapshots` и `rev`, состояние содержит нормализованные `stack` и `uiKit` для отображения конфигурации в share-view. Файлы и stories читаются через `GET …/file?path=` и `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
+**Read-only ссылка внутри sislexa (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState` из `packages/shared/src/make.ts`; кроме прежних `token`, `owner`, `title`, `role`, `conversationId`, `files`, `snapshots` и `rev`, состояние содержит нормализованные `stack` и `uiKit` для отображения конфигурации в share-view. Файлы и stories читаются через `GET …/file?path=` и `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
 
 **PWA в экспорте (п.35).** `GET /api/preview/make/:id/export.zip?vite=1&pwa=1` (оба флага независимы): `exportZip({ vite, pwa })` добавляет `manifest.webmanifest`, `sw.js` (index — network-first, остальное — cache-first) и `icon.svg` (первая буква названия на `theme-color`) — для Vite в `public/` с абсолютными ссылками, для статики рядом с `index.html` с относительными. Ссылки (`<link rel=manifest>`, `theme-color`, `apple-mobile-web-app-capable`, регистрация SW не на `file:`) инъектируются только в копию `index.html` в архиве — файлы проекта не меняются. Название и цвет — `detectPwaMeta` (`<title>`, `meta theme-color`, иначе `--accent` из CSS). Чистые функции — `@shared/makePwa`.
 

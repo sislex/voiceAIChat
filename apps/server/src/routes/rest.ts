@@ -1,5 +1,6 @@
+import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
-import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
+import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
@@ -68,6 +69,7 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
  * Make-контекста) сделал бы это окончательно нечитаемым.
  */
 interface ContextSnapshotOptions {
+  chatModels?: ChatModelPolicy
   isOnline?: (id: string) => boolean
   kbStatus?: KbStatus | null
   cliMcpServers?: Array<{ name: string; detail: string; status: string }>
@@ -127,7 +129,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
    * codex человеку, у которого он закрыт, — а отвечал claude.
    */
   const wantedProvider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-  const llmAccess = await db.identity.getUserLlmAccess(userId)
+  const llmAccess = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), options.chatModels)
   const fallbackProvider = firstAllowedProvider(llmAccess)
   const provider: LlmProvider = isProviderAllowed(llmAccess, wantedProvider) || !fallbackProvider ? wantedProvider : fallbackProvider
   const selectedModel = conversation.llmProvider === provider
@@ -145,7 +147,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
   // и показывать сырое значение значит называть не ту модель.
   const rawModel = selectedModel ?? (provider === 'codex' ? settings.codexModel : settings.model)
-  const model = provider === 'claude' && rawModel ? claudeModelAlias(rawModel) : rawModel
+  const permittedModel = options.chatModels ? deploymentModel(llmAccess, provider, rawModel, options.chatModels) ?? '' : rawModel
+  const model = provider === 'claude' && permittedModel ? claudeModelAlias(permittedModel) : permittedModel
   const llmSource = conversation.llmProvider ? 'Разговор' : projectLlm ? 'Проект' : 'Настройки пользователя'
   const llmExplanation = conversation.llmProvider
     ? 'Явное переопределение.'
@@ -772,6 +775,8 @@ export async function registerRest(
   db: VoiceChatDb,
   dataDir: string,
   opts: {
+    chatModels?: ChatModelPolicy
+    chatTextOnly?: boolean
     runnerFs?: RunnerFsClient
     authStatus?: AuthStatusState
     isAgentOnline?: (agentId: string) => boolean
@@ -823,7 +828,7 @@ export async function registerRest(
   // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
   app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
     const userId = uid(req)
-    if (runnerFs) {
+    if (runnerFs && !opts.chatTextOnly) {
       try {
         const remote = await runnerFs.readFile(userId, req.query.path ?? '')
         if (remote) return remote
@@ -831,8 +836,10 @@ export async function registerRest(
         return proxyError(reply, err) as never
       }
     }
-    const workdir = (await db.settings.getSettings(userId)).workdir
-    const roots = [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
+    // A public text-only user's saved workdir is not filesystem authority.
+    // Shared uploads and runner profiles are outside this output endpoint.
+    const workdir = opts.chatTextOnly ? undefined : (await db.settings.getSettings(userId)).workdir
+    const roots = opts.chatTextOnly ? [] : [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
     const res = readCoreUserFile(req.query.path ?? '', dataDir, userId, roots)
     if (!res.ok) {
       const code = res.reason === 'too-large' ? 413 : 404
@@ -1114,7 +1121,7 @@ export async function registerRest(
     const makeContextText = makeConv?.assistantKind === 'make' && opts.makeContext
       ? await opts.makeContext(req.params.id).catch(() => '')
       : null
-    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null)
+    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null)
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -1128,7 +1135,7 @@ export async function registerRest(
     if (!owner) return reply.code(404).send({ error: 'not found' })
     const updated = await db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
-    const snapshot = await contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
+    const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -1140,8 +1147,8 @@ export async function registerRest(
    */
   app.get<{ Params: { id: string; otherId: string } }>('/api/conversations/:id/context-diff/:otherId', async (req, reply) => {
     const userId = uid(req)
-    const here = await contextSnapshot(db, userId, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
-    const there = await contextSnapshot(db, userId, req.params.otherId, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const here = await contextSnapshot(db, userId, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const there = await contextSnapshot(db, userId, req.params.otherId, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
     const otherConversation = await db.chat.getConversation(userId, req.params.otherId)
     if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
     const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
@@ -1189,7 +1196,7 @@ export async function registerRest(
       if (enabledNow === shouldBeEnabled) continue // уже как надо
       await db.chat.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
     }
-    const snapshot = await contextSnapshot(db, userId, target.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const snapshot = await contextSnapshot(db, userId, target.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -1668,14 +1675,25 @@ export async function registerRest(
     const alive = new Set((await db.machines.listAgents(userId)).map((agent) => agent.id))
     const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
     const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
-    if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
     const repaired = { ...settings, execTarget, defaultAgentId }
-    await db.settings.saveSettings(userId, repaired)
-    return repaired
+    if (execTarget !== settings.execTarget || defaultAgentId !== settings.defaultAgentId) {
+      await db.settings.saveSettings(userId, repaired)
+    }
+    if (!opts.chatModels) return repaired
+    // Project the deployment's effective default without persisting a fallback
+    // over the user's preference. Engine IDs select transport, not model policy.
+    const access = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), opts.chatModels)
+    const fallback = firstAllowedProvider(access)
+    if (!fallback) return repaired
+    const provider = isProviderAllowed(access, repaired.llmProvider) ? repaired.llmProvider : fallback
+    const model = deploymentModel(access, provider, provider === 'codex' ? repaired.codexModel : repaired.model, opts.chatModels)
+    if (!model) return repaired
+    return { ...repaired, llmProvider: provider,
+      ...(provider === 'codex' ? { codexModel: model } : { model: normalizeClaudeModel(model) }) }
   }
   registerChatSettingsRoutes(app, db)
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
-  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => await db.identity.getUserLlmAccess(uid(req))
+  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => deploymentModelAccess(await db.identity.getUserLlmAccess(uid(req)), opts.chatModels)
   app.get(REST.llmAccess, myLlmAccess)
   app.get(REST.meLlmAccess, myLlmAccess)
 

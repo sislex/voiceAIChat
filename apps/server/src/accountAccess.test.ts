@@ -31,7 +31,7 @@ async function fixture() {
   await db.identity.createUser('bob', '', 'developer')
   await db.identity.saveTariffPlan({ id: 'chat', name: 'Chat', capabilities: ['chat.use'] })
   await db.identity.assignUserTariff('alice', 'chat')
-  const send = vi.fn(() => ({ cancel() {} }))
+  const send = vi.fn(() => ({ cancel: vi.fn() }))
   const app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: { send }, sessionSecret: 'tariff-test' })
   cleanup.push(() => app.close())
   const token = signToken({ name: 'alice', role: 'developer' }, 'tariff-test')
@@ -93,6 +93,40 @@ it('checks owned conversation kind and speech capability before dispatching WebS
   expect(await commandAccessError(db, user, { t: 'claude.send', conversationId: own.id, segments: [] })).toMatchObject({ message: TARIFF_DENIED })
   expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: foreign.id })).toMatchObject({ message: 'Разговор недоступен.' })
   expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: own.id })).toBeNull()
+})
+
+it('scopes legacy WebSocket cancel-all to the authenticated user and selected tenant', async () => {
+  const { app, db, send, token } = await fixture()
+  await db.identity.assignUserTariff('alice', 'standard')
+  const team = await db.identity.createTeamTenant('alice', 'Other tenant')
+  const own = await db.chat.createConversation('alice', 'Personal')
+  const teamChat = await db.chat.createConversation('alice', 'Team', null, null, 'chat', team.tenant.id)
+  const foreign = await db.chat.createConversation('bob', 'Other user')
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const port = (app.server.address() as AddressInfo).port
+  const connect = async (credential: string, tenantId?: string): Promise<WebSocket> => {
+    const suffix = tenantId ? `&tenantId=${encodeURIComponent(tenantId)}` : ''
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(credential)}${suffix}`)
+    cleanup.push(async () => socket.terminate())
+    await new Promise<void>((resolve, reject) => {
+      socket.on('error', reject)
+      socket.on('message', data => { if (JSON.parse(data.toString()).t === 'claude.active') resolve() })
+      socket.on('close', () => reject(new Error('Closed before authentication')))
+    })
+    return socket
+  }
+  const personal = await connect(token)
+  const selected = await connect(token, team.tenant.id)
+  const bob = await connect(signToken({ name: 'bob', role: 'developer' }, 'tariff-test'))
+  for (const [socket, conversation] of [[personal, own], [selected, teamChat], [bob, foreign]] as const) {
+    const count = send.mock.calls.length
+    socket.send(JSON.stringify({ t: 'claude.send', conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Run' }] }))
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(count + 1))
+  }
+  personal.send(JSON.stringify({ t: 'claude.cancel' }))
+  await vi.waitFor(() => expect(send.mock.results[0]!.value.cancel).toHaveBeenCalledOnce())
+  expect(send.mock.results[1]!.value.cancel).not.toHaveBeenCalled()
+  expect(send.mock.results[2]!.value.cancel).not.toHaveBeenCalled()
 })
 
 it('binds a browser WebSocket to the selected team tenant from its query string', async () => {

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-19
-checked: 3e456756e
+checked: 0e050cbcd
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -223,6 +223,14 @@ to discover older details through these tools.
 Список и поиск считают агрегаты одним batch-запросом для всех возвращаемых разговоров; одиночное чтение применяет тот же расчёт. Невалидный исторический JSON `messages.meta` изолируется через `json_valid`, а ошибка агрегации оставляет разговоры доступными со статусом `unknown`. Агрегат вычисляется из сохранённых сообщений при каждом чтении, поэтому восстанавливается после повторного открытия БД.
 
 По cancel/error менеджер ходов снимает handle и очищает map. Пользовательский cancel после уже полученной дельты сохраняет partial как AI message с `meta.interrupted=true` и отправляет `done` с этим partial; поздний callback модели игнорируется. Тест не должен ждать пустой `done`, если мок успел отдать токен: такое ожидание держало Vitest до глобального 10-минутного timeout. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
+
+For ordinary public Chat with `VC_CHAT_TEXT_ONLY=true` and Billing, Stop detaches
+display while the paid executor finishes in the background. The queue remains
+paused; an explicit resume is allowed only after the stable user's pending
+accounting operation settles. The checks run before extracting or merging queued
+messages. Shutdown waits for executor completion and reconciliation before closing
+the accounting outbox. See [public Stop accounting](data-auth.md) for the scope,
+uncertain-usage behavior and compatibility with hard cancellation elsewhere.
 
 Очередь разговора хранится в SQLite и исполняется сервером по одному элементу в FIFO-порядке. Завершение, ручная остановка и ошибка активного LLM-хода освобождают слот и вызывают следующий ожидающий элемент. При ошибке исходная реплика сохраняется в очереди со статусом `failed`, но пауза не включается: автоматическая выборка `takeQueuedTurn` рассматривает только `queued`, поэтому ошибочный элемент остаётся видимым для пользователя, не запускается повторно и не блокирует последующие сообщения. Идемпотентность по `messageId` и авторитетные снимки очереди защищают от дублей при повторной отправке и realtime-подтверждении. A `claude.send` whose `messageId` is not a stored message of that conversation (any state) is refused with `claude.error` `message_not_found` before the model and the queue: the queue row references the message, and the failed insert from a later model callback used to stop the Core process. Источники — `apps/server/src/turns.ts` и методы очереди в `apps/server/src/db/database.ts`.
 

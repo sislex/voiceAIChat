@@ -1,6 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-14
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -140,15 +141,15 @@ standalone machines process:
 - `POST /api/agents/vpn/network`: explicit tailnet name and administrative
   API credential; validates device access and an ETag-protected policy write.
 - `GET /api/agents/:id/vpn`: owner-only inspection and eligible gateways.
-- `PUT /api/agents/:id/vpn`: desired mode, ChatAI gateway ID, LAN setting,
+- `PUT /api/agents/:id/vpn`: desired mode, sislexa gateway ID, LAN setting,
   operation ID and expected revision.
 
 `machine_vpn_networks` belongs to the machines repository. Its unique tailnet
-column prevents attaching the same named network to two ChatAI owners. A
+column prevents attaching the same named network to two sislexa owners. A
 per-owner generation CAS serializes changes across both endpoints, while
 machine revisions correlate observed attempts after reconnect. The JSON state
 stores verified node-ID/address bindings, desired state, operation state and
-the exact grants managed by ChatAI. Names are never identity proofs. Project
+the exact grants managed by sislexa. Names are never identity proofs. Project
 sharing does not grant VPN management rights. Self-selection, dependent gateway
 changes and stale revisions are rejected. Explicit off can supersede an
 unresolved operation and does not call the administrative Tailscale API.
@@ -264,7 +265,7 @@ online. No real-host VPN changes, packet captures, gateway sleep/failure tests,
 or OS/Tailscale version measurements have been performed. Generated nft/PF
 rules and mocked tests are **not** proof of leak protection, macOS Network
 Extension interaction, service-channel recovery, or boot-time ordering.
-The real network matrix, foreign-exit attempts outside ChatAI, physical sleep
+The real network matrix, foreign-exit attempts outside sislexa, physical sleep
 tests and reboot behavior remain acceptance work. Chromium Component QA in
 `e2e/machine-vpn.e2e.test.ts` starts an isolated loopback Storybook, verifies the
 keyboard-driven role/gateway/LAN flow and gateway-failure controls at a 390px

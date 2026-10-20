@@ -9,6 +9,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { LlmClient } from '../claude/types.js'
 
 export interface AnthropicGatewayOptions {
+  /** Trusted composition policy; request fields cannot enable the gateway. */
+  enabled?: boolean
   backend?: 'upstream' | 'codex'
   codex?: LlmClient
   upstreamUrl?: string
@@ -234,7 +236,11 @@ export function registerAnthropicGateway(app: FastifyInstance, opts: AnthropicGa
   for (const route of ROUTES) {
     app.post(
       route,
-      { bodyLimit: 64 * 1024 * 1024 },
+      { bodyLimit: 64 * 1024 * 1024, onRequest: async (_req, reply) => {
+        if (opts.enabled === false) return reply.code(503).send({
+          type: 'error', error: { type: 'api_error', message: 'auxiliary_model_disabled: gateway is disabled in text-only chat' }
+        })
+      } },
       async (req, reply) => {
         if (!isLocalNetworkAddress(gatewayClientAddress(req))) return reply.code(403).send({ type: 'error', error: { type: 'permission_error', message: 'Claude gateway доступен только из локальной сети' } })
         if (opts.backend === 'codex') {

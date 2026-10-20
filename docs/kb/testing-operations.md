@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-19
-checked: 21ab54d5
+updated: 2026-10-20
+checked: 0d04afc3f
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -85,20 +85,102 @@ and Tailscale reachability on the assigned gateway port.
 
 ## Core UI test ownership
 
+Settings/onboarding browser integration distinguishes missing voice modules
+from configured but unavailable ones. `e2e/settings.e2e.test.ts` starts a
+loopback STT/TTS fixture that returns 503 for the diagnostic and progress
+scenarios; the real Core capability response must still report `configured:
+true`. TTS availability does not probe that endpoint's health: the isolated
+fixture sets `VC_MIN_MEM_TTS` above available memory to exercise its actual
+resource diagnostic and disabled controls with `configured: true, available:
+false`. STT unavailability is exercised by the endpoint's 503 response.
+Its chat-only scenario restarts Core with both voice endpoints absent and verifies
+that the published UI hides automatic and manual onboarding, including the absent
+TTS settings deep link, while preserving `onboarded: false`, saved progress and
+the selected theme. Assert the actual capabilities response and loaded theme
+before checking absence; navigation buttons alone are not a load barrier.
+Keep outage diagnostics in the configured fixture. An unconfigured module does
+not expose the same screen, so its absence test must not wait for `tts-blocked`.
+Do not restore unconditional wizard or voice-settings visibility to satisfy an
+unconfigured fixture.
+
+`e2e/universalSearch.e2e.test.ts` verifies focus against the installed published
+UI, including the exact mobile palette opener after Escape. Keep that assertion:
+a hidden or inert opener is not a valid focus destination. The owner regression
+must mount the full App with the real Sidebar, palette and styles; testing the
+Sidebar alone misses its interaction with palette navigation. Selecting another
+result or a result in the current chat must close the drawer and leave focus
+outside hidden/inert content, including when only the URL query changes.
+
 ### Shared chat exact-artifact acceptance (U10)
 
 Keep only vendor archives referenced by repository package manifests/lockfiles, owner/snapshot/UI inventories (`asset`), or scripts; `vendor-archives.mjs` supplies the same fail-closed reachability check for `test:tooling` and all pin cleanup paths, which remove replaced archives only after successful reference updates and disappearance of the last consumer.
 
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
-committed Shared contract as version 0.1.11 with bounded Identity
-`>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
-must contain the reviewed 1.5.1/1.2.0 baseline; other peers remain exact.
-The release-tool test checks the packed manifest and source commit. Consumer
-owners must install and gate against the actual released archives without
+committed Shared contract at the explicitly supplied release version with bounded
+Identity `>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core
+lockfile must contain an explicitly reviewed baseline: Identity 1.5.1 or 1.5.2,
+and SDK 1.2.0; other peers remain exact. Version 0.1.11 is the release-tool
+test fixture, not a fixed publication version.
+The release-tool test checks the packed manifest and source commit. Run it again
+after committing a baseline pin change because it packages committed `HEAD`.
+Consumer owners must install and gate against the actual released archives without
 disabling npm peer resolution.
 
+Release composition replaces owner archive identities in the lockfile, but does
+not regenerate an archive's transitive dependency metadata. When those dependencies
+change, refresh that exact pinned archive with
+`npm install --package-lock-only --ignore-scripts --save-dev '<package>@<pinned-url>'`
+for a root development dependency, review the lockfile delta, then run `npm ci`.
+For Runner 0.3.8, the lock entry must require runner-contracts 0.1.3; retaining
+the old 0.1.2 edge makes npm look for that private package in the public registry.
+Do not bypass peer resolution or replace the immutable URL with an unpinned range.
+
+A passing owner-overlay system run does not prove that npm can install a new
+Core composition. The owner fixture installs the pinned Core lockfile first,
+then extracts the candidate package into `node_modules`; this extraction does
+not resolve the candidate's peer dependencies. Validate the composed lockfile
+with ordinary `npm ci`, with peer resolution enabled, before the Core gate and
+installed-owner system acceptance. Check peer ranges against the version of the
+package actually resolved by Core, including linked workspaces. A separately
+published archive version does not change the linked workspace's version.
+Historical runtime exports raised versions in the archive only; align the
+workspace metadata with its verified published capabilities and update incompatible
+consumer peers through reviewed immutable owner releases. Do not lower capability
+requirements or use npm overrides, `--force`, or `--legacy-peer-deps` to conceal
+a composition mismatch.
+
+When immutable pin application leaves stale workspace or owner metadata in the
+lockfile, compare those entries with the workspace manifest and verified archive
+manifests. Correct only the mismatched version/dependency fields, preserving
+resolved URLs, integrity and the rest of the graph. Then run ordinary
+`npm install --package-lock-only --ignore-scripts --strict-peer-deps` and
+`npm ci --strict-peer-deps`; review the resulting lock delta. This bootstrap
+does not replace npm resolution or authorize unrelated dependency updates.
+
+Reader upload acceptance must cover the complete MCP transport, not only the
+decoded file validator. An 8 MiB file produces a larger base64/JSON envelope:
+the embedded SDK transport and shared MCP route both need the finite 16 MiB
+command limit. The decoded file limit remains 8 MiB, and unrelated preview
+routes retain their smaller body limit. The owner's native Chromium test
+accepts the exact boundary and rejects one additional decoded byte even when
+both payloads have the same encoded length, preserving the previously selected
+file. Core's installed-owner system gate exercises the actual pinned transport.
+
+The current S3 provider inventory, `deploy/s3-provider-artifacts.json`, must also
+match Identity, Billing, Runner and runner-contracts owner pins. Composition does
+not rewrite this inventory automatically. Update its artifact identity fields from
+the verified owner manifests while retaining task/interface annotations. The
+existing S3 artifact check validates archive provenance, consumer locks and tool
+pins; a stale row downloads the obsolete archive and fails both consistency and
+unused-archive checks.
+`scripts/a07-composition.mjs` separately fixes the reviewed source commits used
+by loopback acceptance. Advance its exact owner SHAs with a reviewed provider
+release, then rerun `scripts/a07-acceptance.test.mjs` and the S3 negative preflight
+checks. Keep explicit source verification; do not replace it with whichever
+commits happen to appear in the inventory.
+
 The Core Shared workspace exposes the same `./*` and `./*.js` source subpaths as
-the published contracts. Embedded Identity 1.5.1 uses those public subpaths;
+the published contracts. Embedded Identity 1.5.1 and 1.5.2 use those public subpaths;
 its standalone owner gate cannot detect missing exports in Core's local workspace.
 The release-tool test imports both forms, and Core typechecking covers the installed
 owner consumer against the workspace contracts.
@@ -148,6 +230,17 @@ Core retains real API/browser integration (including route read-cache behavior i
 Baseline before the test-gate scope optimization, measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The Core log splits those 505 seconds into 6.11 seconds for typechecking, 115.30 for workspace/root tests, 0.97 for artifact verification, 171.93 for route budgets and 210.14 for remaining API/browser E2E. Browser work therefore accounts for about 76% of this full branch gate. The `gate:all` stage itself took 294.49 seconds; the branch gate added the remaining catalog E2E afterward. This full-fallback sample does not establish the duration or selection of a typical small development diff. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
 
 
+## Route-resource diagnostics
+
+`e2e/routeResources.e2e.test.ts` exercises the pinned Core UI against an isolated
+Core server under network throttling. A cold-route timeout now includes pending
+request paths and recent API reads. For a local consumer reproduction only,
+`CHAT468_WEB_DIR` can select a copied, built browser artifact; normal gates keep
+the immutable installed `@sislexa/core-ui/web` default. Re-run against the final
+published pin before accepting a release. The public-chat quota error-body fix
+was reproduced this way without importing owner source or weakening network
+settling checks.
+
 ## Extracted application test ownership
 
 Detailed Reader browser scenarios now live in `system-tests/` in `sislex/playwrightreader`
@@ -177,6 +270,16 @@ An identified Git process takes diagnostic precedence over unknown process rows;
 unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
+
+Visual-enabled Reader acceptance must observe the displayed Chromium image:
+visible, refreshed after navigation or page input, and decoded with positive
+dimensions. A capable host receives `GET /frames` as NDJSON and need not issue
+future `POST /screenshot` requests. Control ownership is asserted separately,
+because changing control alone need not change page pixels. These scenarios
+remain in the Web Reader owner. Keep `VC_VISUAL_ARTIFACTS` enabled for release
+acceptance and inspect the trusted-origin and manual-control PNGs alongside the
+exact Core/owner source result; disabling visual capture does not validate its
+readiness path.
 
 After the ownership split, complete local Core gates passed in 321.24s and 258.12s
 (latest: 4m18s): 2302 server tests and 41 functional browser cases passed, with existing
@@ -287,7 +390,7 @@ missing their separate dependencies produces TS2307 for `electron` and
 
 Каталог данных каждого дополнительного чекаута — копия основной БД на момент создания, а `models` внутри — симлинк на `~/.voicechat-server/models`: 465 MB моделей Whisper/Piper не дублируются. Заводя ещё один чекаут, бери следующую свободную десятку портов и проверяй `lsof -nP -iTCP:<порт> -sTCP:LISTEN` — забытый чужой сеанс займёт порт молча.
 
-`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='ChatAI <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
+`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='sislexa <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
 
 **Стенд «ядро + канбан» для e2e страниц проекта** (`e2e/kanbanStand.ts`). Проекты,
 доску и приглашения обслуживает сервис `sislexa-kanban`, в ядре его нет, поэтому
@@ -371,7 +474,12 @@ root script tests and workspace tests, owner frontend artifact verification, Web
 build, Core Storybook build, an unconditional `npm ci --prefix apps/desktop`,
 Desktop build, and `frontend:route-gates`, in that order. `build:frontends`
 verifies published owner manifests, provenance and asset integrity; it no longer
-compiles owner applications. Owner unit suites are outside Core workspaces.
+compiles owner applications. An owner archive and its embedded frontend may have
+independent versions. Core binds the owner package name to the application catalog
+and its version to the adjacent release provenance, while binding the frontend
+manifest version to the embedded package next to its `dist` directory. The
+frontend and owner source commit must still match, and every entry/style asset
+must retain its published integrity. Owner unit suites are outside Core workspaces.
 Core keeps bridge and host integration tests for those applications.
 
 A direct `gate:all` invocation differs from the full fallback of `gate` or
@@ -729,6 +837,11 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 ### Development gate: `npm run gate:fast`
 
 #### Universal search browser synchronization
+
+The viewport matrix starts a fresh document before each case. Same-hash
+navigation retains transient mobile drawer state, including the open drawer
+needed to restore the palette opener on Escape. Keep authenticated storage, but
+isolate this transient state rather than weakening focus or pointer checks.
 
 Universal search browser synchronization is implemented in
 `e2e/universalSearch.e2e.test.ts`. Its observer is registered before opening
@@ -1322,7 +1435,7 @@ differences do not justify changing desktop thresholds. The default temporary
 Web-only gate records Electron as skipped explicitly.
 
 
-The September 20 Sislexa extraction review found separate, pre-existing numerical
+The September 20 sislexa extraction review found separate, pre-existing numerical
 budget drift: eleven local initial Web files matched deployed 0.1.310 by SHA-256,
 but exceeded the old CHAT-473 limits. The evidence and fresh Web/Electron report
 are retained in `frontend-quality/measurements/sislexa-extraction/`. Reviewed limits

@@ -1,9 +1,40 @@
 import unittest
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from unittest.mock import patch, Mock
 from compose_env import application_settings, main
 
 
 class ApplicationProfiles(unittest.TestCase):
+    def test_billing_daily_policy_reaches_container_without_enabling_legacy_installs(self):
+        docker = shutil.which('docker')
+        if not docker or subprocess.run([docker, 'compose', 'version'], capture_output=True).returncode:
+            self.skipTest('Docker Compose unavailable')
+        root = Path(__file__).resolve().parents[2]
+        amount, zone = 'BILLING_DAILY_USER_MICRO_USD', 'BILLING_DAILY_USER_TIME_ZONE'
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith(('COMPOSE_', 'SISLEXA_', 'BILLING_'))}
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / 'billing.env'
+            for settings, expected in [({}, {}),
+                    ({amount: '5000000', zone: 'Europe/Minsk'}, {amount: '5000000', zone: 'Europe/Minsk'}),
+                    ({amount: '0'}, {amount: '0'}),
+                    ({amount: ''}, {amount: ''})]:
+                with self.subTest(settings=settings):
+                    config.write_text('SISLEXA_COMPONENTS_DIR=' + directory + '\n' +
+                                      ''.join(f'{key}={value}\n' for key, value in settings.items()))
+                    result = subprocess.run([docker, 'compose', '--env-file', str(config),
+                        '-f', str(root / 'deploy/compose.billing.yml'), 'config', '--format', 'json'],
+                        cwd=directory, env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    actual = json.loads(result.stdout)['services']['billing']['environment']
+                    self.assertEqual({key: actual[key] for key in (amount, zone)
+                                      if actual.get(key) is not None}, expected)
+
     def test_matrix(self):
         for applications, expected in [
             ('chat', {'local-runner', 'voice-runner'}),

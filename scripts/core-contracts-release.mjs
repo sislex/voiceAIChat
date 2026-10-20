@@ -23,14 +23,14 @@ const peerDependencies = {}
 // S4 adds compatible Identity and SDK APIs without changing the Shared contract.
 // Keep the accepted baseline in the lock and bound the newer consumer versions.
 const compatiblePeers = {
-  '@sislexa/identity': { locked: '1.5.1', range: '>=1.4.2 <1.6.0' },
-  '@sislexa/sdk': { locked: '1.2.0', range: '>=1.2.0 <1.4.0' }
+  '@sislexa/identity': { locked: ['1.5.1', '1.5.2'], range: '>=1.4.2 <1.6.0' },
+  '@sislexa/sdk': { locked: ['1.2.0'], range: '>=1.2.0 <1.4.0' }
 }
 for (const name of Object.keys(source.dependencies)) {
   const version = lock.packages['node_modules/' + name]?.version
   if (!version) throw Error('Missing immutable peer version: ' + name)
   const compatible = compatiblePeers[name]
-  if (compatible && version !== compatible.locked) throw Error('Review changed peer baseline: ' + name)
+  if (compatible && !compatible.locked.includes(version)) throw Error('Review changed peer baseline: ' + name)
   peerDependencies[name] = compatible?.range ?? version
 }
 // Core-side peers are only needed by the subpaths that re-export them. Services consume Shared
