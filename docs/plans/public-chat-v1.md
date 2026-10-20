@@ -202,6 +202,19 @@ canonical composition command. Strict lockfile refresh and
 runtime and 12 contracts archive files match the installed bytes. Renewed Core
 acceptance and stand cutover remain pending.
 
+Core `5732bd91666805c1a826da21cf5f476dda58e995` subsequently passed the full
+gate, the 48 performance budget checks, and all 68 installed-owner system tests
+with visual capture enabled. The coordinated local cutover preserved all nine
+original users and prior ledgers. Its live concurrent/Stop acceptance nevertheless
+failed: the four intended operations each settled once, totaling 8,154 microUSD,
+but Runner also observed two unaccounted Core service calls. Their metadata and
+the source audit are consistent with the default semantic KB reranker before
+main-turn admission; no retained runtime callsite trace proves that attribution.
+The failed journal and all receipts remain immutable. Core publication is on
+hold while the public auxiliary-model boundary and UI findings are corrected;
+renewed composed gates and live acceptance remain required. The protected old
+production endpoint remains on Core 0.1.480 / `9c44cb0d211cf23b42de0dcb2735c06ffae8507d`.
+
 Runner's separate synthetic concurrency check used fake CLI responses, not paid
 provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
 zero duplicate executions or unexpected errors. Eight cancellation and eight

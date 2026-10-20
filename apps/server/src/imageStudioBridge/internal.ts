@@ -28,7 +28,7 @@ export function registerImageStudioInternal(app: FastifyInstance, core: ImageStu
       })
       return reply.type('application/octet-stream').send(data)
     } catch (error) {
-      return reply.code(502).send({ error: error instanceof Error ? error.message : String(error) })
+      return reply.code(error instanceof RpcError && error.status === 503 ? 503 : 502).send({ error: error instanceof Error ? error.message : String(error) })
     } finally { reply.raw.removeListener('close', disconnected) }
   })
 }

@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-20
-checked: cc52ce88c
+checked: 5732bd916
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -170,6 +170,15 @@ profiles and empty tool inventory before enabling registration. Set
 `VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
 to start without its Billing dependency instead of silently using legacy
 unaccounted turns. Once configured, Billing failures already deny admission.
+
+The same trusted text-only policy also disables auxiliary model work that has
+no Billing admission: semantic KB reranking, automatic/manual conversation
+summaries, project research, image retouch/Image Studio generation, and the
+Anthropic-compatible gateway. KB lexical search and stored summary reads remain
+available. Explicit runner/backend settings cannot re-enable these features in
+public mode. See [the auxiliary boundary](llm.md) and include ambiguous KB input
+and a denied daily-budget admission in release regression; a successful main-turn
+settlement alone does not prove that no auxiliary call was dispatched.
 
 The Billing Compose layer forwards optional `BILLING_DAILY_USER_MICRO_USD`
 and `BILLING_DAILY_USER_TIME_ZONE` without inventing empty defaults. For the

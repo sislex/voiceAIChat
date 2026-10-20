@@ -1,6 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-07
+updated: 2026-10-20
+checked: 5732bd916
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -127,6 +128,22 @@ Core фиксирует оба значения до старта хода и п
 помощник формулировки больше не регистрируется сервером:
 `POST /api/prompt/suggest` отвечает 404; внутреннее применение
 `permissionMode` одноразовыми вызовами сохранено.
+
+**Public text-only auxiliary boundary.** With trusted server configuration
+`VC_CHAT_TEXT_ONLY=true`, Core does not construct the semantic KB reranker or
+the conversation-summary service. File and scoped KB searches, auto-context,
+KB MCP and internal KB RPC remain lexical; even an explicit
+`VC_KB_RERANK_PROVIDER=codex` or `claude` cannot enable an unaccounted model call.
+Previously stored summaries remain readable. Explicit summary refresh returns
+its existing 503 unavailable response; the automatic forty-message threshold
+cannot dispatch a summary model. Project research, image retouch, Image Studio
+Core generation (including internal RPC), and both Codex/upstream Anthropic
+gateway transports reject model execution with 503. REST research/retouch and
+the gateway reject before body parsing or external work. Request fields cannot
+re-enable these paths. This deliberately disables auxiliary model features until
+they have their own Billing admission and model-policy integration; it does not
+estimate or manufacture charges. Without the trusted text-only flag, existing
+auxiliary behavior is retained. Prompt suggestions remain unregistered (404).
 
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`, но сам уже не
 читает локальный `HOME`: при настроенном исполнителе `routes/rest.ts` получает

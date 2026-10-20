@@ -794,7 +794,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
       : unconfiguredLlmClient()))
-  conversationSummary = createConversationSummaryService({
+  // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
+  conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
     db,
     // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
     // when this installation only has a Claude runner.
@@ -805,7 +806,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
   })
-  const reranker = opts.config.kbRerankProvider === 'disabled'
+  const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
   // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
@@ -839,6 +840,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
   registerAnthropicGateway(app, {
+    enabled: opts.config.chatTextOnly !== true,
     backend: opts.config.claudeGatewayBackend,
     codex: await codex,
     upstreamUrl: opts.config.claudeGatewayUpstreamUrl,
@@ -961,7 +963,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({
-    db, client: codex, generationCwd: opts.imageGenerationWorkdir,
+    db, client: codex, generationEnabled: opts.config.chatTextOnly !== true, generationCwd: opts.imageGenerationWorkdir,
     readGenerated: async (userId, path) => {
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
@@ -1041,7 +1043,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerKbResearchRoutes(
     app,
     db,
-    new KbResearchManager({
+    opts.config.chatTextOnly === true ? undefined : new KbResearchManager({
       db,
       claude: await claude,
       codex: await codex,
@@ -1239,7 +1241,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,
-    { bodyLimit: 2 * 1024 * 1024 },
+    { bodyLimit: 2 * 1024 * 1024, onRequest: async (_req, reply) => {
+      if (opts.config.chatTextOnly === true) return reply.code(503).send({
+        error: 'auxiliary_model_disabled', message: 'Ретушь недоступна в режиме текстового чата.'
+      })
+    } },
     async (req, reply): Promise<ImageRetouchResult> => {
       const userId = uid(req)
       const body = req.body
