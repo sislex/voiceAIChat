@@ -44,6 +44,63 @@ areas:
   - packages/shared/src/kb.ts
 ---
 
+## Public chat deployment isolation
+
+The limited `sislexa.by` installation is a separate deployment of **sislexa**.
+It does not change the product's default application catalog, model access,
+execution modes or voice policy. The owner's 2026-10-20 instruction preserves
+`http://89.125.68.35/` on its existing full-feature version: no deployment,
+restart, configuration change or data migration there is part of this launch.
+Domain DNS, real mail and the public Codex service account remain commissioning
+work; a passing local candidate is not an already provisioned public target.
+
+The read-only baseline on 2026-10-20 is Core `0.1.480`, commit
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, image `voicechat-server` at
+`sha256:bdef5fdf0080423e188bb9794968196cfdb7ea47b5f271ab4660f1fe1dc20913`.
+HTTP port 80 returns a Caddy 301 to HTTPS; the direct port 8787 health endpoint
+returns 200. A local client's missing TLS issuer is not evidence of an app outage.
+Authenticated `/api/system/applications` reports `coreId=localhost` and all seven
+local apps enabled. Docker inspection confirms Make, Projects, readers, Image
+Studio, Identity, Billing, Analytics and both voice services remain running.
+
+| Boundary | Existing full installation (preserve) | Local public-chat candidate | New public installation (required, not yet provisioned) |
+| --- | --- | --- | --- |
+| Address / Compose project | `89.125.68.35`, `voiceaichat` | M2 `127.0.0.1:23001`, `sx-dev-m2-07fb81fd` | `https://sislexa.by`, distinct target and project |
+| Core / component identity | `localhost` / `production` | `stand-dev-m2-public-chat` for both | Distinct `VC_CORE_ID` and component `environmentId` |
+| Core data | `voicechat-server-data` volume | Stand `dev-864e75ef-dd2/voicechat-data` bind | Dedicated data root/volume and outbox |
+| PostgreSQL / Billing | `voiceaichat_vc-postgres` / `voiceaichat_vc-billing-data` | Stand PostgreSQL / operator `public-chat-v1/billing-data` | Separate database, ledger and backup set |
+| Component state | `/etc/voicechat/components-s3-0.1.334` | Operator `public-chat-v1/components` | New registries, directional grants and session secrets |
+| Listening ports | Existing Caddy 80/443 and Core 8787 | Gateway 23001, Core 17801, loopback only | Own bindings; do not replace/reload the old Caddy |
+
+A new Compose project name alone does **not** isolate Core data: root Compose
+fixes `volumes.vc-data.name` to `voicechat-server-data`. The new installation must
+explicitly override that name or bind a dedicated Core data directory. Inspect
+the fully resolved Compose mount sources, database destination, component roots,
+runner profiles and port bindings before any start. Never copy provider registries,
+stand empty-password policy or the M2 personal Codex login into the public site.
+Internal service names such as `/run/sislexa/provider` can match inside containers;
+their host mount sources and issuance environments must be separate.
+
+The explicit public configuration is `VC_APPLICATIONS=chat,identity`,
+`VC_CHAT_MODELS=codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`,
+`VC_CHAT_TEXT_ONLY=true`, `VC_CHAT_REQUIRE_BILLING=true`, `VC_VOICE=off`, and the
+separate Billing ledger's `5000000` / `Europe/Minsk` daily policy. Unset model
+policy, false text-only/required-Billing flags and default voice-on behavior
+remain available to other deployments. Do not put these public restrictions in
+shared defaults or change the existing production ledger's persisted policy.
+
+Publication and deployment are separate. The existing Release Center project
+`e3dea006-b6f7-45ea-8fa3-97502501456d` targets the old production agent
+`02729d2e-be0f-4621-ac2b-8fd1ff39ff93` and `/usr/local/bin/voicechat-deploy`.
+Do not use that target for this launch, edit its production settings, or invoke
+the installed deploy wrapper. `release-train run` without `--deploy` still merges
+PRs and submits release-branch preparation to that Release Center;
+`run --resume` preserves a journal's original deploy intent and target.
+Consequently neither command is a publication-only shortcut here. Use reviewed
+owner/Core PRs and clean immutable artifact publication, then stop before any
+release-environment operation until a distinct public target is configured.
+See the [reviewed publication sequence](../plans/public-chat-v1.md#reviewed-publication-sequence).
+
 ## Deployment application profiles
 
 `VC_APPLICATIONS=chat` selects a chat-only Core. A public chat with account settings and

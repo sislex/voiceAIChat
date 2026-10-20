@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-19
-checked: 8a928747a
+updated: 2026-10-20
+checked: 55bbb8649
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1345,7 +1345,7 @@ differences do not justify changing desktop thresholds. The default temporary
 Web-only gate records Electron as skipped explicitly.
 
 
-The September 20 Sislexa extraction review found separate, pre-existing numerical
+The September 20 sislexa extraction review found separate, pre-existing numerical
 budget drift: eleven local initial Web files matched deployed 0.1.310 by SHA-256,
 but exceeded the old CHAT-473 limits. The evidence and fresh Web/Electron report
 are retained in `frontend-quality/measurements/sislexa-extraction/`. Reviewed limits

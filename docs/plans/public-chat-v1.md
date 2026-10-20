@@ -1,4 +1,4 @@
-# Sislexa Chat v1 public launch
+# sislexa Chat v1 public launch
 
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
 plan, not a claim that the public site or all listed changes are deployed.
@@ -24,6 +24,74 @@ plan, not a claim that the public site or all listed changes are deployed.
 - Acceptance uses the existing M2 Docker stand `dev-m2`, gateway port 23001.
   Preserve data and the existing stand-only empty passwords. Production accounts
   must not inherit the stand's password setting.
+
+## Deployment separation
+
+The domain `sislexa.by` selects one limited deployment configuration; sislexa
+remains the full modular product. The owner explicitly requires the existing
+`http://89.125.68.35/` installation to retain its old version, applications,
+configuration and data. No deploy, restart, registry edit or migration on that
+installation is authorized by this launch plan.
+
+The read-only production baseline is Core 0.1.480 at
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, all seven local apps enabled,
+Compose project `voiceaichat`, Core ID `localhost`, component environment
+`production`. The candidate instead uses project `sx-dev-m2-07fb81fd`, Core and
+component identity `stand-dev-m2-public-chat`, loopback gateway 23001/Core 17801,
+and isolated stand/operator data. Exact boundaries and the fixed Core volume
+name hazard are recorded in the [deployment KB](../kb/deploy.md#public-chat-deployment-isolation).
+
+The public environment is not provisioned yet. Give it its own Core/component
+identity, Compose project, ports, Core/PostgreSQL/Identity/Billing/runner state,
+credentials and backups. A different Compose project alone is insufficient:
+explicitly replace root Compose's fixed `voicechat-server-data` volume name or
+use a dedicated bind. Do not share the old Caddy, database, Billing ledger,
+component provider registries or release target. DNS, mail and the service
+Codex account remain separate operator commissioning work.
+
+## Reviewed publication sequence
+
+At the 2026-10-20 review, the pending source chain is:
+
+| Owner | Reviewed source route | Remaining publication |
+| --- | --- | --- |
+| Core | [#768](https://github.com/sislex/voiceAIChat/pull/768) `integration/public-chat-stand-v1` → `feat/public-chat-launch-v1`, then [#767](https://github.com/sislex/voiceAIChat/pull/767) → `dev` | Final combined gates, reviewed `dev` → `main` promotion and immutable Core release artifact |
+| Core UI | [#187](https://github.com/sislex/sislexa-core-ui/pull/187) → `dev` | New version, owner release gate, reviewed release branch → `main`, sync `dev`, canonical pack |
+| Identity | [#35](https://github.com/sislex/identity/pull/35) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
+| Billing | [#10](https://github.com/sislex/billing/pull/10) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
+| LLM Runner | [#27](https://github.com/sislex/llm-runner/pull/27) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
+
+1. Integrate the completed follow-up branches into their reviewed owner PRs and
+   freeze the final source SHAs. Run the required owner gates. Publish the new
+   optional analytics contract from its exact reviewed Core SHA as Shared
+   `0.1.43` before the UI consumes it; retain package provenance and hashes.
+2. Use new owner release versions. Existing tags Identity `v1.5.1`, Billing
+   `v1.2.2`, Runner `v0.3.7` and Core UI `v1.5.25` already exist and must not be
+   replaced with candidate bytes. Choose the next unused patch at publication
+   time, run version/KB updates and owner release checks, and review the resulting
+   release commit. Existing owner PR bases differ: do not silently retarget the
+   Identity/Billing/Runner PRs through `dev`. Synchronize owner `dev` with reviewed
+   `main` without force after promotion, resolving divergence explicitly.
+3. From clean owner clones use the existing publication adapter
+   `node --import tsx scripts/owner-release-publish.mjs --source <owner-checkout>`.
+   A canonical UI pack must use the final immutable Core test SHA. Verify each
+   remote tag's actual commit, release manifest, archive hashes and image digest.
+   Publication uploads artifacts; it does not authorize a service restart.
+4. Pin verified owner outputs in the Core integration branch, including the
+   polished UI and compatible contracts. Re-run combined Core/consumer release
+   checks and local-stand acceptance for that exact composition. Complete the
+   stacked Core reviews, then separately review `dev` → `main`; re-gate any
+   changed merge result. Retain the current full-deployment regression evidence.
+5. Stop at reviewed, published artifacts and local candidate evidence. Do not
+   invoke `release-train run`, `run --resume`, `/releases/branches`,
+   `/releases/deploy` or `voicechat-deploy` against the existing Release Center
+   project. Its production target is the protected old IP, and even train without
+   `--deploy` prepares a release there. Commission a distinct public target before
+   considering any public environment action.
+6. Before and after future public commissioning, compare the old installation's
+   health commit, image IDs, mounts, component identities and application manifest
+   with the preserved baseline using read-only checks. A release publication or
+   PR merge alone is not evidence that either running deployment changed.
 
 ## Audit baseline
 
@@ -72,7 +140,8 @@ passed; deployment and required stand evidence remain part of acceptance.
 ## Promotion and rollback
 
 1. Finish owner changes and review their PRs. Publish clean immutable artifacts;
-   update Core pins through the existing release mechanism.
+   update Core pins through the reviewed publication sequence above, without
+   invoking the existing production release target.
 2. Back up the stand configuration and PostgreSQL data, record current images
    and dev overrides. Update only this stand through managed operations.
 3. Configure the local mailbox, managed Identity/Billing, model allowlist,
@@ -81,7 +150,8 @@ passed; deployment and required stand evidence remain part of acceptance.
 4. Run acceptance with two new synthetic accounts. Save sanitized evidence and
    machine-readable results in the operator state directory. Delete only the
    test fixtures created for this run when cleanup is needed.
-5. Run release gates and a restore drill. Commission domain/TLS and real email,
+5. Run release gates and a restore drill. On the separate public target,
+   commission domain/TLS and real email,
    then verify real signup/recovery before opening registration publicly.
 6. Observe the first public canary cohort before expanding traffic. On failure,
    close new admission, drain ongoing answers, retain Billing receipts/outbox

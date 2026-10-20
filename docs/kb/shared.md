@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-19
-checked: c0f9d856a
+updated: 2026-10-20
+checked: 55bbb8649
 areas:
   - packages/shared/src
 ---
@@ -72,7 +72,7 @@ consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
 prevent checking subsequent consumers; the overall exit status is nonzero.
 See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
-### Sislexa operation and consumption contracts
+### sislexa operation and consumption contracts
 
 `platformOperation.ts` defines version 1 accounting context with immutable user ID,
 identity issuer, calling client, payer, environment, initiating module, project,
@@ -90,7 +90,7 @@ has a null percentage. The pure reducer is not a durable ledger or a spending
 authorization mechanism. Both contracts are exported by `index.ts`; production
 routes, account migration, and activity collection are not integrated yet.
 The implementation sequence is tracked in the
-[Sislexa platform plan](../plans/sislexa-modular-platform.md).
+[sislexa platform plan](../plans/sislexa-modular-platform.md).
 
 `billing.ts` adds bounded integer micro-USD limits, explicit unlimited (`null`)
 versus zero policy values, reservation lifecycle types and strict principal/policy
