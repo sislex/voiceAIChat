@@ -13,11 +13,11 @@
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ⚠ код изменён 2026-10-20, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-19 | ⚠ 1 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: a19140220 fix: finalize public chat release composition |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 0d04afc3f Align runtime peers and Reader release composition … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 644 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-20 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: a19140220 fix: finalize public chat release composition |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: a19140220 fix: finalize public chat release composition |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 0d04afc3f Align runtime peers and Reader release composition … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 0d04afc3f Align runtime peers and Reader release composition … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1053 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
@@ -27,11 +27,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 795 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 917 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: a19140220 fix: finalize public chat release composition … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 3 коммит(ов) в areas после сверки: 0d04afc3f Align runtime peers and Reader release composition … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1094 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: a19140220 fix: finalize public chat release composition |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 0d04afc3f Align runtime peers and Reader release composition … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 669 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-20, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 592879f34 Document isolated public chat release and sislexa naming |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1242. Последние:
+Всего записей: 1243. Последние:
 
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md) — sislexa current knowledge branding
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md) — recovery-health-target-binding
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md) — public-chat-text-only-machine-policy
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-runtime-peer-alignment.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-runtime-peer-alignment.md) — public-chat-runtime-peer-alignment
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md) — Public chat release isolation and lowercase product naming
+- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-reader-visual-acceptance.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-reader-visual-acceptance.md) — public-chat-reader-visual-acceptance
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-final-owner-composition.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-final-owner-composition.md) — public-chat-final-owner-composition
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-capabilities-and-model-notices.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-capabilities-and-model-notices.md) — public-chat-capabilities-and-model-notices
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md) — voice-module-configuration
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
 
 ## Исторические планы
 

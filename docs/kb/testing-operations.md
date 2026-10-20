@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-20
-checked: a19140220
+checked: 0d04afc3f
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -270,6 +270,16 @@ An identified Git process takes diagnostic precedence over unknown process rows;
 unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
+
+Visual-enabled Reader acceptance must observe the displayed Chromium image:
+visible, refreshed after navigation or page input, and decoded with positive
+dimensions. A capable host receives `GET /frames` as NDJSON and need not issue
+future `POST /screenshot` requests. Control ownership is asserted separately,
+because changing control alone need not change page pixels. These scenarios
+remain in the Web Reader owner. Keep `VC_VISUAL_ARTIFACTS` enabled for release
+acceptance and inspect the trusted-origin and manual-control PNGs alongside the
+exact Core/owner source result; disabling visual capture does not validate its
+readiness path.
 
 After the ownership split, complete local Core gates passed in 321.24s and 258.12s
 (latest: 4m18s): 2302 server tests and 41 functional browser cases passed, with existing

@@ -19,8 +19,8 @@
       "package": "@sislexa/web-reader",
       "workspace": "apps/web-reader",
       "repository": "https://github.com/sislex/webreader",
-      "version": "1.3.3",
-      "commit": "d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666"
+      "version": "1.3.4",
+      "commit": "e0ff32cee8ee80da2953bbfe71c982ecec563cd5"
     },
     "image-studio": {
       "package": "@sislexa/image-studio",

@@ -184,6 +184,24 @@ strict lockfile refresh and `npm ci --strict-peer-deps` now pass for the compose
 dependencies, with the lockfile unchanged by the clean installation. Renewed Core
 gates and installed-owner acceptance remain required after final pins are frozen.
 
+The installed-owner run on Core `0d04afc3febdb0fcca48f167de3f2c5adacc9a21`
+passed all 29 Playwright Reader checks, including the previous upload failure.
+Web Reader passed 29 of 31 checks; both failures were visual-capture waits for
+future screenshot requests after the functional assertions had passed. Streaming
+hosts supply frames without those requests. Web Reader 1.3.4 from
+`e0ff32cee8ee80da2953bbfe71c982ecec563cd5` corrects the owner test synchronization.
+Its canonical pack passed the full owner gate and all 31 system checks on that
+immutable Core with visual capture enabled. Both captured PNGs were inspected:
+the trusted-origin login form and manual-control status with the updated page
+were visible. Runtime implementation and all 11 contract payload files are
+unchanged; release versions and source provenance differ. The official
+[1.3.4 release](https://github.com/sislex/webreader/releases/tag/v1.3.4) and both
+vendor archives were independently verified, then applied through Core's
+canonical composition command. Strict lockfile refresh and
+`npm ci --strict-peer-deps` passed without further lockfile changes; all 125
+runtime and 12 contracts archive files match the installed bytes. Renewed Core
+acceptance and stand cutover remain pending.
+
 Runner's separate synthetic concurrency check used fake CLI responses, not paid
 provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
 zero duplicate executions or unexpected errors. Eight cancellation and eight
