@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-20
-checked: 55bbb8649
+checked: 592879f34
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -310,7 +310,7 @@ missing their separate dependencies produces TS2307 for `electron` and
 
 Каталог данных каждого дополнительного чекаута — копия основной БД на момент создания, а `models` внутри — симлинк на `~/.voicechat-server/models`: 465 MB моделей Whisper/Piper не дублируются. Заводя ещё один чекаут, бери следующую свободную десятку портов и проверяй `lsof -nP -iTCP:<порт> -sTCP:LISTEN` — забытый чужой сеанс займёт порт молча.
 
-`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='ChatAI <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
+`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='sislexa <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
 
 **Стенд «ядро + канбан» для e2e страниц проекта** (`e2e/kanbanStand.ts`). Проекты,
 доску и приглашения обслуживает сервис `sislexa-kanban`, в ядре его нет, поэтому

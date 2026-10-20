@@ -2,8 +2,8 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-06
-checked: 181a1e96
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -156,7 +156,7 @@ from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voi
 
 Знания разделены не по теме, а по видимости (`KbScope` в `packages/shared/src/kb.ts`):
 
-- **«Использование»** (`usage`) — как пользоваться ChatAI. Живёт в файлах `docs/kb/*.md`,
+- **«Использование»** (`usage`) — как пользоваться sislexa. Живёт в файлах `docs/kb/*.md`,
   одинаково для всех пользователей, правится коммитом в репозиторий.
 - **«Настройки пользователя»** (`user`) — персональные знания о настройках и
   предпочтениях. Строка в `kb_documents` с `owner_id`; видит только владелец.
