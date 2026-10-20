@@ -11,7 +11,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { tmpdir } from 'node:os'
+import { tmpdir, totalmem } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, _electron, type Browser, type Page } from 'playwright'
@@ -39,10 +39,13 @@ function startServer(): ChildProcess {
     env: {
       ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
       VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD,
-      // A configured but unavailable module keeps diagnostics reachable.
+      // STT reports the fixture outage. TTS availability uses resource thresholds,
+      // so exceed host memory to exercise its real configured-but-blocked contract.
       VC_STT_RUNNER_URL: voiceConfigured ? voiceFixtureUrl : '',
       VC_STT_RUNNER_TOKEN: voiceConfigured ? 'settings-voice-fixture' : '',
-      VC_TTS_RUNNER_URL: '', VC_TTS_RUNNER_TOKEN: ''
+      VC_TTS_RUNNER_URL: voiceConfigured ? voiceFixtureUrl : '',
+      VC_TTS_RUNNER_TOKEN: voiceConfigured ? 'settings-voice-fixture' : '',
+      VC_MIN_MEM_TTS: String(totalmem() * 2)
     },
     stdio: 'ignore'
   })
@@ -107,6 +110,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     token = ((await login.json()) as { token: string }).token
     const capabilities = await (await api('/api/system/capabilities')).json()
     expect(capabilities.stt).toMatchObject({ configured: true, available: false })
+    expect(capabilities.tts).toMatchObject({ configured: true, available: false })
     await api('/api/settings', { method: 'PUT', body: JSON.stringify({ onboarded: true }) })
 
     browser = await chromium.launch()
@@ -286,6 +290,43 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     await page.getByRole('button', { name: 'Продолжить в чате' }).click()
   }, 120_000)
 
+  it('keeps configured but unavailable TTS diagnostics and disabled controls reachable', async () => {
+    const before = await (await api('/api/settings')).json()
+    expect(before.onboarded).toBe(true)
+    const context = await browser.newContext()
+    const screen = await context.newPage()
+    try {
+      await screen.addInitScript(sessionToken => {
+        localStorage.setItem('vc.session.token', sessionToken)
+        localStorage.setItem('vc:shell:admin:tour', 'true')
+        navigator.mediaDevices.getUserMedia = async () => { throw new Error('Unexpected permission request') }
+      }, token)
+      const response = screen.waitForResponse(value => value.url() === BASE + '/api/system/capabilities' && value.ok())
+      const settingsResponse = screen.waitForResponse(value => value.url() === BASE + '/api/settings' && value.request().method() === 'GET' && value.ok())
+      await screen.goto(BASE + '/#/settings/tts')
+      const capabilities = await (await response).json()
+      expect(await (await settingsResponse).json()).toMatchObject({ theme: before.theme, onboarded: true })
+      expect(capabilities.stt).toMatchObject({ configured: true, available: false })
+      expect(capabilities.tts).toMatchObject({ configured: true, available: false })
+      expect(capabilities.tts.reason).toContain('Недостаточно памяти')
+      await expect.poll(() => screen.locator('html').getAttribute('data-theme')).toBe(before.theme)
+      await screen.getByRole('button', { name: 'Озвучка', exact: true, pressed: true }).waitFor()
+      await screen.getByTestId('tts-blocked').waitFor()
+      expect(new URL(screen.url()).hash).toBe('#/settings/tts')
+      expect(await screen.getByTestId('tts-blocked').textContent()).toContain(capabilities.tts.reason)
+      expect(await screen.getByLabel('Голос озвучки').isDisabled()).toBe(true)
+      expect(await screen.getByRole('switch', { name: 'Автоозвучка ответов' }).isDisabled()).toBe(true)
+      expect(await screen.getByTestId('settings-not-loaded').count()).toBe(0)
+      await screen.getByRole('button', { name: 'Мастер первого запуска' }).waitFor()
+      const after = await (await api('/api/settings')).json()
+      expect(after.onboarded).toBe(before.onboarded)
+      expect(after.onboarding).toEqual(before.onboarding)
+      expect(after.theme).toBe(before.theme)
+      expect(after.voice).toBe(before.voice)
+      expect(after.autoSpeak).toBe(before.autoSpeak)
+    } finally { await context.close() }
+  }, 120_000)
+
   it('hides automatic and manual voice onboarding without configured modules and preserves progress', async () => {
     expect((await api('/api/settings', { method: 'PUT', body: JSON.stringify({ onboarded: false, theme: 'green' }) })).ok).toBe(true)
     const before = await (await api('/api/settings')).json()
@@ -313,9 +354,13 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
       await screen.getByRole('button', { name: 'Новый чат', exact: true }).waitFor()
       expect(await screen.getByRole('dialog', { name: 'Добро пожаловать', exact: true }).count()).toBe(0)
       await screen.goto(BASE + '/#/settings/tts')
-      await screen.getByTestId('tts-blocked').waitFor()
-      expect(await screen.getByTestId('tts-blocked').textContent()).toContain(capabilities.tts.reason)
-      expect(await screen.getByLabel('Голос озвучки').isDisabled()).toBe(true)
+      await expect.poll(() => new URL(screen.url()).hash).toBe('#/settings/llm')
+      await screen.getByRole('button', { name: 'LLM', exact: true, pressed: true }).waitFor()
+      await screen.getByLabel('Рабочий каталог', { exact: true }).waitFor()
+      expect(await screen.getByRole('button', { name: 'Озвучка', exact: true }).count()).toBe(0)
+      expect(await screen.getByTestId('tts-blocked').count()).toBe(0)
+      expect(await screen.getByLabel('Голос озвучки').count()).toBe(0)
+      expect(await screen.getByRole('switch', { name: 'Автоозвучка ответов' }).count()).toBe(0)
       await screen.getByRole('button', { name: 'Интерфейс', exact: true }).click()
       await expect.poll(() => screen.getByLabel('Тема интерфейса').inputValue()).toBe('green')
       expect(await screen.getByTestId('settings-not-loaded').count()).toBe(0)

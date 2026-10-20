@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 795 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 917 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: cc52ce88c Use sislexa in current knowledge and usage guidance |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1094 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1239. Последние:
+Всего записей: 1241. Последние:
 
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md) — sislexa current knowledge branding
+- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md) — recovery-health-target-binding
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md) — public-chat-text-only-machine-policy
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md) — Public chat release isolation and lowercase product naming
+- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-final-owner-composition.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-final-owner-composition.md) — public-chat-final-owner-composition
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-capabilities-and-model-notices.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-capabilities-and-model-notices.md) — public-chat-capabilities-and-model-notices
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-optional.md) — voice-optional
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-voice-module-configuration.md) — voice-module-configuration
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-turn-unknown-message-id.md) — turn-unknown-message-id
 - [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-rpc-mcp.md) — shared-service-rpc-mcp
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-mcp-authority.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-service-mcp-authority.md) — shared-service-mcp-authority
-- [2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md](log/2026-10-19-alexeys-macbook-air-tailae39a6-ts-net-shared-peers-any-range.md) — shared-peers-any-range
 
 ## Исторические планы
 

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-20
-checked: 592879f34
+checked: cc52ce88c
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -87,30 +87,68 @@ and Tailscale reachability on the assigned gateway port.
 
 Settings/onboarding browser integration distinguishes missing voice modules
 from configured but unavailable ones. `e2e/settings.e2e.test.ts` starts a
-loopback STT fixture that returns 503 for the existing diagnostic and progress
+loopback STT/TTS fixture that returns 503 for the diagnostic and progress
 scenarios; the real Core capability response must still report `configured:
-true`. Its chat-only scenario restarts Core with both voice endpoints absent
-and verifies that the published UI hides automatic and manual onboarding while
-preserving `onboarded: false`, saved progress and the selected theme. Positive
-theme and TTS diagnostic assertions prove that settings and capabilities reached
-the renderer before checking absence; navigation buttons alone are not a load
-barrier. Do not restore unconditional wizard visibility to satisfy an
+true`. TTS availability does not probe that endpoint's health: the isolated
+fixture sets `VC_MIN_MEM_TTS` above available memory to exercise its actual
+resource diagnostic and disabled controls with `configured: true, available:
+false`. STT unavailability is exercised by the endpoint's 503 response.
+Its chat-only scenario restarts Core with both voice endpoints absent and verifies
+that the published UI hides automatic and manual onboarding, including the absent
+TTS settings deep link, while preserving `onboarded: false`, saved progress and
+the selected theme. Assert the actual capabilities response and loaded theme
+before checking absence; navigation buttons alone are not a load barrier.
+Keep outage diagnostics in the configured fixture. An unconfigured module does
+not expose the same screen, so its absence test must not wait for `tts-blocked`.
+Do not restore unconditional wizard or voice-settings visibility to satisfy an
 unconfigured fixture.
+
+`e2e/universalSearch.e2e.test.ts` verifies focus against the installed published
+UI, including the exact mobile palette opener after Escape. Keep that assertion:
+a hidden or inert opener is not a valid focus destination. The owner regression
+must mount the full App with the real Sidebar, palette and styles; testing the
+Sidebar alone misses its interaction with palette navigation. Selecting another
+result or a result in the current chat must close the drawer and leave focus
+outside hidden/inert content, including when only the URL query changes.
 
 ### Shared chat exact-artifact acceptance (U10)
 
 Keep only vendor archives referenced by repository package manifests/lockfiles, owner/snapshot/UI inventories (`asset`), or scripts; `vendor-archives.mjs` supplies the same fail-closed reachability check for `test:tooling` and all pin cleanup paths, which remove replaced archives only after successful reference updates and disappearance of the last consumer.
 
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
-committed Shared contract as version 0.1.11 with bounded Identity
-`>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
-must contain the reviewed 1.5.1/1.2.0 baseline; other peers remain exact.
-The release-tool test checks the packed manifest and source commit. Consumer
-owners must install and gate against the actual released archives without
+committed Shared contract at the explicitly supplied release version with bounded
+Identity `>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core
+lockfile must contain an explicitly reviewed baseline: Identity 1.5.1 or 1.5.2,
+and SDK 1.2.0; other peers remain exact. Version 0.1.11 is the release-tool
+test fixture, not a fixed publication version.
+The release-tool test checks the packed manifest and source commit. Run it again
+after committing a baseline pin change because it packages committed `HEAD`.
+Consumer owners must install and gate against the actual released archives without
 disabling npm peer resolution.
 
+Release composition replaces owner archive identities in the lockfile, but does
+not regenerate an archive's transitive dependency metadata. When those dependencies
+change, refresh that exact pinned archive with
+`npm install --package-lock-only --ignore-scripts --save-dev '<package>@<pinned-url>'`
+for a root development dependency, review the lockfile delta, then run `npm ci`.
+For Runner 0.3.8, the lock entry must require runner-contracts 0.1.3; retaining
+the old 0.1.2 edge makes npm look for that private package in the public registry.
+Do not bypass peer resolution or replace the immutable URL with an unpinned range.
+The current S3 provider inventory, `deploy/s3-provider-artifacts.json`, must also
+match Identity, Billing, Runner and runner-contracts owner pins. Composition does
+not rewrite this inventory automatically. Update its artifact identity fields from
+the verified owner manifests while retaining task/interface annotations. The
+existing S3 artifact check validates archive provenance, consumer locks and tool
+pins; a stale row downloads the obsolete archive and fails both consistency and
+unused-archive checks.
+`scripts/a07-composition.mjs` separately fixes the reviewed source commits used
+by loopback acceptance. Advance its exact owner SHAs with a reviewed provider
+release, then rerun `scripts/a07-acceptance.test.mjs` and the S3 negative preflight
+checks. Keep explicit source verification; do not replace it with whichever
+commits happen to appear in the inventory.
+
 The Core Shared workspace exposes the same `./*` and `./*.js` source subpaths as
-the published contracts. Embedded Identity 1.5.1 uses those public subpaths;
+the published contracts. Embedded Identity 1.5.1 and 1.5.2 use those public subpaths;
 its standalone owner gate cannot detect missing exports in Core's local workspace.
 The release-tool test imports both forms, and Core typechecking covers the installed
 owner consumer against the workspace contracts.
@@ -752,6 +790,11 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 ### Development gate: `npm run gate:fast`
 
 #### Universal search browser synchronization
+
+The viewport matrix starts a fresh document before each case. Same-hash
+navigation retains transient mobile drawer state, including the open drawer
+needed to restore the palette opener on Escape. Keep authenticated storage, but
+isolate this transient state rather than weakening focus or pointer checks.
 
 Universal search browser synchronization is implemented in
 `e2e/universalSearch.e2e.test.ts`. Its observer is registered before opening

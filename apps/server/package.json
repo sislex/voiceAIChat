@@ -19,7 +19,7 @@
     "@sislexa/agent": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-0.25.0-a4c1407f5494.tgz",
     "@sislexa/agent-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-contracts-1.5.0-3117b819912f.tgz",
     "@sislexa/component-runtime": "*",
-    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.1-512087c9e9de.tgz",
+    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.2-d3e0e16d58cd.tgz",
     "@sislexa/image-studio": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-make-1.8.0-aacee31445bc.tgz",
     "@sislexa/playwright-reader": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-playwright-reader-1.2.5-c2d51a7ffb4f.tgz",
@@ -41,8 +41,8 @@
     "@voicechat/knowledge": "*"
   },
   "devDependencies": {
-    "@sislex/llm-runner": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-llm-runner-0.3.7-94b078707070.tgz",
-    "@sislex/runner-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-runner-contracts-0.1.2-d224409fdcac.tgz",
+    "@sislex/llm-runner": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-llm-runner-0.3.8-a1063160bde1.tgz",
+    "@sislex/runner-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-runner-contracts-0.1.3-5b7a9498cd40.tgz",
     "@types/better-sqlite3": "^7.6.13",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.10.2",

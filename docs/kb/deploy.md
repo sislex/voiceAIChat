@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-20
-checked: 592879f34
+checked: cc52ce88c
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -707,6 +707,17 @@ the operation retains its failed exit code and does not claim Compose completed.
 Docker's nanosecond timestamps are normalized to microseconds before parsing so
 the same proof works on production hosts with Python 3.9/3.10; operation time
 boundaries remain milliseconds.
+Recovery also binds the operation's health endpoint to the selected `voicechat`
+container before reading health or writing a receipt. Docker must use a local
+Unix socket; the recorded URL must be plain HTTP on a literal loopback address
+at `/api/health`, without credentials, query or fragment. Its host port and IP
+family must match a published binding of Core's configured `PORT` (8787 by
+default). Health requests bypass proxies and reject redirects. A DNS name,
+reverse proxy, host networking, remote Docker daemon or another stack's published
+port cannot provide this proof and requires a different recovery procedure.
+Matching Core commits alone cannot link one stack's health to another stack's
+container inventory. Rejected target checks preserve the uncertain journal and
+create no recovery receipt.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 

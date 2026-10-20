@@ -51,15 +51,17 @@ Codex account remain separate operator commissioning work.
 
 ## Reviewed publication sequence
 
-At the 2026-10-20 review, the pending source chain is:
+At the 2026-10-20 pre-release source freeze, the source route and promotion
+requirements are as follows. Final publication and stand receipts are recorded
+separately against the clean tested Core commit.
 
 | Owner | Reviewed source route | Remaining publication |
 | --- | --- | --- |
 | Core | [#768](https://github.com/sislex/voiceAIChat/pull/768) `integration/public-chat-stand-v1` → `feat/public-chat-launch-v1`, then [#767](https://github.com/sislex/voiceAIChat/pull/767) → `dev` | Final combined gates, reviewed `dev` → `main` promotion and immutable Core release artifact |
-| Core UI | [#187](https://github.com/sislex/sislexa-core-ui/pull/187) → `dev` | New version, owner release gate, reviewed release branch → `main`, sync `dev`, canonical pack |
-| Identity | [#35](https://github.com/sislex/identity/pull/35) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
-| Billing | [#10](https://github.com/sislex/billing/pull/10) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
-| LLM Runner | [#27](https://github.com/sislex/llm-runner/pull/27) → `main` | Reviewed merge, owner version/gate and immutable image/packages |
+| Core UI | 1.5.26 is published through reviewed PRs #188, #187 and #189; the 1.5.27 mobile-focus correction follows `fix/mobile-palette-focus` → `dev` → `main` | 1.5.27 canonical pack, independent review and 18 Core consumer checks passed; verify its official publication before Core promotion |
+| Identity | [#36](https://github.com/sislex/identity/pull/36) and [#35](https://github.com/sislex/identity/pull/35) merged into `main`; `dev` synchronized | [1.5.2 published](https://github.com/sislex/identity/releases/tag/v1.5.2), including verified AMD64 image |
+| Billing | [#11](https://github.com/sislex/billing/pull/11) and [#10](https://github.com/sislex/billing/pull/10) merged into `main`; `dev` synchronized | [1.2.3 published](https://github.com/sislex/billing/releases/tag/v1.2.3), including verified AMD64 image |
+| LLM Runner | [#28](https://github.com/sislex/llm-runner/pull/28) and [#27](https://github.com/sislex/llm-runner/pull/27) merged into `main`; [#29](https://github.com/sislex/llm-runner/pull/29) synchronized `dev` | [0.3.8 published](https://github.com/sislex/llm-runner/releases/tag/v0.3.8), including verified AMD64 image |
 
 1. Integrate the completed follow-up branches into their reviewed owner PRs and
    freeze the final source SHAs. Run the required owner gates. Publish the new
@@ -92,6 +94,68 @@ At the 2026-10-20 review, the pending source chain is:
    health commit, image IDs, mounts, component identities and application manifest
    with the preserved baseline using read-only checks. A release publication or
    PR merge alone is not evidence that either running deployment changed.
+
+### Published owners and prepared stand candidates, 2026-10-20
+
+The following clean source commits passed owner gates and independent review.
+Their canonical packages were uploaded under content-addressed names to Core's
+vendor release and downloaded again to verify SHA-256. Local ARM64 images were
+built from exact Git archives and checked against shipped source and runtime
+version metadata. Official AMD64 releases have also been published and their
+remote tags, downloaded archives, image digests and runtime configuration
+verified. Publication has not replaced the running stand or the protected
+production installation.
+
+| Owner | Version and source | Verification |
+| --- | --- | --- |
+| Identity | 1.5.2, `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e`, [#36](https://github.com/sislex/identity/pull/36) | 502 unit tests, 2 browser tests, smoke and 3 package checks; 5 existing PostgreSQL skips remain |
+| Billing | 1.2.3, `a3897238443664a9a49b964bced4f02212e5c7b7`, [#11](https://github.com/sislex/billing/pull/11) | 41 owner tests and package gate; this patch aligns release metadata without changing ledger behavior |
+| LLM Runner | 0.3.8 / contracts 0.1.3, `edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4`, [#28](https://github.com/sislex/llm-runner/pull/28) | 528 owner tests, 20 operational and 10 package/release checks; lifecycle details are master-only and contain no prompt or user/session identifiers |
+
+All three stacks were merged child-first with merge commits. Their resulting
+`main` trees exactly match the verified source trees, and the original source
+commits remain ancestors. Official artifacts retain those verified source SHAs
+rather than being relabeled with the merge commits. A read-only check after
+promotion still reported protected production Core 0.1.480 at `9c44cb0d211c`.
+Identity and Billing `dev` were fast-forwarded to their reviewed `main` commits.
+Runner's historical merge-only divergence was preserved through reviewed
+main-to-dev PR #29; its resulting tree equals `main`.
+
+Shared 0.1.43 was published from
+`6357410e51dc7b2225b83280dc0e17b224648fdf`. Its SHA-256 is
+`dcc38d1c194bc762c97250e7022a0c554c19d9196e3a13e0f7874f1bb8e1698a`.
+It adds the optional Analytics configuration contract consumed by Core UI
+1.5.26. The canonical UI 1.5.26 pack from
+`418913b5a7665a8c277ab7b8a766cade445f6796` passed: 3,590 main UI tests,
+46 browser tests and eight Core system tests, plus owner workspace/tooling
+checks. Its SHA-256 is
+`8a271cf3007501f6bb2383f796a2d7329b8c3f212e7912f0ded63db982257b35`.
+The downloaded vendor archive was verified and pinned in Core. Official
+source promotion/publication is complete: the version tag retains the exact
+tested source, and `main`/`dev` share the reviewed tree after merge commits.
+
+The subsequent combined Core browser gate exposed a mobile universal-search
+focus regression in 1.5.26. The palette opener became inert when its sidebar
+closed. UI 1.5.27 preserves the opener for Escape and moves focus outside the
+closed drawer after result navigation, including same-chat navigation. Its
+canonical pack from `ec82d0285866329e2af42fced75000d9d499cfe7` passed 3,591 main
+UI tests, 47 browser tests and eight Core system tests against the immutable
+Shared 0.1.43 Core fixture. The archive SHA-256 is
+`353e1e0539ca69808758810ee64c748009197ea967fc8de5ca97b758c25e8a73`;
+all 460 file hashes and its clean source provenance were verified. Core now
+pins that archive. All 18 Core universal-search checks passed with their original
+assertions; each viewport starts a fresh document so the restored mobile drawer
+does not leak into the next case. Final combined Core validation and coordinated
+stand cutover remain required after this source freeze.
+
+Runner's separate synthetic concurrency check used fake CLI responses, not paid
+provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
+zero duplicate executions or unexpected errors. Eight cancellation and eight
+disconnect cases retained accounting through completion. Replay was denied
+before and after restart; four incomplete receipts recovered as uncertain.
+These results establish lifecycle behavior, not real-provider capacity or Billing
+throughput. The bounded two-user live acceptance runs only after final stand
+composition, with previous ledgers and the historical uncertain hold preserved.
 
 ## Audit baseline
 
