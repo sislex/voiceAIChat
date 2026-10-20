@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-19
-checked: 9f7d787a
+updated: 2026-10-20
+checked: 1858f7316
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -1600,6 +1600,101 @@ secrets. Provider-local `components:token`/tool `token` commands issue, list and
 revoke credentials; transfer a newly issued private file to the consumer, replace
 its outgoing file atomically, then revoke the old token ID. Grant-policy edits
 require a provider restart; revocation takes effect immediately for RPC requests.
+
+### Commissioned grant maintenance
+
+`scripts/prod/component-grants.py --policy /private/policy.json` is a read-only
+check of the commissioned links, private storage, provider registries and each
+component's `/v1/ready`. It reports expiry, due/expired counts, remaining seconds
+and the last completed renewal. Exit 2 means a lifetime below 48 hours or failed
+readiness; exit 1 means a refused/failed maintenance boundary. No raw credential,
+digest, upstream response or Docker environment is printed.
+
+Explicit `renew --policy ...` renews still-valid credentials due within seven
+days. It uses the installed provider CLI as the commissioned UID/GID, with exactly
+the existing scopes and 30-day policy (shorter commissioned lifetimes must exceed
+14 days). It never repairs an already expired or intentionally revoked grant.
+The provider registry, outgoing files and user sessions are not reinitialized.
+
+The private JSON policy is deployment-owned, not generated from untrusted runtime
+discovery. Commission it after reviewing every active reference:
+
+```json
+{
+  "schemaVersion": 1,
+  "environmentId": "production",
+  "installationRoot": "/etc/voicechat/components",
+  "stateDirectory": "/var/lib/voicechat/component-grants",
+  "deployLock": "/var/lock/voicechat-deploy.lock",
+  "dockerHost": "unix:///var/run/docker.sock",
+  "dockerDaemonId": "<verified local daemon ID>",
+  "services": {
+    "core": {
+      "container": "<existing Core container name>",
+      "uid": 1000, "gid": 1000, "port": 8787,
+      "configPath": "<canonical private config path>",
+      "providerDirectory": "<canonical provider directory>",
+      "outgoingDirectory": "<canonical outgoing directory>",
+      "mountSources": {
+        "config.json": "<exact Docker bind source>",
+        "provider": "<exact Docker bind source>",
+        "outgoing": "<exact Docker bind source>"
+      },
+      "configSha256": "<reviewed config bytes>",
+      "contractSha256": "<reviewed contract bytes>",
+      "contract": "/app/apps/server/component-contract.json",
+      "cli": "/app/packages/component-runtime/src/cli.ts",
+      "cliSha256": "<reviewed physical CLI bytes>"
+    }
+  },
+  "links": [
+    {
+      "consumer": "make", "provider": "core",
+      "scopes": ["identity.verify", "make.core", "make.events"],
+      "ttlSeconds": 2592000
+    }
+  ]
+}
+```
+
+This abbreviated example is intentionally incomplete: add every provider and
+consumer plus every configured dependency before use. Contract/config hashes,
+environment, grants, exact scopes/TTL, service ownership and the local daemon are
+checked before issuance. Service UID comes from reviewed private-file ownership,
+not Docker's default exec user. The CLI must be its physical path with reviewed
+bytes: a symlink entrypoint can otherwise exit successfully without invoking its
+main function. Known installation symlinks are permitted only
+when both their exact Docker source and canonical destination are commissioned.
+Unknown target changes, nested mounts and file binds are refused; outgoing
+directories must be mounted read-only, provider directories writable.
+
+The existing deployment flock excludes concurrent deployments and renewals. A
+private per-link intent is durable before issuance. A successful issued file can
+be resumed after interruption without a second issue; missing/ambiguous issuance,
+changed authority, or failed verification requires operator recovery. The prior
+credential is privately retained, the replacement preserves UID/GID and 0600,
+and an fsynced atomic rename switches the running consumer. Only after exact
+provider authorization and that consumer's matching dependency readiness pass
+may the superseded grant be revoked. An unrelated dependency outage is not
+permission to mutate its credentials. There are no restarts, rollbacks or repeated
+issuance loops. Keep incomplete intents and private backups for diagnosis; do not
+remove them to force an automatic retry.
+
+`deploy/component-grants.service` and `.timer` are commissioning templates, not
+installed by a release. The hourly persistent timer must use the reviewed
+installation/state/lock paths in `ReadWritePaths`, and a commissioned `OnFailure`
+drop-in must deliver failures to the existing operator monitoring channel before
+enabling it. Check the private policy and run a supervised renewal against
+disposable/approved links first. The current deployment watchdog is unchanged;
+failed readiness must not cause a rebuild or restart loop.
+
+On 2026-10-20, production Core 0.1.480 (`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`)
+and Make remained alive while their directional component grants had expired at
+08:52:39 UTC. `/api/health` returned 200, but dependency readiness failed and Make
+could not verify the user session. The operator repaired the two grants at about
+11:26 UTC with the same scopes and 2,592,000-second TTL, without a service restart
+or image change. The actual owner browser preview rendered both revisions after
+the repair. That incident repair is separate from commissioning this timer.
 
 Billing 1.0.0 is an independently pinned service in `deploy/tools.lock.json` and
 the application catalog. Append `deploy/compose.billing.yml` after the Identity

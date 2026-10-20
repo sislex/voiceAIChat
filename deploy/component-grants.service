@@ -1,0 +1,21 @@
+[Unit]
+Description=Renew commissioned sislexa component grants before expiry
+After=docker.service
+Requires=docker.service
+# Commission an OnFailure= drop-in using the installation's operator alert unit.
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/sislexa-operations/component-grants.py renew --policy /etc/voicechat/component-grants-policy.json
+ExecStartPost=/usr/bin/python3 /opt/sislexa-operations/component-grants.py check --policy /etc/voicechat/component-grants-policy.json
+TimeoutStartSec=15min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# Replace with the reviewed installation/state/lock paths when commissioning.
+ReadWritePaths=/etc/voicechat/components /var/lib/voicechat/component-grants /var/lock
+StandardOutput=journal
+StandardError=journal
