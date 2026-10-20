@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-19
-checked: 20e8599d
+updated: 2026-10-20
+checked: 1858f7316
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -952,6 +952,15 @@ keyed by credential digest. Public proxies retain the user's Authorization heade
 and do not replace it with a component secret. Readiness failures omit secret
 values, private paths and raw upstream response bodies. Installation and rotation
 commands are documented in `deploy.md`.
+
+The separately commissioned `scripts/prod/component-grants.py` checks expiry and
+readiness, and can renew still-valid grants within a seven-day window using the
+existing provider CLI. It preserves the exact approved scopes and TTL, binds the
+private installation and mounts, and journals issuance before replacing a file.
+Interrupted issuance is never blindly repeated. Expired/revoked credentials and
+authority changes require operator review. This does not add automatic renewal to
+the runtime or install a production timer; see the commissioning procedure in
+`deploy.md`.
 
 The `identity.core` callback exposes only `loginNewDeviceEmails` from user settings
 and only `signup.enabled`, `signup.role`, and `sessions.maxPerUser` from application

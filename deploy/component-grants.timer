@@ -1,0 +1,11 @@
+[Unit]
+Description=Check and renew commissioned sislexa component grants hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+Unit=component-grants.service
+
+[Install]
+WantedBy=timers.target
