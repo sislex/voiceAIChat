@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-20
-checked: 22efc2c22
+checked: 55bbb8649
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -81,6 +81,19 @@ and a forbidden conversation Astra resolve that conversation to the policy's
 first permitted model (Luna), not the account's Sol. The existing conversation
 `context-snapshot` summary exposes the effective provider/model; account settings
 alone are not an authoritative fallback for a forbidden conversation override.
+
+Under an explicit model policy, a turn using inherited account defaults does
+not prepend a substitution warning for those projected defaults. Explicit
+conversation/project provider or model substitutions still warn, as does an
+unavailable engine transport. Without `VC_CHAT_MODELS`, legacy warnings remain
+unchanged; `VC_CHAT_TEXT_ONLY` alone does not suppress them. Selection, access
+enforcement, execution metadata and stored preferences are unaffected.
+
+The capabilities endpoint reports `analytics.configured` from the managed
+Analytics dependency, independently of health. Clients hide Analytics UI and
+skip activity/report requests only when the value is explicitly false; a
+configured service outage must remain visible. An omitted field preserves
+older-server behavior. See [the capability contract](protocol.md#analytics-module-configuration).
 
 `VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. It
 ignores saved and request-level machine preferences, skips machine availability

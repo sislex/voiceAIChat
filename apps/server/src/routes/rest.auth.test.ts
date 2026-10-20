@@ -259,7 +259,7 @@ describe('REST: аутентификация', () => {
     expect(emailed.email).toBe('guest@example.com')
     expect(emailed.emailedAt).toBeTypeOf('number')
     expect(sentMails).toHaveLength(1)
-    expect(sentMails[0]).toMatchObject({ to: 'guest@example.com', subject: 'Приглашение в ChatAI' })
+    expect(sentMails[0]).toMatchObject({ to: 'guest@example.com', subject: 'Приглашение в sislexa' })
     expect(sentMails[0]!.text).toContain(`/#/invite/${emailed.token}`)
 
     const created = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester', maxUses: 1, ttlHours: 1, note: 'QA' } })).json() as { token: string; role: string; uses: number; email: null; emailedAt: null }

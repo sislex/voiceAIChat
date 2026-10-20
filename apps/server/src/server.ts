@@ -1098,6 +1098,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // Configuration is independent of a service outage, missing model or tariff denial.
     value.stt.configured = Boolean(sttClient || opts.sttEngine)
     value.tts.configured = Boolean(opts.ttsClient || (opts.config.ttsRunnerUrl && opts.config.ttsRunnerToken))
+    value.analytics = { configured: Boolean(managedAnalytics) }
     return value
   }
   app.get(REST.systemCapabilities, async (req): Promise<SystemCapabilities> => {

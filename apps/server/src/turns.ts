@@ -581,10 +581,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     const model = provider === 'claude' ? claudeModelAlias(permittedModel) : permittedModel
+    // Account defaults are already projected by /api/settings under an explicit deployment policy.
+    // Keep warnings for conversation/project choices and for ordinary unrestricted deployments.
+    const reportProviderFallback = deps.chatModels === undefined || conv?.llmProvider != null || projectLlm?.provider != null
+    const reportModelFallback = deps.chatModels === undefined || selectedModel != null
     const notices = [
       resolvedEngine.substituted ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».` : '',
-      permittedProvider !== wantProvider ? `⚠️ Движок «${wantProvider}» недоступен; выбран «${provider}».` : '',
-      permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
+      reportProviderFallback && permittedProvider !== wantProvider ? `⚠️ Движок «${wantProvider}» недоступен; выбран «${provider}».` : '',
+      reportModelFallback && permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
     ].filter(Boolean)
     const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при

@@ -71,6 +71,8 @@ export interface CapabilityStatus {
 export interface SystemCapabilities {
   stt: CapabilityStatus
   tts: CapabilityStatus
+  /** Deployment configuration only; absence preserves legacy client behavior, not an outage signal. */
+  analytics?: { configured: boolean }
   /** Лимит памяти контейнера (cgroup) либо память хоста, байты. */
   memoryLimitBytes: number
   /** Число доступных CPU (cgroup-квота либо ядра хоста). */

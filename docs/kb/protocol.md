@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-19
-checked: 3b7a10082
+updated: 2026-10-20
+checked: 55bbb8649
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -37,6 +37,17 @@ The browser can suppress voice onboarding when both modules are unconfigured
 without treating a temporary service outage as module removal. The endpoint
 does not expose runner addresses or credentials. Server HTTP regressions live
 in `apps/server/src/system/voiceConfiguration.test.ts`.
+
+## Analytics module configuration
+
+`SystemCapabilities.analytics?: { configured: boolean }` is an additive
+deployment signal on `GET /api/system/capabilities`. Core sets it from the
+managed Analytics dependency, without probing service health or exposing
+addresses, credentials or the user's report permissions. Explicit false means
+no module was configured; true includes an offline configured service. Clients
+preserve legacy behavior when older servers omit the field. HTTP regressions
+use actual component configuration in
+`apps/server/src/system/analyticsConfiguration.test.ts`.
 
 ## Operator assistant project contract
 
