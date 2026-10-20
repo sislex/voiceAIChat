@@ -58,9 +58,10 @@ separately against the clean tested Core commit.
 | Owner | Reviewed source route | Remaining publication |
 | --- | --- | --- |
 | Core | [#768](https://github.com/sislex/voiceAIChat/pull/768) `integration/public-chat-stand-v1` → `feat/public-chat-launch-v1`, then [#767](https://github.com/sislex/voiceAIChat/pull/767) → `dev` | Final combined gates, reviewed `dev` → `main` promotion and immutable Core release artifact |
-| Core UI | 1.5.26 is published through reviewed PRs #188, #187 and #189; the 1.5.27 mobile-focus correction follows `fix/mobile-palette-focus` → `dev` → `main` | 1.5.27 canonical pack, independent review and 18 Core consumer checks passed; verify its official publication before Core promotion |
+| Core UI | Reviewed owner promotion through `dev` → `main`; exact 1.5.28 source `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c` retained in the immutable tag and archive | [1.5.28 published](https://github.com/sislex/sislexa-core-ui/releases/tag/v1.5.28), downloaded archive verified; strict Core install and 24 consumer checks passed, with one existing skip |
 | Identity | [#36](https://github.com/sislex/identity/pull/36) and [#35](https://github.com/sislex/identity/pull/35) merged into `main`; `dev` synchronized | [1.5.2 published](https://github.com/sislex/identity/releases/tag/v1.5.2), including verified AMD64 image |
-| Billing | [#11](https://github.com/sislex/billing/pull/11) and [#10](https://github.com/sislex/billing/pull/10) merged into `main`; `dev` synchronized | [1.2.3 published](https://github.com/sislex/billing/releases/tag/v1.2.3), including verified AMD64 image |
+| Billing | Runtime-peer compatibility follow-up [#12](https://github.com/sislex/billing/pull/12), exact source `db6000b7a87cfb200bf7cc697dbafafde6a60171` | [1.2.4 published](https://github.com/sislex/billing/releases/tag/v1.2.4); verified archive accepts runtime `>=1.0.1 <2.0.0` with unchanged ledger implementation |
+| Web Reader | Reviewed owner promotion, exact 1.3.4 source `e0ff32cee8ee80da2953bbfe71c982ecec563cd5` | [1.3.4 published](https://github.com/sislex/webreader/releases/tag/v1.3.4); runtime and contracts archives verified, including visual-enabled owner system acceptance |
 | LLM Runner | [#28](https://github.com/sislex/llm-runner/pull/28) and [#27](https://github.com/sislex/llm-runner/pull/27) merged into `main`; [#29](https://github.com/sislex/llm-runner/pull/29) synchronized `dev` | [0.3.8 published](https://github.com/sislex/llm-runner/releases/tag/v0.3.8), including verified AMD64 image |
 
 1. Integrate the completed follow-up branches into their reviewed owner PRs and
@@ -214,6 +215,32 @@ The failed journal and all receipts remain immutable. Core publication is on
 hold while the public auxiliary-model boundary and UI findings are corrected;
 renewed composed gates and live acceptance remain required. The protected old
 production endpoint remains on Core 0.1.480 / `9c44cb0d211cf23b42de0dcb2735c06ffae8507d`.
+
+The corrective Core source `a1015514cab3b4847e58e287eb5fa2e026211851`
+disables unaccounted auxiliary model execution only under the trusted public
+text-only policy. Lexical KB search and stored summary reads remain available;
+ordinary deployments keep their existing behavior. Its required quick gate
+passed 525 related tests with ten existing skips, followed by all 17 focused
+auxiliary-policy regressions. The public mode cannot re-enable these model paths
+through request fields or explicit backend settings.
+
+The composed candidate now pins officially published
+[Core UI 1.5.28](https://github.com/sislex/sislexa-core-ui/releases/tag/v1.5.28)
+from `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`, with archive SHA-256
+`c6796125a7b927e4babf008411553d2d7fad56020f319e81c23175fac8c709c8`
+and Shared 0.1.43. The owner fixes absent voice settings/catalogs and deep links,
+optional capability discovery retries, and the closed LLM select width.
+Its canonical pack and official downloaded artifact verification passed.
+Strict lockfile refresh and `npm ci --strict-peer-deps` both passed without
+changing the applied lockfile; all 463 installed archive files match the
+canonical bytes. Core's unchanged settings and universal-search suites passed
+24 checks, with one existing skip. The auxiliary commit was then fast-forwarded
+into the integration branch without changing the four reviewed UI pin files.
+The new combined Core gate, release performance/system checks, candidate image,
+coordinated cutover and four-operation live acceptance remain pending. Earlier
+failed acceptance and publication holds remain preserved as historical evidence;
+these source and consumer checks do not authorize changes to the protected
+production installation.
 
 Runner's separate synthetic concurrency check used fake CLI responses, not paid
 provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
