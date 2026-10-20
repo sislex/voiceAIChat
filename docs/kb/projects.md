@@ -1,6 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-17
+updated: 2026-10-20
+checked: 592879f34
 
 areas:
   - packages/shared/src/projects.ts
@@ -842,7 +843,7 @@ Make умеет открывать компоненты **реального р�
 проекта, второй — про изменение самого проекта.
 
 **Модули dev-сервера переписываются прокси.** Vite отдаёт ESM с абсолютными импортами
-(`from "/@vite/client"`), и браузер резолвил бы их относительно origin ChatAI — на стенде это
+(`from "/@vite/client"`), и браузер резолвил бы их относительно origin sislexa — на стенде это
 давало 404 на каждый модуль и пустой кадр. Поэтому `rewritePreviewBody` для хостов
 `*.machine.internal` переписывает и JavaScript: `rewriteModuleSpecifiers` переводит абсолютные и
 относительные спецификаторы `import`/`export from`/`import()` на `/api/preview?url=…`, голые имена

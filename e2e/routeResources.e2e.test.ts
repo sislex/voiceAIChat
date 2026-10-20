@@ -13,6 +13,7 @@ const apiPort = 21000 + Math.floor(Math.random() * 1000)
 const base = 'http://127.0.0.1:' + apiPort
 const apiBase = 'http://127.0.0.1:' + apiPort
 const artifacts = resolve(root, '.generated_images/chat468')
+const webDir = process.env.CHAT468_WEB_DIR ?? join(root, 'node_modules/@sislexa/core-ui/web')
 let server: ChildProcess, browser: Browser, dataDir: string, token: string
 let ttsFixture: Server
 async function waitReady(url: string) {
@@ -49,7 +50,7 @@ beforeAll(async () => {
   const ttsUrl = 'http://127.0.0.1:' + (ttsFixture.address() as AddressInfo).port
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: join(root, 'apps/server'), stdio: 'ignore', detached: true,
-    env: { ...process.env, PORT: String(apiPort), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_LLM_RUNNER_CLAUDE_URL: ttsUrl, VC_LLM_RUNNER_CODEX_URL: ttsUrl, VC_LLM_RUNNER_TOKEN: 'fixture-token', VC_TTS_RUNNER_URL: ttsUrl, VC_TTS_RUNNER_TOKEN: 'fixture-token', VC_ADMIN_PASSWORD: 'chat468-fixture-password', VC_WEB_DIR: join(root, 'node_modules/@sislexa/core-ui/web') }
+    env: { ...process.env, PORT: String(apiPort), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_LLM_RUNNER_CLAUDE_URL: ttsUrl, VC_LLM_RUNNER_CODEX_URL: ttsUrl, VC_LLM_RUNNER_TOKEN: 'fixture-token', VC_TTS_RUNNER_URL: ttsUrl, VC_TTS_RUNNER_TOKEN: 'fixture-token', VC_ADMIN_PASSWORD: 'chat468-fixture-password', VC_WEB_DIR: webDir }
   })
   await waitReady(apiBase + '/api/health')
   token = (await api('/api/session/login', { name: 'admin', password: 'chat468-fixture-password' })).token
@@ -95,14 +96,17 @@ it('records comparable cold/warm request counts, transferred bytes and content/d
     let count = 0, bytes = 0, last = 0, activity = Date.now()
     const paths: string[] = []
     const requestIds = new Set<string>()
+    const inflight = new Map<string, string>()
     cdp.on('Network.requestWillBeSent', event => {
       const url = new URL(event.request.url)
+      inflight.set(event.requestId, url.pathname)
       if (url.pathname.startsWith('/api/')) { requestIds.add(event.requestId); paths.push(url.pathname); count++; activity = Date.now() }
     })
     cdp.on('Network.loadingFinished', event => {
+      inflight.delete(event.requestId)
       if (requestIds.delete(event.requestId)) { bytes += event.encodedDataLength; last = Date.now(); activity = last }
     })
-    cdp.on('Network.loadingFailed', event => { if (requestIds.delete(event.requestId)) activity = Date.now() })
+    cdp.on('Network.loadingFailed', event => { inflight.delete(event.requestId); if (requestIds.delete(event.requestId)) activity = Date.now() })
     const waitForReads = async () => {
       const deadline = Date.now() + 30_000
       do {
@@ -115,7 +119,9 @@ it('records comparable cold/warm request counts, transferred bytes and content/d
     await page.goto(base + '/#' + section.route, { timeout: 60_000 })
     await page.locator(section.selector).first().waitFor({ timeout: 60_000 })
     const contentMs = Date.now() - started
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('networkidle').catch(cause => {
+      throw new Error(`Cold ${section.name} did not settle; pending: ${[...inflight.values()].join(', ')}; recent API reads: ${paths.slice(-15).join(', ')}`, { cause })
+    })
     await waitForReads()
     measurements.push({ section: section.name, mode: 'cold', requests: count, transferredBytes: bytes, contentMs, dataMs: last - started })
     if (!baseline && section.name === 'chat') {

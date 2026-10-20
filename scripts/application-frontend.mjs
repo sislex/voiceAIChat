@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
 import { parseApplicationFrontendManifest } from '../packages/shared/src/applicationFrontend.ts'
+import { applicationVersion } from '../packages/shared/src/applicationRelease.ts'
 const root = resolve(import.meta.dirname, '..')
 export function applicationFrontendDirectory(id, repo = root) {
   const app = APPLICATION_CATALOG.find(item => item.id === id && item.frontend)
@@ -20,8 +21,15 @@ export async function buildApplicationFrontend(id, { repo = root } = {}) {
     JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')), id
   )
   const require = createRequire(join(repo, 'package.json'))
-  const source = JSON.parse(readFileSync(require.resolve(`${app.external.package}/release-source.json`), 'utf8'))
-  if (manifest.commit !== source.commit || manifest.version !== source.version)
+  const sourcePath = require.resolve(`${app.external.package}/release-source.json`)
+  const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
+  const ownerPackage = JSON.parse(readFileSync(join(dirname(sourcePath), 'package.json'), 'utf8'))
+  const frontendPackage = JSON.parse(readFileSync(join(dirname(directory), 'package.json'), 'utf8'))
+  // Owner releases and their embedded frontend applications may have independent versions.
+  if (manifest.commit !== source.commit ||
+      ownerPackage.name !== app.external.package ||
+      !applicationVersion(source.version) || ownerPackage.version !== source.version ||
+      manifest.version !== frontendPackage.version)
     throw new Error(`Frontend source provenance mismatch: ${id}`)
   for (const asset of [manifest.entry, ...manifest.styles]) {
     const integrity = 'sha384-' + createHash('sha384')

@@ -729,6 +729,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
     chatModels: opts.config.chatModels,
+    chatTextOnly: opts.config.chatTextOnly,
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
@@ -793,7 +794,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
       : unconfiguredLlmClient()))
-  conversationSummary = createConversationSummaryService({
+  // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
+  conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
     db,
     // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
     // when this installation only has a Claude runner.
@@ -804,7 +806,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
   })
-  const reranker = opts.config.kbRerankProvider === 'disabled'
+  const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
   // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
@@ -838,6 +840,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
   registerAnthropicGateway(app, {
+    enabled: opts.config.chatTextOnly !== true,
     backend: opts.config.claudeGatewayBackend,
     codex: await codex,
     upstreamUrl: opts.config.claudeGatewayUpstreamUrl,
@@ -960,7 +963,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({
-    db, client: codex, generationCwd: opts.imageGenerationWorkdir,
+    db, client: codex, generationEnabled: opts.config.chatTextOnly !== true, generationCwd: opts.imageGenerationWorkdir,
     readGenerated: async (userId, path) => {
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
@@ -1040,7 +1043,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerKbResearchRoutes(
     app,
     db,
-    new KbResearchManager({
+    opts.config.chatTextOnly === true ? undefined : new KbResearchManager({
       db,
       claude: await claude,
       codex: await codex,
@@ -1094,13 +1097,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
       value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
     }
+    // Configuration is independent of a service outage, missing model or tariff denial.
+    value.stt.configured = Boolean(sttClient || opts.sttEngine)
+    value.tts.configured = Boolean(opts.ttsClient || (opts.config.ttsRunnerUrl && opts.config.ttsRunnerToken))
+    value.analytics = { configured: Boolean(managedAnalytics) }
     return value
   }
   app.get(REST.systemCapabilities, async (req): Promise<SystemCapabilities> => {
     await refreshSttHealth()
     const value = await capabilities()
-    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { available: false, reason: TARIFF_DENIED }
-    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { ...value.stt, available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { ...value.tts, available: false, reason: TARIFF_DENIED }
     return value
   })
 
@@ -1234,7 +1241,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,
-    { bodyLimit: 2 * 1024 * 1024 },
+    { bodyLimit: 2 * 1024 * 1024, onRequest: async (_req, reply) => {
+      if (opts.config.chatTextOnly === true) return reply.code(503).send({
+        error: 'auxiliary_model_disabled', message: 'Ретушь недоступна в режиме текстового чата.'
+      })
+    } },
     async (req, reply): Promise<ImageRetouchResult> => {
       const userId = uid(req)
       const body = req.body
@@ -1403,6 +1414,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
       billing: billingTransport, environmentId: billingTransport.environmentId,
+      finishStoppedChatInBackground: opts.config.chatTextOnly,
       resolveRunner: async target => {
         if (target.engineId) {
           const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')

@@ -1,6 +1,6 @@
 # voiceAIChat agent instructions
 
-The product is **Sislexa**. This repository is its Core service. Read this file
+The product is **sislexa**. This repository is its Core service. Read this file
 at the start of every session; load package instructions and `docs/kb/` only when
 the task needs them. Keep this file small.
 

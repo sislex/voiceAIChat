@@ -1362,7 +1362,7 @@ export class TasksRepo extends BaseRepo {
         if (!task) throw new Error('Связанная задача не найдена')
         return { task, improvement: this.mapTaskImprovement(row), created: false }
       }
-      if (row.suggested_action !== 'create_chatai_task') throw new Error('Предложение не поддерживает создание задачи ChatAI')
+      if (row.suggested_action !== 'create_chatai_task') throw new Error('Предложение не поддерживает создание задачи sislexa')
       if (row.status !== 'new' && row.status !== 'accepted') throw new Error('Предложение уже обработано')
       if (!(await this.getTask(row.project_id, row.task_id))) throw new Error('Исходная задача не найдена')
       let columnId = args.columnId

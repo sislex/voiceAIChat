@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-19
-checked: ce8eaefdd
+updated: 2026-10-20
+checked: a19140220
 areas:
   - packages/shared/src
 ---
@@ -72,7 +72,7 @@ consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
 prevent checking subsequent consumers; the overall exit status is nonzero.
 See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
-### Sislexa operation and consumption contracts
+### sislexa operation and consumption contracts
 
 `platformOperation.ts` defines version 1 accounting context with immutable user ID,
 identity issuer, calling client, payer, environment, initiating module, project,
@@ -90,7 +90,7 @@ has a null percentage. The pure reducer is not a durable ledger or a spending
 authorization mechanism. Both contracts are exported by `index.ts`; production
 routes, account migration, and activity collection are not integrated yet.
 The implementation sequence is tracked in the
-[Sislexa platform plan](../plans/sislexa-modular-platform.md).
+[sislexa platform plan](../plans/sislexa-modular-platform.md).
 
 `billing.ts` adds bounded integer micro-USD limits, explicit unlimited (`null`)
 versus zero policy values, reservation lifecycle types and strict principal/policy
@@ -187,6 +187,15 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.40 (`voicechat-shared-0.1.40-ea2ec84dac0d.tgz`, contracts commit `5a097e76`) adds the shared-service RPC authority table and MCP token contract (`SHARED_SERVICE_RPC_ROUTES`, `authorizeSharedServiceRpc`, `APPLICATION_ASSISTANT_KIND`, `CORE_ID_HEADER`, `CoreMcpTokenClaims`, `TrustedCoreEntry.serviceCredentialRef`/`mcpSecretRef`; deployment-profiles-v2 B17). The matching `@sislexa/component-runtime` 1.3.0 (`sislexa-component-runtime-1.3.0-af19f57927ad.tgz`, same commit, version raised only in the archive) adds `signCoreMcpToken`, `verifyCoreMcpToken` and `authenticateCoreRequest`.
 
 0.1.41 (`voicechat-shared-0.1.41-f6fc0d800c71.tgz`, contracts commit `ce8eaefd`) lets a shared service act for the user of the turn it serves with the core MCP token (`MCP_TOKEN_HEADER_NAME` = `x-sislexa-mcp-token`), adds the `{ userArg, field }` authority, route `readMethods` and `SharedServiceCaller.readOnly`, the Web Reader methods `context`/`logBrowserEvidence`/`projectResource` and `/internal/playwright-reader/service`, and the read-only task `scope` claim (`CoreMcpTaskScope`, `isCoreMcpTaskScope`; deployment-profiles B21). The matching `@sislexa/component-runtime` 1.4.0 (`sislexa-component-runtime-1.4.0-906e79891542.tgz`, same commit, version raised only in the archive) signs and verifies the `scope` claim and adds `verifyCoreMcpTokenWithSecret`.
+The current component-runtime workspace is version 1.4.0, matching the published
+1.4.0 implementation: all eight source files are byte-identical to that archive.
+Earlier packaging raised the version only inside the archive and left the
+workspace at 1.0.1. That stale workspace label caused peer resolution failures
+when installing newer owners into Core. Historical published 1.0.1 lacks the
+shared-service and Core MCP token APIs; do not lower a consumer's minimum to
+1.0.1 merely because a newer Core checkout once retained that label. Validate
+both the published implementation and the normal consumer `npm ci` resolution.
+
 0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
 0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
 0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.
@@ -384,3 +393,18 @@ ReaderProjectRequest/Response и проверки адресов. readerProjectU
 path/query/hash. isReaderProjectPath исключает служебные RPC/MCP и рекурсию preview.
 Контракт ресурса содержит только method/path/headers/bodyBase64, адрес транспорта
 ему не передаётся. Он одинаков для встроенного Reader и отдельного процесса.
+
+## Workspace and published contract versions
+
+Core owns the Shared sources in `packages/shared`. The public-chat composition
+aligns the workspace manifest with published contract version 0.1.41; its release
+commit `ce8eaefd` is already an ancestor of this source. Identity's actual
+`>=0.1.38 <0.2.0` peer requirement is therefore satisfied without stale lock
+metadata. The older Chat UI and Chat App archives still declare exact 0.1.10
+peers; Core's root overrides select the current 0.1.41 workspace for these two
+consumers. Their integration remains covered by the complete Core gate.
+
+Owner archive pin replacement alone does not refresh dependencies or peers in
+an existing lock entry. Regenerate that entry from the new archive and verify a
+clean `npm ci` before accepting a composition. Never hide a peer mismatch with
+`--legacy-peer-deps`; align the owner declaration or the selected contract.

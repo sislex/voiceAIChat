@@ -242,9 +242,9 @@ export function registerAdminRoutes(
     const link = inviteLink(req, token)
     await mailer.send({
       to,
-      subject: 'Приглашение в ChatAI',
-      text: `Вас приглашают зарегистрироваться в ChatAI.\n\nОткройте ссылку для регистрации:\n${link}\n\nЕсли вы не ждали приглашения — просто проигнорируйте письмо.`,
-      html: `<p>Вас приглашают зарегистрироваться в <b>ChatAI</b>.</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Зарегистрироваться</a></p><p style="color:#666;font-size:12px">Или скопируйте адрес: ${link}<br>Если вы не ждали приглашения — просто проигнорируйте письмо.</p>`
+      subject: 'Приглашение в sislexa',
+      text: `Вас приглашают зарегистрироваться в sislexa.\n\nОткройте ссылку для регистрации:\n${link}\n\nЕсли вы не ждали приглашения — просто проигнорируйте письмо.`,
+      html: `<p>Вас приглашают зарегистрироваться в <b>sislexa</b>.</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Зарегистрироваться</a></p><p style="color:#666;font-size:12px">Или скопируйте адрес: ${link}<br>Если вы не ждали приглашения — просто проигнорируйте письмо.</p>`
     })
   }
 

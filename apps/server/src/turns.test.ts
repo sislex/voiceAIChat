@@ -15,6 +15,7 @@ import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import type { ChatAccounting } from './billing/chatAccounting.js'
+import { ACCOUNTING_PENDING_MESSAGE } from './billing/chatAccounting.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
@@ -1792,6 +1793,136 @@ describe('turns: управляемая персистентная очеред�
     }
     return { client, handlers, requests, cancels: () => cancels }
   }
+
+  it('preserves a stopped public queue and rejects resume/send-now across conversations until stable-user settlement', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      const other = await db.chat.createConversation(U, 'Other chat')
+      const active = await db.chat.addMessage(U, conversation.id, 'u0', 'Active', '10:00')
+      const queued = await db.chat.addMessage(U, conversation.id, 'u0', 'Queued', '10:01')
+      const elsewhere = await db.chat.addMessage(U, other.id, 'u0', 'Other request', '10:02')
+      const llm = controlled()
+      let pending = false
+      const stableUserId = (await db.identity.getAccountAccess(U))!.userId
+      const hasPendingUser = vi.fn((id: string) => id === stableUserId && pending)
+      const wrap = vi.fn((client: LlmClient) => ({ send: (req: LlmRequest, handlers: LlmStreamHandlers) => {
+        pending = true
+        return client.send(req, handlers)
+      } }))
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser, stopsInBackground: (origin: string, delegated: boolean) => origin === 'chat' && !delegated } as unknown as ChatAccounting })
+      const events: import('@voicechat/shared').ServerMessage[] = []
+      turns.subscribe(event => events.push(event))
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: queued.text }] })
+      const queueId = (await db.chat.listQueuedTurns(U, conversation.id))[0]!.id
+      llm.handlers[0].onDelta('Visible partial')
+      await turns.cancel(conversation.id); await turns.cancel(conversation.id)
+      await turns.sendQueuedNow(U, conversation.id, queueId)
+      await turns.resumeQueues(U)
+      await turns.start({ userId: U, conversationId: other.id, messageId: elsewhere.id, segments: [{ speakerId: 1, text: elsewhere.text }] })
+      await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(1)
+      expect(hasPendingUser).toHaveBeenCalledWith(stableUserId)
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([expect.objectContaining({ id: queueId, messageId: queued.id, status: 'queued', text: queued.text })])
+      expect(events.filter(event => event.t === 'claude.error')).toEqual(expect.arrayContaining([expect.objectContaining({ conversationId: other.id, message: expect.stringContaining('учёта его стоимости') })]))
+      llm.handlers[0].onDelta('Hidden'); llm.handlers[0].onDone('Hidden complete'); llm.handlers[0].onError('Hidden failure')
+      await turns.idle()
+      const answers = (await db.chat.listMessages(U, conversation.id)).filter(message => message.role === 'ai')
+      expect(answers).toEqual([expect.objectContaining({ text: 'Visible partial', meta: expect.objectContaining({ interrupted: true }) })])
+      expect(events.filter(event => event.t === 'claude.done')).toHaveLength(1)
+      pending = false
+      await turns.resumeQueues(U); await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(1)
+      await turns.sendQueuedNow(U, conversation.id, queueId); await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(2)
+      expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+      llm.handlers[1].onDone('Next complete'); pending = false
+      await turns.idle()
+    } finally { await db.close() }
+  })
+
+  it('restores extracted public queue work when another conversation reserves the user before admission', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Queue admission race')
+      const messages = await Promise.all(['First', 'Second'].map(text => db.chat.addMessage(U, conversation.id, 'u0', text, '10:00')))
+      const payload = { segments: [{ speakerId: 1, text: 'First' }], verbose: true, execTarget: 'none', billingSession: { userId: 'subject', tenantId: 'tenant', sid: 'sid' } }
+      await db.chat.enqueueTurn(U, conversation.id, messages[0].id, payload)
+      await db.chat.enqueueTurn(U, conversation.id, messages[1].id, { segments: [{ speakerId: 1, text: 'Second' }] })
+      let pending = false
+      const take = db.chat.takeQueuedTurn.bind(db.chat)
+      vi.spyOn(db.chat, 'takeQueuedTurn').mockImplementation(async (...args) => {
+        const result = await take(...args)
+        pending = true
+        return result
+      })
+      const wrap = vi.fn((client: LlmClient) => client)
+      const turns = createTurnManager({ db, claude: controlled().client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser: () => pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.resumeQueues(U); await turns.idle()
+      expect(wrap).not.toHaveBeenCalled()
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      const queue = await db.chat.listQueuedTurns(U, conversation.id)
+      expect(queue.map(item => [item.messageId, item.status])).toEqual(messages.map(message => [message.id, 'queued']))
+      expect(await db.chat.queuedTurnPayload(U, conversation.id, queue[0].id)).toEqual(payload)
+      expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
+    } finally { await db.close() }
+  })
+
+  it('restores merged send-now work if the original public execution becomes billable during the merge', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Send now admission race')
+      const active = await db.chat.addMessage(U, conversation.id, 'u0', 'First', '10:00')
+      const queued = await db.chat.addMessage(U, conversation.id, 'u0', 'Second', '10:01')
+      const llm = controlled()
+      let pending = false
+      const wrap = vi.fn((client: LlmClient) => client)
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser: () => pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: 'First' }] })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: 'Second' }] })
+      const queueId = (await db.chat.listQueuedTurns(U, conversation.id))[0].id
+      const merge = db.chat.mergeQueuedTurnIntoMessage.bind(db.chat)
+      vi.spyOn(db.chat, 'mergeQueuedTurnIntoMessage').mockImplementation(async (...args) => {
+        const result = await merge(...args)
+        pending = true
+        return result
+      })
+      await turns.sendQueuedNow(U, conversation.id, queueId)
+      await vi.waitFor(async () => expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true))
+      expect(wrap).toHaveBeenCalledTimes(1)
+      const queue = await db.chat.listQueuedTurns(U, conversation.id)
+      expect(queue).toHaveLength(1)
+      expect(queue[0]).toMatchObject({ text: 'First\n\nSecond', status: 'queued' })
+      expect((await db.chat.queuedTurnPayload(U, conversation.id, queue[0].id))?.segments).toEqual([
+        { speakerId: 1, text: 'First' }, { speakerId: 1, text: 'Second' }
+      ])
+    } finally { await db.close() }
+  })
+
+  it('keeps the first public queue item queued when Billing rejects an admission race', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Billing admission race')
+      const messages = await Promise.all(['First', 'Second'].map(text => db.chat.addMessage(U, conversation.id, 'u0', text, '10:00')))
+      for (const message of messages) await db.chat.enqueueTurn(U, conversation.id, message.id, { segments: [{ speakerId: 1, text: message.text }] })
+      const llm = controlled()
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap: (client: LlmClient) => client, hasPendingUser: () => false, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.resumeQueues(U); await turns.idle()
+      expect(llm.handlers).toHaveLength(1)
+      await llm.handlers[0].onError(ACCOUNTING_PENDING_MESSAGE)
+      await turns.idle()
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      expect((await db.chat.listQueuedTurns(U, conversation.id)).map(item => [item.messageId, item.status])).toEqual(messages.map(message => [message.id, 'queued']))
+      expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
+      expect(llm.handlers).toHaveLength(1)
+    } finally { await db.close() }
+  })
 
   it('Stop завершает CLI, сохраняет partial и однократно продвигает очередь', async () => {
     const db = await freshDb()

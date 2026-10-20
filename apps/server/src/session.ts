@@ -281,9 +281,18 @@ export function createSession(deps: SessionDeps): WsHandlers {
             assistantContext: msg.assistantContext
           })
           break
-        case 'claude.cancel':
-          await deps.turns.cancel(msg.conversationId)
+        case 'claude.cancel': {
+          // Legacy cancel-all applies only to this user and selected tenant.
+          // Never pass an absent ID to the process-global cancellation method.
+          const ids = msg.conversationId ? [msg.conversationId]
+            : deps.turns.active(deps.user.name).map(turn => turn.conversationId)
+          for (const id of ids) {
+            const conversation = await deps.db.chat.getConversation(deps.user.name, id)
+            if (!conversation || (conversation.tenantId && conversation.tenantId !== deps.user.account?.tenantId)) continue
+            await deps.turns.cancel(id)
+          }
           break
+        }
         case 'claude.queue.edit':
           await deps.turns.editQueued(deps.user.name, msg.conversationId, msg.id, msg.text, msg.segments)
           break

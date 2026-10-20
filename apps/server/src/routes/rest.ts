@@ -1,6 +1,6 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
-import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
+import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
@@ -776,6 +776,7 @@ export async function registerRest(
   dataDir: string,
   opts: {
     chatModels?: ChatModelPolicy
+    chatTextOnly?: boolean
     runnerFs?: RunnerFsClient
     authStatus?: AuthStatusState
     isAgentOnline?: (agentId: string) => boolean
@@ -827,7 +828,7 @@ export async function registerRest(
   // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
   app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
     const userId = uid(req)
-    if (runnerFs) {
+    if (runnerFs && !opts.chatTextOnly) {
       try {
         const remote = await runnerFs.readFile(userId, req.query.path ?? '')
         if (remote) return remote
@@ -835,8 +836,10 @@ export async function registerRest(
         return proxyError(reply, err) as never
       }
     }
-    const workdir = (await db.settings.getSettings(userId)).workdir
-    const roots = [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
+    // A public text-only user's saved workdir is not filesystem authority.
+    // Shared uploads and runner profiles are outside this output endpoint.
+    const workdir = opts.chatTextOnly ? undefined : (await db.settings.getSettings(userId)).workdir
+    const roots = opts.chatTextOnly ? [] : [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
     const res = readCoreUserFile(req.query.path ?? '', dataDir, userId, roots)
     if (!res.ok) {
       const code = res.reason === 'too-large' ? 413 : 404
@@ -1672,10 +1675,21 @@ export async function registerRest(
     const alive = new Set((await db.machines.listAgents(userId)).map((agent) => agent.id))
     const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
     const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
-    if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
     const repaired = { ...settings, execTarget, defaultAgentId }
-    await db.settings.saveSettings(userId, repaired)
-    return repaired
+    if (execTarget !== settings.execTarget || defaultAgentId !== settings.defaultAgentId) {
+      await db.settings.saveSettings(userId, repaired)
+    }
+    if (!opts.chatModels) return repaired
+    // Project the deployment's effective default without persisting a fallback
+    // over the user's preference. Engine IDs select transport, not model policy.
+    const access = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), opts.chatModels)
+    const fallback = firstAllowedProvider(access)
+    if (!fallback) return repaired
+    const provider = isProviderAllowed(access, repaired.llmProvider) ? repaired.llmProvider : fallback
+    const model = deploymentModel(access, provider, provider === 'codex' ? repaired.codexModel : repaired.model, opts.chatModels)
+    if (!model) return repaired
+    return { ...repaired, llmProvider: provider,
+      ...(provider === 'codex' ? { codexModel: model } : { model: normalizeClaudeModel(model) }) }
   }
   registerChatSettingsRoutes(app, db)
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
