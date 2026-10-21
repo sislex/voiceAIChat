@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-19
-checked: 0e050cbcd
+updated: 2026-10-22
+checked: f047b4158
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -418,7 +418,9 @@ request]}`; the dispatcher (`kanbanBridge/internal.ts`) rejects other method nam
 получает порт как `HttpMachines` (`machinesBridge/httpMachines.ts`): синхронные чтения — из зеркала, которое
 процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
 события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
-`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
+`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`; пока команда
+работает, сервер раз в 30 с пишет пустую строку — иначе клиент на `fetch`/undici рвёт тело через 5 минут без
+данных, и молчаливая команда вроде снимка прод-базы падала с `terminated`). Ошибки
 файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`; буфер PTY (`ptyBufferText`) —
 полный, по RPC у процесса машин (тип у порта допускает `Promise`, консольный MCP ждёт `await`). При обрыве шины все машины
 считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
