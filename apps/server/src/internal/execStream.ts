@@ -19,9 +19,13 @@ export type ExecStreamLine = { chunk: string } | { result: ExecResult } | { erro
 
 export const EXEC_STREAM_HIGH_WATER = 8 * 1024 * 1024
 export const EXEC_STREAM_LOW_WATER = 1024 * 1024
+// Fetch-based clients (undici) drop a response body after 5 minutes without data, so a silent command
+// such as a production snapshot ended with `terminated`. An empty line keeps the body alive; both
+// clients skip blank lines.
+export const EXEC_STREAM_KEEPALIVE_MS = 30_000
 
 /** Сторона сервера: выполняет команду и пишет поток в ответ; обрыв соединения клиентом отменяет команду. */
-export async function serveExecStream(reply: FastifyReply, body: ExecStreamRequest, machines: Pick<MachinesService, 'exec' | 'execStream'>): Promise<void> {
+export async function serveExecStream(reply: FastifyReply, body: ExecStreamRequest, machines: Pick<MachinesService, 'exec' | 'execStream'>, keepaliveMs = EXEC_STREAM_KEEPALIVE_MS): Promise<void> {
   const controller = new AbortController()
   reply.hijack()
   const raw = reply.raw
@@ -60,6 +64,7 @@ export async function serveExecStream(reply: FastifyReply, body: ExecStreamReque
     })
   }
   let final: ExecStreamLine
+  const keepalive = setInterval(() => { if (writable() && raw.writableLength < EXEC_STREAM_LOW_WATER) raw.write('\n') }, keepaliveMs)
   try {
     const result = body.stream
       ? await machines.execStream(body.agentId, body.command, body.timeoutMs, onChunk, controller.signal)
@@ -67,6 +72,8 @@ export async function serveExecStream(reply: FastifyReply, body: ExecStreamReque
     final = { result }
   } catch (error) {
     final = { error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    clearInterval(keepalive)
   }
   await waitForCapacity()
   flushDropped()
