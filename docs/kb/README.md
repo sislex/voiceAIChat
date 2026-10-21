@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 796 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 918 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: ff965ad35 chore(core): compose public chat with Core UI 1.5.28 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 7 коммит(ов) в areas после сверки: d13ea5ae0 docs(kb): exec-stream keepalive for silent commands … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1095 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
