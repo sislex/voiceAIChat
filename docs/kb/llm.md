@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-20
-checked: a1015514c
+updated: 2026-10-22
+checked: ebbe9b6d
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -660,8 +660,15 @@ Chromium-цели и не исполняет эти команды в iframe. А
 после такого отказа ушёл писать файлы через `python3 -c` в `bash`, не смог и
 закончил ход, не создав ни одной правки, — ран при этом отчитался успехом (защиту
 от этого см. в [features/ci-runner.md](features/ci-runner.md#пустой-ход-модели-не-может-закончиться-успехом)).
-Путь вне `cwd` по-прежнему отвергается, но теперь отказ называет сам `cwd`, и
-модель может исправиться без человека. Границы закреплены в
+Without URL `root` parameters, paths outside `cwd` remain forbidden.
+Repeated `root=<absolute-directory>` query parameters grant access to additional
+owner workspaces on the selected machine. `read`, `edit` and `grep` use the same
+`remotePath` resolver: relative paths still start at `cwd`; absolute paths must
+be inside `cwd` or one of the roots. Rejections list all allowed roots. Roots
+must be absolute directories without `..` or NUL; filesystem roots (`/`, `C:/`)
+are rejected with HTTP 400 before tool execution. Windows comparisons ignore
+case and slash direction. These grants do not apply to other project machines.
+This version of the endpoint exposes no separate `write`, `glob` or `list` tools. Границы закреплены в
 `mcp/remoteBashMcp.test.ts`: абсолютный путь внутри `cwd` доходит до реестра,
 `/repos/other` и сосед с общим префиксом (`/repos/taskX` при `cwd=/repos/task`)
 отклоняются до обращения к машине, `..` внутри абсолютного пути запрещён,

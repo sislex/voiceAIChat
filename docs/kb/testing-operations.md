@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-20
-checked: 0d04afc3f
+updated: 2026-10-22
+checked: ebbe9b6d
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -48,6 +48,12 @@ after its run finishes; on timeout, unfinished file names identify the work for
 promotion even when no result report was written. Node reports are persisted
 after each result. Temporary reports live under `artifacts/gate-task` and are
 removed after reading. Missing successful-run reports fail the gate.
+
+`scripts/task-gate.mjs` writes each Vitest `assertion.fullName` to
+`GATE-TASK-CASE` without escaping. Parameterized values therefore become part
+of the gate log verbatim, including NUL. Keep a NUL regression in a test body
+under a safe static test name instead of interpolating the value through
+`it.each` and `%s`.
 
 Focused regression coverage: `node --import tsx --test
 scripts/task-gate.test.mjs scripts/task-tests.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.mjs`.
