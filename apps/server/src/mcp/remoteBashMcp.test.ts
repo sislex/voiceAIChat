@@ -63,11 +63,14 @@ describe('remotePath', () => {
       }
     }
   )
-  it.each(['relative', '/', '/./', '/owners/../core', 'C:/', 'C:/./', 'C:relative', '/owners/\0bad'])(
+  it.each(['relative', '/', '/./', '/owners/../core', 'C:/', 'C:/./', 'C:relative'])(
     'rejects invalid root %s even for a cwd path', (root) => {
       expect(() => remotePath(cwd, 'a.ts', [root])).toThrow('Недопустимый root')
     }
   )
+  it('rejects a root containing NUL even for a cwd path', () => {
+    expect(() => remotePath(cwd, 'a.ts', ['/owners/\0bad'])).toThrow('Недопустимый root')
+  })
   it('compares Windows roots without case or slash differences', () => {
     expect(remotePath('C:/task', 'd:\\Owners\\Core\\a.ts', ['D:/owners/core']))
       .toBe('D:/owners/core/a.ts')
