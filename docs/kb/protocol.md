@@ -1,16 +1,20 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-05
-checked: 8e052b52
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/release.ts
+  - packages/shared/src/releaseDisk.ts
   - packages/shared/src/kb.ts
   - packages/shared/src/kbService.ts
   - packages/shared/src/agentProtocol.ts
+  - packages/shared/src/devStand.ts
+  - packages/shared/src/devProcess.ts
   - packages/shared/src/llm.ts
   - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
@@ -19,6 +23,203 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Voice module configuration
+
+`GET /api/system/capabilities` includes optional `configured` on both `stt`
+and `tts` statuses. Core sets it from the installed engine/client or complete
+runner URL and credential configuration, independently of health, model files,
+memory limits and the user's tariff. A connected service that is offline or
+denied by the tariff remains configured; `available` and `reason` describe its
+current usability. Older servers omit this additive field.
+
+The browser can suppress voice onboarding when both modules are unconfigured
+without treating a temporary service outage as module removal. The endpoint
+does not expose runner addresses or credentials. Server HTTP regressions live
+in `apps/server/src/system/voiceConfiguration.test.ts`.
+
+## Analytics module configuration
+
+`SystemCapabilities.analytics?: { configured: boolean }` is an additive
+deployment signal on `GET /api/system/capabilities`. Core sets it from the
+managed Analytics dependency, without probing service health or exposing
+addresses, credentials or the user's report permissions. Explicit false means
+no module was configured; true includes an offline configured service. Clients
+preserve legacy behavior when older servers omit the field. HTTP regressions
+use actual component configuration in
+`apps/server/src/system/analyticsConfiguration.test.ts`.
+
+## Operator assistant project contract
+
+`ProjectDetail` and the `projects:update` patch also expose optional
+`operatorAssistantModel: OperatorAssistantModel`. The shared contract exports
+`OperatorAssistantExecution`, `DEFAULT_OPERATOR_ASSISTANT_MODEL` and
+`normalizeOperatorAssistantModel`; see [model normalization](projects.md#operator-assistant-model).
+`LlmRequest.toolOnly?: boolean` (also inherited by `LlmRunBody`) requests only
+MCP tools; no shell, file or web tools. Enforcement belongs to the runner adapters.
+
+`projects.ts` exports `OperatorAssistantMode` (`off | answers | full`) and
+`OPERATOR_ASSISTANT_MODES`. `ProjectDetail` and the `projects:update` patch in
+`ipc.ts` expose optional `operatorAssistant` and
+`operatorAssistantLimits: Partial<OperatorAssistantLimits>`. An absent mode
+means `off`; `normalizeOperatorAssistant` also maps unknown input to `off`.
+
+`OperatorActionKind` and `OPERATOR_ACTIONS_BY_MODE` define the action contract:
+`off` allows none; `answers` allows `answer`, `comment`, `escalate`; `full` also
+allows `retry_step`, `discard_and_retry`, `restart_development`, `move_ready`.
+See [project limits](projects.md#operator-assistant-limits) for defaults and
+normalization. Execution and persistence belong to the external Kanban service.
+
+## External agent API tokens
+
+`REST.sessionApiTokens` maps GET/POST `/api/session/api-tokens`;
+`REST.sessionApiToken(sid)` maps DELETE `/api/session/api-tokens/:sid`
+with an encoded session identifier. Identity owns these handlers. API callers
+send `Authorization: Bearer <token>` without cookies or CSRF; `/ws` accepts
+the URL-encoded token in its `token` query parameter. Read-only tokens reject
+REST mutations with 403; revoked tokens return 401. Issuance, permissions,
+revocation and owner route maps are documented in
+[External agent access through API tokens](agent-api-access.md).
+
+## Subproject board contracts (board-subproject-view-v1 B01)
+
+Shared defines `ProjectSummary.parentProjectId: string | null` and
+`subprojectCount: number`. The full `ProjectDetail` inherits both; `Project`
+is an alias for that full contract. `projects:update` accepts optional
+`parentProjectId`: omission leaves the relationship unchanged, null detaches it.
+
+`REST.subprojects(id)` builds `GET /api/projects/:id/subprojects`, returning
+`ProjectSubprojectSummary[]` with `id`, `name`, and the viewer's `role`.
+The corresponding `projects:subprojects` IPC channel is in `IPC_CHANNELS`.
+No new WebSocket message types are introduced.
+
+`BoardRequestOptions.projects` selects the requested project itself and/or its
+subprojects. `REST.board(id, { projects: ['a', 'b'] })` produces
+`/api/projects/:id/board?projects=a,b`. IDs are individually URL-encoded.
+`REST.projectBoard` and `REST.projectBoardStatuses` accept the same options
+and retain their legacy boolean includeCompleted argument. Both IPC loading
+phases (`board:get`, `board:getStatuses`) share these options; callers must
+send the same selection for the skeleton and TaskStatus requests.
+Omission preserves the default project; an explicit empty list is transmitted
+as `projects=`, distinct from omission. includeCompleted can be combined with
+the selection.
+
+`Board.projects` lists included projects as `{ id, name }[]`, including those
+without tasks. A subproject task retains its original `projectId` and
+`columnId`; optional `displayColumnId` names its column on the requested board.
+These are shared contracts and URL adapters; server authorization, persistence,
+and consumer integration are owned by the subsequent implementation tasks.
+
+## Release disk preflight (release-disk-preflight-v1 B01)
+
+Shared exports `RELEASE_MIN_FREE_BYTES = 10 * 1024 ** 3` (10 GiB),
+`ReleaseDiskCheck`, `ReleaseDiskPreflight`, `parseReleaseDiskPreflight` and
+`releaseDiskCleanupPrompt` through the release contract and package barrel.
+`REST.projectReleasePreflight(id)` builds the encoded path for
+`GET /api/projects/:id/releases/preflight?agentId=<encoded build agent ID>`;
+the caller appends the query parameter.
+
+Each check carries `role: 'build' | 'production'`, `machineId: string | null`,
+`machineName`, `freeBytes: number | null`, `minBytes`, `ok`, `measuredAt`
+(Unix milliseconds), and optional `error`. An unmeasurable machine must carry
+`freeBytes: null`, `ok: false` and a nonblank error. Measured checks succeed at
+`freeBytes >= minBytes` and omit `error`. The strict parser throws `TypeError`
+for unknown or missing fields, invalid types, blank names/IDs/errors, negative,
+fractional or unsafe numeric quantities, empty check lists, and contradictory
+check or aggregate success flags. Aggregate `ok` equals every check's `ok`.
+
+The HTTP 409 `ReleaseDiskLowResponse` is
+`{ code: 'release_disk_low', error: string, preflight: ReleaseDiskPreflight }`;
+`RELEASE_DISK_LOW` exports the code. Existing `releases:createBranch` and
+`releases:deploy` request arguments accept optional `ignoreDiskCheck?: boolean`.
+The Russian cleanup prompt names the machine, reports free/minimum GiB and
+exact bytes (or the measurement error), lists cleanup candidates and asks to
+show their sizes. It prohibits deletion without explicit user confirmation in
+that chat and prohibits touching personal files.
+
+B01 supplies pure contracts, validation and prompt generation. Kanban C01 owns
+measurement, HTTP enforcement and owner authorization for overrides; Core UI
+C02 owns preflight display and opening the cleanup chat. Building the shared
+archive and commissioning those integrations belong to the integrator.
+
+## Dev stands (dev-lane-v1 B01)
+
+The agent-facing Core gateway CLI and health contract are versioned separately
+as `DEV_GATEWAY_VERSION` in Shared. `scripts/dev-gateway.mjs --version` (run with
+`node --import tsx`) reports that version. `GET /__gateway/health` returns
+`DevGatewayHealth`: version, standId and each component's upstream reachability.
+`readDevGatewayManifest` accepts optional opaque `gateway` metadata and ignores
+future top-level fields with warnings, while retaining strict component entries.
+See [deployment](deploy.md#dev-stand-gateway-and-core-component-c02) for the full CLI contract.
+
+`packages/shared/src/devStand.ts` owns the schema-1 `DevStandManifest`,
+`DevComponentId`, `DEV_COMPONENT_REGISTRY`, build ID helpers and REST payloads.
+The registry uses canonical `owner/repository` names. Ports are local defaults,
+not allocations: Core 8787, Core UI 5273, Make 8788, Kanban 8789,
+Playwright Reader 8797 and Image Studio 8796. The allocator supplies actual ports.
+Readiness is `/api/health`, except Core UI (`/`, HTML).
+
+Gateway consumers match the longest route prefix, with path-segment boundaries
+for prefixes without a trailing slash. Core UI `/` is the UI fallback; Core owns
+`/api` and `/ws`; product prefixes take precedence. Kanban has no public prefix:
+Core connects to it through `VC_KANBAN_URL`. Routing and process execution are
+implemented by the subsequent gateway, Kanban and Agent tasks, not by Shared.
+
+`isDevStandManifest(unknown)` is a type guard;
+`validateDevStandManifest(unknown)` returns the validated input or throws
+`invalid_dev_stand_manifest`. Neither fills defaults nor mutates input. All six
+components and their full lowercase 40-character hex SHAs are mandatory.
+Unknown fields, unknown components, missing own fields and invalid sources are
+rejected. IDs use ASCII letters/digits plus dot, underscore and hyphen, up to
+128 characters, starting with a letter/digit. Repository values use
+`owner/repository` (forks are allowed by the schema; authorization is the owner's
+responsibility). Optional URLs must be absolute HTTP(S), without credentials or
+fragments. `startedAt` is a nonnegative safe integer in Unix milliseconds.
+`devBuildId` is permitted only for `source: 'dev'` and must match the SHA prefix.
+
+`formatDevBuildId(version, sha)` accepts a release `major.minor.patch` and a full
+lowercase SHA; it emits `<version>-dev.<sha12>`. Prerelease/build metadata inputs
+and leading-zero version parts are rejected. `parseDevBuildId` returns
+`{ version, sha12 }` or `null`; `isDevBuildVersion` recognizes exactly this wire
+format. Release consumers must reject these versions (enforcement is C02).
+
+| Method and path | Request | Success response |
+| --- | --- | --- |
+| GET `/api/projects/:id/dev-stands` | No body | `ListDevStandsResponse` (manifest array), 200 |
+| POST `/api/projects/:id/dev-stands` | `CreateDevStandRequest` (`machineId`, `baseEnvironmentId`) | `CreateDevStandResponse` (manifest), 201 |
+| GET `/api/projects/:id/dev-stands/:standId` | No body | `GetDevStandResponse` (manifest), 200 |
+| POST `…/:standId/components/:component` | `StartDevStandComponentRequest` (`repository` and exactly one of `sha`, `branch`) | `StartDevStandComponentResponse` (manifest), 200 |
+| DELETE `…/:standId/components/:component` | No body | `ResetDevStandComponentResponse` (manifest), 200 |
+
+`REST.projectDevStands`, `REST.projectDevStand` and
+`REST.projectDevStandComponent` encode dynamic segments. Create/start request
+type guards reject unknown fields. The owner resolves a branch to a full SHA
+before calling the Agent; responses always contain resolved SHAs. Reset stops
+the override and restores the base component entry. The owner publishes the new
+manifest only after success; failed starts preserve the previous manifest.
+Errors use `DevStandErrorResponse` (`error`: stable code, `message`: diagnostic).
+`DEV_STAND_ERROR_STATUS` is the authoritative code-to-HTTP mapping, including
+invalid input, access errors, missing stand/base/repository/ref, conflicts,
+unavailable machines/ports, dependency/process failures and readiness timeout.
+
+`packages/shared/src/devProcess.ts` defines the additive Agent RPC extension.
+Requests use existing Agent envelopes (`t`, `requestId`), with payload fields at
+the top level. `devProcess.start` carries `standId`, `component`, `repository`,
+resolved `sha`, `command` (nonempty executable/argument array), `env` and allocated
+`port`. Stop/status carry `standId` and `component`; logs additionally accepts
+`limit` (default 200, range 1–1000). Start returns only after readiness, with
+`state: 'ready'`, repository, SHA, URL and `startedAt`; stop returns after cleanup
+with `state: 'stopped'`. Status describes the current lifecycle; logs returns
+redacted timestamped stdout/stderr lines and a truncation flag.
+
+Success envelopes use `t: '<method>.result'`, `requestId` and `result`; failures
+use `t: 'devProcess.error'`, `requestId`, `method`, stable `code` and diagnostic
+`message`. `DevProcessRpc` binds methods to request/result types, and the
+`DEV_PROCESS_REQUEST_TYPES` / `DEV_PROCESS_RESPONSE_TYPES` registries derive from
+the same exhaustive method map. Shared's `agentProtocol.ts` and barrel extend
+`ServerToAgent` / `AgentToServer`; the published Agent owner package remains
+unchanged until the integrator distributes this contract. These are Agent wire
+messages, not browser `ClientMessage` / `ServerMessage` events.
 
 ## Knowledge modules and service RPC (B01)
 
@@ -112,6 +313,15 @@ The existing `loadServiceData` setting and
 stored diagnostics and WebSocket message events are unchanged.
 The renderer IPC channel `conversations:get` accepts the same optional `limit` and
 `before`; web and desktop hosts map them to the REST query.
+
+## Rolling conversation summaries
+
+`Conversation.summary` is optional and contains `text`, the inclusive
+`coversUntilMessageId` boundary, and `updatedAt` in Unix milliseconds. `GET
+/api/conversations/:id/summary` returns that object or `null`; `POST
+/api/conversations/:id/summary/refresh` runs an on-demand refresh and returns
+the resulting object. A stored change is also delivered to the owner's active
+connections as `chat.conversation` with the complete updated conversation.
 
 ## Versioned chat/application boundary
 
@@ -269,6 +479,15 @@ URL руками. Параметризованные пути — функции
 агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
 и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
 
+`Conversation.contextUsage` — необязательный снимок заполнения текущего LLM-потока:
+`{ usedTokens, windowTokens, provider, model, measuredAt }`. Для Claude `usedTokens`
+равен input + cache read + cache creation последнего assistant turn; для Codex —
+только `last_token_usage.input_tokens`, а не кумулятивный total потока. Размер окна
+берётся из общей таблицы моделей с консервативным fallback 128k. Поле приходит и в
+`GET REST.conversation(id)`. `POST REST.conversationThreadReset(id)` доступен только
+владельцу, очищает provider session и снимок usage, добавляет системную заметку и
+возвращает обновлённый `Conversation`; чужой и отсутствующий разговор одинаково дают 404.
+
 ### Tenant selection
 
 An authenticated REST client selects one of its current Identity memberships
@@ -276,6 +495,58 @@ with `x-sislexa-tenant-id`. Omitting the header selects the personal tenant.
 Identity rejects foreign or removed memberships before Core handles the request.
 Browser WebSockets carry the same selection as the encoded `tenantId` query
 parameter because the browser WebSocket API cannot set a custom header.
+
+### Multi-project integration tokens
+
+`POST /integrations/v1/projects/:id/tasks/:taskId/actions` requires `tasks:control`
+and an allowed project. Token issuance accepts this scope alone or with
+`tasks:read` and `tasks:external`; none of these scopes implies another.
+The shared `BoardCardActionRequest` has `action` (`retry_stage`,
+`restart_development`, `move`, `comment`, or `set_engine_result`), optional
+`stage` (QA stage), `column` (column semantic type), `text`, and `result`.
+The result contains `status` (`done` or `failed`), `branch`, `sha`, `summary`,
+and `evidenceUrl`. `BoardCardActionResponse` is `{ ok, runId?, error? }`.
+Core forwards the body to `POST /internal/kanban/projects/:id/tasks/:taskId/actions`
+using internal Bearer authorization and preserves upstream status, body and
+content type. Missing/invalid/revoked tokens return 401; scope/project failures
+return 403, missing board URL/internal token returns 503, and transport failures
+return 502. The external board validates actions and owns their execution.
+
+`POST /api/projects/:id/integration-tokens` accepts the existing `name` and
+`scopes` plus optional `projectIds` (1–50 unique ids). The list must contain
+`:id`, and the authenticated caller must own every listed project. Responses
+expose both `projectIds` and compatibility `projectId`, which is always the first
+entry. When omitted, `projectIds` is `[projectId]`.
+
+An integration principal returned by `/internal/whoami` has
+`{kind: 'integration', projectId, projectIds, scopes}`. The compatibility
+`projectId` remains the first entry. Integration ingress authorizes its URL
+project by membership in `projectIds`; token listing and revocation remain
+anchored to `projectId`.
+
+`GET /integrations/v1/projects/:id/tasks/state` requires an integration token
+with `tasks:read` and `:id` in its `projectIds`. Missing, invalid or revoked
+credentials return 401; a missing scope or foreign project returns 403 before
+contacting the board. Token creation accepts `tasks:read` alone or together with
+`tasks:external`; read permission does not authorize external task upserts.
+Core forwards the request to the external board's
+`GET /internal/kanban/projects/:id/tasks/state` with its internal Bearer token,
+preserving the response body, status and content type. Missing board configuration
+or internal credential returns 503; transport failures return 502.
+
+The response is `BoardCardsSnapshot` (`packages/shared/src/integrations.ts`):
+`{ generatedAt, tasks: [{ id, seq, key, title, column: { id, name, semanticType },
+autoPilot, autoPilotFixCycles, updatedAt, labels, development, qa, merge,
+decisionReason }] }`. Timestamps are Unix milliseconds and labels are strings.
+`development` is null or `{ runId, status, startedAt, finishedAt, failedStep }`,
+with nullable start/finish times and a nullable failed step
+`{ title, exitCode, tail }` (exitCode may be null). The board supplies `tail` as
+the last at most 40 redacted lines joined into a string. `qa` contains
+`{ stage, status, failedSummary }`; `merge` is null or
+`{ runId, status, targetBranch, failedSummary }`. Failure summaries and
+`decisionReason` are nullable strings. Snapshot assembly, status derivation,
+log truncation and redaction belong to the external board; Core only authorizes
+and forwards the request.
 
 Core stores tenant ownership on projects and conversations. The public transfer
 boundary is `PUT REST.projectTenant(id)` with `{ tenantId }`; only a project
@@ -318,7 +589,7 @@ and all attached conversations move atomically. A tenant mismatch returns 404.
 только чтение), `conversations:copyContext`
 (`POST /api/conversations/:id/context-copy` — перенос выключений из другого
 разговора: источник передаётся телом, потому что это данные операции, а не
-адрес). Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
+адрес). Module details: `core-ui:README.md`.
 
 Чтение репозитория проекта из Make: `GET /api/make/:id/project-files?path=`
 (листинг машины), `GET …/project-links` (статусы связей) и
@@ -326,7 +597,7 @@ and all attached conversations move atomically. A tenant mismatch returns 404.
 `make:projectLinks`, `make:projectPull`. Обратного `project-push` и моста
 `make:projectPush` больше нет (удалены 2026-09-04): Make в репозиторий не
 пишет, иначе общая копия проекта остаётся dirty мимо git. Разбор —
-[ui.md](ui.md#make-компоненты-и-стили-из-репозитория-проекта-только-чтение).
+`make:README.md`.
 
 `warnings` снимка считает сервер, и порогов там три разного смысла.
 `CONTEXT_PREVIEW_TOKENS_NOTICE` (4000 токенов) — абсолютный: «постоянная часть
@@ -444,7 +715,7 @@ input/change, submit, click и навигации; открытие повтор
 слоям route/active-chat, host, cookie/auth, proxy/network, page-loading, dom-bridge,
 action или timeout. Детали действий и UI запуска — [ui.md](ui.md).
 
-Детали протокола действий, лимиты и relay — [ui.md](ui.md#действия-модели-в-превью-mcp__browser__)
+Детали действий Web Reader — `web-reader:README.md`;
 и [llm.md](llm.md).
 
 `kb.usage` — обращение к базе знаний (авто-инъекция контекста сервером или вызов
@@ -514,7 +785,7 @@ SIGTERM) `flushInterrupted` сохраняет частичный текст а�
 `development_done` для режима разработки; ошибка или отмена статус не меняют.
 Мост и ручка остались, но точки входа для ручной смены в UI больше нет: селектор
 из карточки чата убран (там теперь режим чата, см.
-[ui.md](ui.md#компоненты-и-поверхности)), и `conversations:setStatus` зовёт только
+`core-ui:README.md`), и `conversations:setStatus` зовёт только
 автозавершение хода.
 
 `Message.execTarget` — неизменяемый снимок фактической цели конкретного вопроса
@@ -701,7 +972,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 собирает `makeDesignPreviewUrl(conversationId, path)` (`protocol.ts`) — одна функция на UI
 и на промпт модели. Связать можно только Make-проект, привязанный к тому же проекту (иначе
 400 с текстом), а участники проекта получают на такой Make-проект доступ `viewer`, включая
-`GET /api/preview/make/:id/*`. Подробности — [projects.md](projects.md#дизайн-из-make-в-карточке).
+`GET /api/preview/make/:id/*`. Module details: `kanban:README.md`.
 
 **Мок-API проекта (п.29).** Если запрошенного файла нет, превью (`/api/preview/make/:id/*`) и публикация (`/p/…`, `/s/…`) ищут `mock/<путь>.<METHOD>.json` → `mock/<путь>.json` → `mock/<путь>/index[.<METHOD>].json` (`mockCandidates` в `@shared/makeMock`) и отдают JSON с `x-vc-mock: 1`. Файл — либо тело как есть, либо конверт `{ "$status", "$headers", "$delay" (≤ 5000 мс), "$body" }` (`unwrapMockEnvelope`). Не-GET методы (`POST/PUT/PATCH/DELETE`) на этих путях отдают только моки; на публикации `__auth__` обрабатывается тем же маршрутом (`publicMutation`). На публикации со закреплённым снимком моки берутся из снимка. Битый JSON мока → 500 с текстом ошибки. Прямой запрос файла `mock/…` мокам не подлежит (отдаётся как обычный файл).
 
@@ -715,7 +986,7 @@ Make 1.3.1 enforces 256 MiB per project (`MAKE_LIMITS.maxProjectBytes`) and 2 Gi
 
 **Rate-limit импорта (п.39).** `POST /api/make/:id/import` и `/import-url` ограничены на пользователя скользящим окном (`apps/server/src/make/rateLimit.ts`, `SlidingWindowLimiter`): 10 ZIP-импортов и 20 импортов по URL за 10 минут; сверх — 429 `{ error }` с заголовком `Retry-After` (секунды). Лимитеры подменяются через `MakeRoutesDeps.importLimiter/importUrlLimiter`; счётчик в памяти процесса — перезапуск сервера его сбрасывает.
 
-**Read-only ссылка внутри ChatAI (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState` из `packages/shared/src/make.ts`; кроме прежних `token`, `owner`, `title`, `role`, `conversationId`, `files`, `snapshots` и `rev`, состояние содержит нормализованные `stack` и `uiKit` для отображения конфигурации в share-view. Файлы и stories читаются через `GET …/file?path=` и `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
+**Read-only ссылка внутри sislexa (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState` из `packages/shared/src/make.ts`; кроме прежних `token`, `owner`, `title`, `role`, `conversationId`, `files`, `snapshots` и `rev`, состояние содержит нормализованные `stack` и `uiKit` для отображения конфигурации в share-view. Файлы и stories читаются через `GET …/file?path=` и `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной — кроме именных грантов (roadmap-3 п.6): `POST /api/make/:id/share/grants { user, role: 'editor'|'viewer'|null }` (владелец; пользователь проверяется по `db.getUser`) пишет `grants` в `.share.json`; `MakeSharedState.role`/`conversationId` говорят получателю, кто он. Маршруты файлов/снимков/комментариев/presence проверяются `access(userId, id, reply, level)`: владелец — всё, редактор — уровень `editor` (запись файлов, снимки, комментарии), зритель — только `viewer` (чтение); публикация, шаринг, очистка, удаление — по-прежнему `own`. Мосты `make:share/unshare/shareGrant/shared/sharedFile/sharedStories`.
 
 **PWA в экспорте (п.35).** `GET /api/preview/make/:id/export.zip?vite=1&pwa=1` (оба флага независимы): `exportZip({ vite, pwa })` добавляет `manifest.webmanifest`, `sw.js` (index — network-first, остальное — cache-first) и `icon.svg` (первая буква названия на `theme-color`) — для Vite в `public/` с абсолютными ссылками, для статики рядом с `index.html` с относительными. Ссылки (`<link rel=manifest>`, `theme-color`, `apple-mobile-web-app-capable`, регистрация SW не на `file:`) инъектируются только в копию `index.html` в архиве — файлы проекта не меняются. Название и цвет — `detectPwaMeta` (`<title>`, `meta theme-color`, иначе `--accent` из CSS). Чистые функции — `@shared/makePwa`.
 

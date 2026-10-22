@@ -1,8 +1,21 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-05
-checked: ab05d600
+updated: 2026-10-22
+checked: 950a2719f
 areas:
+  - scripts/prod/test_environment_stands.py
+  - scripts/prod/test_environment_scripts.py
+  - scripts/prod/test_compose_env.py
+  - scripts/prod/compose_env.py
+  - scripts/contracts-release.mjs
+  - scripts/contracts-release.test.mjs
+  - scripts/release-train.mjs
+  - scripts/release-train.test.mjs
+  - scripts/release-train-run.mjs
+  - scripts/release-train-run.test.mjs
+  - scripts/dev-gateway.mjs
+  - scripts/dev-component.mjs
+  - scripts/release-version.mjs
   - scripts/prod/environment-files-snapshot.sh
   - deploy/compose.stand.yml
   - scripts/prod/environment_stand.py
@@ -31,7 +44,521 @@ areas:
   - packages/shared/src/kb.ts
 ---
 
+## Public chat deployment isolation
+
+The limited `sislexa.by` installation is a separate deployment of **sislexa**.
+It does not change the product's default application catalog, model access,
+execution modes or voice policy. The owner's 2026-10-20 instruction preserves
+`http://89.125.68.35/` on its existing full-feature version: no deployment,
+restart, configuration change or data migration there is part of this launch.
+Domain DNS, real mail and the public Codex service account remain commissioning
+work; a passing local candidate is not an already provisioned public target.
+
+The read-only baseline on 2026-10-20 is Core `0.1.480`, commit
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, image `voicechat-server` at
+`sha256:bdef5fdf0080423e188bb9794968196cfdb7ea47b5f271ab4660f1fe1dc20913`.
+HTTP port 80 returns a Caddy 301 to HTTPS; the direct port 8787 health endpoint
+returns 200. A local client's missing TLS issuer is not evidence of an app outage.
+Authenticated `/api/system/applications` reports `coreId=localhost` and all seven
+local apps enabled. Docker inspection confirms Make, Projects, readers, Image
+Studio, Identity, Billing, Analytics and both voice services remain running.
+
+| Boundary | Existing full installation (preserve) | Local public-chat candidate | New public installation (required, not yet provisioned) |
+| --- | --- | --- | --- |
+| Address / Compose project | `89.125.68.35`, `voiceaichat` | M2 `127.0.0.1:23001`, `sx-dev-m2-07fb81fd` | `https://sislexa.by`, distinct target and project |
+| Core / component identity | `localhost` / `production` | `stand-dev-m2-public-chat` for both | Distinct `VC_CORE_ID` and component `environmentId` |
+| Core data | `voicechat-server-data` volume | Stand `dev-864e75ef-dd2/voicechat-data` bind | Dedicated data root/volume and outbox |
+| PostgreSQL / Billing | `voiceaichat_vc-postgres` / `voiceaichat_vc-billing-data` | Stand PostgreSQL / operator `public-chat-v1/billing-data` | Separate database, ledger and backup set |
+| Component state | `/etc/voicechat/components-s3-0.1.334` | Operator `public-chat-v1/components` | New registries, directional grants and session secrets |
+| Listening ports | Existing Caddy 80/443 and Core 8787 | Gateway 23001, Core 17801, loopback only | Own bindings; do not replace/reload the old Caddy |
+
+A new Compose project name alone does **not** isolate Core data: root Compose
+fixes `volumes.vc-data.name` to `voicechat-server-data`. The new installation must
+explicitly override that name or bind a dedicated Core data directory. Inspect
+the fully resolved Compose mount sources, database destination, component roots,
+runner profiles and port bindings before any start. Never copy provider registries,
+stand empty-password policy or the M2 personal Codex login into the public site.
+Internal service names such as `/run/sislexa/provider` can match inside containers;
+their host mount sources and issuance environments must be separate.
+
+The explicit public configuration is `VC_APPLICATIONS=chat,identity`,
+`VC_CHAT_MODELS=codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`,
+`VC_CHAT_TEXT_ONLY=true`, `VC_CHAT_REQUIRE_BILLING=true`, `VC_VOICE=off`, and the
+separate Billing ledger's `5000000` / `Europe/Minsk` daily policy. Unset model
+policy, false text-only/required-Billing flags and default voice-on behavior
+remain available to other deployments. Do not put these public restrictions in
+shared defaults or change the existing production ledger's persisted policy.
+
+Publication and deployment are separate. The existing Release Center project
+`e3dea006-b6f7-45ea-8fa3-97502501456d` targets the old production agent
+`02729d2e-be0f-4621-ac2b-8fd1ff39ff93` and `/usr/local/bin/voicechat-deploy`.
+Do not use that target for this launch, edit its production settings, or invoke
+the installed deploy wrapper. `release-train run` without `--deploy` still merges
+PRs and submits release-branch preparation to that Release Center;
+`run --resume` preserves a journal's original deploy intent and target.
+Consequently neither command is a publication-only shortcut here. Use reviewed
+owner/Core PRs and clean immutable artifact publication, then stop before any
+release-environment operation until a distinct public target is configured.
+See the [reviewed publication sequence](../plans/public-chat-v1.md#reviewed-publication-sequence).
+
+## Deployment application profiles
+
+`VC_APPLICATIONS=chat` selects a chat-only Core. A public chat with account settings and
+quota display uses `VC_APPLICATIONS=chat,identity`; Identity provides the
+personal account UI while other product applications remain disabled. Candidate dependency audits are
+recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
+pins and distinguish installed packages from reachable runtime services. Other examples are
+`chat,make`, `chat,make=https://make.example.org`, and
+`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
+tickets. External URLs must be HTTPS without credentials, query or fragment.
+No selector preserves legacy Core modes.
+
+`VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
+`provider:model-id` entries from the shared model catalog. For the first public
+chat deployment, use
+`codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`.
+The first permitted entry is the fallback for stale saved model IDs. Core applies
+this restriction both to personal model access responses and to execution; user
+revocations still take precedence. Missing/empty configuration preserves legacy
+behavior; malformed nonempty configuration prevents startup. Compose forwards
+this value independently of the application selector. Actual model availability
+must also be verified against the configured runner account.
+
+With `VC_CHAT_MODELS`, both GET and PUT responses from `/api/settings` project
+the effective account provider and its selected model using the deployment order
+and current user restrictions. The projection does not overwrite stored model
+preferences on read or when an unrelated preference is patched. Other settings,
+including the inactive provider's model and explicit `llmEngineId`, are retained;
+the turn manager resolves engine transport separately by provider and role. If
+no model is available, clients must use the access response to disable selection
+rather than treating the retained preference as executable.
+
+Conversation overrides remain independent. For example, an allowed account Sol
+and a forbidden conversation Astra resolve that conversation to the policy's
+first permitted model (Luna), not the account's Sol. The existing conversation
+`context-snapshot` summary exposes the effective provider/model; account settings
+alone are not an authoritative fallback for a forbidden conversation override.
+
+Under an explicit model policy, a turn using inherited account defaults does
+not prepend a substitution warning for those projected defaults. Explicit
+conversation/project provider or model substitutions still warn, as does an
+unavailable engine transport. Without `VC_CHAT_MODELS`, legacy warnings remain
+unchanged; `VC_CHAT_TEXT_ONLY` alone does not suppress them. Selection, access
+enforcement, execution metadata and stored preferences are unaffected.
+
+The capabilities endpoint reports `analytics.configured` from the managed
+Analytics dependency, independently of health. Clients hide Analytics UI and
+skip activity/report requests only when the value is explicitly false; a
+configured service outage must remain visible. An omitted field preserves
+older-server behavior. See [the capability contract](protocol.md#analytics-module-configuration).
+
+`VC_CHAT_TEXT_ONLY=true` forces tool-free requests from the turn manager. It
+ignores saved and request-level machine preferences, skips machine availability
+checks and Git preflight, and supplies no remote machine transport. Requests
+carry `textOnly: true` and `executionDisabled: true` with plan permissions, even
+for administrators. This prevents a harmless chat from emitting a preliminary
+machine error or being blocked by a stale offline target. Only the server's
+configured policy enables this behavior; request flags cannot bypass ordinary
+machine checks or preflight refusals. Saved machine preferences are not rewritten.
+The Core file-output endpoint then reads only the authenticated user's Core output
+directories: saved working directories, shared upload roots and runner filesystem
+proxies do not grant access. This prevents a user-supplied workdir from becoming
+filesystem authority in a public chat deployment. The
+runner must explicitly support this mode; an older incompatible runner rejects
+execution. Public release acceptance must verify the installed runner, isolated
+profiles and empty tool inventory before enabling registration. Set
+`VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
+to start without its Billing dependency instead of silently using legacy
+unaccounted turns. Once configured, Billing failures already deny admission.
+
+The same trusted text-only policy also disables auxiliary model work that has
+no Billing admission: semantic KB reranking, automatic/manual conversation
+summaries, project research, image retouch/Image Studio generation, and the
+Anthropic-compatible gateway. KB lexical search and stored summary reads remain
+available. Explicit runner/backend settings cannot re-enable these features in
+public mode. See [the auxiliary boundary](llm.md) and include ambiguous KB input
+and a denied daily-budget admission in release regression; a successful main-turn
+settlement alone does not prove that no auxiliary call was dispatched.
+
+The Billing Compose layer forwards optional `BILLING_DAILY_USER_MICRO_USD`
+and `BILLING_DAILY_USER_TIME_ZONE` without inventing empty defaults. For the
+approved public launch set them to `5000000` and `Europe/Minsk`. Billing persists
+the policy with its ledger: removing environment variables later does not disable
+an established limit. Invalid or conflicting settings prevent startup. The limit
+admits an answer while that user's settled daily spend is below $5; that answer
+may cross the threshold, after which new requests are denied until the next day.
+Do not substitute this admission policy for a hard per-response monetary bound.
+
+`python3 scripts/prod/compose_env.py applications --file .env` prints derived
+`COMPOSE_PROFILES` and `VC_*_MODE` assignments. Apply these assignments to the
+Compose environment before invoking root Compose, or use
+`python3 scripts/prod/compose_env.py run -- up --build -d`. `npm run docker`, the
+deployment script and the stand lifecycle apply this automatically in memory.
+With no selector, the generator preserves the former
+default local services; existing explicit stand module profiles remain selective.
+Local applications enable their service profiles; external applications do not.
+Local LLM runners are omitted when both provider URLs are supplied. Voice runners
+belong to local Chat by default. Set `VC_VOICE=off` to omit both STT and TTS
+containers and clear the legacy voice endpoint URLs passed to Core; `VC_VOICE=on`
+is the default. This also works without `VC_APPLICATIONS` and removes an inherited
+`voice-runner` profile. Invalid values and `VC_VOICE=off` combined with the wildcard
+`COMPOSE_PROFILES=*` fail before Compose runs. Caddy remains enabled in root Compose.
+For build A, `VC_APPLICATIONS=chat`, `VC_VOICE=off`, `COMPOSE_PROFILES=postgres`
+and both external LLM runner URLs select only Core, Postgres and Caddy. Use the
+Compose wrapper above so the generated settings reach Compose. Browser runners
+belong to local Playwright Reader.
+Optional service dependencies use `required: false`.
+
+The selector also derives `VC_CADDY_MAKE_UPSTREAM`,
+`VC_CADDY_PLAYWRIGHT_READER_UPSTREAM` and `VC_CADDY_IMAGE_STUDIO_UPSTREAM`.
+Local applications retain their direct service upstreams. Disabled and external
+applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
+return Core's `404 application_disabled` instead of proxying to absent services.
+Without a selector, the original direct Caddy upstream defaults are preserved.
+
+Operator verification on 2026-10-19 used a separate Docker project and disposable
+Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
+Postgres and Caddy, accepted an administrator login, exposed the chat-only
+manifest and returned the expected disabled responses over certificate-verified
+HTTPS. This isolated check does not replace the complete four-profile acceptance
+or the final production-snapshot release validation below.
+
+Local Projects enables Kanban and Postgres. When Projects is off or external,
+the stand no longer requires those profiles or a database URL; SQLite remains
+available. Restoring a Postgres snapshot still requires its profile explicitly.
+External application credentials continue to use the B01 per-application token
+settings; the generator does not create or modify credentials. Root Compose
+forwards `VC_APPLICATION_<ID>_TOKEN`, `VC_APPLICATION_<ID>_SERVICE_TOKEN` and
+`VC_APPLICATION_<ID>_MCP_SECRET` to Core for each application, using uppercase IDs
+with hyphens replaced by underscores. Unset credentials remain empty; they never
+fall back to the shared internal token or MCP secret. These values are not
+forwarded to local application containers.
+
+Before merge, the operator must validate the four application combinations on
+`dev-m2`: inspect the manifest, authenticate, check disabled prefixes and runner
+MCP inventories, redeem an external Make ticket, and inspect Compose services.
+This commissioning is separate from repository tests and has not been performed
+by C01's sandbox worker (deployment is prohibited in that task).
+
+
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Core memory diagnostics
+
+The Compose `voicechat` service keeps its `mem_limit: 1g` and starts Node with
+`--max-old-space-size=768 --heapsnapshot-near-heap-limit=1
+--diagnostic-dir=/data/diagnostics`. Startup creates that directory and removes
+previous `*.heapsnapshot` files before starting Node, retaining at most one
+automatic near-limit snapshot per process run. Retrieve the snapshot from the
+Core data volume at `/data/diagnostics` before restarting the container.
+Snapshots contain process memory and should be treated as private diagnostics.
+Every five minutes, `docker logs` receives a JSON `process_memory` event with
+`rss`, `heapUsed`, `heapTotal`, `external`, and `arrayBuffers` in MiB.
+The heap cap leaves space for native allocations but does not guarantee that
+a snapshot completes before the container memory limit is reached.
+
+## Contract pin release
+
+`node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
+--commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local
+contract release. See [Shared](shared.md#one-command-contract-release) for owner
+and Shared examples. Run from the target Core checkout with explicit, assigned
+consumer paths. Temporary clones live under `DELIVERY_ATTEMPT_ROOT/tmp` when
+allocated, otherwise under Core's `artifacts/contracts-release`, and are removed
+on completion or error. Owner pack lifecycle scripts run in that detached clone.
+
+The command updates dependency and peer pins, vendors the content-addressed
+archive, records provenance, and runs `npm install --package-lock-only
+--ignore-scripts --strict-peer-deps` in each target. Consumers additionally run
+`npm ci --ignore-scripts --strict-peer-deps`; Core's installed dependencies are
+not replaced. It never commits, pushes, publishes or deploys.
+
+Use dedicated consumer checkouts: their manifests, lockfiles, vendor metadata
+and installed dependencies are modified. Results are JSON lines with `consumer`,
+`status`, and npm diagnostics on failure. A peer conflict is an actionable
+failure, never bypassed with `--force` or `--legacy-peer-deps`. Other consumers
+are still checked. Failed targets retain their proposed pins and archive for
+review; this is not an atomic multi-repository transaction. Correct the peer
+baseline or choose a compatible release and rerun. Existing unrelated snapshot
+entries and metadata are preserved, and old archives are not pruned.
+
+Review the resulting diffs and all consumer results before commissioning the
+release through the normal operator workflow. A successful local command does
+not constitute production deployment or consumer application acceptance.
+
+Module details: `llm-runner:README.md`
+
+## Release train planning (B01)
+
+`node scripts/release-train.mjs plan [--json]` is a read-only preflight. It reads
+every GitHub owner application in `deploy/tools.lock.json`, reports its pinned
+version/commit, proposed next patch, and all commit subjects ahead on `dev`.
+Shared repositories (for example STT/TTS) remain separate report rows but have
+one proposed owner release. Inconsistent shared pins block the plan.
+
+Owner branch heads are resolved through the GitHub REST API before paginated
+comparison. The planner checks the published `v<pinned-version>` release against
+the actual tag commit, not its potentially moving `target_commitish`. Missing
+releases, draft releases and mismatched commits are distinguished in JSON.
+Core commits come from local `origin/main..origin/dev`; refresh these refs before
+planning. The planner never fetches, clones, creates directories, writes Git
+state, logs into Docker, publishes, or deploys.
+
+Prerequisites are a reachable Docker daemon (`docker info`), nonempty `GH_TOKEN`
+or `GITHUB_TOKEN` (never printed), and an existing `~/sislexa-worktrees` root.
+The root must not be a symlink and may contain only clean Git worktrees, with
+no untracked files or dirty submodules; an empty existing root is valid. Missing,
+unreadable or unsafe roots block planning; the planner never repairs them.
+API failures, diverged owner branches, mismatched published tags and missing
+Core refs also block readiness. JSON uses schema version 1 and `ready`; blocked
+plans still include available results and exit 1. Successful plans exit 0.
+
+The ordered proposal covers owner patch/gate/merge/publish/verification, Core
+pin and KB updates, Core gate/merge, then Release Center preflight and branch
+creation. An unchanged owner missing its pinned release proposes publication
+of that exact pin. Production deployment remains a separate explicit operator
+action through `run --deploy`. Fixture Git repositories and fake HTTP responses
+test these adapters without contacting real owners.
+
+## Release train execution (C01)
+
+`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
+owner repository (including both voice services). An unchanged owner with a
+missing release publishes the exact existing pin without a version bump.
+
+The version bump writes the root and application manifests and refreshes the lock.
+An owner whose root `package.json` defines a `set-version` script (Make keeps
+`apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
+itself instead: the runner installs dependencies and runs
+`npm run set-version -- <version>`, then commits every manifest it changed.
+
+The runner creates private clones below
+`~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
+`~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
+original owner selection, commits, versions and deploy intent; it skips completed
+steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
+file excludes competing runners; after a hard process/host crash, confirm the
+runner is no longer active before removing its stale lock and resuming. Clone
+directories remain available for diagnosis. Failures identify the journal and failed
+step and exit nonzero. The error and journal include the failed command, exit code,
+and last 40 output lines, with environment credentials, bearer tokens and recognized
+token formats redacted. Successful resume clears the saved error.
+
+The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
+the runner stops before planning or resuming with an installation hint. GitHub API
+requests retry HTTP 422, 5xx and network failures up to five times after the initial
+attempt, with 1/2/4/8/16-second backoff. Final errors include HTTP status and GitHub
+`message`/`errors`. Verification polls the release, provenance manifest and Docker
+manifests every five seconds for up to five minutes; request and Docker timeouts
+are bounded by the remaining verification time.
+
+If the Core pin push is rejected because `dev` advanced, the runner fetches and
+rebases the pin commit onto `origin/dev`, reruns the Core gate, and pushes without
+force. Only conflicts confined to generated `docs/kb/README.md` are resolved
+automatically by `kb:index`; other conflicts abort the rebase and stop the train.
+The journal records the rebased pin and invalidates the earlier Core gate so a
+failed gate must pass on resume before the rebased commit can be pushed.
+
+Owners with a `kb:check` script must have fresh knowledge topics before the version bump (the train stops otherwise); after the bump commit the train touches only topics whose `areas` cover the bumped manifests, records the full 40-character reviewed commit for owners that require unambiguous metadata, re-indexes, commits that reconciliation separately (an amend would orphan the recorded commit) and runs `kb:check` again. Changed owners update the root and every selected application `package.json`,
+then run `npm install --package-lock-only` (never `npm version --workspaces`).
+The runner installs dependencies in its clones and runs `gate:release` when the
+owner provides it, otherwise `gate`. It pushes `release/<version>`, creates a PR
+to `main`, and requests a merge constrained to the gated head SHA. Required
+reviews and GitHub protections still apply: merge rejection stops the train;
+resume after review/check completion. `dev` advances without force to merged
+`main`; concurrent incompatible changes stop execution.
+
+Publication uses a new clean clone and the existing
+`scripts/owner-release-publish.mjs --source` adapter. GHCR login sends the GitHub
+token on stdin into a temporary `DOCKER_CONFIG`; the directory is removed on
+success and failure. Verification checks the actual GitHub tag commit, release
+manifest provenance and all expected remote images before Core pins change.
+Retries reconcile existing PRs, release branches and deployments instead of
+blindly creating new ones. Core updates tools-lock versions/commits, compose
+image tags and the deployment KB, runs KB touch/log/index and `npm run gate`,
+then merges a PR from `dev` to `main`.
+
+Operator commissioning must supply `GH_TOKEN` or `GITHUB_TOKEN`, Git push
+authentication, Docker, npm and Git, plus `RELEASE_CENTER_URL`,
+`RELEASE_CENTER_PROJECT_ID` and `RELEASE_CENTER_TOKEN`. The latter must authorize
+the project's release APIs; the runner does not create or change credentials.
+`RELEASE_CENTER_AGENT_ID` optionally selects the build machine. Release Center
+GET `/releases/preflight` must pass before POST `/releases/branches` with the
+next patch branch based on `main`. Core moving after its merge blocks branch
+creation. Release Center accepts the project's configured `ciBaseBranch` or an
+existing `release/x.y.z` branch as the base. The train explicitly requests `main`,
+so a project configured for development on `dev` rejects branch creation with
+`Разрешены только ветки release/x.y.z`, even though the destination release name
+is valid. This failure happens before preparation is admitted. For this operator
+step, record the current project setting, temporarily select `main`, resume the
+same journal, and restore the previous setting after branch creation is accepted
+(or if creation fails). The accepted preparation retains its resolved target;
+restoring the development setting does not change its source. Do not alter the
+journal or substitute an ungated development commit. With `--deploy`, POST
+`/releases/deploy` starts deployment and the
+runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
+the new version for up to ten minutes. Without that flag it stops after branch
+creation. Real publication/deployment and token commissioning are operator
+actions, separate from fixture verification of the implementation.
+
+## Dev stand gateway and Core component (C02)
+
+### Operator workflow: working copy to preview
+
+`node scripts/dev-stand.mjs start --config <private.json> --journal <new.json>`
+attaches an existing working copy through the existing asynchronous live API.
+It returns the admitted operation immediately; `--watch` observes it every two
+seconds and prints changes plus ten-second progress. No package publication,
+Docker build or gate completion is required before showing the preview.
+
+The private, owner-readable configuration contains `coreUrl`, `tokenFile`,
+`projectId`, `standId`, `component` and the absolute `workingCopyPath` on the
+stand machine. The token stays in its separate private file and is sent only in
+the authorization header; redirects are refused. The existing server checks
+project/machine authorization, repository origin and working-copy containment.
+Dependencies are prepared by the live adapter, not installed by this CLI.
+
+Use `status` with the same configuration/journal to read the operation, stand
+health, live state, exact commit and discovered LAN/Tailscale addresses. Run
+`npm run gate:task -- --base <sha>` separately in the working copy while reviewing
+the preview. The current task ceiling is 1,000 tests / 300 seconds; a preview is
+not passing gate evidence. Normal quick/full promotion gates still apply.
+
+`stop` uses a **new** journal and restores the server's saved previous component.
+Mutation journals use exclusive creation and mode 0600. A lost response or
+interrupted admission is `uncertain`, never automatically retried or reported
+as success; reconcile the existing operation before starting a new mutation.
+`status` performs GET requests only. A successful operation is reported separately
+from current stand health, since a later runtime failure must remain visible.
+
+The CLI and real HTTP fixture tests are in `scripts/dev-stand.mjs` and
+`scripts/dev-stand-cli.test.mjs`. Live host acceptance is separate from these tests.
+
+Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined in
+`packages/shared/src/devStand.ts`. Core delegates the B01 collection, single-stand
+(manifest), delete and component start/reset routes under
+`/api/projects/:id/dev-stands` through its existing authenticated Kanban proxy.
+Kanban remains responsible for project access checks, request validation and
+the lifecycle; Core does not allocate environments or write manifests.
+
+### Login and locations on the stand machine
+
+A stand's base environment is a Docker Compose project whose Postgres database
+starts from a copy of the production database. `environment-sanitize.sql` then
+clears every user's password (`must_change_password = 1`), replaces e-mail
+addresses and makes the first account an administrator whose password is
+`VC_ADMIN_PASSWORD` from the environment settings. Production passwords never work
+on a stand. The hash is written by `environment_stand.scrypt_password_hash` in
+Identity's `scrypt$<saltHex>$<hashHex>` format (node:crypto scrypt defaults, 16-byte
+salt, 32-byte key); until 2026-10-10 the script used pgcrypto bcrypt, which Identity
+never accepts, so no password opened a stand. `ensureAdmin` at Core startup uses
+`INSERT OR IGNORE` and does not change an existing `admin` password.
+
+The optional environment setting `VC_STAND_USERS_PASSWORD` (owner decision
+2026-10-18, for example `1234`) gives every stand user, the administrator included,
+that one test password after sanitization: `must_change_password = 0`, TOTP cleared,
+unblocked. Absent or empty keeps the behaviour above. It is a deliberately public
+test value, not a secret: the stand script does not mask it in stage logs. It only
+exists on the stand provisioning path (`sanitize_sql` in `environment_stand.py`);
+production never runs the sanitize step.
+
+To set a user's password on a stand, compute the hash with the stand's own Identity
+code inside its Core container and update `users` (never production), for example
+the operator helper `sislexa-stand-password [compose-project] [user]`: it reads the
+password from the terminal, calls `hashPassword` through `node --import tsx` with
+`pg` on `VC_DB_URL`, clears `failed_logins`/`locked_until` and checks
+`POST /api/session/login`. Other stand users get passwords from the stand
+administrator through reset codes in the admin screen.
+
+Stand runtime files are located as follows:
+
+- the stand manifest and gateway log are in
+  `~/.voicechat/dev/stands/<standId>/`;
+- development processes and worktrees are under
+  `~/.voicechat/dev-processes/`, whose registry is `registry.json`;
+- the base environment's Compose directory is
+  `<sislexa data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
+
+`npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
+`SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
+(the base stand's Caddy entry) and an allocated `SISLEXA_GATEWAY_PORT`.
+`SISLEXA_GATEWAY_HOST` defaults to `0.0.0.0`, listening on both the host's LAN
+and Tailscale IPv4 addresses. Operators must commission DNS, reachability and
+access controls for those addresses; the launcher does not modify the host.
+The gateway rewrites `Host` to the upstream and sends the browser's address as
+`x-forwarded-host`. A request whose `Origin` equals the gateway address (a page
+the gateway served) is forwarded with the upstream origin, so Core's same-origin
+check accepts mutations at any stand address; foreign origins pass unchanged and
+stay `origin_denied`. Without this, login at the Tailscale/LAN gateway address
+failed with `origin_denied` (2026-10-08).
+
+The agent-facing entry is `node --import tsx scripts/dev-gateway.mjs` (also
+`npm run dev:gateway`). `--version` prints `1.0.0` and exits without requiring
+environment configuration or opening a port. Its independently versioned Shared
+contract is `DEV_GATEWAY_VERSION`, `DEV_GATEWAY_HEALTH_PATH` and `DevGatewayHealth`
+in `devStand.ts`. Breaking CLI/health behavior requires a major version change.
+The gateway reader accepts schema 1 with optional opaque owner `gateway` metadata.
+Future top-level fields are ignored with a `dev_gateway_unknown_manifest_field`
+warning naming only the field, never its value. Required fields, schema version,
+component map and component entries retain strict validation.
+
+`GET /__gateway/health` returns uncached JSON with `version`, manifest `standId`
+and a `components` map of all registry IDs. Each entry contains `reachable` and,
+when an HTTP response arrived, `statusCode`. Probes run concurrently with a
+two-second total timeout per upstream, using its registry readiness path. A dev
+component with a URL is probed directly; other entries probe base Caddy. Thus a
+base result proves Caddy reachability, not readiness of the component behind it.
+Any HTTP status proves reachability; this is not authenticated acceptance.
+Valid manifests return 200 even with unreachable upstreams; malformed/unreadable
+manifests return 503 JSON with `error: invalid_dev_stand_manifest`. Other HTTP
+methods return 405. Responses omit upstream URLs and credentials.
+Health and proxy requests reread the file named by `SISLEXA_STAND_MANIFEST` on
+every request, including atomic replacement; editing that file requires no
+restart. Changing the launch environment's path requires relaunching the process.
+
+Routing uses the longest matching, segment-bounded prefix in
+`DEV_COMPONENT_REGISTRY`. A matching component with `source: dev` and a URL
+receives the original path and query; otherwise the request goes to base Caddy.
+This includes components with more specific prefixes than Core's `/api` even
+when Core is overridden. HTTP bodies and SSE responses stream with backpressure;
+WebSocket upgrades tunnel bidirectionally. Every new request/upgrade rereads and
+validates the manifest, including atomic file replacement. Existing streams stay
+on their original upstream. Invalid/unreadable manifests return 503; unavailable
+HTTP upstreams return 502. There is no stale manifest cache.
+
+`npm run dev:component` runs `tsx watch apps/server/src/index.ts`. It requires
+explicit `VC_DATA_DIR`, `VC_DB_URL`, `VC_PORT` and `SISLEXA_STAND_URL` from the
+stand allocation, preserving the copied stand's data/database settings. It maps
+`VC_PORT`/`VC_HOST` to Core's `PORT`/`HOST` (default host `0.0.0.0`), selects remote
+component modes and points external component/runner URLs at `SISLEXA_STAND_URL`.
+That URL must be the base stand's Caddy entry, not the overriding gateway, to
+avoid forwarding Core's own delegated requests back into itself. No data copy,
+database provisioning, credential setup or persistent service installation is
+performed by these commands. The owner supplies those resources before launch.
+Values already present in the environment win (`??=`): Kanban's container swap
+(`environments/devSwap.ts` in sislexa-kanban) passes the stopped base Core
+container's own configuration with service URLs on the stand's `127.0.0.1` access
+bridge, so only unspecified components fall back to `SISLEXA_STAND_URL`. `PORT`
+from the agent is accepted when `VC_PORT` is absent.
+
+The gateway routes `/internal` to Core as well as `/api` and `/ws`: Core UI owns `/`,
+so with a dev Core UI an unlisted `/internal/kanban/core` request reached Vite (404)
+and a dev Kanban using the gateway as its Core lost its RPC. Kanban's readiness path
+in `DEV_COMPONENT_REGISTRY` is `/v1/health` (it has no `/api/health`).
+
+Stand LLM runners (stand-dev-v1): `runner-work` and `runner-personal` belong to the
+`local-runner` profile in `compose.stand.yml`, and Core/Kanban depend on them with
+`required: false`. `scripts/prod/environment_stand.py` adds `local-runner` on the
+primary unless both `VC_LLM_RUNNER_CLAUDE_URL` and `VC_LLM_RUNNER_CODEX_URL` are
+set (Kanban environment settings), so stands written by an older Kanban keep their
+runners and an external runner leaves none running locally.
+
+Release composition rejects B01 `isDevBuildVersion` versions before parsing or
+writing pins, including package/archive versions. Owner pin checks also reject
+dev versions in manifests, tools and lock entries. Desktop renderer provenance
+rejects dev versions even when the embedded renderer and Core UI versions match.
+These builds are valid only within a dev stand, never release inputs.
 
 ## Production file migration and cutover
 
@@ -173,6 +700,33 @@ Recovery is not successful release acceptance. If command completion is unknown
 operator recovery is required. Pending/uncertain records block new controlled
 operations and must not be deleted to retry. Normal legacy invocations remain
 available for existing callers; delivery-control must use the controlled form.
+
+For a known nonzero Compose exit that left **every** pre-deployment container
+unchanged, an operator can run `python3 scripts/prod/recover_unchanged_deployment.py
+--operation <id> --project <compose-project> --services <complete-prior-service-list>`.
+The default is observation only; `--apply` records `recovered`, never `succeeded`.
+It holds the existing host and journal locks, requires the deployment PID to be
+absent, verifies the exact previous Core commit and component readiness, and
+requires the complete service inventory to be running and healthy with creation
+and start times before the operation. Missing, extra, replaced, restarted or
+unhealthy containers, unknown command completion and Delivery Control fences
+require a different recovery procedure. The original failure and exit code are
+preserved in `operator-recoveries/<id>.json` under the private journal directory;
+the operation retains its failed exit code and does not claim Compose completed.
+Docker's nanosecond timestamps are normalized to microseconds before parsing so
+the same proof works on production hosts with Python 3.9/3.10; operation time
+boundaries remain milliseconds.
+Recovery also binds the operation's health endpoint to the selected `voicechat`
+container before reading health or writing a receipt. Docker must use a local
+Unix socket; the recorded URL must be plain HTTP on a literal loopback address
+at `/api/health`, without credentials, query or fragment. Its host port and IP
+family must match a published binding of Core's configured `PORT` (8787 by
+default). Health requests bypass proxies and reject redirects. A DNS name,
+reverse proxy, host networking, remote Docker daemon or another stack's published
+port cannot provide this proof and requires a different recovery procedure.
+Matching Core commits alone cannot link one stack's health to another stack's
+container inventory. Rejected target checks preserve the uncertain journal and
+create no recovery receipt.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 
@@ -194,6 +748,16 @@ container identity and the exact healthy Core commit. The broker still owns arch
 provenance, gateway asset evidence and authenticated acceptance. See the
 [controlled UI protocol](../delivery-release-adapter.md#controlled-browser-ui-owner-entrypoint).
 This owner change alone is not production deployment or completion of B06.
+
+Any failure exits 1 with a single stderr line
+`ui_delivery_rejected: step=<step>: <ExceptionClass>` (steps: `lock`, `journal`,
+`envelope`, `verify`, `container`, `contract`, `preflight`, `staging`, `copy`,
+`activation`, `observation`, `cleanup`). It never prints paths, tokens or child
+output; a failed child command raises `CommandFailed` that keeps its exit code and
+stderr tail only on the in-process exception. Inspect the operation with
+`delivery-status` before retrying. `scripts/browser-ui-release.test.mjs` runs the
+owner with python3 fake `docker`/`verify` commands and a 120 s per-command budget;
+a failing command reports `code`, `signal`, `killed`, `stderr` and `stdout`.
 
 ## Independent browser release rollout (2026-09-22)
 
@@ -369,55 +933,8 @@ runner host and owner deployment procedure.
 
 ## Аутентификация CLI живёт в контейнере
 
-Логин CLI теперь живёт не в контейнере сервера, а в контейнерах исполнителя:
-`runner-work` и `runner-personal`. Персональные профили пользователей лежат внутри
-`VC_DATA_DIR/cli-users/<base64url(user)>`; сервер видит только HTTP API
-исполнителя и bearer-токен к нему. Общий `HOME` исполнителя нужен лишь как seed
-для auth/config.
-
-`runner-work` переиспользует прежние volume `vc-claude` / `vc-codex`, поэтому рабочая
-авторизация переезжает без повторного логина. Его профили пользователей теперь
-живут в отдельном volume `vc-runner-work-data`; при первом старте entrypoint
-копирует туда старое дерево `vc-data:/data/cli-users`, чтобы не потерять
-историю сессий, usage и generated images. `runner-personal` хранит свои volume
-авторизации и профилей отдельно и требует одноразового `claude auth login` внутри
-контейнера.
-
-Для осознанного общего сервисного аккаунта Codex включите у исполнителя
-`VC_CODEX_SHARED_AUTH=true`. Тогда `.codex/auth.json` каждого пользовательского
-профиля перезаписывается общим источником при каждом запуске (`seedFile(..., overwrite=true)`
-в `cliProfiles.ts`); истории, сессии и рабочие каталоги остаются раздельными.
-По умолчанию режим выключен.
-
-**Источник общего auth зависит от `VC_CODEX_SHARED_AUTH_USER`, и это ловушка при
-`codex login`.** Если переменная задана (напр. `admin`), источник — не `HOME/.codex/
-auth.json`, а профиль этого пользователя: `<dataDir>/cli-users/<base64url(логин)>/.codex/
-auth.json` (в проде `/data/cli-users/YWRtaW4/.codex/auth.json` для `admin`; `YWRtaW4`
-= base64url `admin`). Пустая переменная — источник действительно `HOME/.codex/auth.json`.
-Поэтому обычный `codex login` внутри `runner-work` пишет в `HOME` (`/home/node/.codex`)
-и **не вступает в силу**: раздаётся всем по-прежнему старый токен из профиля админа,
-а ходы Codex падают с `401 invalid_refresh_token` (токены ChatGPT-логина протухают).
-Логиниться нужно в профиль-источник:
-
-```bash
-docker exec -it -e CODEX_HOME=/data/cli-users/YWRtaW4/.codex \
-  voiceaichat-runner-work-1 codex login
-```
-
-либо, залогинившись в дефолтный HOME, скопировать результат в профиль-источник
-(`cp -f /home/node/.codex/auth.json /data/cli-users/YWRtaW4/.codex/auth.json`).
-После этого фикс расходится на остальных сам — профили пересеиваются на следующем
-ходе, перезапуск контейнеров не нужен. Codex установлен только в `runner-work`
-(в `runner-personal` он выключен через `VC_CODEX_BIN=/bin/false`). Проверка
-живого токена: `codex login status` говорит «Logged in» и на протухшем токене —
-доверяй не ему, а реальному прогону `echo … | codex exec --json --skip-git-repo-check -`
-(инцидент 2026-08-25).
-
-Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
-`/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
-профиль пользователя внутри соответствующего исполнителя. Именно исполнитель
-читает `/v1/auth/status`, `/v1/files/read`, `/v1/fs/cc/*` и `/v1/fs/cx/*`; bind-mount
-общих `.claude` / `.codex` в серверный контейнер для этих функций больше не нужен.
+Core boundary: сервер видит только HTTP API
+исполнителя и bearer-токен к нему.
 
 ## HTTPS по IP
 
@@ -504,7 +1021,7 @@ conversation-scoped MCP URL passed only to the selected LLM runner. A missing
 secret now fails standalone startup instead of exposing an unusable MCP endpoint.
 
 **Канбан отдельным сервисом (`docs/plans/kanban-service.md`, 2026-09-07).** Профиль compose `kanban`
-использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.7, SHA `8c23be9b66489eb20efb4199ba0e0d292677aa77` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
+использует образ `ghcr.io/sislex/sislexa-kanban:<commit>` из репозитория `sislex/sislexa-kanban` (публикует `scripts/owner-release-publish.mjs --source`, выбирается на вкладке «Приложения» как выпуск из одного образа); текущий закреплённый — Kanban 0.2.13, SHA `8d64d6317b185c29c1c1fece166ce4d607d6ffac` включает сервер, переносимый пакет Projects, тесты кластера, перенесённые из Core, уборку снимков QA, передачу коммита production в регрессию релиза, сборку релиза из выбранных выпусков приложений (`VC_GITHUB_TOKEN`) окружения с конфигурациями и операциями (environments-v1, этап 1) и управляемые окружения с настройками, секретами, проверкой готовности машины, созданием и удалением стенда (environments-v2, этап 2: C06–C09, C12); с 0.1.4 `stand.env` пишет зарезервированные `COMPOSE_PARALLEL_LIMIT=1`, `COMPOSE_BAKE=false` и `VC_KANBAN_MODE=remote`, которых требует `scripts/prod/environment_stand.py` (иначе шаг `config` падает с `unsafe build settings`, а ядро стенда выключает Kanban); с 0.1.6 — внешние задачи доски, окружения на нескольких машинах и стенд из снимка прода (environments-v3 C17–C19); с 0.1.7 отвязанные команды (применение, сервер снимка, обновление агента) открывают сессию без `setsid` — на macOS через `perl POSIX::setsid`; с 0.1.8 ошибки снимка и его передачи содержат код выхода и последнюю строку вывода (без разового токена); с 0.2.0 — этап 4 окружений: реплики модулей, связи по VPN или туннелю, поочерёдное применение с откатом, перенос прода и переключение (environments-v4 C27, C28), а удаление стенда передаёт роль машины (`--role module` для машин модулей); с 0.2.1 машины окружения, кроме основной, проверяются по порогам машины модулей (5 ГиБ диска, 2 ГиБ памяти минимум, 4 ГиБ рекомендуется); с 0.2.2 доступ из локальной сети находит частный адрес физического интерфейса, когда маршрут по умолчанию занят exit node VPN; с 0.2.13 после деплоя прода удаляются неиспользуемые образы (кроме образов предыдущего выпуска) и старые резервные копии, а диск прода проверяется раз в 30 минут с уведомлением проекта; с 0.2.12 подмена Make на стенде без данных Make начинается с пустого каталога; с 0.2.11 подмены стенда разработки получают расшифрованные секреты стенда и путь к Docker для данных Make, база знаний Kanban; с 0.2.10 проверка места на машине сборки и проде перед созданием релизной ветки и деплоем (`release_disk_low`, подтверждение владельцем), асинхронные операции стенда разработки с настройками стенда и адресами шлюза; с 0.2.9 стенды разработки, гейт задачи и режим разработки (dev-lane-v1 C03, C07); с 0.2.8 подключение базы знаний репозитория к проекту через модули Core и shared 0.1.23; с 0.2.7 подготовка задачи в проекте без базы знаний (обзорная заготовка базу не подключает) и shared 0.1.19; с 0.2.6 снятие VPN-доступа при удалении окружения — отдельный шаг с кодом ошибки и маршрут повтора; с 0.2.5 повторная подготовка удаляет связи прошлого прогона, сообщение об ошибке скрипта стенда сохраняется у шага; с 0.2.4 подготовка запрашивает VPN-доступ окружения до создания связей, удаление его снимает; с 0.2.3 связи к одной службе сервера публикуются одним портом (две и больше реплик модуля); с 0.1.5 preflight managed-релиза и этап `directories` стенда сравнивают `environment.json` как JSON-значение, а не строку (shared 0.1.15 поменял порядок ключей `parseEnvironmentManifest`, и побайтовое сравнение блокировало любой деплой прода сообщением «Managed preflight не пройден»)
 (переопределяется через `SISLEXA_KANBAN_IMAGE`), порт 8789. Core не собирает этот образ.
 По умолчанию профиль выключен: у ядра `VC_KANBAN_MODE=embedded`, кластер живёт
 в процессе ядра, как раньше. Включение: в `.env` задать `VC_KANBAN_MODE=remote` и `VC_DB_URL` (общая база
@@ -518,6 +1035,37 @@ secret now fails standalone startup instead of exposing an unusable MCP endpoint
 `/api/projects/*` у ядра свои роуты (git-панель, KB), а права проекта проверяет preHandler ядра по пути;
 ядро переправляет остальное в `kanban:8789` (`kanbanBridge/proxy.ts`), канбан перепроверяет сессию через
 `/internal/whoami`. Откат — убрать `VC_KANBAN_MODE` (данные те же, база общая).
+
+**Board assistant Delivery Control credential.** The `kanban` service reads
+`DELIVERY_CONTROL_ASSISTANT_TOKEN_FILE` (default
+`/run/kanban-secrets/delivery-control-assistant.token`). This file holds a
+Delivery Control coordinator operator credential scoped to the intended project.
+The operator provisions that credential through the coordinator's credential
+management procedure and securely installs it as `delivery-control-assistant.token`
+in `VC_KANBAN_SECRETS_DIR` (default `/etc/voicechat/kanban`), with mode `0400`
+and ownership allowing the Kanban process to read it. Never print the credential
+or include its contents in commands, logs, or documentation. Compose already mounts
+this directory read-only at `/run/kanban-secrets`; an overridden file path must be
+readable inside the container. Configure `DELIVERY_CONTROL_URL` for the coordinator.
+Without the assistant credential, the assistant only reports that Delivery Control
+is not connected. Provisioning the credential and commissioning the connection are
+operator steps; adding this Compose setting does not perform them.
+
+**Pinned archives are not in git (2026-10-18).** `vendor/*.tgz` moved to the immutable assets of the public
+GitHub release `vendor` of sislex/voiceAIChat; `package.json`/`package-lock.json` reference
+`https://github.com/sislex/voiceAIChat/releases/download/vendor/<asset>.tgz`, so `npm ci` (local, Dockerfile,
+Release Center, stands, agents, Delivery Control workers) downloads and checks lockfile `integrity` with no
+extra step (`.npmrc` retries 5×). The repository had grown to ~866 MB from 272 committed archive versions;
+large clones broke on GitHub `fetch-pack` disconnects. `scripts/vendor-store.mjs` (`npm run vendor:fetch|publish|check`)
+fills `vendor/` from the cache `~/.cache/sislexa/vendor` for tools that read archive bytes (A07, shared-chat
+artifacts, owner-release-publish `--from-core`). Uploading is an explicit opt-in: `release-composition apply --publish`,
+`contracts-release ... --publish` (required for a Core pin) or `npm run vendor:publish`; it needs `gh` write auth.
+The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner (`NODE_TEST_CONTEXT`, `VITEST`,
+`JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
+uploaded fixture archives to the real release (removed by the coordinator).
+Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
+`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
+is rewritten.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
@@ -958,7 +1506,7 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
 **Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с
-compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='sislexa <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
 
 ## Почта на проде (настроено 29.08.2026)
 
@@ -1351,6 +1899,13 @@ checks. Record the resulting image IDs with the release backup.
 
 ## Local owner image delivery
 
+Before rendering local image pins, `release-manager-deploy.sh` derives the same
+application profiles and modes as the detached launcher through `compose_env.py
+applications`. Inactive profiles are omitted from Compose configuration: deriving
+profiles only during deployment would leave services such as `browser-runner`
+unpinned and allow an obsolete operator override to win. Invalid application
+settings stop the wrapper before any Docker invocation.
+
 The in-product release manager has a separate mutable production checkout. Its
 default deploy command now verifies the selected branch and full commit before
 calling `voicechat-deploy`. The release-manager wrapper replaces the old
@@ -1363,6 +1918,13 @@ also receives the expected full commit, so a branch moving during `git pull`
 stops before the build. This path does not need a GHCR login. Custom production
 deploy commands retain their own image-delivery policy but still receive the
 selected SHA and a checkout preflight.
+
+When both the expected full commit and explicit release version are supplied,
+the installed launcher pulls with `--no-tags --ff-only` and does not fetch all
+historical tags. Release metadata already comes from the verified request;
+conflicting old tags must neither block this deployment nor be force-updated.
+The clean-checkout and exact-commit checks still run before any Docker effect.
+Unpinned or versionless operator deployments retain tag fetching and its errors.
 
 Do not point the in-product release button at an immutable older release
 directory: the checkout switched by the manager and the checkout used by
@@ -2085,69 +2647,6 @@ Billing snapshot hashes match their server copies. This validated archive
 readability, not a restore drill. The 0.1.329 Core image, Identity 1.3.2 image,
 Billing 1.2.1 image and UI 1.3.1 release remain available as rollback inputs.
 
-## Image Studio executor repair (LLM Runner 0.3.4)
-
-Image Studio generation failed on the separate runner host with `bwrap: No
-permissions to create new namespace`. Ubuntu 24.04 AppArmor restricted the
-unprivileged user namespace that Codex `workspace-write` uses. LLM Runner 0.3.2
-introduced the repository-owned `llm-runner-bwrap` AppArmor profile and applies
-it only to the Codex-enabled work runner together with `no-new-privileges` and an
-unconfined seccomp policy. The production container has no added capabilities and
-does not use privileged mode. A real Bubblewrap namespace probe passes there.
-
-The same investigation found that the image lacked the rendering tools named by
-the Image Studio prompt. LLM Runner 0.3.3 adds Python Pillow and ImageMagick.
-Version 0.3.4 (`63514a5eda882272100c7cb426aabc72f85cdd56`) also defaults a
-user-scoped run without a project `cwd` to the user's isolated profile home. This
-is writable by Codex and is the same root exposed through the authenticated
-Runner file API. PRs #12 through #14, their release gates, and all local gates
-passed. The 0.3.4 GHCR publish job was blocked before runner allocation by the
-GitHub account billing/spending limit. That incident led to the server-owned
-release flow described below; no account or registry fix is now required.
-
-Production runs image `sislexa-llm-runner:0.3.4-63514a5eda88`; all three runner
-containers are healthy. Pillow and ImageMagick produced valid PNGs. A real Codex
-`acceptEdits` run with no `cwd`, matching Image Studio, created a 32×32 PNG in the
-user profile; `/v1/files/read` returned the valid PNG to the caller. The temporary
-profile and generated file were removed.
-
-The deployment preserved the six runner volumes. Its stopped-writer archive is
-`/var/backups/llm-runner/0.3.2-fdec065ed501/profiles.tar.gz`, with SHA-256
-`6925c7afef09cb9621303a3dbfc1c52d9110bda46912751f4a96b71c0bc64fc9`.
-The final 0.3.4 configuration and rollback inventory are in
-`/var/backups/llm-runner/0.3.4-63514a5eda88`; the previous 0.3.3 image remains
-available for rollback.
-
-## Server-owned LLM Runner releases (0.3.5)
-
-LLM Runner PR #15 removed its GitHub Actions workflow and GHCR dependency.
-Release tag `v0.3.5` at commit
-`ad0819ab77d17eb4abfc993f7a603de8499f1440` created no Actions run. The dedicated
-runner host now checks out the exact tag, reruns the canonical gate, Compose
-tests and dependency audit, builds the `linux/amd64` image, then checks the
-authenticated API, Bubblewrap, Pillow and ImageMagick in a disposable container.
-It writes an atomic release manifest only after every check succeeds.
-
-The first server-owned run passed 489 Vitest cases, eight operational Node tests,
-four package/release tests, five Compose tests and an audit with zero
-vulnerabilities. Its manifest is
-`/opt/llm-runner/releases/ad0819ab77d17eb4abfc993f7a603de8499f1440/release.json`.
-Production pins immutable image ID
-`sha256:5e18dcd5db0813b67f57a5da259041b1b12d49949895d5d13407a7fe6e654f7c`
-instead of a mutable tag. Work, personal and callbacks are healthy; both
-executors report zero active runs. The work service retains
-`no-new-privileges`, `seccomp=unconfined`, and `apparmor=llm-runner-bwrap`, with
-no added capabilities and without privileged mode.
-
-The first deployment attempt passed both new-image smoke checks, then its
-operator helper failed while writing the persistent image reference. Automatic
-recovery restored 0.3.4 and reopened Core and automation. The corrected second
-attempt deployed 0.3.5 and atomically updated `RUNNER_IMAGE`. Records are in
-`/var/backups/llm-runner/0.3.5-ad0819ab77d1` and
-`/var/backups/llm-runner/0.3.5-ad0819ab77d1-attempt2`; 0.3.3 and 0.3.4 remain as
-rollback images. Core, automation, Image Studio API/UI and the public signup
-probe were healthy after deployment.
-
 ## Delivery Control coordinator foundation (2026-09-24)
 
 The independent coordinator API 0.3.1 runs on the LLM Runner host
@@ -2280,7 +2779,10 @@ four content-addressed archives: Identity, Billing, LLM Runner, and Runner
 Contracts. `deploy/s3-provider-artifacts.json` records each owner repository,
 exact source commit, archive digest, provided interface, and consumer task.
 `vendor/owner-artifacts.json`, `deploy/tools.lock.json`, and the npm lockfile
-carry the matching pins. `scripts/s3-provider-artifacts.test.mjs` verifies the
+carry the matching pins. Refresh this provider inventory when promoting newer
+owner archives, together with the exact source allowlist in
+`scripts/a07-composition.mjs`; retaining the historical source values causes the composition
+gate to reject an otherwise valid pin update. `scripts/s3-provider-artifacts.test.mjs` verifies the
 archive bytes and embedded release provenance before Core accepts them.
 Core's database ownership manifest also assigns the provider's three new
 application registry tables to Identity so SQLite and PostgreSQL schema checks
@@ -2326,6 +2828,16 @@ and repeated apply. These checks do not commission or deploy an environment.
 
 ## Managed stands
 
+Core persists Storybook session intents (agent, workspace, path, original command,
+and selected port) in app config `storybook.sessions`. After a Core restart, the
+first session refresh with an online agent adopts the recorded port when its
+`/index.json` identifies Storybook; otherwise it launches the saved command again.
+Each intent gets at most one recovery attempt per Core process. Recovery failures
+report `stopped` with an error and retain the intent for the next restart or a
+manual start. Explicit Stop removes the intent, including before recovery; closing
+Core preserves it. Opening stand Storybook uses this same recovery path (a newly
+launched process must finish becoming ready before it can be opened).
+
 `deploy/compose.stand.yml` layers over `docker-compose.yml`: Core publishes only
 `${VC_STAND_LAN_ADDRESS:-127.0.0.1}:${VC_STAND_PORT}:8787`, has no `/run/voicechat` host mount, and uses
 `${VC_DATA_VOLUME}` for `vc-data`. Caddy belongs to the inactive `public` profile.
@@ -2344,11 +2856,27 @@ U03 Make module); its service and database URLs come
 from reserved values in `stand.env` and point to stable agent tunnel ports. The
 primary chain retains the compose-name defaults, so production output is unchanged.
 
-Core pins agent 0.22.2 (contracts 1.2.2): a WebSocket heartbeat (ping every 15 s, reconnect after
+Core pins agent 0.24.4 (contracts 1.4.2): startup recovery recognises its own dev stand process groups even
+when the saved leader (`npm run …`, which rewrites its process title) shows no environment to `ps -E` or
+`/proc/<pid>/environ`; the marker is read from the rest of the group, so an agent restart replaces its
+processes instead of leaving orphans on the stand ports. Agent 0.24.3 (contracts 1.4.1): dev stand processes report the real spawn failure, log every
+start/stop/failure, remove failed starts (registry entry and worktree, never recovered) and stop stale own
+port owners before a new stand starts (stand-agent-v1 B01). Agent 0.24.0 (contracts 1.4.0) manages the dev stand gateway, recovers dev stand
+components after an agent restart, and on component replacement keeps the old process until the new
+one is ready, then switches the stand manifest (`sha`, `url`, `devBuildId`, `startedAt`) atomically
+before retiring the old process (stand-fixes-v1 B02). Before 0.24.0 a replacement could report
+success while the manifest still pointed at the stopped process (`dev_upstream_unavailable`).
+
+Agent 0.23.0 (contracts 1.3.0) added the `devProcess.start/stop/status/logs` RPC
+for dev stands (dev-lane-v1 C01): the agent runs a component from a branch checkout in dev mode
+without Docker. Agents older than 0.23.0 answer these calls with an unknown-method error; the rest
+of the protocol is unchanged.
+
+Agent 0.22.2 (contracts 1.2.2) added a WebSocket heartbeat (ping every 15 s, reconnect after
 30 s without any inbound frame — a route change such as turning off an exit node left agent 0.22.1
 connected to nothing), the project Git write check in a temporary repository (0.22.1 reported
 «insufficient permissions» for any token) and the Docker bridge address when `docker0` has no
-carrier. Core UI and Desktop keep agent contracts 1.2.1 until their next release.
+carrier.
 
 On macOS the agent runs under launchd, where Docker Desktop's `credsStore: desktop` hangs on
 `docker-credential-desktop get` (no keychain access), so private GHCR images never download. The
@@ -2480,3 +3008,112 @@ included by `test_environment_scripts.py`. The real Compose config-only test
 skips when Docker Compose is unavailable; it never starts services. Machine
 commissioning (Docker access, owner images, runner authentication, resources
 and end-to-end creation/removal) remains an operator/integration step.
+
+<!-- release-train:f1f867f4-d2a8-4cd2-b9b1-5251f6e4b86b -->
+- sislex/make: 1.4.2
+- sislex/sislexa-kanban: 0.2.14
+
+<!-- release-train:20f8fcbc-e2a1-4c2a-ab5b-fc4b322575bd -->
+- sislex/make: 1.4.3
+
+## Production Compose layers and stand lease ports
+
+Production combines the root `docker-compose.yml`, selected repository overlays
+`deploy/compose.*.yml`, and host overrides `/etc/voicechat/*.yml` (including
+nested environment/release overrides). These are groups, not a fixed file list
+or a rule for their ordering. Read the exact applied list, in order, from the
+`com.docker.compose.project.config_files` label of `voiceaichat-voicechat-1`:
+
+```sh
+docker inspect voiceaichat-voicechat-1 --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'
+```
+
+The production label and effective port bindings were checked on 2026-10-14.
+The applied host layer `/etc/voicechat/make-stand.yml` publishes TCP ports
+8790–8794 on `caddy`; `voicechat` uses internal `expose: ["8790-8794"]` for
+this range, not host port publication. Other services using the same internal
+port numbers do not thereby publish stand ports. The root Compose file alone
+cannot describe the resulting production configuration.
+
+Caddy terminates HTTPS with `tls internal` and proxies each lease port to
+`voicechat:{http.request.port}` over HTTP. Lease URLs use the same host and
+certificate as the main HTTPS endpoint on port 443; live certificate SHA-256
+fingerprints matched on 443 and all five lease ports during the check.
+Before opening a preview, visit `https://<host>` and confirm the internal-CA
+certificate once in the same browser context, then open the preview on that
+same host. A different host, browser context or renewed certificate may require
+confirmation again; browser preview behavior still needs verification in that
+context. See [Core dev stand access ports](#core-dev-stand-access-ports) for
+lease configuration and commissioning checks.
+
+## Core dev stand access ports
+
+`POST /api/dev-stand-access` also accepts optional integer `port` (1024–65535).
+It targets that port on the stand machine; omission targets the gateway.
+Leases are isolated by user, host project, stand and requested port, so Storybook
+and gateway sessions can coexist. Cookie isolation and header rewriting remain
+the same. Make stand `storybook/open` uses the proxy service directly for the
+Storybook session port when the pool is enabled; otherwise it uses the machine
+bridge. Production commissioning still requires the published port pool and
+browser WebSocket/HMR verification.
+
+Core's `POST /api/dev-stand-access` leases a same-host public port to the current
+session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
+enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
+optional hostname override, otherwise Core uses the access request's Host
+(without its original port). Keep this hostname equal to the browser's Core
+hostname so its session cookie reaches the listener.
+
+`VC_STAND_PROXY_PUBLIC_SCHEME` accepts `http` or `https`; by default it follows
+the protocol of `VC_PUBLIC_URL`, falling back to `http` when that URL is absent.
+Make previews and inspector script tags preserve this lease origin, including
+behind TLS termination. Matching HTTPS Origin headers are rewritten to the
+HTTP loopback gateway origin just like HTTP lease origins.
+
+The optional `deploy/docker-compose.yml` overlay publishes the same host and
+container range on `caddy`, only exposes it internally on `voicechat`, and
+forwards the proxy configuration variables to Core. The root `Caddyfile` serves
+ports 8790–8794 with `tls internal` and forwards each to the same Core port:
+
+```sh
+VC_STAND_PROXY_PORTS=8790-8794 docker compose -f docker-compose.yml -f deploy/docker-compose.yml up -d
+```
+
+Omit the overlay when the range is empty: the base Compose configuration and its
+published ports stay unchanged. Compose does not support an optional empty
+`ports` sequence entry, so the overlay requires a nonempty range explicitly.
+The stand UI reads `vc_csrf` from `document.cookie`, where it finds Core's own
+token (cookies are per host), so the proxy replaces `x-vc-csrf` with the stand's
+renamed csrf cookie; otherwise every mutation inside the stand fails with 403.
+Listeners bind only while leased and expire after one idle hour. The stand
+gateway itself stays on its machine; Core reaches its loopback port through the
+agent connection, including when Machines runs as a separate service.
+
+Operator commissioning is separate from code delivery: publish/open the chosen
+range and verify browser login, SSE and WebSocket through the actual same-host
+address. Core listeners serve HTTP inside Compose; Caddy terminates HTTPS on
+the published ports to preserve Secure session cookies and avoid mixed content.
+Clients must trust Caddy's internal CA. Keep the configured pool aligned with
+the Caddy lease site addresses when changing the default range.
+
+Stand deliveries: `VC_STAND_DELIVERY_PROJECTS` (JSON `{projectId: {url, token}}`) is passed from `.env` to the
+`voicechat` service by `docker-compose.yml`; the coordinator must listen on an address reachable from the
+production host (private link `10.77.0.2:8798`).
+
+## Published Make 1.8.1 pin (2026-10-19)
+
+Core pins Make 1.8.1 at `b04733783732b654ba02ee090f63dec564eada56` in the tools lock and
+Compose image. This owner release completed in the interrupted release train;
+its GitHub release and image provenance were verified before updating the pin.
+The subsequent train releases the remaining owners without republishing Make.
+
+<!-- release-pin:playwright-reader-1.2.6 -->
+- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+
+<!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
+- sislex/webreader: 1.3.2
+- sislex/image-studio: 1.1.3
+- sislex/identity: 1.5.1
+- sislex/sislexa-kanban: 0.2.35
+
+<!-- release-train:0e091d1f-17fa-431c-9aad-2af913d0d697 -->

@@ -18,12 +18,14 @@ describe('contextGating', () => {
     expect(isContextToggleable('skill-Refactor')).toBe(true)
     expect(isContextToggleable('mcp-remote-bash')).toBe(true)
     expect(isContextToggleable('mcp-kb-search')).toBe(true)
+    expect(isContextToggleable('mcp-history')).toBe(true)
   })
 
   it('id инструмента маппится в имя MCP-инструмента', () => {
     expect(toolNameForContextId('mcp-remote-bash')).toBe('mcp__remote__bash')
     expect(toolNameForContextId('mcp-kb-search')).toBe('mcp__kb__search')
     expect(toolNameForContextId('mcp-kb-document')).toBe('mcp__kb__document')
+    expect(toolNameForContextId('mcp-history')).toBe('mcp__history__*')
     expect(toolNameForContextId('personalization')).toBeNull()
     expect(toolNameForContextId('skill-X')).toBeNull()
   })

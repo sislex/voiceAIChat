@@ -1,28 +1,43 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-09-22
-checked: 60c3f73a
+updated: 2026-10-20
+checked: 55bbb8649
 areas:
-  - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
   - apps/server/src/session.ts
   - apps/server/src/turns.ts
-  - packages/app-shell/src
-  - packages/ui/src/index.ts
-  - packages/ui/src/createApplication.ts
-  - packages/ui/src/adapters
-  - packages/ui/src/remote
-  - packages/web-reader-app
-  - packages/playwright-reader-app
-  - apps/web/src/main.tsx
 ---
 
 # Архитектура: кто с кем разговаривает
 
+Module details: `voice:README.md`
+
+Module details: `playwright-reader:README.md`
+Module details: `core-ui:README.md`
+
 ## Core frontend ownership
+
+### Deployment application selection
+
+Core reads the B01 `VC_APPLICATIONS` selector and `VC_CORE_ID` in `config.ts`.
+An absent selector preserves legacy module modes. An explicit list enables only
+its application IDs; `id=https://host` enables an external application. Make,
+Web Reader, Playwright Reader and Image Studio accept `embedded|remote|off`;
+Projects retains `remote|off`. External applications use off local adapters:
+Core starts neither their module nor their UI proxy or MCP registration.
+Their delegation and one-use ticket endpoints remain available.
+
+`GET /api/system/applications` exposes the deployment manifest to authenticated
+clients. Disabled application routes and external application UI prefixes return
+`404 { error: 'application_disabled' }`, including `/applications/:id/*` assets.
+Core authentication intersects tenant capabilities with enabled applications;
+queued turns apply the same intersection when refreshing tenant entitlements.
+Voice STT/TTS capabilities belong to Chat. External applications retain tenant
+capabilities but do not appear in local runner MCP inventories. Identity login
+remains Core infrastructure even in a chat-only deployment.
 
 `sislex/sislexa-core-ui` owns the Core browser client, renderer, UI modules, stories and internal UI gates. Generic UI Kit/Foundation remain in `sislex/sielexa-ui`. Core consumes a versioned static archive with source provenance and per-file hashes; there is no local compatibility workspace. API contracts remain authored in Core and are exported from an exact committed SHA for UI consumption. Changes to an owner package reach consumers only through an explicit pinned archive upgrade and compatibility checks.
 
@@ -49,12 +64,17 @@ exports. This does not complete the remaining application adapter removals.
 
 ## Project identity
 
-The owner selected **Sislexa** as the project name and confirmed purchasing a
-domain with the `sislexa` label. The purchased TLD has not been specified, so
-neither `sislexa.com` nor `sislexa.ai` is documented as the confirmed domain.
-Use Sislexa when referring to the project. Existing `voiceAIChat`, `ChatAI`, and
-`@voicechat/*` technical identifiers remain in the repository; this naming
-decision does not establish a new deployment URL or rename those identifiers.
+The product name is **sislexa**, written in lowercase in current product copy and
+knowledge topics. The confirmed public chat domain is `sislexa.by`; its limited
+application/model policy is deployment configuration, not a rename or restriction
+of the full product. The existing `http://89.125.68.35/` installation remains on
+its previous full-feature release and configuration. See
+[deployment isolation](deploy.md#public-chat-deployment-isolation) and the
+[public launch plan](../plans/public-chat-v1.md).
+
+Existing repository paths, API/package IDs such as `voiceAIChat` and `@voicechat/*`,
+and historical quoted output or commit titles retain their original spelling.
+Brand copy changes do not rename those identifiers or establish a new deployment.
 
 The proposed move to independently hosted application repositories, shared user
 identity, delegated API access, and cross-application usage accounting is tracked
@@ -74,20 +94,10 @@ Fastify-процесс или модуль ядра. REST `/api/browser/*` и и
 `PlaywrightReaderService`; встроенный и отдельный режимы обоих ридеров сочетаются
 независимо. Подробнее — [Playwright Reader](features/playwright-reader.md).
 
-Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`; каждый владеет маршрутом, conversation read model, browser surface, store и lifecycle. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Разрешённая product-зависимость Reader → публичный `@voicechat/chat-app` нужна только для `SplitChatWorkspace`; architecture gates запрещают обратную связь и cross-Reader imports.
-
 Рабочий host загружает панели через `applicationHost.tsx`: собственные IIFE/CSS,
 манифест, версия и SRI. Реализации панелей не входят в основной web bundle.
-`moduleRegistry.ts` сохраняет переходные Reader surfaces; оркестрация разговоров
-и общие эффекты ещё находятся в `App.tsx`. Отдельный выпуск панели не означает
-полного переноса всех host-адаптеров в новый store.
 
-Web Reader API отделён в `apps/web-reader`, iframe в `apps/web-recorder` входит
-в его образ и выпуск. Прокси ядра сохраняет origin под `/web-recorder/`.
-`ReaderCore` и HTTP-клиент находятся в `packages/web-reader-contracts`, порты
-Playwright — в `packages/playwright-reader-contracts`, клиент Chromium — в
-`packages/browser-contracts`. API Reader не имеют общей БД и не импортируют
-реализацию браузерного раннера. Релизы `web-reader`, `web-reader-ui`,
+Прокси ядра сохраняет origin под `/web-recorder/`. Релизы `web-reader`, `web-reader-ui`,
 `playwright-reader`, `playwright-reader-ui` и `browser-runner` независимы;
 диапазоны совместимости проверяются перед deploy.
 
@@ -175,23 +185,7 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 тестируется без DOM, React подключается через `store/react.tsx`. После CHAT-236 он
 отвечает только за аудио: готовую транскрипцию он публикует событием, а разговор
 создаёт и реплику сохраняет `chatStore` — их сводит `runtime/appRuntime.ts`.
-Карта доменов состояния — [ui.md](ui.md#слои).
-
-Озвучка идёт по мере готовности предложений: `sentences.ts` (shared + ui) режет
-поток токенов на произносимые фразы, `lib/ttsPlayer.ts` играет их очередью.
-VAD (`lib/vad.ts`) даёт hands-free и barge-in.
-
-## Платформенно-независимый frontend runtime
-
-`createAppRuntime(ports, modules)` из `packages/app-shell/src/runtime.ts` создаёт независимые shell/session/settings/voice stores и `ModuleRegistry`; общего singleton и публичного универсального `setState` у runtime нет. Платформенные эффекты приходят через `ApplicationPorts`: session/settings/voice clients, `AppShellHost`, optional reconnect и cleanup. `packages/ui/src/createApplication.ts` предоставляет тонкую обёртку `createApplication({ bridges, modules? })`, а `createBrowserAdapters` собирает browser location/logging host из переданных clients, не создавая сеть при импорте.
-
-При активации registry сначала применяет `visible` и role gates к parser-кандидатам, и только затем runtime выполняет отдельные стадии `module.load()`, optional `createStore()` и `bootstrap()`. Экземпляр модуля кэшируется по id; realtime-события направляются подписчикам owner id. Logout/dispose собирают dispose загруженных модулей, зарегистрированные cleanup, reconnect unsubscribe и остановку voice, исполняют их через `Promise.allSettled`, поэтому отказ одного ресурса не отменяет остальные попытки; повторные logout/dispose защищены общими promises. После logout session очищается и host делает replace-переход на `#/`.
-
-Это новый composition path, но ещё не единственный frontend runtime: `packages/ui/src/index.ts` продолжает экспортировать legacy `App.tsx` с прежним host runtime и продуктовыми компонентами. Web/desktop bootstrap этим изменением на `createApplication` не переведён.
-
-## Единый контейнер popup
-
-Все модальные поверхности UI используют `PopupFrame`: он владеет overlay, `role=dialog`, кликом по фону и обработкой Escape. `ToolFrame` остаётся надстройкой для тулов и полноэкранного режима, но его modal-вариант также построен на `PopupFrame`.
+The Core UI state-domain map is documented in `core-ui:README.md`.
 
 ## Tool repository ownership
 
@@ -235,7 +229,7 @@ credential-file and grant settings. Static metadata/grant endpoints avoid startu
 cycles; readiness and outbound calls enforce compatibility. Provider-local token
 registries are separate from application data and outgoing credentials. This is
 an infrastructure authorization boundary; the immutable user/delegation/billing
-migration in the Sislexa plan remains separate.
+migration in the sislexa plan remains separate.
 
 ### Voice and Image Studio ownership
 
@@ -348,3 +342,60 @@ Runtime requirements and source commits are recorded in each archive. Core retai
 only compatibility reexports of machine contracts required by already released
 consumers, plus server/host integration coverage. See [clients.md](clients.md)
 for independent setup and packaging.
+
+## Deployment profiles and shared services
+
+`packages/shared/src/deploymentProfiles.ts` defines `APPLICATION_IDS`,
+`parseApplications`, `serializeApplications`, `validateCoreId`, `DeploymentManifest`,
+`EnterTicketRedeemRequest/Response`, `TrustedCoreEntry`, `CoreLimits`, `CoreUsage`
+and `SharedServiceSession`. `VC_APPLICATIONS` is comma-separated `id` (local) or
+`id=https://service` (external). Missing ids are disabled; an unset variable enables
+all seven applications. Empty means all disabled. Invalid/duplicate ids and unsafe
+external URLs fail configuration. This parser does not impose a UI policy on chat.
+`VC_CORE_ID` defaults to the public URL hostname (`localhost` for local development)
+and must match `^[a-z0-9][a-z0-9.-]{1,62}$`.
+
+Builds sharing one database MUST share one `VC_CORE_ID`: shared database means shared
+data. A different hostname is not a separate data boundary for that database.
+
+`@sislexa/component-runtime` exports `TrustedCoreRegistry`. Load an array of
+`{ coreId, url, credentialRef, limits? }` from JSON with `fromFile`, or use `fromEnv`
+for `VC_CORE_URL` + `VC_INTERNAL_TOKEN` (optional `VC_CORE_ID`). File references are
+server-side secret files; consumers may inject their own secret resolver and fetch
+transport. `add`/`remove` update the live registry; `resolve(session)` returns only
+public metadata. Resolve on each request, never select a core from untrusted request
+URLs. `coreDataPath(root, coreId, ...segments)` rejects traversal and existing
+symlinks. Keep the root and its ancestors operator-owned; this helper does not
+replace race-free file creation permissions.
+
+`CoreDelegationClient.chatSession` exchanges a delegation at the session's Core: by
+default the Core-issued `session.delegation.token` from the redeemed ticket, sent with
+the service credential; an explicit Identity grant passed to the constructor keeps the
+user-only path without a service bearer. `connect` uses the returned scoped WS handle, sends the
+existing `ClientMessage` contract and delivers `ServerMessage` notifications and
+`claude.usage` billing events. Core `turns.ts` remains responsible for grant checks,
+model execution, Billing admission and settlement. Service credentials never become
+user credentials. `redeem()` rejects responses without a valid delegation that
+outlives neither the session nor the current time (`isEnterTicketRedeemResponse`).
+See data-auth.md «Core-issued ticket delegation».
+
+Registry entries may also carry `serviceCredentialRef` (verifies Core→service calls,
+`authenticateCoreRequest`) and `mcpSecretRef` (verifies per-turn MCP tokens,
+`verifyCoreMcpToken`; `signCoreMcpToken` signs them in Core, which checks its own tokens with
+`verifyCoreMcpTokenWithSecret`). A service serving a Core-run turn calls Core with the
+application token plus that turn's MCP token in `x-sislexa-mcp-token`. `fromEnv` reads them from
+`VC_CORE_SERVICE_TOKEN` and `VC_CORE_MCP_SECRET`; `resolve()` never returns refs. Core
+calls its own internal RPC from a shared service with the application token plus the
+ticket delegation; the method table and Core-side variables are in data-auth.md
+«Shared-service RPC and MCP».
+
+Use `registry.account(coreId, delta)` before allocating resources; all counters and
+returned usage records carry `coreId`. Optional limits are `diskBytes`, `workshops`,
+`machines`; a failed multi-counter update changes nothing. Release allocations with
+negative deltas. Counters are process-local: owners must initialize them from their
+durable resource inventory on startup and serialize allocation through the owning
+service instance. `registerCoreServiceErrors` emits HTTP 409
+`{ error: 'core_limit_exceeded', limit, used }`. `registerUsageRoute(app, authorize)`
+exposes authenticated `GET /internal/v1/cores/:coreId/usage`; the caller supplies the
+service's administrator authorization policy. Runtime registry mutations are local;
+operators maintain the startup JSON separately.

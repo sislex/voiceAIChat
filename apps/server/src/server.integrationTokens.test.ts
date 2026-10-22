@@ -25,7 +25,7 @@ it('composes token management, internal whoami and global route denial in Core',
     const authorization = 'Bearer ' + created.json().token
     const whoami = await app.inject({ method: 'POST', url: '/internal/whoami', headers: { authorization: 'Bearer ' + serviceToken },
       payload: { method: 'PUT', url: '/external-task', headers: { authorization } } })
-    expect(whoami.json()).toEqual({ ok: true, principal: { kind: 'integration', projectId: project.id, scopes: ['tasks:external'] } })
+    expect(whoami.json()).toEqual({ ok: true, principal: { kind: 'integration', projectId: project.id, projectIds: [project.id], scopes: ['tasks:external'] } })
     for (const url of ['/', '/api/health', '/api/projects', '/ws', '/mcp/bash', '/missing']) {
       expect((await app.inject({ url, headers: { authorization } })).statusCode).toBe(403)
     }

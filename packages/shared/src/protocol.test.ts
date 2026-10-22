@@ -2,9 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { CLIENT_MESSAGE_TYPES, REST, SERVER_MESSAGE_TYPES } from './protocol'
 
 describe('контракт протокола', () => {
+  it('maps API token management and encodes session identifiers', () => {
+    expect(REST.sessionApiTokens).toBe('/api/session/api-tokens')
+    expect(REST.sessionApiToken('a/b?#')).toBe('/api/session/api-tokens/a%2Fb%3F%23')
+  })
   it('keeps the legacy conversation URL and encodes history cursors', () => {
     expect(REST.conversation('c')).toBe('/api/conversations/c')
     expect(REST.conversation('c', { limit: 50, before: 'a&b?#' })).toBe('/api/conversations/c?limit=50&before=a%26b%3F%23')
+    expect(REST.conversationThreadReset('a/b')).toBe('/api/conversations/a%2Fb/thread/reset')
   })
   // @testCase TC-CONTRACT-01
   // @testCase TC-REG-01

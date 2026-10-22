@@ -84,6 +84,62 @@ function connectReady(p = port, token = TOKEN): Promise<WebSocket> {
   })
 }
 
+type Frame = Record<string, unknown>
+
+/**
+ * Resolves with the first frame matching `predicate`, driven by the socket `message` event rather than
+ * polling. Attach it before the action that triggers the frame: frames received earlier are not replayed.
+ * On timeout it rejects with every frame seen so far, so a failure under full-suite load is diagnosable.
+ */
+function waitForFrame(ws: WebSocket, predicate: (frame: Frame) => boolean, timeoutMs = 30_000): Promise<Frame> {
+  const seen: Frame[] = []
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      ws.off('message', onMessage)
+    }
+    const onMessage = (data: Buffer): void => {
+      const frame = JSON.parse(data.toString()) as Frame
+      seen.push(frame)
+      if (!predicate(frame)) return
+      cleanup()
+      resolve(frame)
+    }
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error(`waitForFrame: no matching frame within ${timeoutMs} ms; seen: ${JSON.stringify(seen)}`))
+    }, timeoutMs)
+    ws.on('message', onMessage)
+  })
+}
+
+/** Resolves once `count` frames matching `predicate` have arrived, counted from the moment of the call. */
+function waitForFrames(ws: WebSocket, predicate: (frame: Frame) => boolean, count: number, timeoutMs = 30_000): Promise<Frame> {
+  let matched = 0
+  return waitForFrame(ws, (frame) => predicate(frame) && ++matched >= count, timeoutMs)
+}
+
+const isChatMessage = (frame: Frame): boolean => frame.t === 'chat.message'
+const isChatMessageId = (id: string) => (frame: Frame): boolean =>
+  frame.t === 'chat.message' && (frame.message as { id?: string } | undefined)?.id === id
+
+/**
+ * Publishes a persisted message as `token`'s user and waits until `ws` receives it. Frames reach one
+ * socket in publish order, so once this barrier arrives any frame published earlier would have arrived
+ * too — negative assertions ("nothing leaked") then need no fixed sleep.
+ */
+async function chatBarrier(ws: WebSocket, conversationId: string, token: string, messageId: string): Promise<void> {
+  const arrived = waitForFrame(ws, isChatMessageId(messageId))
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/conversations/${conversationId}/messages`,
+    headers: { authorization: `Bearer ${token}` },
+    payload: { messageId, role: 'u1', text: 'barrier', time: '10:00' }
+  })
+  expect(response.statusCode).toBe(200)
+  await arrived
+}
+
 describe('WS: синхронизация сохранённых сообщений между устройствами', () => {
   const collectChatFrames = (ws: WebSocket): Array<Record<string, unknown>> => {
     const frames: Array<Record<string, unknown>> = []
@@ -103,6 +159,7 @@ describe('WS: синхронизация сохранённых сообщени
     const firstFrames = collectChatFrames(first)
     const secondFrames = collectChatFrames(second)
     const payload = { messageId: 'sync-user-1', role: 'u1', text: 'Синхронное сообщение', time: '10:00' }
+    const delivered = Promise.all([waitForFrame(first, isChatMessage), waitForFrame(second, isChatMessage)])
 
     const response = await app.inject({
       method: 'POST',
@@ -111,14 +168,14 @@ describe('WS: синхронизация сохранённых сообщени
       payload
     })
     expect(response.statusCode).toBe(200)
-    await vi.waitFor(() => {
-      expect(firstFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
-      expect(secondFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
-    })
+    await delivered
+    expect(firstFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
+    expect(secondFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
     const persisted = response.json()
     expect(firstFrames.find(frame => frame.t === 'chat.message')).toMatchObject({ t: 'chat.message', conversationId: conversation.id, message: { id: persisted.id, text: payload.text } })
     expect(firstFrames.some(frame => frame.t === 'claude.start' || frame.t === 'claude.token')).toBe(false)
 
+    const replayed = waitForFrame(second, isChatMessage)
     const replay = await app.inject({
       method: 'POST',
       url: `/api/conversations/${conversation.id}/messages`,
@@ -126,7 +183,8 @@ describe('WS: синхронизация сохранённых сообщени
       payload: { ...payload, text: 'must not replace' }
     })
     expect(replay.json()).toEqual(persisted)
-    await vi.waitFor(() => expect(secondFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(2))
+    await replayed
+    expect(secondFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(2)
     expect(new Set(secondFrames.filter(frame => frame.t === 'chat.message').map(frame => (frame.message as { id: string }).id))).toEqual(new Set([persisted.id]))
     first.close()
     second.close()
@@ -146,9 +204,9 @@ describe('WS: синхронизация сохранённых сообщени
       payload: { messageId: 'sync-failed-1', role: 'u1', text: 'not persisted', time: '10:00' }
     })
     expect(response.statusCode).toBe(500)
-    await new Promise(resolve => setTimeout(resolve, 30))
-    expect(frames.filter(frame => frame.t === 'chat.message')).toEqual([])
     failure.mockRestore()
+    await chatBarrier(ws, conversation.id, TOKEN, 'sync-failed-barrier')
+    expect(frames.filter(frame => frame.t === 'chat.message').map(frame => (frame.message as { id: string }).id)).toEqual(['sync-failed-barrier'])
     ws.close()
   })
 
@@ -165,6 +223,8 @@ describe('WS: синхронизация сохранённых сообщени
     const framesA = collectChatFrames(ownerA)
     const framesB = collectChatFrames(ownerB)
     const outsiderFrames = collectChatFrames(outsider)
+    const outsiderConversation = await db.chat.createConversation('other-sync-user', 'Outsider')
+    const delivered = Promise.all([waitForFrame(ownerA, isChatMessage), waitForFrame(ownerB, isChatMessage)])
 
     await app.inject({
       method: 'POST',
@@ -172,11 +232,11 @@ describe('WS: синхронизация сохранённых сообщени
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: { messageId: 'owner-only-1', role: 'u1', text: 'owner secret', time: '10:00' }
     })
-    await vi.waitFor(() => expect(framesA.some(frame => frame.t === 'chat.message')).toBe(true))
+    await delivered
     expect(framesB).toEqual([expect.objectContaining({ t: 'chat.message', conversationId: target.id })])
     expect(framesA.some(frame => frame.conversationId === unrelated.id)).toBe(false)
-    await new Promise(resolve => setTimeout(resolve, 30))
-    expect(outsiderFrames).toEqual([])
+    await chatBarrier(outsider, outsiderConversation.id, otherToken, 'outsider-barrier-1')
+    expect(outsiderFrames).toEqual([expect.objectContaining({ t: 'chat.message', conversationId: outsiderConversation.id })])
     ownerA.close()
     ownerB.close()
     outsider.close()
@@ -190,11 +250,11 @@ describe('WS: синхронизация сохранённых сообщени
     const firstFrames = collectChatFrames(first)
     const secondFrames = collectChatFrames(second)
 
+    const isDone = (frame: Frame): boolean => frame.t === 'claude.done'
+    const done = Promise.all([waitForFrame(first, isDone), waitForFrame(second, isDone)])
+
     first.send(JSON.stringify({ t: 'claude.send', conversationId: conversation.id, segments: [{ speakerId: 1, text: 'hello' }], verbose: true }))
-    await vi.waitFor(() => {
-      expect(firstFrames.some(frame => frame.t === 'claude.done')).toBe(true)
-      expect(secondFrames.some(frame => frame.t === 'claude.done')).toBe(true)
-    })
+    await done
     const lifecycle = (frames: Array<Record<string, unknown>>) => frames
       .filter(frame => ['claude.start', 'claude.token', 'claude.log', 'claude.done'].includes(String(frame.t)))
       .map(frame => frame.t)
@@ -215,10 +275,11 @@ describe('WS: аутентификация соединения', () => {
         opened = true
       })
       ws.on('close', () => resolve('closed'))
-      setTimeout(() => resolve(opened ? 'stayed' : 'closed'), 800)
+      // Under a loaded full gate the server's auth check can take longer than a second.
+      setTimeout(() => resolve(opened ? 'stayed' : 'closed'), 5000)
     })
     expect(result).toBe('closed')
-    // На загруженной машине соединение может не успеть установиться за 800 мс.
+    // На загруженной машине соединение может не успеть установиться за отведённое время.
     // `close()` по такому сокету бросает «WebSocket was closed before the
     // connection was established», и vitest считает это ошибкой всего прогона;
     // `terminate()` безопасен в любом состоянии, а пустой обработчик error
@@ -245,6 +306,7 @@ describe('chat message synchronization', () => {
     const second = await connectReady()
     const firstFrames = collectChatMessages(first)
     const secondFrames = collectChatMessages(second)
+    const delivered = Promise.all([waitForFrame(first, isChatMessage), waitForFrame(second, isChatMessage)])
 
     const response = await app.inject({
       method: 'POST',
@@ -254,10 +316,9 @@ describe('chat message synchronization', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    await vi.waitFor(() => {
-      expect(firstFrames).toHaveLength(1)
-      expect(secondFrames).toHaveLength(1)
-    })
+    await delivered
+    expect(firstFrames).toHaveLength(1)
+    expect(secondFrames).toHaveLength(1)
     for (const frame of [...firstFrames, ...secondFrames]) {
       expect(frame).toMatchObject({
         t: 'chat.message',
@@ -274,7 +335,7 @@ describe('chat message synchronization', () => {
     const conversation = await db.chat.createConversation(U, 'Failed persistence')
     const socket = await connectReady()
     const frames = collectChatMessages(socket)
-    vi.spyOn(db.chat, 'addMessage').mockRejectedValueOnce(new Error('storage unavailable'))
+    const failure = vi.spyOn(db.chat, 'addMessage').mockRejectedValueOnce(new Error('storage unavailable'))
 
     const response = await app.inject({
       method: 'POST',
@@ -284,8 +345,9 @@ describe('chat message synchronization', () => {
     })
 
     expect(response.statusCode).toBe(500)
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(frames).toEqual([])
+    failure.mockRestore()
+    await chatBarrier(socket, conversation.id, TOKEN, 'sync-failed-barrier')
+    expect(frames.map(frame => (frame.message as { id: string }).id)).toEqual(['sync-failed-barrier'])
     socket.close()
   })
 
@@ -300,6 +362,8 @@ describe('chat message synchronization', () => {
     const ownerAFrames = collectChatMessages(ownerA)
     const ownerBFrames = collectChatMessages(ownerB)
     const foreignFrames = collectChatMessages(foreign)
+    const foreignConversation = await db.chat.createConversation('bob', 'Bob chat')
+    const delivered = Promise.all([waitForFrame(ownerA, isChatMessage), waitForFrame(ownerB, isChatMessage)])
 
     await app.inject({
       method: 'POST',
@@ -308,12 +372,11 @@ describe('chat message synchronization', () => {
       payload: { messageId: 'owner-only-1', role: 'u1', text: 'owner secret', time: '10:00' }
     })
 
-    await vi.waitFor(() => {
-      expect(ownerAFrames).toHaveLength(1)
-      expect(ownerBFrames).toHaveLength(1)
-    })
-    await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(foreignFrames).toEqual([])
+    await delivered
+    expect(ownerAFrames).toHaveLength(1)
+    expect(ownerBFrames).toHaveLength(1)
+    await chatBarrier(foreign, foreignConversation.id, bobToken, 'foreign-barrier-1')
+    expect(foreignFrames).toEqual([expect.objectContaining({ conversationId: foreignConversation.id })])
     ownerA.close()
     ownerB.close()
     foreign.close()
@@ -346,10 +409,11 @@ describe('WS: живые изменения списка сессий', () => {
 
     const victimSid = (await db.identity.listSessions('wsuser')).find((s) => s.userAgent === 'Phone/1.0')!.sid
     await app.inject({ method: 'DELETE', url: `/api/session/${victimSid}`, headers: { authorization: `Bearer ${observerToken}` } })
-    await settle()
-
-    expect(victimFrames).toEqual([{ t: 'session.revoked', v: 1, sid: victimSid }])
-    expect(observerFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    // Frames arrive asynchronously; wait for them instead of a fixed pause (flaky on a loaded machine).
+    await vi.waitFor(() => {
+      expect(victimFrames).toEqual([{ t: 'session.revoked', v: 1, sid: victimSid }])
+      expect(observerFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    }, { timeout: 30_000 })
     victim.close()
     observer.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
@@ -369,10 +433,11 @@ describe('WS: живые изменения списка сессий', () => {
 
     // «Выйти на других» с ноутбука: телефон мёртв и должен узнать это сразу.
     await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${laptopToken}` } })
-    await settle()
-    expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
-    // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
-    expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    await vi.waitFor(() => {
+      expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
+      // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
+      expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    }, { timeout: 30_000 })
     phone.close()
     laptop.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
@@ -399,12 +464,10 @@ describe('WS: живые изменения списка сессий', () => {
     const frames = collect(ws)
     const sid = (await db.identity.listSessions('renamer'))[0]!.sid
     await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}` } })
-    await settle()
-    expect(frames).toEqual([{ t: 'sessions.update', v: 1 }])
+    await vi.waitFor(() => expect(frames).toEqual([{ t: 'sessions.update', v: 1 }]), { timeout: 30_000 })
     // Отзыв администратором приходит владельцу так же адресно, как свой.
     await app.inject({ method: 'DELETE', url: `/api/admin/sessions/${sid}`, headers: { authorization: `Bearer ${TOKEN}` } })
-    await settle()
-    expect(frames.at(-1)).toEqual({ t: 'session.revoked', v: 1, sid })
+    await vi.waitFor(() => expect(frames.at(-1)).toEqual({ t: 'session.revoked', v: 1, sid }), { timeout: 30_000 })
     ws.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
@@ -424,22 +487,14 @@ describe('WS: auth status', () => {
     expect(snapshot).toMatchObject({ t: 'auth.status', v: 1, status: { claude: { loggedIn: true }, codex: { loggedIn: false } } })
     let updates = 0
     first.on('message', (data) => { if (JSON.parse(data.toString()).t === 'auth.status') updates += 1 })
-    /**
-     * Ждём условие, а не фиксированные 20 мс: под полным прогоном пакета кадр
-     * успевал прийти позже, и тест падал «expected 0 to be 1» — при том что
-     * изолированно проходил за четверть секунды. Отсутствие кадра проверяется
-     * по-прежнему паузой: тут ждать нечего, ждём заведомо дольше доставки.
-     */
-    const waitUpdates = async (expected: number): Promise<void> => {
-      for (let attempt = 0; attempt < 100 && updates < expected; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-    }
+    // The absence of a frame is still checked with a pause (there is nothing to wait for); the positive
+    // update is awaited from the message event with a 30 s budget, since full-suite load delays delivery.
     authStatus.set(U, snapshot.status)
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(updates).toBe(0)
+    const updated = waitForFrame(first, (frame) => frame.t === 'auth.status')
     authStatus.reportRunError(U, 'claude', 'вход в Claude не выполнен')
-    await waitUpdates(1)
+    await updated
     expect(updates).toBe(1)
     first.close()
 
@@ -799,14 +854,15 @@ describe('WS: ходы переживают обрыв соединения (Tur
         segments: [{ speakerId: 1, text: 'привет' }]
       })
     )
-    await wait(20)
+    // The turn has started once the first token arrives; a fixed delay raced the server on a loaded machine.
+    await new Promise<void>((resolve) => ws.on('message', (d) => { if (JSON.parse(d.toString()).t === 'claude.token') resolve() }))
     await closeWs(ws) // «обновление страницы» посреди генерации
     // Ответ мока приходит через 60 мс, запись в базу — ещё позже: ждём сам факт сохранения.
     const saved = await vi.waitFor(async () => {
       const list = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
       expect(list).toHaveLength(1)
       return list
-    }, { timeout: 5_000 })
+    }, { timeout: 30_000 })
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
     expect(saved[0].meta?.request?.provider).toBe('claude')
@@ -870,7 +926,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
       ws2.on('error', reject)
     })
     // Финал хода — только когда вторая сессия подписана (получила claude.active): иначе done ушёл бы в пустоту.
-    await vi.waitFor(() => expect(events.some((e) => e.t === 'claude.active')).toBe(true))
+    await vi.waitFor(() => expect(events.some((e) => e.t === 'claude.active')).toBe(true), { timeout: 30_000 })
     expect(finish).toBeDefined()
     finish?.()
     await done
@@ -899,7 +955,17 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
   // @testCase TC-WS-02
   it('claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется', async () => {
-    const { sapp, sdb, sport } = await buildSlow(makeSlowClaude(['Ча'], 'Часть ответа', 60))
+    // The late done is fired by the test after the cancel, so a loaded machine cannot finish the turn first.
+    let finishLate: (() => void) | undefined
+    const controlledClaude: LlmClient = {
+      send(_req, h) {
+        void h.onSession('sess-cancel')
+        setTimeout(() => h.onDelta('Ча'), 5)
+        finishLate = () => h.onDone('Часть ответа')
+        return { cancel: () => undefined }
+      }
+    }
+    const { sapp, sdb, sport } = await buildSlow(controlledClaude)
     const conv = await sdb.chat.createConversation(U, 'Чат')
     const ws = await connectTo(sport)
     const events: Array<{ t: string; text?: string }> = []
@@ -923,7 +989,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
     await firstToken
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
     await cancelledDone
-    await wait(80) // финал мока уже не должен записать второе сообщение
+    finishLate?.() // поздний финал мока уже не должен записать второе сообщение
+    await wait(80)
     const saved = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ text: 'Ча', meta: { interrupted: true } })
@@ -980,8 +1047,9 @@ describe('WS: кадры использования базы знаний', () =
     mine.on('message', (d) => mineFrames.push(JSON.parse(d.toString())))
     other.on('message', (d) => otherFrames.push(JSON.parse(d.toString())))
 
+    const usageDelivered = waitForFrames(mine, (frame) => frame.t === 'kb.usage', 2)
     ;(await tracker.begin({ userId: U, conversationId: conv.id, source: 'tool_search' }, 'ws')).complete({ deliveredChars: 42 })
-    await new Promise((r) => setTimeout(r, 200))
+    await usageDelivered
     mine.close()
     other.close()
 

@@ -31,6 +31,11 @@ if [[ -L $environment_current && -r $environment_current ]]; then
 fi
 export VC_RELEASE_VERSION_SOURCE=release-manager
 
+# Pin exactly the services that the detached launcher will activate. Inactive
+# profiles are omitted by Compose config and would otherwise escape image pins.
+settings=$(python3 scripts/prod/compose_env.py applications)
+while IFS= read -r line; do [[ -n $line ]] && export "$line"; done <<<"$settings"
+
 root=/etc/voicechat/release-overrides
 install -d -m 0700 "$root"
 operation="release-${VC_RELEASE_VERSION}-${VC_RELEASE_EXPECTED_COMMIT:0:12}-$(date +%s%N)"

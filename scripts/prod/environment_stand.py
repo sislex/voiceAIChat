@@ -10,7 +10,16 @@ import re
 import subprocess
 import sys
 import time
-from compose_env import read_env
+from compose_env import read_env, application_settings
+
+
+def scrypt_password_hash(password, salt=None):
+    """Identity verifies only `scrypt$<saltHex>$<hashHex>` (node:crypto scrypt defaults:
+    N=16384, r=8, p=1, 32-byte key, 16-byte salt); a pgcrypto bcrypt hash never matches."""
+    import hashlib
+    salt = os.urandom(16) if salt is None else salt
+    digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+    return 'scrypt$' + salt.hex() + '$' + digest.hex()
 
 RESERVED = '''VC_ENVIRONMENT_ID COMPOSE_PROJECT_NAME COMPOSE_FILE COMPOSE_PROFILES
 COMPOSE_PARALLEL_LIMIT COMPOSE_BAKE VC_STAND_PORT VC_DATA_VOLUME VC_PUBLIC_HOST
@@ -134,6 +143,20 @@ START_ATTEMPTS = 3
 START_RETRY_SECONDS = float(os.environ.get('VC_STAND_START_RETRY_SECONDS', '5'))
 
 
+PUBLIC_SETTINGS = frozenset({'VC_STAND_USERS_PASSWORD'})
+
+
+def sanitize_sql(values):
+    """psql input for sanitizing a restored production copy; stand provisioning only."""
+    password = values.get('VC_ADMIN_PASSWORD', '')
+    if not password:
+        raise ValueError('missing admin password')
+    users = values.get('VC_STAND_USERS_PASSWORD', '')
+    header = "\\set admin_password_hash '" + scrypt_password_hash(password) + "'\n"
+    header += "\\set users_password_hash '" + (scrypt_password_hash(users) if users else '') + "'\n"
+    return header.encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+
+
 class Stand:
     def __init__(self, action, role='primary'):
         self.stage = 'config' if action == 'provision' else 'down'
@@ -145,7 +168,9 @@ class Stand:
         self.failure = ''
 
     def emit(self, status, message=''):
-        for value in sorted(set(self.values.values()), key=len, reverse=True):
+        # VC_STAND_USERS_PASSWORD is a deliberately public test value (for example "1234");
+        # masking it would mangle every matching number in the stage log.
+        for value in sorted({v for k, v in self.values.items() if k not in PUBLIC_SETTINGS}, key=len, reverse=True):
             if value:
                 message = message.replace(value, '[redacted]')
         print(json.dumps(dict(stage=self.stage, status=status, log=message)), flush=True)
@@ -165,7 +190,10 @@ class Stand:
     def config(self):
         self.values = read_env(Path('.env'))
         v = self.values
-        if any(not v.get(key) for key in RESERVED):
+        if self.role == 'primary':
+            v.update(application_settings(v))
+        optional = {'VC_DB_URL', 'COMPOSE_PROFILES'} if v.get('VC_KANBAN_MODE') == 'off' else set()
+        if any(not v.get(key) for key in RESERVED if key not in optional):
             raise ValueError('missing settings')
         project = v['COMPOSE_PROJECT_NAME']
         if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project) or project in ('voicechat', 'voiceaichat'):
@@ -189,9 +217,9 @@ class Stand:
             host = v['VC_PUBLIC_HOST']
             if not valid_hostname(host) or '.' not in host or host.replace('.', '').isdigit():
                 raise ValueError('public host must be a DNS name')
-        profiles = set(v['COMPOSE_PROFILES'].split(','))
+        profiles = set(filter(None, v.get('COMPOSE_PROFILES', '').split(',')))
         module_profiles = {'make', 'image-studio', 'reader', 'playwright-reader'}
-        if (self.role == 'primary' and (not {'postgres', 'kanban'} <= profiles or '*' in profiles or ('public' in profiles and not self.public))) or \
+        if (self.role == 'primary' and ((v.get('VC_KANBAN_MODE', 'remote') != 'off' and not {'postgres', 'kanban'} <= profiles) or '*' in profiles or ('public' in profiles and not self.public))) or \
                 (self.role == 'module' and (not profiles or not profiles <= module_profiles)):
             raise ValueError('invalid profiles')
         if v['COMPOSE_PARALLEL_LIMIT'] != '1' or v['COMPOSE_BAKE'] != 'false':
@@ -205,7 +233,11 @@ class Stand:
             raise ValueError('release mismatch')
         if self.public:
             profiles.add('public')
-            v['COMPOSE_PROFILES'] = ','.join(sorted(profiles))
+        # Local LLM runners unless both providers use an external runner; a stand written by an
+        # older Kanban (no `local-runner` profile) keeps its runners.
+        if self.role == 'primary' and 'VC_APPLICATIONS' not in v and not (v.get('VC_LLM_RUNNER_CLAUDE_URL') and v.get('VC_LLM_RUNNER_CODEX_URL')):
+            profiles.add('local-runner')
+        v['COMPOSE_PROFILES'] = ','.join(sorted(profiles))
         upstreams = parse_upstreams(v.get('VC_STAND_UPSTREAMS', ''))
         if upstreams:
             lb = write_load_balancer(upstreams, v)
@@ -239,7 +271,7 @@ class Stand:
                         VC_APPLICATION_DATA_VERSION=str(release['dataVersion']))
         self.model = json.loads(self.compose('config', '--format', 'json').stdout)
         services = self.model['services']
-        expected_builds = {'voicechat', 'automation-runner'} if self.role == 'primary' else set()
+        expected_builds = ({'voicechat'} | ({'automation-runner'} if 'automation-runner' in services else set())) if self.role == 'primary' else set()
         if {name for name, service in services.items() if service.get('build')} != expected_builds:
             raise ValueError('unexpected build services')
         if self.model.get('name') != project:
@@ -324,6 +356,8 @@ class Stand:
         return all(name in seen for name, service in self.model['services'].items() if self.active(service))
 
     def restore(self, snapshot):
+        if 'postgres' not in self.values['COMPOSE_PROFILES'].split(','):
+            raise ValueError('database restore requires the postgres profile')
         self.begin('restore', 28)
         self.compose('up', '-d', '--no-build', '--pull', 'never', 'postgres')
         # A freshly created database container accepts connections only after initdb;
@@ -351,11 +385,7 @@ class Stand:
             with os.fdopen(descriptor, 'wb') as out:
                 out.write(result.stderr[-65536:])
             raise ValueError('restore failed')
-        password = self.values.get('VC_ADMIN_PASSWORD', '')
-        if not password:
-            raise ValueError('missing admin password')
-        escaped = password.replace("'", "''")
-        sql = ("\\set admin_password '" + escaped + "'\n").encode() + Path(__file__).with_name('environment-sanitize.sql').read_bytes()
+        sql = sanitize_sql(self.values)
         with io.BytesIO(sql) as source:
             result = subprocess.run([self.docker, 'compose', 'exec', '-T', 'postgres', 'psql',
                 '-U', 'voicechat', '-d', 'voicechat'], env=self.env,
@@ -388,7 +418,9 @@ class Stand:
     def provision(self, snapshot=None, files_archives=None):
         self.begin('build', 25)
         for name in (('voicechat', 'automation-runner') if self.role == 'primary' else ()):
-            self.compose('build', name)
+            service = self.model['services'].get(name)
+            if service and self.active(service):
+                self.compose('build', name)
         self.emit('passed')
         self.begin('pull', 20)
         images = {s['image'] for s in self.model['services'].values() if self.active(s) and not s.get('build')}

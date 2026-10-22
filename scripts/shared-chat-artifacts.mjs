@@ -5,10 +5,27 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, symlinkSync, readd
 import { resolve, join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { assertReleaseVersions } from './release-version.mjs'
+import { ensureVendorArchive, isVendorRef } from './vendor-store.mjs'
 
 export const root = resolve(import.meta.dirname, '..')
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 export const requiredPackages = Object.freeze(['@sislexa/make', '@sislexa/web-reader', '@sislexa/playwright-reader', '@sislexa/core-ui', '@sislexa/desktop', '@sislexa/chat-ui', '@voicechat/chat-app', '@voicechat/ui-foundation', '@voicechat/shared', '@voicechat/make-contracts', '@voicechat/web-reader-contracts', '@voicechat/playwright-reader-contracts', '@voicechat/browser-contracts'])
+
+/**
+ * A frozen owner artifact stays pinned and installed, but is no longer re-released or
+ * re-verified against newer siblings. Desktop is frozen while nobody uses it: Core UI
+ * releases must not force a Desktop release just to re-embed the renderer.
+ */
+export const isFrozenArtifact = row => !!row?.frozen
+export const desktopFrozen = (snapshot = JSON.parse(readFileSync(join(root, 'dependency-snapshots.json')))) =>
+  isFrozenArtifact(snapshot.packages?.find(row => row.name === '@sislexa/desktop'))
+
+export function verifyDesktopRendererProvenance(desktop, ui) {
+  assertReleaseVersions(desktop, 'Desktop renderer provenance')
+  assertReleaseVersions(ui, 'Core UI provenance')
+  if (desktop.dependencies.coreUi.commit !== ui.commit || desktop.dependencies.coreUi.version !== ui.version) throw Error('Desktop renderer provenance mismatch')
+}
 
 export async function archiveFiles(bytes) {
   const files = new Map(), stream = extract()
@@ -27,27 +44,33 @@ export async function archiveFiles(bytes) {
 }
 
 export async function verifySnapshot(snapshot, directory = root) {
+  assertReleaseVersions(snapshot, 'Owner snapshot')
   if (snapshot.schemaVersion !== 1 || snapshot.packages?.length !== requiredPackages.length || new Set(snapshot.packages.map(row => row.name)).size !== requiredPackages.length || requiredPackages.some(name => !snapshot.packages.some(row => row.name === name))) throw Error('Incomplete owner artifact set')
   const lock = JSON.parse(readFileSync(join(directory, 'package-lock.json')))
   const archives = new Map()
   for (const row of snapshot.packages) {
     if (!/^[\w.-]+\.tgz$/.test(row.asset) || !/^[a-f0-9]{40}$/.test(row.commit)) throw Error('Invalid artifact pin')
-    const bytes = readFileSync(join(directory, 'vendor', row.asset))
+    const bytes = await ensureVendorArchive(directory, row.asset, { sha256: row.sha256, integrity: row.integrity })
     if (digest(bytes) !== row.sha256 || 'sha512-' + createHash('sha512').update(bytes).digest('base64') !== row.integrity) throw Error('Artifact digest mismatch: ' + row.name)
     const files = await archiveFiles(bytes)
     const pkg = JSON.parse(files.get('package.json')), source = JSON.parse(files.get('release-source.json'))
+    assertReleaseVersions(pkg, row.name)
+    assertReleaseVersions(source, `${row.name} provenance`)
     if (pkg.name !== row.name || pkg.version !== row.version || source.version !== row.version || source.commit !== row.commit || source.repository !== row.repository) throw Error('Artifact provenance mismatch: ' + row.name)
     const installed = lock.packages['node_modules/' + row.name]
-    if (installed && !installed.link && (installed.resolved !== 'file:vendor/' + row.asset || installed.integrity !== row.integrity || installed.version !== row.version)) throw Error('Lockfile artifact mismatch: ' + row.name)
+    if (installed && !installed.link && (!isVendorRef(installed.resolved, row.asset) || installed.integrity !== row.integrity || installed.version !== row.version)) throw Error('Lockfile artifact mismatch: ' + row.name)
     archives.set(row.name, files)
   }
-  const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
-  const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
-  if (desktop.dependencies.coreUi.commit !== ui.commit || desktop.dependencies.coreUi.version !== ui.version) throw Error('Desktop renderer provenance mismatch')
+  const frozenDesktop = desktopFrozen(snapshot)
+  if (!frozenDesktop) {
+    const desktop = JSON.parse(archives.get('@sislexa/desktop').get('release-source.json'))
+    const ui = JSON.parse(archives.get('@sislexa/core-ui').get('release-source.json'))
+    verifyDesktopRendererProvenance(desktop, ui)
+  }
   const manifest = JSON.parse(archives.get('@sislexa/core-ui').get('manifest.json'))
   for (const [name, hash] of Object.entries(manifest.files)) {
     if (digest(archives.get('@sislexa/core-ui').get(name)) !== hash) throw Error('Core UI asset mismatch')
-    if (name.startsWith('renderer/')) {
+    if (name.startsWith('renderer/') && !frozenDesktop) {
       const embedded = archives.get('@sislexa/desktop').get('out/' + name)
       if (!embedded || digest(embedded) !== hash) throw Error('Desktop embeds different renderer: ' + name)
     }

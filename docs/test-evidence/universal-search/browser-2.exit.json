@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/usr/local/bin/node",
+    "scripts/browser-gate.mjs",
+    "--integration"
+  ],
+  "sourceSha256": "650569bdd10a9c28ac7564acbdd53552d3431f569f4458d587b8d6018d98e366",
+  "exitCode": 0,
+  "signal": null,
+  "error": null
+}

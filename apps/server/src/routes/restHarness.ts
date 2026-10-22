@@ -31,7 +31,7 @@ export interface InjOpts {
   headers?: Record<string, string>
 }
 
-export function setupRestHarness() {
+export function setupRestHarness(options: { now?: () => number; env?: NodeJS.ProcessEnv } = {}) {
   const sentMails: Array<{ to: string; subject: string; text: string; html?: string }> = []
   const triggerDeploy = vi.fn<() => Promise<{ status: 'accepted' | 'running'; message: string }>>()
 
@@ -56,7 +56,7 @@ export function setupRestHarness() {
   beforeEach(async () => {
     let id = 0
     let clock = 1000
-    harness.db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
+    harness.db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: options.now ?? (() => (clock += 10)) })
     // Каталог данных берётся у ОС, а не собирается из `Date.now()` и счётчика.
     // Пока весь REST-набор жил в одном файле, тесты шли последовательно и
     // самодельное имя почти не сталкивалось. После разрезки на пять файлов они
@@ -75,6 +75,7 @@ export function setupRestHarness() {
       // Место входа: тесты не ходят в сеть, но проверяют, что ответ доезжает до сессии.
       geo: { resolve: async () => ({ country: 'RU', city: 'Москва', label: 'Москва, RU' }) },
       config: loadConfig({
+        ...options.env,
         PORT: '0',
         VC_DATA_DIR: harness.dataDir,
         VC_MODELS_DIR: join(harness.dataDir, 'models'),

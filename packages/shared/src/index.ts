@@ -17,6 +17,7 @@ export * from './prompt'
 export * from './streamJson'
 export * from './codexStream'
 export * from './codexUsage'
+export * from './contextUsage'
 export * from './pricing'
 export * from './format'
 export * from './textPrep'
@@ -97,7 +98,7 @@ export * from './componentConfig'
 export * from './llmAccounting'
 
 // Preserve the published Core contract while existing owner releases migrate.
-export * from '@sislexa/agent-contracts/agentProtocol'
+export * from './agentProtocol'
 export * from '@sislexa/agent-contracts/version'
 export * from '@sislexa/agent-contracts/gitAccess'
 export * from '@sislexa/agent-contracts/vpn'
@@ -108,3 +109,10 @@ export * from './browserUiRelease'
 
 export * from './environment'
 export * from './integrationTokens'
+export * from './devStand'
+
+export type { DevStandAccessRequest, DevStandAccessResponse } from './devStandAccess.js'
+export * from './standDelivery'
+
+export * from './integrations'
+export * from './deploymentProfiles.js'

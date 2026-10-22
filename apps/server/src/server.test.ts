@@ -10,6 +10,7 @@ import { loadConfig } from './config.js'
 import { buildPublicMcpUrl, mcpBaseMisconfigured } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
+import { HISTORY_MCP_PATH } from './mcp/historyMcp.js'
 import { CI_COMMANDS_MCP_PATH } from './kanbanBridge/proxy.js'
 
 let app: FastifyInstance
@@ -62,6 +63,7 @@ describe('server: VC_MCP_PUBLIC_BASE', () => {
     const config = loadConfig({ PORT: '8787', VC_MCP_PUBLIC_BASE: 'http://voicechat:8787/' })
     expect(buildPublicMcpUrl(config, REMOTE_BASH_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/remote-bash?k=secret')
     expect(buildPublicMcpUrl(config, KB_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/kb?k=secret')
+    expect(buildPublicMcpUrl(config, HISTORY_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/history?k=secret')
     expect(buildPublicMcpUrl(config, CI_COMMANDS_MCP_PATH, 'secret')).toBe('http://voicechat:8787/mcp/ci-commands?k=secret')
   })
 

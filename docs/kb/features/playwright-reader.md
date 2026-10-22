@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-09-22
-checked: 31b38601
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -47,7 +47,7 @@ for the separate API/frontend processes.
 
 ## Что это и чем отличается от Web Reader
 
-Playwright Reader — отдельный продуктовый режим: слева обычный чат ChatAI, справа
+Playwright Reader — отдельный продуктовый режим: слева обычный чат sislexa, справа
 работает изолированный Chromium под управлением Playwright.
 Web Reader (`assistantKind: 'web-recorder'`) выбирает движок в том же разговоре:
 быстрый просмотр — iframe поверх `/api/preview`, полный браузер — эта же
@@ -388,7 +388,7 @@ Reader к раннеру ещё не подключена (см. «Что реа
 
 Идемпотентность старта держится на том, что в `Map` кладётся **промис** сессии, а
 не готовый объект: параллельные вкладки получают один Chromium, упавший старт
-удаляет запись. Раннер не знает про пользователей ChatAI: он получает
+удаляет запись. Раннер не знает про пользователей sislexa: он получает
 непрозрачные `userKey`/`conversationKey` и лишь сверяет, что повторный старт того
 же `sessionId` пришёл с той же парой (`session identity mismatch`). Ownership
 обязан проверять вызывающий сервер.

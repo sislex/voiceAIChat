@@ -1,3 +1,4 @@
+import { buildUnixInstallScript } from '@sislexa/agent/installers'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
@@ -9,6 +10,7 @@ import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness } from './restHarness.js'
 import { skillNameForContextId, toolNameForContextId } from '@voicechat/shared'
 import { enabledContextSkills } from '../turns.js'
+import { coldStartPrompt } from '../prompt/coldStart.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -103,11 +105,32 @@ describe('REST: conversations/messages/settings', () => {
     const got = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
     expect(got.conversation.title).toBe('Тест')
     expect(got.messages).toEqual([])
+    expect((await inj({ method: 'GET', url: `/api/conversations/${created.id}/summary` })).json()).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/summary/refresh` })).json()).toBeNull()
   })
 
   it('404 на несуществующий разговор', async () => {
     const res = await inj({ method: 'GET', url: '/api/conversations/нет' })
     expect(res.statusCode).toBe(404)
+  })
+
+  it('сбрасывает только собственный thread, usage и оставляет системную заметку для cold start', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Длинный чат' } })).json()
+    await db.chat.addMessage(U, created.id, 'u1', 'Сохранённый контекст', '10:00')
+    await db.chat.setClaudeSession(U, created.id, 'claude:thread-1')
+    await db.chat.setConversationContextUsage(U, created.id, { usedTokens: 100, windowTokens: 200_000, provider: 'claude', model: 'claude-sonnet-4-5', measuredAt: 10 })
+
+    await db.identity.createUser('outsider-reset', '', 'developer')
+    const outsider = signToken({ name: 'outsider-reset', role: 'developer' }, SECRET)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset`, headers: { authorization: `Bearer ${outsider}` } })).statusCode).toBe(404)
+
+    const reset = await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset` })
+    expect(reset.statusCode).toBe(200)
+    expect(reset.json()).toMatchObject({ id: created.id, claudeSessionId: null })
+    expect(reset.json().contextUsage).toBeUndefined()
+    const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
+    expect(after.messages.at(-1)).toMatchObject({ role: 'ai', text: expect.stringContaining('контекст потока сброшен') })
+    expect(coldStartPrompt(after.messages)).toContain('Сохранённый контекст')
   })
 
   it('возвращает авторизованный серверный снимок эффективного контекста', async () => {
@@ -768,11 +791,14 @@ describe('REST: conversations/messages/settings', () => {
     expect(desktop.statusCode).toBe(404)
   })
 
+  // @testCase TC-1
+  // @testCase TC-2
   it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
     const res = await inj({ method: 'GET', url: '/api/agents/script' })
     expect(res.statusCode).toBe(200)
-    expect(res.headers['content-type']).toContain('javascript')
-    expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.headers['content-type']).toBe('application/javascript; charset=utf-8')
+    expect(res.headers['content-disposition']).toBe('attachment; filename="voicechat-agent.cjs"')
     expect(res.body).toBe(readFileSync(createRequire(import.meta.url).resolve('@sislexa/agent/voicechat-agent.cjs'), 'utf8'))
   }, 30_000)
 
@@ -792,6 +818,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.headers['content-type']).toContain('powershell')
     expect(res.body).toContain('/api/agents/script')
     expect(res.body).toContain('nodejs.org')
+  })
+
+  // @testCase TC-1
+  // @testCase TC-2
+  it.each([
+    { headers: { host: 'agents.example:8787' }, base: 'http://agents.example:8787' },
+    {
+      headers: {
+        host: 'internal.example:8787',
+        'x-forwarded-host': 'agents.example, internal.example:8787',
+        'x-forwarded-proto': 'https, http'
+      },
+      base: 'https://agents.example'
+    }
+  ])('Unix installer responses preserve the full generator output for $base', async ({ headers, base }) => {
+    for (const platform of ['linux', 'macos'] as const) {
+      const res = await app.inject({ method: 'GET', url: `/api/agents/install-${platform}.sh`, headers })
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.headers['content-type']).toBe('text/x-shellscript; charset=utf-8')
+      expect(res.body).toBe(buildUnixInstallScript(base, platform))
+    }
   })
 
   it('установщики Linux и macOS публичны, отдают bash и разные скрипты', async () => {
@@ -892,9 +940,19 @@ describe('REST: conversations/messages/settings', () => {
       return snap.groups.flatMap((g: { items: unknown[] }) => g.items).find((e: { id: string }) => e.id === 'conversation-history')
     }
 
+    vi.stubEnv('VC_COLD_START_PROMPT_CHARS', '10')
+    try {
+      const bounded = await item()
+      const expected = coldStartPrompt(await db.chat.listMessages(U, created.id))
+      expect(expected).toContain('сокращена')
+      expect(bounded.details?.prompt).toBe(expected)
+      expect(bounded.size?.chars).toBe(expected.length)
+    } finally {
+      vi.unstubAllEnvs()
+    }
     const withoutSession = await item()
     expect(withoutSession.description).toMatch(/1 сообщений, ≈\d+ токенов/)
-    expect(withoutSession.explanation).toContain('пересобирается в промпт целиком')
+    expect(withoutSession.explanation).toContain('свежая часть истории')
     expect(withoutSession.size?.chars).toBeGreaterThan(0)
 
     // Живая сессия движка: история уже у модели, в промпт она не пересобирается.
@@ -907,7 +965,7 @@ describe('REST: conversations/messages/settings', () => {
 
     // Сессия другого движка чужой разговор не «продолжает»: у codex своя.
     await db.chat.setClaudeSession(U, created.id, 'codex:sess-2')
-    expect((await item()).explanation).toContain('пересобирается в промпт целиком')
+    expect((await item()).explanation).toContain('свежая часть истории')
   })
 
   it('цепочка AGENTS.md читается с машины по просьбе: от общей к конкретной, без шума о ненайденных', async () => {
@@ -1418,6 +1476,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(ids).toEqual([
       'instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
       'knowledge-mode',
+      // mcp-history: turns.ts reads it (historyEnabled), see turns.test «honours the mcp-history context toggle».
+      'mcp-history',
       'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
       'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
       'personalization', 'project-binding', 'task-context'

@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-09-29
-checked: 3ed5c019
+updated: 2026-10-15
+checked: 9f17e9b1
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -125,7 +125,11 @@ push ветки задачи в `origin`, после чего карточка �
 `POST /api/projects/:id/tasks/:taskId/merge`, не передавая ветку, target, Git URL,
 checkout или машину. `VoiceChatDb.startMergeRun` определяет их из задачи,
 проекта и последнего успешно отправленного `ci_workspaces`, требует owner-доступ,
-target `main`, сохранённый source SHA и привязанную машину. Машина merge-рана
+сохранённый source SHA и привязанную машину. The server snapshots
+`project.ciBaseBranch || 'main'` in `merge_runs.target_branch`; every read and
+list returns the stored target. `MergeRun.targetBranch` is a string, replacing
+the former main-only literal and start restriction. An active run keeps its
+target when the project setting changes. Машина merge-рана
 всегда берётся из этой записи workspace, а не из текущей default-машины проекта
 или настройки карточки: именно на ней гарантированно существует родительский
 каталог для временного merge-клона. Создание идемпотентно:
@@ -137,7 +141,10 @@ merge-рана задачи, а повторное нажатие возвращ
 Менеджер использует один процесс-глобальный слот. До мутаций он проверяет
 права и статус задачи в БД, доступность машины и workspace, отсутствие другого
 активного рана, а затем read-only командой `ls-remote` — доступ к origin и
-существование `main` и feature-ветки. Fetch сохраняет оба актуальных SHA в refs
+существование целевой и feature-ветки. The Kanban owner executor uses the saved
+`run.targetBranch` for readiness, fetch, pinned comparison, merge, lease push,
+verification and reconciliation. Missing targets fail; dev never silently falls
+back to main. Promotion from dev to main is separate. Fetch сохраняет оба актуальных SHA в refs
 `refs/merge-runs/<runId>/source|target`; это неизменяемые ссылки одного цикла,
 не зависящие от общего `FETCH_HEAD`. Изменившаяся после development CI feature
 завершается как stale source до checkout target.

@@ -2,6 +2,8 @@
 // Identity is the archive hash and source commit, not the version: an owner can
 // republish the same version with different bytes, and that still changes consumers.
 
+import { assertReleaseVersions } from './release-version.mjs'
+import { vendorAssetFromRef } from './vendor-store.mjs'
 const MANIFESTS = ['dependency-snapshots.json', 'vendor/owner-artifacts.json', 'vendor/ui-libraries.json']
 const COMPOSE = /^(?:docker-compose\.yml|deploy\/compose\.[\w.-]+\.yml)$/
 const PACKAGE_JSON = /^(?:package\.json|(?:apps|packages)\/[\w.-]+\/package\.json)$/
@@ -19,7 +21,8 @@ const parse = (text) => {
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const without = (value, key) => { const { [key]: _removed, ...rest } = value; return rest }
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']
-const vendorSpec = (spec) => typeof spec === 'string' && /^file:(?:\.\.\/)*vendor\/[\w.@-]+\.tgz$/.test(spec)
+// Pinned archives are referenced as `file:vendor/X.tgz` (legacy) or by the `vendor` release URL.
+const vendorSpec = (spec) => vendorAssetFromRef(spec) !== null
 
 /**
  * @param {string[]} files changed paths
@@ -28,6 +31,8 @@ const vendorSpec = (spec) => typeof spec === 'string' && /^file:(?:\.\.\/)*vendo
  * @returns {{ packages: string[], tools: string[], images: boolean, archives: string[] } | { unproven: string }}
  */
 export function ownerPinChanges(files, readBefore, readAfter) {
+  for (const file of [...MANIFESTS, 'deploy/tools.lock.json', 'package-lock.json'])
+    assertReleaseVersions(parse(readAfter(file)), `Owner pins ${file}`)
   const packages = new Set(), tools = new Set(), archives = []
   let images = false
   const assets = new Map()

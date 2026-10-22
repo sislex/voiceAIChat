@@ -1,6 +1,7 @@
 // Точка входа сервера.
 
 import { buildServer } from './server.js'
+import { startProcessMemoryLogger } from './processMemory.js'
 import { loadConfig } from './config.js'
 import { mcpBaseMisconfigured } from './mcp/publicBase.js'
 
@@ -16,6 +17,8 @@ if (mcpBaseMisconfigured(config)) {
 }
 
 const app = await buildServer({ config })
+const stopMemoryLogger = startProcessMemoryLogger()
+app.addHook('onClose', async () => stopMemoryLogger())
 
 app
   .listen({ port: config.port, host: config.host })

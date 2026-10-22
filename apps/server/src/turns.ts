@@ -1,3 +1,6 @@
+import { effectiveCapabilities } from './deploymentApplications.js'
+import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
+import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
@@ -12,7 +15,9 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, instructionsForAssistantKind, stripDisabledInstructionBlocks, parseTaskLaunchRequest, buildConversationPrompt, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, clampModel, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
+import { conversationContextUsage } from '@voicechat/shared'
+import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -23,11 +28,16 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
-import type { ChatAccounting } from './billing/chatAccounting.js'
+import { ACCOUNTING_PENDING_MESSAGE, type ChatAccounting } from './billing/chatAccounting.js'
 import type { LlmBillingSession } from '@voicechat/shared'
 
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
+
+/** Codex cannot resume a thread whose rollout is gone; such a turn must start a new thread. */
+export function isLostCodexThread(message: string): boolean {
+  return /no rollout found for thread id|thread\/resume failed/i.test(message)
+}
 
 /** Навыки, которые реально передаются исполнителю после контекстных тумблеров. */
 export function enabledContextSkills(skillNames: string[], disabledContext: Iterable<string>): string[] {
@@ -36,12 +46,16 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 }
 
 export interface TurnManagerDeps {
+  chatModels?: ChatModelPolicy
+  chatTextOnly?: boolean
+  deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
   db: VoiceChatDb
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
+  conversationSummary?: { consider(userId: string, conversationId: string): void }
   /** Клиент конкретного исполнителя из реестра. */
   engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
@@ -71,6 +85,11 @@ export interface TurnManagerDeps {
     }): void
     unregister(token: string): void
   }
+  historyMcpBaseUrl?: string
+  historyTool?: {
+    register(token: string, entry: { userId: string; conversationId: string }): void
+    unregister(token: string): void
+  }
   /**
    * База URL MCP-эндпоинта действий веб-превью (с секретом k). Только для хода
    * разговора: действия транслируются подключённым клиентам пользователя.
@@ -80,6 +99,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Per-turn MCP URL of an external application signed for this core (deployment-profiles B17). */
+  externalMcpUrl?: (application: import('@voicechat/shared').ApplicationId, context: { userId: string; conversationId: string; turnId?: string }) => string | undefined
   /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
   imageStudioMcpBaseUrl?: string
   /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
@@ -244,6 +265,8 @@ export interface StartTurnRequest {
   conversationId: string
   /** Сохранённое пользовательское сообщение — идемпотентность очереди. */
   messageId?: string
+  /** Internal queue dispatch marker; never accepted from the public WS request. */
+  fromQueue?: boolean
   segments: SttSegmentWire[]
   attachments?: string[]
   verbose?: boolean
@@ -347,9 +370,12 @@ interface TurnState {
   turnId: string
   /** Токен MCP-инструмента БЗ этого хода (снимается при завершении/отмене). */
   kbToolToken: string | null
+  historyToolGrantId: string | null
   /** Токен бинарного файлового контекста remote:image. */
   remoteFileToken: string | null
   source: StartTurnRequest
+  /** Stop pauses public chat output and its queue until the paid execution settles. */
+  backgroundStop?: boolean
 }
 
 /** Кэп на число записей активности, хранимых у одного хода. */
@@ -406,8 +432,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!deps.delegation || req.delegation.userId !== userId) throw Error('delegation_denied')
         if (req.attachments?.length || req.assistantContext) throw Error('delegation_denied')
         await deps.delegation.authorize(req.delegation, 'execute', conversationId)
-        // Applications must use live delegated Billing admission, never the legacy fallback.
-        if (!deps.accounting) throw Error('delegation_billing_required')
+        // Applications must use live delegated Billing admission, never the legacy fallback. Core ticket
+        // delegations act within the user's own build and follow its billing like the user's own turns.
+        if (!deps.accounting && !deps.delegation.referenceTicket(req.delegation)) throw Error('delegation_billing_required')
         req = { ...req, execTarget: 'none', skipProjectSync: true }
       } catch {
         // takeQueuedTurn removes the row before admission. Retain rejected work
@@ -434,7 +461,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     const conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
+    const backgroundStop = !!deps.chatTextOnly && !!conv &&
+      deps.accounting?.stopsInBackground(billingOriginForConversation(conv), !!req.delegation) === true
     const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
+    if (entitlements && deps.deployment) entitlements.capabilities = effectiveCapabilities(entitlements.capabilities, deps.deployment)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
       broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
       return
@@ -464,8 +494,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       const message = await deps.db.chat.addMessage(userId, conversationId, 'u0',
         req.segments.map(segment => segment.text).join('\n'), timeHHMM())
       req.messageId = message.id
+      deps.conversationSummary?.consider(userId, conversationId)
+    }
+    // A client-chosen queue key must name a stored message of this conversation: the queue row
+    // references it, and a failed insert in a later model callback would stop the process.
+    if (req.messageId && !(await deps.db.chat.hasMessage(userId, conversationId, req.messageId))) {
+      broadcast({ t: 'claude.error', conversationId, message: 'message_not_found' }, userId)
+      return
     }
     req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    if (backgroundStop && !turns.has(conversationId) && (!entitlements.userId || deps.accounting!.hasPendingUser(entitlements.userId))) {
+      // Another conversation can reserve this user after dispatchNext's check and
+      // before this admission. Restore the extracted work without marking it failed.
+      if (req.fromQueue && req.messageId) {
+        await restoreQueuedTurn(req)
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
+      }
+      broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
+      return
+    }
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
     if (turns.has(conversationId) || starting.has(conversationId)) {
@@ -498,7 +546,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? await deps.db.ci.getCiLlmConfig('project', conv.projectId) ?? await deps.db.ci.ciLlmDefaultsForUser(userId)
       : null
     const wantProvider = conv?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-    const access = await deps.db.identity.getUserLlmAccess(userId)
+    const access = deploymentModelAccess(await deps.db.identity.getUserLlmAccess(userId), deps.chatModels)
     const fallbackProvider = firstAllowedProvider(access)
     if (!fallbackProvider) {
       starting.delete(conversationId)
@@ -513,8 +561,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const selectedClient = resolvedEngine.engine && deps.engineClient
       ? deps.engineClient(resolvedEngine.engine)
       : provider === 'codex' ? deps.codex! : deps.claude
-    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: req.billingSession,
-      delegatedAuthorization: req.delegation ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
+    // A ticket delegation is admitted through the issuing user session, attributed to its application.
+    const ticket = req.delegation ? deps.delegation!.referenceTicket(req.delegation) : undefined
+    const client = accountedTurn ? deps.accounting!.wrap(selectedClient, { login: userId, session: ticket ? ticket.billingSession : req.billingSession,
+      delegatedAuthorization: req.delegation && !ticket ? () => deps.delegation!.billingAuthorization(req.delegation!, conversationId) : undefined,
       application: req.delegation ? deps.delegation!.attribution(req.delegation) : undefined,
       authorize: req.delegation ? () => deps.delegation!.authorize(req.delegation!, 'execute', conversationId) : undefined,
       originModuleId: billingOriginForConversation(conv), ...(resolvedEngine.engine ? { engineId: resolvedEngine.engine.id } : {}) }) : selectedClient
@@ -524,17 +574,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const requestedModel = provider === 'codex'
       ? (selectedModel ?? settings.codexModel)
       : normalizeClaudeModel(selectedModel || settings.model)
-    const permittedModel = clampModel(access, provider, requestedModel)
+    const permittedModel = deploymentModel(access, provider, requestedModel, deps.chatModels)
     if (!permittedModel) {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'WARNING: Для выбранного движка нет доступных моделей.' }, userId)
       return
     }
     const model = provider === 'claude' ? claudeModelAlias(permittedModel) : permittedModel
+    // Account defaults are already projected by /api/settings under an explicit deployment policy.
+    // Keep warnings for conversation/project choices and for ordinary unrestricted deployments.
+    const reportProviderFallback = deps.chatModels === undefined || conv?.llmProvider != null || projectLlm?.provider != null
+    const reportModelFallback = deps.chatModels === undefined || selectedModel != null
     const notices = [
       resolvedEngine.substituted ? `⚠️ Исполнитель «${wantedEngineId}» недоступен; ход выполнен через «${resolvedEngine.engine?.name ?? `default ${provider}`}».` : '',
-      permittedProvider !== wantProvider ? `⚠️ Движок «${wantProvider}» недоступен; выбран «${provider}».` : '',
-      permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
+      reportProviderFallback && permittedProvider !== wantProvider ? `⚠️ Движок «${wantProvider}» недоступен; выбран «${provider}».` : '',
+      reportModelFallback && permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
     ].filter(Boolean)
     const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
@@ -570,7 +624,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
-      : buildConversationPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths)
+      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -583,6 +637,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
+    const historyEnabled = !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
+    if (historyEnabled && (conv?.messageCount ?? 0) > 200) {
+      basePrompt += '\n\nЭтот разговор длинный. Если для ответа нужны прежние детали, используй mcp__history__history_search и затем mcp__history__history_get вместо догадок.'
+    }
     if (!req.delegation && deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
@@ -650,11 +708,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // проекта, выбранном в её селекторе. Признак второго — `assistantContext`:
     // его шлёт только эта панель, обычный чат сайдбара такого поля не имеет.
     const kanbanTurn = Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
+    // An external application gets its tools on its own turns and on the user's turns; never on another application's.
+    const externalTools = (application: import('@voicechat/shared').ApplicationId, toolConversationId = conversationId) =>
+      !req.delegation || req.delegation.applicationId === application
+        ? deps.externalMcpUrl?.(application, { userId, conversationId: toolConversationId, turnId }) : undefined
+    // External Kanban (projects=https://…) serves `/mcp/kanban` with a core MCP token instead of the shared secret.
+    const externalKanban = kanbanTurn ? externalTools('projects') : undefined
     if (kanbanTurn && req.assistantContext) {
       // С инструментами канбана envelope не нужен: модель читает и меняет доску
       // сама. Без них (старый деплой, инструменты не подняты) остаётся прежний
       // режим предложений — иначе ассистент вообще ничего не сможет сделать.
-      basePrompt = deps.kanbanMcpBaseUrl
+      basePrompt = deps.kanbanMcpBaseUrl || externalKanban
         ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
         : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
@@ -671,10 +735,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Фильтр по виду чата — общий с инспектором контекста
     // (`instructionsForAssistantKind` в `@voicechat/shared`): пока он жил здесь
     // двумя `.filter`, предпросмотр показывал подсказки, которых в этом чате
-    // не будет.
-    const instructions = instructionsForAssistantKind(
+    // не будет. Канбан-ассистент с «Автопилотом» действует сам — task-launch
+    // ему не даём (`turnChatInstructions`).
+    const instructions = turnChatInstructions(
       effectiveChatInstructions(req.delegation ? [] : settings.chatInstructions, disabledContext),
-      conv?.assistantKind ?? null
+      conv,
+      kanbanTurn
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
@@ -710,11 +776,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
-    const machine = makeChat ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
+    // The server's tool-free policy needs neither a machine nor Git preflight,
+    // regardless of saved or request-level machine preferences.
+    const machine = makeChat || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
       ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
-    const executionDisabled = machine?.source === 'disabled'
+    const executionDisabled = deps.chatTextOnly === true || machine?.source === 'disabled'
     if (machine?.error === 'unavailable') {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'Выбранная машина больше недоступна для этого чата' }, userId)
@@ -856,6 +924,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         }
       })
     }
+    let historyToolGrantId: string | null = null
+    let historyMcpUrl: string | undefined
+    if (historyEnabled) {
+      historyToolGrantId = randomUUID()
+      historyMcpUrl = `${deps.historyMcpBaseUrl}&turn=${encodeURIComponent(historyToolGrantId)}`
+      deps.historyTool!.register(historyToolGrantId, { userId, conversationId })
+    }
     // Инструменты веб-превью (mcp__browser__*) — вне ветки `remote`: действия
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
@@ -863,12 +938,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewSurface: 'panel' | 'chromium' | undefined
     // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
     // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
-    if (!req.delegation && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use') && deps.previewMcpBaseUrl && deps.previewTurns) {
+    // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
+    const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+    const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
+    if (externalPreview) previewMcpUrl = externalPreview
+    else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
     // The Make turn acts on the bound reader conversation, never on the Make chat itself.
-    if (makeBrowser?.available && deps.previewMcpBaseUrl && deps.previewTurns) {
-      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId: makeBrowser.session.id }))}`
+    const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
+    if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
+      previewMcpUrl = externalMakeBrowser
+        ?? `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns!.issue({ userId, conversationId: makeBrowser.session.id }))}`
       previewSurface = makeBrowser.surface
     }
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
@@ -880,23 +961,25 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
+    const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
+    if (conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+      makeMcpUrl = `${externalMake ?? deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
     let imageStudioMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'images' && deps.imageStudioMcpBaseUrl) {
-      imageStudioMcpUrl = `${deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
+    const externalImages = conv?.assistantKind === 'images' ? externalTools('image-studio') : undefined
+    if (conv?.assistantKind === 'images' && (externalImages || (!req.delegation && deps.imageStudioMcpBaseUrl))) {
+      imageStudioMcpUrl = `${externalImages ?? deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
     }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl) {
+    if (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl)) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
-      kanbanMcpUrl = `${deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
+      kanbanMcpUrl = `${externalKanban ?? deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
@@ -995,8 +1078,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       execTarget: requestedTarget,
       turnId,
       kbToolToken,
+      historyToolGrantId,
       remoteFileToken,
-      source: req
+      source: req,
+      backgroundStop
     }
     starting.delete(conversationId)
     turns.set(conversationId, turn)
@@ -1037,14 +1122,19 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         return
       }
     }
+    // Identity-delegated turns stay tool-free. A shared service's ticket delegation keeps that
+    // service's MCP tools (B21) and loses only shell execution: the Codex runner has no tool-free mode.
+    const ticketDelegated = Boolean(req.delegation && deps.delegation!.referenceTicket(req.delegation))
     turn.handle = client.send(
       {
-        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), textOnly: true } : {}),
+        ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
+        ...(deps.chatTextOnly ? { textOnly: true } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
-        remote: executionRemote, readOnlyRemote, executionDisabled,
+        remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
+        ...(historyMcpUrl ? { historyMcpUrl } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
         ...(previewMcpUrl && previewSurface ? { previewSurface } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
@@ -1059,6 +1149,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       {
         onSession: async (sid) => {
           codexThreadId = sid
+          if (conv?.claudeSessionId && conv.claudeSessionId !== `${provider}:${sid}`) {
+            await deps.db.chat.setConversationContextUsage(userId, conversationId, null)
+          }
           await deps.db.chat.setClaudeSession(userId, conversationId, `${provider}:${sid}`)
         },
         onInit: (info) => {
@@ -1151,7 +1244,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               timeHHMM(),
               provider,
               merged,
-              requestedTarget
+              requestedTarget,
+              undefined,
+              undefined,
+              conversationContextUsage(provider, resolvedModel, merged, now())
             )
             // Итоги хода — в его обращения к БЗ: id сообщения (панель ведёт на
             // ход) и размеры промпта/входа (доля БЗ в промпте).
@@ -1161,6 +1257,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               promptChars: requestInfo.promptChars,
               turnInputTokens: turnInputTokens(merged)
             })
+            deps.conversationSummary?.consider(userId, conversationId)
             return message
           }
           // Чат студии картинок: всё нарисованное в ходе попадает в галерею.
@@ -1240,21 +1337,31 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           if (turn.done) return
           deps.onAuthError?.(userId, provider, message)
           finish()
+          // The runner lost the Codex thread (for example a recreated runner volume): forget it so
+          // the next turn starts a fresh thread, and retry this message instead of failing it.
+          const lostThread = provider === 'codex' && !!sessionId && isLostCodexThread(message)
+          if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {
-            await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
-              segments: req.segments,
-              attachments: req.attachments,
-              verbose: req.verbose,
-              execTarget: req.execTarget,
-              assistantContext: req.assistantContext,
-              delegation: req.delegation,
-              billingSession: req.billingSession
-            }, false)
-            await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
+            const pendingAdmission = backgroundStop && message === ACCOUNTING_PENDING_MESSAGE
+            if (pendingAdmission && req.fromQueue) await restoreQueuedTurn(req)
+            else {
+              await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
+                segments: req.segments,
+                attachments: req.attachments,
+                verbose: req.verbose,
+                execTarget: req.execTarget,
+                assistantContext: req.assistantContext,
+                delegation: req.delegation,
+                billingSession: req.billingSession
+              }, false)
+            }
+            if (!lostThread) {
+              if (!pendingAdmission) await deps.db.chat.markQueuedTurnFailed(userId, conversationId, req.messageId)
+              await deps.db.chat.setTurnQueuePaused(userId, conversationId, accountedTurn)
+            }
             await emitQueue(userId, conversationId)
           }
-          broadcast({ t: 'claude.error', conversationId, message }, userId)
+          if (!lostThread || !req.messageId) broadcast({ t: 'claude.error', conversationId, message }, userId)
           await dispatchNext(userId, conversationId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
@@ -1276,7 +1383,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   /**
-   * Снять токены инструментов хода (БЗ и файлы). Обязателен во всех выходах
+   * Снять токены инструментов хода (БЗ, истории и файлов). Обязателен во всех выходах
    * хода (готово, ошибка, отмена, остановка сервера) — иначе каждый отменённый
    * ход оставляет живые токены, по которым можно действовать от его имени.
    */
@@ -1285,10 +1392,33 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       deps.kbTool?.unregister(turn.kbToolToken)
       turn.kbToolToken = null
     }
+    if (turn.historyToolGrantId) {
+      deps.historyTool?.unregister(turn.historyToolGrantId)
+      turn.historyToolGrantId = null
+    }
     if (turn.remoteFileToken) {
       deps.remoteFileTool?.unregister(turn.remoteFileToken)
       turn.remoteFileToken = null
     }
+  }
+
+  async function restoreQueuedTurn(req: StartTurnRequest): Promise<void> {
+    if (!req.messageId) return
+    const queue = await deps.db.chat.enqueueTurn(req.userId, req.conversationId, req.messageId, {
+      segments: req.segments, attachments: req.attachments, verbose: req.verbose,
+      execTarget: req.execTarget, assistantContext: req.assistantContext,
+      delegation: req.delegation, billingSession: req.billingSession
+    })
+    const restored = queue.find(item => item.messageId === req.messageId)
+    if (restored) await deps.db.chat.prioritizeQueuedTurn(req.userId, req.conversationId, restored.id)
+  }
+
+  async function pendingPublicAccounting(userId: string, conversationId: string, delegated = false): Promise<boolean> {
+    if (!deps.chatTextOnly || !deps.accounting || delegated) return false
+    const conversation = await deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation || !deps.accounting.stopsInBackground(billingOriginForConversation(conversation), false)) return false
+    const account = await deps.db.identity.getAccountAccess(userId, conversation.tenantId)
+    return !account?.userId || deps.accounting.hasPendingUser(account.userId)
   }
 
   async function dispatchNext(userId: string, conversationId: string): Promise<void> {
@@ -1296,13 +1426,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       await emitQueue(userId, conversationId)
       return
     }
+    const queued = deps.chatTextOnly && deps.accounting
+      ? (await deps.db.chat.listQueuedTurns(userId, conversationId)).find(item => item.status === 'queued') : undefined
+    const payload = queued ? await deps.db.chat.queuedTurnPayload(userId, conversationId, queued.id) : undefined
+    if (queued && await pendingPublicAccounting(userId, conversationId, !!payload?.delegation)) {
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+      await emitQueue(userId, conversationId)
+      return
+    }
     const next = await deps.db.chat.takeQueuedTurn(userId, conversationId)
     await emitQueue(userId, conversationId, next?.message)
     if (!next) return
-    queueMicrotask(() => track(start({ userId, conversationId, messageId: next.messageId, ...next.payload })))
+    queueMicrotask(() => track(start({ userId, conversationId, messageId: next.messageId, ...next.payload, fromQueue: true })))
   }
 
-  /** Остановка сохраняет partial и затем автоматически продвигает очередь. */
+  /** Stop preserves partial output; public paid chat requires an explicit queue resume. */
   async function cancelTurn(conversationId: string, notify: boolean): Promise<TurnState | undefined> {
     const turn = turns.get(conversationId)
     if (!turn) return undefined
@@ -1310,7 +1448,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.done = true
     releaseTurnTools(turn)
     turn.handle.cancel()
-    await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, false)
+    await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, turn.backgroundStop === true)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
@@ -1322,6 +1460,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const message = turn.partial.trim()
       ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
+    if (message) deps.conversationSummary?.consider(turn.userId, conversationId)
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn
@@ -1357,6 +1496,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
   async function sendQueuedNow(userId: string, conversationId: string, id: string): Promise<void> {
     const turn = turns.get(conversationId)
+    const queued = await deps.db.chat.queuedTurnPayload(userId, conversationId, id)
+    if (await pendingPublicAccounting(userId, conversationId, !!queued?.delegation)) {
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+      await emitQueue(userId, conversationId)
+      broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
+      return
+    }
     if (restarting.has(conversationId)) {
       await emitQueue(userId, conversationId)
       return
@@ -1416,7 +1562,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         userId,
         conversationId,
         messageId: merged.message.id,
-        ...merged.payload
+        ...merged.payload,
+        fromQueue: true
       }).catch(async (error: unknown) => {
         await deps.db.chat.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
         await deps.db.chat.markQueuedTurnFailed(userId, conversationId, merged.message.id)

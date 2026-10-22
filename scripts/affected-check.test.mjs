@@ -15,6 +15,42 @@ const protectedTemporaryBase = () => process.env.DELIVERY_ATTEMPT_ROOT ? join(pr
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+// Allow detached fixture processes to make progress on busy delivery hosts.
+const hostTimeoutMs = 60_000
+
+async function waitUntil(predicate, message) {
+  const deadline = performance.now() + hostTimeoutMs
+  while (!predicate()) {
+    assert.ok(performance.now() < deadline, message)
+    await delay(20)
+  }
+}
+
+function barrierStart(events, width) {
+  let active = 0
+  let maxActive = 0
+  let waiting = []
+  return {
+    start(pkg, script, { maxWorkers }) {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      events.push({ type: 'start', pkg: pkg.id, script, maxWorkers })
+      const done = new Promise((resolve) => {
+        waiting.push(resolve)
+        if (waiting.length === width) {
+          const batch = waiting
+          waiting = []
+          for (const release of batch) release()
+        }
+      }).then(() => {
+        active -= 1
+        events.push({ type: 'end', pkg: pkg.id, script })
+      })
+      return { done, stop() {} }
+    },
+    maxActive: () => maxActive
+  }
+}
 
 function timedStart(events, { fail } = {}) {
   let active = 0
@@ -59,7 +95,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -69,14 +105,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -90,7 +126,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 })
 
@@ -121,6 +157,10 @@ test('consumersOf даёт транзитивное замыкание и не �
   for (const id of ['ui', 'web']) assert.equal(appShell.has(id), false)
   assert.equal(appShell.has('desktop'), false)
   assert.equal(consumersOf('shared').has('agent-tray'), false)
+})
+
+test('knowledge edits select the extracted package and Core consumer', () => {
+  assert.deepEqual(ids(selectAffected(['packages/knowledge/src/scoped.ts'])), ['knowledge', 'server'])
 })
 
 test('e2e, frontend-quality и настройки агентов не включают полный гейт', () => {
@@ -181,8 +221,11 @@ test('диагностика молчит на быстром успехе, да
   })
   hanging.append('first line\nlast active test')
   now = 31_000
-  await delay(15)
-  hanging.stopped('timeout')
+  try {
+    await waitUntil(() => info.length > 0, 'Expected a heartbeat while the command is running')
+  } finally {
+    hanging.stopped('timeout')
+  }
   assert.match(info.at(-1), /active package: server \/ test; elapsed: 31s; stage: running/)
   assert.match(errors.at(-1), /timeout: server \/ test[\s\S]*last active test/)
 })
@@ -205,24 +248,26 @@ test('relatedArgs согласует min/max workers для fast-stage Vitest', 
   )
 })
 
-test('runPackageGates ограничивает два независимых гейта и замеряет ускорение', async () => {
+test('runPackageGates ограничивает два независимых гейта и запускает их одновременно', { timeout: hostTimeoutMs }, async () => {
   const packages = [{ id: 'one' }, { id: 'two' }]
 
   const sequentialEvents = []
-  const sequentialRunner = timedStart(sequentialEvents)
-  const sequentialStarted = Date.now()
+  const sequentialRunner = barrierStart(sequentialEvents, 1)
   await runPackageGates(packages, { jobs: 1, start: sequentialRunner.start })
-  const sequentialMs = Date.now() - sequentialStarted
 
   const parallelEvents = []
-  const parallelRunner = timedStart(parallelEvents)
-  const parallelStarted = Date.now()
+  const parallelRunner = barrierStart(parallelEvents, 2)
   await runPackageGates(packages, { jobs: 2, start: parallelRunner.start })
-  const parallelMs = Date.now() - parallelStarted
 
   assert.equal(sequentialRunner.maxActive(), 1)
   assert.equal(parallelRunner.maxActive(), 2)
-  assert.ok(parallelMs < sequentialMs, `parallel ${parallelMs}ms must be faster than sequential ${sequentialMs}ms`)
+  for (const script of ['typecheck', 'test']) {
+    assert.deepEqual(
+      parallelEvents.filter((event) => event.script === script).map(({ type, pkg }) => [type, pkg]),
+      [['start', 'one'], ['start', 'two'], ['end', 'one'], ['end', 'two']],
+      `${script}: both packages must start before either finishes`
+    )
+  }
   const parallelTests = parallelEvents.filter((event) => event.type === 'start' && event.script === 'test')
   const sequentialTests = sequentialEvents.filter((event) => event.type === 'start' && event.script === 'test')
   // Раньше здесь стояла жёсткая единица, и `packages/ui` в параллельном режиме
@@ -413,11 +458,11 @@ esac
     let metadata = '', applicationMetadata = ''
     // The detached child writes the two files sequentially. Observing the first
     // one does not mean the second has been created yet.
-    for (let attempt = 0; attempt < 500 && (!metadata || !applicationMetadata); attempt += 1) {
-      await delay(20)
+    await waitUntil(() => {
       try { metadata = readFileSync(marker, 'utf8') } catch {}
       try { applicationMetadata = readFileSync(marker + '.application', 'utf8') } catch {}
-    }
+      return Boolean(metadata && applicationMetadata)
+    }, 'Detached deployment did not write both metadata files')
     assert.equal(metadata, '0.1.42|protected-release|abcdef123456')
     assert.equal(applicationMetadata, '0.1.42|1.1.0|1.0.0|abcdef123456abcdef123456abcdef123456abcdef')
     assert.match(readFileSync(log, 'utf8'), /version=0\.1\.42 .*source=protected-release/)
@@ -429,7 +474,7 @@ esac
 test('production deploy безопасно мигрирует постоянный серверный том до compose up', async (t) => {
   const repository = dirname(dirname(fileURLToPath(import.meta.url)))
 
-  const runScenario = ({ target = [], legacy = {}, fail = '' }) => {
+  const runScenario = ({ target = [], legacy = {}, fail = '', postgres = false }) => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'voicechat-volume-test-'))
     const commandsDirectory = join(tempRoot, 'commands')
     const volumesRoot = join(tempRoot, 'volumes')
@@ -438,6 +483,7 @@ test('production deploy безопасно мигрирует постоянны
     mkdirSync(volumesRoot)
     mkdirSync(join(tempRoot, 'apps/server'), { recursive: true })
     writeFileSync(join(tempRoot, 'apps/server/release.json'), JSON.stringify({ apiVersion: '1.1.0', dataVersion: '1.0.0' }))
+    if (postgres) writeFileSync(join(tempRoot, '.env'), 'VC_DB_URL=postgres://fixture/voicechat\n')
 
     const putVolume = (name, files) => {
       const directory = join(volumesRoot, name)
@@ -498,6 +544,10 @@ for mount in "\${mounts[@]}"; do
     /backup) backup=$volume ;;
   esac
 done
+if [[ -n $data && "$*" == *python3* && "$*" == *VC_DATA_REQUIRES_SQLITE=0* ]]; then
+  [[ -f "$VOLUMES_ROOT/$data/session.secret" && -s "$VOLUMES_ROOT/$data/session.secret" ]]
+  exit
+fi
 if [[ -n $data && "$*" == *python3* ]]; then
   [[ -f "$VOLUMES_ROOT/$data/voicechat.db" &&
      -s "$VOLUMES_ROOT/$data/voicechat.db" &&
@@ -572,6 +622,23 @@ exit 2
     } finally { repeat.cleanup() }
   })
 
+  await t.test('with Postgres the volume needs session.secret only, not the legacy SQLite file', () => {
+    const postgres = runScenario({ postgres: true, target: [['session.secret', 'current'], ['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.equal(postgres.result.status, 0, postgres.result.stderr)
+      assert.match(postgres.calls, /compose up -d --build/)
+    } finally { postgres.cleanup() }
+    const sqlite = runScenario({ target: [['session.secret', 'current'], ['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.notEqual(sqlite.result.status, 0)
+      assert.doesNotMatch(sqlite.calls, /compose up -d --build/)
+    } finally { sqlite.cleanup() }
+    const noSecret = runScenario({ postgres: true, target: [['chat-accounting.sqlite', 'x']] })
+    try {
+      assert.notEqual(noSecret.result.status, 0)
+    } finally { noSecret.cleanup() }
+  })
+
   await t.test('чистая установка и пустой legacy не блокируют compose', () => {
     const scenario = runScenario({ legacy: { 'old_project_vc-data': [] } })
     try {
@@ -622,7 +689,7 @@ test('production compose закрепляет каноническое имя se
 test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
   const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
   const head = 'a'.repeat(40), previous = 'b'.repeat(40)
-  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
+  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, tagConflict = false, releaseVersion = '0.1.77', fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'controlled-deploy-')))
     const bin = join(root, 'bin'), state = join(root, 'operations'), calls = join(root, 'calls')
     mkdirSync(bin); mkdirSync(state, { mode: 0o700 }); mkdirSync(join(root, 'apps/server'), { recursive: true })
@@ -631,7 +698,9 @@ test('controlled deployment pins a commit, persists detached completion and neve
     executable('setsid', 'exec "$@"'); executable('nohup', 'exec "$@"')
     executable('flock', busy ? 'exit 1' : 'exit 0')
     executable('sleep', 'exit 0')
-    executable('git', `case "$*" in
+    executable('git', `printf '%s\\n' "$*" >>"$FIXTURE_ROOT/git-calls"
+    case "$*" in
+      'fetch --tags origin') ${tagConflict ? "echo 'would clobber existing tag' >&2; exit 1" : 'exit 0'};;
       'status --porcelain --untracked-files=all') ${statusFailure ? 'exit 1' : dirty ? "echo '?? injected-source.js'" : 'exit 0'};;
       'rev-parse HEAD') echo ${actual};;
       'rev-parse --short HEAD'|'rev-parse --short=12 HEAD') echo ${actual.slice(0, 12)};;
@@ -643,7 +712,7 @@ test('controlled deployment pins a commit, persists detached completion and neve
       exit 0`)
     const env = { ...process.env, PATH: bin + ':' + process.env.PATH, VC_REPO_DIR: root,
       VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOG: join(root, 'log'), VC_DEPLOY_LOCK: join(root, 'lock'),
-      VC_RELEASE_VERSION: '0.1.77', VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
+      VC_RELEASE_VERSION: releaseVersion, VC_RELEASE_VERSION_SOURCE: 'protected-release', VC_HEALTH_TRIES: '1', FIXTURE_ROOT: root }
     delete env.VC_DEPLOY_CHILD
     // The operator envelope is outside the candidate checkout, with protected
     // ancestors. A conventional /tmp ancestor is intentionally not accepted.
@@ -664,16 +733,15 @@ test('controlled deployment pins a commit, persists detached completion and neve
         lease: { id: 'one', epoch: 1, leaseId: 'fixture-lease', expiresAt: Date.now() + 60000, action: 'deploy', runId: 'fixture', environment: 'staging', releaseSetId: 'candidate', manifestHash: 'c'.repeat(64) },
         verifyLeaseCommand: [process.execPath, verifier, root, fencePath], environment: {} }), { mode: 0o600 })
     }
-    const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: 10000 })
+    const run = (...args) => spawnSync('bash', [launcher, ...args], { env, encoding: 'utf8', timeout: hostTimeoutMs })
     const start = run('--operation-id', 'one', '--expected-commit', head, ...(fence ? ['--delivery-fence', fencePath] : []))
     assert.equal(start.status, 0, start.stderr)
     assert.equal(JSON.parse(start.stdout).state, 'accepted')
     let record
-    for (let n = 0; n < 500; n++) {
+    await waitUntil(() => {
       record = JSON.parse(readFileSync(join(state, 'one.json'), 'utf8'))
-      if (!['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))) break
-      await delay(20)
-    }
+      return !['accepted', 'running'].includes(record.state) || existsSync(join(root, 'killed'))
+    }, 'Detached deployment did not finish or reach the simulated SIGKILL')
     try { await check({ root, state, record, run, fencePath, calls: () => existsSync(calls) ? readFileSync(calls, 'utf8') : '' }) }
     finally { rmSync(root, { recursive: true, force: true }); if (protectedRoot) rmSync(protectedRoot, { recursive: true, force: true }) }
   }
@@ -687,6 +755,18 @@ test('controlled deployment pins a commit, persists detached completion and neve
   }))
   await t.test('a moved checkout fails before Docker', () => scenario({ actual: previous }, ({ record, calls }) => {
     assert.equal(record.state, 'failed'); assert.equal(record.exitCode, 65); assert.equal(calls(), '')
+  }))
+  await t.test('a pinned version deploys without fetching conflicting historical tags', () => scenario({ tagConflict: true }, ({ root, record, calls }) => {
+    assert.equal(record.state, 'succeeded')
+    assert.match(calls(), /compose up -d --build/)
+    const gitCalls = readFileSync(join(root, 'git-calls'), 'utf8')
+    assert.match(gitCalls, /^pull --no-tags --ff-only$/m)
+    assert.doesNotMatch(gitCalls, /^fetch /m)
+  }))
+  await t.test('without an explicit version, tag-fetch errors still stop before Docker', () => scenario({ tagConflict: true, releaseVersion: '' }, ({ root, record, calls }) => {
+    assert.equal(record.state, 'failed')
+    assert.equal(calls(), '')
+    assert.match(readFileSync(join(root, 'git-calls'), 'utf8'), /^fetch --tags origin$/m)
   }))
   for (const options of [{ dirty: true }, { statusFailure: true }]) {
     await t.test('untracked source or unreadable Git status fails before Docker: ' + JSON.stringify(options), () => scenario(options, ({ record, calls }) => {

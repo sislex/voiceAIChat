@@ -869,6 +869,20 @@ export interface ConversationMembershipMutation {
   archived: boolean
 }
 
+export interface ConversationSummary {
+  text: string
+  coversUntilMessageId: string
+  updatedAt: number
+}
+
+export interface ConversationContextUsage {
+  usedTokens: number
+  windowTokens: number
+  provider: LlmProvider
+  model: string
+  measuredAt: number
+}
+
 export interface Conversation {
   id: string
   /** Identity tenant that owns this conversation and pays for its operations. */
@@ -877,6 +891,10 @@ export interface Conversation {
   createdAt: number
   updatedAt: number
   messageCount: number
+  /** Rolling server-generated context for bounded cold starts. */
+  summary?: ConversationSummary
+  /** Fill of the current provider thread after its latest completed turn. */
+  contextUsage?: ConversationContextUsage
   /** session-id Claude CLI, привязанный к разговору (null до первого ответа). */
   claudeSessionId: string | null
   /** Изменяемая цель новых ходов только этого чата. */
@@ -1212,6 +1230,8 @@ export interface TurnUsage {
   pricingMode?: 'standard' | 'batch' | 'flex' | 'fast'
   /** Фактическая категория контекста, если её сообщил источник usage. */
   contextTier?: 'short' | 'long'
+  /** Latest turn input reported separately from cumulative Codex thread totals. */
+  contextInputTokens?: number
 }
 
 /**

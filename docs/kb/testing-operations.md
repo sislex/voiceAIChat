@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-04
-checked: a5eaef73
+updated: 2026-10-22
+checked: ebbe9b6d
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -16,17 +16,180 @@ areas:
 
 # Разработка, тестирование, диагностика и эксплуатация
 
+Module details: `core-ui:README.md`
+Module details: `web-reader:README.md`
+
+## Task gate for the dev lane
+
+`npm run gate:task -- --base <sha>` compares the merge base with the current
+worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
+only changed workspace packages are typechecked. Test selection is ordered:
+changed test files first, then tests named after a changed source module in the
+same package (`x.test.ts` / `x.dom.test.tsx`, including JavaScript equivalents),
+then other tests that import a changed file directly, provided there are at most
+10 such files. Above that threshold none of those additional importers run; the
+gate prints `GATE-TASK-DEFERRED: <n> direct importer file(s) left to the promotion gate`.
+Files are deduplicated. The task planner never traverses transitive imports or
+uses `vitest related`. Script tests follow the same selection with Node's test
+runner. Selected files run in parallel with at most four workers per runner;
+runner groups execute sequentially so the total worker limit remains four.
+No builds, browser E2E, system suites, owner suites or artifact
+verification are added. Root, lockfile and configuration changes never escalate
+this mode to the full gate; promotion owns that coverage. A docs-only or empty
+diff runs `npm run kb:check` only. Failure to read the diff fails closed.
+
+The task budget is 1000 test cases and 300 seconds (5 minutes, owner decision
+2026-10-07) of total wall time, including
+planning and typecheck. Each command receives the remaining timeout. Reports
+count actual cases (not files), with `GATE-TASK-CASE:` evidence; a breach exits 2, prints `GATE-TASK-SLOW:` and then the
+test files sorted by duration plus unfinished files/commands, one per line. Ordinary failures exit 1. Every
+execution ends with `GATE-TASK: tests=<n> seconds=<s>`. Vitest reports are available
+after its run finishes; on timeout, unfinished file names identify the work for
+promotion even when no result report was written. Node reports are persisted
+after each result. Temporary reports live under `artifacts/gate-task` and are
+removed after reading. Missing successful-run reports fail the gate.
+
+`scripts/task-gate.mjs` writes each Vitest `assertion.fullName` to
+`GATE-TASK-CASE` without escaping. Parameterized values therefore become part
+of the gate log verbatim, including NUL. Keep a NUL regression in a test body
+under a safe static test name instead of interpolating the value through
+`it.each` and `%s`.
+
+Focused regression coverage: `node --import tsx --test
+scripts/task-gate.test.mjs scripts/task-tests.test.mjs scripts/quick-gate.test.mjs scripts/test-files.test.mjs`.
+It covers selection, docs-only execution, count/time breaches, failure handling
+and real Node/Vitest report adapters. This gate does not commission a stand or
+replace full repository and release checks at promotion.
+The dev-to-main promotion gate retains its full selection and budgets.
+
+## Dev stand focused checks (C02)
+
+Run `npm run test:files -- scripts/dev-stand.test.mjs scripts/owner-pins.test.mjs
+scripts/release-composition.test.mjs scripts/shared-chat-artifacts.test.mjs
+apps/server/src/kanbanBridge/proxy.test.ts` as one command. The gateway integration
+test uses the first three `DELIVERY_PORTS` (24000–24002 when unassigned), writes
+only a temporary manifest under `DELIVERY_ATTEMPT_ROOT/tmp` when supplied, and
+closes its servers. It verifies base fallback, live SSE delivery before response
+completion, WebSocket frame echo, atomic manifest reload, reset and invalid
+manifest rejection. Pure tests cover prefix precedence, Core's stand environment
+and dev-version rejection at release, pin and Desktop provenance boundaries.
+Core proxy injection tests cover the B01 REST methods and session forwarding.
+
+Typecheck Core with `npm run -w @voicechat/server typecheck`. Check the new Node
+entrypoints with `node node_modules/typescript/bin/tsc --noEmit --allowJs --checkJs
+--target es2022 --module nodenext --skipLibCheck --allowImportingTsExtensions
+scripts/dev-gateway.mjs scripts/dev-component.mjs scripts/release-version.mjs`.
+Use `gate:quick -- --base <sha> --dry-run` to inspect affected-test selection.
+Root package-script changes can select the full gate; in supervised delivery,
+leave that gate to the supervisor. Sandbox `listen EPERM` prevents the real
+transport check; `spawnSync tar EPERM` prevents existing release archive fixture
+tests. Report these as requiring supervisor execution, not passing checks.
+
+Code checks do not commission a dev stand: the environment owner/operator still
+allocates a copied database/data directory, writes the manifest and checks LAN
+and Tailscale reachability on the assigned gateway port.
+
 ## Core UI test ownership
+
+Settings/onboarding browser integration distinguishes missing voice modules
+from configured but unavailable ones. `e2e/settings.e2e.test.ts` starts a
+loopback STT/TTS fixture that returns 503 for the diagnostic and progress
+scenarios; the real Core capability response must still report `configured:
+true`. TTS availability does not probe that endpoint's health: the isolated
+fixture sets `VC_MIN_MEM_TTS` above available memory to exercise its actual
+resource diagnostic and disabled controls with `configured: true, available:
+false`. STT unavailability is exercised by the endpoint's 503 response.
+Its chat-only scenario restarts Core with both voice endpoints absent and verifies
+that the published UI hides automatic and manual onboarding, including the absent
+TTS settings deep link, while preserving `onboarded: false`, saved progress and
+the selected theme. Assert the actual capabilities response and loaded theme
+before checking absence; navigation buttons alone are not a load barrier.
+Keep outage diagnostics in the configured fixture. An unconfigured module does
+not expose the same screen, so its absence test must not wait for `tts-blocked`.
+Do not restore unconditional wizard or voice-settings visibility to satisfy an
+unconfigured fixture.
+
+`e2e/universalSearch.e2e.test.ts` verifies focus against the installed published
+UI, including the exact mobile palette opener after Escape. Keep that assertion:
+a hidden or inert opener is not a valid focus destination. The owner regression
+must mount the full App with the real Sidebar, palette and styles; testing the
+Sidebar alone misses its interaction with palette navigation. Selecting another
+result or a result in the current chat must close the drawer and leave focus
+outside hidden/inert content, including when only the URL query changes.
 
 ### Shared chat exact-artifact acceptance (U10)
 
+Keep only vendor archives referenced by repository package manifests/lockfiles, owner/snapshot/UI inventories (`asset`), or scripts; `vendor-archives.mjs` supplies the same fail-closed reachability check for `test:tooling` and all pin cleanup paths, which remove replaced archives only after successful reference updates and disappearance of the last consumer.
+
 For S4 browser consumers, `scripts/core-contracts-release.mjs` packages the
-committed Shared contract as version 0.1.11 with bounded Identity
-`>=1.4.2 <1.5.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core lockfile
-must still contain the accepted 1.4.2/1.2.0 baseline; other peers remain exact.
-The release-tool test checks the packed manifest and source commit. Consumer
-owners must install and gate against the actual released archives without
+committed Shared contract at the explicitly supplied release version with bounded
+Identity `>=1.4.2 <1.6.0` and SDK `>=1.2.0 <1.4.0` peers. The committed Core
+lockfile must contain an explicitly reviewed baseline: Identity 1.5.1 or 1.5.2,
+and SDK 1.2.0; other peers remain exact. Version 0.1.11 is the release-tool
+test fixture, not a fixed publication version.
+The release-tool test checks the packed manifest and source commit. Run it again
+after committing a baseline pin change because it packages committed `HEAD`.
+Consumer owners must install and gate against the actual released archives without
 disabling npm peer resolution.
+
+Release composition replaces owner archive identities in the lockfile, but does
+not regenerate an archive's transitive dependency metadata. When those dependencies
+change, refresh that exact pinned archive with
+`npm install --package-lock-only --ignore-scripts --save-dev '<package>@<pinned-url>'`
+for a root development dependency, review the lockfile delta, then run `npm ci`.
+For Runner 0.3.8, the lock entry must require runner-contracts 0.1.3; retaining
+the old 0.1.2 edge makes npm look for that private package in the public registry.
+Do not bypass peer resolution or replace the immutable URL with an unpinned range.
+
+A passing owner-overlay system run does not prove that npm can install a new
+Core composition. The owner fixture installs the pinned Core lockfile first,
+then extracts the candidate package into `node_modules`; this extraction does
+not resolve the candidate's peer dependencies. Validate the composed lockfile
+with ordinary `npm ci`, with peer resolution enabled, before the Core gate and
+installed-owner system acceptance. Check peer ranges against the version of the
+package actually resolved by Core, including linked workspaces. A separately
+published archive version does not change the linked workspace's version.
+Historical runtime exports raised versions in the archive only; align the
+workspace metadata with its verified published capabilities and update incompatible
+consumer peers through reviewed immutable owner releases. Do not lower capability
+requirements or use npm overrides, `--force`, or `--legacy-peer-deps` to conceal
+a composition mismatch.
+
+When immutable pin application leaves stale workspace or owner metadata in the
+lockfile, compare those entries with the workspace manifest and verified archive
+manifests. Correct only the mismatched version/dependency fields, preserving
+resolved URLs, integrity and the rest of the graph. Then run ordinary
+`npm install --package-lock-only --ignore-scripts --strict-peer-deps` and
+`npm ci --strict-peer-deps`; review the resulting lock delta. This bootstrap
+does not replace npm resolution or authorize unrelated dependency updates.
+
+Reader upload acceptance must cover the complete MCP transport, not only the
+decoded file validator. An 8 MiB file produces a larger base64/JSON envelope:
+the embedded SDK transport and shared MCP route both need the finite 16 MiB
+command limit. The decoded file limit remains 8 MiB, and unrelated preview
+routes retain their smaller body limit. The owner's native Chromium test
+accepts the exact boundary and rejects one additional decoded byte even when
+both payloads have the same encoded length, preserving the previously selected
+file. Core's installed-owner system gate exercises the actual pinned transport.
+
+The current S3 provider inventory, `deploy/s3-provider-artifacts.json`, must also
+match Identity, Billing, Runner and runner-contracts owner pins. Composition does
+not rewrite this inventory automatically. Update its artifact identity fields from
+the verified owner manifests while retaining task/interface annotations. The
+existing S3 artifact check validates archive provenance, consumer locks and tool
+pins; a stale row downloads the obsolete archive and fails both consistency and
+unused-archive checks.
+`scripts/a07-composition.mjs` separately fixes the reviewed source commits used
+by loopback acceptance. Advance its exact owner SHAs with a reviewed provider
+release, then rerun `scripts/a07-acceptance.test.mjs` and the S3 negative preflight
+checks. Keep explicit source verification; do not replace it with whichever
+commits happen to appear in the inventory.
+
+The Core Shared workspace exposes the same `./*` and `./*.js` source subpaths as
+the published contracts. Embedded Identity 1.5.1 and 1.5.2 use those public subpaths;
+its standalone owner gate cannot detect missing exports in Core's local workspace.
+The release-tool test imports both forms, and Core typechecking covers the installed
+owner consumer against the workspace contracts.
 
 `dependency-snapshots.json` pins the 13 supplied S2 owner archives by package,
 version, source commit, SHA-256 and npm integrity. Content-addressed archives live
@@ -73,6 +236,17 @@ Core retains real API/browser integration (including route read-cache behavior i
 Baseline before the test-gate scope optimization, measured on the local MacBook Air M2: the full UI owner gate completed in 225 seconds; the full Core branch gate completed in 505 seconds, including route budgets and 104 API/browser integration cases. These are observed times, not CI SLAs. The Core log splits those 505 seconds into 6.11 seconds for typechecking, 115.30 for workspace/root tests, 0.97 for artifact verification, 171.93 for route budgets and 210.14 for remaining API/browser E2E. Browser work therefore accounts for about 76% of this full branch gate. The `gate:all` stage itself took 294.49 seconds; the branch gate added the remaining catalog E2E afterward. This full-fallback sample does not establish the duration or selection of a typical small development diff. The fixed-hardware Admin benchmark still requires its Linux/AMD EPYC baseline host; local native Electron integration passed without replacing that baseline.
 
 
+## Route-resource diagnostics
+
+`e2e/routeResources.e2e.test.ts` exercises the pinned Core UI against an isolated
+Core server under network throttling. A cold-route timeout now includes pending
+request paths and recent API reads. For a local consumer reproduction only,
+`CHAT468_WEB_DIR` can select a copied, built browser artifact; normal gates keep
+the immutable installed `@sislexa/core-ui/web` default. Re-run against the final
+published pin before accepting a release. The public-chat quota error-body fix
+was reproduced this way without importing owner source or weakening network
+settling checks.
+
 ## Extracted application test ownership
 
 Detailed Reader browser scenarios now live in `system-tests/` in `sislex/playwrightreader`
@@ -87,8 +261,31 @@ Owner `test:system` uses a pinned Core commit as an isolated fixture and overlay
 a freshly built owner package. `gate:release`/`pack:release` include it. Core
 `gate:system` uses `system-tests/owners.json` to run those owner-maintained scenarios
 against the exact dependency artifacts in its own lockfile; `gate:release` runs the Core gate, Web/Desktop performance budgets, then that matrix. Development gates never fetch owner source.
+Owner checkouts live outside the Core checkout, in
+`~/.cache/sislexa/system-owners/<checkout hash>/<owner>/<commit>` (override with
+`SISLEXA_SYSTEM_OWNERS_DIR`): delivery task workspaces reject nested Git
+repositories. Each owner's Core fixture (`.cache/core-system/<commit>`) is seeded
+by a shallow fetch from the local Core checkout instead of GitHub. Interrupted
+fetch residues (`shallow.lock`, `tmp_pack_*`) are cleaned only when no Git process
+runs; process inspection is skipped when there is no residue to clean.
+The shallow owner fetch from GitHub is retried up to four times (5/10/20 s
+backoff) only for transient transport failures (`fetch-pack`, unexpected
+disconnect, early EOF, RPC failed, remote hang-up, DNS, connection reset/timeout,
+HTTP 5xx); residues are cleaned between attempts and other failures stop at once.
+An identified Git process takes diagnostic precedence over unknown process rows;
+unknown rows still prevent cleanup when no Git process is identified.
 Caches store installed fixtures, not successful-test results. No sibling checkout
 or production service is required. See `docs/plans/browser-test-ownership.md`.
+
+Visual-enabled Reader acceptance must observe the displayed Chromium image:
+visible, refreshed after navigation or page input, and decoded with positive
+dimensions. A capable host receives `GET /frames` as NDJSON and need not issue
+future `POST /screenshot` requests. Control ownership is asserted separately,
+because changing control alone need not change page pixels. These scenarios
+remain in the Web Reader owner. Keep `VC_VISUAL_ARTIFACTS` enabled for release
+acceptance and inspect the trusted-origin and manual-control PNGs alongside the
+exact Core/owner source result; disabling visual capture does not validate its
+readiness path.
 
 After the ownership split, complete local Core gates passed in 321.24s and 258.12s
 (latest: 4m18s): 2302 server tests and 41 functional browser cases passed, with existing
@@ -162,21 +359,9 @@ claim live-provider acceptance. Artifacts live in `artifacts/onboarding/`.
 The embedded LLM Runner remains tracked in the extraction completion plan;
 this increment is not final completion.
 
-## Лимит одного теста: 60 секунд во фронтенде
-
-`testTimeout` у `@voicechat/ui` и `@voicechat/ui-kit` — 60 секунд, как у сервера.
-Двадцати не хватало не тестам, а машине: в релизном regression воркспейсы
-гоняются параллельно и голодают по CPU, поэтому dom-тест, который локально идёт
-0,4 с, упирался в лимит на 21-й секунде. Так подряд упали две релизные сборки —
-`release/0.1.226` (ImageStudioPane, кнопка «Вернуть») и `release/0.1.227`
-(App.projects, «Открыть чат»), причём на разных тестах, что и указывает на
-окружение, а не на код. Настоящее зависание 60-секундный лимит всё равно
-поймает; если сборки продолжат упираться в него, лечить надо загрузку машины
-подготовки, а не лимит.
-
 ## Проверки Reader frontend
 
-Оба Reader workspace имеют собственные `typecheck` и `test`. Unit-наборы проверяют route round-trip, независимые conversation selectors, preview fallback без материализации, stale-response protection, browser-session lifecycle/capability degradation и dispose. Architecture tests запрещают host/chatStore/cross-Reader imports, transports, browser storage и imports исходников recorder/browser-runner. `frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces. Корневые `frontend:typecheck` и `frontend:test` запускают пакеты отдельно; `verify:frontend` затем выполняет web build, bundle gate, Storybook build и desktop web build. Наличие команд в gate зафиксировано кодом, но KB не утверждает, что конкретный merge SHA прошёл их, если результат запуска не сохранён.
+`frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces. Корневые `frontend:typecheck` и `frontend:test` запускают пакеты отдельно; `verify:frontend` затем выполняет web build, bundle gate, Storybook build и desktop web build. Наличие команд в gate зафиксировано кодом, но KB не утверждает, что конкретный merge SHA прошёл их, если результат запуска не сохранён.
 
 ## Установка зависимостей
 
@@ -211,7 +396,7 @@ missing their separate dependencies produces TS2307 for `electron` and
 
 Каталог данных каждого дополнительного чекаута — копия основной БД на момент создания, а `models` внутри — симлинк на `~/.voicechat-server/models`: 465 MB моделей Whisper/Piper не дублируются. Заводя ещё один чекаут, бери следующую свободную десятку портов и проверяй `lsof -nP -iTCP:<порт> -sTCP:LISTEN` — забытый чужой сеанс займёт порт молча.
 
-`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='ChatAI <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
+`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='sislexa <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
 
 **Стенд «ядро + канбан» для e2e страниц проекта** (`e2e/kanbanStand.ts`). Проекты,
 доску и приглашения обслуживает сервис `sislexa-kanban`, в ядре его нет, поэтому
@@ -221,7 +406,9 @@ missing their separate dependencies produces TS2307 for `electron` and
 `src/kanban/standalone/index.ts` из чекаута того коммита, который закрепил compose
 (`SISLEXA_KANBAN_IMAGE`). Чекаут — `SISLEXA_KANBAN_SOURCE`, иначе кэш
 `npm run e2e:kanban-stand` (`scripts/kanban-stand-prepare.mjs`: `~/.cache/sislexa/kanban/<коммит>`
-или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`), иначе соседний `../sislexa-kanban`.
+или `VC_E2E_KANBAN_CACHE`, клон по коммиту и `npm ci`; после каждой подготовки кэш оставляет
+`VC_E2E_KANBAN_CACHE_KEEP` (по умолчанию 3) последних по использованию чекаутов — время использования
+хранит маркер `.sislexa-e2e-ready`), иначе соседний `../sislexa-kanban`.
 Деревья сравниваются с закреплённым коммитом (merge-коммит с тем же содержимым подходит;
 `SISLEXA_KANBAN_SOURCE_ANY_COMMIT=1` снимает проверку). `scripts/browser-gate.mjs` готовит
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
@@ -293,7 +480,12 @@ root script tests and workspace tests, owner frontend artifact verification, Web
 build, Core Storybook build, an unconditional `npm ci --prefix apps/desktop`,
 Desktop build, and `frontend:route-gates`, in that order. `build:frontends`
 verifies published owner manifests, provenance and asset integrity; it no longer
-compiles owner applications. Owner unit suites are outside Core workspaces.
+compiles owner applications. An owner archive and its embedded frontend may have
+independent versions. Core binds the owner package name to the application catalog
+and its version to the adjacent release provenance, while binding the frontend
+manifest version to the embedded package next to its `dist` directory. The
+frontend and owner source commit must still match, and every entry/style asset
+must retain its published integrity. Owner unit suites are outside Core workspaces.
 Core keeps bridge and host integration tests for those applications.
 
 A direct `gate:all` invocation differs from the full fallback of `gate` or
@@ -382,6 +574,20 @@ builds the panels; `npm run -w @voicechat/web-recorder build` and
 a new action and cause a relay timeout even when direct iframe tests pass. The
 application gate performs the required builds; this distinction matters when
 running a focused browser test manually before the gate.
+
+### Playwright browser preparation
+
+Browser suites using `e2e/vitest.config.ts` (including `gate:quick`,
+`test:browser` and `gate:all`) run `scripts/ensure-playwright-browser.mjs`
+as global setup. It checks Playwright 1.62's Chromium headless-shell registry
+entry (`chromium_headless_shell-<revision>`), the executable used by default
+`chromium.launch()`, rather than the full Chromium executable. If missing,
+it runs `npx playwright install chromium` once per setup invocation with the
+inherited environment, including `PLAYWRIGHT_BROWSERS_PATH`, then checks again.
+An existing shell needs no download. With `VC_PLAYWRIGHT_OFFLINE=1` or
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, a missing shell fails immediately without
+spawning an installer. Install failures include the captured output tail.
+Injected unit tests run in `test:tooling` without downloading or launching browsers.
 
 ### Fast-stage затронутых тестов
 
@@ -636,6 +842,73 @@ Integration QA. Это не «мало покрытые», а «не вызва�
 
 ### Development gate: `npm run gate:fast`
 
+#### Universal search browser synchronization
+
+The viewport matrix starts a fresh document before each case. Same-hash
+navigation retains transient mobile drawer state, including the open drawer
+needed to restore the palette opener on Escape. Keep authenticated storage, but
+isolate this transient state rather than weakening focus or pointer checks.
+
+Universal search browser synchronization is implemented in
+`e2e/universalSearch.e2e.test.ts`. Its observer is registered before opening
+and typing, captures a new main-frame POST request to the current stand's exact
+`/api/universal-search` URL with the requested query, and accepts only that
+request's completed response. API fixture calls, previous in-flight requests,
+other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
+groups, missing expected IDs/deep links and request cancellation have distinct
+failures. The helper then waits for each requested source/title option to become
+visible. Search observation and option waits retain bounded 10-second limits;
+there is no readiness sleep.
+
+The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
+resets its query on reopening and does not retrigger its search effect for an
+unchanged mounted input. The E2E verifies this behavior in Chromium. Calling
+the helper again with the same mounted value explicitly clears the input before
+arming a fresh search. A controlled delayed-response case demonstrates why
+counting arbitrary options is insufficient: local command options for
+`Настройки` already exist while the search response is withheld. Another case
+keeps the expected option hidden after a successful real response and verifies
+that readiness waits for visibility. Negative cases cover old and unrelated
+responses, a response before the triggering action completes, HTTP 400/503,
+unavailable sources, missing hits and aborted requests.
+
+Navigation remains six separate `it.each(SEARCH_SOURCES)` cases, each checking
+the deep link after reload, plus the kanban-message context case. Existing
+authentication, secret exclusion, keyboard, touch, focus and geometry checks
+remain in the same suite. `[palette:timing]` logs opening, fill, request,
+completed response and visible-option elapsed times; `[palette:navigation]`
+records each source through reload.
+
+The opt-in acceptance tests in the same file carry TC-3 and TC-4 markers.
+Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
+`npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
+Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
+required by the environment. Child runs disable acceptance mode to prevent
+recursion. TC-3 runs the complete `browser-gate.mjs --integration` three times
+sequentially with `VC_E2E_WORKERS=2`, stops on failure, verifies the full batch
+inventory and all universalSearch cases, and retains separate logs, exit codes,
+Vitest results and batch reports under `artifacts/universal-search-acceptance/`.
+TC-4 runs the quick gate against the supplied base. Ordinary browser runs keep
+their normal case inventory. The parallel allowlist includes sessions, projects,
+gitPane, universalSearch, both Web Reader suites and toolIntegration; other
+integration suites remain serial. The normal `browser.json` is overwritten,
+so its single latest result is insufficient evidence of three runs.
+
+#### Universal search browser-gate diagnostics
+
+On 2026-10-16, three consecutive complete integration runs on MacBook passed
+with two workers in the parallel batch and all 18 universalSearch cases passing
+without retries or skips. In 51 ordinary searches across these runs, opening took
+10–130 ms, fill-to-request 201–336 ms, request-to-completed-response 39–75 ms,
+and response-to-visible-option 3–34 ms. Total search readiness was 289–498 ms;
+the 18 source navigations through reload took 419–1,659 ms. These observations
+identify client debounce/scheduling as the largest search-wait component on this
+stand, and demonstrate why response and DOM readiness are separate conditions.
+The historical October 6 timeout was not reproduced; the measurements do not
+establish a cold-FTS or port-conflict explanation. Per-run evidence is preserved
+in `docs/test-evidence/universal-search/`; the source SHA-256 is recorded in
+each exit report.
+
 Task acceptance uses `npm run gate:quick -- --base <sha>`. It reuses
 `application-gate.mjs` ownership, diff (including untracked files), and contract
 planning. Selected local workspaces run typecheck and build when present,
@@ -860,15 +1133,6 @@ positive tests». `terminate()` безопасен в любом состоян�
 
 Эти же слои автоматизирует **самодиагностика чата** прямо из UI: команда `самодиагностика чата` / `/chat-diagnostics` в композере любого разговора прогоняет 11 проверок (transport → backend → model → persistence → store) и публикует пошаговый результат служебными сообщениями в саму беседу, останавливаясь на первом провале с указанием слоя. Быстрый способ проверить весь путь «клиент → сервер → модель → БД» глазами пользователя, без devtools. Реализация и список шагов — [ui.md](ui.md), раздел про самодиагностику.
 
-## Известные дефекты dev-режима браузера (2026-08-24)
-
-Два независимых дефекта ломают вход в dev-режиме (`npm run dev:web`, Vite + React development build) и не проявляются в production-сборке; оба воспроизводятся на чистом main и не связаны с Web Reader:
-
-- **React StrictMode + одноразовый dispose runtime.** `useCreateAppRuntime` создаёт runtime в `useMemo`, а эффект на StrictMode-цикле mount → cleanup → mount вызывает `runtime.dispose()` и затем `start()` на уже необратимо disposed runtime: все `setState` доменных сторов молча блокируются, `check()`/`login()` не устанавливают `currentUser`, и приложение навсегда остаётся на экране «Вход», хотя сетевые запросы (login 200, bootstrap) проходят.
-- **Redux DevTools-обёртка зацикливает эффекты.** `createReduxDevToolsDiagnostics` оборачивает `store.actions` в Proxy, чей `get` создаёт новую функцию на каждый доступ; зависимость `useEffect(..., [path, setSidebarOpen])` в `App.tsx` меняется на каждом рендере, а `setState` без bail-out уведомляет подписчиков даже без изменения значения — при установленном расширении Redux DevTools рендер падает в «Maximum update depth exceeded» и экран пуст. Без расширения обёртка неактивна и дефект не виден.
-
-**Исправлено 2026-08-25:** dispose runtime в `useCreateAppRuntime` откладывается на тик и отменяется повторным StrictMode-mount (регресс — StrictMode-тест в `App.dom.test.tsx`), а Proxy devtools кэширует обёртки actions (стабильные ссылки; тест в `store/devtools.test.ts`). Dev-вход работает без обходов.
-
 ## Docker
 
 Dockerfile многостадийный: устанавливает workspace dependencies, собирает web, формирует runtime с server source, shared и необходимыми системными binary/libs. Приложение слушает configurable `HOST/PORT`, persistent data монтируется в `VC_DATA_DIR`.
@@ -974,22 +1238,6 @@ drill against the retained set before applying a production retention plan.
 
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
 
-## Проверки Operations frontend
-
-Пакет имеет собственные команды `typecheck` и `test`. `routes.test.ts` покрывает round-trip публичных hash routes и базовые POSIX/Windows path helpers; `operationsStore.test.ts` проверяет stale machine response, повторный `dispose` и независимость закрытия Explorer от Console. `architecture.test.ts` сканирует TypeScript-исходники и запрещает host stores, прямые transports, platform apps и явные имена token-полей. JSDOM setup находится в `src/test/setup.ts`.
-
-`packages/ui/.storybook/main.ts` включает stories пакета. `Operations.stories.tsx` содержит состояния online/offline, utility, restricted policy, Explorer, LLM History, Knowledge Base, CI и diagnostics; это независимые поверхности без production transport. Проверки запускаются `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`; общий проектный гейт остаётся `npm run affected-check`.
-
-## Проверки Administration frontend
-
-`@voicechat/admin-app` имеет собственные `typecheck` и `test`, JSDOM setup, route, store stale-response/dispose, DOM и architecture tests. Architecture suite запрещает host stores, apps/web/apps/desktop, прямые fetch/WebSocket/Electron API, глубокие host imports и browser storage. Storybook host включает `packages/admin-app/src/**/*.stories.tsx`. Штатный итоговый гейт — `npm run affected-check`; после переноса он прошёл fast и full stages.
-
-## Проверки App Shell
-
-`@voicechat/app-shell` запускает `npm run -w @voicechat/app-shell typecheck` и `npm run -w @voicechat/app-shell test`; Vitest использует JSDOM и `src/test/setup.ts` с jest-dom. `registry.test.ts` проверяет role gate до lazy load и диагностику конфликтующих route examples. `runtime.test.ts` подтверждает независимость нескольких runtime/store экземпляров, раздельные load/createStore/bootstrap и продолжение cleanup после ошибки одного ресурса, включая повторные logout/dispose.
-
-`architecture.test.ts` рекурсивно сканирует TypeScript исходники App Shell и запрещает импорты Chat/Projects/Operations/Admin, host `@voicechat/ui`, platform apps и прямые обращения к перечисленным `window.*` bridges. Storybook host включает stories App Shell, Chat, Projects, Operations и Admin.
-
 ## Единый frontend quality gate
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
@@ -997,9 +1245,26 @@ owner-built product/Core UI artifact verification, and retained Core functional
 browser integration. It does not run detailed owner scenarios or Web/Desktop
 performance measurements. `gate:performance` runs serial Web route budgets by
 default; `VC_ELECTRON_TESTS=1` restores Electron measurement. `gate:system` runs
-owner-maintained system acceptance. `gate:release`
-requires all three. Known budget/measurement edits still select their real browser
-measurements directly. Errors and signals stop every stage; timing artifacts live
+owner-maintained system acceptance. `gate:release` selects these stages from the
+release diff as described below. Known budget/measurement edits still select their real browser
+measurements directly. The full gate's test stage runs tooling and each workspace
+test script as separate processes, with at most three active by default; set
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. Their output
+is buffered and printed in manifest order, all failing workspaces are reported,
+and `[gate:timing] tests/<workspace>` records individual durations.
+Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
+file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling
+keeps the manifest command chain and gives each node:test invocation its own
+report, including prefixed package tests. Reports are collected before temporary
+files are removed; failed repository-relative paths are deduplicated across
+completed tasks. On failure, the last two lines are exactly
+`GATE-FAILED-STAGE: <stage>` followed by `GATE-FAILED-TESTS: <json array>`.
+The stage is `tests` for tooling/workspace failures, `browser-integration` for
+functional browser tests, or the other full-gate stage name. Non-test failures
+(for example, typecheck), missing reports and incomplete reports produce an
+empty file list when no failed files were identified. Success adds no markers.
+The ordinary
+`npm run test` command remains sequential for local use. Errors and signals stop every stage; timing artifacts live
 in `artifacts/gate-timings/`. Functional Core browser suites use at most two workers;
 resource timing and native Electron input remain serial. Successful full Core
 fallbacks suppress duplicate functional suites, but never suppress explicitly
@@ -1007,6 +1272,42 @@ selected performance suites. Routine settings/onboarding runs do not rewrite the
 reviewed screenshots tracked under `artifacts/onboarding/`. Set
 `VC_VISUAL_ARTIFACTS=artifacts/onboarding` only when intentionally refreshing that
 evidence, or set `VC_VISUAL_FAILURE_ARTIFACTS` to capture failure-only diagnostics.
+
+### Release regression base and owner selection
+
+`scripts/release-gate.mjs --base <production-sha>` (or
+`VOICECHAT_RELEASE_BASE_SHA`) refreshes `refs/tags/verified/full-gate/*` from
+origin before planning. It selects the newest tag by tagger date only when it is
+annotated, names its exact 40-hex commit, contains `gate:all exit 0`, and lies
+between production and HEAD by ancestry. A fetch failure or no qualifying tag
+keeps production as the base. An unknown production commit still runs all stages.
+The selected verified base is printed with the production SHA for auditing.
+
+Core changes still select `gate:all`, but system suites are selected independently
+per archive: Core UI, Web Reader and Playwright Reader run only for changed pins
+or their Core integration prefixes. `SYSTEM_PATH_PREFIXES` in the release script
+is the tested source of truth for those prefixes. Pin comparison reads snapshot,
+manifest and lock identities even when the application planner falls back to full.
+`gate:system -- --owners webreader,playwrightreader,sislexa-core-ui` accepts any
+nonempty subset; omission preserves the complete manual system gate.
+
+Performance runs only for the Core UI pin or the tested
+`PERFORMANCE_PATH_PREFIXES` (chat rendering, UI delivery, route measurement and
+budgets). Other diffs print an explicit performance skip reason, including in
+full Core mode. The narrowed application plan does not duplicate route budgets.
+`gate:release:full` remains the explicit all-stage override.
+
+`npm run gate:promotion` captures HEAD, requires a clean committed tree, runs
+`gate:all`, rechecks HEAD and tree cleanliness, then invokes the attestation
+helper. Promotion orchestrators that already own the full gate can instead
+invoke `node scripts/mark-full-gate.mjs <sha>` only after `gate:all` exits zero
+for that exact checkout.
+The helper creates and pushes the annotated `verified/full-gate/<sha>` tag with
+`gate:all exit 0` and an ISO timestamp. It never force-updates tags and propagates
+tag/push failures. It is an attestation publisher, not a substitute for running
+the gate. The promotion operator must select `gate:promotion` or wire the
+post-success helper call in its owning orchestrator; that commissioning is
+outside the Core scripts.
 
 `npm run verify:frontend` runs `frontend:build-gates`: product artifact verification,
 Core UI artifact verification and browser route budgets. React builds, Storybook
@@ -1140,7 +1441,7 @@ differences do not justify changing desktop thresholds. The default temporary
 Web-only gate records Electron as skipped explicitly.
 
 
-The September 20 Sislexa extraction review found separate, pre-existing numerical
+The September 20 sislexa extraction review found separate, pre-existing numerical
 budget drift: eleven local initial Web files matched deployed 0.1.310 by SHA-256,
 but exceeded the old CHAT-473 limits. The evidence and fresh Web/Electron report
 are retained in `frontend-quality/measurements/sislexa-extraction/`. Reviewed limits

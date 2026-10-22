@@ -1,3 +1,5 @@
+import { parseApplications, validateCoreId, type DeploymentManifest, type ApplicationId } from '@voicechat/shared'
+import { parseChatModelPolicy, type ChatModelPolicy } from './chatModelPolicy.js'
 // Конфигурация сервера из окружения.
 
 import { existsSync, readdirSync } from 'node:fs'
@@ -6,6 +8,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface ServerConfig {
+  chatModels?: ChatModelPolicy
+  chatTextOnly?: boolean
+  chatRequireBilling?: boolean
+  deployment?: DeploymentManifest
   /** Explicit opt-in for delegated external applications; disabled until S3 acceptance. */
   delegatedChatEnabled: boolean
   port: number
@@ -55,11 +61,15 @@ export interface ServerConfig {
   /** Отображение имён моделей Claude Code в имена upstream. */
   claudeGatewayModelMap: Record<string, string>
   /** Корень read-only базы знаний Markdown. */
+  kbRefreshMs?: number
+  kbModules?: string
+  /** Register the owner knowledge base modules of docs/kb/modules.md at startup (production only). */
+  kbOwnerModules?: boolean
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
   /** Студия картинок: встроенный модуль для dev/desktop или отдельный процесс. */
-  imageStudioMode: 'embedded' | 'remote'
+  imageStudioMode: 'embedded' | 'remote' | 'off'
   imageStudioUrl?: string
   /** Публичная база MCP-эндпоинтов для контейнера-исполнителя; без env остаётся loopback сервера. */
   mcpPublicBase?: string
@@ -68,7 +78,7 @@ export interface ServerConfig {
    * сервис `apps/make` по адресу `makeUrl`, ядро ходит к нему за контекстом промпта и списком файлов,
    * а он к ядру — за данными чата/канбана и авторизацией (`/internal/*`). См. docs/plans/make-standalone.md.
    */
-  makeMode: 'embedded' | 'remote'
+  makeMode: 'embedded' | 'remote' | 'off'
   makeUrl?: string
   /** База `/mcp/make` глазами исполнителя LLM в режиме `remote`; без неё — `makeUrl`. */
   makeMcpPublicBase?: string
@@ -79,6 +89,9 @@ export interface ServerConfig {
    * нет. Встроенного режима больше нет, код канбана живёт только в `sislexa-kanban`.
    */
   kanbanMode: 'remote' | 'off'
+  standProxyPorts?: string
+  standProxyPublicHost?: string
+  standProxyPublicScheme?: 'http' | 'https'
   kanbanUrl?: string
   /** База `/mcp/kanban` и `/mcp/ci-commands` глазами исполнителя LLM в режиме `remote`; без неё — `kanbanUrl`. */
   kanbanMcpPublicBase?: string
@@ -96,12 +109,12 @@ export interface ServerConfig {
    * Web Reader: `remote` — прокси превью `/api/preview*` и MCP «browser» `/mcp/preview` обслуживает отдельный
    * процесс по адресу `readerUrl` (docs/plans/web-reader-service.md); ядро переправляет туда пути превью.
    */
-  readerMode: 'embedded' | 'remote'
+  readerMode: 'embedded' | 'remote' | 'off'
   readerUrl?: string
   /** База `/mcp/preview` глазами исполнителя LLM в режиме `remote`; без неё — `readerUrl`. */
   readerMcpPublicBase?: string
   /** Playwright Reader: REST Chromium и команды модели обслуживает приложение по адресу playwrightReaderUrl. */
-  playwrightReaderMode: 'embedded' | 'remote'
+  playwrightReaderMode: 'embedded' | 'remote' | 'off'
   playwrightReaderUrl?: string
   /** Адрес ядра для отдельных процессов канбана и машин (`VC_CORE_URL`); самому ядру не нужен. */
   coreUrl?: string
@@ -229,8 +242,23 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const standProxyPublicScheme = env.VC_STAND_PROXY_PUBLIC_SCHEME ||
+    (env.VC_PUBLIC_URL ? new URL(env.VC_PUBLIC_URL).protocol.slice(0, -1) : 'http')
+  if (standProxyPublicScheme !== 'http' && standProxyPublicScheme !== 'https') {
+    throw new Error('Invalid VC_STAND_PROXY_PUBLIC_SCHEME: expected http or https')
+  }
+  const deployment: DeploymentManifest = {
+    coreId: validateCoreId(env.VC_CORE_ID ?? new URL(env.VC_PUBLIC_URL ?? 'http://localhost').hostname),
+    applications: parseApplications(env.VC_APPLICATIONS),
+  }
+  const mode = (id: ApplicationId, value: string | undefined): 'embedded' | 'remote' | 'off' => {
+    const app = deployment.applications.find(a => a.id === id)!
+    if (value === 'off' && app.location === 'local') app.enabled = false
+    return !app.enabled || app.location === 'external' || value === 'off' ? 'off' : value === 'remote' ? 'remote' : 'embedded'
+  }
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   return {
+    deployment,
     delegatedChatEnabled: env.VC_DELEGATED_CHAT_ENABLED === 'true',
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
@@ -242,6 +270,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       ...(env.VC_CORS_ORIGINS ?? '').split(',').map((value) => value.trim()).filter(Boolean)
     ])],
     smtpUrl: env.VC_SMTP_URL ?? null,
+    chatModels: parseChatModelPolicy(env.VC_CHAT_MODELS || undefined),
+    chatTextOnly: env.VC_CHAT_TEXT_ONLY === 'true',
+    chatRequireBilling: env.VC_CHAT_REQUIRE_BILLING === 'true',
     mailFrom: env.VC_MAIL_FROM ?? null,
     publicUrl: env.VC_PUBLIC_URL ?? null,
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),
@@ -265,26 +296,32 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
         ? env.VC_CLAUDE_UPSTREAM_AUTH
         : 'x-api-key',
     claudeGatewayModelMap: parseModelMap(env.VC_CLAUDE_MODEL_MAP),
+    kbRefreshMs: Number(env.VC_KB_REFRESH_MS) > 0 ? Number(env.VC_KB_REFRESH_MS) : 600_000,
+    kbModules: env.VC_KB_MODULES,
+    kbOwnerModules: env.VC_KB_OWNER_MODULES === '1',
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
     applicationFrontends: env.VC_APPLICATION_FRONTENDS ? JSON.parse(env.VC_APPLICATION_FRONTENDS) as Record<string, string> : undefined,
-    imageStudioMode: env.VC_IMAGE_STUDIO_MODE === 'remote' ? 'remote' : 'embedded',
+    imageStudioMode: mode('image-studio', env.VC_IMAGE_STUDIO_MODE),
     imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
-    makeMode: env.VC_MAKE_MODE === 'remote' ? 'remote' : 'embedded',
+    makeMode: mode('make', env.VC_MAKE_MODE),
     makeUrl: env.VC_MAKE_URL,
     makeMcpPublicBase: env.VC_MAKE_MCP_PUBLIC_BASE,
-    kanbanMode: env.VC_KANBAN_MODE === 'remote' ? 'remote' : 'off',
+    kanbanMode: mode('projects', env.VC_KANBAN_MODE) === 'remote' ? 'remote' : 'off',
+    standProxyPorts: env.VC_STAND_PROXY_PORTS,
+    standProxyPublicHost: env.VC_STAND_PROXY_PUBLIC_HOST,
+    standProxyPublicScheme,
     kanbanUrl: env.VC_KANBAN_URL,
     kanbanMcpPublicBase: env.VC_KANBAN_MCP_PUBLIC_BASE,
     machinesMode: env.VC_MACHINES_MODE === 'remote' ? 'remote' : 'embedded',
     machinesUrl: env.VC_MACHINES_URL,
     adminMode: env.VC_ADMIN_MODE === 'remote' ? 'remote' : 'embedded',
     adminUrl: env.VC_ADMIN_URL,
-    readerMode: env.VC_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    readerMode: mode('web-reader', env.VC_READER_MODE),
     readerUrl: env.VC_READER_URL,
     readerMcpPublicBase: env.VC_READER_MCP_PUBLIC_BASE,
-    playwrightReaderMode: env.VC_PLAYWRIGHT_READER_MODE === 'remote' ? 'remote' : 'embedded',
+    playwrightReaderMode: mode('playwright-reader', env.VC_PLAYWRIGHT_READER_MODE),
     playwrightReaderUrl: env.VC_PLAYWRIGHT_READER_URL,
     coreUrl: env.VC_CORE_URL,
     componentConfigPath: env.SISLEXA_COMPONENT_CONFIG,

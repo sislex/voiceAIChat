@@ -3,9 +3,13 @@ import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { archiveFiles } from './shared-chat-artifacts.mjs'
 import { join, resolve } from 'node:path'
-const input = process.argv[2]
+import { pathToFileURL } from 'node:url'
+import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+import { vendorRef } from './vendor-store.mjs'
+
+export async function pinSharedChat(input, root = resolve(import.meta.dirname, '..')) {
 if (!input) throw Error('Expected assigned artifact directory')
-const root = resolve(import.meta.dirname, '..')
+const candidates = analyzeVendorArchives(root).archives.map(row => row.file)
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
 const save = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n')
 const source = json(join(input, 'source.json'))
@@ -22,12 +26,17 @@ for (const row of source.copies) {
   const asset = row.name.replace(/\.tgz$/, '-' + sha256.slice(0, 12) + '.tgz')
   packages.push({ name: pkg.name, version: pkg.version, filename: row.name, asset, sha256, integrity: 'sha512-' + createHash('sha512').update(bytes).digest('base64'), repository: provenance.repository, commit: provenance.commit, provenance, pkg, file })
 }
+// Verify existing targets before changing any reference.
+for (const row of packages) {
+  const target = join(root, 'vendor', row.asset)
+  if (existsSync(target) && createHash('sha256').update(readFileSync(target)).digest('hex') !== row.sha256) throw Error('Existing artifact differs')
+}
 const manifests = ['package.json', 'apps/server/package.json', 'packages/shared/package.json', 'packages/component-runtime/package.json']
 const lock = json(join(root, 'package-lock.json'))
 for (const file of manifests) {
   const pkg = json(join(root, file))
   for (const section of ['dependencies', 'devDependencies']) for (const row of packages) {
-    if (row.name !== '@voicechat/shared' && pkg[section]?.[row.name]) pkg[section][row.name] = 'file:' + (file === 'package.json' ? '' : '../../') + 'vendor/' + row.asset
+    if (row.name !== '@voicechat/shared' && pkg[section]?.[row.name]) pkg[section][row.name] = vendorRef(row.asset)
   }
   save(join(root, file), pkg)
   const key = file === 'package.json' ? '' : file.replace('/package.json', '')
@@ -40,7 +49,7 @@ for (const row of packages) {
   } else copyFileSync(row.file, target)
   const entry = lock.packages['node_modules/' + row.name] ?? (row.name === '@voicechat/shared' ? undefined : (lock.packages['node_modules/' + row.name] = { dev: true }))
   if (entry && !entry.link) {
-    entry.version = row.version; entry.resolved = 'file:vendor/' + row.asset; entry.integrity = row.integrity
+    entry.version = row.version; entry.resolved = vendorRef(row.asset); entry.integrity = row.integrity
     for (const key of ['dependencies', 'peerDependencies', 'peerDependenciesMeta', 'engines', 'optionalDependencies', 'bin']) {
       if (row.pkg[key]) entry[key] = row.pkg[key]; else delete entry[key]
     }
@@ -55,3 +64,7 @@ for (const row of rows) {
 }
 save(join(root, 'vendor/owner-artifacts.json'), inventory)
 save(join(root, 'dependency-snapshots.json'), { schemaVersion: 1, purpose: 'shared-chat-s2-candidate', handoff: { repository: source.repository, commit: source.commit }, packages: rows })
+return removeUnusedVendorArchives(root, candidates)
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await pinSharedChat(process.argv[2])

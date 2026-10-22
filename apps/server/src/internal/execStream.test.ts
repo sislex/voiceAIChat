@@ -2,8 +2,9 @@
 // исключение, обрыв по signal рвёт соединение, а не-200 ответ ядра — понятная ошибка.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import Fastify from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
-import { execOverHttp, type ExecStreamRequest } from './execStream.js'
+import { execOverHttp, serveExecStream, type ExecStreamRequest } from './execStream.js'
 
 const PATH = '/internal/exec-stream'
 
@@ -68,5 +69,26 @@ describe('execOverHttp', () => {
     await expect(promise).rejects.toThrow(/aborted/)
     await new Promise((r) => setTimeout(r, 30))
     expect(closed).toBe(true)
+  })
+})
+
+describe('serveExecStream', () => {
+  it('keeps a silent command alive with blank lines that both clients skip', async () => {
+    const app = Fastify()
+    const machines = {
+      exec: async () => { await new Promise((r) => setTimeout(r, 120)); return { exitCode: 0, output: 'done', timedOut: false } },
+      execStream: async () => ({ exitCode: 0, output: '', timedOut: false }),
+    }
+    app.post(PATH, async (req, reply) => serveExecStream(reply, req.body as ExecStreamRequest, machines as never, 20))
+    const coreUrl = await app.listen({ port: 0, host: '127.0.0.1' })
+    try {
+      const body: ExecStreamRequest = { agentId: 'm', command: 'pg_dump', timeoutMs: 1000, stream: false }
+      const text = await (await fetch(coreUrl + PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).text()
+      expect(text.match(/^\n/gm)?.length ?? 0).toBeGreaterThanOrEqual(2)
+      expect(text.trim()).toBe(JSON.stringify({ result: { exitCode: 0, output: 'done', timedOut: false } }))
+      await expect(execOverHttp({ baseUrl: coreUrl, token: 't', path: PATH }, body)).resolves.toEqual({ exitCode: 0, output: 'done', timedOut: false })
+    } finally {
+      await app.close()
+    }
   })
 })

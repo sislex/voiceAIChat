@@ -1,6 +1,6 @@
 {
   "name": "@sislexa/component-runtime",
-  "version": "1.0.1",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -29,6 +29,6 @@
     "tsx": "^4.19.2"
   },
   "dependencies": {
-    "@sislexa/agent-contracts": "file:../../vendor/sislexa-agent-contracts-1.2.2-dfd0cbd06e3b.tgz"
+    "@sislexa/agent-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-contracts-1.5.0-3117b819912f.tgz"
   }
 }

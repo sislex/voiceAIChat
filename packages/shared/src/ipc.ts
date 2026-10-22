@@ -486,6 +486,7 @@ export interface IpcInvokeMap {
     result: ProjectDetail
   }
 
+  'projects:subprojects': { arg: { id: string }; result: import('./projects').ProjectSubprojectSummary[] }
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
 
   // --- Приглашения в проект ---
@@ -533,11 +534,11 @@ export interface IpcInvokeMap {
   /** Состав релиза из выпусков приложений: закреплённое в базовой ветке и опубликованные выпуски (Kanban). */
   'releases:composition': { arg: { projectId: string; baseBranch?: string; agentId?: string }; result: import('./releaseComposition').ReleaseCompositionCatalog }
   /** `composition` — выбранные выпуски; их закрепляет подготовка release-ветки. */
-  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string; composition?: import('./releaseComposition').ReleaseCompositionItem[] }; result: import('./release').ProjectRelease }
+  'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string; agentId?: string; ignoreDiskCheck?: boolean; composition?: import('./releaseComposition').ReleaseCompositionItem[] }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string; includeArchived?: boolean }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:changes': { arg: { projectId: string; releaseId: string; from?: string }; result: import('./release').ReleaseChangesResult }
-  'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
+  'releases:deploy': { arg: { projectId: string; branch: string; ignoreDiskCheck?: boolean }; result: import('./release').ProjectRelease }
   'releases:managedPreflight': { arg: { projectId: string }; result: import('./release').ManagedPreflightConfirmation }
   'releases:managedConfirm': { arg: { projectId: string; confirmationToken: string }; result: ProjectDetail }
   'projects:bootstrapProduction': { arg: { id: string; agentId: string; storageId?: string; deployCommand?: string; healthCheckCommand?: string }; result: import('./release').ProductionBootstrapResult }
@@ -545,6 +546,7 @@ export interface IpcInvokeMap {
   'projects:update': {
     arg: {
       id: string
+      parentProjectId?: string | null
       /** Узел дерева типов: меняет живые возможности, доску не трогает. */
       typeId?: string
       name?: string
@@ -574,7 +576,17 @@ export interface IpcInvokeMap {
       ciExecAuthRef?: string
       doneRetentionDays?: number | null
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
+      executionEngine?: import('./projects').ExecutionEngine
+      operatorAssistant?: import('./projects').OperatorAssistantMode
+      operatorAssistantModel?: import('./projects').OperatorAssistantModel
+      operatorAssistantLimits?: Partial<import('./projects').OperatorAssistantLimits>
       automatedQaMode?: import('./qa').AutomatedQaMode
+      /**
+       * Enabled QA stages; the board service owns persistence and routing.
+       * An empty list sends development straight to `awaiting_merge`.
+       * Columns of disabled stages are hidden.
+       */
+      qaStages?: import('./projects').QaStage[]
       automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
     }
     result: ProjectDetail
@@ -653,9 +665,9 @@ export interface IpcInvokeMap {
   /** Назначить персональную машину пользователя по умолчанию для проекта. */
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
-  'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  'board:get': { arg: { id: string } & import('./projects').BoardRequestOptions; result: Board }
   /** Состояние карточек доски: вторая фаза, приезжает следом за скелетом. */
-  'board:getStatuses': { arg: { id: string; includeCompleted?: boolean }; result: import('./projects').BoardStatuses }
+  'board:getStatuses': { arg: { id: string } & import('./projects').BoardRequestOptions; result: import('./projects').BoardStatuses }
   /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
   'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
   /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
@@ -1505,6 +1517,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:quota',
   'projects:create',
   'projects:get',
+  'projects:subprojects',
   'projects:invitations',
   'projects:invite',
   'projects:resendInvitation',

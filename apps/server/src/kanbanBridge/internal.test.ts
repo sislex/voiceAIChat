@@ -13,12 +13,13 @@ function fakeCore(): KanbanCore & { tunnelArgs: unknown[] } {
       exec: vi.fn(), execStream: vi.fn(),
       ensureLink: vi.fn(async input => ({ ...input, id: 'link', state: 'open' })), deleteLink: vi.fn(async () => {}), listLinks: vi.fn(async () => []),
       fsRead: vi.fn(async (agentId: string, path: string) => ({ ok: true, agentId, path })),
-      fsWrite: vi.fn(), fsMkdir: vi.fn(), fsDelete: vi.fn(), fsRename: vi.fn(), gitAccess: vi.fn(),
+      fsWrite: vi.fn(), fsMkdir: vi.fn(), fsDelete: vi.fn(), fsRename: vi.fn(), gitAccess: vi.fn(), devProcess: vi.fn(async (agentId: string, method: string) => ({ agentId, method })),
       createTunnel: vi.fn(async (...args: unknown[]) => { core.tunnelArgs = args; return 4242 }),
       closeTunnel: vi.fn(() => true),
       closeTunnelsForTarget: vi.fn()
     },
     kb: { status: vi.fn(async () => ({ ok: true })), topics: vi.fn(async () => []), document: vi.fn(async () => null), search: vi.fn(async () => []), context: vi.fn(async () => ({ text: '' })) },
+    kbModules: { modules: vi.fn(async () => []), ensureModule: vi.fn(async (input: { repository: string }) => ({ id: 'make', title: 'make', repository: input.repository, ref: 'main', path: 'docs/kb', status: 'indexing', indexedSha: null, indexedAt: null })), removeModule: vi.fn(async () => true) },
     uploads: { get: vi.fn(() => undefined) },
     widgets: { contexts: { surface: vi.fn(() => null), updateSurface: vi.fn() }, ui: { request: vi.fn(async () => ({ ok: true })) } },
     ensureProjectMainCurrent: vi.fn(async () => ({ baseSha: 'abc' }))
@@ -43,6 +44,26 @@ describe('createKanbanCoreRpcDispatcher', () => {
     expect(await dispatch({ method: 'machines.closeTunnelsForTarget', args: ['m1'] })).toBeNull()
     expect(core.machines.closeTunnelsForTarget).toHaveBeenCalledWith('m1')
     expect(await dispatch({ method: 'ensureProjectMainCurrent', args: [{ projectId: 'p' }] })).toEqual({ baseSha: 'abc' })
+  })
+
+  it('forwards dev process requests to the machines port', async () => {
+    const core = fakeCore()
+    const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize: async () => true, closed: async () => {} } })
+    expect(await dispatch({ method: 'machines.devProcess', args: ['m1', 'devProcess.status', { standId: 's', component: 'make' }] })).toEqual({ agentId: 'm1', method: 'devProcess.status' })
+    expect(core.machines.devProcess).toHaveBeenCalledWith('m1', 'devProcess.status', { standId: 's', component: 'make' })
+    expect(await dispatch({ method: 'machines.devProcess', args: ['m1', 'devProcess.stopStand', { standId: 's' }] })).toEqual({ agentId: 'm1', method: 'devProcess.stopStand' })
+    expect(core.machines.devProcess).toHaveBeenCalledWith('m1', 'devProcess.stopStand', { standId: 's' })
+    await expect(dispatch({ method: 'machines.devProcess', args: ['m1', 'exec.start', {}] })).rejects.toMatchObject({ status: 400 })
+    expect(core.machines.devProcess).toHaveBeenCalledTimes(2)
+  })
+
+  it('dispatches KB module registration to the Core module port', async () => {
+    const core = fakeCore()
+    const dispatch = createKanbanCoreRpcDispatcher({ core, machinesSnapshot: () => [], tunnels: { authorize: async () => true, closed: async () => {} } })
+    expect(await dispatch({ method: 'kb.ensureModule', args: [{ repository: 'https://github.com/sislex/make.git' }] })).toMatchObject({ id: 'make', status: 'indexing' })
+    expect(core.kbModules.ensureModule).toHaveBeenCalledWith({ repository: 'https://github.com/sislex/make.git' })
+    expect(await dispatch({ method: 'kb.modules', args: [] })).toEqual([])
+    expect(await dispatch({ method: 'kb.removeModule', args: ['make'] })).toBe(true)
   })
 
   it('dispatches persistent links without Kanban authorization callbacks', async () => {

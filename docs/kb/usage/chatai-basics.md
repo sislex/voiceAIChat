@@ -1,8 +1,9 @@
 ---
 id: usage/chatai-basics
-title: Как пользоваться ChatAI
+title: Как пользоваться sislexa
 kind: runbook
-updated: 2026-08-01
+updated: 2026-10-20
+checked: 592879f34
 tags:
   - usage
   - onboarding
@@ -16,10 +17,15 @@ related:
   - project-knowledge-base
 ---
 
-# Как пользоваться ChatAI
+# Как пользоваться sislexa
 
 Статья раздела «Использование»: он общий для всех пользователей и отвечает на вопрос
 «как работать с приложением», а не «как оно устроено внутри».
+
+Available modules depend on the installation. The initial `sislexa.by` profile
+provides chat and account settings; project, machine and voice controls appear
+only in installations where those modules are enabled. This profile does not
+remove the full product capabilities described below.
 
 ## Разговор
 

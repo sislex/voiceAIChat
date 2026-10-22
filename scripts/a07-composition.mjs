@@ -4,12 +4,13 @@ import { createHash } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
+import { ensureVendorArchive, isVendorRef } from './vendor-store.mjs'
 
 export const requiredSources = Object.freeze({
-  '@sislexa/identity': ['sislex/identity', 'e33958be66c7a1f44b3cb4c6b4619f7c2fefe322'],
-  '@sislexa/billing': ['sislex/billing', '41263c7c20f8e852b508bbd76220245fbb62bd10'],
-  '@sislex/llm-runner': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
-  '@sislex/runner-contracts': ['sislex/llm-runner', '1ccbdeb47b0419730e5b460c0e6610bf73fef29a'],
+  '@sislexa/identity': ['sislex/identity', 'b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e'],
+  '@sislexa/billing': ['sislex/billing', 'db6000b7a87cfb200bf7cc697dbafafde6a60171'],
+  '@sislex/llm-runner': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
+  '@sislex/runner-contracts': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
   '@sislexa/sdk': ['sislex/sdk', 'f6313db5ff58cc35fa8dacc90b9844f9706dcfba'],
   '@sislexa/analytics': ['sislex/analytics', 'a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942']
 })
@@ -37,7 +38,7 @@ export async function verifyA07Composition(directory = root) {
   for (const name of Object.keys(requiredSources)) {
     const row = inventory.packages.find(item => item.name === name)
     if (!/^[\w.-]+\.tgz$/.test(row.asset)) throw Error('Invalid archive name: ' + name)
-    const bytes = readFileSync(join(directory, 'vendor', row.asset))
+    const bytes = await ensureVendorArchive(directory, row.asset, { sha256: row.sha256, integrity: row.integrity })
     if (digest(bytes) !== row.sha256 || 'sha512-' + createHash('sha512').update(bytes).digest('base64') !== row.integrity) {
       throw Error('Artifact integrity mismatch: ' + name)
     }
@@ -48,7 +49,7 @@ export async function verifyA07Composition(directory = root) {
     // Runner is also installed as a dev dependency for exact-composition acceptance.
     {
       const installed = lock['node_modules/' + name]
-      if (installed?.resolved !== 'file:vendor/' + row.asset || installed?.integrity !== row.integrity
+      if (!isVendorRef(installed?.resolved, row.asset) || installed?.integrity !== row.integrity
         || installed?.version !== row.version) throw Error('Consumer lock mismatch: ' + name)
       for (const [file, content] of files) {
         if (digest(readFileSync(join(directory, 'node_modules', name, file))) !== digest(content)) {

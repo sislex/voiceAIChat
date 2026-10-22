@@ -61,3 +61,6 @@ storybook-static/
 .mobile-shots/
 
 .cache/
+
+# Owner archives live in the GitHub release `vendor` (see vendor/README.md); never commit them.
+vendor/*.tgz

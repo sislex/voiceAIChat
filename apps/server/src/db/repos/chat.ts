@@ -10,6 +10,7 @@ import { parseJsonValue } from './support.js'
 import type { Values } from './chatSettings.js'
 import { InvalidChatSettings } from '../../chatSettingsValidation.js'
 import type { ConversationHistory } from '@voicechat/shared'
+import type { ConversationContextUsage } from '@voicechat/shared'
 
 interface ConversationRow {
   id: string
@@ -45,6 +46,10 @@ interface ConversationRow {
   cost_dirty?: number
   last_exec_target?: string | null
   archived_at: number | null
+  summary_text: string | null
+  summary_covers_message_id: string | null
+  summary_updated_at: number | null
+  context_usage_json: string | null
 }
 
 /** Разбор JSON meta сообщения; битый/пустой → undefined (не роняет чтение ленты). */
@@ -531,10 +536,31 @@ export class ChatRepo extends BaseRepo {
     return await this.mapConversation(row, count)
   }
 
+  async summaryMessages(userId: string, conversationId: string): Promise<{ summary: Conversation['summary']; messages: Message[] } | null> {
+    const conversation = await this.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const rows = await this.sql.all<MessageRow>(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+      AND history_position > COALESCE((SELECT history_position FROM messages WHERE id = ? AND conversation_id = ?), 0)
+      ORDER BY history_position, id`, [conversationId, conversation.summary?.coversUntilMessageId ?? '', conversationId])
+    return { summary: conversation.summary, messages: this.messageRows(rows) }
+  }
+
+  async setConversationSummary(userId: string, conversationId: string, summary: NonNullable<Conversation['summary']>): Promise<Conversation | null> {
+    const changed = await this.sql.run(`UPDATE conversations SET summary_text = ?, summary_covers_message_id = ?, summary_updated_at = ?
+      WHERE id = ? AND user_id = ?`, [summary.text, summary.coversUntilMessageId, summary.updatedAt, conversationId, userId])
+    return changed.changes ? await this.getConversation(userId, conversationId) : null
+  }
+
   /** Владеет ли пользователь разговором (для проверок при работе с сообщениями). */
   async ownsConversation(userId: string, conversationId: string): Promise<boolean> {
     const row = await this.sql.get(`SELECT 1 FROM conversations WHERE id = ? AND user_id = ?`, [conversationId, userId])
     return row !== undefined
+  }
+
+  /** Whether the owned conversation stores this message in any state (queued messages included). */
+  async hasMessage(userId: string, conversationId: string, messageId: string): Promise<boolean> {
+    if (!(await this.ownsConversation(userId, conversationId))) return false
+    return (await this.sql.get(`SELECT 1 FROM messages WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])) !== undefined
   }
 
   async moveProjectToTenant(projectId: string, tenantId: string): Promise<void> {
@@ -810,6 +836,25 @@ export class ChatRepo extends BaseRepo {
     await this.sql.run(`UPDATE conversations SET claude_session_id = ? WHERE id = ? AND user_id = ?`, [sessionId, id, userId])
   }
 
+  async setConversationContextUsage(userId: string, id: string, usage: ConversationContextUsage | null): Promise<void> {
+    await this.sql.run(`UPDATE conversations SET context_usage_json = ? WHERE id = ? AND user_id = ?`, [usage ? JSON.stringify(usage) : null, id, userId])
+  }
+
+  /** Clears the provider thread and leaves a visible, non-provider-authored audit note. */
+  async resetConversationThread(userId: string, id: string): Promise<Conversation | null> {
+    const resetAt = this.now()
+    const noteId = this.newId()
+    await this.sql.transaction(async () => {
+      const owned = await this.ownsConversation(userId, id)
+      if (!owned) return
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [id])) as { position: number }).position
+      await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
+      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position)
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.', new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
+    })
+    return await this.getConversation(userId, id)
+  }
+
   async listQueuedTurns(userId: string, conversationId: string): Promise<QueuedTurn[]> {
     if (!(await this.ownsConversation(userId, conversationId))) return []
     const rows = (await this.sql.all(`SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
@@ -1022,7 +1067,8 @@ export class ChatRepo extends BaseRepo {
     meta?: TurnMeta,
     execTarget?: string | null,
     attachments?: MessageAttachment[],
-    requestedId?: string
+    requestedId?: string,
+    contextUsage?: ConversationContextUsage
   ): Promise<Message> {
     if (!(await this.ownsConversation(userId, conversationId))) {
       throw new Error(`Разговор ${conversationId} не принадлежит пользователю`)
@@ -1050,12 +1096,12 @@ export class ChatRepo extends BaseRepo {
       `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
     )
-    const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ? WHERE id = ?`)
+    const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ?, context_usage_json = COALESCE(?, context_usage_json) WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
     await this.sql.transaction(async () => {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
       await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
-      await touch.run(createdAt, conversationId)
+      await touch.run(createdAt, contextUsage ? JSON.stringify(contextUsage) : null, conversationId)
     })
     return {
       id,
@@ -1186,6 +1232,47 @@ export class ChatRepo extends BaseRepo {
     if (!(await this.ownsConversation(userId, conversationId))) return []
     const rows = (await this.sql.all(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
     return this.messageRows(rows)
+  }
+
+  /** MCP history is deliberately scoped to one owned conversation. */
+  async searchConversationHistory(userId: string, conversationId: string, query: string, limit: number): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const match = this.sql.engine === 'postgres' ? toPgTsQuery(query) : toFtsMatchQuery(query)
+    if (!match || !this.ftsReady) return []
+    const rows = this.sql.engine === 'postgres'
+      ? await this.sql.all<MessageRow>(`SELECT m.* FROM messages m
+          WHERE m.conversation_id = ? AND m.state = 'published'
+            AND m.text_tsv @@ to_tsquery('simple', ?)
+          ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
+      : await this.sql.all<MessageRow>(`SELECT m.* FROM messages_fts
+          JOIN messages m ON m.rowid = messages_fts.rowid
+          WHERE m.conversation_id = ? AND m.state = 'published' AND messages_fts MATCH ?
+          ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
+    return this.messageRows(rows)
+  }
+
+  async conversationHistoryAround(userId: string, conversationId: string, messageId: string, around: number): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const center = await this.sql.get<{ history_position: number | null }>(
+      `SELECT history_position FROM messages WHERE id = ? AND conversation_id = ? AND state = 'published'`,
+      [messageId, conversationId])
+    if (!center) return []
+    // Imported legacy rows can lack a position; the deterministic full-history fallback
+    // preserves their native order while the normal path remains a bounded indexed read.
+    if (center.history_position === null) {
+      const all = await this.listMessages(userId, conversationId)
+      const index = all.findIndex((message) => message.id === messageId)
+      return index < 0 ? [] : all.slice(Math.max(0, index - around), index + around + 1)
+    }
+    const before = await this.sql.all<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND state = 'published' AND history_position < ?
+      ORDER BY history_position DESC, id DESC LIMIT ?`, [conversationId, center.history_position, around])
+    const selected = await this.sql.get<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND id = ? AND state = 'published'`, [conversationId, messageId])
+    const after = await this.sql.all<MessageRow>(`SELECT * FROM messages
+      WHERE conversation_id = ? AND state = 'published' AND history_position > ?
+      ORDER BY history_position ASC, id ASC LIMIT ?`, [conversationId, center.history_position, around])
+    return this.messageRows([...before.reverse(), ...(selected ? [selected] : []), ...after])
   }
 
   /** Indexed keyset read: fetch one extra row, never materialize the full history. */
@@ -1702,6 +1789,13 @@ export class ChatRepo extends BaseRepo {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount,
+      ...(row.summary_text && row.summary_covers_message_id && row.summary_updated_at !== null
+        ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at } }
+        : {}),
+      ...(() => {
+        const usage = parseJsonValue<ConversationContextUsage | null>(row.context_usage_json, null)
+        return usage ? { contextUsage: usage } : {}
+      })(),
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,

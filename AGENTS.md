@@ -1,6 +1,6 @@
 # voiceAIChat agent instructions
 
-The product is **Sislexa**. This repository is its Core service. Read this file
+The product is **sislexa**. This repository is its Core service. Read this file
 at the start of every session; load package instructions and `docs/kb/` only when
 the task needs them. Keep this file small.
 
@@ -38,8 +38,11 @@ authorization, transport and browser integration checks. See
 ## Commands
 
 ```bash
-npm install                  # Core workspaces only
+npm install                  # Core workspaces only; pinned owner archives install from the `vendor` release URL
+npm run vendor:fetch         # put pinned archives into vendor/ for pin/provenance tools (never commit *.tgz)
 npm run dev:web              # Core :8787 and published UI proxy :5273
+npm run gate:task -- --base <sha> # development feedback; full validation remains at promotion
+node scripts/dev-stand.mjs --help # attach a working copy to a managed stand without a release
 npm run gate:quick -- --base <sha> # task typecheck/build and affected tests
 npm run test:files -- <files> # rerun failed repository-relative test files
 npm run gate:fast            # changed worktree since HEAD; use during a step
@@ -81,11 +84,14 @@ details: [testing conventions](docs/kb/conventions.md) and
 
 ## Knowledge base
 
-Use the generated [KB index](docs/kb/README.md) to find a topic. Frequent entry
+Use the generated [KB index](docs/kb/README.md) to find a Core topic and the
+[module ownership map](docs/kb/modules.md) to locate knowledge owned by another
+repository (cross-module references use `<module>:<path>` ids). Frequent entry
 points are [architecture](docs/kb/architecture.md),
 [contracts](docs/kb/protocol.md), [server](docs/kb/server-internals.md),
 [auth/data](docs/kb/data-auth.md), [testing](docs/kb/testing-operations.md),
-[deployment](docs/kb/deploy.md) and [conventions](docs/kb/conventions.md).
+[deployment](docs/kb/deploy.md), [conventions](docs/kb/conventions.md) and the
+[glossary](docs/kb/glossary.md) of roles and terms.
 Historical plans in `docs/plans/` are context, not current truth.
 
 If KB lookup was incomplete and code research established the answer, update the

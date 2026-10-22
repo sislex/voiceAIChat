@@ -1,3 +1,4 @@
+import { CoreTunnel } from './coreTunnel.js'
 import type { VpnService, VpnEnvironment } from '../machines/vpn/service.js'
 import { vpnAddress } from '../machines/vpn/telemetry.js'
 import type { LinkManager } from './linkManager.js'
@@ -7,6 +8,7 @@ import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 
 import { randomUUID } from 'node:crypto'
 import { sanitizeVpnObservation, type VpnAgentRequest, type VpnObservation } from '@sislexa/agent-contracts'
+import { DEV_PROCESS_RESPONSE_TYPES, type DevProcessMethod, type DevProcessResponseMessage, type DevProcessRpc } from '@voicechat/shared'
 import { evaluateAgentCommand, isToolAllowed, requiredVersion, AGENT_VERSION, DEFAULT_AGENT_POLICY, type AgentHttpRequest, type AgentHttpResponse, type AgentImageHost, type AgentPolicy, type AgentTelemetry, type AgentToServer, type FsOp, type FsResult, type GitAccessRequest, type GitAccessResult, type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@sislexa/agent-contracts'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
@@ -152,6 +154,14 @@ export const TUNNEL_RELAY_HIGH_WATER_MARK = 8 * 1024 * 1024
 export const TUNNEL_RELAY_LOW_WATER_MARK = 2 * 1024 * 1024
 const TUNNEL_RELAY_POLL_MS = 25
 
+/** Last self-update outcome reported by an agent (`agent.updateResult`, stand-https-v1 C01). */
+export interface AgentUpdateStatus {
+  status: Extract<AgentToServer, { t: 'agent.updateResult' }>['status']
+  message: string
+  /** Unix milliseconds when Core received the result. */
+  at: number
+}
+
 /** Кто и откуда запустил команду — попадает в журнал команд машины. */
 export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
 
@@ -161,9 +171,14 @@ export class AgentRegistry {
   private readonly pendingFs = new Map<string, PendingFs>()
   private readonly pendingHttp = new Map<string, PendingHttp>()
   private readonly pendingGitAccess = new Map<string, PendingGitAccess>()
+  // Dev stand processes (dev-lane-v1): start waits for dependencies and readiness on the agent.
+  private readonly pendingDev = new Map<string, { agentId: string; method: DevProcessMethod; timer: NodeJS.Timeout; resolve: (v: unknown) => void; reject: (e: Error) => void }>()
   private readonly pendingVpn = new Map<string, { agentId: string; timer: NodeJS.Timeout; resolve: (o: VpnObservation) => void; reject: (e: Error) => void }>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
+  // Kept across reconnects: an applied update restarts the agent, so the result outlives the connection.
+  private readonly updateStatuses = new Map<string, AgentUpdateStatus>()
+  private readonly coreTunnels = new Map<string, { agentId: string; stream: CoreTunnel }>()
   private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
@@ -240,6 +255,11 @@ export class AgentRegistry {
     return this.online.get(agentId)?.version
   }
 
+  /** Last reported self-update outcome (undefined — none reported since Core started). */
+  updateStatusOf(agentId: string): AgentUpdateStatus | undefined {
+    return this.updateStatuses.get(agentId)
+  }
+
   /** Последняя телеметрия онлайн-агента (undefined — нет данных/офлайн). */
   telemetryOf(agentId: string): AgentTelemetry | undefined {
     return this.telemetry.get(agentId)
@@ -289,6 +309,7 @@ export class AgentRegistry {
 
   /** Убирает агента из онлайна и отклоняет все его незавершённые команды. */
   unregister(agentId: string): void {
+    for (const tunnel of this.coreTunnels.values()) if (tunnel.agentId === agentId) tunnel.stream.destroy(new Error('Machine disconnected'))
     const had = this.online.delete(agentId)
     this.telemetry.delete(agentId)
     for (const tunnel of [...this.tunnels.values()]) if (tunnel.sourceAgentId === agentId || tunnel.targetAgentId === agentId) this.closeTunnel(tunnel.id)
@@ -297,6 +318,10 @@ export class AgentRegistry {
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    for (const [requestId, p] of this.pendingDev) {
+      if (p.agentId !== agentId) continue
+      this.pendingDev.delete(requestId); clearTimeout(p.timer); p.reject(new Error('machine_unavailable: agent disconnected'))
     }
     for (const [requestId, p] of this.pendingVpn) {
       if (p.agentId !== agentId) continue
@@ -561,6 +586,25 @@ export class AgentRegistry {
       this.pendingVpn.set(requestId, { agentId, timer, resolve, reject })
       try { this.send(agentId, { t: 'vpn.request', requestId, request }) }
       catch { clearTimeout(timer); this.pendingVpn.delete(requestId); reject(new Error('offline')) }
+    })
+  }
+
+  /**
+   * Forward a dev stand process request to the agent. Errors carry the stable dev stand code as a
+   * `<code>: <message>` prefix so callers behind RPC (Kanban) can branch on it.
+   */
+  devProcess<M extends DevProcessMethod>(agentId: string, method: M, request: DevProcessRpc[M]['request']): Promise<DevProcessRpc[M]['result']> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('machine_unavailable: machine is offline'))
+    const requestId = this.newId()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingDev.delete(requestId)
+        reject(new Error(method === 'devProcess.start' ? 'readiness_timeout: dev process did not become ready' : 'machine_unavailable: no answer from the agent'))
+      }, method === 'devProcess.start' ? 10 * 60_000 : 60_000)
+      timer.unref?.()
+      this.pendingDev.set(requestId, { agentId, method, timer, resolve: resolve as (v: unknown) => void, reject })
+      try { this.send(agentId, { t: method, requestId, ...withCloneUrl(request) } as unknown as ServerToAgent) }
+      catch { clearTimeout(timer); this.pendingDev.delete(requestId); reject(new Error('machine_unavailable: send failed')) }
     })
   }
 
@@ -833,6 +877,22 @@ export class AgentRegistry {
   deleteLink(projectId: string, environmentId: string, id: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.deleteLink(projectId, environmentId, id) }
   listLinks(projectId: string, environmentId: string) { if (!this.linkManager) throw new Error('Link manager unavailable'); return this.linkManager.listLinks(projectId, environmentId) }
 
+  connectCoreTunnel(agentId: string, port: number): CoreTunnel {
+    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid tunnel port')
+    if (!this.isOnline(agentId)) throw new Error('Machine unavailable')
+    const error = this.versionError(agentId, 'tunnel')
+    if (error) throw error
+    const id = randomUUID()
+    const stream = new CoreTunnel(frame => this.send(agentId, { ...frame, tunnelId: id, connectionId: id } as never),
+      () => this.bufferedAmount(agentId), () => {
+        this.coreTunnels.delete(id)
+        this.send(agentId, { t: 'tunnel.close', tunnelId: id })
+      })
+    this.coreTunnels.set(id, { agentId, stream })
+    this.send(agentId, { t: 'tunnel.connect', tunnelId: id, connectionId: id, port })
+    return stream
+  }
+
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: (frame: string) => Promise<boolean> = async () => true, onClose?: () => Promise<void>, listener?: { host: 'docker-host'; port: number }): Promise<number> {
     const existing = this.tunnels.get(id)
     if (existing?.localPort) return Promise.resolve(existing.localPort)
@@ -952,6 +1012,11 @@ export class AgentRegistry {
       return
     }
     if ('tunnelId' in msg) {
+      const core = this.coreTunnels.get(msg.tunnelId)
+      if (core) {
+        if (core.agentId === agentId && (!('connectionId' in msg) || msg.connectionId === msg.tunnelId)) core.stream.frame(msg)
+        return
+      }
       const tunnel = this.tunnels.get(msg.tunnelId)
       if (!tunnel || (agentId !== tunnel.sourceAgentId && agentId !== tunnel.targetAgentId)) return
       // Frames of one tunnel are handled strictly in arrival order: authorization is async and
@@ -959,6 +1024,16 @@ export class AgentRegistry {
       // overtook tunnel.open and reached the target before tunnel.connect, which dropped it.
       tunnel.queue = (tunnel.queue ?? Promise.resolve()).then(() => this.handleTunnelFrame(agentId, tunnel, msg)).catch(() => undefined)
       return tunnel.queue
+    }
+    if (isDevProcessResponse(msg)) {
+      const dev = msg
+      const pending = this.pendingDev.get(dev.requestId)
+      if (!pending || pending.agentId !== agentId) return
+      this.pendingDev.delete(dev.requestId); clearTimeout(pending.timer)
+      if (dev.t === 'devProcess.error') pending.reject(new Error(`${dev.code}: ${dev.message}`))
+      else if (dev.t === `${pending.method}.result`) pending.resolve(dev.result)
+      else pending.reject(new Error('internal_error: unexpected dev process response'))
+      return
     }
     if (msg.t === 'vpn.result') {
       const pending = this.pendingVpn.get(msg.requestId)
@@ -1019,6 +1094,15 @@ export class AgentRegistry {
       }
       return
     }
+    // Agent 0.24.0 reports dev stand recovery after a restart; Core has no consumer yet
+    // (stand reconciliation belongs to Kanban), so the events are not exec traffic.
+    if (isDevProcessRecovery(msg)) return
+    // Agent 0.25 reports the outcome of an `agent.update` sent after registration (stand-https-v1 C01).
+    if (msg.t === 'agent.updateResult') {
+      this.updateStatuses.set(agentId, { status: msg.status, message: String(msg.message ?? '').slice(0, 2000), at: Date.now() })
+      this.emitChange()
+      return
+    }
     const p = this.pending.get(msg.execId)
     if (!p || p.agentId !== agentId) return
     switch (msg.t) {
@@ -1070,4 +1154,27 @@ export class AgentRegistry {
       /* сокет умер — дисконнект придёт своим чередом */
     }
   }
+}
+
+// Agent contracts 1.3.0 include dev process responses in the agent message union; the guard
+// narrows them out so the exec handling below keeps its `execId` messages.
+type AgentDevProcessResponse = DevProcessResponseMessage | Extract<AgentToServer, { t: `devProcess.${string}`; requestId: string }>
+const DEV_PROCESS_RESPONSES = new Set<string>(DEV_PROCESS_RESPONSE_TYPES)
+function isDevProcessResponse(msg: { t: string }): msg is AgentDevProcessResponse {
+  return DEV_PROCESS_RESPONSES.has(msg.t) && 'requestId' in msg
+}
+
+type DevProcessRecovery = Extract<AgentToServer, { t: 'devProcess.recovered' | 'devProcess.recoveryFailed' }>
+function isDevProcessRecovery(msg: AgentToServer): msg is DevProcessRecovery {
+  return msg.t === 'devProcess.recovered' || msg.t === 'devProcess.recoveryFailed'
+}
+
+// The dev stand contract names repositories as `owner/name` (DEV_COMPONENT_REGISTRY); the agent runs
+// `git clone` with the value, so the GitHub shorthand becomes an HTTPS clone URL. Full URLs, scp-style
+// remotes and local paths pass through unchanged.
+const GITHUB_SHORTHAND = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
+function withCloneUrl<T>(request: T): T {
+  const repository = (request as { repository?: unknown }).repository
+  if (typeof repository !== 'string' || !GITHUB_SHORTHAND.test(repository) || repository.startsWith('.')) return request
+  return { ...request, repository: `https://github.com/${repository.replace(/\.git$/, '')}.git` }
 }

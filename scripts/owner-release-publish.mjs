@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url'
 import {
   RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease, releasePackageAsset, releaseTag
 } from '../packages/shared/src/releaseComposition.ts'
+import { fetchVendorArchives } from './vendor-store.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -77,6 +78,8 @@ const COMPOSE_FILES = () => ['docker-compose.yml', ...(existsSync(join(root, 'de
 export const rowRepository = (row) => row.repository ?? row.provenance?.repository ?? row.source?.repository
 export const rowCommit = (row) => row.commit ?? row.provenance?.commit ?? row.source?.commit
 
+// Pin replacement and unused vendor archive cleanup belong to release-composition.mjs;
+// publication reads the remaining pinned bytes without changing the checkout.
 /** Манифест и файлы выпуска из того, что сейчас закреплено в Core. */
 export function manifestFromCore(repository, core = root) {
   const all = new Map()
@@ -98,6 +101,7 @@ export function manifestFromCore(repository, core = root) {
   const files = []
   const packages = [...rows.values()].map((row) => {
     const path = join(core, 'vendor', row.asset)
+    if (!existsSync(path)) throw new Error(`Нет vendor/${row.asset}: архивы не хранятся в git, выполните npm run vendor:fetch`)
     files.push(path)
     return releasePackage(readFileSync(path), { name: row.name, version: row.version, asset: row.asset, sha256: row.sha256, integrity: row.integrity })
   })
@@ -179,6 +183,8 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   const dryRun = args.includes('--dry-run')
   let prepared
   if (value('--from-core')) {
+    // Pinned archives are not committed; fetch them from the `vendor` release before reading the bytes.
+    await fetchVendorArchives(root)
     prepared = manifestFromCore(value('--from-core'))
   } else if (value('--source')) {
     const source = resolve(value('--source'))

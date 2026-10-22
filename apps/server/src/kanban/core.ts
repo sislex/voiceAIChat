@@ -14,6 +14,7 @@ import type { ExecMeta, ExecResult } from '../agents/registry.js'
 /** Результат и метка команды машины — часть поверхности порта, кластер берёт их отсюда. */
 export type { ExecMeta, ExecResult }
 import type { KnowledgeBaseService } from '../kb/types.js'
+import type { KbModule } from '@voicechat/shared'
 import type { StoredUpload } from '../uploads.js'
 import type { WidgetUiRelay } from '../mcp/widgetUiRelay.js'
 
@@ -22,7 +23,7 @@ import type { WidgetUiRelay } from '../mcp/widgetUiRelay.js'
  * `isOnline` 21, `policyOf` 5, `fsRead` 6, `gitAccess` 5, …). `AgentRegistry` удовлетворяет ему структурно
  * (проверка типом в `boundary.test.ts`); PTY, тоннели чата, `onChange` и прочее ядро не отдаёт.
  */
-export interface KanbanMachines extends Pick<MachinesService, 'ensureLink' | 'deleteLink' | 'listLinks' | 'vpnAddressOf' | 'ensureEnvironmentGrant' | 'removeEnvironmentGrant' | 'environmentGrantState'> {
+export interface KanbanMachines extends Pick<MachinesService, 'ensureLink' | 'deleteLink' | 'listLinks' | 'vpnAddressOf' | 'ensureEnvironmentGrant' | 'removeEnvironmentGrant' | 'environmentGrantState' | 'devProcess'> {
   isOnline(agentId: string): boolean
   nameOf(agentId: string): string | undefined
   platformOf(agentId: string): string | undefined
@@ -66,9 +67,17 @@ export interface KanbanWidgets {
 /** Актуализация main проекта в git-копии машины; живёт в ядре рядом с панелью кода. */
 export type EnsureProjectMainCurrent = (args: { userId: string; projectId: string; conversationId: string | null; agentId: string; path: string; branch: string; gitUrl: string }) => Promise<{ baseSha: string; autoHealed?: unknown }>
 
+/** Repository knowledge bases registered as KB modules (kb-service-v1 U01). */
+export interface KanbanKbModules {
+  modules(): Promise<KbModule[]>
+  ensureModule(input: { id?: string; repository: string; ref?: string; path?: string; title?: string }): Promise<KbModule>
+  removeModule(id: string): Promise<boolean>
+}
+
 export interface KanbanCore {
   machines: KanbanMachines
   kb: KnowledgeBaseService
+  kbModules: KanbanKbModules
   uploads: KanbanUploads
   widgets: KanbanWidgets
   ensureProjectMainCurrent: EnsureProjectMainCurrent

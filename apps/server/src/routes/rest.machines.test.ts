@@ -5,7 +5,7 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'
-import { AGENT_VERSION } from '@sislexa/agent-contracts'
+import { servedAgent } from '../agents/agentScript.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -362,6 +362,17 @@ describe('REST: утилиты машины (exec/fs)', () => {
   it('GET /api/agents/version публичен и отдаёт версию', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ version: AGENT_VERSION })
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.json()).toEqual({ version: servedAgent().version })
+    expect(servedAgent().sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('GET /api/agents lists the last agent self-update result', async () => {
+    const machine = await db.machines.createAgent(U, 'Updated')
+    agentRegistry.register(machine.id, 'Updated', { send: vi.fn(), close: vi.fn() }, undefined, '0.24.0')
+    const listed = async () => ((await inj({ method: 'GET', url: '/api/agents' })).json() as Array<{ id: string; updateStatus?: unknown }>).find((a) => a.id === machine.id)
+    expect((await listed())?.updateStatus).toBeUndefined()
+    await agentRegistry.handleMessage(machine.id, { t: 'agent.updateResult', status: 'rolled_back', message: 'health check failed' })
+    expect((await listed())?.updateStatus).toEqual({ status: 'rolled_back', message: 'health check failed', at: expect.any(Number) })
   })
 })

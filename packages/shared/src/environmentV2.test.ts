@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_ENVIRONMENT_OPERATION_STATUSES, ENVIRONMENT_SETTINGS, RESERVED_ENVIRONMENT_SETTINGS, environmentComposeProject, environmentDataVolume, managedStandPaths, parseCoreSelection, parseEnvironmentSettingsPatch } from './environment.js'
+import { ACTIVE_ENVIRONMENT_OPERATION_STATUSES, ENVIRONMENT_SETTINGS, ENVIRONMENT_URL_SETTINGS, RESERVED_ENVIRONMENT_SETTINGS, usesExternalLlmRunner, environmentComposeProject, environmentDataVolume, managedStandPaths, parseCoreSelection, parseEnvironmentSettingsPatch } from './environment.js'
 import { parseEnvironmentManifest } from './manifests.js'
 
 describe('Core selections', () => {
@@ -16,10 +16,10 @@ describe('Core selections', () => {
 
 describe('environment settings', () => {
   it('accepts the entire catalog, deletions and literal shell characters', () => {
-    const input = ENVIRONMENT_SETTINGS.map(({ key }) => ({ key, value: 'literal-$`\\value' }))
+    const input = ENVIRONMENT_SETTINGS.map(({ key }) => ({ key, value: ENVIRONMENT_URL_SETTINGS.includes(key) ? 'http://host.docker.internal:18790' : 'literal-$`\\value' }))
     expect(parseEnvironmentSettingsPatch(input)).toEqual(input)
     expect(parseEnvironmentSettingsPatch(input)[0]).not.toBe(input[0])
-    expect(parseEnvironmentSettingsPatch(input.map(item => ({ ...item, value: null })))).toHaveLength(20)
+    expect(parseEnvironmentSettingsPatch(input.map(item => ({ ...item, value: null })))).toHaveLength(28)
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value: 'x'.repeat(4096) }])[0].value).toHaveLength(4096)
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(12) }])).toHaveLength(1)
   })
@@ -27,6 +27,13 @@ describe('environment settings', () => {
   it.each([null, [], false, 1, 'setting', undefined])('rejects item %j', value => expect(() => parseEnvironmentSettingsPatch([value])).toThrow('Invalid environment setting'))
   it.each([{}, { key: 'VC_PUBLIC_URL' }, { key: 'VC_PUBLIC_URL', value: 'x', extra: true }])('rejects fields %j', value => expect(() => parseEnvironmentSettingsPatch([value])).toThrow('Unexpected environment setting fields'))
   it.each([1, null, 'A', 'lower', 'VC_PUBLIC_URL\n', 'A'.repeat(65)])('rejects key %j', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow('Invalid environment setting key'))
+  it('accepts only credential-free http(s) URLs for runner and MCP settings', () => {
+    expect(parseEnvironmentSettingsPatch([{ key: 'VC_LLM_RUNNER_CODEX_URL', value: 'https://runner.example:8790/base' }])).toHaveLength(1)
+    for (const value of ['runner-work:8790', 'ftp://runner', 'http://user:pass@runner', 'http://runner/?q=1', 'http://runner/#x'])
+      expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_MCP_PUBLIC_BASE', value }])).toThrow('Invalid value for VC_MCP_PUBLIC_BASE')
+    expect(usesExternalLlmRunner(new Map([['VC_LLM_RUNNER_CLAUDE_URL', 'http://a'], ['VC_LLM_RUNNER_CODEX_URL', 'http://b']]))).toBe(true)
+    expect(usesExternalLlmRunner(new Map([['VC_LLM_RUNNER_CLAUDE_URL', 'http://a'], ['VC_LLM_RUNNER_CODEX_URL', null]]))).toBe(false)
+  })
   it('rejects unknown and duplicate keys and sparse arrays', () => {
     expect(() => parseEnvironmentSettingsPatch([{ key: 'UNKNOWN', value: null }])).toThrow('Unknown environment setting: UNKNOWN')
     expect(() => parseEnvironmentSettingsPatch(Array(1))).toThrow('Invalid environment setting')
@@ -35,8 +42,13 @@ describe('environment settings', () => {
   it.each(RESERVED_ENVIRONMENT_SETTINGS)('rejects reserved %s', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow(`Reserved environment setting: ${key}`))
   it.each(['', 'x'.repeat(4097), "a'b", 'a\rb', 'a\nb', 'a\0b', undefined, 123, {}, []])('rejects unsafe value %j', value => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value }])).toThrow('Invalid value for VC_PUBLIC_URL'))
   it('rejects short administrator passwords', () => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(11) }])).toThrow('Invalid value for VC_ADMIN_PASSWORD'))
+  it('accepts a short public stand users password', () => {
+    expect(parseEnvironmentSettingsPatch([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])).toEqual([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])
+    expect(ENVIRONMENT_SETTINGS.find(item => item.key === 'VC_STAND_USERS_PASSWORD')).toMatchObject({ secret: false, required: false, generated: false })
+  })
   it('keeps catalog flags and reserved keys disjoint', () => {
-    expect(new Set(ENVIRONMENT_SETTINGS.map(item => item.key)).size).toBe(20)
+    expect(new Set(ENVIRONMENT_SETTINGS.map(item => item.key)).size).toBe(28)
+    expect(ENVIRONMENT_URL_SETTINGS.every(key => ENVIRONMENT_SETTINGS.some(item => item.key === key && !item.secret && !item.generated))).toBe(true)
     expect(ENVIRONMENT_SETTINGS.filter(item => item.required).map(item => item.key)).toEqual(['VC_ADMIN_PASSWORD'])
     expect(ENVIRONMENT_SETTINGS.filter(item => item.generated)).toHaveLength(8)
     expect(ENVIRONMENT_SETTINGS.filter(item => item.secret)).toHaveLength(12)

@@ -2,8 +2,8 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-08-02
-checked: 259877e
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - docs/kb
   - scripts/kb-search.mjs
@@ -24,6 +24,7 @@ protocols:
   - GET /api/kb/topics
   - GET /api/kb/search
   - GET /api/kb/context
+  - POST /api/kb/modules/reconcile
   - GET /api/kb/documents/:id
   - POST /api/kb/documents
   - DELETE /api/kb/documents/:id
@@ -50,6 +51,101 @@ related:
 
 # База знаний проекта
 
+## Repository modules
+
+`ModuleKnowledgeBaseService` indexes Core's `VC_KB_ROOT` (default `docs/kb`)
+as the reserved module `core`. Additional sources are an array in
+`$VC_DATA_DIR/kb-modules.json`. `VC_KB_MODULES`, when set, replaces that array
+with JSON from the environment; an empty array leaves only Core. Restart Core
+after changing the environment source list. Example:
+
+```json
+[{"id":"make","title":"Make","repository":"https://github.com/sislex/make.git","ref":"main","path":"docs/kb"}]
+```
+
+Without `VC_KB_MODULES`, Core reconciles the checked-out
+`docs/kb/modules.md` ownership table at startup and on admin-only
+`POST /api/kb/modules/reconcile`. The response is the current module list;
+registration starts indexing in the background, so registration success does
+not mean the remote repository has already been fetched. The strict parser
+accepts rows naming `<module>:README.md` at `docs/kb`, skips rows marked `нет`,
+and rejects malformed maps before changing registrations. Owner repositories
+use `https://github.com/<owner/repo>.git`, ref `main`, path `docs/kb`, and the
+first column's stable module ID. This registers `make`, `agent`,
+`playwright-reader`, `web-reader`, `kanban`, and `core-ui` without projects.
+Existing generated IDs for these same sources migrate to the owner ID;
+an occupied ID belonging to a different source fails reconciliation.
+
+The existing `kb.ensureModule` registration path recognizes
+`sislex/voiceAIChat` as built-in `core` (including HTTPS and Git SSH shorthand)
+and never registers another copy. Reconciliation removes old Core repository
+registrations and their indexed documents while preserving unrelated sources.
+Repeated and concurrent reconciliations are idempotent. When `VC_KB_MODULES`
+is present, reconciliation leaves its list untouched, including any existing
+duplicates; runtime registration restrictions remain in force.
+Startup reconciliation failures emit a sanitized warning and keep Core
+available; the admin route returns a sanitized 500 and can be retried after
+correcting the map or source conflict. Non-admin requests return 403.
+
+Module IDs are lowercase slugs and must be unique. Repositories use HTTPS
+without embedded credentials (absolute local repository paths support testing
+and local mirrors); docs paths must stay inside the checkout. Credentials come
+from the existing Git credential helper store (`git credential fill`) or the
+existing `VC_GITHUB_TOKEN` integration setting for `github.com`. The service
+passes credentials to Git in process environment configuration, never URL,
+command arguments, on-disk Git configuration, API responses or log messages.
+It does not create or modify credentials. Inbound project integration tokens
+are stored as hashes and are not Git hosting credentials.
+
+Each remote source has a shallow, sparse checkout under
+`$VC_DATA_DIR/kb-cache/<id>`. Startup triggers a refresh; subsequent checks run
+every ten minutes (`VC_KB_REFRESH_MS` overrides the interval). Git fetches the
+configured ref with depth one and requests blob filtering; sparse checkout
+materializes only the docs subtree. A changed SHA is fully parsed before its
+in-memory index replaces the previous generation. Unchanged SHAs retain the
+index timestamp. Concurrent refresh requests for one module share the same
+operation. A failed fetch or parse keeps the last successful in-memory index,
+SHA and timestamp, with `status: failed` and a constant sanitized `error`.
+Remote indexes are rebuilt at process startup; cached Git objects are reused.
+
+`GET /api/kb/modules` returns the module list, status, indexed SHA and Unix
+millisecond timestamp. `POST /api/kb/modules/:id/refresh` is admin-only and
+returns the resulting module state (404 for an unknown module). A failed
+refresh is represented by the returned state rather than raw Git diagnostics.
+
+File IDs are `<module>:<relative-path.md>`; `sourcePath` is relative to the
+source repository. Old unprefixed Core IDs, including frontmatter IDs and
+extensionless paths, continue to resolve. Database document IDs stay unchanged.
+Topics, search and context REST queries accept `module`; MCP `topics`, `search`
+and `document` accept the same optional filter. No filter searches all visible
+modules; an unknown module produces an empty result. File modules have the same
+public `usage` visibility as Core's existing files; `access.ts` is unchanged.
+The module filter narrows results and excludes unassociated database articles.
+
+Auto-context first tries the module matching the authorized current project's
+Git repository (or the repository explicitly supplied in the internal KB view).
+If it cannot produce useful context, it falls back to the normal visible search.
+SSH-style and HTTPS project URLs match the same configured repository.
+
+Implementation and operator commissioning are separate: deploying the code
+does not register production sources or provision tokens. Operators supply the
+source list and existing Git access, then verify module status after startup.
+
+Kanban registers repository knowledge bases through the Core RPC methods
+`kb.ensureModule({ repository, ref?, path?, title? })` (defaults `main`, `docs/kb`;
+returns the existing module when the same repository, ref and path is already
+registered), `kb.removeModule(id)` and `kb.modules()`. Registration validates
+the source like the file configuration, persists the list atomically to
+`<VC_DATA_DIR>/kb-modules.json` and starts indexing in the background. When
+`VC_KB_MODULES` is set, the list is managed by the environment and registration
+fails with `kb_modules_managed_by_env`; module `core` cannot be removed.
+
+The server image installs `git` for module fetches. Private repositories need
+`VC_GITHUB_TOKEN` (read access to the module repositories) in the Core environment;
+without it a module stays `failed` with `KB source fetch failed`. In production the value comes
+from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voicechat` service
+(before 0.1.413 only the `kanban` service received it, so private modules such as Make failed).
+
 ## Назначение
 
 База знаний быстро отвечает, как реализованы фичи voiceAIChat, где находятся ключевые символы и какие протоколы используются. Markdown в `docs/kb` остаётся единственным источником истины и проходит обычный Git review. UI работает только на чтение.
@@ -60,7 +156,7 @@ related:
 
 Знания разделены не по теме, а по видимости (`KbScope` в `packages/shared/src/kb.ts`):
 
-- **«Использование»** (`usage`) — как пользоваться ChatAI. Живёт в файлах `docs/kb/*.md`,
+- **«Использование»** (`usage`) — как пользоваться sislexa. Живёт в файлах `docs/kb/*.md`,
   одинаково для всех пользователей, правится коммитом в репозиторий.
 - **«Настройки пользователя»** (`user`) — персональные знания о настройках и
   предпочтениях. Строка в `kb_documents` с `owner_id`; видит только владелец.

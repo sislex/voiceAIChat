@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-05
-checked: 765b3a23
+updated: 2026-10-20
+checked: a19140220
 areas:
   - packages/shared/src
 ---
@@ -18,7 +18,61 @@ areas:
 
 ## Карта модулей
 
-### Sislexa operation and consumption contracts
+### Agent-facing stand gateway contract
+
+`devStand.ts` exports `DEV_GATEWAY_VERSION` (currently `1.0.0`),
+`DEV_GATEWAY_HEALTH_PATH` (`/__gateway/health`), `DevGatewayHealth` and
+`readDevGatewayManifest`. The stable Core CLI is
+`node --import tsx scripts/dev-gateway.mjs`; `--version` needs no stand setup.
+The gateway reader projects schema-1 routing fields, accepts opaque `gateway`
+metadata and warns about ignored future top-level fields. Component validation
+remains strict; the existing strict manifest validator is unchanged.
+Health reports the manifest stand ID and per-component HTTP reachability/status,
+not application readiness. See [deployment](deploy.md#dev-stand-gateway-and-core-component-c02)
+for environment inputs, reload behavior, probe semantics and operator commissioning.
+
+### One-command contract release
+
+From the Core checkout, run:
+
+```bash
+node scripts/contracts-release.mjs @voicechat/make-contracts --version 1.6.0 --source /assigned/make --commit <full-sha> --consumers make=/assigned/make-consumer,core-ui=/assigned/core-ui
+node scripts/contracts-release.mjs @voicechat/shared --version 0.1.27 --source /assigned/core-source --commit <full-sha>
+```
+
+The source must be clean, including untracked files. Owner contract versions must
+already match the committed workspace manifest. The command clones the source
+locally into a disposable detached checkout, installs locked owner build tools
+with scripts disabled when a lockfile exists, and runs `npm pack -w <package>`.
+Shared uses the selected commit's `build:core-contracts` script, which derives
+its peer baseline from that commit's lockfile. No source checkout is switched or
+version-bumped. The packed name and version are verified before Core is changed.
+
+Since 0.1.38 the Core-side peers of the packed Shared (Identity, SDK, Voice, agent,
+browser, image-studio and make contracts) are published as optional `"*"` ranges
+(`peerDependenciesMeta.optional`): services own other versions of these private
+packages and must never fetch them from the public registry. The exact Core
+versions stay in the archive's `release-source.json` (`corePeers`). Consumers that
+also depend on packages with exact Shared or component-runtime peers (chat-ui,
+Identity) add root overrides `"$<name>"` for `@voicechat/shared`,
+`@sislexa/component-runtime` and `@sislexa/agent-contracts`.
+
+Archives use a SHA-256 prefix of 12 characters in the asset name. Every tracked
+source `package.json` reference is updated to the relative vendor archive;
+existing peer references become exact version pins. The npm lockfile and both
+`dependency-snapshots.json` and `vendor/owner-artifacts.json` record the release,
+including SHA-256, SHA-512 integrity, full source commit and provenance.
+
+Consumers are explicit checkout paths, optionally `name=path`; bare names such
+as `make` resolve relative to Core's working directory. There is no sibling
+workspace discovery. Each consumer receives the same archive and pins, followed
+by lockfile resolution and a clean `npm ci --ignore-scripts --strict-peer-deps`.
+This replaces that consumer's `node_modules`. JSON result lines identify each
+consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
+prevent checking subsequent consumers; the overall exit status is nonzero.
+See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
+
+### sislexa operation and consumption contracts
 
 `platformOperation.ts` defines version 1 accounting context with immutable user ID,
 identity issuer, calling client, payer, environment, initiating module, project,
@@ -36,7 +90,7 @@ has a null percentage. The pure reducer is not a durable ledger or a spending
 authorization mechanism. Both contracts are exported by `index.ts`; production
 routes, account migration, and activity collection are not integrated yet.
 The implementation sequence is tracked in the
-[Sislexa platform plan](../plans/sislexa-modular-platform.md).
+[sislexa platform plan](../plans/sislexa-modular-platform.md).
 
 `billing.ts` adds bounded integer micro-USD limits, explicit unlimited (`null`)
 versus zero policy values, reservation lifecycle types and strict principal/policy
@@ -113,6 +167,41 @@ conversation history: `REST.conversation(id, { limit, before })`, `ConversationH
 0.1.22 (`voicechat-shared-0.1.22-2374d42bebbf.tgz`, contracts commit `22eb01a9`) adds knowledge base modules: `KbModule`, `REST.kbModules`, the `module` filter and `<module>:<path>` file topic ids, and the typed knowledge service RPC registry (kb-service-v1 B01).
 
 0.1.23 (`voicechat-shared-0.1.23-d6509beb7835.tgz`, contracts commit `765b3a23`) drops an unused `KbScope` import from `ipc.ts` so consumers compiling with `noUnusedLocals` accept the knowledge base module contracts.
+
+0.1.24 (`voicechat-shared-0.1.24-d1f695c1a28a.tgz`, contracts commit `6cb5a147`) adds dev stand contracts: `DEV_COMPONENT_REGISTRY`, `DevStandManifest`, dev build ids `<version>-dev.<sha12>` with `isDevBuildVersion`, dev stand REST and the agent `devProcess.*` RPC (dev-lane-v1 B01).
+
+0.1.25 (`voicechat-shared-0.1.25-b9fb6f8fdc76.tgz`, contracts commit `3444a1ba`) moves the agent contracts peer to 1.3.0 (agent 0.23.0 with the devProcess RPC, dev-lane-v1 C01).
+
+0.1.26 (`voicechat-shared-0.1.26-7117c54e28b6.tgz`, contracts commit `1cc31438`) moves the make-contracts peer to 1.4.0 (Make project mode port, make-project-mode-v1); Make cannot install make-contracts 1.4.0 next to Shared 0.1.25 and older.
+
+0.1.27 (`voicechat-shared-0.1.27-39a478888a3a.tgz`, contracts commit `6d302b4f`) adds subproject contracts (`parentProjectId`, `subprojectCount`, `REST.subprojects`, board `projects` filter, `displayColumnId`, `subprojectColumnFor`; board-subproject-view-v1 B01), multi-project integration tokens (`projectIds`; board-subprojects-v1 B01) and the `releases:automate` token scope, so the Kanban shared copy no longer diverges.
+
+0.1.28 (`voicechat-shared-0.1.28-28e9e61f4571.tgz`, contracts commit `f29f68ef`) makes the 0.1.27 additions optional (`parentProjectId`, `subprojectCount`, `Board.projects`, `IntegrationTokenView.projectIds`): consumers that compile shipped sources of older packages keep building.
+
+0.1.29 (`voicechat-shared-0.1.29-7d71eb7c0230.tgz`, contracts commit `3eb9ed21`) adds the conversation summary contract (`Conversation.summary`, `REST.conversationSummary`/`conversationSummaryRefresh`, chat-history-v1 B02), the bounded cold start helper (B01) and the `mcp-history` context toggle (B04).
+
+0.1.38 (`voicechat-shared-0.1.38-ca752c856bd8.tgz`, contracts commit `0a851f7b`) publishes the Core-side peers as optional `"*"` ranges (exact Core versions in `release-source.json` `corePeers`); no contract changes.
+
+0.1.39 (`voicechat-shared-0.1.39-7179e01e06f2.tgz`, contracts commit `de3dd79e`) adds the Core-issued ticket delegation to `EnterTicketRedeemResponse` (`delegation: { token, expiresAt }`, `isTicketDelegationToken`, `isEnterTicketRedeemResponse`; deployment-profiles-v1 B02). The matching `@sislexa/component-runtime` 1.2.0 (`sislexa-component-runtime-1.2.0-8639602851f7.tgz`, same commit, packed with the workspace version raised only in the archive) validates it in `redeem()` and makes `CoreDelegationClient` use it by default.
+
+0.1.40 (`voicechat-shared-0.1.40-ea2ec84dac0d.tgz`, contracts commit `5a097e76`) adds the shared-service RPC authority table and MCP token contract (`SHARED_SERVICE_RPC_ROUTES`, `authorizeSharedServiceRpc`, `APPLICATION_ASSISTANT_KIND`, `CORE_ID_HEADER`, `CoreMcpTokenClaims`, `TrustedCoreEntry.serviceCredentialRef`/`mcpSecretRef`; deployment-profiles-v2 B17). The matching `@sislexa/component-runtime` 1.3.0 (`sislexa-component-runtime-1.3.0-af19f57927ad.tgz`, same commit, version raised only in the archive) adds `signCoreMcpToken`, `verifyCoreMcpToken` and `authenticateCoreRequest`.
+
+0.1.41 (`voicechat-shared-0.1.41-f6fc0d800c71.tgz`, contracts commit `ce8eaefd`) lets a shared service act for the user of the turn it serves with the core MCP token (`MCP_TOKEN_HEADER_NAME` = `x-sislexa-mcp-token`), adds the `{ userArg, field }` authority, route `readMethods` and `SharedServiceCaller.readOnly`, the Web Reader methods `context`/`logBrowserEvidence`/`projectResource` and `/internal/playwright-reader/service`, and the read-only task `scope` claim (`CoreMcpTaskScope`, `isCoreMcpTaskScope`; deployment-profiles B21). The matching `@sislexa/component-runtime` 1.4.0 (`sislexa-component-runtime-1.4.0-906e79891542.tgz`, same commit, version raised only in the archive) signs and verifies the `scope` claim and adds `verifyCoreMcpTokenWithSecret`.
+The current component-runtime workspace is version 1.4.0, matching the published
+1.4.0 implementation: all eight source files are byte-identical to that archive.
+Earlier packaging raised the version only inside the archive and left the
+workspace at 1.0.1. That stale workspace label caused peer resolution failures
+when installing newer owners into Core. Historical published 1.0.1 lacks the
+shared-service and Core MCP token APIs; do not lower a consumer's minimum to
+1.0.1 merely because a newer Core checkout once retained that label. Validate
+both the published implementation and the normal consumer `npm ci` resolution.
+
+0.1.35 (`voicechat-shared-0.1.35-edd37b360ff4.tgz`, contracts commit `c0d0b635`) adds `OperatorAssistantModel` (run or custom model, `mcp_only` / `unrestricted` execution) with `normalizeOperatorAssistantModel`.
+0.1.34 (`voicechat-shared-0.1.34-c3ff9d49a8d4.tgz`, contracts commit `a8d66771`) adds the operator assistant contract: `OperatorAssistantMode`, `OperatorActionKind`, `OPERATOR_ACTIONS_BY_MODE`, `OperatorAssistantLimits` with defaults, ranges and `normalizeOperatorAssistantLimits`.
+0.1.33 (`voicechat-shared-0.1.33-eb9abc5a5763.tgz`, contracts commit `b33170a6`) widens the Identity peer range to `>=1.4.2 <1.6.0` for Identity 1.5.0 (API tokens); no contract changes.
+0.1.32 (`voicechat-shared-0.1.32-7a8e1732ddcf.tgz`, contracts commit `8cb7aaa1`) adds `qaStages`/`normalizeQaStages` (enabled QA stages of a project, default none), `executionEngine` (`board` | `worker`) on projects and tasks, and `integrations.ts` with the board cards snapshot and card actions contracts (`tasks:read`, `tasks:control`).
+0.1.31 (`voicechat-shared-0.1.31-cf6eccb367da.tgz`, contracts commit `bc0fafa2`) changes `MergeRun.targetBranch` from the literal `main` to `string`: merge runs store the project base branch (`ciBaseBranch`) as their target (SISL-736).
+0.1.30 (`voicechat-shared-0.1.30-2615fa58a0fc.tgz`, contracts commit `b0fb4b2f`) adds `ConversationContextUsage` (`Conversation.contextUsage`, thread fill of the latest turn with the model window table) and `REST.conversationThreadReset(id)` → `POST /api/conversations/:id/thread/reset` (chat-history-v2 B01).
 
 ### Existing modules
 
@@ -304,3 +393,18 @@ ReaderProjectRequest/Response и проверки адресов. readerProjectU
 path/query/hash. isReaderProjectPath исключает служебные RPC/MCP и рекурсию preview.
 Контракт ресурса содержит только method/path/headers/bodyBase64, адрес транспорта
 ему не передаётся. Он одинаков для встроенного Reader и отдельного процесса.
+
+## Workspace and published contract versions
+
+Core owns the Shared sources in `packages/shared`. The public-chat composition
+aligns the workspace manifest with published contract version 0.1.41; its release
+commit `ce8eaefd` is already an ancestor of this source. Identity's actual
+`>=0.1.38 <0.2.0` peer requirement is therefore satisfied without stale lock
+metadata. The older Chat UI and Chat App archives still declare exact 0.1.10
+peers; Core's root overrides select the current 0.1.41 workspace for these two
+consumers. Their integration remains covered by the complete Core gate.
+
+Owner archive pin replacement alone does not refresh dependencies or peers in
+an existing lock entry. Regenerate that entry from the new archive and verify a
+clean `npm ci` before accepting a composition. Never hide a peer mismatch with
+`--legacy-peer-deps`; align the owner declaration or the selected contract.

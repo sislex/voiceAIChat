@@ -6,13 +6,13 @@
   "providers": [
     {
       "name": "@sislexa/identity",
-      "version": "1.4.2",
-      "filename": "sislexa-identity-1.4.2.tgz",
-      "integrity": "sha512-iIUnTqlFORYjq/ClSmuNBoi70joyuE6kDmkvwp7jB/iKHn5Qe2PyAVTd3AZmTPekCKewagBOSizTwBXzgYK52Q==",
-      "sha256": "0207bffe45ba79eb7cbafa96d82662357d6a53423ff780c3e989a50f2e45274e",
+      "version": "1.5.2",
+      "filename": "sislexa-identity-1.5.2.tgz",
+      "integrity": "sha512-gigz+0vR9sSCAMysTk9Nf3+A3jGB6NOnJfS9Q2HmHl81Da7sfHo6N5YwziG1yFHJkmpr/cdI7rYk077I84oYNg==",
+      "sha256": "d3e0e16d58cd6a67421e4d26a1bc127f7a46faf33f7fbd41d215671b1a85a851",
       "repository": "https://github.com/sislex/identity",
-      "commit": "e33958be66c7a1f44b3cb4c6b4619f7c2fefe322",
-      "asset": "sislexa-identity-1.4.2-0207bffe45ba.tgz",
+      "commit": "b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e",
+      "asset": "sislexa-identity-1.5.2-d3e0e16d58cd.tgz",
       "producerTask": "A01",
       "interfaces": [
         "delegated principal introspection",
@@ -26,13 +26,13 @@
     },
     {
       "name": "@sislexa/billing",
-      "version": "1.2.2",
-      "filename": "sislexa-billing-1.2.2.tgz",
-      "integrity": "sha512-h/iWMDDAB1eRMrC0OlxnvB2lFf6vnOfobChZBxyULxFsSPZtg8c8qtv+TVW1I+8y9Ryf+RHStLyo/I2MtJgaUg==",
-      "sha256": "54901a743aaeb7f76cf4f9784b98f94b7acde6af7aba285bfa05ac2612fd4dcd",
+      "version": "1.2.4",
+      "filename": "sislexa-billing-1.2.4.tgz",
+      "integrity": "sha512-/EH8GdAkrCDC1LIh6Vam2LCB0O75Ol//+23Jm8vKtsl8pdQxpYuO1pTjQaB6TPPZSZ+IZ/b2rY6q1eqBxDBfUA==",
+      "sha256": "56b4cbab3a3327c146a58579d98f2688b7ea9da48ccf498df385ca4ebb25b250",
       "repository": "https://github.com/sislex/billing",
-      "commit": "41263c7c20f8e852b508bbd76220245fbb62bd10",
-      "asset": "sislexa-billing-1.2.2-54901a743aae.tgz",
+      "commit": "db6000b7a87cfb200bf7cc697dbafafde6a60171",
+      "asset": "sislexa-billing-1.2.4-56b4cbab3a33.tgz",
       "producerTask": "A02",
       "interfaces": [
         "trusted originApplicationId ledger attribution",
@@ -45,35 +45,37 @@
     },
     {
       "name": "@sislex/llm-runner",
-      "version": "0.3.5",
+      "version": "0.3.8",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a",
-      "asset": "sislex-llm-runner-0.3.5-1ccbdeb47b04.tgz",
-      "sha256": "4b68c1f1fa3c3c5842a13a753531db57655716eabd16b4cc94d6eac3912b5b82",
-      "integrity": "sha512-p1VMCISOOkZ14yIRuaJNVg6ZpqJw+LuOHORjQXOMVrbYGgVbqyouCTcCdT/C9pjhqNr9or9HnNAMi9vvgY/uxw==",
+      "commit": "edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4",
+      "asset": "sislex-llm-runner-0.3.8-a1063160bde1.tgz",
+      "sha256": "a1063160bde1e3c85ba477cf2c04b7c68b1811f16a7bd6ab5e8b5cb605f41fb2",
+      "integrity": "sha512-6HVINieKISkicZcJOjHVt1J7tvTJxFEB9IWZTtgLnynNYOVgPMLeR7bu3JGEpkQ6KBb4i7sIKnRV7EKKDPFY6g==",
       "producerTask": "A03",
       "interfaces": [
         "verified application attribution in claims and receipts"
       ],
       "consumers": [
         "A04"
-      ]
+      ],
+      "filename": "sislex-llm-runner-0.3.8.tgz"
     },
     {
       "name": "@sislex/runner-contracts",
-      "version": "0.1.1",
+      "version": "0.1.3",
       "repository": "https://github.com/sislex/llm-runner",
-      "commit": "1ccbdeb47b0419730e5b460c0e6610bf73fef29a",
-      "asset": "sislex-runner-contracts-0.1.1-1ccbdeb47b04.tgz",
-      "sha256": "0f20107ecc3e893668c7927a0a0ac36f05b5b0653b8b73f3d8a114f2d996fb7c",
-      "integrity": "sha512-z60fc41JzN4xaGHF2t8SrVCnXd0UFX+km8Wr/c9mZ7fDHIPB7QoIDBFeVe17uL4sVtgutrVSzyBJcm5CyOSWhA==",
+      "commit": "edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4",
+      "asset": "sislex-runner-contracts-0.1.3-5b7a9498cd40.tgz",
+      "sha256": "5b7a9498cd40af8ac0e412bf6d22cd8854236fd5ce42476c97f5d28a5bfec841",
+      "integrity": "sha512-HTHa0KKbRJ28Hn6WCkS3JgK8EFY6WgZyfoNnDsDW5HKDbzw380l5GWKxNT6aewYyuY71AuQ5EDoeDRTEUuxFXA==",
       "producerTask": "A03",
       "interfaces": [
         "runner attribution receipt contract"
       ],
       "consumers": [
         "A04"
-      ]
+      ],
+      "filename": "sislex-runner-contracts-0.1.3.tgz"
     }
   ]
 }

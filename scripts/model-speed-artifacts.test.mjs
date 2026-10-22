@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { archiveFiles, root } from './shared-chat-artifacts.mjs'
+import { ensureVendorArchive } from './vendor-store.mjs'
 
 const snapshot = JSON.parse(readFileSync(join(root, 'dependency-snapshots.json'), 'utf8'))
 const ownerSnapshot = JSON.parse(readFileSync(join(root, 'vendor/owner-artifacts.json'), 'utf8'))
@@ -10,7 +11,7 @@ const ownerSnapshot = JSON.parse(readFileSync(join(root, 'vendor/owner-artifacts
 async function packageText(name) {
   const row = snapshot.packages.find(item => item.name === name)
   assert(row, `Missing ${name} artifact`)
-  const files = await archiveFiles(readFileSync(join(root, 'vendor', row.asset)))
+  const files = await archiveFiles(await ensureVendorArchive(root, row.asset, { sha256: row.sha256, integrity: row.integrity }))
   return [...files.entries()]
     .filter(([path]) => /\.(?:js|css|d\.ts)$/.test(path))
     .map(([, bytes]) => bytes.toString('utf8'))
@@ -67,7 +68,7 @@ test('public chat artifacts do not expose the removed prompt assistant', async (
 test('runner artifact contains capability-safe reasoning mappings', async () => {
   const row = ownerSnapshot.packages.find(item => item.name === '@sislex/llm-runner')
   assert(row)
-  const files = await archiveFiles(readFileSync(join(root, 'vendor', row.asset)))
+  const files = await archiveFiles(await ensureVendorArchive(root, row.asset, { sha256: row.sha256, integrity: row.integrity }))
   const text = [...files.entries()]
     .filter(([path]) => path.endsWith('.ts'))
     .map(([, bytes]) => bytes.toString('utf8'))

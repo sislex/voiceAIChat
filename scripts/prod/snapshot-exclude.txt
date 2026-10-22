@@ -3,6 +3,7 @@ conversation_turn_control
 conversation_turn_queue
 email_verifications
 environment_settings
+identity_sign_in_tickets
 integration_tokens
 login_device_emails
 login_enrollments

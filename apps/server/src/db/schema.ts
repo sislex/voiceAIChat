@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS conversations (
   cost_prices_stamp INTEGER,
   cost_dirty        INTEGER NOT NULL DEFAULT 1,
   permission_mode TEXT,
-  archived_at INTEGER
+  archived_at INTEGER,
+  summary_text TEXT,
+  summary_covers_message_id TEXT,
+  summary_updated_at INTEGER,
+  context_usage_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS conversation_groups (
@@ -500,6 +504,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS integration_tokens (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  project_ids TEXT NOT NULL DEFAULT '[]',
   name TEXT NOT NULL,
   scopes TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,

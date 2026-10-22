@@ -10,7 +10,7 @@
 // раньше, ловит 504 от прокси (у моста агента таймаут 10 с). Проба заодно прогревает
 // сервер, чтобы первая загрузка кадра не упиралась в этот таймаут.
 
-import { PROJECT_STORYBOOK_DEFAULT_COMMAND, PROJECT_STORYBOOK_DEFAULT_PORT, type ProjectStorybookSession, type ProjectStorybookState } from '@voicechat/shared'
+import { PROJECT_STORYBOOK_DEFAULT_COMMAND, PROJECT_STORYBOOK_DEFAULT_PORT, type ProjectStorybookErrorCode, type ProjectStorybookSession, type ProjectStorybookState } from '@voicechat/shared'
 import { type AgentHttpRequest, type AgentHttpResponse } from '@sislexa/agent-contracts'
 
 export interface StorybookRegistry {
@@ -25,6 +25,10 @@ export interface StorybookRegistry {
 
 export interface StorybookSessionsDeps {
   registry: StorybookRegistry
+  settings?: {
+    getAppConfig(key: string): Promise<string | null>
+    setAppConfig(key: string, value: string): Promise<void>
+  }
   now?: () => number
   /** Пауза между пробами готовности; в тестах — короткая. */
   probeIntervalMs?: number
@@ -51,12 +55,22 @@ interface Session {
   startedAt: number | null
   readyAt: number | null
   error: string | null
+  errorCode: ProjectStorybookErrorCode | null
   log: string
   probeTimer: ReturnType<typeof setTimeout> | null
   /** Строка-сентинел завершения команды: по ней виден выход процесса в живом shell. */
   exitRe: RegExp
   /** Процесс запущен не нами: подхвачен по отвечающему порту. */
   adopted: boolean
+  restoring?: boolean
+}
+
+interface SessionIntent {
+  agentId: string
+  workspaceId: string
+  path: string
+  command: string
+  port: number
 }
 
 /** Экранные последовательности в логе бесполезны: панель показывает текст, а не терминал. */
@@ -71,12 +85,58 @@ export function stripAnsi(text: string): string {
  * каталог меняется в настройках машины, и без пути панель показывала бы индекс
  * прежнего репозитория как свой.
  */
+/** Port conflicts printed by Storybook, Vite or Node when the chosen port is taken. */
+const PORT_BUSY_RE = /EADDRINUSE|port \d+ is (?:already in use|not available)/i
+
+/** Error with an HTTP status and a stable code; the components routes pass both through. */
+function codedError(statusCode: number, code: string, message: string): Error {
+  return Object.assign(new Error(message), { statusCode, code })
+}
+
 const keyOf = (agentId: string, workspaceId: string, path: string): string => `${agentId}::${workspaceId}::${path}`
 
 export class StorybookSessions {
   private readonly sessions = new Map<string, Session>()
 
-  constructor(private readonly deps: StorybookSessionsDeps) {}
+  private readonly intents = new Map<string, SessionIntent>()
+  private readonly attempted = new Set<string>()
+  private readonly restoreErrors = new Map<string, string>()
+  private readonly ready: Promise<void>
+  private pending: Promise<unknown> = Promise.resolve()
+
+  constructor(private readonly deps: StorybookSessionsDeps) {
+    this.ready = this.loadIntents()
+    void this.ready.catch(() => {})
+  }
+
+  private async loadIntents(): Promise<void> {
+    const raw = await this.deps.settings?.getAppConfig('storybook.sessions')
+    if (!raw) return
+    const intents: unknown = JSON.parse(raw)
+    if (!Array.isArray(intents)) throw new Error('Invalid Storybook session intents')
+    for (const intent of intents) {
+      if (!intent || typeof intent.agentId !== 'string' || typeof intent.workspaceId !== 'string'
+        || typeof intent.path !== 'string' || typeof intent.command !== 'string'
+        || !Number.isInteger(intent.port) || intent.port < 1 || intent.port > 65535) continue
+      this.intents.set(keyOf(intent.agentId, intent.workspaceId, intent.path), intent)
+    }
+  }
+
+  // Serialize persistence and lifecycle operations, including concurrent refresh requests.
+  private run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.pending.then(() => this.ready).then(operation)
+    this.pending = result.catch(() => {})
+    return result
+  }
+
+  private async saveIntents(): Promise<void> {
+    await this.deps.settings?.setAppConfig('storybook.sessions', JSON.stringify([...this.intents.values()]))
+  }
+
+  private async remember(intent: SessionIntent): Promise<void> {
+    this.intents.set(keyOf(intent.agentId, intent.workspaceId, intent.path), intent)
+    await this.saveIntents()
+  }
 
   private now(): number {
     return this.deps.now?.() ?? Date.now()
@@ -94,7 +154,8 @@ export class StorybookSessions {
       command: session?.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND,
       startedAt: session?.startedAt ?? null,
       readyAt: session?.readyAt ?? null,
-      error: session?.error ?? null,
+      error: session?.error ?? this.restoreErrors.get(keyOf(agentId, workspaceId, path)) ?? null,
+      errorCode: session?.errorCode ?? null,
       log: session?.log ?? '',
       adopted: session?.adopted ?? false
     }
@@ -105,41 +166,51 @@ export class StorybookSessions {
     const used = new Set([...this.sessions.values()].filter((s) => s.agentId === agentId && s.state !== 'stopped').map((s) => s.port))
     if (requested && requested >= 1 && requested <= 65_535 && !used.has(requested)) return requested
     for (let port = PORT_FROM; port <= PORT_TO; port++) if (!used.has(port)) return port
-    return PORT_FROM
+    throw codedError(409, 'storybook_no_free_port', `Все порты Storybook ${PORT_FROM}–${PORT_TO} на машине заняты`)
   }
 
   async start(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }): Promise<ProjectStorybookSession> {
+    return this.run(() => {
+      // A manual start supersedes any pending recovery for this process.
+      this.attempted.add(keyOf(input.agentId, input.workspaceId, input.path))
+      return this.startSession(input)
+    })
+  }
+
+  private async startSession(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }, restoring = false): Promise<ProjectStorybookSession> {
     const key = keyOf(input.agentId, input.workspaceId, input.path)
+    this.restoreErrors.delete(key)
     const existing = this.sessions.get(key)
     if (existing && existing.state !== 'stopped' && existing.state !== 'failed' && this.deps.registry.ptyLive(existing.ptyId)) {
       return this.snapshot(input.agentId, input.workspaceId, input.path)
     }
     if (existing) this.stopSession(existing)
     if (!this.deps.registry.isOnline(input.agentId)) {
-      throw new Error('Машина не в сети — Storybook запускать негде')
+      throw codedError(409, 'machine_offline', 'Машина не в сети — Storybook запускать негде')
     }
     // Порт уже отвечает — значит Storybook подняли руками или он пережил перезапуск
-    // сервера (сессии живут в памяти). Второй процесс на том же порту всё равно не
+    // сервера. Второй процесс на том же порту всё равно не
     // встал бы, поэтому подключаемся к существующему, а не плодим сироту.
     const adoptPort = input.port ?? PORT_FROM
-    // Подхватываем только когда своих сессий на машине нет: иначе занятый порт — наш
-    // же Storybook соседней копии, и «подключиться» к нему значило бы показать чужие
-    // компоненты вместо запуска своего.
-    const ownsMachine = [...this.sessions.values()].some((s) => s.agentId === input.agentId && s.state !== 'stopped')
+    // Recovery knows the saved port; manual discovery must not adopt another workspace.
+    const ownsMachine = [...this.sessions.values()].some((s) => s.agentId === input.agentId && s.state !== 'stopped' && (!restoring || s.port === adoptPort))
     if (!ownsMachine && await this.storybookAnswers(input.agentId, adoptPort)) {
       const adopted: Session = {
         workspaceId: input.workspaceId, agentId: input.agentId, path: input.path,
         ptyId: `storybook:${input.workspaceId}`, port: adoptPort,
         command: (input.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND).trim(),
-        state: 'running', startedAt: this.now(), readyAt: this.now(), error: null,
+        state: 'running', startedAt: this.now(), readyAt: this.now(), error: null, errorCode: null,
         log: `На порту ${adoptPort} уже отвечает Storybook — панель подключилась к нему.\n`,
         probeTimer: null, exitRe: /$^/, adopted: true
       }
       this.sessions.set(key, adopted)
+      await this.remember({ ...input, command: adopted.command, port: adoptPort })
       return this.snapshot(input.agentId, input.workspaceId, input.path)
     }
     const port = this.pickPort(input.agentId, input.port)
-    const command = `${(input.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND).trim()} --port ${port} --no-open --ci`
+    const baseCommand = (input.command ?? PROJECT_STORYBOOK_DEFAULT_COMMAND).trim()
+    const needsSeparator = /^(?:npm\s+(?:run|exec)\b|npx\s)/.test(baseCommand) && !/\s--(?:\s|$)/.test(baseCommand)
+    const command = `${baseCommand}${needsSeparator ? ' --' : ''} --port ${port} --no-open --ci`
     // Команда идёт в живой shell, и его выход `pty.exit` не наступает, когда падает
     // только она: без сентинела «npm error Missing script» выглядел бы как бесконечная
     // сборка. Приём тот же, что в console_run: `%d` в эхе ввода под `(\d+)` не подходит,
@@ -156,45 +227,68 @@ export class StorybookSessions {
       startedAt: this.now(),
       readyAt: null,
       error: null,
+      errorCode: null,
       log: '',
       probeTimer: null,
       exitRe: new RegExp(`${sentinel}(\\d+)__`),
-      adopted: false
+      adopted: false,
+      restoring
     }
     this.sessions.set(key, session)
     this.deps.registry.ptyStart(input.agentId, session.ptyId, 160, 48, input.path, (event) => {
       if (event.t === 'pty.output' && typeof event.data === 'string') this.appendLog(session, event.data)
-      if (event.t === 'pty.error') this.fail(session, event.message ?? 'Сеанс терминала прервался')
+      if (event.t === 'pty.error') this.fail(session, event.message ?? 'Сеанс терминала прервался', 'pty_error')
       if (event.t === 'pty.exit') {
         // Выход процесса до готовности — это отказ; после готовности — обычная остановка.
-        if (session.state === 'starting') this.fail(session, 'Storybook завершился, не успев собраться — смотрите лог')
+        if (session.state === 'starting') this.fail(session, 'Storybook завершился, не успев собраться — смотрите лог', 'storybook_exited_before_ready')
         else this.markStopped(session)
       }
     })
     this.deps.registry.ptyInput(session.ptyId, `${command} ; printf '\\n${sentinel}%d__\\n' $?\r`)
     this.scheduleProbe(session)
+    await this.remember({ ...input, command: baseCommand, port })
     return this.snapshot(input.agentId, input.workspaceId, input.path)
   }
 
-  stop(agentId: string, workspaceId: string, path: string): ProjectStorybookSession {
-    const session = this.sessions.get(keyOf(agentId, workspaceId, path))
-    if (session) this.stopSession(session)
-    return this.snapshot(agentId, workspaceId, path)
+  async stop(agentId: string, workspaceId: string, path: string): Promise<ProjectStorybookSession> {
+    return this.run(async () => {
+      const key = keyOf(agentId, workspaceId, path)
+      this.intents.delete(key)
+      await this.saveIntents()
+      this.restoreErrors.delete(key)
+      const session = this.sessions.get(key)
+      if (session) this.stopSession(session)
+      return this.snapshot(agentId, workspaceId, path)
+    })
   }
 
   async restart(input: { agentId: string; workspaceId: string; path: string; command?: string; port?: number }): Promise<ProjectStorybookSession> {
-    this.stop(input.agentId, input.workspaceId, input.path)
+    await this.stop(input.agentId, input.workspaceId, input.path)
     return await this.start(input)
   }
 
   /** Живая проверка: панель опрашивает состояние, пока идёт сборка. */
   async refresh(agentId: string, workspaceId: string, path: string, adoptPort: number = PORT_FROM): Promise<ProjectStorybookSession> {
-    const session = this.sessions.get(keyOf(agentId, workspaceId, path))
-    if (session && session.state !== 'stopped' && !session.adopted && !this.deps.registry.ptyLive(session.ptyId)) {
-      this.markStopped(session)
-    }
-    void adoptPort
-    return this.snapshot(agentId, workspaceId, path)
+    return this.run(async () => {
+      const key = keyOf(agentId, workspaceId, path)
+      const session = this.sessions.get(key)
+      if (session && session.state !== 'stopped' && !session.adopted && !this.deps.registry.ptyLive(session.ptyId)) {
+        this.markStopped(session)
+      }
+      const intent = this.intents.get(key)
+      if (intent && (!session || session.state === 'stopped' || session.state === 'failed')
+        && !this.attempted.has(key) && this.deps.registry.isOnline(agentId)) {
+        this.attempted.add(key)
+        try {
+          return await this.startSession(intent, true)
+        } catch (error) {
+          const failed = this.sessions.get(key)
+          if (failed) this.stopSession(failed)
+          this.restoreErrors.set(key, error instanceof Error ? error.message : String(error))
+        }
+      }
+      return this.snapshot(agentId, workspaceId, path, adoptPort)
+    })
   }
 
   /** Индекс живого Storybook: он же список компонентов с настоящими id стори. */
@@ -229,15 +323,19 @@ export class StorybookSessions {
     if (session.state === 'starting') {
       this.fail(session, exit[1] === '0'
         ? 'Команда запуска завершилась, не подняв Storybook — смотрите лог'
-        : `Команда запуска завершилась с кодом ${exit[1]} — смотрите лог`)
+        : `Команда запуска завершилась с кодом ${exit[1]} — смотрите лог`,
+      exit[1] === '0' ? 'storybook_exited_before_ready' : 'storybook_exit_nonzero')
     } else if (session.state === 'running') {
       this.markStopped(session)
     }
   }
 
-  private fail(session: Session, message: string): void {
-    session.state = 'failed'
-    session.error = message
+  private fail(session: Session, message: string, code: ProjectStorybookErrorCode): void {
+    // A taken port explains any later exit better than the exit itself.
+    const portBusy = code !== 'pty_error' && PORT_BUSY_RE.test(session.log)
+    session.state = session.restoring ? 'stopped' : 'failed'
+    session.error = portBusy ? `Порт ${session.port} занят другим процессом — выберите другой порт` : message
+    session.errorCode = portBusy ? 'storybook_port_busy' : code
     session.readyAt = null
     if (session.probeTimer) clearTimeout(session.probeTimer)
     session.probeTimer = null
@@ -295,7 +393,7 @@ export class StorybookSessions {
       session.probeTimer = null
       if (session.state !== 'starting') return
       if (!this.deps.registry.ptyLive(session.ptyId)) {
-        this.fail(session, 'Сеанс с Storybook закрыт — процесс не запустился')
+        this.fail(session, 'Сеанс с Storybook закрыт — процесс не запустился', 'pty_error')
         return
       }
       const response = await this.request(session, '/index.json')
@@ -304,10 +402,11 @@ export class StorybookSessions {
         session.state = 'running'
         session.readyAt = this.now()
         session.error = null
+        session.errorCode = null
         return
       }
       if (session.startedAt !== null && this.now() - session.startedAt > timeout) {
-        this.fail(session, 'Storybook не ответил за отведённое время — смотрите лог запуска')
+        this.fail(session, 'Storybook не ответил за отведённое время — смотрите лог запуска', 'storybook_ready_timeout')
         return
       }
       session.probeTimer = setTimeout(() => { void tick() }, interval)

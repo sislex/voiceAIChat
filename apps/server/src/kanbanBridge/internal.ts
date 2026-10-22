@@ -3,7 +3,7 @@ import { vpnMachineView } from '../machines/vpn/telemetry.js'
 // локальной реализацией `KanbanCore` и снимок машин из реестра для зеркала канбана.
 import type { WidgetSurfaceSnapshot } from '@voicechat/shared'
 import type { AgentPolicy, AgentTelemetry } from '@sislexa/agent-contracts'
-import { RpcError, type RpcRequest } from '@voicechat/shared'
+import { DEV_PROCESS_REQUEST_TYPES, RpcError, type RpcRequest } from '@voicechat/shared'
 import type { KanbanCore } from '../kanban/core.js'
 import { KANBAN_CORE_RPC_METHODS, type KanbanCoreRpcMethod, type MachineSnapshot } from '../kanban/internal.js'
 
@@ -36,6 +36,11 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
       case 'machines.fsDelete': return core.machines.fsDelete(a[0], a[1])
       case 'machines.fsRename': return core.machines.fsRename(a[0], a[1], a[2])
       case 'machines.gitAccess': return core.machines.gitAccess(a[0], a[1])
+      case 'machines.devProcess': {
+        // Only registered dev-process methods (start/stop/status/logs/stopStand) reach the agent.
+        if (!(DEV_PROCESS_REQUEST_TYPES as readonly unknown[]).includes(a[1])) throw new RpcError(400, `unknown dev process method ${String(a[1])}`)
+        return core.machines.devProcess(a[0], a[1], a[2])
+      }
       case 'machines.createTunnel': {
         const id = a[0] as string
         return core.machines.createTunnel(id, a[1], a[2], a[3], () => deps.tunnels.authorize(id), () => deps.tunnels.closed(id))
@@ -47,6 +52,9 @@ export function createKanbanCoreRpcDispatcher(deps: KanbanCoreRpcDeps): (req: Rp
       case 'kb.document': return core.kb.document(a[0], a[1])
       case 'kb.search': return core.kb.search(a[0], a[1])
       case 'kb.context': return core.kb.context(a[0], a[1], a[2])
+      case 'kb.modules': return core.kbModules.modules()
+      case 'kb.ensureModule': return core.kbModules.ensureModule(a[0])
+      case 'kb.removeModule': return core.kbModules.removeModule(a[0])
       case 'uploads.get': return (await core.uploads.get(a[0])) ?? null
       case 'uploads.read': { const bytes = await core.uploads.read(a[0]); return bytes ? bytes.toString('base64') : null }
       case 'widgets.surface': return (await core.widgets.contexts.surface(a[0])) ?? null

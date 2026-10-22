@@ -9,6 +9,7 @@ export class LocalImageStudioCore implements ImageStudioCore {
   constructor(private readonly opts: {
     db: VoiceChatDb
     client: LlmClient
+    generationEnabled?: boolean
     generationCwd?(userId: string): string
     readGenerated(userId: string, path: string): Promise<{ dataBase64: string } | null>
   }) {}
@@ -20,6 +21,7 @@ export class LocalImageStudioCore implements ImageStudioCore {
   readGenerated(userId: string, path: string) { return this.opts.readGenerated(userId, path) }
 
   async generate(userId: string, input: ImageStudioGeneration): Promise<Buffer> {
+    if (this.opts.generationEnabled === false) throw new RpcError(503, 'auxiliary_model_disabled')
     if (!await userHasCapability(this.opts.db, userId, 'image-studio.use')) throw new RpcError(403, TARIFF_DENIED)
     let cancelled = false
     let cancel = () => {}

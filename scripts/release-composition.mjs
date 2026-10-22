@@ -9,12 +9,15 @@
 // владельца: `vendor/*.tgz`, три манифеста архивов, `package.json`/`package-lock.json`,
 // `deploy/tools.lock.json` и образы в compose. Результат — чистая замена закреплений: регрессия
 // релиза узнаёт её (`scripts/owner-pins.mjs`) и идёт суженным планом.
-import { existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, copyFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { RELEASE_MANIFEST_ASSET, parsePublishedApplicationRelease } from '../packages/shared/src/releaseComposition.ts'
 import { archiveDigests, rowCommit, rowRepository } from './owner-release-publish.mjs'
+import { assertReleaseVersions } from './release-version.mjs'
+import { analyzeVendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
+import { ghVendorPublisher, publishVendorArchives } from './vendor-store.mjs'
 
 const MANIFESTS = ['vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'dependency-snapshots.json']
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'))
@@ -38,10 +41,12 @@ function packageJsonFiles(core) {
 /** Закреплённые выпуски по репозиториям: версия и коммит — у инструмента или первого пакета. */
 export function currentComposition(core) {
   const toolsLock = readJson(join(core, 'deploy/tools.lock.json'))
+  assertReleaseVersions(toolsLock, 'Current release tools')
   const byRepository = new Map()
   for (const file of MANIFESTS) {
     if (!existsSync(join(core, file))) continue
     for (const row of readJson(join(core, file)).packages) {
+      assertReleaseVersions(row, `Current release ${file}`)
       const repository = rowRepository(row)
       if (!repository) continue
       const entry = byRepository.get(repository) ?? { repository, packages: new Map() }
@@ -60,9 +65,11 @@ export function currentComposition(core) {
 
 /** Проверка архива против манифеста и содержимого: имя, версия и коммит внутри пакета. */
 export function verifyArchive(bytes, pkg, commit, inspect = inspectArchive) {
+  assertReleaseVersions(pkg, 'Release archive')
   const digests = archiveDigests(bytes)
   if (digests.size !== pkg.size || digests.sha256 !== pkg.sha256 || digests.integrity !== pkg.integrity) throw new Error(`${pkg.asset}: байты не совпадают с манифестом`)
   const inside = inspect(bytes)
+  assertReleaseVersions(inside, 'Release archive contents')
   if (inside.name !== pkg.name || inside.version !== pkg.version) throw new Error(`${pkg.asset}: внутри ${inside.name}@${inside.version}, ожидался ${pkg.name}@${pkg.version}`)
   if (inside.commit && inside.commit !== commit) throw new Error(`${pkg.asset}: собран из ${inside.commit}, выпуск — ${commit}`)
 }
@@ -81,6 +88,7 @@ const imagePattern = (name) => new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g,
 
 /** Всё, что может отказать, проверяется до первой записи: чекаут не остаётся наполовину переписанным. */
 export function checkRelease(core, manifest, dir, { inspect = inspectArchive } = {}) {
+  assertReleaseVersions(manifest, 'Release composition')
   const rows = MANIFESTS.filter((file) => existsSync(join(core, file))).flatMap((file) => readJson(join(core, file)).packages.map((row) => ({ file, row })))
   for (const pkg of manifest.packages) {
     verifyArchive(readFileSync(join(dir, pkg.asset)), pkg, manifest.commit, inspect)
@@ -101,6 +109,8 @@ export function checkRelease(core, manifest, dir, { inspect = inspectArchive } =
 
 /** Закрепить один проверенный выпуск; файлы архивов лежат в `dir`. Возвращает, что поменялось. */
 export function applyRelease(core, manifest, dir) {
+  assertReleaseVersions(manifest, 'Release composition')
+  const candidates = analyzeVendorArchives(core).archives.map(row => row.file)
   const changes = []
   for (const pkg of manifest.packages) {
     let previous = null
@@ -147,7 +157,6 @@ export function applyRelease(core, manifest, dir) {
       }
       writeJson(lockPath, lock)
     }
-    if (previous.asset !== pkg.asset && !stillReferenced(core, previous.asset)) rmSync(join(core, 'vendor', previous.asset), { force: true })
     changes.push({ package: pkg.name, from: previous.version, to: pkg.version })
   }
   const toolsPath = join(core, 'deploy/tools.lock.json')
@@ -166,17 +175,18 @@ export function applyRelease(core, manifest, dir) {
       if (next !== text) writeFileSync(path, next)
     }
   }
+  removeUnusedVendorArchives(core, candidates)
   return { repository: manifest.repository, version: manifest.version, commit: manifest.commit, packages: changes, tools: manifest.tools, images: manifest.images.map((image) => image.name) }
-}
-
-function stillReferenced(core, asset) {
-  return MANIFESTS.some((file) => existsSync(join(core, file)) && readFileSync(join(core, file), 'utf8').includes(`"${asset}"`))
 }
 
 /** Все выпуски из каталога: по подкаталогу на выпуск. Один репозиторий — один выпуск. */
 export function applyComposition(core, dir, options) {
   const releases = readdirSync(dir).filter((name) => statSync(join(dir, name)).isDirectory() && existsSync(join(dir, name, RELEASE_MANIFEST_ASSET)))
-    .map((name) => ({ dir: join(dir, name), manifest: parsePublishedApplicationRelease(readJson(join(dir, name, RELEASE_MANIFEST_ASSET))) }))
+    .map((name) => {
+      const raw = readJson(join(dir, name, RELEASE_MANIFEST_ASSET))
+      assertReleaseVersions(raw, 'Release composition')
+      return { dir: join(dir, name), manifest: parsePublishedApplicationRelease(raw) }
+    })
   if (!releases.length) throw new Error(`В ${dir} нет ни одного ${RELEASE_MANIFEST_ASSET}`)
   const repositories = new Set()
   for (const { manifest } of releases) {
@@ -187,16 +197,21 @@ export function applyComposition(core, dir, options) {
   return releases.map(({ dir: releaseDir, manifest }) => applyRelease(core, manifest, releaseDir))
 }
 
-export function main(args = process.argv.slice(2), core = resolve(import.meta.dirname, '..')) {
+export function main(args = process.argv.slice(2), core = resolve(import.meta.dirname, '..'), publisher = args.includes('--publish') ? ghVendorPublisher() : null) {
   const command = args[0]
   if (command === 'current') { console.log(JSON.stringify(currentComposition(core))); return }
   if (command === 'apply') {
     const index = args.indexOf('--dir')
     if (index < 0) throw new Error('Нужен --dir <каталог с выпусками>')
-    console.log(JSON.stringify(applyComposition(core, resolve(args[index + 1]))))
+    const result = applyComposition(core, resolve(args[index + 1]))
+    // Archives are not committed: new pins must exist in the `vendor` release before `npm ci` can install them.
+    // Uploading is an explicit opt-in (`--publish`); without it the operator runs `npm run vendor:publish`.
+    if (args.includes('--publish')) publishVendorArchives(core, publisher)
+    else console.error('vendor: новые архивы не загружены в релиз vendor — запустите apply с --publish или npm run vendor:publish')
+    console.log(JSON.stringify(result))
     return
   }
-  throw new Error('Команды: current | apply --dir <каталог>')
+  throw new Error('Команды: current | apply --dir <каталог> [--publish]')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

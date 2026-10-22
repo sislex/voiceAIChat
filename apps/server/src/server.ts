@@ -1,11 +1,16 @@
+import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
+import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
+import { standProxyKanban } from './standProxyKanban.js'
+import { StandProxy, proxyPorts, registerStandProxy } from './standProxy.js'
 import { clientEvent } from './serviceData.js'
 import { Maintenance } from './maintenance.js'
 import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
+import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
-import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS } from '@voicechat/shared'
+import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, APPLICATION_ASSISTANT_KIND, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
 import { createDelegationIntrospectionClient } from '@sislexa/identity/client/delegation'
 import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/index'
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
@@ -31,7 +36,7 @@ import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
@@ -41,6 +46,7 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
+import { createConversationSummaryService, type ConversationSummaryService } from './conversationSummary.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
@@ -81,6 +87,8 @@ import { SessionHub } from "@sislexa/identity/server/users/sessionHub"
  * имён по схеме в `users/auth.ts`), по http — `vc_session`. Защищённое имя
  * приоритетнее: если в браузере лежат оба, актуально то, что поставил https.
  */
+const sameSecret = (value: string | undefined, expected: string) =>
+  timingSafeEqual(createHash('sha256').update(value ?? '').digest(), createHash('sha256').update(expected).digest())
 function cookieToken(header: string | undefined): string | undefined {
   if (!header) return undefined
   let plain: string | undefined
@@ -112,6 +120,7 @@ import { WidgetUiRelay } from './mcp/widgetUiRelay.js'
 
 import { createOfflineKanban } from './kanbanBridge/offline.js'
 import { createLocalKanbanCore } from './kanbanBridge/localCore.js'
+import type { KanbanCore } from './kanban/core.js'
 import { createRemoteKanban } from './kanbanBridge/remote.js'
 import { KANBAN_MCP_PATH, registerKanbanProxy } from './kanbanBridge/proxy.js'
 import { machinesSnapshot } from './kanbanBridge/internal.js'
@@ -119,7 +128,14 @@ import type { KanbanService } from './kanban/service.js'
 import { UserFrameHub } from './frameHub.js'
 import { createMakeModule, MAKE_MCP_PATH, type MakeHub, type MakeService } from '@sislexa/make'
 import { LocalMakeCore } from './makeBridge/localCore.js'
+import { MakeProjectAdapters, projectModeError } from './makeBridge/projectAdapters.js'
+import { StandDeliveries } from './makeBridge/standDeliveries.js'
+import { StandDeliveryCoordinator, type StandDeliveryIntegration } from './makeBridge/standDeliveryCoordinator.js'
+import { registerStandDeliveryRoutes } from './routes/standDeliveries.js'
+import { MakeRequestAuthority } from './makeBridge/requestAuthority.js'
 import { createRemoteMake } from './makeBridge/remote.js'
+import { createSharedServiceAuthority } from './auth/sharedServiceCallers.js'
+import { externalMcpUrls, externalServiceFetch, externalTaskMakeSources } from './sharedServices/externalService.js'
 import { registerMakeProxy } from './makeBridge/proxy.js'
 import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
@@ -146,22 +162,25 @@ import { registerAnthropicGateway } from './anthropic/gateway.js'
 import { detectResources } from './system/resources.js'
 import { computeCapabilities } from './system/capabilities.js'
 import type { SystemCapabilities } from '@voicechat/shared'
-import { FileKnowledgeBaseService } from './kb/service.js'
+import { ModuleKnowledgeBaseService, gitStoreCredentials, readKbSources, type KbCredentials } from './kb/sources.js'
 import { registerKbRoutes, registerKbResearchRoutes } from './kb/routes.js'
 import { registerUniversalSearch } from './routes/universalSearch.js'
 import { ScopedKnowledgeBase } from './kb/scoped.js'
+import { createLocalKbRpc } from './kb/rpc.js'
 import { kbViewOf } from './kb/access.js'
 import { KbResearchManager } from './kb/research.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
+import { registerHistoryMcp, historyTurnBroker, HISTORY_MCP_PATH } from './mcp/historyMcp.js'
 import { PreviewActionRelay } from '@voicechat/web-reader-contracts'
 import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { createReaderModule } from '@sislexa/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
-import { registerReaderProxy } from './readerBridge/proxy.js'
+import { registerMakePreviewInspector, registerReaderProxy } from './readerBridge/proxy.js'
+import { makeStandPreviewAccess } from './makeBridge/previewAccess.js'
 import { registerBrowserShotRoutes } from './routes/browserShots.js'
 import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@sislexa/playwright-reader'
 import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
@@ -180,14 +199,20 @@ const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 export interface BuildOptions {
+  applicationTickets?: ApplicationTicketOptions
   /** Embedded hosts supply the same authenticated transport as managed Billing. */
   billingTransport?: { url: string; fetchImpl: typeof fetch; environmentId: string }
   delegationClient?: DelegationIntrospectionClient
+  /** Kanban HTTP transport for Make project previews; injectable without a live stand. */
+  makeKanbanFetch?: typeof fetch
+  standDeliveryFetch?: typeof fetch
+  standDeliveryIntegration?: (projectId: string) => StandDeliveryIntegration | undefined
   config: ServerConfig
   /** Готовый экземпляр БД (для тестов, напр. :memory:). Иначе создаётся из config. */
   db?: VoiceChatDb
   /** Read-only база знаний (для тестов — мок). */
   kbService?: KnowledgeBaseService
+  kbCredentials?: KbCredentials
   /** Телеметрия обращений к БЗ (для тестов — мок/выключено). */
   kbUsage?: KbUsageTracker
   /**
@@ -322,6 +347,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     routerOptions: { maxParamLength: 1024 },
     genReqId: request => requestIdOf(request.headers[REQUEST_ID_HEADER])
   })
+  const ticketOptions = opts.applicationTickets ?? applicationTicketOptions(process.env, opts.config.publicUrl)
+  const deployment = opts.config.deployment ?? ticketOptions.manifest
+  registerDeploymentApplications(app, deployment)
   await registerHttpCompression(app)
   const maintenance = new Maintenance()
   maintenance.register(app)
@@ -336,6 +364,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const configuredDependency = (id: string) => component?.config.dependencies.some(d => d.applicationId === id) ? component.dependency(id) : undefined
   const managedIdentity = configuredDependency('identity')
   const managedBilling = configuredDependency('billing')
+  if (opts.config.chatRequireBilling && !managedBilling && !opts.billingTransport) {
+    await app.close()
+    throw Error('VC_CHAT_REQUIRE_BILLING requires a configured Billing dependency')
+  }
   const managedAnalytics = configuredDependency('analytics')
   const managedMake = configuredDependency('make')
   const managedPlaywright = configuredDependency('playwright-reader')
@@ -344,12 +376,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? component.dependency('image-studio', { timeoutMs: IMAGE_STUDIO_GENERATION_TIMEOUT_MS }) : undefined
   const managedStt = configuredDependency('stt-runner')
   const managedTts = configuredDependency('tts-runner')
-  if (managedStudio) { opts.config.imageStudioMode = 'remote'; opts.config.imageStudioUrl = managedStudio.url }
+  if (managedStudio && localApplication(deployment, 'image-studio')) { opts.config.imageStudioMode = 'remote'; opts.config.imageStudioUrl = managedStudio.url }
   if (managedStt) { opts.config.sttRunnerUrl = managedStt.url; opts.config.sttRunnerToken = managedStt.token }
   if (managedTts) { opts.config.ttsRunnerUrl = managedTts.url; opts.config.ttsRunnerToken = managedTts.token }
-  if (managedMake) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
-  if (managedPlaywright) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
-  if (managedReader) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
+  if (managedMake && localApplication(deployment, 'make')) { opts.config.makeMode = 'remote'; opts.config.makeUrl = managedMake.url }
+  if (managedPlaywright && localApplication(deployment, 'playwright-reader')) { opts.config.playwrightReaderMode = 'remote'; opts.config.playwrightReaderUrl = managedPlaywright.url }
+  if (managedReader && localApplication(deployment, 'web-reader')) { opts.config.readerMode = 'remote'; opts.config.readerUrl = managedReader.url }
   if (component && ((opts.config.makeMode === 'remote' && !managedMake) || (opts.config.playwrightReaderMode === 'remote' && !managedPlaywright) || (opts.config.readerMode === 'remote' && !managedReader))) {
     component.close()
     throw new Error('Managed remote tools require declared component dependencies')
@@ -462,6 +494,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const billingSessions = new BillingSessions()
   const revokeBillingSession = sessionHub.onChange(event => {
     if (event.revokedSid) billingSessions.revoke(event.user, event.revokedSid)
+    if (event.revokedSid) ticketStore.delegations.revoke({ userId: event.user, sid: event.revokedSid })
   })
   app.addHook('onClose', async () => revokeBillingSession())
   // Ключи Chromium к прокси превью: изолированный браузер открывает dev-сервер
@@ -474,11 +507,43 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegationClient = opts.config.delegatedChatEnabled ? opts.delegationClient ?? (managedIdentity ? createDelegationIntrospectionClient({
     url: managedIdentity.url, token: managedIdentity.token, fetchImpl: managedIdentity.fetchImpl
   }) : undefined) : undefined
-  const delegation = delegationClient ? new ChatDelegation(delegationClient, db, Date.now,
-    component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy') : undefined
+  // External applications with a service credential receive Core-issued delegations from redeemed tickets.
+  const ticketStore = ticketOptions.tickets ?? new ApplicationTickets()
+  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'external')
+    && !!ticketOptions.credentials[id]
+  const ticketDelegation = deployment.applications.some(a => ticketApplications(a.id))
+    ? { delegations: ticketStore.delegations, enabled: ticketApplications } : undefined
+  const externalApplicationUrl = (id: ApplicationId) => {
+    const app = deployment.applications.find(a => a.id === id && a.enabled && a.location === 'external')
+    return app?.url
+  }
+  const externalMcpUrl = externalMcpUrls({ coreId: deployment.coreId, url: externalApplicationUrl, secrets: ticketOptions.mcpSecrets ?? {} })
+  const externalMake = (url: string, serviceToken: string) => {
+    const remote = createRemoteMake({ makeUrl: url, token: serviceToken, mcpSecret: ticketOptions.mcpSecrets?.make ?? '', fetchImpl: externalServiceFetch({
+      application: 'make', coreId: deployment.coreId, serviceToken, delegations: ticketStore.delegations,
+      userOf: async (method, args) => {
+        if (!['promptContext', 'listFiles'].includes(method) || typeof args[0] !== 'string') return undefined
+        const owner = await makeCore.conversationOwner(args[0])
+        if (!owner) return undefined
+        const conversation = await db.chat.getConversation(owner, args[0])
+        return { userId: owner, tenantId: conversation?.tenantId ?? null }
+      }
+    }) })
+    // Each task source of an external Make is one core MCP token for its conversation with a read-only task scope.
+    remote.service.taskSources = args => externalTaskMakeSources(externalMcpUrl, args)
+    return remote
+  }
+  const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
+    component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
   let sessionAuthenticate: AuthenticateFn
-  const authenticate: AuthenticateFn = async req => {
+  const makeRequests = new MakeRequestAuthority(async userId => {
+    const user = await db.identity.getUser(userId)
+    return user && !user.blocked ? { name: user.name, role: user.role } : null
+  })
+  const authenticateRaw: AuthenticateFn = async req => {
+    const makeRequest = await makeRequests.authenticate(req)
+    if (makeRequest) return makeRequest
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
@@ -498,16 +563,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     try {
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
-      if (!/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      // Ticket delegations may also create a conversation of their application's kind (checked by the route).
+      const createsConversation = req.method === 'POST' && req.url.split('?')[0] === '/api/conversations' && isTicketDelegationToken(grant)
+      if (!createsConversation && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      if (isTicketDelegationToken(grant)) {
+        // Ticket delegations are bearer-bound to the issuing application's own service credential.
+        const ticket = delegation.ticketGrant(grant)
+        const credential = ticket && ticketOptions.credentials[ticket.applicationId]
+        if (!credential || req.headers.cookie || !sameSecret(req.headers.authorization, `Bearer ${credential}`)) throw new DelegationDenied()
+      }
       const user = await delegation.user(grant)
       const tenant = req.headers['x-sislexa-tenant-id']
       if (tenant !== undefined && tenant !== user.account?.tenantId) throw new DelegationDenied()
-      if (req.headers.authorization || req.headers.cookie) {
+      if (!isTicketDelegationToken(grant) && (req.headers.authorization || req.headers.cookie)) {
         const session = await sessionAuthenticate(req)
         if (!session.ok || !sameAccountContext(user, session.user)) throw new DelegationDenied()
       }
       return { ok: true, user }
     } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+  }
+  const authenticate: AuthenticateFn = async req => {
+    const verdict = await authenticateRaw(req)
+    return verdict.ok ? { ...verdict, user: effectiveUser(verdict.user, deployment) } : verdict
   }
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
     ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
@@ -557,19 +634,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       .send(httpDiagnostics.prometheus())
   )
 
-  app.get(REST.health, async (): Promise<HealthResponse & { readOnly: boolean; reason: string }> => ({
-    ...maintenance.snapshot(),
-    application: applicationRuntimeMetadata('core', process.env),
-    ok: true,
-    version: VERSION,
-    releasedAt: RELEASED_AT,
-    commit: RELEASE_COMMIT,
-    task: RELEASE_TASK
-  }))
+  app.get(REST.health, async (_req, reply): Promise<HealthResponse & { readOnly: boolean; reason: string }> => {
+    reply.header('cache-control', 'no-store')
+    return {
+      ...maintenance.snapshot(),
+      application: applicationRuntimeMetadata('core', process.env),
+      ok: true,
+      version: VERSION,
+      releasedAt: RELEASED_AT,
+      commit: RELEASE_COMMIT,
+      task: RELEASE_TASK
+    }
+  })
 
   const runnerFs =
     opts.config.llmRunnerClaudeUrl || opts.config.llmRunnerCodexUrl
       ? new RunnerFsClient({
+          mcpFilter: name => enabledMcp(name, deployment),
           claudeBaseUrl: opts.config.llmRunnerClaudeUrl,
           codexBaseUrl: opts.config.llmRunnerCodexUrl,
           ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {})
@@ -600,6 +681,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ...(opts.agentRegistry ? { registry: opts.agentRegistry } : {})
   })
   const agentRegistry: MachinesService = remoteMachines ?? machinesModule!.machines
+  const standSession = async (cookie: string) => {
+    const verdict = await sessionAuthenticate({ method: 'GET', url: '/api/dev-stand-access', headers: { cookie } })
+    return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
+  }
+  const standProxy = new StandProxy({
+    ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
+    publicScheme: opts.config.standProxyPublicScheme,
+    session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
+    connect: (machine, port) => agentRegistry.connectCoreTunnel(machine, port),
+    inspectorScript: async cookie => {
+      const reply = await app.inject({ method: 'GET', url: '/api/make/inspector.js', headers: cookie ? { cookie } : {} })
+      const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
+      return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
+    },
+    stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+  })
+  registerStandProxy(app, standProxy, standSession)
   const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
   if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
@@ -628,7 +726,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void operation.finally(() => { if (projectMainRefreshes.get(key) === operation) projectMainRefreshes.delete(key) }).catch(() => {})
     return operation
   }
+  let conversationSummary: ConversationSummaryService | undefined
   await registerRest(app, db, opts.config.dataDir, {
+    chatModels: opts.config.chatModels,
+    chatTextOnly: opts.config.chatTextOnly,
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
@@ -653,6 +754,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // создать чат: мастерская работает и без свежей копии, а причина уходит в лог.
     publishChatMessage: async (userId, conversationId, message) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
+    },
+    conversationSummary: () => conversationSummary,
+    delegatedAssistantKind: grant => {
+      const ticket = delegation?.ticketGrant(grant)
+      return ticket ? APPLICATION_ASSISTANT_KIND[ticket.applicationId] : undefined
     },
     refreshProjectMain: async (userId, projectId) => {
       const project = await db.projects.getProject(userId, projectId)
@@ -688,23 +794,53 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (opts.config.llmRunnerCodexUrl
       ? runner('codex', opts.config.llmRunnerCodexUrl)
       : unconfiguredLlmClient()))
-  const reranker = opts.config.kbRerankProvider === 'disabled'
+  // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
+  conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
+    db,
+    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
+    // when this installation only has a Claude runner.
+    client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
+    model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    publish: async (userId, conversation) => {
+      frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
+    },
+    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+  })
+  const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
     : new LlmKbReranker(await (opts.config.kbRerankProvider === 'claude' ? claude : codex))
   // Файловые темы docs/kb — раздел «Использование» (общий для всех); поверх них
   // ScopedKnowledgeBase добавляет статьи из БД (персональные и проектные) и
   // решает, что кому видно.
-  const fileKb = opts.kbService ?? new FileKnowledgeBaseService(opts.config.kbRoot, reranker)
+  const fileKb = opts.kbService ?? new ModuleKnowledgeBaseService({
+    root: opts.config.kbRoot, dataDir: opts.config.dataDir,
+    sources: readKbSources(opts.config.dataDir, opts.config.kbModules),
+    credentials: opts.kbCredentials ?? gitStoreCredentials(opts.config.githubToken),
+    refreshMs: opts.config.kbRefreshMs,
+    managedByEnv: opts.config.kbModules !== undefined
+  }, reranker)
+  if (fileKb instanceof ModuleKnowledgeBaseService) {
+    // Owner modules clone and index GitHub repositories; tests and local servers skip them unless enabled.
+    if (opts.config.kbOwnerModules) {
+      try { await fileKb.reconcileModules() }
+      catch { app.log.warn('KB module reconciliation failed') }
+    }
+    fileKb.start()
+    app.addHook('onClose', async () => fileKb.close())
+  }
   const kb = new ScopedKnowledgeBase(fileKb, db, reranker)
+  app.decorate('kbRpc', createLocalKbRpc(kb, db, opts.config.kbToolEnabled))
   // Телеметрия обращений к БЗ: одна на процесс (как реестр ходов) — её события
   // рассылаются всем соединениям пользователя, а строки живут в БД.
   const kbUsage = opts.kbUsage ?? createKbUsageTracker({ db })
   registerUiPerformanceRoutes(app)
-  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled })
+  registerKbRoutes(app, kb, { db, toolEnabled: opts.config.kbToolEnabled,
+    reconcileModules: fileKb instanceof ModuleKnowledgeBaseService ? () => fileKb.reconcileModules() : undefined })
 
   // Входящий Anthropic Messages API для подключения внешнего Claude Code CLI.
   // Авторизация клиента намеренно отсутствует: маршрут предназначен для закрытой сети.
   registerAnthropicGateway(app, {
+    enabled: opts.config.chatTextOnly !== true,
     backend: opts.config.claudeGatewayBackend,
     codex: await codex,
     upstreamUrl: opts.config.claudeGatewayUpstreamUrl,
@@ -736,12 +872,53 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
+  const gitWorkspaces: GitWorkspaceService = new GitWorkspaceService({
+    db,
+    getStand: (user, project, stand) => makeProjectAdapters.getStand(user, project, stand),
+    runtime: {
+      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
+      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      policyOf: (agentId) => agentRegistry.policyOf(agentId),
+      platformOf: (agentId) => agentRegistry.platformOf(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    },
+    gate: commandGate
+  })
   // Make (mcp__make__*): файлы проекта разговора в <dataDir>/make/<conv>; изменения
   // уходят владельцу кадром make.changed. Ядро и Make видят друг друга только через
   // порты MakeCore / MakeService (docs/plans/make-standalone.md): здесь — единственная
   // точка, где Make получает доступ к данным чата, канбана и машин.
+  const makeProjectAdapters = new MakeProjectAdapters({
+    db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
+    machines: agentRegistry,
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? makeStandPreviewAccess(
+      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
+    authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
+    boardChanged: projectId => kanban.service.board.changed(projectId),
+    readDesignFile: async (userId, conversationId, path) => {
+      const url = '/api/make/' + encodeURIComponent(conversationId) + '/file?path=' + encodeURIComponent(path)
+      return makeRequests.run(userId, 'GET', url, async authorization => {
+        // Injection uses the same authenticated route/proxy in embedded and remote modes.
+        const response = await app.inject({ method: 'GET', url, headers: { authorization } })
+        if (response.statusCode !== 200) projectModeError(response.statusCode, 'make_design_file_unavailable')
+        const file = response.json() as { content?: unknown }
+        if (typeof file.content !== 'string') projectModeError(502, 'invalid_make_file_response')
+        return file.content
+      })
+    }
+  })
+  registerStandDeliveryRoutes(app, new StandDeliveries({
+    db, git: gitWorkspaces, stands: makeProjectAdapters, machines: agentRegistry,
+    coordinator: new StandDeliveryCoordinator(opts.standDeliveryIntegration, opts.standDeliveryFetch)
+  }))
   const makeCore = new LocalMakeCore({
     db,
+    git: gitWorkspaces,
+    standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
+    makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
+    transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
     // Чтение репозитория проекта: файловый мост машины только на чтение —
@@ -760,7 +937,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeMcpBaseUrl = makeRemote
     ? `${(opts.config.makeMcpPublicBase ?? opts.config.makeUrl!).replace(/\/+$/, '')}${MAKE_MCP_PATH}?k=${mcpSecret}`
     : buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
-  const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = makeRemote
+  // External Make (`make=https://…` in VC_APPLICATIONS) with a service credential: prompt context, files and statistics
+  // come from the shared service for this core; its events arrive on /internal/make/events with a ticket delegation.
+  const makeExternalUrl = externalApplicationUrl('make')
+  const makeServiceToken = ticketOptions.serviceTokens?.make
+  const makeExternal = !!(makeExternalUrl && makeServiceToken)
+  const make: { service: MakeService; hub: MakeHub; register?: (app: FastifyInstance) => void } = makeExternal
+    ? externalMake(makeExternalUrl!, makeServiceToken!)
+    : opts.config.makeMode === 'off' ? disabledMake() : makeRemote
     ? createRemoteMake({ makeUrl: opts.config.makeUrl!, token: managedMake?.token ?? opts.config.internalToken!, fetchImpl: managedMake?.fetchImpl, mcpSecret, mcpBaseUrl: makeMcpBaseUrl })
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
@@ -779,7 +963,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const widgetContexts = new WidgetContextStore()
   const widgetUiRelay = new WidgetUiRelay()
   const imageStudioCore = new LocalImageStudioCore({
-    db, client: codex, generationCwd: opts.imageGenerationWorkdir,
+    db, client: codex, generationEnabled: opts.config.chatTextOnly !== true, generationCwd: opts.imageGenerationWorkdir,
     readGenerated: async (userId, path) => {
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
@@ -797,7 +981,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? `${opts.config.imageStudioUrl!.replace(/\/+$/, '')}${IMAGE_STUDIO_MCP_PATH}?k=${mcpSecret}`
     : buildPublicMcpUrl(opts.config, IMAGE_STUDIO_MCP_PATH, mcpSecret)
   // В remote ядро не открывает файлы галерей: единственный владелец — процесс студии.
-  const imageStudio = imageStudioRemote
+  const imageStudio = opts.config.imageStudioMode === 'off' ? { service: disabledImageStudio } : imageStudioRemote
     ? { service: createRemoteImageStudio({ studioUrl: opts.config.imageStudioUrl!, token: managedStudio?.token ?? opts.config.internalToken!, fetchImpl: managedStudio?.fetchImpl }) }
     : createImageStudioModule({ dataDir: opts.config.dataDir, core: imageStudioCore, mcpSecret })
   if ('register' in imageStudio) imageStudio.register(app)
@@ -818,6 +1002,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     deployTrigger
   })
+  registerHistoryMcp(app, { db, secret: mcpSecret })
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении; сам MCP собирает модуль ридера ниже.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
@@ -842,6 +1027,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
+  const historyMcpBaseUrl = buildPublicMcpUrl(opts.config, HISTORY_MCP_PATH, mcpSecret)
   // Web Reader отдельным процессом: MCP «browser» слушает он — исполнителю нужен его адрес (docs/plans/web-reader-service.md).
   const readerRemote = opts.config.readerMode === 'remote'
   if (readerRemote && !(opts.config.readerUrl && (managedReader || opts.config.internalToken) && opts.config.mcpSecret)) throw new Error('VC_READER_MODE=remote требует VC_READER_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
@@ -857,7 +1043,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerKbResearchRoutes(
     app,
     db,
-    new KbResearchManager({
+    opts.config.chatTextOnly === true ? undefined : new KbResearchManager({
       db,
       claude: await claude,
       codex: await codex,
@@ -911,13 +1097,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
       value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
     }
+    // Configuration is independent of a service outage, missing model or tariff denial.
+    value.stt.configured = Boolean(sttClient || opts.sttEngine)
+    value.tts.configured = Boolean(opts.ttsClient || (opts.config.ttsRunnerUrl && opts.config.ttsRunnerToken))
+    value.analytics = { configured: Boolean(managedAnalytics) }
     return value
   }
   app.get(REST.systemCapabilities, async (req): Promise<SystemCapabilities> => {
     await refreshSttHealth()
     const value = await capabilities()
-    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { available: false, reason: TARIFF_DENIED }
-    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.stt')) value.stt = { ...value.stt, available: false, reason: TARIFF_DENIED }
+    if (!hasProductCapability(req.user?.account, 'voice.tts')) value.tts = { ...value.tts, available: false, reason: TARIFF_DENIED }
     return value
   })
 
@@ -1051,7 +1241,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,
-    { bodyLimit: 2 * 1024 * 1024 },
+    { bodyLimit: 2 * 1024 * 1024, onRequest: async (_req, reply) => {
+      if (opts.config.chatTextOnly === true) return reply.code(503).send({
+        error: 'auxiliary_model_disabled', message: 'Ретушь недоступна в режиме текстового чата.'
+      })
+    } },
     async (req, reply): Promise<ImageRetouchResult> => {
       const userId = uid(req)
       const body = req.body
@@ -1220,6 +1414,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
       billing: billingTransport, environmentId: billingTransport.environmentId,
+      finishStoppedChatInBackground: opts.config.chatTextOnly,
       resolveRunner: async target => {
         if (target.engineId) {
           const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')
@@ -1240,16 +1435,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     void reconcile()
   }
   const turnManager = createTurnManager({
+    chatTextOnly: opts.config.chatTextOnly,
+    chatModels: opts.config.chatModels,
+    deployment,
     delegation,
     accounting,
     db,
     claude: await claude,
     codex: await codex,
+    conversationSummary,
     engineClient: (engine) => new RemoteLlmClient({ kind: engine.kind, baseUrl: engine.baseUrl, ...(engine.token ? { token: engine.token } : {}) }),
     kb,
     kbUsage,
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
+    historyTool: historyTurnBroker,
     resolveUpload: async (id) => {
       const upload = uploads.get(id)
       if (!upload) return null
@@ -1292,10 +1492,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // MCP для исполнителя должен смотреть либо на loopback dev-сервера, либо на публичную базу из VC_MCP_PUBLIC_BASE.
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
-    previewMcpBaseUrl,
+    historyMcpBaseUrl,
+    previewMcpBaseUrl: opts.config.readerMode === 'off' ? undefined : previewMcpBaseUrl,
     consoleMcpBaseUrl,
-    makeMcpBaseUrl,
-    imageStudioMcpBaseUrl,
+    makeMcpBaseUrl: opts.config.makeMode === 'off' ? undefined : makeMcpBaseUrl,
+    externalMcpUrl,
+    imageStudioMcpBaseUrl: opts.config.imageStudioMode === 'off' ? undefined : imageStudioMcpBaseUrl,
     kanbanMcpBaseUrl,
     widgetContexts,
     make: make.service,
@@ -1305,13 +1507,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   // Канбан — отдельный сервис `sislexa-kanban`; ядро отдаёт ему свои зависимости портом (docs/plans/kanban-service.md).
-  const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
+  // Module registration needs the multi-repository engine; injected test services refuse it.
+  const kbModules: KanbanCore['kbModules'] = fileKb instanceof ModuleKnowledgeBaseService
+    ? { modules: () => fileKb.modules(), ensureModule: (input) => fileKb.ensureSource(input), removeModule: (id) => fileKb.removeSource(id) }
+    : { modules: async () => [], ensureModule: async () => { throw new Error('kb_modules_unavailable') }, removeModule: async () => false }
+  const kanbanCore = createLocalKanbanCore({ registry: agentRegistry, kb, kbModules, uploads, widgets: { contexts: widgetContexts, ui: widgetUiRelay }, ensureProjectMainCurrent })
+  // External Kanban (`projects=https://…` in VC_APPLICATIONS) with a service credential: the shared Kanban host
+  // serves this core's tenant; it calls back on /internal/kanban/* with the application token. No UI proxy.
+  const kanbanExternalUrl = externalApplicationUrl('projects')
+  const kanbanServiceToken = ticketOptions.serviceTokens?.projects
+  const onKanbanError = (error: unknown, what: string) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался')
   const remoteKanban = kanbanRemote
-    ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: (error, what) => app.log.warn({ err: error, what }, 'kanban: фоновый вызов процесса канбана не удался') })
-    : null
+    ? createRemoteKanban({ kanbanUrl: opts.config.kanbanUrl!, token: opts.config.internalToken!, onError: onKanbanError })
+    : kanbanExternalUrl && kanbanServiceToken
+      ? createRemoteKanban({ kanbanUrl: kanbanExternalUrl, token: kanbanServiceToken, onError: onKanbanError, fetchImpl: externalServiceFetch({
+        application: 'projects', coreId: deployment.coreId, serviceToken: kanbanServiceToken, delegations: ticketStore.delegations }) })
+      : null
   const kanban: { service: KanbanService } = remoteKanban ?? { service: createOfflineKanban() }
   if (remoteKanban) {
-    registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
+    if (kanbanRemote) registerKanbanProxy(app, { kanbanUrl: opts.config.kanbanUrl! })
     // Зеркало машин у канбана: снимок после каждого изменения реестра (онлайн, политика, телеметрия);
     // телеметрия приходит часто, поэтому с небольшой задержкой — один пуш на пачку изменений.
     let pushTimer: NodeJS.Timeout | null = null
@@ -1339,7 +1553,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     logBrowserShot: (...args) => readerCore.logBrowserShot(...args)
   })
   let playwrightReader: PlaywrightReaderService
-  if (opts.config.playwrightReaderMode === 'remote') {
+  if (opts.config.playwrightReaderMode === 'off') {
+    playwrightReader = disabledPlaywrightReader
+  } else if (opts.config.playwrightReaderMode === 'remote') {
     if (!(opts.config.playwrightReaderUrl && (managedPlaywright || opts.config.internalToken))) throw new Error('VC_PLAYWRIGHT_READER_MODE=remote требует VC_PLAYWRIGHT_READER_URL и VC_INTERNAL_TOKEN')
     playwrightReader = createRemotePlaywrightReader({ baseUrl: opts.config.playwrightReaderUrl, token: managedPlaywright?.token ?? opts.config.internalToken!, fetchImpl: managedPlaywright?.fetchImpl })
     registerPlaywrightReaderProxy(app, { baseUrl: opts.config.playwrightReaderUrl, fetchImpl: managedPlaywright?.publicFetchImpl })
@@ -1348,13 +1564,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     module.register(app)
     playwrightReader = module.service
   }
+  registerMakePreviewInspector(app)
   if (readerRemote) registerReaderProxy(app, { readerUrl: opts.config.readerUrl!, fetchImpl: managedReader?.publicFetchImpl })
-  else createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
+  else if (opts.config.readerMode === 'embedded') createReaderModule({ app, core: readerCore, mcpSecret, browser: playwrightReader })
   // Register internal RPC only when a managed provider or legacy migration credential is configured.
-  if (opts.config.internalToken || component) {
+  const sharedServices = ticketDelegation
+    ? createSharedServiceAuthority({ credentials: ticketOptions.credentials, enabled: ticketApplications, delegations: ticketStore.delegations,
+      coreId: deployment.coreId, mcpSecrets: ticketOptions.mcpSecrets ?? {} }) : undefined
+  if (opts.config.internalToken || component || sharedServices) {
     registerInternalRoutes(app, {
-      maintenance, token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore,
-      ...(makeRemote ? { makeHub: make.hub } : { makeService: make.service }),
+      maintenance, token: opts.config.internalToken ?? '', component, makeCore, authenticate, imageStudio: imageStudioCore, sharedServices,
+      ...(makeRemote || makeExternal ? { makeHub: make.hub } : { makeService: make.service }),
       identityCore: db,
       admin: { ...(deployTrigger ? { deployTrigger } : {}), sessionHub },
       reader: readerCore,
@@ -1364,26 +1584,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
-  const gitWorkspaces = new GitWorkspaceService({
-    db,
-    runtime: {
-      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
-      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
-      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
-      isOnline: (agentId) => agentRegistry.isOnline(agentId),
-      policyOf: (agentId) => agentRegistry.policyOf(agentId),
-      platformOf: (agentId) => agentRegistry.platformOf(agentId),
-      nameOf: (agentId) => agentRegistry.nameOf(agentId)
-    },
-    gate: commandGate
-  })
   registerIntegrationTokenRoutes(app, db)
-  registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined })
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, issuer: req => {
+    const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
+    const sid = verifyToken(token, sessionSecret)?.sid ?? null
+    const billingSession = token && req.user ? billingSessions.register(req.user, sid, token) : undefined
+    return { sid, ...(billingSession ? { billingSession } : {}) }
+  } })
+  registerIntegrationIngress(app, db, { kanbanUrl: kanbanRemote ? opts.config.kanbanUrl : undefined, internalToken: opts.config.internalToken })
   registerProjectGitRoutes(app, gitWorkspaces)
   // Компоненты проекта в Make: тот же сервис рабочих копий плюс Storybook на машине.
-  // Сессии живут в памяти процесса — перезапуск сервера оставляет dev-сервер сиротой,
-  // поэтому панель показывает «остановлен» и предлагает запустить заново.
   const storybookSessions = new StorybookSessions({
+    settings: db.settings,
     registry: {
       ptyStart: (agentId, ptyId, cols, rows, cwd, emit) => agentRegistry.ptyStart(agentId, ptyId, cols, rows, cwd, emit),
       ptyInput: (ptyId, data) => agentRegistry.ptyInput(ptyId, data),
@@ -1395,6 +1607,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   })
   registerProjectComponentsRoutes(app, {
+    standProxy: proxyPorts(opts.config.standProxyPorts).length ? standProxy : undefined,
     git: gitWorkspaces,
     storybook: storybookSessions,
     tickets: new ComponentTicketService({ db, git: gitWorkspaces }),
@@ -1445,7 +1658,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             online: online.has(a.id),
             version: agentRegistry.versionOf(a.id),
             telemetry: agentRegistry.telemetryOf(a.id),
-            imageHost: agentRegistry.imageHostOf(a.id)
+            imageHost: agentRegistry.imageHostOf(a.id),
+            updateStatus: agentRegistry.updateStatusOf?.(a.id)
           }))
         },
         subscribe: (cb) => agentRegistry.onChange(cb)
@@ -1672,7 +1886,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     })
   })
 
-  if(managedIdentity){
+  if(managedIdentity && localApplication(deployment, 'identity')){
     for(const prefix of ['/login/','/account/']){
       const proxy=async(req:import('fastify').FastifyRequest,reply:import('fastify').FastifyReply)=>{
         const response=await managedIdentity.publicFetchImpl(new URL(req.url,managedIdentity.url),{redirect:'error'})
@@ -1681,10 +1895,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, opts.config.applicationFrontends)
+  registerApplicationFrontends(app, Object.fromEntries(Object.entries(opts.config.applicationFrontends ?? {}).filter(([id]) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'local'))))
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
-  if (opts.config.readerMode !== 'remote') {
+  if (opts.config.readerMode === 'embedded') {
     const recorderDir = opts.config.webRecorderDir && existsSync(opts.config.webRecorderDir)
       ? opts.config.webRecorderDir
       : dirname(createRequire(import.meta.url).resolve('@sislexa/web-reader/recorder/index.html'))

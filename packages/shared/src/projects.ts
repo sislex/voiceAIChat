@@ -1,3 +1,115 @@
+/** Selects the board-owned runner or an external worker. */
+export type ExecutionEngine = 'board' | 'worker'
+
+export type OperatorAssistantMode = 'off' | 'answers' | 'full'
+
+export type OperatorAssistantExecution = 'mcp_only' | 'unrestricted'
+
+export interface OperatorAssistantModel {
+  source: 'run' | 'custom'
+  provider?: 'claude' | 'codex'
+  model?: string
+  llmEngineId?: string | null
+  execution: OperatorAssistantExecution
+}
+
+export const DEFAULT_OPERATOR_ASSISTANT_MODEL: OperatorAssistantModel = {
+  source: 'run', execution: 'mcp_only'
+}
+
+/** Invalid configuration inherits the run model with MCP-only execution. */
+export function normalizeOperatorAssistantModel(value: unknown): OperatorAssistantModel {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  }
+  const input = value as Record<string, unknown>
+  if (input.source !== 'run' && input.source !== 'custom') return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  const execution = input.execution === 'unrestricted' ? 'unrestricted' : 'mcp_only'
+  if (input.source === 'run') return { source: 'run', execution }
+  const model = typeof input.model === 'string' ? input.model.trim().slice(0, 200).trim() : ''
+  if ((input.provider !== 'claude' && input.provider !== 'codex') || !model) {
+    return { ...DEFAULT_OPERATOR_ASSISTANT_MODEL }
+  }
+  const result: OperatorAssistantModel = { source: 'custom', provider: input.provider, model, execution }
+  if (typeof input.llmEngineId === 'string' || input.llmEngineId === null) result.llmEngineId = input.llmEngineId
+  return result
+}
+
+export const OPERATOR_ASSISTANT_MODES: readonly OperatorAssistantMode[] = ['off', 'answers', 'full']
+
+/** Missing or unrecognized configuration disables the operator assistant. */
+export function normalizeOperatorAssistant(value: unknown): OperatorAssistantMode {
+  return value === 'answers' || value === 'full' ? value : 'off'
+}
+
+export type OperatorActionKind = 'answer' | 'comment' | 'retry_step' | 'discard_and_retry'
+  | 'restart_development' | 'move_ready' | 'escalate'
+
+export const OPERATOR_ACTIONS_BY_MODE: Readonly<Record<OperatorAssistantMode, readonly OperatorActionKind[]>> = {
+  off: [],
+  answers: ['answer', 'comment', 'escalate'],
+  full: ['answer', 'comment', 'retry_step', 'discard_and_retry', 'restart_development', 'move_ready', 'escalate']
+}
+
+export interface OperatorAssistantLimits {
+  actionsPerCardPerDay: number
+  stepRetries: number
+  discardRetries: number
+  developmentRestarts: number
+  answersPerRun: number
+  disabledActions: OperatorActionKind[]
+}
+
+export const DEFAULT_OPERATOR_ASSISTANT_LIMITS: OperatorAssistantLimits = {
+  actionsPerCardPerDay: 3,
+  stepRetries: 1,
+  discardRetries: 1,
+  developmentRestarts: 1,
+  answersPerRun: 3,
+  disabledActions: []
+}
+
+export const OPERATOR_ASSISTANT_LIMIT_RANGES = {
+  actionsPerCardPerDay: { min: 0, max: 50 },
+  stepRetries: { min: 0, max: 5 },
+  discardRetries: { min: 0, max: 5 },
+  developmentRestarts: { min: 0, max: 5 },
+  answersPerRun: { min: 0, max: 20 }
+} as const
+
+/** Normalize finite numeric counts to integers; malformed values use defaults. */
+export function normalizeOperatorAssistantLimits(value: unknown): OperatorAssistantLimits {
+  const input = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {}
+  const limits = { ...DEFAULT_OPERATOR_ASSISTANT_LIMITS, disabledActions: [] as OperatorActionKind[] }
+  for (const key of Object.keys(OPERATOR_ASSISTANT_LIMIT_RANGES) as (keyof typeof OPERATOR_ASSISTANT_LIMIT_RANGES)[]) {
+    const count = input[key]
+    const { min, max } = OPERATOR_ASSISTANT_LIMIT_RANGES[key]
+    if (typeof count === 'number' && Number.isFinite(count)) {
+      limits[key] = Math.min(max, Math.max(min, Math.trunc(count)))
+    }
+  }
+  const disabled = input.disabledActions
+  if (Array.isArray(disabled)) {
+    limits.disabledActions = OPERATOR_ACTIONS_BY_MODE.full.filter(action => disabled.includes(action))
+  }
+  return limits
+}
+
+export type QaStage = 'component_qa' | 'integration_tests' | 'automated_qa' | 'manual_qa'
+
+export const QA_STAGES: readonly QaStage[] = [
+  'component_qa', 'integration_tests', 'automated_qa', 'manual_qa'
+]
+
+export const DEFAULT_QA_STAGES: QaStage[] = []
+
+/** Keep only known stages, once each, in pipeline order. */
+export function normalizeQaStages(value: unknown): QaStage[] {
+  if (!Array.isArray(value)) return []
+  return QA_STAGES.filter((stage) => value.includes(stage))
+}
+
 export const MACHINE_STORAGE_FORMAT_VERSION = 1
 
 export type MachineStorageStatus = 'ready' | 'read-only' | 'offline' | 'unavailable'
@@ -608,6 +720,9 @@ export interface ProjectQuota {
 }
 
 export interface ProjectSummary {
+  /** Null for a top-level project. */
+  parentProjectId?: string | null
+  subprojectCount?: number
   id: string
   /** Identity tenant that owns the project and its shared budget. */
   tenantId?: string
@@ -663,6 +778,12 @@ export interface ProjectSummary {
   automatedQaCommand?: string
   /** Способ исполнения этапа Automated QA; по умолчанию `command`. */
   automatedQaMode?: import('./qa').AutomatedQaMode
+  /**
+   * Enabled QA stages; the board service owns persistence and routing.
+   * An empty list sends development straight to `awaiting_merge`.
+   * Columns of disabled stages are hidden.
+   */
+  qaStages?: QaStage[]
   /**
    * Сценарии браузерной проверки для режима `playwright`. Набор, а не один:
    * «много автотестов» упиралось именно в единственный сценарий на проект.
@@ -787,7 +908,21 @@ export interface ProjectInvitationForUser extends ProjectInvitation {
 }
 
 /** Проект со всем составом (ответ get/create/update). */
+export interface ProjectSubprojectSummary {
+  id: string
+  name: string
+  role: ProjectRole
+}
+
+/** Full project contract, also available under the existing detail name. */
+export type Project = ProjectDetail
+
 export interface ProjectDetail extends ProjectSummary {
+  executionEngine?: ExecutionEngine
+  /** Absent means off. */
+  operatorAssistant?: OperatorAssistantMode
+  operatorAssistantModel?: OperatorAssistantModel
+  operatorAssistantLimits?: Partial<OperatorAssistantLimits>
   members: ProjectMember[]
   /** Машины проекта с папками. */
   machines: ProjectMachine[]
@@ -808,6 +943,23 @@ export interface KanbanColumn {
   /** WIP-лимит (макс. карточек в колонке) или null — без лимита. */
   wipLimit: number | null
   createdAt: number
+}
+
+/** Match semantics first (including hidden columns), then use the first visible column.
+ * Columns are supplied in board order; no match and no visible column returns undefined.
+ */
+export function subprojectColumnFor(
+  semanticType: KanbanColumnSemanticType,
+  columns: readonly KanbanColumn[]
+): KanbanColumn | undefined {
+  return columns.find(column => column.semanticType === semanticType)
+    ?? columns.find(column => !column.hidden)
+}
+
+/** Selection shared by both phases of board loading. Omission keeps the default project. */
+export interface BoardRequestOptions {
+  includeCompleted?: boolean
+  projects?: string[]
 }
 
 /** Нормализованный сервером последний актуальный процесс или терминальный результат задачи. */
@@ -1050,10 +1202,14 @@ export interface CreateTaskReworkCycleInput {
 
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
+  /** Null inherits the project execution engine. */
+  executionEngine?: ExecutionEngine | null
   id: string
   projectId: string
   external?: TaskExternalRef
   columnId: string
+  /** Requested-board column; columnId remains the source project column. */
+  displayColumnId?: string
   type: WorkItemType
   parentId: string | null
   /** Исходная задача для карточки, созданной из предложения улучшения. */
@@ -1382,6 +1538,8 @@ export interface TaskChatBadge {
 
 /** Снапшот доски проекта. */
 export interface Board {
+  /** Included projects, even when they currently have no tasks. */
+  projects?: { id: string; name: string }[]
   columns: KanbanColumn[]
   tasks: Task[]
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */

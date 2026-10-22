@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { REST, isKbScope, type KbDocument, type KbDocumentKind, type KbScope, type KbUsageReport } from '@voicechat/shared'
+import { PUBLIC_KB_VIEW } from './types.js'
 import type { KnowledgeBaseService } from './types.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from "@sislexa/identity/server/users/auth"
@@ -11,6 +12,7 @@ export interface KbUsageRoutesDeps {
   db: VoiceChatDb
   /** Инструменты mcp__kb__* включены администратором (config.kbToolEnabled). */
   toolEnabled: boolean
+  reconcileModules?: () => Promise<import('@voicechat/shared').KbModule[]>
 }
 
 /**
@@ -37,16 +39,29 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
   const db = usage?.db
   const forbidden = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
   app.get(REST.kbStatus, async () => kb.status())
-
-  app.get<{ Querystring: { scope?: string; projectId?: string } }>(REST.kbTopics, async (req, reply) => {
-    if (!db) return kb.topics()
-    if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
-    return kb.topics(await kbViewOfRequest(db, req, req.query))
+  app.get(REST.kbModules, async () => kb.modules?.() ?? [])
+  app.post(REST.kbModulesReconcile, async (req, reply) => {
+    if ((req.user as { role?: string } | undefined)?.role !== 'admin') return reply.code(403).send({ error: 'admin required' })
+    if (!usage?.reconcileModules) return reply.code(503).send({ error: 'kb_modules_unavailable' })
+    try { return await usage.reconcileModules() }
+    catch { return reply.code(500).send({ error: 'KB module reconciliation failed' }) }
+  })
+  app.post<{ Params: { id: string } }>('/api/kb/modules/:id/refresh', async (req, reply) => {
+    if ((req.user as { role?: string } | undefined)?.role !== 'admin') return reply.code(403).send({ error: 'admin required' })
+    const result = await kb.refreshModule?.(req.params.id)
+    return result ?? reply.code(404).send({ error: 'KB module not found' })
   })
 
-  app.get<{ Querystring: { q?: string; kind?: string; tags?: string; limit?: string; scope?: string; projectId?: string } }>(REST.kbSearch, async (req, reply) => {
+  app.get<{ Querystring: { scope?: string; projectId?: string; module?: string } }>(REST.kbTopics, async (req, reply) => {
+    if (!db) return kb.topics({ ...PUBLIC_KB_VIEW, module: req.query.module })
+    if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
+    return kb.topics({ ...await kbViewOfRequest(db, req, req.query), module: req.query.module })
+  })
+
+  app.get<{ Querystring: { q?: string; kind?: string; tags?: string; limit?: string; scope?: string; projectId?: string; module?: string } }>(REST.kbSearch, async (req, reply) => {
     const request = {
       query: req.query.q ?? '',
+      module: req.query.module,
       kinds: req.query.kind ? (req.query.kind.split(',') as KbDocumentKind[]) : undefined,
       tags: req.query.tags ? req.query.tags.split(',') : undefined,
       limit: Number(req.query.limit) || undefined,
@@ -58,11 +73,11 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
     return kb.search(request, await kbViewOfRequest(db, req, req.query))
   })
 
-  app.get<{ Querystring: { q?: string; budget?: string; projectId?: string } }>(REST.kbContext, async (req, reply) => {
+  app.get<{ Querystring: { q?: string; budget?: string; projectId?: string; module?: string } }>(REST.kbContext, async (req, reply) => {
     const budget = Number(req.query.budget) || undefined
-    if (!db) return kb.context(req.query.q ?? '', budget)
+    if (!db) return kb.context(req.query.q ?? '', budget, { ...PUBLIC_KB_VIEW, module: req.query.module })
     if (await projectDenied(db, req, req.query.projectId)) return forbidden(reply)
-    return kb.context(req.query.q ?? '', budget, await kbViewOfRequest(db, req, req.query))
+    return kb.context(req.query.q ?? '', budget, { ...await kbViewOfRequest(db, req, req.query), module: req.query.module })
   })
 
   // Документ: чужая проектная/персональная статья неотличима от отсутствующей.
@@ -142,14 +157,18 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
  * «Исследовать проект»: запуск сверки статей с кодом и состояние прогона.
  * Гейт — членство в проекте (тот же db.projects.getProject, что и у остальных знаний).
  */
-export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager): void {
-  app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
+export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager | undefined): void {
+  app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', {
+    onRequest: async (_req, reply) => {
+      if (!research) return reply.code(503).send({ error: 'auxiliary_model_disabled', message: 'Исследование проекта недоступно в режиме текстового чата.' })
+    }
+  }, async (req, reply) => {
     const project = await db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
     try {
       // `sinceSha` — режим «по изменениям с коммита <sha>»: ручной фолбэк шага
       // CI-рана «Актуализировать базу знаний» (общий промпт, kb/codeUpdate.ts).
-      return research.start(uid(req), project, { sinceSha: req.body?.sinceSha })
+      return research!.start(uid(req), project, { sinceSha: req.body?.sinceSha })
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -158,6 +177,6 @@ export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, 
   app.get<{ Params: { id: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
     const project = await db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
-    return research.get(req.params.id)
+    return research?.get(req.params.id) ?? null
   })
 }

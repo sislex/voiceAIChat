@@ -95,21 +95,8 @@ interface KbDocumentRow {
 }
 
 /** Статья БЗ из БД (файловые темы приходят из docs/kb и сюда не попадают). */
-export interface KbStoredDocument {
-  id: string
-  scope: KbScope
-  ownerId: string | null
-  projectId: string | null
-  title: string
-  kind: KbDocumentKind
-  tags: string[]
-  areas: string[]
-  body: string
-  checkedOn: string | null
-  createdBy: string
-  createdAt: number
-  updatedAt: number
-}
+export type { KbStoredDocument } from '../../../../../packages/knowledge/src/ports.js'
+import type { KbStoredDocument } from '../../../../../packages/knowledge/src/ports.js'
 
 function mapKbDocument(r: KbDocumentRow): KbStoredDocument {
   return {

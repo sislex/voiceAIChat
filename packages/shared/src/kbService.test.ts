@@ -63,6 +63,7 @@ describe('knowledge RPC boundary', () => {
   it('exposes the complete method registry and modules endpoint', () => {
     expect(Object.keys(KB_SERVICE_RPC)).toEqual(['status', 'modules', 'topics', 'document', 'search', 'context', 'write', 'delete', 'usage'])
     expect(REST.kbModules).toBe('/api/kb/modules')
+    expect(REST.kbModulesReconcile).toBe('/api/kb/modules/reconcile')
     expectTypeOf<KbServiceRpcResult<'modules'>>().toEqualTypeOf<KbModule[]>()
     expectTypeOf<KbDocument['module']>().toEqualTypeOf<string | undefined>()
   })

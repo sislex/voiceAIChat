@@ -1,13 +1,18 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-05
-checked: 30cbb49d
+updated: 2026-10-22
+checked: f047b4158
 areas:
   - apps/server/src
-  - apps/image-studio/src
+  - packages/knowledge/src
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+Module details: `voice:README.md`
+
+Module details: `make:README.md`
+Module details: `web-reader:README.md`
 
 Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-артефакт: production и development запускают `tsx src/index.ts`, поэтому относительные импорты в исходниках имеют расширение `.js`, несмотря на физические `.ts`.
 
@@ -18,6 +23,62 @@ after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
 
 ## Запуск и dependency injection
+
+### Knowledge module lifecycle
+
+`packages/knowledge` (`@voicechat/knowledge`) owns Markdown indexing, search,
+scoped visibility, source snapshot lifecycle, auto-context and the KB MCP
+definitions (`search`, `document`, `topics`). It has no imports from Core and
+does not open files, databases, Git processes or model connections itself.
+Core's `kb/` entry points retain source-compatible wrappers around the package;
+REST routes, MCP HTTP transport, operational tools and research orchestration
+remain in Core. The source wrappers use relative workspace imports so the
+existing `tsx` launch does not depend on a generated JavaScript build.
+
+The explicit host ports are:
+
+| Port | Core implementation | Responsibility |
+| --- | --- | --- |
+| `KbFiles` | `kb/files.ts`: `kbFiles` | Markdown listing, configuration/document reads and existence checks |
+| `KbGit` | `kb/sources.ts`: `createKbGit` | Credential lookup, sparse checkout, bounded fetch and docs-path validation |
+| `KbScopedStore` | `kb/scoped.ts`: `createKbScopedStore` | Stored document generation/rows and authorized project repository lookup |
+| `KbSemanticReranker` | `kb/reranker.ts`: `LlmKbReranker` | Model execution; package search retains its lexical fallback |
+| `KbView` / `KbAccess<Viewer>` | `kb/access.ts`, `kb/rpc.ts` | Host identity, current membership and write permissions; request filters only narrow visibility |
+| `KbDocumentStore` | `kb/rpc.ts` | Persistent document lookup, save and delete through `db.kb` |
+| `KbRpcPorts.usage` | `kb/rpc.ts` | Authorized conversation/project/run/task usage reports |
+| `KbUsageTracker` | `kb/usage.ts` | MCP delivery telemetry and Core event publication |
+
+`createInProcessKbRpc` implements every method in Shared's B01
+`KB_SERVICE_RPC` registry. `createLocalKbRpc` binds concrete database/access
+adapters and `server.ts` exposes it as the `kbRpc` Fastify decorator. The host
+supplies the authenticated user ID separately from the decoded request; live
+identity and membership checks protect writes and scoped reads. The contract
+test in `kb/rpc.test.ts` runs the registry against the package with real
+in-memory SQL storage, including all usage targets and denied access.
+This extraction adds no remote listener or deployment requirement.
+
+`server.ts` builds `ModuleKnowledgeBaseService` from `config.kbRoot`,
+`config.dataDir`, optional `config.kbModules` (`VC_KB_MODULES`) and
+`config.kbRefreshMs` (`VC_KB_REFRESH_MS`, default 600000). The source-file fallback
+is `kb-modules.json` under the data directory. `ScopedKnowledgeBase` wraps the
+file modules and retains the existing database visibility checks. It forwards
+module status/refresh and resolves the current authorized project's repository
+for auto-context preference.
+
+The concrete Git adapter in `kb/sources.ts` uses depth-one fetch, non-cone
+sparse checkout and the existing Git credential helper or GitHub integration
+token. `BuildOptions.kbCredentials` injects credential lookup for deployments
+and tests; `BuildOptions.kbService` still replaces the complete file source.
+Per-module refresh promises serialize updates, and complete in-memory snapshots
+are swapped only after successful indexing. Failures preserve the previous
+snapshot and expose only constant failure reasons. The timer is unreferenced;
+Fastify's `onClose` clears it and waits for bounded in-flight operations.
+
+`kb/routes.ts` serves `/api/kb/modules` and admin-only
+`POST /api/kb/modules/:id/refresh`. Module filters flow through REST, MCP and
+the scoped engine without changing `kb/access.ts`. File IDs are namespaced by
+module and relative Markdown path; legacy Core IDs remain read aliases.
+See [repository module configuration](features/project-knowledge-base.md#repository-modules).
 
 ### HTTP response compression
 
@@ -53,8 +114,14 @@ it. Disabling clears the reason. Nothing is persisted, so restart starts writabl
 
 The global `onRequest` hook returns HTTP 503 `{error: "read_only", reason}` for
 non-GET/HEAD/OPTIONS requests to `/api` and `/api/*`, before route handlers,
-authentication or proxy forwarding. Reads and `/api/health` stay available;
-health adds top-level `readOnly` and `reason`. Internal maintenance remains
+authentication or proxy forwarding. Reads and `/api/health` stay available.
+`GET /api/health` always returns HTTP 200 with `Cache-Control: no-store`,
+including while maintenance is enabled. Its JSON contract is unchanged: the live
+`readOnly` and `reason` come from the process-local maintenance snapshot,
+`application` comes from `applicationRuntimeMetadata('core', process.env)`, and
+`ok` plus release metadata retain their existing sources in `server.ts`.
+`maintenance.test.ts` verifies the complete body, status and cache header in
+both writable and read-only modes (TC-1/TC-2). Internal maintenance remains
 reachable for rollback.
 
 `attachWs` checks the same live state on existing and new chat connections,
@@ -110,312 +177,6 @@ projection's `serviceData` marker and reduced request never replace stored diagn
 
 Одна вычисленная пара попадает и в `summary`, и в элемент `llm` группы `conversation`. Для элемента сервер ставит `source` соответственно «Разговор», «Проект» или «Настройки пользователя», а `explanation` различает явное переопределение и наследование с конкретного уровня. Контрактные сценарии приоритета и наследования закреплены в `apps/server/src/routes/rest.test.ts`.
 
-## Граница отдельного Make-подобного продукта
-
-**Make (с 2026-08-26) — аналог Figma Make внутри чата.** Проект разговора — рабочая папка
-`<dataDir>/make/<conversationId>/` (`apps/server/src/make/workspace.ts`, класс `MakeWorkspaces`):
-статические файлы + служебный `.snapshots/<id>/{meta.json,files/}`. Пути нормализует
-`normalizeMakePath` (`@voicechat/shared/make`): без `..`, скрытых сегментов и спецсимволов,
-глубина ≤ 8; символические ссылки внутри проекта отвергаются; лимиты `MAKE_LIMITS`
-(2 МБ/файл, 400 файлов, 50 снимков). `rev` — счётчик изменений в памяти процесса.
-REST (`routes/make.ts`): `GET/PUT/DELETE /api/make/:id[/file]`, `/rename`, `/snapshots`,
-`/snapshots/:sid/restore`, `/reset`; все проверяют `core.conversation(uid, id)` (порт `MakeCore`, см. ниже) и
-`assistantKind === 'make'`. Превью и ZIP — `/api/preview/make/:id/*` и `…/export.zip`: под
-префиксом `/api/preview/` действует preview-cookie (`users/auth.ts`, `previewSession` принимает
-`startsWith('/api/preview/make/')`). HTML отдаётся с CSP `default-src 'self' 'unsafe-inline'
-'unsafe-eval' data: blob: https:; frame-ancestors 'self'` и инъекцией `MAKE_INSPECTOR_SCRIPT`.
-ZIP — собственный писатель без сжатия (`make/zip.ts`). События — `MakeHub` (`make/hub.ts`),
-сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
-MCP даёт `core.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
-Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
-`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
-**`.publish.json` пишется через временный файл и `rename`.** Счётчик просмотров
-идёт фоном (`void countView(...)` в маршруте отдачи), а обычный `writeFile`
-сначала усекает файл: читатель, попавший в это окно, получал обрезанный JSON и
-`publishRaw` отвечал `null`. Хуже всего это било по `unpublish` — на `null` он
-не удалял ни индекс, ни сам файл и возвращал успех, а ссылка `/p/<token>/`
-оставалась живой. В гейте то же окно давало плавающий провал `rest.test.ts`
-(«после снятия — 404», приходило 200). Поэтому: запись атомарна, `unpublish`
-удаляет `.publish.json` в любом исходе, а при нечитаемом файле ищет записи
-индекса обходом `make/.published/` по `conversationId`.
-
-`publish(id, {snapshotId})` закрепляет публикацию за снимком (`snapshotId/snapshotLabel` в `.publish.json`):
-`publicFile()` читает файлы из `.snapshots/<id>/files`, транспиляция кэшируется по ключу `conv@snapshot`;
-`publish(id)` без снимка возвращает «живую» публикацию текущих файлов (п.26).
-`check()` — статика: ошибки компиляции jsx/tsx/ts (`compileDiagnostics` в `make/transpile.ts` → `kind: 'compile-error'`
-со `line/column`), нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
-`..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),
-пустые файлы, `http://`-скрипты. `applyTemplate(id)` заменяет файлы шаблоном `MAKE_TEMPLATES`
-со снимком «Перед шаблоном «…»». `snapshotDiff(id, sid)` сравнивает файлы снимка с текущими побайтно
-(added/removed/changed/same), `restoreFile(id, sid, path)` возвращает один файл. `importFiles(id, files, mode)`
-— общий вход для импорта ZIP (`make/zipRead.ts`: store+deflate, срез общей папки, пропуск скрытых и
-`__MACOSX`) и страницы по URL (`make/importUrl.ts`: HTML → index.html, same-origin css/js/img → `assets/`,
-ссылки переписаны, чужие домены и `<a href>` — абсолютные; хосты проверяет `assertPublicHost` из
-`previewProxy.ts`, лимиты 30 файлов × 2 МБ); перед импортом — снимок, `replace` очищает проект.
-`exportZip(id, {vite})` добавляет `package.json` (react/react-dom при jsx/tsx, typescript при ts),
-`vite.config.js`, `tsconfig.json`, `.gitignore`, `README.md` — только если таких файлов нет в проекте.
-**React без сборки** (`make/transpile.ts`): при отдаче превью и публикации файлы `.jsx/.tsx/.ts`
-прогоняются через `esbuild.transform` (esm, jsx automatic, target es2020), относительные импорты без
-расширения дополняются существующим файлом (`rewriteRelativeImports`), ошибка компиляции отдаётся
-модулем `throw new Error('Ошибка компиляции …')` — превью живо, текст виден в консоли/раннере. Кэш
-`(conv, path) → {rev, code}` на 500 записей. React берётся из esm.sh через import map в index.html
-(`MAKE_REACT_IMPORT_MAP`, шаблоны `react` и `react-ts` — второй на TSX с типизированными пропсами и
-`*.stories.tsx`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
-стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
-для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories`,
-**Библиотека компонентов** (п.17, `make/library.ts`): `<dataDir>/make-library/<base64url(login)>/<slug>/{meta.json,
-files/…}`; `GET /api/make/library`, `POST /api/make/:id/library {name, paths}` (файлы читаются из проекта),
-`POST /api/make/:id/library/:slug/insert` (→ `importFiles(merge)` со снимком), `DELETE /api/make/library/:slug`;
-slug — транслит имени (`librarySlug`). `GET/POST /api/make/:id/shots` (визуальные снимки стори: PNG снимает клиент, сервер хранит в `.shots/<id>.png` +
-`meta.json`, ≤10 на стори, отдаёт `…/__shots__/<id>.png`; `.shots` не входит в список файлов и переживает reset;
-серверный Playwright для авто-снимков отложен — в прод-образе нет браузеров), `GET /api/preview/make/:id/__gallery__` (`renderGalleryPage` — сетка iframe-ов на раннер; те же `__stories__` и
-`__gallery__` отдаются и на публикации `/p/<token>/…` без входа, п.15) и
-`GET /api/make/:id/search?q=` (`MakeWorkspaces.stories/search`, поиск без регистра, ≤200 совпадений).
-
-Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
-
-Канонические строки находятся в `packages/shared/src/protocol.ts`. Реализация разделена между `routes/rest.ts`, `routes/agents.ts`, `routes/admin.ts`, `routes/projects.ts`, `kb/routes.ts`, `users/auth.ts` и `anthropic/gateway.ts`.
-
-Каждый запрос к пользовательским данным получает имя через `uid(req)`. Проверки членства/владения выполняются до чтения или мутации. Admin guard использует роль из разрешённой сессии, не имя из URL. Выделение `@voicechat/admin-app` не меняло реализации `routes/admin.ts`, SQLite, auth model или runner protocol; host лишь адаптирует существующие маршруты к transport-neutral frontend contract.
-
-## Прокси веб-превью
-
-`registerPreviewProxy()` подключается из модуля Web Reader (`reader/module.ts`, см. раздел
-«Web Reader» ниже) и обслуживает защищённый `/api/preview` — маршрут зарегистрирован как `all`, то есть
-обслуживает любой метод, а не только GET первичной загрузки страницы. Реализация в
-`routes/previewProxy.ts` принимает только HTTP/HTTPS и не позволяет превью стать
-SSRF-мостом: до запроса и в DNS-lookup все адреса имени должны быть публичными;
-loopback, unspecified, private, link-local, multicast/reserved IPv4 и IPv6 ULA
-отвергаются. Каждое из максимум пяти перенаправлений проходит ту же проверку.
-
-Один внешний ответ ждут не дольше 10 секунд и читают максимум 5 MiB. Для HTML,
-XHTML и CSS прокси переписывает URL ресурсов, ссылок, форм, постеров и `srcset`
-обратно в `/api/preview`, сохраняя навигацию и зависимые ресурсы внутри проверяемой
-границы; `url(...)` переписывается не только в самостоятельных CSS-ответах, но и в
-`<style>`-блоках HTML и в inline `style=""`-атрибутах. Перед отправкой он снимает
-`X-Frame-Options`, CSP и cookies, пересчитывает
-длину изменённого тела и отдаёт исходный status; ошибки загрузки возвращаются как
-структурированный JSON. В HTML перед закрывающим `body` (либо в конец документа)
-вставляется автономный same-origin скрипт: он обслуживает инспектор, DOM-действия и
-запись пользовательских действий через `postMessage`, а на `pagehide` снимает их
-обработчики. UI-поведение и семантика сценариев — в [ui.md](ui.md#веб-превью), путь
-контракта — в `packages/shared/src/protocol.ts`.
-
-Текущее приложение доступно по `https://app.internal/` без операторского алиаса.
-`ReaderCore.projectResource` доставляет ресурс встроенному Fastify через app.inject
-(`readerBridge/projectResource.ts`), standalone вызывает тот же порт по RPC. Это
-всегда своё ядро: путь не выбирает сетевой хост. Host имеет логическое значение
-app.internal для генерируемых приложением абсолютных ссылок. Авторизация вложенной
-страницы отдельная — только её Bearer/cookies, внешняя сессия не подставляется.
-Бинарное тело сохраняется в base64-контракте, ответ ограничен 5 MiB.
-`previewProjectLoader.ts` обрабатывает до пяти внутренних redirect с cookie/hash,
-сохраняет метод/тело 307/308, ограничивает всю цепочку 10 секундами и прекращает её
-после позднего ответа. Служебные /internal, /mcp и рекурсивные /api/preview закрыты;
-встроенная diagnostics остаётся специальным разрешённым ресурсом. Ответы приложения
-имеют private,no-store. UI канонизирует скопированный собственный URL до доставки;
-сервер также распознаёт точный Host текущего запроса. Проверки: previewProject.test,
-projectResource.test, previewProjectLoader.test, readerRemote.integration и
-webReaderOwnProject/webReaderProject.e2e.test.ts (реальный вход без aliases).
-
-Алиасы Web Reader читаются в `reader/module.ts` непосредственно из
-`process.env.VC_BROWSER_HOST_ALIASES` при создании локального модуля. Передача
-похожего поля через `loadConfig({...})` в тесте не меняет эту среду: in-process
-стенд должен явно задать и затем восстановить переменную, как в
-`sislex/webreader:system-tests/webReaderModel.e2e.test.ts`. Созданный Web Reader-разговор имеет scope
-`web-reader`; чтение `/api/conversations/:id` в таком стенде требует
-`?scope=web-reader`, ответ содержит `{conversation, messages}`.
-
-CSS разбирается PostCSS, значения — postcss-value-parser (`previewStyles.ts`):
-переписываются настоящие url(), строковый @import и строковые источники image-set;
-CSS escapes декодируются до URL. Комментарии и content-строки сохраняются,
-fragment-only SVG-ссылки остаются локальными. Повреждённый CSS возвращается исходным.
-Тот же разбор работает для внешней таблицы, style-блока и атрибута.
-Srcset сканируется по URL/дескрипторам, поэтому запятые в data URL и именах файлов
-не превращаются в разделители; imagesrcset у preload обрабатывается так же.
-Проверки: `previewStyles.test.ts`, `e2e/webReaderStyles.e2e.test.ts`.
-
-HTML разбирается `parse5` в `routes/previewHtml.ts`, правятся диапазоны исходных
-атрибутов: entities декодируются перед разрешением URL, поддерживаются значения
-без кавычек и `formaction`, строки скриптов/комментарии и `data-*` сохраняются.
-Первый `<base href>` задаёт базу ресурсов и fetch/XHR; сами base удаляются, чтобы
-относительные адреса прокси оставались на origin Reader. Якоря `#…` сохраняются,
-`target=_blank|_parent|_top` заменяется на `_self`. Integrity у script/link снимается,
-поскольку тело CSS/модуля меняет прокси; импорты inline `type=module` также
-переписываются. `previewModules.ts` использует AST Acorn для настоящих импортов
-(включая absolute URL, escapes, статические template literals и комментарии),
-реэкспортов и ресурсов `new URL(..., import.meta.url)`. Это относится и к JS
-публичного сайта без machine/alias; текст строк и комментариев сохраняется.
-Явные mappings в inline import map переписываются в те же URL прокси.
-Вставка context/inspector использует позиции настоящих head/body,
-поэтому HTML-строки внутри JavaScript её не сбивают. Регрессии:
-`previewHtml.test.ts`, реальные переходы/ресурсы Chromium —
-`e2e/webReaderHtml.e2e.test.ts` (порт выбирается автоматически, без данных прода).
-
-Cookies сайтов хранит `PreviewCookieStore` (`previewCookies.ts`, tough-cookie 5.1.2):
-отдельный CookieJar пользователя в экземпляре Reader. Host-only, граница Path,
-default-path, приоритет Max-Age над Expires, Secure и префиксы __Host-/__Secure-
-повторяют правила браузера. Общие Domain `machine.internal`/`internal` не принимаются:
-разные окружения машин не должны делить сессии. Повреждённые и больше 4096 символов
-Set-Cookie пропускаются отдельно, регистр имени заголовка не важен. Cookies каждого
-redirect сохраняются до следующего запроса. HTTP reset и MCP clearCookies используют
-один контейнер модуля; закрытие сервера очищает его. Глобальные функции сохранены
-только для старых чистых тестов, рабочие маршруты их не используют. Регрессии:
-`previewCookies.test.ts`, `reader/module.cookies.test.ts`, `webReaderCookies.e2e.test.ts`.
-
-Кэш ресурсов машины принадлежит экземпляру `registerPreviewProxy`, ключ включает
-машину, пользователя и URL. Доступ и online проверяются до чтения/304; браузер
-получает `private, no-cache`, чтобы отзыв прав замечался сразу. JSON не кэшируется.
-`previewCachePolicy.ts` исключает запросы с cookie/Authorization сайта, повторную
-загрузку и Range, а также ответы с private/no-store/no-cache, Vary и Set-Cookie;
-более строгий upstream no-store сохраняется до браузера. Мутации очищают старые
-ресурсы машины. HTTP-регрессии — `previewCache.integration.test.ts`, браузерные —
-`e2e/webReaderCache.e2e.test.ts`.
-
-Текстовый ответ декодирует `previewResponse.ts`: BOM имеет приоритет, затем HTTP
-charset, meta charset/http-equiv HTML, декларация XML или CSS @charset; fallback
-UTF-8. Переписанные HTML/CSS/JS всегда объявляются браузеру как UTF-8. JSON и бинарь
-не проходят текстовое преобразование, в том числе при чтении собственного ядра.
-Gzip/br/deflate распаковываются до переписывания в каждом транспорте; заголовок
-Content-Encoding снимается, лимит 5 MiB проверяется и после распаковки. Повреждённый
-поток, неподдерживаемое сжатие и превышение лимита возвращают понятную ошибку;
-пустой HEAD/204 не отправляется в декомпрессор.
-
-Общая политика redirect сохраняет PUT/HEAD и 307/308 с телом; 301/302 переводят
-в GET только POST, 303 — всё кроме HEAD. После сброса тела удаляются его заголовки,
-при смене origin — авторизация; неявный fragment наследуется, явный пустой сбрасывает
-его. Локальный адрес машины и HTTP app.internal сначала возвращаются к логическому
-origin, чтобы не потерять авторизацию собственного сайта. Не-HTTP redirect закрыт.
-Проверки: `previewResponse.test.ts`, `previewResponse.integration.test.ts`,
-`webReaderEncoding.e2e.test.ts`.
-
-DOM-действия click/type/set используют `previewInteractions.ts`: выбирается
-единственная видимая цель, а неоднозначность возвращает кандидатов вместо первого
-случайного элемента. Учитываются disabled/fieldset, aria-disabled/inert, readonly,
-maxlength, нетекстовые input и отключённые option/optgroup. Ввод проходит отменяемый
-beforeinput и InputEvent; неверное число/дата не стирает прежнее значение. Click
-воспроизводит pointer/mouse-последовательность и фокус. Set проверяет фактическое
-состояние checkbox после отменяемого click; radio нельзя снять как checkbox.
-Проверки: `previewInteractions.test.ts`, `webReaderInteractions.e2e.test.ts`.
-
-`press` в прокси использует `previewKeyboard.ts`: dispatchEvent сам не запускает
-нативные действия клавиши, поэтому после отменяемых keydown/keypress выполняются
-ввод/удаление через beforeinput/input, выделение, Tab-порядок, Enter формы с
-валидацией, Space checkbox и выбор option стрелками. Keyup отправляется и после
-отмены keydown. Сочетания разбираются на key/code/модификаторы, ControlOrMeta
-выбирает платформу; удаление не разрывает Unicode code point. У contenteditable
-удаление не выходит за границы блока. Это ограниченная эмуляция, системные shortcut
-и все действия редакторов она не заменяет; для них доступен полный Chromium.
-Проверки: `previewKeyboard.test.ts`, `webReaderKeyboard.e2e.test.ts`.
-
-Чтение `read/find/a11y` использует `previewReading.ts`: обход видимых текстовых
-узлов исключает script/style, скрытое и инспектор; выбранный корень включается
-в результат. Подписи учитывают aria-labelledby (все ID, включая скрытые ссылки),
-aria-label, связанные label и alt иконок. Дерево доступности исключает aria-hidden
-и inert, сообщает роли и состояния checked/expanded/selected/disabled/readonly/
-required/invalid. Значения чувствительных input/textarea не попадают в read,
-включая текстовое содержимое textarea. Это компактная DOM-модель, не полная
-реализация алгоритма доступного имени браузера. Проверки — `previewReading.test.ts`
-и `webReaderReading.e2e.test.ts`; типы дополнительных полей — `previewActions.ts`.
-
-Контекст хранилищ (`previewStorage.ts`) сохраняет интерфейс Storage: свойства,
-присваивание/delete, Object.keys/JSON, prototype/instanceof, стабильные методы,
-DOMString и обязательные аргументы. Ключи native local/sessionStorage имеют префикс
-логического origin; clear удаляет только его значения. События storage чужого
-origin подавляются, свои получают логические key/url и правильный storageArea.
-IndexedDB.open/deleteDatabase/databases и IDBDatabase.name используют те же
-исходные имена поверх namespace; базы другого сайта не перечисляются. Если getter
-localStorage запрещён браузером, остальные мосты продолжают запуск, а это хранилище
-получает временный in-memory fallback. Chromium-проверки: `webReaderStorage.e2e.test.ts`.
-
-Динамический сетевой трафик страницы тоже не покидает `/api/preview`: context shim
-(`previewContextScript`, вставляется в начало `<head>`) переопределяет `window.fetch`,
-`XMLHttpRequest.prototype.open`, `navigator.sendBeacon` и `history.pushState/replaceState`.
-Каждый URL резолвится относительно текущей страницы внешнего сайта (база берётся из
-`?url=` текущего `location.href`, при недоступности — из URL, с которым рендерился
-документ) и, если он http/https и ещё не обёрнут, заворачивается в
-`/api/preview?url=<encoded>`; fetch сохраняет метод, тело и заголовки и форсирует
-`credentials: 'same-origin'`, чтобы preview-cookie дошла до гейта. Перехват
-`location.assign/replace/href` — best-effort через `Object.defineProperty` в
-`try/catch`: в реальных браузерах интерфейс `Location` целиком `[LegacyUnforgeable]`
-и не переопределяется, поэтому прямое присваивание `location.href` шим не ловит —
-SPA-навигацию держит перехват History API и серверное переписывание ссылок.
-`Authorization`, выставленный самой страницей, шим переименовывает в
-`x-preview-authorization` (иначе Bearer-гейт ChatAI принял бы его за токен ChatAI и
-ответил 401), а роут возвращает его апстриму как `authorization`. Deep-link:
-фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=`.
-Context-шim канонизирует его в `location` через нативный `replaceState` до запуска
-приложения, без дополнительного шага истории; после redirect используется конечный
-URL ответа. Обёртки `pushState/replaceState` сохраняют настоящий hash и уведомляют
-мост; hashchange/popstate тоже отправляют ready с логическим адресом (включая
-очищенный hash). `pageInfo` и выбор элемента возвращают этот же адрес. После
-pagehide/pageshow восстанавливается обработчик команд — BFCache не оставляет
-живую страницу с отключённым мостом. Chromium: `webReaderNavigation.e2e.test.ts`.
-
-Ресурсы, созданные JavaScript после загрузки, синхронно переписывает
-`previewResources.ts`: URL-свойства DOM, setAttribute/NS, srcset, inner/outerHTML,
-insertAdjacentHTML и ShadowRoot.innerHTML. MutationObserver здесь опоздал бы:
-запрос начинается до его callback. Getter возвращает URL сайта; document.URL,
-documentURI/baseURI следуют логическому SPA-адресу. SRI снимается с переписываемых
-script/link. CSSOM, document.write и srcdoc этот слой пока не эмулирует.
-Проверка реальной загрузки ресурсов — `e2e/webReaderResources.e2e.test.ts`.
-
-Нативные формы и динамические ссылки обрабатывает `previewNavigation.ts` внутри
-context-шима. GET собирает successful controls через `FormData(form, submitter)`
-и заменяет query исходного action перед оборачиванием, иначе браузер удаляет
-служебный `?url=`. Пустой action использует адрес текущей страницы; учитываются
-formaction/formmethod. POST остаётся нативным (включая multipart и файлы), меняются
-только action/target. Программный `form.submit()` проходит тот же маршрут.
-Обработчики на window пропускают отменённые приложением события и dialog-формы.
-Динамические ссылки, включая Shadow DOM, выбираются через composedPath и
-оборачиваются перед default action. Якоря, download, специальные схемы и
-модифицированные клики сохраняют отдельную нативную семантику. Проверки:
-`previewNavigation.test.ts`, `e2e/webReaderForms.e2e.test.ts`.
-
-Границы прокси-подхода (проверено живьём на instagram.com): SPA с
-**history-роутером** (маршрут из `location.pathname`) через превью не поднимаются —
-документ живёт на `/api/preview?url=…`, роутер не матчит свой маршрут и приложение
-остаётся на сплэше; подделать `pathname` нельзя, интерфейс `Location` целиком
-`[LegacyUnforgeable]` (hash-роутеры при этом работают — см. deep-link выше).
-Второе: динамически создаваемые `<script src>`/`<link>` (лоадеры крупных сайтов)
-уходят мимо шима напрямую на их CDN — они загружаются (CSP снят), но такие
-под-запросы не проходят через `/api/preview`. Такие сайты — ниша playwright-reader
-(реальный браузер), а не веб-прокси.
-
-Роут принимает тело запроса любого content-type сырым буфером (JSON, multipart,
-бинарь) — парсеры остального API не затронуты: внутри `registerPreviewProxy()` свой
-fastify-scope с `removeAllContentTypeParsers()` и catch-all `'*'`-парсером. Заголовки
-входящего запроса пробрасываются апстриму через `upstreamRequestHeaders()`, кроме
-hop-by-hop, адресации и авторизации/сессии ChatAI: `cookie`, `authorization`,
-`host`, `origin`, `referer`, `accept-encoding`, `sec-*`, `x-forwarded-*` и т.п.
-наружу не уходят; `content-type` уходит как есть. Conditional-заголовки
-(`if-none-match`, `if-modified-since` и родня) тоже отбрасываются, а из ответа
-вырезаются `etag`/`last-modified` (`DROPPED_RESPONSE_HEADERS`): валидаторы описывают
-апстримное тело, после инъекций оно другое, и 304 от апстрима залипал бы в кэше
-браузера как HTML с устаревшими шимами — Vite-окружения с их `etag` на `index.html`
-воспроизводили это стабильно. SSRF-проверка (`assertPublicHost`
-плюс кастомный DNS-lookup) выполняется в `get()` на каждый проксируемый запрос —
-включая переписанные fetch/XHR/beacon и каждый redirect-хоп, исключений нет.
-
-`/api/preview` защищён, но не Bearer-токеном в query (тот попал бы в лог/историю
-браузера) — авторизация идёт через отдельную HttpOnly-cookie `vc_preview_session`
-(`Path=/api/preview`, `SameSite=Strict`, ставится без `Max-Age` — то есть session-cookie,
-не переживает закрытие браузера). В `apps/server/src/users/auth.ts` функция
-`previewSession()` читает эту cookie, но только когда путь запроса точно равен
-`/api/preview`; глобальный auth `preHandler` пробует Bearer, а при его отсутствии —
-эту cookie, так что на любом другом защищённом REST-пути cookie не работает и нужен
-`Authorization: Bearer`. Cookie выпускают два роута: `POST /api/session/login` при
-входе и `POST /api/session/preview`, который переиздаёт её из уже действующего
-Bearer-токена без пароля — он покрывает сессии, восстановленные из `localStorage`
-без повторного login, и повторные визиты после перезапуска браузера, когда
-session-cookie от предыдущего входа уже пропала; без этого второго роута такие
-сессии получали 401 на любом сайте в превью. Оба пути лежат под публичным префиксом
-`/api/session/` (`isPublic()`), поэтому `/api/session/preview` проверяет Bearer сам и
-без него отвечает 401 без cookie. `POST /api/session/logout` снимает cookie через
-`Max-Age=0`. На клиенте мостовой `session.ensurePreview()` вызывает только
-`PreviewPane`, которая в приложении уже не монтируется; живая панель Web Reader
-(`WebReaderHost` → iframe рекордера) идёт в `/api/preview` без клиентского гейта и
-полагается на cookie от login — подробности флоу в [ui.md](ui.md#веб-превью).
-
 ## WebSocket `/ws`
 
 `attachWs` installs message and close listeners before awaiting asynchronous
@@ -431,6 +192,8 @@ close. Regression tests cover ordering, initialization failure and early close.
 
 После успешного `db.chat.addMessage`, атомарного создания draft-разговора или обновления meta REST публикует `chat.message` через процесс-глобальный `UserFrameHub`. Кадр содержит `conversationId` и полный сохранённый `Message`, адресуется по аутентифицированному `userId` и поэтому приходит всем активным соединениям владельца, включая источник, но не другому аккаунту. Публикации при ошибке записи нет; повтор с тем же `messageId` может повторить кадр, а клиент обязан слить его по `Message.id`. Эта публикация не зависит от старта модели или первого токена: серверные проверки двух одновременных сессий находятся в `apps/server/src/session.test.ts`.
 
+A Codex turn that fails with `no rollout found for thread id` (the runner lost the thread, for example after its volume was recreated) clears the conversation's stored `codex:` session and re-queues the same message without marking it failed, so it runs once more in a fresh thread; a second failure follows the normal error path (`isLostCodexThread` in `turns.ts`).
+
 `TurnManager` также публикует весь lifecycle хода и авторитетные снимки очереди всем сессиям владельца через подписку с `ownerUserId`. В `createSession.onOpen` подписка на ходы устанавливается до отправки `claude.active`, затем сессия подписывается на `UserFrameHub` до первого ожидания БД и вызывает `resumeQueues(userId)`. Поэтому reconnect получает накопленный active-turn, восстановленные из SQLite очереди и последующие `start/token/log/usage/done/error`; история сообщений остаётся авторитетным REST-снимком `conversations:get`, который клиент сливает с уже увиденными realtime-кадрами.
 
 При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
@@ -441,6 +204,18 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 `turns.ts` хранит по одному активному ходу на conversation id. `start()` выбирает Claude/Codex client, строит запрос с cwd/profile/MCP и подписывается на token/activity/usage. Partial хранится в памяти и транслируется всем заинтересованным соединениям.
 
+The read-only history MCP endpoint (`/mcp/history`, tools
+`mcp__history__history_search` and `mcp__history__history_get`) is attached to a
+normal assistant turn with an in-memory, conversation-scoped token. Search uses
+the messages full-text index but can only return published messages from that
+turn's conversation, newest first; snippets are capped at 400 characters.
+Direct reads return the selected message and at most five neighbours on either
+side, with every message capped at 4,000 characters. The `mcp-history` context
+toggle removes the whole server. Delegated/text-only turns never receive it,
+and turn completion, cancellation, or failure revokes its token. Conversations
+with more than 200 published messages add a short prompt hint telling the model
+to discover older details through these tools.
+
 По завершении сервер сохраняет AI message и метаданные в SQLite, обновляет conversation и отправляет `done`. Каждый возвращаемый `Conversation` содержит серверный агрегат стоимости сохранённых AI-сообщений: `costUsd` и `costStatus` (`known`, `partial`, `unknown`). Источник расчёта — `conversationCosts` в `apps/server/src/db/database.ts`: он связывает фактический `messages.engine` и `meta.model` с `model_prices`, используя `conversations.llm_model` только как fallback модели. Обычный вход равен `max(inputTokens - cacheReadTokens, 0)`, чтение и создание кэша и output тарифицируются отдельно. AI-ход считается известным только при числовых input/output (и, если присутствуют, cache) usage и найденном тарифе для provider/model; все известны — `known`, известна лишь часть — `partial`, нет ни одного известного или AI-ходов ещё нет — `unknown`. Для `partial`/`unknown` `costUsd` равен `null`, чтобы известная часть или отсутствие usage не выглядели полной нулевой суммой.
 
 **Итог кэшируется в самой беседе** (`conversations.cost_usd`, `cost_status`, `cost_prices_stamp`, `cost_dirty`): полный агрегат сканирует все AI-сообщения беседы и разбирает JSON каждого, и на списке сайдбара это было 95% его времени (17.5 мс на 22 беседы, 353 мс на 158). Протухание ловят **триггеры** на `messages` (INSERT/UPDATE/DELETE → `cost_dirty = 1`), а не вызовы по коду: сообщения пишет десяток мест (ход, правка, откат, импорт legacy), и любое забытое давало бы устаревшую цену в списке — ошибку, которую никто не заметит. Смену прайса ловит `cost_prices_stamp` (`MAX(updated_at)` и число строк `model_prices` — второе нужно, чтобы заметить удаление цены). Триггеры снимаются в начале миграций и создаются в конце: пересборка `conversations` (DROP + RENAME) падает, пока жив триггер с телом, ссылающимся на эту таблицу. После кэша список стоит 0.6 мс на окно недели и 7 мс на все 158 бесед.
@@ -449,7 +224,15 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 По cancel/error менеджер ходов снимает handle и очищает map. Пользовательский cancel после уже полученной дельты сохраняет partial как AI message с `meta.interrupted=true` и отправляет `done` с этим partial; поздний callback модели игнорируется. Тест не должен ждать пустой `done`, если мок успел отдать токен: такое ожидание держало Vitest до глобального 10-минутного timeout. Проверка identity текущего turn не позволяет позднему callback старого процесса удалить новый ход того же разговора.
 
-Очередь разговора хранится в SQLite и исполняется сервером по одному элементу в FIFO-порядке. Завершение, ручная остановка и ошибка активного LLM-хода освобождают слот и вызывают следующий ожидающий элемент. При ошибке исходная реплика сохраняется в очереди со статусом `failed`, но пауза не включается: автоматическая выборка `takeQueuedTurn` рассматривает только `queued`, поэтому ошибочный элемент остаётся видимым для пользователя, не запускается повторно и не блокирует последующие сообщения. Идемпотентность по `messageId` и авторитетные снимки очереди защищают от дублей при повторной отправке и realtime-подтверждении. Источники — `apps/server/src/turns.ts` и методы очереди в `apps/server/src/db/database.ts`.
+For ordinary public Chat with `VC_CHAT_TEXT_ONLY=true` and Billing, Stop detaches
+display while the paid executor finishes in the background. The queue remains
+paused; an explicit resume is allowed only after the stable user's pending
+accounting operation settles. The checks run before extracting or merging queued
+messages. Shutdown waits for executor completion and reconciliation before closing
+the accounting outbox. See [public Stop accounting](data-auth.md) for the scope,
+uncertain-usage behavior and compatibility with hard cancellation elsewhere.
+
+Очередь разговора хранится в SQLite и исполняется сервером по одному элементу в FIFO-порядке. Завершение, ручная остановка и ошибка активного LLM-хода освобождают слот и вызывают следующий ожидающий элемент. При ошибке исходная реплика сохраняется в очереди со статусом `failed`, но пауза не включается: автоматическая выборка `takeQueuedTurn` рассматривает только `queued`, поэтому ошибочный элемент остаётся видимым для пользователя, не запускается повторно и не блокирует последующие сообщения. Идемпотентность по `messageId` и авторитетные снимки очереди защищают от дублей при повторной отправке и realtime-подтверждении. A `claude.send` whose `messageId` is not a stored message of that conversation (any state) is refused with `claude.error` `message_not_found` before the model and the queue: the queue row references the message, and the failed insert from a later model callback used to stop the Core process. Источники — `apps/server/src/turns.ts` и методы очереди в `apps/server/src/db/database.ts`.
 
 Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 
@@ -487,6 +270,13 @@ STT session аккумулирует PCM, конвертирует в WAV и в�
 
 Штатная модельная картинка хранится в AI-сообщении компактным fenced-блоком ```image с абсолютным путём, `agentId` и подписью; `MessageImage` получает её байты только при рендеринге. При наличии сохранённого provider-session следующий ход идёт через resume и в prompt попадает лишь новая реплика. После сброса/отсутствия session `TurnManager` пересобирает prompt из всех `messages.text` через `buildConversationPrompt`. При этом функция вырезает из AI-реплик корректные служебные ```image-блоки и локальные markdown-картинки через `parseImages`: это метаданные для UI, а не контекст следующего хода. Inline data-URL (`data:image/...;base64,...`) или иной base64 в тексте AI-сообщения не преобразуется и будет повторно отправлен модели. `parseImages` вырезает только локальные markdown-картинки и корректные ```image-блоки; внешние URL и data-URL остаются в markdown.
 
+Снимок заполнения provider-thread хранится в `conversations.context_usage_json` и
+публикуется как `Conversation.contextUsage`. `TurnManager` обновляет его после
+завершённого хода и очищает, когда runner сообщает другой thread id. Явный
+`POST /api/conversations/:id/thread/reset` атомарно очищает session и usage и
+оставляет заметку в ленте; следующий ход поэтому проходит через `coldStartPrompt`
+со свежим ограниченным хвостом и серверным резюме, а не через resume.
+
 ## LLM и MCP
 
 `ClaudeCli` и `CodexCli` реализуют общий `LlmClient` (`@voicechat/shared`, `llm.ts`): spawn, поток событий, cancel. Сами классы лежат в `apps/llm-runner/src/cli/`; сервер либо импортирует их из `@voicechat/llm-runner/cli` и спавнит локально, либо использует третью реализацию того же интерфейса — `llm/remoteClient.ts` (`RemoteLlmClient`), который шлёт ход по HTTP в контейнер-исполнитель (`POST /v1/run`, NDJSON, отмена — `DELETE /v1/run/:id`). В Docker этот transport смотрит на внутренние сервисы `runner-work` и `runner-personal`; серверный образ собственных `claude`/`codex` бинарников больше не содержит. Для соседних профильных задач у сервера есть отдельный клиент `llm/runnerFsClient.ts`: он проксирует `/api/auth/status`, `/api/cc/*`, `/api/cx/*`, `/api/files/read` и live-tail CC/Codex в `/v1/auth/status`, `/v1/fs/*` и `/v1/files/read`, переподключая SSE с `Last-Event-ID`. Разбор потока для удалённого транспорта живёт в `llm/sinks.ts`, выбор реализаций идёт по `VC_LLM_RUNNER_URL`/`VC_LLM_RUNNER_CLAUDE_URL`/`VC_LLM_RUNNER_CODEX_URL` в `config.ts`; подробности — `docs/kb/llm.md`. MCP-конфигурация Claude может включать `remoteBashMcp`, который адресует команду выбранной машине через registry.
@@ -499,13 +289,9 @@ Observer-модули как код живут и на сервере, и в и�
 
 `system/resources.ts` читает cgroup v1/v2 лимиты CPU/RAM с fallback на host. `capabilities.ts` сравнивает их с default или `VC_MIN_MEM_STT/TTS`. Недоступность отражается в API и блокирует запуск.
 
-Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`; runner единолично владеет `whisper-cli`, моделями, временными WAV, очередью, лимитами и очисткой. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
-
-Синтез вынесен в отдельный `@voicechat/tts-runner`: только этот процесс запускает Piper или macOS `say`, владеет каталогом голосов и временными WAV. Внутренний ресурсный API `/v1/runs` защищён Bearer-токеном: создание и статус возвращают JSON-ресурс, WAV читается отдельно через `/v1/runs/:runId/audio`, отмена — `DELETE /v1/runs/:runId`. Runner ограничивает длину текста, очередь, конкурентность, время процесса и размер WAV, а после старта очищает оставшиеся временные файлы.
+Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
 
 Сервер использует только `TtsClient` (`RemoteTtsClient` в runtime, `FakeTtsClient` в тестах). `ttsSession` сохраняет браузерную FIFO-очередь и прежний кадр `tts.audio`, связывает активную фразу с `runId` и отменяет её при barge-in или закрытии WebSocket. Если URL или токен runner не настроены, capabilities помечает только TTS недоступным; STT и текстовый чат не блокируются.
-
-Piper доступен только при бинарнике и валидной паре `.onnx` + `.onnx.json`; на macOS `say` остаётся альтернативой. Фактически выбранные engine и voice фиксируются в ресурсе запуска.
 
 ## Конфигурация
 
@@ -562,13 +348,9 @@ HTTP-тесты используют `app.inject()`, WS-тесты — врем�
 `apps/web-reader` владеет прокси `/api/preview*`, переписыванием HTML/CSS/JS,
 контейнером cookie и MCP `/mcp/preview`. `createReaderModule` собирает эти части;
 ядро подключает его через публичный `@voicechat/web-reader` только в embedded.
-`apps/web-recorder` — iframe-документ того же продукта: собирается внутрь образа
-Web Reader и раздаётся под `/web-recorder/`. React-панель хоста остаётся отдельным
-артефактом `web-reader-ui` (`packages/web-reader-app`).
 
 `ReaderCore`, HTTP-клиент, RPC whitelist и подписанные токены вынесены в
-`packages/web-reader-contracts`. Приложение не открывает БД и не импортирует
-`apps/server`. `context` возвращает доступные машину, тестовых пользователей,
+`packages/web-reader-contracts`. `context` возвращает доступные машину, тестовых пользователей,
 feature-preview окружения и проектную политику. `canUseMachine`, `machineOnline`
 и `machineHttp` обращаются к реестру ядра; сам `machineHttp` повторно проверяет
 доступ, поэтому прямой RPC не обходит разрешения. Контекст чужого разговора —
@@ -584,21 +366,14 @@ Standalone `apps/web-reader/src/standalone/index.ts` слушает 8795. Ему
 с cookie/Bearer/CSRF без кэша прав. Ядро с `VC_READER_MODE=remote` и `VC_READER_URL`
 проксирует `/api/preview*`, `/mcp/preview` и `/web-recorder*`; конкретные маршруты
 Make сохраняют приоритет. `VC_READER_MCP_PUBLIC_BASE` переопределяет адрес MCP для
-LLM; helper `reader/mcpBase.ts` общий для ядра и канбана. Cookie сайтов остаются
-в памяти Reader, поэтому перезапуск сервиса сбрасывает входы в HTTP-прокси.
+LLM; helper `reader/mcpBase.ts` общий для ядра и канбана.
 
-Chromium исполняет `PlaywrightReaderService` из `packages/playwright-reader-contracts`:
-Web Reader вызывает приложение Playwright по HTTP, не включает его реализацию.
-`packages/browser-contracts` содержит лёгкий клиент раннера и валидацию адресов;
-ни один API-образ Reader не содержит движок Chromium или драйверы БД.
 Токены `createPreviewTurnTokens(mcpSecret)` живут сутки, подписаны HMAC и работают
 между процессами без регистрации в памяти. WS `PreviewActionRelay` создаёт ядро;
 перенос библиотеки контрактов не переносит владение его подключениями.
 
 Web Reader требует API ядра >=1.1.0; старое ядро без `context`/`machineHttp`
-отвергается при проверке манифеста. Изолированный гейт — `gate:app -- web-reader`,
-Playwright — `gate:app -- playwright-reader`; проверки UI-панелей имеют суффикс
-`-ui`. Тесты `readerBridge/readerRemote.integration.test.ts` и
+отвергается при проверке манифеста. Тесты `readerBridge/readerRemote.integration.test.ts` и
 `playwrightReaderBridge/remote.integration.test.ts` проверяют HTTP-границы без общей
 БД. `e2e/webReaderProject.e2e.test.ts` проверяет вход и deep link собственного
 проекта в embedded и отдельном процессе Reader.
@@ -618,12 +393,34 @@ artifacts привязанного хранилища через обратны�
 ядра). Гейт `machines/boundary.test.ts`: `server.ts` не собирает машины сам, `AgentRegistry` импортируют
 только модуль машин и его части. План выделения в отдельный процесс — `docs/plans/machines-service.md`.
 
+**Self-update of supervised agents (stand-https-v1 C01, 2026-10-14).** `agents/agentScript.ts`
+`servedAgent()` returns `{version, sha256}` of the bundle served at `/api/agents/script` (version from the
+`@sislexa/agent` manifest, SHA-256 over the exact bytes, computed once per process); the route sends those raw
+bytes and `GET /api/agents/version` returns the served version. After `agent.registered`, `agents/wsAgent.ts`
+sends `agent.update {version, sha256}` at most once per connection when the agent reported
+`supervisor: 'systemd' | 'launchd'` in `agent.register` and the served version is newer (`compareVersions`), and
+logs the security event `agent_update_sent` (group `machines`). Equal/newer versions and unsupervised or legacy
+agents receive no update; they keep the `agent.updateAvailable` hint from the registry version checks. The
+registry stores the last `agent.updateResult` per agent in memory across reconnects (`updateStatusOf`), and
+`GET /api/agents` lists it as `updateStatus: {status, message, at}`. The machines WebSocket
+feed includes the same outcome in its initial list and subsequent registry change notifications.
+Machines without a reported outcome omit the field; stored outcomes remain visible while offline.
+
+**Dev-process relay.** `registry.devProcess(agentId, method, request)` forwards the methods of the Shared
+`DevProcessRpc` registry: `devProcess.start|stop|status|logs` and, for agent 0.25+, `devProcess.stopStand
+{standId}` → `{standId, state: 'stopped', stopped, gateways}` (older agents answer with `devProcess.error`).
+Only response types from `DEV_PROCESS_RESPONSE_TYPES` are treated as dev results. Kanban calls it through
+`POST /internal/kanban/core` with `{method: 'machines.devProcess', args: [agentId, '<devProcess method>',
+request]}`; the dispatcher (`kanbanBridge/internal.ts`) rejects other method names with 400.
+
 **Режим `VC_MACHINES_MODE=remote` (2026-09-07).** Реестр живёт в отдельном процессе машин
 (`machines/standalone/index.ts`, `buildMachinesServer`, порт 8793, compose-профиль `machines`), а ядро
 получает порт как `HttpMachines` (`machinesBridge/httpMachines.ts`): синхронные чтения — из зеркала, которое
 процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
 события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
-`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
+`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`; пока команда
+работает, сервер раз в 30 с пишет пустую строку — иначе клиент на `fetch`/undici рвёт тело через 5 минут без
+данных, и молчаливая команда вроде снимка прод-базы падала с `terminated`). Ошибки
 файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`; буфер PTY (`ptyBufferText`) —
 полный, по RPC у процесса машин (тип у порта допускает `Promise`, консольный MCP ждёт `await`). При обрыве шины все машины
 считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
@@ -765,6 +562,106 @@ temporary readable files for both embedded and HTTP CLI execution.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
 
+Make stand working copies resolve through `stand:<conversationId>/<hostProjectId>/<standId>`
+(two UUIDs and a Kanban stand id such as `dev-5b9d0ce6-61b`). The Git workspace resolver requires the conversation owner and
+its Make project to match the caller and route project. It reads Kanban details
+through the same authorized `MakeProjectAdapters.getStand` client, matches the
+conversation repository against `DEV_COMPONENT_REGISTRY`, and uses the matching
+live entry's path and branch. Missing live entries return `409 stand_not_live`;
+owner/project mismatches and Kanban 404 return `404 workspace_not_found`.
+Machine permissions come from the conversation project, falling back to the
+host project only when no machine access exists there. The resolved kind is
+`project-worktree`, with the conversation id retained.
+For these workspaces, `storybook/open` uses a stand proxy lease for the session
+port when enabled, otherwise the existing machine bridge. Other workspace kinds
+retain direct and tunnel access selection.
+
+Make stand `status` on a Kanban 404 reports `creating` only while a `create` job
+is still running; a succeeded create followed by 404 means the stand was deleted
+and the status fails with `stand_not_found`. `detach` on a 404 returns an idle
+state so the Make service drops the conversation binding; otherwise a stale
+binding keeps the stand selector locked and rejects new `create` with 409.
+
+`StorybookSessions` appends `--port <port> --no-open --ci` to the configured
+command (default: `npm run storybook`). For `npm run`, `npm exec` and `npx`
+invocations it inserts `--` before these flags unless the command already has
+a standalone separator, including a trailing `--`. Other launch commands keep
+their existing argument forwarding.
+
+Errors of the components routes (`routes/projectComponents.ts` `handle`) keep
+the `statusCode` and code of errors that carry them: stand proxy
+`stand_not_found` 404, `stand_proxy_unavailable` 503, adapter
+`invalid_stand_response` 502, and Storybook start refusals 409
+`machine_offline` (machine not connected) and 409 `storybook_no_free_port`
+(every port 6006–6046 used by sessions on that machine). The body is
+`{error, code, message}`; errors without a status remain 409
+`components_failed`. A `failed` Storybook session carries `errorCode`
+(`ProjectStorybookErrorCode`): `storybook_exit_nonzero` (sentinel exit code
+≠ 0), `storybook_exited_before_ready` (exit 0 or PTY exit before readiness),
+`pty_error` (PTY error or session gone during probes),
+`storybook_ready_timeout`, and `storybook_port_busy` when the log shows
+`EADDRINUSE` or `port N is already in use/not available`, which overrides the
+exit codes. A successful start clears `errorCode`.
+
+### Project mode в Core (2026-10-07)
+
+`LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
+текущего участника. Структуру и дизайн рабочей копии он читает только через
+read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
+элементами, 256 КиБ на файл и 4 МиБ суммарно. Инвентарь включает package roots,
+stories, style files, CSS custom properties из `:root` и `data-theme`, простые
+JSON/TypeScript token maps и экспортированные компоненты.
+
+Git-операции project mode используют тот же `GitWorkspaceService`, что REST
+`/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
+занятость workspace и запрет push в protected branches проверяются в одном месте.
+Те же методы проходят через schema-validated `/internal/make/core` RPC.
+
+`server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
+Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is
+remote. Start reuses a stand on the selected project machine or creates one
+from an environment assigned to that machine. Status and URL use the stand's
+gateway URLs. `live_on` and `live_off` address a component of a specified stand;
+live writes use that stand machine's configured project working-copy path,
+never a caller-supplied absolute path. Project access and write roles are
+checked before mutation; Kanban remains responsible for allocation, durable
+operations, live-process readiness and machine/path validation. Transport
+failure or an offline Kanban returns 503 `stand_preview_unavailable`; Kanban
+client errors retain their HTTP status.
+
+`MakeRequestAuthority` creates an in-memory, random capability for each outbound
+request, bound to the user, exact method and URL, with a 30-second lifetime and
+immediate revocation on completion. The ordinary Core authenticator recognizes
+these capabilities, including through Kanban/Make's authenticated whoami
+callback. No user session or persistent credential is created. Design file
+reads use the authenticated Make file API through Fastify injection, so the
+same adapter works with embedded Make and the remote Make proxy.
+
+Transfer requires repository write permission and a writable, clean project
+machine workspace. The target project must point to the selected repository:
+`sislex/sislexa-core-ui` or UI Kit's `sislex/sielexa-ui`. Core reads only the
+selected files of an owned Make conversation, creates a backlog task and a
+`task_designs` link, then creates a unique `make/<slug>-<suffix>` branch, writes
+files, commits and pushes through `GitWorkspaceService`. After recording the
+pushed CI workspace revision it moves the task to awaiting-merge and restores
+the original branch. Failed writes remain on the transfer branch for recovery;
+the task is not advertised as ready to merge before a successful push. A local
+workspace guard prevents overlapping Make transfers. Transfers are bounded to
+200 files, the Git editor per-file limit and 4 MiB total. The explicit internal
+transfer option on `linkTaskDesign` permits an owned design from another
+project; ordinary link requests retain the same-project rule.
+
+The Core RPC compatibility adapter dispatches all six project-mode methods,
+preserves adapter HTTP errors, accepts `live_on`/`live_off` and retains transfer
+branch/task/design URLs. The installed make-contracts 1.4 schemas only describe
+start/status/url and the minimal transfer result; Make clients must adopt the
+extended operations/results to expose them. Cross-project task design reads
+through Make's scoped MCP additionally require Make-owner support (its current
+scope validator requires the conversation's project to match the task).
+Stand provisioning, repository credentials and actual remote push/preview
+commissioning remain operator responsibilities; Core tests use fake HTTP and
+Git transports.
+
 Серверная часть Make уже выделена в workspace `apps/make` (`@voicechat/make`) и умеет
 запускаться отдельно (`src/standalone/index.ts`). В compose это сервис `make:8788`, а ядро
 использует `VC_MAKE_MODE=remote`; для dev/desktop сохраняется `embedded`. Границу пакетов
@@ -827,18 +724,32 @@ UI Make остаётся в `packages/ui` и собирается общим web
   SSRF-гард `assertPublicHost`/`isPublicAddress` — `util/publicHost.ts` ядра (`routes/previewProxy.ts`
   оборачивает его в `PreviewProxyError(403)`) и намеренная копия `apps/make/src/publicHost.ts`.
 
-## Публикация Make: сериализация мутаций файла (2026-09-03)
+## Bounded cold-start conversation history
 
-Все изменения `.publish.json` разговора идут через `withPublishLock` в
-`MakeWorkspaces` — промис-цепочка на разговор (`publish`, `unpublish`,
-`countView`). Причина: `countView` зовётся fire-and-forget из маршрута отдачи
-и с read-modify-write без блокировки воскрешал публикацию — читал состояние до
-`unpublish`, писал обратно после повторного `publish`, файл возвращался к
-старому токену, и `publishedTarget` свежей ссылки отвечал 404 (плавающий
-провал теста `/p/<token>/` в полном гейте). Атомарного rename в
-`writePublishRaw` для этого мало: он спасает от рваного чтения, но не от
-lost-update. Регрессионный тест — «переопубликация не воскрешает старый токен»
-в `workspace.test.ts` (красная проверка: без лока падает сразу).
+Core uses shared `buildConversationPromptWithin` for cold starts: no session,
+edited/deleted history, provider switch, and retry after a lost Codex thread.
+Turn execution and the context inspector share `prompt/coldStart.ts`.
+`VC_COLD_START_PROMPT_CHARS` sets the rendered history budget (default 200,000
+characters, approximately 50k tokens). Invalid, nonpositive or noninteger values
+use the default. The newest contiguous messages fit including role labels and
+separators. An oversized newest message retains its ending. Short histories keep
+the existing prompt format; resumed turns still send only the new message.
+
+An omission notice precedes retained history. The optional shared-helper summary
+block follows that notice and precedes recent messages. Notice, summary,
+attachment instructions and other turn context are additional to the history
+budget. B01 does not generate or persist summaries. Inspector history details
+expose the same bounded prompt and its size; stored messages remain unchanged.
+
+`conversationSummary.ts` supplies the rolling summary consumed by that cold
+start. After 40 published messages beyond the stored boundary it starts a
+deduplicated background run with the cheapest configured runner model. The run
+has a fresh session, plan permission, disabled execution and no tools. It folds
+the previous summary together with only the messages after the boundary, caps
+the saved result at 1,500 words, persists all three summary fields atomically,
+and emits `chat.conversation`. Runner failures are logged, never fail the chat
+turn, and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh uses the same service but bypasses the threshold.
 
 ## Account profile query path
 
@@ -924,3 +835,217 @@ RPC and HttpMachines expose `ensureLink(input)`,
 same methods with the `machines.` prefix. These are trusted internal worker
 ports, not user-facing APIs; no Kanban authorization callback or connected
 RPC event client is required to keep a link alive.
+
+## Make conversation stand worktrees
+
+`MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
+embedded and remote Make. Core checks the conversation owner and resolves its
+project through `db.chat.makeConversationProject`; project viewers cannot use
+this editing port. The standard Make RPC dispatcher validates both operations
+and results. `server.ts` supplies the machines, Git runtime and optional stand
+proxy lease service directly.
+
+Options match the project's GitHub repository against `DEV_COMPONENT_REGISTRY`.
+They include the conversation project's stands and other accessible projects'
+stands containing that component, with machine names and live branch/head.
+For online, authorized host machines, each option also includes
+`conversationWorktree?: { branch }` when the read-only agent `inspect` action
+finds a registered `<reposRoot>/make-worktrees/<conversationId>` via
+`git worktree list --porcelain`. Inspection does not fetch, clone or create a
+worktree; missing, detached or unavailable worktrees omit the field. Core's
+RPC compatibility adapter preserves and validates this extension with older
+Make contracts. The Make consumer must support the field to display it.
+Details are requested in parallel and only for stands on online machines:
+Kanban holds a details request for an offline machine for about 30 seconds,
+longer than Make's 15-second Core timeout. Offline stands come from the stand
+list with status `stopped`; Files and Git skip them. A status poll also reads
+the stand's `/operations`: a running Kanban `live-start` job is reported as
+`installing` and `live-stop`/`override` as `switching`, since Kanban's details
+show the live entry only after the job finishes. Kanban detail statuses
+`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
+is the requested agent. The same environment rule applies to `standPreview`.
+Missing bases are reported; Core never provisions a base environment implicitly.
+During creation, Kanban can return 404 for stand details before publishing its
+manifest. Status then queries the same authorized host/stand `/operations`
+endpoint and reports `creating`, retaining `standId` and `hostProjectId`, when
+a create operation exists and has not failed. A running create takes precedence
+over an older failed attempt; a succeeded create still waits for the manifest.
+A failed create reports its mapped error, and no create operation reports
+`stand_not_found`. This fallback applies only to status and detail HTTP 404;
+authorization and other transport errors retain their normal handling.
+
+Attach works inside the stand host project's machine `reposRoot`, because
+Kanban admits a live working copy and its Git common directory only under that
+machine's `path` or `reposRoot`. The component repository is cloned once into
+`<reposRoot>/<repository name>` (origin must match the registry repository),
+fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
+The fixed agent-side Node program launches Git with argv and `shell: false`;
+user values travel as base64 JSON. A registered conversation worktree can be
+reused only on its existing branch. A taken new branch name fails with
+`branch_exists`. New branches start from the requested remote base, otherwise
+the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
+for component live mode. Status reads Kanban details; detach disables live
+without deleting the worktree or branch and refuses to disable another
+conversation's live copy.
+
+Files and Git find the conversation's live copy through Kanban, rejecting
+ambiguous bindings. File paths are relative to the computed worktree, checked
+on the agent against real paths and the repository's registered worktrees.
+Traversal, symlinks, `.git` metadata and directory mutations are refused;
+individual files are limited to 2 MiB, including truncated agent reads.
+File operations use the agent filesystem port. Git operations share the
+`projectGit` implementation through a scoped `GitWorkspaceService` view that
+rechecks machine permissions and retains command policy, locking and auditing.
+
+`previewUrl` comes from the stand proxy lease service when configured and is
+null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
+failures become the contract's failed state/error codes; authorization failures
+remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
+operator commissioning, not part of worktree attachment.
+
+## Stand delivery to dev
+
+Core owns the concrete routes registered by `routes/standDeliveries.ts`:
+`POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
+`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
+`POST .../sync-dev` returns `StandSyncResult`.
+`GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
+`git fetch origin dev` and `git rev-list --count HEAD..origin/dev`, without
+merging or modifying the working tree. It permits read access, including dirty
+trees, checks the same machine/repository/path boundaries, and shares the
+per-machine/root busy lock with sync and delivery submission. Fetch failures
+retain `stand_fetch_failed`. Git push sets the branch upstream to
+`origin/<branch>` on success, replacing an inherited `origin/dev` upstream so
+Repository ahead/behind counters compare against the pushed branch. Both contracts and URL builders
+are exported from Shared. These exact routes take precedence over the Kanban proxy.
+
+`makeBridge/standDeliveries.ts` checks project access, repository write permission
+for mutations, the stand's machine and the Git workspace write policy. The working
+copy comes only from the authorized Kanban manifest's live entries. It selects
+the entry matching the project repository, or a single live entry on a host
+project; ambiguous multi-component bindings fail closed. History is filtered by
+that repository and live branch, and access is rechecked even on cache hits.
+
+`standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
+agent. Real paths, Git common directory and origin are checked against the
+project's allowed directory and selected repository. Submission reads the exact
+HEAD and verifies the current branch, but never pushes or fetches. Core forwards
+`{repository, branch, targetBranch:'dev', headSha, title, author}` to
+`POST /v1/candidates/branch`; author is the authenticated Core user.
+
+Stand failures use the specific codes listed in Shared `STAND_ERROR_CODES`.
+`sync-dev` first runs `git status --porcelain --untracked-files=no`: tracked
+changes fail with 409 `stand_worktree_dirty` before any fetch or merge, while
+unmerged entries of a previous conflicted sync still return `conflicts`. A
+failed `git fetch origin` is `stand_fetch_failed`; a Git spawn hitting its
+60-second limit is 504 `stand_git_timeout`. Core checks `timedOut` of the agent
+command before parsing its output (504 `stand_agent_timeout`), and a rejected
+`machines.exec` (dropped agent) is 409 `machine_unavailable`. Other program
+codes stay 409; unparseable output stays 502 `invalid_stand_agent_response`.
+
+Outbound Delivery Control credentials are configured separately from Core's
+hashed inbound integration tokens. `VC_STAND_DELIVERY_PROJECTS` is a JSON object
+keyed by Core project id, each entry containing `url` and the project's operator
+`token`. Missing configuration returns 503; there is no global-token fallback.
+`BuildOptions.standDeliveryIntegration` and `standDeliveryFetch` inject the same
+concrete adapter in tests or managed hosts. Tokens are sent only as Bearer headers;
+redirects are refused and upstream error bodies are not exposed.
+
+`standDeliveryCoordinator.ts` reads `GET /v1/status` with a 10-second per-project
+cache, invalidated by submission. It joins persisted branch candidates with task
+and attempt status: candidates may be in `candidates` or `tasks[].candidate`, and
+tasks may be top-level or nested under `runs`. Optional status `events` apply
+`candidate.branch_submitted` and `attempt.integration_*` transitions. Public states
+are `submitted`, `gating`, `integrated`, `rejected`; a rejected gate log tail is
+limited to 16 KiB. History is reconstructed from the coordinator after restart,
+not synthesized from local submissions.
+
+For non-success responses, Core reads a bounded error body (4 KiB cap), cancels
+the remaining stream, and accepts only a JSON object containing a single `error`
+string from Shared's `STAND_DELIVERY_ERROR_CODES`. Those refusals preserve the
+coordinator's 400/403/409/503 status. Unknown codes, extra fields, malformed or
+interrupted bodies, bodies reaching the cap, and other statuses retain
+`stand_delivery_request_failed` (409 for upstream 409, otherwise 502). No upstream
+diagnostics or other body fields are returned or logged; route shapes are unchanged.
+
+Sync runs `git fetch origin` followed, only on success, by
+`git merge --no-edit origin/dev` in the live copy. `behind` counts commits still
+missing after that attempt. Conflicts return `merged:false` and NUL-parsed file
+names; Core never resets, aborts, cleans or pushes the working copy. Other Git
+failures return an error. Concurrent delivery/sync requests for the same working
+copy are rejected while a mutation is in flight. Vite/HMR can observe merged
+files directly; restarting Storybook remains a client/operator action.
+
+Operator commissioning remains separate: supply each project's coordinator URL
+and token, deploy the coordinator branch-candidate API with persisted status
+metadata, and exercise the Make push → delivery → sync flow on a real stand.
+
+## Dev stand access proxy
+
+`standProxy.ts` registers `POST /api/dev-stand-access {projectId, standId}`
+outside Kanban's `/api/projects` proxy. It requires a Core session cookie and
+project membership, then reads `GET /api/projects/:id/dev-stands/:standId` from
+Kanban with an exact-request user capability. Only the returned `machineId`
+and validated `gateway.port` select the upstream; clients cannot supply a
+target machine or TCP port. The shared response is `{url, expiresAt}`, with
+`expiresAt` expressed as Unix milliseconds.
+
+Allocation is serialized. A user/project/stand tuple reuses its lease; target
+changes replace it. The disabled or exhausted pool returns HTTP 503 with
+`stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
+deadline; expiry and Core shutdown close listeners and all their connections.
+Every HTTP request and WebSocket upgrade checks the current cookie session
+against the lease owner and rechecks project membership before opening a tunnel.
+
+Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+upstream, with the prefix removed. Response Set-Cookie names receive the prefix
+and Domain attributes are removed. Core authorization and internal forwarding
+headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
+to the leased proxy origin becomes the gateway origin, while foreign origins
+remain unchanged. SSE responses stream without buffering and WebSocket upgrades
+retain their initial bytes in both directions.
+
+Internal callers can opt in with
+`standProxy.access(user, project, stand, host, port?, { inject: 'make-inspector' })`.
+The injection mode is stored on the lease and included in its reuse key, so
+ordinary callers retain separate, unmodified leases. The public access route
+does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
+responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
+`</head>` (or after the opening `<body>`). Its URL uses the incoming request's
+Host and socket scheme: `/api/make/inspector.js`. On injected leases the proxy answers
+`GET /api/make/inspector.js` itself through `deps.inspectorScript` (Core injects its own
+route with the caller's cookie), so the stand's Core version never has to serve it;
+ordinary leases forward that path to the stand. Rewritten responses receive a
+byte-accurate Content-Length; Content-Encoding and stale entity validators are
+removed. Enforced CSP must allow the script; restrictive or unrecognized source
+policies and documents with CSP meta tags are left untouched. Non-HTML bodies,
+unsupported encodings, partial responses, HEAD, SSE, and WebSocket upgrades pass
+through without rewriting; chunked HTML (Storybook's dev server) is buffered and
+rewritten with Transfer-Encoding dropped in favour of Content-Length. Invalid compressed HTML or
+documents without an insertion point retain their original bytes and headers.
+
+Make's `makeStand` preview adapter and `storybook/open` for `stand:` workspaces
+request inspector-enabled leases. When stand proxy ports are disabled,
+`storybook/open` issues a random, HttpOnly, SameSite=Lax bridge cookie scoped to
+`/api/preview` (Secure on HTTPS). Core keeps a bounded, 30-minute session registry
+binding each token to the authenticated user and the exact machine origin/port.
+Cookies have distinct names per origin so multiple Storybooks can remain open.
+This works with the existing Make client, which rebuilds story frame query strings.
+`readerBridge/proxy.ts` registers a Core response hook before either embedded or
+remote Reader, using the same `htmlInject.ts` helper on buffered HTML. It removes
+stale validators and encoding, corrects Content-Length, and marks rewritten
+responses private/no-store. Conditional request validators are removed for Make
+sessions so an ordinary cached preview cannot suppress the initial injection.
+Reader authorization still checks machine access on every request. Missing,
+expired, forged, other-user or other-origin sessions receive ordinary Reader
+responses; non-stand workspaces do not issue an inspector cookie. The opt-in lasts
+for the browser's machine-origin session, including other preview tabs for that
+same origin, until expiry; it does not depend on a caller-supplied injection flag.
+
+`AgentRegistry.connectCoreTunnel` returns a Duplex using the agent's existing
+tunnel frames. It waits for connection acknowledgement, bounds data frames,
+observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
+reads when the Duplex fills. Agent disconnect/error closes the stream. The
+MachinesService port also supports remote Machines through the authenticated
+`/internal/machines/core-tunnel` WebSocket byte stream.

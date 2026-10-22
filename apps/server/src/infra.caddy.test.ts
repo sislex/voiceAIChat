@@ -15,6 +15,19 @@ const caddyfile = readFileSync(fileURLToPath(new URL('../../../Caddyfile', impor
 const compose = readFileSync(fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url)), 'utf8')
 
 describe('Caddyfile', () => {
+  it('terminates TLS for all lease ports and proxies each port to Core', () => {
+    const addresses = [8790, 8791, 8792, 8793, 8794].map(port => 'https://{$VC_PUBLIC_HOST}:' + port).join(', ')
+    expect(caddyfile).toContain(addresses + ' {\n\ttls internal\n\treverse_proxy voicechat:{http.request.port}\n}')
+  })
+
+  it('publishes lease ports only on Caddy and exposes Core listeners internally', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../../../deploy/docker-compose.yml', import.meta.url)), 'utf8')
+    const block = (service: string) => overlay.split('\n  ' + service + ':\n')[1]?.split(/\n  [a-z][a-z-]*:\n/)[0]
+    expect(block('caddy')).toContain('ports:\n      - "${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}:${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}"')
+    expect(block('voicechat')).not.toMatch(/^    ports:/m)
+    expect(block('voicechat')).toContain('expose:\n      - "${VC_STAND_PROXY_PORTS:?Set a stand proxy port range}"')
+    expect(block('voicechat')).toContain('VC_STAND_PROXY_PUBLIC_SCHEME: ${VC_STAND_PROXY_PUBLIC_SCHEME:-}')
+  })
   // @testCase TC3
   it('оба режима Web Reader получают операторские алиасы собственного сайта', () => {
     for (const service of ['voicechat', 'reader', 'browser-runner']) {
@@ -45,23 +58,23 @@ describe('Caddyfile', () => {
     expect(compose).toMatch(/VC_PUBLIC_HOST:\s*\$\{VC_PUBLIC_HOST:\?/)
   })
 
-  it('пути Make уходят в сервис make на обоих виртуальных хостах, внутренний API наружу закрыт', () => {
+  it('routes Make through its configurable upstream on both hosts and keeps internal APIs private', () => {
     const blocks = caddyfile.match(/(?:https:\/\/\{\$VC_PUBLIC_HOST\}|https:\/\/caddy)\s*\{[\s\S]*?\n\}/g) ?? []
     expect(blocks).toHaveLength(2)
     for (const block of blocks) {
       expect(block).toMatch(/@make path [^\n]*\/api\/make\/\*[^\n]*\/p\/\*/)
-      expect(block).toMatch(/handle @make \{\s*reverse_proxy make:8788/)
+      expect(block).toMatch(/handle @make \{\s*reverse_proxy \{\$VC_CADDY_MAKE_UPSTREAM:make:8788\}/)
       expect(block).toMatch(/handle \/internal\/\* \{\s*respond 404/)
     }
     expect(compose).toMatch(/^  make:\n/m)
-    expect(compose).toContain('VC_MAKE_MODE: remote')
+    expect(compose).toContain('VC_MAKE_MODE: ${VC_MAKE_MODE:-remote}')
   })
 
-  it('API Playwright Reader на обоих хостах идёт в отдельное приложение', () => {
-    expect(caddyfile.match(/reverse_proxy playwright-reader:8797/g)).toHaveLength(2)
+  it('routes Playwright Reader through its configurable upstream on both hosts', () => {
+    expect(caddyfile.match(/reverse_proxy \{\$VC_CADDY_PLAYWRIGHT_READER_UPSTREAM:playwright-reader:8797\}/g)).toHaveLength(2)
     expect(caddyfile.match(/@playwright_reader path \/api\/browser \/api\/browser\/\*/g)).toHaveLength(2)
     expect(compose).toMatch(/^  playwright-reader:\n/m)
-    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: remote')
+    expect(compose).toContain('VC_PLAYWRIGHT_READER_MODE: ${VC_PLAYWRIGHT_READER_MODE:-remote}')
     // Stands may override the address (environments-v3 placement); production keeps the default.
     expect(compose).toContain('VC_PLAYWRIGHT_READER_URL: ${VC_PLAYWRIGHT_READER_URL:-http://playwright-reader:8797}')
   })

@@ -82,24 +82,47 @@ it('gates existing WS connections, binary frames and unknown writes while subscr
   expect(onMessage).toHaveBeenCalledTimes(2)
 })
 
-it('exposes live process-local maintenance state through Core health', async () => {
+// @testCase TC-1
+// @testCase TC-2
+it('exposes live process-local maintenance state through Core health without caching', async () => {
   const { mkdtempSync, rmSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
-  const { buildServer } = await import('./server.js')
+  const { applicationRuntimeMetadata } = await import('@voicechat/shared')
   const { loadConfig } = await import('./config.js')
   const directory = mkdtempSync(join(tmpdir(), 'maintenance-'))
-  let app: Awaited<ReturnType<typeof buildServer>> | undefined
+  let app: Awaited<ReturnType<typeof import('./server.js').buildServer>> | undefined
   const fixtureToken = randomUUID()
   try {
+    vi.stubEnv('VC_RELEASE_VERSION', ' 1.2.3 ')
+    vi.stubEnv('VC_RELEASED_AT', ' 2026-10-14T00:00:00.000Z ')
+    vi.stubEnv('VC_RELEASE_COMMIT', ' abc123 ')
+    vi.stubEnv('VC_RELEASE_TASK', ' ')
+    const { buildServer } = await import('./server.js')
     app = await buildServer({ config: loadConfig({ VC_DATA_DIR: directory, VC_INTERNAL_TOKEN: fixtureToken }) })
-    expect((await app.inject('/api/health')).json()).toMatchObject({ ok: true, readOnly: false, reason: '' })
+    const health = await app.inject('/api/health')
+    expect(health.statusCode).toBe(200)
+    expect(health.headers['cache-control']).toBe('no-store')
+    expect(health.json()).toEqual({
+      readOnly: false,
+      reason: '',
+      application: applicationRuntimeMetadata('core', process.env),
+      ok: true,
+      version: '1.2.3',
+      releasedAt: '2026-10-14T00:00:00.000Z',
+      commit: 'abc123',
+      task: null
+    })
     expect((await app.inject({ method: 'POST', url: '/internal/maintenance',
       headers: { authorization: `Bearer ${fixtureToken}` }, payload: { readOnly: true, reason: 'migration' }
     })).statusCode).toBe(200)
-    expect((await app.inject('/api/health')).json()).toMatchObject({ ok: true, readOnly: true, reason: 'migration' })
+    const maintenanceHealth = await app.inject('/api/health')
+    expect(maintenanceHealth.statusCode).toBe(200)
+    expect(maintenanceHealth.headers['cache-control']).toBe('no-store')
+    expect(maintenanceHealth.json()).toEqual({ ...health.json(), readOnly: true, reason: 'migration' })
     expect((await app.inject({ method: 'POST', url: '/api/conversations', payload: {} })).statusCode).toBe(503)
   } finally {
+    vi.unstubAllEnvs()
     await app?.close()
     rmSync(directory, { recursive: true, force: true })
   }

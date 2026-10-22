@@ -179,6 +179,16 @@ FENCE_PYTHON
 # Every Docker invocation, including a detached child's mutations, checks live
 # authority. The original host flock remains held by this launcher and Docker.
 docker() { delivery_authority verify && command docker "$@"; }
+# Compose with profiles and modes derived from VC_APPLICATIONS (compose_env.py next to this script). The
+# derived variables are exported in a subshell and Compose still runs through the fenced docker() above.
+COMPOSE_ENV="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose_env.py"
+app_compose() {
+  (
+    settings=$(python3 "$COMPOSE_ENV" applications) || exit $?
+    while IFS= read -r line; do [[ -n $line ]] && export "$line"; done <<<"$settings"
+    docker compose "$@"
+  )
+}
 
 # Embedded in the content-addressed shell copy: git pull cannot replace journal
 # code midway through a detached operation. No credential or raw health body is stored.
@@ -276,7 +286,7 @@ if [[ $operation_command == reconcile ]]; then
   flock -n 9 || { echo 'Deployment still owns the host lock' >&2; exit 75; }
   cd "$REPO"
   observed=$(observed_commit)
-  docker compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null
+  app_compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null
   operation_record reconcile "$observed"
   exit
 fi
@@ -322,11 +332,18 @@ if [[ -n $delivery_fence ]]; then
 fi
 log "=== деплой начат, HEAD $(git rev-parse --short HEAD) ==="
 
-log 'git pull --ff-only и git fetch --tags'
 delivery_authority verify
-git pull --ff-only
-delivery_authority verify
-git fetch --tags origin
+if [[ -n $expected_commit && -n ${VC_RELEASE_VERSION:-} ]]; then
+  # The release manager supplies both identities. Unrelated historical tags
+  # must not block this pinned deployment or be overwritten to make it pass.
+  log 'git pull --no-tags --ff-only for the pinned release'
+  git pull --no-tags --ff-only
+else
+  log 'git pull --ff-only and git fetch --tags for release metadata'
+  git pull --ff-only
+  delivery_authority verify
+  git fetch --tags origin
+fi
 log "HEAD после pull: $(git rev-parse --short HEAD)"
 
 if [[ -n $expected_commit ]]; then
@@ -374,19 +391,29 @@ volume_nonempty() {
     'test -n "$(find /data -mindepth 1 -maxdepth 1 -print -quit)"'
 }
 
+# With Postgres (VC_DB_URL in the checkout .env) the volume keeps session.secret and file
+# data only; the legacy SQLite voicechat.db is no longer required.
+postgres_configured() {
+  [[ -n ${VC_DB_URL:-} ]] || grep -Eq '^VC_DB_URL=.+' "$REPO/.env" 2>/dev/null
+}
+
 validate_data_volume() {
-  docker run --rm -v "$1:/data:ro" "$sqlite_image" python3 -c \
+  local require_sqlite=1
+  postgres_configured && require_sqlite=0
+  docker run --rm -e "VC_DATA_REQUIRES_SQLITE=$require_sqlite" -v "$1:/data:ro" "$sqlite_image" python3 -c \
     'import os,sqlite3,stat
 db="/data/voicechat.db"
 secret="/data/session.secret"
-for path in (db,secret):
+requires_sqlite=os.environ.get("VC_DATA_REQUIRES_SQLITE")=="1"
+for path in ((db,secret) if requires_sqlite else (secret,)):
  item=os.stat(path)
  assert stat.S_ISREG(item.st_mode), f"{path} is not a regular file"
  assert item.st_size > 0, f"{path} is empty"
-connection=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
-result=connection.execute("PRAGMA integrity_check").fetchone()
-connection.close()
-assert result and result[0]=="ok", f"voicechat.db integrity_check: {result}"'
+if requires_sqlite:
+ connection=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
+ result=connection.execute("PRAGMA integrity_check").fetchone()
+ connection.close()
+ assert result and result[0]=="ok", f"voicechat.db integrity_check: {result}"'
 }
 
 migration_error() {
@@ -404,7 +431,7 @@ docker volume create "$data_volume" >/dev/null ||
 
 if volume_nonempty "$data_volume"; then
   validate_data_volume "$data_volume" ||
-    migration_error "постоянный том непуст, но не содержит корректный комплект voicechat.db/session.secret"
+    migration_error "постоянный том непуст, но не содержит корректный комплект данных (session.secret; voicechat.db без Postgres)"
   log 'постоянный том уже содержит корректные данные; миграция не требуется'
 else
   volume_status=$?
@@ -459,13 +486,13 @@ if [[ -n $operation_id ]]; then
   operation_record phase "$previous" >/dev/null
 fi
 log 'docker compose up -d --build'
-docker compose up -d --build
+app_compose up -d --build
 [[ -z $operation_id ]] || operation_record composed >/dev/null
 
 log 'ждём /api/health'
 for ((i = 1; i <= HEALTH_TRIES; i++)); do
   if curl -fsS -m 5 "$HEALTH_URL" >/dev/null 2>&1 &&
-     docker compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
+     app_compose exec -T voicechat node /app/scripts/component-readiness.mjs; then
     if [[ -n $expected_commit && $(observed_commit) != "$expected_commit" ]]; then
       log 'Healthy runtime does not match expected commit'; sleep 5; continue
     fi
@@ -478,6 +505,6 @@ for ((i = 1; i <= HEALTH_TRIES; i++)); do
 done
 
 log "!!! приложение не поднялось за $((HEALTH_TRIES * 5))с"
-docker compose ps -a
-docker compose logs --tail=50 voicechat || true
+app_compose ps -a
+app_compose logs --tail=50 voicechat || true
 exit 1

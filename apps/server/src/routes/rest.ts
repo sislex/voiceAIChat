@@ -1,11 +1,14 @@
-import { INVALID_HISTORY_CURSOR } from '@voicechat/shared'
+import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
+import { coldStartPrompt } from '../prompt/coldStart.js'
+import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
+import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
 import { clientMessages, loadsServiceData } from '../serviceData.js'
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, buildConversationPrompt, effectiveChatInstructions, instructionsForAssistantKind, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -13,6 +16,7 @@ import { uid } from "@sislexa/identity/server/users/auth"
 import { readCoreUserFile } from '../userFiles.js'
 import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import type { ConversationSummaryService } from '../conversationSummary.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
@@ -65,6 +69,7 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
  * Make-контекста) сделал бы это окончательно нечитаемым.
  */
 interface ContextSnapshotOptions {
+  chatModels?: ChatModelPolicy
   isOnline?: (id: string) => boolean
   kbStatus?: KbStatus | null
   cliMcpServers?: Array<{ name: string; detail: string; status: string }>
@@ -124,7 +129,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
    * codex человеку, у которого он закрыт, — а отвечал claude.
    */
   const wantedProvider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
-  const llmAccess = await db.identity.getUserLlmAccess(userId)
+  const llmAccess = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), options.chatModels)
   const fallbackProvider = firstAllowedProvider(llmAccess)
   const provider: LlmProvider = isProviderAllowed(llmAccess, wantedProvider) || !fallbackProvider ? wantedProvider : fallbackProvider
   const selectedModel = conversation.llmProvider === provider
@@ -142,7 +147,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // ходе: сохранённое старое значение («opus») исполнитель резолвит в «opus[1m]»,
   // и показывать сырое значение значит называть не ту модель.
   const rawModel = selectedModel ?? (provider === 'codex' ? settings.codexModel : settings.model)
-  const model = provider === 'claude' && rawModel ? claudeModelAlias(rawModel) : rawModel
+  const permittedModel = options.chatModels ? deploymentModel(llmAccess, provider, rawModel, options.chatModels) ?? '' : rawModel
+  const model = provider === 'claude' && permittedModel ? claudeModelAlias(permittedModel) : permittedModel
   const llmSource = conversation.llmProvider ? 'Разговор' : projectLlm ? 'Проект' : 'Настройки пользователя'
   const llmExplanation = conversation.llmProvider
     ? 'Явное переопределение.'
@@ -174,7 +180,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.
   const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
-  const historyText = buildConversationPrompt(messages)
+  const historyText = coldStartPrompt(messages)
   // Контекст задачи — тот же блок, что уходит в ход: раньше предпросмотр про
   // него не знал, и в чате задачи инспектор обещал заметно меньше, чем уходило.
   const linkedTask = conversation.taskId && conversation.projectId ? await db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId) : null
@@ -294,7 +300,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     'mcp-remote-bash': { 'Инструмент': 'mcp__remote__bash', 'Назначение': 'Выполняет shell-команду в рабочем каталоге машины.', 'Параметры': ['command', 'timeout_ms', 'machine'], 'Изменяет данные': true, 'Ограничение': 'Потенциально опасно; политика машины и режим прав.' },
     'mcp-kb-search': { 'Инструмент': 'mcp__kb__search', 'Назначение': 'Поиск по доступным разделам базы знаний.', 'Параметры': ['query', 'limit'], 'Изменяет данные': false, 'Ограничение': 'Результаты фильтруются по пользователю и проекту.' },
     'mcp-kb-document': { 'Инструмент': 'mcp__kb__document', 'Назначение': 'Чтение раздела БЗ по устойчивому id.', 'Параметры': ['documentId', 'anchor'], 'Изменяет данные': false },
-    'mcp-kb-topics': { 'Инструмент': 'mcp__kb__topics', 'Назначение': 'Список тем/разделов базы знаний.', 'Параметры': [], 'Изменяет данные': false }
+    'mcp-kb-topics': { 'Инструмент': 'mcp__kb__topics', 'Назначение': 'Список тем/разделов базы знаний.', 'Параметры': [], 'Изменяет данные': false },
+    'mcp-history': { 'Инструменты': ['mcp__history__history_search', 'mcp__history__history_get'], 'Назначение': 'Поиск и чтение опубликованной истории текущего разговора.', 'Изменяет данные': false, 'Ограничение': 'Только текущий разговор и только во время хода.' }
   }
   const groups: ContextSnapshotGroup[] = [
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
@@ -405,7 +412,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
           + (tool.available && tool.readOnlyInPlan && permissionMode === 'plan' ? ' Режим «Только планирование»: инструмент подключается только на чтение — запись отклоняется.' : ''),
         configured: true, available: tool.available, includedInNextTurn: tool.available,
         details: { 'Инструменты': tool.tools, 'Подключает': tool.source, ...(tool.readOnlyInPlan ? { 'В режиме планирования': 'только чтение' } : {}) } })),
-      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
+      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } })),
+      contextItem({ id: 'mcp-history', type: 'MCP-инструмент', source: 'MCP history', scope: 'Текущий разговор', priority: 'Возможность', title: 'history:search/get', description: 'Находит и читает прежние опубликованные сообщения этого разговора.', explanation: 'Подключается к обычному ходу; delegated/text-only ходы его не получают.', configured: true, available: true, includedInNextTurn: true, details: { ...mcpToolDetails['mcp-history'], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('history')) ? 'да' : 'нет данных' } })
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
       // Доступность индекса — отдельный вопрос от режима: «авто» при сломанном
@@ -437,11 +445,11 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         explanation: resumeId
           ? 'Ход продолжает сессию движка (resume): история в промпт не пересобирается, уходит только новое сообщение — но все блоки настроек ниже отправляются заново каждым ходом. Сессия сбрасывается при смене движка и правке или удалении сообщений.'
           : messages.length > 0
-            ? 'Сессии движка нет — история пересобирается в промпт целиком.'
+            ? 'Сессии движка нет — в промпт включается свежая часть истории в пределах лимита символов.'
             : 'Истории пока нет: в ход уйдёт только ваше сообщение.',
         configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0,
         size: resumeId ? null : { chars: historyText.length, approxTokens: approxTokens(historyText.length) },
-        details: { messageCount: messages.length, 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
+        details: { messageCount: messages.length, ...(!resumeId ? { prompt: historyText } : {}), 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
@@ -559,8 +567,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   const previewBlocks = buildContextBlocks({
     personalization: disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
     // Фильтр по виду чата общий с ходом: в «Консоли с ассистентом» не уходит
-    // подсказка про терминал, в Make — про терминал и заведение задачи.
-    instructions: instructionsForAssistantKind(effectiveChatInstructions(settings.chatInstructions, disabled), conversation.assistantKind ?? null),
+    // подсказка про терминал, в Make — про терминал и заведение задачи, у
+    // канбан-ассистента с «Автопилотом» — task-launch.
+    instructions: turnChatInstructions(effectiveChatInstructions(settings.chatInstructions, disabled), conversation, conversation.assistantKind === 'kanban'),
     project: disabled.has('project-binding') ? null : project,
     projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
     taskContext: await taskContext,
@@ -592,7 +601,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Инструкция включена, но в чате этого вида не применяется. Раньше человек
   // видел её в списке «уйдёт» и не понимал, почему модель ведёт себя иначе.
   const skippedByKind = effectiveChatInstructions(settings.chatInstructions, disabled)
-    .filter((item) => !instructionsForAssistantKind([item], conversation.assistantKind ?? null).length)
+    .filter((item) => !turnChatInstructions([item], conversation, conversation.assistantKind === 'kanban').length)
   if (skippedByKind.length) {
     warnings.push({
       itemId: null,
@@ -766,6 +775,8 @@ export async function registerRest(
   db: VoiceChatDb,
   dataDir: string,
   opts: {
+    chatModels?: ChatModelPolicy
+    chatTextOnly?: boolean
     runnerFs?: RunnerFsClient
     authStatus?: AuthStatusState
     isAgentOnline?: (agentId: string) => boolean
@@ -791,8 +802,11 @@ export async function registerRest(
      * offline-машины.
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
+    /** Conversation kind a ticket-delegated application may create (`x-sislexa-delegation`), or undefined to refuse. */
+    delegatedAssistantKind?: (grant: string) => string | undefined
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
+    conversationSummary?: () => ConversationSummaryService | undefined
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -814,7 +828,7 @@ export async function registerRest(
   // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
   app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
     const userId = uid(req)
-    if (runnerFs) {
+    if (runnerFs && !opts.chatTextOnly) {
       try {
         const remote = await runnerFs.readFile(userId, req.query.path ?? '')
         if (remote) return remote
@@ -822,8 +836,10 @@ export async function registerRest(
         return proxyError(reply, err) as never
       }
     }
-    const workdir = (await db.settings.getSettings(userId)).workdir
-    const roots = [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
+    // A public text-only user's saved workdir is not filesystem authority.
+    // Shared uploads and runner profiles are outside this output endpoint.
+    const workdir = opts.chatTextOnly ? undefined : (await db.settings.getSettings(userId)).workdir
+    const roots = opts.chatTextOnly ? [] : [join(dataDir, 'uploads'), ...(workdir ? [workdir] : [])]
     const res = readCoreUserFile(req.query.path ?? '', dataDir, userId, roots)
     if (!res.ok) {
       const code = res.reason === 'too-large' ? 413 : 404
@@ -917,6 +933,9 @@ export async function registerRest(
 
   app.post<{ Body: { title?: string; scope?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'images' } }>(REST.conversations, async (req, reply) => {
     const kind = req.body?.assistantKind
+    const delegated = req.headers['x-sislexa-delegation']
+    if (delegated !== undefined && (typeof delegated !== 'string' || !kind || req.body?.scope !== undefined
+      || opts.delegatedAssistantKind?.(delegated) !== kind)) return reply.code(403).send({ error: 'delegation_denied' })
     const scope = req.body?.scope === undefined
       ? kind === 'web-recorder' ? 'web-reader' : kind === 'playwright-reader' ? 'playwright-reader' : kind === 'console-reader' ? 'console' : kind === 'make' ? 'make' : kind === 'images' ? 'images' : 'chat'
       : parseConversationScope(req.body.scope)
@@ -1042,6 +1061,26 @@ export async function registerRest(
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 
+  app.post<{ Params: { id: string } }>(REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.resetConversationThread(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation
+  })
+
+  app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.getConversation(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
+  })
+
+  app.post<{ Params: { id: string } }>(REST.conversationSummaryRefresh(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const service = opts.conversationSummary?.()
+    if (!service) return reply.code(503).send({ error: 'summary runner unavailable' })
+    const conversation = await service.refresh(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversation.summary ?? null
+  })
+
   app.get<{ Params: { id: string; messageId: string }; Querystring: { scope?: string; projectId?: string } }>(
     REST.messageServiceData(':id', ':messageId').replace('%3Aid', ':id').replace('%3AmessageId', ':messageId'), async (req, reply) => {
       const scope = req.query.scope === undefined ? 'chat' : parseConversationScope(req.query.scope)
@@ -1082,7 +1121,7 @@ export async function registerRest(
     const makeContextText = makeConv?.assistantKind === 'make' && opts.makeContext
       ? await opts.makeContext(req.params.id).catch(() => '')
       : null
-    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null)
+    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null)
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -1096,7 +1135,7 @@ export async function registerRest(
     if (!owner) return reply.code(404).send({ error: 'not found' })
     const updated = await db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
-    const snapshot = await contextSnapshot(db, owner, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
+    const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -1108,8 +1147,8 @@ export async function registerRest(
    */
   app.get<{ Params: { id: string; otherId: string } }>('/api/conversations/:id/context-diff/:otherId', async (req, reply) => {
     const userId = uid(req)
-    const here = await contextSnapshot(db, userId, req.params.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
-    const there = await contextSnapshot(db, userId, req.params.otherId, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const here = await contextSnapshot(db, userId, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const there = await contextSnapshot(db, userId, req.params.otherId, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
     const otherConversation = await db.chat.getConversation(userId, req.params.otherId)
     if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
     const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
@@ -1157,7 +1196,7 @@ export async function registerRest(
       if (enabledNow === shouldBeEnabled) continue // уже как надо
       await db.chat.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
     }
-    const snapshot = await contextSnapshot(db, userId, target.id, { isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
+    const snapshot = await contextSnapshot(db, userId, target.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe() })
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -1476,6 +1515,7 @@ export async function registerRest(
       }
       const message = await db.chat.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments, messageId)
       await opts.publishChatMessage?.(userId, req.params.id, message)
+      opts.conversationSummary?.()?.consider(userId, req.params.id)
       return (await clientMessages(db, userId, req.params.id, [message]))[0]
     }
   )
@@ -1635,14 +1675,25 @@ export async function registerRest(
     const alive = new Set((await db.machines.listAgents(userId)).map((agent) => agent.id))
     const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
     const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
-    if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
     const repaired = { ...settings, execTarget, defaultAgentId }
-    await db.settings.saveSettings(userId, repaired)
-    return repaired
+    if (execTarget !== settings.execTarget || defaultAgentId !== settings.defaultAgentId) {
+      await db.settings.saveSettings(userId, repaired)
+    }
+    if (!opts.chatModels) return repaired
+    // Project the deployment's effective default without persisting a fallback
+    // over the user's preference. Engine IDs select transport, not model policy.
+    const access = deploymentModelAccess(await db.identity.getUserLlmAccess(userId), opts.chatModels)
+    const fallback = firstAllowedProvider(access)
+    if (!fallback) return repaired
+    const provider = isProviderAllowed(access, repaired.llmProvider) ? repaired.llmProvider : fallback
+    const model = deploymentModel(access, provider, provider === 'codex' ? repaired.codexModel : repaired.model, opts.chatModels)
+    if (!model) return repaired
+    return { ...repaired, llmProvider: provider,
+      ...(provider === 'codex' ? { codexModel: model } : { model: normalizeClaudeModel(model) }) }
   }
   registerChatSettingsRoutes(app, db)
   app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
-  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => await db.identity.getUserLlmAccess(uid(req))
+  const myLlmAccess = async (req: Parameters<typeof uid>[0]) => deploymentModelAccess(await db.identity.getUserLlmAccess(uid(req)), opts.chatModels)
   app.get(REST.llmAccess, myLlmAccess)
   app.get(REST.meLlmAccess, myLlmAccess)
 

@@ -104,3 +104,4 @@ export class ComponentRuntime {
   }
   close(): void { this.registry?.close() }
 }
+export * from './sharedServices.js'

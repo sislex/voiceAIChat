@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-09-23
-checked: 6543b798
+updated: 2026-10-20
+checked: 592879f34
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -38,6 +38,8 @@ areas:
 
 ## Source-owned tool releases
 
+Keep only referenced archives in `vendor/`: pin replacement removes an old archive after its last package manifest, lockfile, artifact inventory or script reference disappears, and `scripts/vendor-archives.test.mjs` enforces this rule in `test:tooling`.
+
 Make, Playwright Reader, Web Reader, Voice and Image Studio publish their own tagged source archives
 and own their API/UI release metadata. Core pins the archive integrity and source
 commit through direct immutable archives. Owner repositories run complete checks
@@ -71,7 +73,7 @@ Deploy доступен только владельцу и только для �
 
 Перед созданием попытки сервер обновляет origin на CI/Git-машине и требует, чтобы текущий SHA ветки совпадал с SHA подготовки. Попытка хранит этот SHA неизменно. На production-машине этап `switching` проверяет чистое рабочее дерево и точное совпадение URL origin, fetch-ит выбранную ветку в уникальный ref `refs/voicechat/releases/<attempt-id>`, сверяет этот стабильный ref и доступность commit object, затем переключает checkout на `release/x.y.z`, приводит его к сохранённому SHA через `reset --hard` и удаляет временный ref. Глобальный `FETCH_HEAD` намеренно не читается: его может перезаписать параллельное обновление списка release-веток.
 
-Перед созданием deploy-попытки сервер повторно вычисляет версию из строгого имени `release/x.y.z` и требует её точного совпадения с `version` подготовленной записи; противоречивые метаданные останавливают публикацию до Git-операций на production. Этап `building` запускает сохранённую production-команду проекта, предварительно экспортируя в её окружение эту проверенную версию как `VC_RELEASE_VERSION` вместе с источником `release-manager`. Если команда использует `/usr/local/bin/voicechat-deploy`, ReleaseManager сначала обновляет его из `scripts/prod/deploy.sh` уже проверенного checkout: так первая публикация исправляет и старую установленную копию с fallback `0.1.0`. Актуальный production launcher и `deploy.sh` явно переносят metadata через detached-запуск, поэтому версия в production health и футере не зависит от старого launcher, наследования окружения или наличия Git-тега на сохранённом SHA. До запуска production-команды шаг пишет ожидаемые version, commit и source, а health-check повторяет version/commit в своём логе. Для ChatAI это фоновый host-side deploy, который возвращает управление до пересоздания контейнеров. Затем `health_check` повторяет сохранённую команду проверки и принимает публикацию только когда JSON health одновременно содержит ожидаемые commit SHA и версию. Поскольку для фоновой команды этот шаг включает фактическую Docker-сборку, его дефолтный лимит — 30 минут; сохранённая настройка проекта по-прежнему имеет приоритет и должна покрывать полную длительность production-сборки.
+Перед созданием deploy-попытки сервер повторно вычисляет версию из строгого имени `release/x.y.z` и требует её точного совпадения с `version` подготовленной записи; противоречивые метаданные останавливают публикацию до Git-операций на production. Этап `building` запускает сохранённую production-команду проекта, предварительно экспортируя в её окружение эту проверенную версию как `VC_RELEASE_VERSION` вместе с источником `release-manager`. Если команда использует `/usr/local/bin/voicechat-deploy`, ReleaseManager сначала обновляет его из `scripts/prod/deploy.sh` уже проверенного checkout: так первая публикация исправляет и старую установленную копию с fallback `0.1.0`. Актуальный production launcher и `deploy.sh` явно переносят metadata через detached-запуск, поэтому версия в production health и футере не зависит от старого launcher, наследования окружения или наличия Git-тега на сохранённом SHA. До запуска production-команды шаг пишет ожидаемые version, commit и source, а health-check повторяет version/commit в своём логе. Для sislexa это фоновый host-side deploy, который возвращает управление до пересоздания контейнеров. Затем `health_check` повторяет сохранённую команду проверки и принимает публикацию только когда JSON health одновременно содержит ожидаемые commit SHA и версию. Поскольку для фоновой команды этот шаг включает фактическую Docker-сборку, его дефолтный лимит — 30 минут; сохранённая настройка проекта по-прежнему имеет приоритет и должна покрывать полную длительность production-сборки.
 
 ## Reconcile после рестарта
 
@@ -319,3 +321,10 @@ cross into the browser or companion-agent command. Install, rollback and bundled
 fallback operations are idempotent and audited in
 `browser_ui_release_operations`; success also requires an unchanged Core
 container ID and start timestamp.
+
+**Причина провала регрессии (2026-10-14, release-reliability-v1).** Регрессию гоняет Kanban: при падении `gate:all`
+он разбирает последние строки `GATE-FAILED-STAGE:` и `GATE-FAILED-TESTS:` (их печатает `scripts/full-gate.mjs`), один раз
+повторяет 1–20 упавших файлов через `npm run test:files` и при зелёном повторе считает регрессию пройденной. Релиз
+несёт необязательные `failedTests` и `failureTail` (последние 80 строк без ANSI). `releaseFailureSummary` в
+`packages/shared/src/release.ts` пропускает YAML/TAP-строки вида `error: |-` (раньше причиной провала становилось `|-`),
+предпочитает «N упавших тестов: …», затем строку `GATE-FAILED-STAGE:` или метку стадии регрессии.

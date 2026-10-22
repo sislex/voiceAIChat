@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-05
-checked: 0aef0202
+updated: 2026-10-20
+checked: a1015514c
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -11,9 +11,47 @@ areas:
 
 # Клиенты и упаковка: web, desktop и agent-tray
 
+Module details: `web-reader:README.md`
+Module details: `core-ui:README.md`
+Module details: `agent:README.md`
+
 ## Core UI distribution
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
+
+The public-chat candidate pins Core UI 1.5.28 from
+`f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`. Its daily quota panel shows settled
+spend, remaining allowance and the Europe/Minsk reset. Voice onboarding uses
+optional `CapabilityStatus.configured`, introduced in Shared 0.1.42 and retained
+in the installed Shared 0.1.43: explicit absence hides
+both automatic and manual launchers without changing saved onboarding progress.
+Legacy servers fall back to availability only when configuration is unspecified;
+unknown or failed capability reads do not block chat readiness. A configured but
+unhealthy voice module remains discoverable for diagnosis. The owner also fixes
+the mobile model trigger and popup geometry. Core keeps artifact and browser
+integration checks; the implementation and responsive regressions live in the
+Core UI owner repository. Candidate stand evidence and remaining public
+commissioning work are recorded in `docs/plans/public-chat-v1.md`.
+
+Settings and their catalogs gate STT and TTS independently by configured
+presence. Unknown or absent optional voice modules stay hidden; a confirmed
+absent voice deep link falls back to LLM settings without saving preferences.
+A TTS-only configuration does not expose STT or dialog settings. Configured but
+unavailable modules retain diagnostic controls. Bootstrap coalesces capability
+discovery, and a failed optional read does not trigger automatic retries;
+opening Settings or explicitly retrying can request discovery again.
+The closed native LLM select stays within its settings pane on desktop and
+mobile; its expanded operating-system menu remains native. These regressions
+belong to the UI owner, while Core verifies the installed archive and its
+settings/universal-search integration.
+
+The first-chat model picker uses effective account settings supplied by Core.
+The access response is a deny-list, so its entries and shared catalog order
+cannot determine deployment fallback. A denied conversation override resolves
+through the authoritative conversation context snapshot; unresolved access or
+snapshot reads keep selection unavailable. Selecting a model before a draft
+has a conversation persists only model fields, and sending waits for that save.
+Failures preserve the draft; navigation and unmount guards prevent stale sends.
 
 
 ## Independent browser chat hosts
@@ -45,8 +83,8 @@ tests and source directories are removed from Core. Both owners install and gate
 without a sibling Core checkout. Desktop 1.0.3 consumes pinned Agent and Core UI
 archives. The frozen chat-client 1.0.1 package supplies only legacy migration DTOs;
 its renderer is no longer selected. Core UI publishes the shared renderer from its
-own repository. Desktop does not compile Core UI source. Core serves the Web shell
-from Core UI 1.5.3, owner commit `75aef0fb55af7bafb95ff727db3cb07c316aa40b`. Since 1.4.12
+own repository. Desktop does not compile Core UI source. The current renderer pin is documented above; the following entries describe
+earlier owner releases. Since 1.4.12
 it recovers the project list when the browser read cache supersedes the startup request
 (retry once, then an error state with retry instead of an endless load); 1.4.13 also
 never strands detail-only project tabs (Release Center, settings, code) behind their
@@ -63,10 +101,24 @@ so a keystroke re-renders only the composer (a 360-message Make chat spent ~440 
 1.5.2 opens long chats with only the latest 40 messages and renders earlier ones on demand.
 1.5.3 loads history in pages of 50 (`conversations:get` with `limit`/`before`), virtualizes the timeline
 (memoized `MessageRow`) and pins agent contracts 1.2.2 (reliability-v2 C01).
-Desktop 1.0.22 (owner commit `52ef5413`, agent 0.22.2, agent contracts 1.2.2) embeds the same renderer;
-`scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one. Standalone chat-app/chat-ui archives remain
+1.5.4 adds the knowledge base module selector (kb-service-v1 C02).
+1.5.5 adds the UI dev mode and the dev stands section (dev-lane-v1 C04), shared 0.1.25 and agent contracts 1.3.0.
+1.5.7 adds the Core UI knowledge base (kb-service-v2 B03).
+1.5.9 fixes the phone task modal (title row with ⋯ and ✕, wrapping description) and project header tabs, makes external task cards readable, loads the board when the subprojects endpoint is absent, and adds the `SISLEXA_STORYBOOK_HMR=0` Storybook mode for Make's machine-bridge frames (mobile-fixes-v1, stand-fixes-v1, followup-fixes-v1/v2, storybook-bridge-v1/v2).
+1.5.6 adds the release disk preflight with the «Разобраться в чате» cleanup chat in Release Center (release-disk-preflight-v1 C02), asynchronous dev stand operations with gateway urls (dev-lane-v2 B02) and shared 0.1.26.
+Desktop 1.0.28 (owner commit `1b3afd4a`, agent 0.23.0, agent contracts 1.3.0) embeds the same renderer;
+`scripts/shared-chat-artifacts.mjs` rejects a Desktop archive with another one, unless Desktop is frozen. Standalone chat-app/chat-ui archives remain
 at their compatible versions until Make and Web Reader owners update their exact
 peer dependencies.
+
+**Desktop is frozen (since 2026-10-18).** Nobody uses Desktop now, so the owner froze its development and
+testing. The Desktop rows in `dependency-snapshots.json` and `vendor/owner-artifacts.json` carry
+`frozen: {since, reason}`. While frozen, the pinned Desktop archive (1.0.41) stays installed and served, but
+`verifySnapshot` skips the Desktop renderer provenance and embedded-renderer checks, and a Desktop pin
+change selects only pin-integrity checks in the application gate (no frontend browser suites). Core UI
+releases therefore no longer require a Desktop release: release Core UI and pin only Core UI. Electron
+QA stays opt-in (`VC_ELECTRON_TESTS=1`). To unfreeze, remove the `frozen` keys, release Desktop with the
+current Core UI and pin it; the renderer checks apply again.
 
 Core browser integration uses the published Core UI renderer, Desktop preload and its own Electron
 test dependency, with no `npm ci --prefix apps/desktop`. Desktop's owner gate
@@ -85,22 +137,6 @@ top-level await so privileged scheme registration finishes before `app.ready`.
 The historical monorepo paths in older sections below describe the pre-extraction
 layout. Current sources and internal commands are in the owner READMEs.
 
-
-## Reader bundles
-
-Web и desktop продолжают монтировать общий legacy `@voicechat/ui` bootstrap. Новый module registry объявляет Web Reader и Playwright Reader отдельными dynamic imports; каждый пакет экспортирует собственный stylesheet. `apps/web-recorder` остаётся отдельным Vite-приложением и не импортируется Reader-пакетами.
-
-Проект имеет три пользовательских host-приложения, но только один продуктовый React-UI. Browser и desktop renderer используют `@voicechat/ui`; agent-tray — отдельная маленькая оболочка управления компаньон-агентом без чата.
-
-## Browser (`apps/web`)
-
-Пакет состоит из Vite-конфига, HTML entry, `src/main.tsx` и определения server URL. `main.tsx` сначала устанавливает remote bridges, затем монтирует общий `App`. Это требование порядка: store обращается к `window.*` уже во время инициализации.
-
-`VITE_SERVER_URL` нужен, когда backend на другом origin. В dev пустой URL идёт через Vite proxy; в Docker production web собирается для same-origin. Backend с `VC_WEB_DIR` раздаёт `dist` и SPA fallback, поэтому browser refresh на клиентском route не должен давать 404.
-
-Dev-прокси Vite (порт 5273) — часть dev-контура Web Reader: `/web-recorder/` уходит на отдельный Reader dev server (порт 5274) c `ws: true`, чтобы HMR-сокет Reader тоже шёл same-origin путём и изменения `apps/web-recorder` применялись внутри iframe без пересборки `apps/web`; `/api` проксируется на Fastify **без** `changeOrigin` — previewProxy сверяет host диагностической страницы с Host запроса, и с переписанным Host самодиагностика в dev получала SSRF-отказ. Формы прокси зафиксированы тестом `apps/web/src/devProxy.test.ts`. `scripts/dev-web.sh` поднимает backend + оба Vite, ждёт готовности всех трёх портов (до 30 с) и завершает весь dev-сеанс с диагностикой, если любой обязательный процесс упал до готовности; production от dev-прокси не зависит — сервер раздаёт сборку Reader сам (`VC_WEB_RECORDER_DIR`).
-
-Здесь не размещают компоненты, состояние или fetch-логику. Исключения — host/bootstrap, Vite proxy, CSP/assets и выбор URL.
 
 ## Desktop (`apps/desktop`)
 
@@ -131,26 +167,6 @@ Electron preload должен сохранять `contextIsolation` и публ�
 `electron-vite` собирает main, preload и renderer. Main bundle — ESM, поэтому пути к preload/renderer вычисляются через `dirname(fileURLToPath(import.meta.url))`; CommonJS-глобальная `__dirname` в packaged приложении не определена и оставляет процесс только с tray/menu-bar без `BrowserWindow`. `electron-builder.yml` определяет app id, ресурсы и macOS DMG; `afterPack.cjs` выполняет package-specific обработку. Сервер может найти DMG автоматически в `apps/desktop/release` или получить путь через `VC_DESKTOP_APP`, после чего раздаёт `/api/app/desktop`.
 
 Команды: `npm --prefix apps/desktop install`, `npm run typecheck:desktop`, `npm run test:desktop`, `npm --prefix apps/desktop run dev`, `npm --prefix apps/desktop run dist`.
-
-## Agent tray (`apps/agent-tray`)
-
-Agent tray — Electron-приложение для пользователя, который предоставляет машину, но не работает с CLI. Оно хранит server URL и machine token, показывает setup, журнал, permissions и update controls, создаёт tray icon и запускает bundle агента как дочерний процесс.
-
-`src/main/configStore.ts` отвечает за устойчивое хранение конфигурации; секрет не должен попадать в renderer log. `serverUrl.ts` нормализует http/https и производные ws/wss адреса. `trayIcon.ts` управляет меню и lifecycle окон.
-
-Renderer намеренно простой HTML+TypeScript, без React: `setup` вводит адрес/токен, `log` показывает ограниченный поток строк, `permissions` читает и изменяет policy через сервер. Preload выдаёт только необходимые команды/события.
-
-Поведение агента не копируется. Tray запускает распространяемый `voicechat-agent.cjs`; изменения exec/fs/pty делаются в `apps/agent`. Версия tray package и `AGENT_VERSION` независимы.
-
-Сборка отдельная: `npm --prefix apps/agent-tray install`, `npm run typecheck:agent-tray`, `npm run test:agent-tray`, `npm run dist:agent-tray`. DMG появляется в `apps/agent-tray/release`, autodiscovery server или `VC_AGENT_APP` публикует его на `/api/agents/app`.
-
-## Login application (`apps/login-application`)
-
-Самостоятельное Electron-приложение принимает `voicechat-login://enroll` при cold start, через macOS `open-url` и single-instance callback. Оно погашает двухминутный opaque enrollment и только после успешного ответа применяет возвращённые `serverUrl` и machine token: token сохраняется через `safeStorage`, затем запускается `startConnection` из `apps/agent`; exec/fs/pty не копируются. Повторная доставка одной уже успешно обработанной ссылки идемпотентна. Если машина уже настроена, до redeem показывается системное подтверждение: отказ сохраняет старую конфигурацию, а согласие атомарно заменяет её зашифрованным файлом. Renderer-форма в `apps/login-application/src/renderer` предлагает сервер ChatAI, логин и пароль; кнопка активна только при заполненных обязательных полях. Она вызывает только preload-операции `configured` и `addCurrentDevice`, передаёт пароль в IPC-запросе и очищает его после завершения, ошибки и успешного подключения; credentials не сохраняются. Аккаунты с 2FA направляются в enrollment flow из открытой web-сессии.
-
-В URI находятся только краткоживущий enrollment `secret`, `correlationId` и `origin` сервера; старые имена query-параметров читаются на время обновления установленных приложений. HTTPS origin разрешён всегда, а HTTP — только для `localhost`, IPv6 loopback и диапазона `127.0.0.0/8` в development. Постоянный machine token приходит в ответе redeem. В desktop-host `voicechat-login://open` только раскрывает окно; enrollment-ссылка проходит `parse`/`enroll`, а её `serverUrl` применяется лишь после успешного `enroll` (`apps/desktop/src/main/remoteConfig.ts`). Renderer видит только фиксированные операции preload и статусы, но не token store. `electron-builder.yml` регистрирует protocol и собирает только macOS ARM64 DMG. Пакет вне workspaces, имеет отдельный lockfile; команды проверки — `npm --prefix apps/login-application run typecheck`, `test`, `dist`, `smoke`.
-
-Серверный реестр `/api/login-application/artifacts` выбирает platform/arch; сейчас доступна только `macos/arm64`. Отдельный download endpoint отдаёт `voicechat-login-macos-arm64.dmg`, настроенный через `VC_LOGIN_APPLICATION` или autodiscovery `apps/login-application/release`. Диалог подключения устройства реализован в `packages/ui/src/App.tsx` на общем `Dialog`, поэтому закрывается штатной кнопкой и с клавиатуры. Production-мост использует `loginApplication:artifacts` для DMG, `loginApplication:issueEnrollment` для новой одноразовой ссылки и `loginApplication:enrollmentStatus` для polling результата. Состояния загрузки, ожидания, истечения и ошибок выводятся как live-region `status`/`alert`; закрытие инвалидирует текущий polling и отменяет отложенное действие. После completed enrollment UI дополнительно ждёт online-машину, выбирает её как default и выполняет continuation ровно один раз.
 
 ## Границы безопасности Electron
 

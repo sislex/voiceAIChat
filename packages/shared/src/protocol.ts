@@ -1,3 +1,4 @@
+import type { BoardRequestOptions } from './projects'
 import type { MakePresenceClient } from '@voicechat/make-contracts/make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
@@ -24,6 +25,17 @@ import type { PreviewAction, PreviewActionResult } from '@voicechat/browser-cont
 import type { WidgetUiAction, WidgetUiActionResult } from './widgetAssistant'
 import type { LoginStatusMap } from './auth'
 
+/** Preserve legacy boolean calls and share selection across both board phases. */
+function boardQuery(options?: boolean | BoardRequestOptions): string {
+  const selection = typeof options === 'boolean' ? { includeCompleted: options } : options
+  const query: string[] = []
+  if (selection?.includeCompleted) query.push('includeCompleted=1')
+  if (selection?.projects !== undefined) {
+    query.push('projects=' + selection.projects.map(id => encodeURIComponent(id)).join(','))
+  }
+  return query.length ? '?' + query.join('&') : ''
+}
+
 // --- Общие ---------------------------------------------------------------
 
 /** Сегмент для передачи по сети (совпадает с SttSegment). */
@@ -43,6 +55,8 @@ export interface SttStatus {
 
 /** Доступность одной функции (STT/TTS) на этой машине/в контейнере. */
 export interface CapabilityStatus {
+  /** A voice engine or service is configured, independently of health, resources and user access. Omitted by older servers. */
+  configured?: boolean
   /** Функция разрешена (ресурсов достаточно). */
   available: boolean
   /** Причина недоступности для показа в UI ('' — если доступно). */
@@ -57,6 +71,8 @@ export interface CapabilityStatus {
 export interface SystemCapabilities {
   stt: CapabilityStatus
   tts: CapabilityStatus
+  /** Deployment configuration only; absence preserves legacy client behavior, not an outage signal. */
+  analytics?: { configured: boolean }
   /** Лимит памяти контейнера (cgroup) либо память хоста, байты. */
   memoryLimitBytes: number
   /** Число доступных CPU (cgroup-квота либо ядра хоста). */
@@ -69,6 +85,7 @@ export interface SystemCapabilities {
 // GET    /api/conversations                  -> Conversation[]
 // POST   /api/conversations {title?}         -> Conversation
 // GET    /api/conversations/:id              -> ConversationWithMessages | 404
+// POST   /api/conversations/:id/thread/reset -> Conversation | 404
 // PATCH  /api/conversations/:id {title}      -> Conversation
 // DELETE /api/conversations/:id              -> { ok }
 // POST   /api/conversations/:id/messages AddMessageArgs -> Message
@@ -153,11 +170,20 @@ export interface HealthResponse {
 
 /** Пути REST (единый источник для сервера и клиентов). */
 export const REST = {
+  devStandAccess: '/api/dev-stand-access',
+  projectDevStands: (id: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands`,
+  projectDevStand: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}`,
+  projectDevStandDeliveries: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/deliveries`,
+  projectDevStandSyncDev: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/sync-dev`,
+  projectDevStandSyncDevStatus: (id: string, standId: string) => `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/sync-dev/status`,
+  projectDevStandComponent: (id: string, standId: string, component: import('./devStand').DevComponentId) =>
+    `/api/projects/${encodeURIComponent(id)}/dev-stands/${encodeURIComponent(standId)}/components/${encodeURIComponent(component)}`,
   uiPerformance: '/api/ui-performance',
   uiPerformanceReport: '/api/ui-performance/report',
   health: '/api/health',
   kbStatus: '/api/kb/status',
   kbModules: '/api/kb/modules',
+  kbModulesReconcile: '/api/kb/modules/reconcile',
   kbTopics: '/api/kb/topics',
   kbSearch: '/api/kb/search',
   kbContext: '/api/kb/context',
@@ -168,6 +194,8 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationSummary: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary`,
+  conversationSummaryRefresh: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary/refresh`,
   conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
   projectKbUsage: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb-usage`,
   sessionLogin: '/api/session/login',
@@ -184,6 +212,8 @@ export const REST = {
   sessionLogout: '/api/session/logout',
   /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
   sessionList: '/api/session/list',
+  sessionApiTokens: '/api/session/api-tokens',
+  sessionApiToken: (sid: string) => `/api/session/api-tokens/${encodeURIComponent(sid)}`,
   /** Bearer → HttpOnly cookie-сессия + CSRF (auth-roadmap п.5). */
   sessionCookie: '/api/session/cookie',
   /** Второй фактор TOTP (auth-roadmap п.6): код после пароля, настройка и отключение. */
@@ -276,6 +306,7 @@ export const REST = {
     if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
+  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
@@ -447,6 +478,9 @@ export const REST = {
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  subprojects: (id: string) => `/api/projects/${encodeURIComponent(id)}/subprojects`,
+  board: (id: string, options?: BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board${boardQuery(options)}`,
   projectTenant: (id: string) => `/api/projects/${encodeURIComponent(id)}/tenant`,
   // Дерево типов проекта: каталог общий, решения по публикации — под /api/admin/.
   projectInvitations: (id: string) => `/api/projects/${encodeURIComponent(id)}/invitations`,
@@ -476,15 +510,15 @@ export const REST = {
   projectAutomatedQaCheck: (id: string) => `/api/projects/${encodeURIComponent(id)}/automated-qa/check`,
   projectUserDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines/default`,
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
-  projectBoard: (id: string, includeCompleted?: boolean) =>
-    `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
+  projectBoard: (id: string, options?: boolean | BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board${boardQuery(options)}`,
   /**
    * Вторая фаза доски: состояние карточек (чат, merge, подготовка, последний
    * ран) и сводки CI. Отдельный запрос — чтобы доска рисовалась по скелету, не
    * дожидаясь обхода восьми таблиц ранов.
    */
-  projectBoardStatuses: (id: string, includeCompleted?: boolean) =>
-    `/api/projects/${encodeURIComponent(id)}/board/statuses${includeCompleted ? '?includeCompleted=1' : ''}`,
+  projectBoardStatuses: (id: string, options?: boolean | BoardRequestOptions) =>
+    `/api/projects/${encodeURIComponent(id)}/board/statuses${boardQuery(options)}`,
   /** Вид доски текущего человека в проекте: фильтры, свимлейны, показ скрытых. */
   projectBoardView: (id: string) => `/api/projects/${encodeURIComponent(id)}/board/view`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
@@ -619,6 +653,8 @@ export const REST = {
   projectBrowserUiReleases: (id: string) => `/api/projects/${encodeURIComponent(id)}/application-releases/browser-ui`,
   projectBrowserUiReleaseActions: (id: string) => `/api/projects/${encodeURIComponent(id)}/application-releases/browser-ui/actions`,
   projectReleaseBranches: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/branches`,
+  /** GET; callers may append the selected build machine as ?agentId=<encoded id>. */
+  projectReleasePreflight: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/preflight`,
   projectReleaseMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/machines`,
   projectReleases: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases`,
   projectReleaseDeploy: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/deploy`,
@@ -923,6 +959,7 @@ export type ServerMessage =
    * чём — поэтому это не `claude.done`.
    */
   | { t: 'chat.message'; conversationId: string; message: Message }
+  | { t: 'chat.conversation'; conversation: Conversation }
   /**
    * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
    * моделью). Рассылается по userId, как `claude.usage`, — подписки нет.
@@ -1039,6 +1076,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.interaction',
   'merge.snapshot',
   'chat.message',
+  'chat.conversation',
   'kb.usage',
   'preview.action',
   'widget.action',

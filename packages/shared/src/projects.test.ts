@@ -4,6 +4,137 @@ import { applyTaskStatuses, canTransitionWorkflow, chatStorageDirectories, compa
   designPromptLines, taskMakeSources, type TaskDesignLink, type Task, type TaskStatus
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
+import { DEFAULT_QA_STAGES, QA_STAGES, normalizeQaStages } from './projects'
+import {
+  DEFAULT_OPERATOR_ASSISTANT_LIMITS, OPERATOR_ACTIONS_BY_MODE,
+  OPERATOR_ASSISTANT_LIMIT_RANGES, OPERATOR_ASSISTANT_MODES,
+  normalizeOperatorAssistant, normalizeOperatorAssistantLimits,
+  DEFAULT_OPERATOR_ASSISTANT_MODEL, normalizeOperatorAssistantModel
+} from './projects'
+
+describe('operator assistant model', () => {
+  it.each([undefined, null, false, 1, 'custom', [], {}, { source: 'unknown', execution: 'unrestricted' }])('defaults invalid input %j', value => {
+    expect(normalizeOperatorAssistantModel(value)).toEqual({ source: 'run', execution: 'mcp_only' })
+  })
+
+  it.each(['claude', 'codex'] as const)('normalizes a custom %s model', provider => {
+    const input = { source: 'custom', provider, model: '  model-name  ', execution: 'unrestricted', llmEngineId: 'engine-1' }
+    const result = normalizeOperatorAssistantModel(input)
+    expect(result).toEqual({ ...input, model: 'model-name' })
+    expect(input.model).toBe('  model-name  ')
+    expect(normalizeOperatorAssistantModel(result)).toEqual(result)
+  })
+
+  it.each([
+    {}, { provider: 'other', model: 'model' }, { provider: 'codex' },
+    { model: 'model' }, { provider: 'claude', model: '  ' }, { provider: 'codex', model: 42 }
+  ])('falls back for incomplete custom model %j', fields => {
+    expect(normalizeOperatorAssistantModel({ source: 'custom', execution: 'unrestricted', ...fields })).toEqual(DEFAULT_OPERATOR_ASSISTANT_MODEL)
+  })
+
+  it('caps trimmed model names and sanitizes optional values', () => {
+    const input = { source: 'custom', provider: 'codex', model: `  ${'x'.repeat(201)}  ` }
+    expect(normalizeOperatorAssistantModel({ ...input, execution: 'invalid', llmEngineId: 1 })).toEqual({
+      source: 'custom', provider: 'codex', model: 'x'.repeat(200), execution: 'mcp_only'
+    })
+    expect(normalizeOperatorAssistantModel({ ...input, llmEngineId: null }).llmEngineId).toBeNull()
+    expect(normalizeOperatorAssistantModel(input)).not.toHaveProperty('llmEngineId')
+  })
+
+  it('strips custom settings from run selection and returns fresh defaults', () => {
+    expect(normalizeOperatorAssistantModel({ source: 'run', execution: 'unrestricted', provider: 'codex', model: 'ignored', llmEngineId: 'ignored' })).toEqual({ source: 'run', execution: 'unrestricted' })
+    const result = normalizeOperatorAssistantModel(undefined)
+    result.execution = 'unrestricted'
+    expect(normalizeOperatorAssistantModel({ source: 'run' })).toEqual({ source: 'run', execution: 'mcp_only' })
+    expect(DEFAULT_OPERATOR_ASSISTANT_MODEL.execution).toBe('mcp_only')
+  })
+})
+
+describe('operator assistant contract', () => {
+  it('defines modes and their exact allowed actions', () => {
+    expect(OPERATOR_ASSISTANT_MODES).toEqual(['off', 'answers', 'full'])
+    expect(OPERATOR_ACTIONS_BY_MODE).toEqual({
+      off: [],
+      answers: ['answer', 'comment', 'escalate'],
+      full: ['answer', 'comment', 'retry_step', 'discard_and_retry', 'restart_development', 'move_ready', 'escalate']
+    })
+    for (const mode of OPERATOR_ASSISTANT_MODES) expect(normalizeOperatorAssistant(mode)).toBe(mode)
+  })
+
+  it.each([undefined, null, '', 'FULL', ' full', 'unknown', 1, true, {}, ['full']])('disables invalid mode %j', value => {
+    expect(normalizeOperatorAssistant(value)).toBe('off')
+  })
+
+  it('defines default counts and inclusive ranges', () => {
+    expect(DEFAULT_OPERATOR_ASSISTANT_LIMITS).toEqual({
+      actionsPerCardPerDay: 3, stepRetries: 1, discardRetries: 1,
+      developmentRestarts: 1, answersPerRun: 3, disabledActions: []
+    })
+    expect(OPERATOR_ASSISTANT_LIMIT_RANGES).toEqual({
+      actionsPerCardPerDay: { min: 0, max: 50 }, stepRetries: { min: 0, max: 5 },
+      discardRetries: { min: 0, max: 5 }, developmentRestarts: { min: 0, max: 5 },
+      answersPerRun: { min: 0, max: 20 }
+    })
+  })
+
+  it.each([undefined, null, false, 3, 'limits', [], {}])('defaults malformed or empty limits %j', value => {
+    expect(normalizeOperatorAssistantLimits(value)).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+  })
+
+  it('fills partial limits and returns independent objects and arrays', () => {
+    const result = normalizeOperatorAssistantLimits({ stepRetries: 0 })
+    expect(result).toEqual({ ...DEFAULT_OPERATOR_ASSISTANT_LIMITS, stepRetries: 0 })
+    result.disabledActions.push('answer')
+    result.answersPerRun = 0
+    expect(normalizeOperatorAssistantLimits({})).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+    expect(DEFAULT_OPERATOR_ASSISTANT_LIMITS.disabledActions).toEqual([])
+  })
+
+  for (const [key, { min, max }] of Object.entries(OPERATOR_ASSISTANT_LIMIT_RANGES)) {
+    it(`clamps ${key}, truncates fractions and defaults non-finite or nonnumeric values`, () => {
+      for (const [value, expected] of [[-100, min], [0, min], [max, max], [max + 100, max], [2.9, 2]]) {
+        expect(normalizeOperatorAssistantLimits({ [key]: value })).toHaveProperty(key, expected)
+      }
+      for (const value of [NaN, Infinity, -Infinity, '2', null, true, {}, []]) {
+        expect(normalizeOperatorAssistantLimits({ [key]: value })).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
+      }
+    })
+  }
+
+  it('filters and deduplicates disabled actions without mutating input and is idempotent', () => {
+    const input = Object.freeze({ disabledActions: Object.freeze(['escalate', 'unknown', null, 1, 'answer', 'answer']) })
+    const result = normalizeOperatorAssistantLimits(input)
+    expect(result.disabledActions).toEqual(['answer', 'escalate'])
+    expect(normalizeOperatorAssistantLimits(result)).toEqual(result)
+    expect(normalizeOperatorAssistantLimits({ disabledActions: OPERATOR_ACTIONS_BY_MODE.full }).disabledActions)
+      .toEqual(OPERATOR_ACTIONS_BY_MODE.full)
+    expect(normalizeOperatorAssistantLimits({ disabledActions: 'answer' }).disabledActions).toEqual([])
+  })
+})
+
+describe('normalizeQaStages', () => {
+  it('defines the pipeline order and defaults to no QA stages', () => {
+    expect(QA_STAGES).toEqual(['component_qa', 'integration_tests', 'automated_qa', 'manual_qa'])
+    expect(DEFAULT_QA_STAGES).toEqual([])
+    expect(normalizeQaStages([])).toEqual([])
+  })
+
+  it.each([undefined, null, false, 1, 'manual_qa', { manual_qa: true }])('rejects non-array input %j', (value) => {
+    expect(normalizeQaStages(value)).toEqual([])
+  })
+
+  it('drops unknown values, deduplicates and restores pipeline order without mutating input', () => {
+    const input = Object.freeze(['manual_qa', null, 'automated_qa', 'unknown', 'component_qa', 'manual_qa', 'integration_tests', 1, {}])
+    expect(normalizeQaStages(input)).toEqual(QA_STAGES)
+  })
+
+  it('preserves selected subsets and is idempotent', () => {
+    const normalized = normalizeQaStages(['manual_qa', 'integration_tests', 'integration_tests'])
+    expect(normalized).toEqual(['integration_tests', 'manual_qa'])
+    expect(normalizeQaStages(normalized)).toEqual(normalized)
+    expect(normalizeQaStages(['development', 'awaiting_merge', 'MANUAL_QA', ' manual_qa'])).toEqual([])
+  })
+})
 
 const DAY = 24 * 60 * 60 * 1000
 const T0 = 1_700_000_000_000

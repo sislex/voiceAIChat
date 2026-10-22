@@ -1,8 +1,9 @@
+import { parseChatModelPolicy } from './chatModelPolicy.js'
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
-import { createTurnManager, ProjectMainSnapshotCoordinator } from './turns.js'
+import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
-import { imageBlock } from '@voicechat/shared'
+import { imageBlock, parseApplications } from '@voicechat/shared'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
@@ -14,12 +15,48 @@ import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import type { ChatAccounting } from './billing/chatAccounting.js'
+import { ACCOUNTING_PENDING_MESSAGE } from './billing/chatAccounting.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
 const fixtureCredential1 = randomUUID()
 
 const U = 'admin'
+
+it('refuses a client message id that is not stored in the conversation, before the model or the queue', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Chat')
+    const other = await db.chat.createConversation(U, 'Other')
+    const foreign = await db.chat.addMessage(U, other.id, 'u0', 'Elsewhere', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client })
+    const errors: string[] = []
+    turns.subscribe(message => { if (message.t === 'claude.error') errors.push(message.message) })
+    for (const messageId of [randomUUID(), foreign.id]) {
+      await turns.start({ userId: U, conversationId: conversation.id, messageId, segments: [{ speakerId: 1, text: 'Hi' }] })
+    }
+    await turns.idle()
+    expect(rec.last()).toBeNull()
+    expect(errors).toEqual(['message_not_found', 'message_not_found'])
+    expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+  } finally { await db.close() }
+})
+
+it('denies a disabled application on fresh turn admission despite tenant entitlement', async () => {
+  const db = await freshDb()
+  try {
+    const conversation = await db.chat.createConversation(U, 'Make', 'make', null, 'make')
+    expect((await db.identity.getAccountAccess(U))?.capabilities).toContain('make.use')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client,
+      deployment: { coreId: 'test-core', applications: parseApplications('chat') },
+    })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Build a page' }] })
+    await turns.idle()
+    expect(rec.last()).toBeNull()
+  } finally { await db.close() }
+})
 
 it('persists token-only text as a distinct message before execution without REST write access', async () => {
   const { ChatDelegation } = await import('./auth/delegation.js')
@@ -312,6 +349,28 @@ describe('turns: канбан-ассистент', () => {
     await db.chat.setConversationExecTarget(U, conv.id, 'none', undefined, undefined, undefined, undefined, 'plan')
     await run()
     expect(rec.last()?.kanbanMcpUrl).toContain('ro=1')
+    await turns.idle()
+    db.close()
+  })
+
+  it('с «Автопилотом» канбан-ассистенту не даётся task-launch, без него — даётся', async () => {
+    const db = await freshDb()
+    const project = await db.projects.createProject(U, { name: 'Board' })
+    const conv = (await db.chat.ensureKanbanAssistantConversation(U, project.id))!
+    const context = { version: 1 as const, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: null, selection: null, recentActions: [] }
+    const rec = recorder()
+    const turns = createTurnManager({ db: await db, claude: rec.client, kanbanMcpBaseUrl: 'http://127.0.0.1:8787/mcp/kanban?k=secret' })
+    const run = async (): Promise<void> => new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => { if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() } })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Разрули упавшие карточки' }], assistantContext: context, execTarget: 'none' })
+    })
+    await run()
+    expect(rec.last()?.prompt).not.toContain('task-launch')
+    expect(rec.last()?.prompt).toContain('```questions')
+
+    await db.chat.setConversationAutonomy(U, conv.id, 'confirm')
+    await run()
+    expect(rec.last()?.prompt).toContain('task-launch')
     await turns.idle()
     db.close()
   })
@@ -1416,6 +1475,42 @@ describe('turns: автоматический контекст базы знан
   })
 })
 
+describe('turns: conversation history MCP', () => {
+  const HISTORY_MCP = 'http://127.0.0.1:8787/mcp/history?k=secret'
+  function broker() {
+    const live = new Set<string>()
+    return { register: (token: string) => live.add(token), unregister: (token: string) => live.delete(token), live: () => [...live] }
+  }
+
+  it('connects for a normal turn and revokes its token when the turn ends', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'History'); const rec = recorder(); const tool = broker()
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.historyMcpUrl).toContain('/mcp/history?k=secret&turn=')
+    expect(tool.live()).toEqual([])
+    await turns.idle(); await db.close()
+  })
+
+  it('honours the mcp-history context toggle', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'History'); const rec = recorder(); const tool = broker()
+    await db.chat.setConversationContextEnabled(U, conversation.id, 'mcp-history', false)
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.historyMcpUrl).toBeUndefined()
+    expect(tool.live()).toEqual([])
+    await turns.idle(); await db.close()
+  })
+
+  it('adds a discovery hint only for long conversations', async () => {
+    const db = await freshDb(); const conversation = await db.chat.createConversation(U, 'Long'); const rec = recorder(); const tool = broker()
+    for (let index = 0; index < 201; index++) await db.chat.addMessage(U, conversation.id, 'u1', `message ${index}`, '10:00')
+    const turns = createTurnManager({ db, claude: rec.client, historyMcpBaseUrl: HISTORY_MCP, historyTool: tool })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'continue' }] })
+    expect(rec.last()?.prompt).toContain('mcp__history__history_search')
+    await turns.idle(); await db.close()
+  })
+})
+
 describe('turns: MCP-инструменты базы знаний и режимы kbContextMode', () => {
   const bundle = {
     query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
@@ -1699,6 +1794,136 @@ describe('turns: управляемая персистентная очеред�
     return { client, handlers, requests, cancels: () => cancels }
   }
 
+  it('preserves a stopped public queue and rejects resume/send-now across conversations until stable-user settlement', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      const other = await db.chat.createConversation(U, 'Other chat')
+      const active = await db.chat.addMessage(U, conversation.id, 'u0', 'Active', '10:00')
+      const queued = await db.chat.addMessage(U, conversation.id, 'u0', 'Queued', '10:01')
+      const elsewhere = await db.chat.addMessage(U, other.id, 'u0', 'Other request', '10:02')
+      const llm = controlled()
+      let pending = false
+      const stableUserId = (await db.identity.getAccountAccess(U))!.userId
+      const hasPendingUser = vi.fn((id: string) => id === stableUserId && pending)
+      const wrap = vi.fn((client: LlmClient) => ({ send: (req: LlmRequest, handlers: LlmStreamHandlers) => {
+        pending = true
+        return client.send(req, handlers)
+      } }))
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser, stopsInBackground: (origin: string, delegated: boolean) => origin === 'chat' && !delegated } as unknown as ChatAccounting })
+      const events: import('@voicechat/shared').ServerMessage[] = []
+      turns.subscribe(event => events.push(event))
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: queued.text }] })
+      const queueId = (await db.chat.listQueuedTurns(U, conversation.id))[0]!.id
+      llm.handlers[0].onDelta('Visible partial')
+      await turns.cancel(conversation.id); await turns.cancel(conversation.id)
+      await turns.sendQueuedNow(U, conversation.id, queueId)
+      await turns.resumeQueues(U)
+      await turns.start({ userId: U, conversationId: other.id, messageId: elsewhere.id, segments: [{ speakerId: 1, text: elsewhere.text }] })
+      await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(1)
+      expect(hasPendingUser).toHaveBeenCalledWith(stableUserId)
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([expect.objectContaining({ id: queueId, messageId: queued.id, status: 'queued', text: queued.text })])
+      expect(events.filter(event => event.t === 'claude.error')).toEqual(expect.arrayContaining([expect.objectContaining({ conversationId: other.id, message: expect.stringContaining('учёта его стоимости') })]))
+      llm.handlers[0].onDelta('Hidden'); llm.handlers[0].onDone('Hidden complete'); llm.handlers[0].onError('Hidden failure')
+      await turns.idle()
+      const answers = (await db.chat.listMessages(U, conversation.id)).filter(message => message.role === 'ai')
+      expect(answers).toEqual([expect.objectContaining({ text: 'Visible partial', meta: expect.objectContaining({ interrupted: true }) })])
+      expect(events.filter(event => event.t === 'claude.done')).toHaveLength(1)
+      pending = false
+      await turns.resumeQueues(U); await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(1)
+      await turns.sendQueuedNow(U, conversation.id, queueId); await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(2)
+      expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+      llm.handlers[1].onDone('Next complete'); pending = false
+      await turns.idle()
+    } finally { await db.close() }
+  })
+
+  it('restores extracted public queue work when another conversation reserves the user before admission', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Queue admission race')
+      const messages = await Promise.all(['First', 'Second'].map(text => db.chat.addMessage(U, conversation.id, 'u0', text, '10:00')))
+      const payload = { segments: [{ speakerId: 1, text: 'First' }], verbose: true, execTarget: 'none', billingSession: { userId: 'subject', tenantId: 'tenant', sid: 'sid' } }
+      await db.chat.enqueueTurn(U, conversation.id, messages[0].id, payload)
+      await db.chat.enqueueTurn(U, conversation.id, messages[1].id, { segments: [{ speakerId: 1, text: 'Second' }] })
+      let pending = false
+      const take = db.chat.takeQueuedTurn.bind(db.chat)
+      vi.spyOn(db.chat, 'takeQueuedTurn').mockImplementation(async (...args) => {
+        const result = await take(...args)
+        pending = true
+        return result
+      })
+      const wrap = vi.fn((client: LlmClient) => client)
+      const turns = createTurnManager({ db, claude: controlled().client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser: () => pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.resumeQueues(U); await turns.idle()
+      expect(wrap).not.toHaveBeenCalled()
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      const queue = await db.chat.listQueuedTurns(U, conversation.id)
+      expect(queue.map(item => [item.messageId, item.status])).toEqual(messages.map(message => [message.id, 'queued']))
+      expect(await db.chat.queuedTurnPayload(U, conversation.id, queue[0].id)).toEqual(payload)
+      expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
+    } finally { await db.close() }
+  })
+
+  it('restores merged send-now work if the original public execution becomes billable during the merge', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Send now admission race')
+      const active = await db.chat.addMessage(U, conversation.id, 'u0', 'First', '10:00')
+      const queued = await db.chat.addMessage(U, conversation.id, 'u0', 'Second', '10:01')
+      const llm = controlled()
+      let pending = false
+      const wrap = vi.fn((client: LlmClient) => client)
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser: () => pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: 'First' }] })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: 'Second' }] })
+      const queueId = (await db.chat.listQueuedTurns(U, conversation.id))[0].id
+      const merge = db.chat.mergeQueuedTurnIntoMessage.bind(db.chat)
+      vi.spyOn(db.chat, 'mergeQueuedTurnIntoMessage').mockImplementation(async (...args) => {
+        const result = await merge(...args)
+        pending = true
+        return result
+      })
+      await turns.sendQueuedNow(U, conversation.id, queueId)
+      await vi.waitFor(async () => expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true))
+      expect(wrap).toHaveBeenCalledTimes(1)
+      const queue = await db.chat.listQueuedTurns(U, conversation.id)
+      expect(queue).toHaveLength(1)
+      expect(queue[0]).toMatchObject({ text: 'First\n\nSecond', status: 'queued' })
+      expect((await db.chat.queuedTurnPayload(U, conversation.id, queue[0].id))?.segments).toEqual([
+        { speakerId: 1, text: 'First' }, { speakerId: 1, text: 'Second' }
+      ])
+    } finally { await db.close() }
+  })
+
+  it('keeps the first public queue item queued when Billing rejects an admission race', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Billing admission race')
+      const messages = await Promise.all(['First', 'Second'].map(text => db.chat.addMessage(U, conversation.id, 'u0', text, '10:00')))
+      for (const message of messages) await db.chat.enqueueTurn(U, conversation.id, message.id, { segments: [{ speakerId: 1, text: message.text }] })
+      const llm = controlled()
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap: (client: LlmClient) => client, hasPendingUser: () => false, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.resumeQueues(U); await turns.idle()
+      expect(llm.handlers).toHaveLength(1)
+      await llm.handlers[0].onError(ACCOUNTING_PENDING_MESSAGE)
+      await turns.idle()
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      expect((await db.chat.listQueuedTurns(U, conversation.id)).map(item => [item.messageId, item.status])).toEqual(messages.map(message => [message.id, 'queued']))
+      expect(await db.chat.listMessages(U, conversation.id)).toEqual([])
+      expect(llm.handlers).toHaveLength(1)
+    } finally { await db.close() }
+  })
+
   it('Stop завершает CLI, сохраняет partial и однократно продвигает очередь', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')
@@ -1771,6 +1996,65 @@ describe('turns: управляемая персистентная очеред�
     expect((await db.chat.listQueuedTurns(U, conversation.id)).map((item) => item.text)).toEqual(['A', 'B'])
     await turns.idle()
     db.close()
+  })
+
+  it('a lost Codex thread is forgotten and the message is retried in a fresh thread', async () => {
+    const db = await freshDb()
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
+    const conversation = await db.chat.createConversation(U, 'make')
+    await db.chat.setClaudeSession(U, conversation.id, 'codex:01a0423d-0b8d-7931-ba8f-c7282aa63583')
+    await db.chat.addMessage(U, conversation.id, 'u1', 'OLD-COLD-HISTORY' + 'x'.repeat(200_000), '09:00')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Сделай кнопку', '10:00')
+    const llm = controlled()
+    const errors: string[] = []
+    const turns = createTurnManager({ db: await db, claude: llm.client, codex: llm.client })
+    turns.subscribe((m) => { if (m.t === 'claude.error') errors.push(m.message) })
+
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    expect(llm.requests[0]?.sessionId).toBe('01a0423d-0b8d-7931-ba8f-c7282aa63583')
+    await llm.handlers[0]!.onError('thread/resume: thread/resume failed: no rollout found for thread id 01a0423d-0b8d-7931-ba8f-c7282aa63583 (code -32600)')
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+    expect(llm.requests[1]?.prompt).toContain('Сделай кнопку')
+    expect(llm.requests[1]?.prompt).toContain('1 ранних сообщений опущены')
+    expect(llm.requests[1]?.prompt).not.toContain('OLD-COLD-HISTORY')
+    expect(errors).toEqual([])
+    expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(false)
+
+    await llm.handlers[1]!.onError('thread/resume failed: no rollout found for thread id x')
+    await turns.idle()
+    expect(llm.handlers).toHaveLength(2)
+    expect(errors).toHaveLength(1)
+    db.close()
+  })
+
+  it('persists latest context fill and clears it when the provider starts another thread', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'context fill')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Привет', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    await llm.handlers[0]!.onSession('thread-one')
+    await llm.handlers[0]!.onDone('Ответ', { model: 'claude-sonnet-4-5', inputTokens: 10, cacheReadTokens: 20, cacheCreationTokens: 5 })
+    await turns.idle()
+    expect((await db.chat.getConversation(U, conversation.id))?.contextUsage).toMatchObject({ usedTokens: 35, windowTokens: 200_000, provider: 'claude' })
+
+    const next = await db.chat.addMessage(U, conversation.id, 'u1', 'Ещё', '10:01')
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: next.id, segments: [{ speakerId: 1, text: next.text }] })
+    await llm.handlers[1]!.onSession('thread-two')
+    expect((await db.chat.getConversation(U, conversation.id))?.contextUsage).toBeUndefined()
+    await llm.handlers[1]!.onDone('Ещё ответ', { model: 'claude-sonnet-4-5', inputTokens: 12 })
+    await turns.idle()
+    await turns.idle()
+    db.close()
+  })
+
+  it('isLostCodexThread recognises only the missing rollout error', () => {
+    expect(isLostCodexThread('Error: thread/resume: thread/resume failed: no rollout found for thread id abc (code -32600)')).toBe(true)
+    expect(isLostCodexThread('runner failed')).toBe(false)
   })
 
   it('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {
@@ -1937,5 +2221,42 @@ describe('ProjectMainSnapshotCoordinator', () => {
     expect(updated).toBe(false)
     reader.release(); reader.release()
     expect((await update).baseSha).toBe(shas[1])
+  })
+})
+
+
+describe('deployment model allowlist at execution', () => {
+  const chatModels = parseChatModelPolicy('codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol')
+  it.each(['unknown-model', 'gpt-5.6-sol'])('narrows a saved model %s before sending to the runner', async requested => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      await db.chat.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'codex', requested)
+      const claude = recorder(), codex = recorder()
+      const turns = createTurnManager({ db, claude: claude.client, codex: codex.client, chatModels, chatTextOnly: true })
+      await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+      await turns.idle()
+      expect(codex.last()?.model).toBe(requested === 'unknown-model' ? 'gpt-5.6-luna' : requested)
+      expect(codex.last()?.textOnly).toBe(true)
+      expect(claude.last()).toBeNull()
+    } finally { await db.close() }
+  })
+
+  it.each(['missing-runner', 'user-denied'])('never falls back to a forbidden provider when %s', async scenario => {
+    const db = await freshDb()
+    try {
+      if (scenario === 'user-denied') await db.identity.setUserLlmAccess(U, [{ provider: 'codex', modelId: '*' }])
+      const conversation = await db.chat.createConversation(U, 'Public chat')
+      const claude = recorder(), codex = recorder()
+      const turns = createTurnManager({ db, claude: claude.client,
+        ...(scenario === 'missing-runner' ? {} : { codex: codex.client }), chatModels })
+      const errors: string[] = []
+      turns.subscribe(message => { if (message.t === 'claude.error') errors.push(message.message) })
+      await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+      await turns.idle()
+      expect(claude.last()).toBeNull()
+      expect(codex.last()).toBeNull()
+      expect(errors).toHaveLength(1)
+    } finally { await db.close() }
   })
 })

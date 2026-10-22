@@ -1,0 +1,10 @@
+# chat-history-v2 — заполненность контекста и новый тред со сводкой
+
+Ран `chat-history-v2`. Ветка задач — `dev`.
+
+Продолжение [chat-history-v1](chat-history-v1.md): задача C01 (Core UI) остановилась — в контрактах нет
+заполненности контекста треда (`codexThreadUsage` хранит накопленные расходы, не занятое окно) и нет API
+сброса треда разговора (`/api/session/reset` — это сброс пароля). Сначала контракт и сервер, потом UI.
+
+| B01 | Core | — | Thread context fill and conversation thread reset. Shared contract: `ConversationContextUsage {usedTokens, windowTokens, provider, model, measuredAt}` — `usedTokens` is the input tokens of the latest turn of the current thread (Claude: input + cache read + cache creation of the last assistant turn; Codex: `last_token_usage.input_tokens` from the thread usage, not the cumulative total), `windowTokens` from a model window table in shared (with a safe default); expose it as `Conversation.contextUsage?` and in `REST.conversation(id)`; reset it when the thread changes. New `POST /api/conversations/:id/thread/reset` (owner only) clears the stored `claude:`/`codex:` session so the next turn cold-starts (bounded prompt + summary from chat-history-v1), records a system note in the conversation, and returns the updated conversation; message-type registries in sync. Tests: usage extraction for both providers, window defaults, reset authorization and effect on the next turn. Update docs/kb (protocol, server-internals). Gate: `npm run gate:task -- --base <sha>`. |
+| C01 | core-ui | B01 | Context fill indicator and «Новый тред со сводкой» in the chat UI and the Make chat (redo of chat-history-v1 C01 on the new contract). Show `contextUsage` next to the composer (used / window, colour at 70% and 90%, tooltip with numbers); the action calls `POST …/summary/refresh` (chat-history-v1 B02) and then `POST …/thread/reset`, with a confirm dialog that the history stays. Tests (DOM): thresholds, hidden without usage, action flow and errors. Stories. Update docs/kb. Gate: `npm run gate:task -- --base <sha>`. |

@@ -206,6 +206,7 @@ export class VoiceChatDb {
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
     await this.sql.exec("UPDATE environment_links SET address = 'host.docker.internal:' || listener_port WHERE address = ''")
+    await this.migrateIntegrationTokenProjectIds()
     const personalTenant = async (userName: string): Promise<string | null> =>
       (await this.ctx.repos.identity.getAccountAccess(userName))?.tenant.id ?? null
     await this.ctx.repos.projects.backfillTenantIds(personalTenant)
@@ -242,7 +243,24 @@ export class VoiceChatDb {
     }
   }
 
+  private async migrateIntegrationTokenProjectIds(): Promise<void> {
+    const rows = await this.sql.all<{ id: string; project_id: string; project_ids: string }>(
+      `SELECT id, project_id, project_ids FROM integration_tokens`
+    )
+    for (const row of rows) {
+      let projectIds: unknown
+      try { projectIds = JSON.parse(row.project_ids) } catch { projectIds = null }
+      if (!Array.isArray(projectIds) || projectIds.length === 0) {
+        await this.sql.run(`UPDATE integration_tokens SET project_ids = ? WHERE id = ?`, [JSON.stringify([row.project_id]), row.id])
+      }
+    }
+  }
+
   private async migrate(): Promise<void> {
+    const integrationTokenColumns = await this.sql.all<{ name: string }>(`PRAGMA table_info(integration_tokens)`)
+    if (integrationTokenColumns.length && !integrationTokenColumns.some(column => column.name === 'project_ids')) {
+      await this.sql.exec(`ALTER TABLE integration_tokens ADD COLUMN project_ids TEXT NOT NULL DEFAULT '[]'`)
+    }
     for (const [table, definitions] of [
       ['environments', ["mode TEXT NOT NULL DEFAULT 'external'", 'storage_id TEXT', "state TEXT NOT NULL DEFAULT 'ready'", 'compose_project TEXT', 'port INTEGER']],
       ['environment_links', ["transport TEXT NOT NULL DEFAULT 'tunnel'", "address TEXT NOT NULL DEFAULT ''"]],
@@ -311,6 +329,9 @@ export class VoiceChatDb {
       await add('device_secret', 'device_secret TEXT')
       await add('two_factor', 'two_factor INTEGER NOT NULL DEFAULT 0')
       await add('end_reason', 'end_reason TEXT')
+      // Identity 1.5.0: API tokens are sessions of kind 'api' with a read/full access level.
+      await add('kind', "kind TEXT NOT NULL DEFAULT 'session'")
+      await add('access', "access TEXT NOT NULL DEFAULT 'full'")
       await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
     }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
@@ -397,6 +418,10 @@ export class VoiceChatDb {
       ['cost_usd', 'REAL'],
       ['cost_status', 'TEXT'],
       ['cost_prices_stamp', 'INTEGER'],
+      ['summary_text', 'TEXT'],
+      ['summary_covers_message_id', 'TEXT'],
+      ['summary_updated_at', 'INTEGER'],
+      ['context_usage_json', 'TEXT'],
       ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
     ] as const) {
       if (!convCols.some((c) => c.name === column)) await this.sql.exec(`ALTER TABLE conversations ADD COLUMN ${column} ${ddl}`)
