@@ -22,7 +22,7 @@ Historical owner-supplied evidence (original bytes not independently read here):
   806 packages / 12 seconds; log SHA-256
   `00e1a74178882690bf78e1b6d4fedd18f81ab32657f7e5bb65e0a79a913a6562`.
 
-Independently checked on the assigned `MakBook M1 16` in this run:
+Recorded checks from the preceding SISL-771 run on `MakBook M1 16`:
 
 - Clean Core `dev` at `1b31e499`; HTTPS fetch succeeded; task branch `SISL-771` created.
 - GitHub API confirms UI base `7c853031318cf52622665a2666d526427b8e09f5`
@@ -66,6 +66,36 @@ candidate data remain untouched. Original implementation retry is obsolete becau
 the owner PR is merged; this isolated check verifies transport, not UI acceptance
 or public commissioning. No additional owner code change or overlapping branch is
 needed for this repository-scoped completion.
+
+### Owner continuation reconciliation, 2026-10-23
+
+The continuation found existing task commits `973ef881` and `90559221`, although
+its supplied card history listed no commits. Remote `refs/heads/SISL-771` was
+`905592219cc24050e50b121d11498810ea934d3f`. The clean checkout initially selected
+`dev` at `1b31e499`; it was switched to the existing task branch without resetting
+or recreating it. Core HTTPS fetch succeeded (origin/dev advanced to `2c59534a`).
+
+Fresh checks on the assigned M1 (`uname -m`: `arm64`) confirmed:
+
+- The allowed UI owner checkout is clean and detached at exactly
+  `7c853031318cf52622665a2666d526427b8e09f5`; its origin uses HTTPS.
+- Noninteractive HTTPS `ls-remote` exited 0 and returned the same UI main/dev
+  commits recorded above. Command-local HTTP low-speed limits were used; no
+  persistent Git configuration was changed.
+- Authenticated GitHub API access returned `sislex`. PR #187 remains merged with
+  exactly the head, merge commit and merge timestamp recorded above. API identity
+  and Git read access are separate observations, not a new Git write-access test.
+
+The previous install and SSH probe results above are preserved historical checks,
+not newly rerun checks. Repeating clone, `npm ci`, SSH probes or original candidate
+preparation is unnecessary for this documentation-only reconciliation. No owner
+code or dependency versions changed. The remaining acceptance dependency is still
+the private-receipt/retry review in the linked follow-up; this continuation does
+not mark it passed or claim access to its status.
+
+Continuation validation: `npm run gate:fast`, `npm run gate:quick -- --base
+1b31e499` and `git diff --check` exited 0. Both gates selected no applications,
+contracts or tests for this documentation-only change; no UI test pass is claimed.
 
 
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
