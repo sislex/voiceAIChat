@@ -16,8 +16,8 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 4 коммит(ов) в areas после сверки: ff965ad35 chore(core): compose public chat with Core UI 1.5.28 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 644 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-20 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-22 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-20 | ⚠ 5 коммит(ов) в areas после сверки: fa3b77b31 chore: pin Kanban 0.2.34 (SK-53 machine storage by machine) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-24 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: 2eabd0c2a chore: pin Kanban 0.2.35 (SK-55..64: owner root for remote bridge, operator answers, per-machine slots, auto release) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ 1054 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
@@ -27,11 +27,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 796 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 918 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 10 коммит(ов) в areas после сверки: 950a2719f docs(kb): update after merge 1e4f89ee-d6a6-4993-a25a-5ddacb289e47 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 11 коммит(ов) в areas после сверки: 2eabd0c2a chore: pin Kanban 0.2.35 (SK-55..64: owner root for remote bridge, operator answers, per-machine slots, auto release) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1095 коммит(ов) в areas после сверки: a1015514c fix: block unmetered auxiliary models in public chat … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 5 коммит(ов) в areas после сверки: fa3b77b31 chore: pin Kanban 0.2.34 (SK-53 machine storage by machine) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: 2eabd0c2a chore: pin Kanban 0.2.35 (SK-55..64: owner root for remote bridge, operator answers, per-machine slots, auto release) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 669 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-20, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 592879f34 Document isolated public chat release and sislexa naming |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-22, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 1 коммит(ов) в areas после сверки: 2eabd0c2a chore: pin Kanban 0.2.35 (SK-55..64: owner root for remote bridge, operator answers, per-machine slots, auto release) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-22, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1250. Последние:
+Всего записей: 1251. Последние:
 
+- [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md) — pin-kanban-0-2-36
 - [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md) — remote-owner-roots
 - [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots-kb.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots-kb.md) — remote-owner-roots-kb
 - [2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-35.md](log/2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-35.md) — pin-kanban-0-2-35
@@ -73,7 +74,6 @@
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md) — recovery-health-target-binding
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md) — public-chat-text-only-machine-policy
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-runtime-peer-alignment.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-runtime-peer-alignment.md) — public-chat-runtime-peer-alignment
-- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-release-isolation.md) — Public chat release isolation and lowercase product naming
 
 ## Исторические планы
 
