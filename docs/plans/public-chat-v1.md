@@ -1,5 +1,61 @@
 # sislexa Chat v1 public launch
 
+## SISL-771: M1 transport reconciliation (2026-10-23)
+
+Completion plan: reconcile historical receipts and owner PRs; verify bounded M1
+connectivity and authenticated HTTPS; fetch exact UI base in the allowed owner
+checkout and run `npm ci`; run Core `gate:fast`; commit the evidence on `SISL-771`.
+Resolve inaccessible private receipts before claiming full historical acceptance.
+No candidate implementation, deployment, registration, shared-mirror, credential,
+global Git/SSH configuration or sandbox changes are included.
+
+Historical owner-supplied evidence (original bytes not independently read here):
+
+- Failed SSH22 preparation: inbox `9a09b729-2815-481b-b801-e80a8aa1a498`, clone exit 128;
+  no candidate model/code work started.
+- Probe `c8855c44-89ff-4716-878d-5f8fb2126681`, exit 0; log SHA-256
+  `c93b8b72d269858971335166311ca47d8ea2e3ccc0b1c7b548c4239ea2655f23`.
+- HTTPS checkout and npm ci: `020ee9a2-c0ef-44af-96cc-0a75a0e6508b`, exit 0,
+  806 packages / 12 seconds; log SHA-256
+  `00e1a74178882690bf78e1b6d4fedd18f81ab32657f7e5bb65e0a79a913a6562`.
+
+Independently checked on the assigned `MakBook M1 16` in this run:
+
+- Clean Core `dev` at `1b31e499`; HTTPS fetch succeeded; task branch `SISL-771` created.
+- GitHub API confirms UI base `7c853031318cf52622665a2666d526427b8e09f5`
+  (`Consume failed daily quota responses in browsers`).
+- UI PR #187 (`feat/public-chat-quota` into `dev`) is MERGED at
+  `2026-10-20T05:24:08Z`, head `8e4a3354171f93947b15e77dc7af00c7c2fd4ab1`,
+  merge `3b6ff5d9e68a43c67d3528c722de81c5766835a8`. Later PRs #192/#193
+  record release 1.5.28. Remote main is `d1923b82362a8788525b14c84f6ef54e21d92083`;
+  dev is `64805582b899d9b903fe9879ffed53f878fe4a23`.
+- HTTPS clone, exact-base fetch and detached checkout exited 0 under the project
+  root at `tasks/b65ce4fb-73d3-43de-9379-e799f9c52a21/owners/sislexa-core-ui/repository`.
+  No overlapping implementation branch was created.
+
+- `uname -m` returned `arm64`; authenticated GitHub API `user` returned `sislex`.
+- Bounded SSH22 (`BatchMode=yes`, `StrictHostKeyChecking=yes`, `ConnectTimeout=5`,
+  outer subprocess timeout 12 seconds) returned 255: connection timed out.
+- TCP github.com:443 and ssh.github.com:443 succeeded. SSH443 with the same strict
+  options returned 255 because its ED25519 host key is not present in known_hosts.
+  No key was added and host checking was not weakened. HTTPS is the verified route.
+- `npm ci` on the exact detached UI base exited 0: 806 packages installed, 813
+  audited in about one minute. The owner checkout stayed clean. Its 48 audit
+  findings (1 low, 9 moderate, 32 high, 6 critical) are separate dependency work;
+  no automatic dependency fixes were applied.
+- Core `npm run gate:fast`, `npm run gate:quick -- --base 1b31e499` and
+  `git diff --check` exited 0. Documentation-only scope selected no applications,
+  contracts or tests; this is not evidence of a new UI test pass.
+
+The bridge refused access to the existing Delivery Control evidence outside the
+allowed task/owner roots. Private command logs must be supplied inside an allowed
+root or through an authorized evidence interface to compare their bytes, hashes
+and retry contents. Missing evidence is not a passed check. Historical receipts,
+accounting and candidate data remain untouched. Original implementation retry is
+obsolete because the owner PR is merged; this isolated check verifies transport,
+not UI acceptance or public commissioning.
+
+
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
 plan, not a claim that the public site or all listed changes are deployed.
 
