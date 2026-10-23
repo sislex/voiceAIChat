@@ -979,7 +979,8 @@ export type ServerMessage =
    * нажать команду палитры, открыть карточку. Выполняет только клиент с
    * открытым проектом этого разговора; остальные отвечают ok:false.
    */
-  | { t: 'widget.action'; conversationId: string; projectId: string; requestId: string; action: WidgetUiAction }
+  | { t: 'widget.action'; conversationId: string; projectId: string; requestId: string; action: WidgetUiAction; expiresAt?: number }
+  | { t: 'widget.action.expired'; conversationId: string; projectId: string; requestId: string }
   /** Прогресс плана работ канбан-ассистента: шаги, статусы, ошибка. */
   | { t: 'assistant.orchestration'; plan: import('./orchestration').Orchestration }
   /** Reader: действие изменило/прочитало живую страницу — панель синхронизирует кадр и ленту. */
@@ -1080,6 +1081,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'kb.usage',
   'preview.action',
   'widget.action',
+  'widget.action.expired',
   'assistant.orchestration',
   'reader.changed',
   'make.changed',

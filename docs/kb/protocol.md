@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-24
+checked: 45f2945
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -1014,6 +1014,15 @@ Make 1.3.1 enforces 256 MiB per project (`MAKE_LIMITS.maxProjectBytes`) and 2 Gi
 ok, result?, error? }`, где `result.surface` — снимок экрана после действия, а
 `result.confirmed` — ответ на запрос подтверждения. Мост — `window.widgetUi`
 (`RendererWidgetUiBridge`, только web).
+
+Confirmation requests include optional `expiresAt` (Unix milliseconds); Core waits
+five minutes by default. On timeout, `WidgetUiRelay` removes the pending request,
+returns a distinct expiration error (not a user rejection), and broadcasts
+`widget.action.expired { conversationId, projectId, requestId }` to that user's
+current clients. Late results cannot execute the expired action. The optional
+`RendererWidgetUiBridge.onExpired` forwards this lifecycle event; clients also
+check the absolute deadline before accepting a click. UI implementation belongs
+to `sislexa-core-ui`, not Core's Kanban adapter.
 
 Клиент → сервер `widget.surface { conversationId, projectId, surface }` — экран
 сменился во время хода: без него модель весь ход считает открытым тот раздел,
