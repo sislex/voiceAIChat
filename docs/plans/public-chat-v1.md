@@ -277,6 +277,65 @@ loopback web port 23025 and SMTP port 23125. Core and Identity are wired to it;
 stand signup, one-use verification/reset and session revocation checks passed.
 A read-only sandbox by itself does not establish user-data isolation.
 
+## SISL-763 verification and completion plan (2026-10-23)
+
+The task checkout started clean at Core `1b31e499` on `dev`; work continues
+on `SISL-763` on MacBook. Identity PR #35 is merged, not in progress:
+head `3b9e28b82342af4cd9f52745fd567b832ff6889f`, merge/main
+`67435604554cb27b1442c711c63f200531aaf380`. Its merged release PR #36
+contains source `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e`.
+Core pins `sislexa-identity-1.5.2-d3e0e16d58cd.tgz`; the installed
+`release-source.json` identifies that same `b71a98e` source. The archive
+suffix is not a Git revision. Installed and owner-main `users/auth.ts`
+are identical. Do not reimplement the closure fix or create another fix branch.
+
+Evidence and remaining work:
+
+1. **Preserved historical acceptance:** the October 19 owner gate and two-user
+   Mailpit signup/reset/session-revocation acceptance above remain historical
+   evidence. The PR body names `/private/tmp/sislexa-public-chat-identity-gate.log`;
+   that file was not found on this task's MacBook. The PR has no status checks.
+   The October 20 review records 502 unit tests, 2 browser tests, smoke and
+   3 package checks, with 5 PostgreSQL skips; it names `b71a98e` but its
+   review commit metadata names `bd5dcc9`. Retain this provenance distinction.
+2. **Source behavior verified:** closed signup rejects verification before token
+   redemption; signup fields require strings. Existing owner tests assert no
+   cookie/user on closure, reopening, one-use verification/reset, personal
+   tenant creation and old-session revocation followed by new-password login.
+   The SISL-763 owner test change adds successful resend rotation, expired
+   verification/reset, neutral reset responses, and closed signup/resend.
+3. **Development validation:** run the bounded Identity server task gate from
+   merge `6743560`, then Core `npm run gate:fast` before committing.
+   Identity's `gate:fast` aliases the full gate, so use its bounded
+   `gate:task -- --base 6743560` during development as required by this task.
+   Core `gate:fast` passed with documentation-only selection. The first Identity
+   task gate passed typechecking but had 28 five-second test timeouts (153 passed,
+   2 skipped); a worker-limited repeat exceeded the MCP 300-second timeout and
+   is not counted as a pass. A separate single-worker signup/mailer run passed
+   all 14 tests, including all four added scenarios, without changing timeouts.
+   Final server workspace validation passed with explicit CLI worker limits:
+   `npx vitest run --maxWorkers=1 --minWorkers=1 --reporter=dot` from
+   Identity `apps/server`: 25 files passed, 2 skipped; 181 tests passed,
+   2 skipped, 167.09 seconds. Together with the successful server typecheck,
+   this covers the changed workspace; it does not claim a fresh full owner gate.
+   No test timeouts or assertions were relaxed.
+4. **Remaining stand evidence:** repeat the added resend/expiry cases against
+   a local mailbox on the selected immutable stand composition and save sanitized
+   results with exact Identity/Core source and image IDs. In-memory mailbox
+   regression tests do not establish real SMTP delivery, and the historical
+   summary does not explicitly establish these added stand cases. Resolve the
+   stand endpoint/configuration and retained operator evidence before that run.
+5. **Promotion dependency:** review the new tests, run the full owner/release
+   gates in the later workflow and retain PostgreSQL skips as limitations.
+   Public commissioning still requires configured outbound email and canonical
+   `sislexa.by` verification/reset links. Deployment, production configuration
+   replacement and public signup opening require separate owner confirmation.
+
+No production configuration, deployed service, historical user data, spending
+ledger or test-environment restriction is changed by this preparation. MacBook
+validation is not physical-M1 evidence. No new paid-provider requests are needed
+for these tests.
+
 ## Work and acceptance order
 
 | Work item | Required evidence | Status at audit |
