@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-24
+checked: 985b9e55
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -29,6 +29,7 @@ areas:
   - apps/server/src/routes/ci.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
+  - apps/server/src/mcp/remoteBashMcp.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
@@ -1453,6 +1454,16 @@ deploy принадлежат merge/release workflow. Cleanup в development о�
 для чтения файлов и правок heredoc; `bash` остаётся для команд вроде `git`,
 `npm` и шагов проверки. Все файловые пути считаются относительно workspace
 рана. В plan-фазе `read`/`grep` работают, а `edit` отклоняется.
+
+Обычные файловые операции remote-MCP не дают произвольного доступа к файловой
+системе машины. `remotePath` в `apps/server/src/mcp/remoteBashMcp.ts` разрешает
+относительный путь от `cwd` и абсолютный путь только внутри `cwd` либо явно
+переданных сервером URL-параметров `root`; `..`, системный корень и выход за эти
+границы отклоняются до `MachinesService.fsRead`. Дополнительные корни действуют
+только для выбранной машины хода: при адресации другой машины проекта её cwd
+берётся из настройки папки проекта, но `root` к ней не переносится. Поэтому
+исторический приватный журнал вне области рана нельзя читать обычным `read` за
+счёт выбора другой машины или абсолютного пути.
 
 ## Актуализация базы знаний (общий код merge-workflow)
 

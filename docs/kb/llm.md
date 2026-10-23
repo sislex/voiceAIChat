@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-24
-checked: 1b31e499
+checked: 985b9e55
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -12,6 +12,8 @@ areas:
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/mcp/remoteBashMcp.ts
+  - apps/server/src/mcp/historicalEvidence.ts
+  - apps/server/src/server.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
   - packages/shared/src/prompt.ts
@@ -58,6 +60,15 @@ change. With no adapter the operation returns `source_unavailable`; invalid
 scope is denied before a source read. Connecting historical originals remains
 a separate integration prerequisite. The tests use synthetic bytes and do not
 confirm historical hashes from task descriptions.
+
+For SISL-771 (run `4fec4aaf-3645-4c71-9059-97c34501f71c`), the values
+`c93b8b72d269858971335166311ca47d8ea2e3ccc0b1c7b548c4239ea2655f23` for command
+`c8855c44-89ff-4716-878d-5f8fb2126681` and
+`00e1a74178882690bf78e1b6d4fedd18f81ab32657f7e5bb65e0a79a913a6562` for command
+`020ee9a2-c0ef-44af-96cc-0a75a0e6508b` remain task-card claims, not observed
+hashes. The implemented boundary makes an independent hash-only check possible
+once an existing run capability and immutable sources are commissioned; it does
+not by itself make either original available or validate either value.
 
 ## Independent runner boundary
 
