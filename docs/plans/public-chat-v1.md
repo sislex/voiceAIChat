@@ -5,7 +5,10 @@
 Completion plan: reconcile historical receipts and owner PRs; verify bounded M1
 connectivity and authenticated HTTPS; fetch exact UI base in the allowed owner
 checkout and run `npm ci`; run Core `gate:fast`; commit the evidence on `SISL-771`.
-Resolve inaccessible private receipts before claiming full historical acceptance.
+The repository-scoped work is complete with the checks below. By owner direction,
+verification of inaccessible historical private receipts is assigned to follow-up
+[66f3c5fe-22a5-4670-9865-9869bc311bbf](/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/task/66f3c5fe-22a5-4670-9865-9869bc311bbf).
+This handoff does not claim full historical acceptance.
 No candidate implementation, deployment, registration, shared-mirror, credential,
 global Git/SSH configuration or sandbox changes are included.
 
@@ -48,12 +51,21 @@ Independently checked on the assigned `MakBook M1 16` in this run:
   contracts or tests; this is not evidence of a new UI test pass.
 
 The bridge refused access to the existing Delivery Control evidence outside the
-allowed task/owner roots. Private command logs must be supplied inside an allowed
-root or through an authorized evidence interface to compare their bytes, hashes
-and retry contents. Missing evidence is not a passed check. Historical receipts,
-accounting and candidate data remain untouched. Original implementation retry is
-obsolete because the owner PR is merged; this isolated check verifies transport,
-not UI acceptance or public commissioning.
+allowed task/owner roots. Do not request broader access or bypass bridge restrictions.
+The follow-up card owns the remaining historical verification within its authorized
+scope: inspect the original preparation failure and both repair receipts listed
+above, compare the two log SHA-256 values, confirm exact-base checkout and npm ci
+exit status, and review the original task retry decision against private command
+evidence. Record any unavailable evidence as unresolved rather than passed; preserve
+original receipts, accounting, candidate data and test-environment restrictions.
+No production deployment, public registration or production-configuration change
+is authorized by this handoff.
+
+Missing evidence is not a passed check. Historical receipts, accounting and
+candidate data remain untouched. Original implementation retry is obsolete because
+the owner PR is merged; this isolated check verifies transport, not UI acceptance
+or public commissioning. No additional owner code change or overlapping branch is
+needed for this repository-scoped completion.
 
 
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
