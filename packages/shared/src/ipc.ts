@@ -1110,7 +1110,9 @@ export interface RendererPreviewBridge {
  * widget.result. В desktop отсутствует — ассистент остаётся без управления UI.
  */
 export interface RendererWidgetUiBridge {
-  onAction(cb: (m: { conversationId: string; projectId: string; requestId: string; action: import('./widgetAssistant').WidgetUiAction }) => void): () => void
+  onAction(cb: (m: { conversationId: string; projectId: string; requestId: string; action: import('./widgetAssistant').WidgetUiAction; expiresAt?: number }) => void): () => void
+  /** Optional for older hosts; expiresAt also fences delayed/offline clicks. */
+  onExpired?(cb: (m: { conversationId: string; projectId: string; requestId: string }) => void): () => void
   /** Прогресс плана работ ассистента (кадр assistant.orchestration). */
   onOrchestration(cb: (plan: import('./orchestration').Orchestration) => void): () => void
   result(m: { conversationId: string; requestId: string; ok: boolean; result?: import('./widgetAssistant').WidgetUiActionResult; error?: string }): void
