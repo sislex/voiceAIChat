@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-24
-checked: 45f2945
+checked: 556a06ce
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -1015,14 +1015,30 @@ ok, result?, error? }`, где `result.surface` — снимок экрана п
 `result.confirmed` — ответ на запрос подтверждения. Мост — `window.widgetUi`
 (`RendererWidgetUiBridge`, только web).
 
-Confirmation requests include optional `expiresAt` (Unix milliseconds); Core waits
-five minutes by default. On timeout, `WidgetUiRelay` removes the pending request,
-returns a distinct expiration error (not a user rejection), and broadcasts
-`widget.action.expired { conversationId, projectId, requestId }` to that user's
-current clients. Late results cannot execute the expired action. The optional
-`RendererWidgetUiBridge.onExpired` forwards this lifecycle event; clients also
-check the absolute deadline before accepting a click. UI implementation belongs
-to `sislexa-core-ui`, not Core's Kanban adapter.
+Confirmation requests carry `expiresAt` (Unix milliseconds); the public field is
+optional for compatibility. `WidgetUiRelay` waits five minutes by default for
+`confirm`, versus 15 seconds for other actions. Kanban reaches this Core relay
+through `widgets.uiRequest` in `apps/server/src/kanbanBridge/internal.ts`.
+
+On expiration, the relay clears the timer and pending request, returns `ok:false`
+with an error explicitly saying that the action was not performed, this is neither
+a user rejection nor an orchestration failure, and the tool may be called again.
+It sends `widget.action.expired` to the requesting user's currently subscribed
+clients, identified by conversation, project and request; other users receive no
+event. There is no automatic retry. `resolve()` checks the absolute deadline
+before accepting a result, including when the timer callback is delayed; later
+results cannot revive a settled request. Explicit rejection remains a successful
+UI response with `confirmed:false` and produces no expiration event.
+
+`packages/shared/src/protocol.ts` declares the event and registers its message
+type; `packages/shared/src/ipc.ts` exposes optional
+`RendererWidgetUiBridge.onExpired` for compatibility with older hosts. These
+contracts enable UI expiration handling but do not implement the dialog. Rendering
+an expired state and guarding clicks belong to `sislexa-core-ui`; those consumer
+changes are not present in this Core diff. Regression coverage is in
+`apps/server/src/mcp/widgetUiRelay.test.ts` (normal timeout, delayed timer with a
+late acceptance, user isolation, explicit rejection) and
+`packages/shared/src/protocol.test.ts` (event registration).
 
 Клиент → сервер `widget.surface { conversationId, projectId, surface }` — экран
 сменился во время хода: без него модель весь ход считает открытым тот раздел,
