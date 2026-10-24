@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-24
+checked: 8c8ce466
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -29,6 +29,7 @@ areas:
   - apps/server/src/routes/ci.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
+  - apps/server/src/mcp/remoteBashMcp.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
@@ -1303,8 +1304,11 @@ Development-run нельзя запустить из `backlog` или `preparati
 ## Стандартный пайплайн проекта
 
 Справочник команд — это **данные** (`ci_commands` + `ci_slot_commands`), набор
-и порядок задаются в UI проекта. Стандартный development pipeline ограничен
-подготовкой и публикацией ветки задачи:
+и порядок задаются в UI проекта. Контракт и неизменяемый порядок стадий
+`before_model → model_work → after_model → summary` заданы в
+`packages/shared/src/ci.ts`, а чтение project/task-привязок с сортировкой по
+`position` и их редактирование — в `apps/server/src/db/repos/ci.ts`. Стандартный
+development pipeline ограничен подготовкой и публикацией ветки задачи:
 
 **Слот «до модели»**
 
@@ -1321,6 +1325,25 @@ Development-run нельзя запустить из `backlog` или `preparati
 `repository/<task-key>`; `REPO_ROOT`, `WORKSPACE`, `NPM_CACHE_DIR` и
 `npm_config_cache` строятся одной portable-функцией shared для POSIX, Termux,
 macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
+
+Owner gate discovery is implemented in the independent `sislex/sislexa-kanban`
+repository, `apps/server/src/ci/ownerRepositories.ts`, not in Core.
+See `kanban:ci-qa-merge.md`, “Как owner-репозитории проходят гейт и merge одной
+карточкой”. SISL-775 adds fail-closed history diagnostics before owner selection:
+shallow history blocks with `shallow-history`; complete unrelated histories block
+with `unrelated-histories`; missing commits, invalid identity/base and fetch
+failures remain errors. A missing merge-base never means no owner changes.
+The plan logs full HEAD/base SHAs and emits no partial owner plan on failure.
+
+The SISL-771 incident was reproduced on its assigned physical MakBook M1 16
+(machine `268c8eda-818b-4bbd-9cc8-2b52e225097c`). The retained owner checkout
+has HEAD `7c853031318cf52622665a2666d526427b8e09f5` and origin/dev
+`64805582b899d9b903fe9879ffed53f878fe4a23`, but shallow history exposes only
+1 and 3 commits respectively. A separate complete clone exposes 355 and 375;
+the exact SHA pair has HEAD as its merge-base. The origin and configured
+owner base `dev` match; no saved owner-publication event exists for this task.
+The original checkout was retained unchanged. Detailed evidence and regression
+tests belong to the Kanban owner topic above.
 
 Независимые owner-репозитории получают отдельный канонический корень
 `projects/<project-id>/tasks/<task-id>/owners` через переменную
@@ -1453,6 +1476,16 @@ deploy принадлежат merge/release workflow. Cleanup в development о�
 для чтения файлов и правок heredoc; `bash` остаётся для команд вроде `git`,
 `npm` и шагов проверки. Все файловые пути считаются относительно workspace
 рана. В plan-фазе `read`/`grep` работают, а `edit` отклоняется.
+
+Обычные файловые операции remote-MCP не дают произвольного доступа к файловой
+системе машины. `remotePath` в `apps/server/src/mcp/remoteBashMcp.ts` разрешает
+относительный путь от `cwd` и абсолютный путь только внутри `cwd` либо явно
+переданных сервером URL-параметров `root`; `..`, системный корень и выход за эти
+границы отклоняются до `MachinesService.fsRead`. Дополнительные корни действуют
+только для выбранной машины хода: при адресации другой машины проекта её cwd
+берётся из настройки папки проекта, но `root` к ней не переносится. Поэтому
+исторический приватный журнал вне области рана нельзя читать обычным `read` за
+счёт выбора другой машины или абсолютного пути.
 
 ## Актуализация базы знаний (общий код merge-workflow)
 
