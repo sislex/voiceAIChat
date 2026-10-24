@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-24
+checked: a5caf05d
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -122,6 +122,29 @@ active-operation uniqueness across environments-v2 statuses. Service deployment,
 Kanban/UI integration and production commissioning remain separate tasks.
 
 ## Identity repository and request authentication
+
+Identity PR #35 is merged at `67435604554cb27b1442c711c63f200531aaf380`.
+Core's Identity 1.5.2 archive `sislexa-identity-1.5.2-d3e0e16d58cd.tgz`
+declares source `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e` in
+`release-source.json`; its `apps/server/src/users/auth.ts` matches that
+merged owner implementation. Archive suffixes are not source commit IDs.
+
+In Identity `users/auth.ts`, POST `/api/session/verify` checks
+`signup.enabled` before redeeming a pending token: closure returns 404,
+does not create a user/session and leaves the token available after reopening
+within its lifetime. Signup requires string name/email/password and returns 400
+for other field types; malformed resend email remains a neutral 200 response.
+Resend rotates an unexpired pending verification token, invalidating the earlier
+link. Verification lifetime is 24 hours; reset lifetime is one hour. Expired
+verification returns 400 without a user/session; an expired reset returns 410
+on first redemption and 400 on reuse. Successful reset revokes user sessions.
+These behaviors live in Identity, not Core's historical users paths below.
+Identity `auth.signup.test.ts` at `3a66930564c3bb2baebfc8d3e85a04d15867fa41`
+checks all 15 combinations of name/email/password with null, number, boolean,
+array and object values, and asserts that closed verification returns neither
+cookie nor response token. Its mailbox is an injected in-memory capture;
+these tests do not establish SMTP delivery on a deployed stand.
+
 
 ### Core delegated chat adapter
 

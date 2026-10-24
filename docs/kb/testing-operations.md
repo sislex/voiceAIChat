@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-22
-checked: ebbe9b6d
+updated: 2026-10-24
+checked: 21d430c7
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -61,6 +61,25 @@ It covers selection, docs-only execution, count/time breaches, failure handling
 and real Node/Vitest report adapters. This gate does not commission a stand or
 replace full repository and release checks at promotion.
 The dev-to-main promotion gate retains its full selection and budgets.
+
+### Identity owner task gate
+
+Identity has its own `scripts/gate-task.mjs`: it typechecks and tests every
+workspace touched since the supplied base; a change outside workspaces selects
+all owner workspaces. Its `gate:fast` aliases the full owner gate, so development
+uses `npm run gate:task -- --base <sha>` inside the Identity checkout.
+
+Identity's server Vitest configuration bounds file concurrency to one worker.
+This preserves real password hashing and the existing five-second deadlines
+on shared runners. The SISL-763 tests cover signup closure, malformed fields,
+resend rotation, one-use/expired verification and reset, neutral reset responses,
+and session revocation; their mailbox is injected in memory. SMTP transport has
+separate tests and this combination is not immutable-stand Mailpit acceptance.
+
+An Identity task-gate failure can print `tests=0` even after Vitest executed
+tests: the counter is updated only after a successful Vitest exit, and the
+temporary JSON report is removed in `finally`. Inspect the preceding test
+output; zero in that summary does not establish that discovery found no tests.
 
 ## Dev stand focused checks (C02)
 
