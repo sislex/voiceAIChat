@@ -13,11 +13,11 @@
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-17 | ⚠ код изменён 2026-10-24, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-20 | ⚠ 3 коммит(ов) в areas после сверки: 985b9e55d feat(mcp): add scoped historical journal verification … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 985b9e55d feat(mcp): add scoped historical journal verification |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 4 коммит(ов) в areas после сверки: ff965ad35 chore(core): compose public chat with Core UI 1.5.28 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 5 коммит(ов) в areas после сверки: ae7779a72 chore: pin Kanban 0.2.38 and Core UI 1.5.29 (SK-68 assistant autonomy, expired confirmations) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 645 коммит(ов) в areas после сверки: 3160172e1 fix: expire widget confirmations with an explicit lifecycle event … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-20 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-24 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-24 | ⚠ 5 коммит(ов) в areas после сверки: 556a06ce0 Merge dev into SK-68 (task 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-24 | ⚠ 6 коммит(ов) в areas после сверки: ae7779a72 chore: pin Kanban 0.2.38 and Core UI 1.5.29 (SK-68 assistant autonomy, expired confirmations) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e20 SISL-736: persist project merge targets and use remote task bases … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e633326 operator-assistant-model-v1 B01 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-24 | ✓ |
@@ -27,11 +27,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 799 коммит(ов) в areas после сверки: 556a06ce0 Merge dev into SK-68 (task 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ 921 коммит(ов) в areas после сверки: 556a06ce0 Merge dev into SK-68 (task 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 3160172e1 fix: expire widget confirmations with an explicit lifecycle event |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 21 коммит(ов) в areas после сверки: 384779fb0 docs(kb): update after merge 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 22 коммит(ов) в areas после сверки: ae7779a72 chore: pin Kanban 0.2.38 and Core UI 1.5.29 (SK-68 assistant autonomy, expired confirmations) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1096 коммит(ов) в areas после сверки: 985b9e55d feat(mcp): add scoped historical journal verification … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 11 коммит(ов) в areas после сверки: 556a06ce0 Merge dev into SK-68 (task 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 12 коммит(ов) в areas после сверки: ae7779a72 chore: pin Kanban 0.2.38 and Core UI 1.5.29 (SK-68 assistant autonomy, expired confirmations) … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 669 коммит(ов) в areas после сверки: 6357410e5 Expose Analytics configuration and polish public chat defaults … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-24, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 592879f34 Document isolated public chat release and sislexa naming |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 3160172e1 fix: expire widget confirmations with an explicit lifecycle event |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 3 коммит(ов) в areas после сверки: 6b795bc7a chore: pin Kanban 0.2.37 (SK-70 preparation machine, SK-71, SK-72 partial clones, SK-73 shallow owner history) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 4 коммит(ов) в areas после сверки: ae7779a72 chore: pin Kanban 0.2.38 and Core UI 1.5.29 (SK-68 assistant autonomy, expired confirmations) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1259. Последние:
+Всего записей: 1260. Последние:
 
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md) — sk68-confirmation-contract-verification
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md) — sisl-775-owner-history
@@ -70,10 +70,10 @@
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md) — scoped-historical-evidence
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md) — scoped-historical-evidence-kb
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-confirmation-expiration.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-confirmation-expiration.md) — confirmation-expiration
+- [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-39.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-39.md) — pin-kanban-0-2-39
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-38-core-ui-1-5-29.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-38-core-ui-1-5-29.md) — pin-kanban-0-2-38-core-ui-1-5-29
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-37.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-37.md) — pin-kanban-0-2-37
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md) — pin-kanban-0-2-36
-- [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md) — remote-owner-roots
 
 ## Исторические планы
 
