@@ -35,6 +35,24 @@ Core `npm run gate:fast` passed (documentation-only selection). Identity server
  all 14 tests. No assertion or timeout was weakened. Full owner/release gates
  remain at the later workflow stage.
 
+## Workflow retry
+
+The follow-up preserves the prior results above. Identity's server Vitest
+configuration now records the one-worker limit instead of requiring manual CLI
+flags. No assertions, timeout budgets or production code changed.
+
+On MacBook with Node 22.19.0 and npm 10.9.3, the standard owner command
+`npm run gate:task -- --base 67435604554cb27b1442c711c63f200531aaf380`
+passed (exit 0) in 66.4 seconds including typecheck. Vitest reported 181 passing
+tests and 2 PostgreSQL skips, 25 passing files and 2 skipped files, in 50.07
+seconds. The gate's total of 183 includes skips. Signup's 11 tests and mailer's
+3 tests passed.
+
+The failed run's temporary JSON report was not retained. Code inspection of
+`scripts/gate-task.mjs` shows why its summary can say tests=0 after executed
+tests fail: counting follows the successful child exit, and cleanup removes
+the report in finally. Do not interpret that summary as missing discovery.
+
 ## Remaining acceptance
 
 Retain exact stand composition and SMTP evidence for resend/expiry, then run

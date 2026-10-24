@@ -319,6 +319,16 @@ Evidence and remaining work:
    2 skipped, 167.09 seconds. Together with the successful server typecheck,
    this covers the changed workspace; it does not claim a fresh full owner gate.
    No test timeouts or assertions were relaxed.
+   Follow-up after failed run 735fe640: the server Vitest configuration now
+   sets both minWorkers and maxWorkers to 1, making the successful concurrency
+   limit reproducible in the workflow without CLI overrides. On MacBook,
+   `npm run gate:task -- --base 67435604554cb27b1442c711c63f200531aaf380`
+   passed with exit 0 in 66.4 seconds, including typecheck: 181 tests passed,
+   2 PostgreSQL tests skipped; 25 files passed and 2 skipped. The printed
+   `tests=183` includes skipped cases. Node was 22.19.0, npm 10.9.3.
+   The previous run's temporary Vitest report is no longer present; its
+   `tests=0` summary alone cannot identify which tests failed because the owner
+   gate counts results only after a successful Vitest process.
 4. **Remaining stand evidence:** repeat the added resend/expiry cases against
    a local mailbox on the selected immutable stand composition and save sanitized
    results with exact Identity/Core source and image IDs. In-memory mailbox

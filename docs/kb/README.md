@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ код изменён 2026-10-20, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ код изменён 2026-10-20, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 12 коммит(ов) в areas после сверки: 082bf548 chore: pin Kanban 0.2.36 (SK-69: bounded cleanup registry, lock released during machine I/O) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 13 коммит(ов) в areas после сверки: 21d430c7 docs: reconcile SISL-763 Identity evidence and completion plan … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ код изменён 2026-10-20, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ код изменён 2026-10-18, сверка 2026-09-30 (по датам: правки того же дня не видны — поставь checked) |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 2 коммит(ов) в areas после сверки: 082bf548 chore: pin Kanban 0.2.36 (SK-69: bounded cleanup registry, lock released during machine I/O) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-24 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1252. Последние:
+Всего записей: 1253. Последние:
 
+- [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-sisl-763-owner-gate-retry.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-sisl-763-owner-gate-retry.md) — sisl-763-owner-gate-retry
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-sisl-763-identity-acceptance-audit.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-sisl-763-identity-acceptance-audit.md) — sisl-763-identity-acceptance-audit
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md) — pin-kanban-0-2-36
 - [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md) — remote-owner-roots
@@ -73,7 +74,6 @@
 - [2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-exec-stream-keepalive.md](log/2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-exec-stream-keepalive.md) — exec-stream-keepalive
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md) — sislexa current knowledge branding
 - [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-recovery-health-target-binding.md) — recovery-health-target-binding
-- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-public-chat-text-only-machine-policy.md) — public-chat-text-only-machine-policy
 
 ## Исторические планы
 
