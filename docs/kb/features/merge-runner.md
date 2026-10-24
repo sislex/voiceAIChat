@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-10-15
-checked: 9f17e9b1
+updated: 2026-10-24
+checked: 2f5123b1
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -135,6 +135,24 @@ target when the project setting changes. Машина merge-рана
 каталог для временного merge-клона. Создание идемпотентно:
 partial unique index и транзакционная проверка оставляют не больше одного активного
 merge-рана задачи, а повторное нажатие возвращает его.
+
+## Prepared repository origin recovery
+
+SISL-763 exposed a legacy-origin mismatch: its pushed workspace was published
+to `sislex/sislexa-kanban`, while the board project points to
+`sislex/voiceAIChat`; preflight therefore queried the configured project origin,
+where `SK-763` does not exist. Kanban's owner implementation may resolve the
+saved workspace origin only when it maps to one unique existing project and the
+requesting owner already has access. It neither changes project configuration
+nor grants permissions.
+
+The recovered origin is used through a separate prepared-repository merge clone,
+so the existing merge gates remain mandatory. Operator ancestry checks run Git
+on the selected machine executor against a disposable full-history snapshot,
+not inside the Kanban server container (which has no Git executable). Transport
+or executor failures remain an unknown result rather than evidence that a commit
+is absent from history. See
+`kanban:ci-qa-merge.md#prepared-repository-recovery-sisl-776`.
 
 ## Исполнение и защита main
 

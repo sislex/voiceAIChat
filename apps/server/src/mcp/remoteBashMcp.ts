@@ -6,6 +6,7 @@
 // эндпоинт выполняет команды и не должен быть открыт даже на LAN.
 
 import { z } from 'zod'
+import type { HistoricalEvidence } from './historicalEvidence.js'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -232,7 +233,8 @@ export function registerRemoteBashMcp(
   limits?: () => Promise<ToolOutputLimits>,
   projectMachines?: (projectId: string) => Promise<RemoteMcpMachine[]>,
   fileContexts?: (token: string) => RemoteImageAttachment[] | undefined,
-  commandGate?: CommandGate
+  commandGate?: CommandGate,
+  historicalEvidence?: HistoricalEvidence
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -248,7 +250,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -339,6 +341,25 @@ export function registerRemoteBashMcp(
         }
 
         const server = new McpServer({ name: 'remote', version: '1.0.0' })
+        server.registerTool(
+          'historical_evidence_verify',
+          {
+            description: 'Сверяет SHA256 исходного исторического журнала, явно разрешённого текущему рану. Возвращает только хеш и размер, без содержимого и приватных путей. Требует подключённого источника и действующих полномочий рана.',
+            inputSchema: { commandId: z.string().uuid().describe('ID команды из разрешённого набора доказательств рана') }
+          },
+          async ({ commandId }) => {
+            const result = historicalEvidence
+              ? await historicalEvidence.verify({
+                token: req.query.evidence, projectId: req.query.project,
+                agentId, cwd: req.query.cwd
+              }, commandId)
+              : { status: 'source_unavailable' as const }
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+              isError: result.status !== 'verified' || !result.matches
+            }
+          }
+        )
         server.registerTool(
           'bash',
           {
