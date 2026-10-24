@@ -27,6 +27,10 @@ describe('контракт протокола', () => {
       expect(SERVER_MESSAGE_TYPES).toContain(t)
   })
 
+  it('declares confirmation expiration separately from user results', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('widget.action.expired')
+  })
+
   it('содержит reader.changed для живого Reader', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('reader.changed')
   })
