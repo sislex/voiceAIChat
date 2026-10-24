@@ -198,7 +198,11 @@ const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString
 const RELEASE_COMMIT = process.env.VC_RELEASE_COMMIT?.trim() || null
 const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
+import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
+
 export interface BuildOptions {
+  /** Trusted existing-run authority and commissioned journal source; absent means fail closed. */
+  historicalEvidence?: HistoricalEvidencePort
   applicationTickets?: ApplicationTicketOptions
   /** Embedded hosts supply the same authenticated transport as managed Billing. */
   billingTransport?: { url: string; fetchImpl: typeof fetch; environmentId: string }
@@ -867,7 +871,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
     async (projectId) => await db.machines.listProjectMachines(projectId),
     (token) => remoteFileBroker.get(token),
-    commandGate
+    commandGate,
+    opts.historicalEvidence ? new HistoricalEvidence(opts.historicalEvidence,
+      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined
   )
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
