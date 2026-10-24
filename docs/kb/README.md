@@ -14,25 +14,25 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-20 | ⚠ 3 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 4 коммит(ов) в areas после сверки: ff965ad3 chore(core): compose public chat with Core UI 1.5.28 … |
-| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ код изменён 2026-10-20, сверка 2026-09-29 (по датам: правки того же дня не видны — поставь checked) |
+| [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 644 коммит(ов) в areas после сверки: 6357410e Expose Analytics configuration and polish public chat defaults … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-20 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-24 | ⚠ 2 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-24 | ⚠ 1 коммит(ов) в areas после сверки: 6b795bc7 chore: pin Kanban 0.2.37 (SK-70 preparation machine, SK-71, SK-72 partial clones, SK-73 shallow owner history) |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-24 | ✓ |
-| [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ код изменён 2026-10-15, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ код изменён 2026-10-17, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
+| [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e2 SISL-736: persist project merge targets and use remote task bases … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ 521 коммит(ов) в areas после сверки: e6e63332 operator-assistant-model-v1 B01 … |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-17 | ⚠ код изменён 2026-10-24, сверка 2026-10-17 (по датам: правки того же дня не видны — поставь checked) |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ код изменён 2026-10-24, сверка 2026-08-28 (по датам: правки того же дня не видны — поставь checked) |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ код изменён 2026-10-24, сверка 2026-09-12 (по датам: правки того же дня не видны — поставь checked) |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 999 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-09-12 | ⚠ 402 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-10-15 | ⚠ код изменён 2026-10-24, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ код изменён 2026-10-24, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 797 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-15 | ⚠ код изменён 2026-10-24, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 14 коммит(ов) в areas после сверки: 2c59534a docs(kb): update after merge 66f3c5fe-22a5-4670-9865-9869bc311bbf … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ код изменён 2026-10-24, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 17 коммит(ов) в areas после сверки: 8c8ce466 Merge dev into SISL-775 (task ee991431-926f-49ec-ae3a-7f59e4bc4be4) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1096 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ код изменён 2026-10-18, сверка 2026-09-30 (по датам: правки того же дня не видны — поставь checked) |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 8 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ код изменён 2026-10-20, сверка 2026-09-16 (по датам: правки того же дня не видны — поставь checked) |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-20 | ⚠ 9 коммит(ов) в areas после сверки: 6b795bc7 chore: pin Kanban 0.2.37 (SK-70 preparation machine, SK-71, SK-72 partial clones, SK-73 shallow owner history) … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-09-16 | ⚠ 669 коммит(ов) в areas после сверки: 6357410e Expose Analytics configuration and polish public chat defaults … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-15 | ⚠ код изменён 2026-10-24, сверка 2026-10-15 (по датам: правки того же дня не видны — поставь checked) |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 592879f3 Document isolated public chat release and sislexa naming |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 2 коммит(ов) в areas после сверки: 082bf548 chore: pin Kanban 0.2.36 (SK-69: bounded cleanup registry, lock released during machine I/O) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-22 | ⚠ 3 коммит(ов) в areas после сверки: 6b795bc7 chore: pin Kanban 0.2.37 (SK-70 preparation machine, SK-71, SK-72 partial clones, SK-73 shallow owner history) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1254. Последние:
+Всего записей: 1256. Последние:
 
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md) — sisl-775-owner-history
+- [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-771-owner-gate-kb.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-771-owner-gate-kb.md) — sisl-771-owner-gate-kb
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md) — scoped-historical-evidence
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md) — scoped-historical-evidence-kb
+- [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-37.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-37.md) — pin-kanban-0-2-37
 - [2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md](log/2026-10-24-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-36.md) — pin-kanban-0-2-36
 - [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots.md) — remote-owner-roots
 - [2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots-kb.md](log/2026-10-22-pc-radvilovich-tailae39a6-ts-net-remote-owner-roots-kb.md) — remote-owner-roots-kb
 - [2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-35.md](log/2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-35.md) — pin-kanban-0-2-35
 - [2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-34.md](log/2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-34.md) — pin-kanban-0-2-34
-- [2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-exec-stream-keepalive.md](log/2026-10-22-alexeys-macbook-air-tailae39a6-ts-net-exec-stream-keepalive.md) — exec-stream-keepalive
-- [2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md](log/2026-10-20-alexeys-macbook-air-tailae39a6-ts-net-sislexa-current-knowledge-branding.md) — sislexa current knowledge branding
 
 ## Исторические планы
 

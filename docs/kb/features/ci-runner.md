@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-10-24
-checked: 2c59534a
+checked: 8c8ce466
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1304,8 +1304,11 @@ Development-run нельзя запустить из `backlog` или `preparati
 ## Стандартный пайплайн проекта
 
 Справочник команд — это **данные** (`ci_commands` + `ci_slot_commands`), набор
-и порядок задаются в UI проекта. Стандартный development pipeline ограничен
-подготовкой и публикацией ветки задачи:
+и порядок задаются в UI проекта. Контракт и неизменяемый порядок стадий
+`before_model → model_work → after_model → summary` заданы в
+`packages/shared/src/ci.ts`, а чтение project/task-привязок с сортировкой по
+`position` и их редактирование — в `apps/server/src/db/repos/ci.ts`. Стандартный
+development pipeline ограничен подготовкой и публикацией ветки задачи:
 
 **Слот «до модели»**
 
