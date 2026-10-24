@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-10-24
-checked: 985b9e55
+checked: 2c59534a
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1322,6 +1322,25 @@ Development-run нельзя запустить из `backlog` или `preparati
 `repository/<task-key>`; `REPO_ROOT`, `WORKSPACE`, `NPM_CACHE_DIR` и
 `npm_config_cache` строятся одной portable-функцией shared для POSIX, Termux,
 macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
+
+Owner gate discovery is implemented in the independent `sislex/sislexa-kanban`
+repository, `apps/server/src/ci/ownerRepositories.ts`, not in Core.
+See `kanban:ci-qa-merge.md`, “Как owner-репозитории проходят гейт и merge одной
+карточкой”. SISL-775 adds fail-closed history diagnostics before owner selection:
+shallow history blocks with `shallow-history`; complete unrelated histories block
+with `unrelated-histories`; missing commits, invalid identity/base and fetch
+failures remain errors. A missing merge-base never means no owner changes.
+The plan logs full HEAD/base SHAs and emits no partial owner plan on failure.
+
+The SISL-771 incident was reproduced on its assigned physical MakBook M1 16
+(machine `268c8eda-818b-4bbd-9cc8-2b52e225097c`). The retained owner checkout
+has HEAD `7c853031318cf52622665a2666d526427b8e09f5` and origin/dev
+`64805582b899d9b903fe9879ffed53f878fe4a23`, but shallow history exposes only
+1 and 3 commits respectively. A separate complete clone exposes 355 and 375;
+the exact SHA pair has HEAD as its merge-base. The origin and configured
+owner base `dev` match; no saved owner-publication event exists for this task.
+The original checkout was retained unchanged. Detailed evidence and regression
+tests belong to the Kanban owner topic above.
 
 Независимые owner-репозитории получают отдельный канонический корень
 `projects/<project-id>/tasks/<task-id>/owners` через переменную
