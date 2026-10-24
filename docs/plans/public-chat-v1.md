@@ -329,6 +329,13 @@ Evidence and remaining work:
    The previous run's temporary Vitest report is no longer present; its
    `tests=0` summary alone cannot identify which tests failed because the owner
    gate counts results only after a successful Vitest process.
+   Reconciliation on 2026-10-24 retained the existing implementation and
+   fast-forwarded owner `SISL-763` to `3a66930564c3bb2baebfc8d3e85a04d15867fa41`
+   from `SK-763`. The same bounded gate passed in 25.8 seconds including
+   typecheck: 193 passed, 2 PostgreSQL tests skipped, 25 files passed and
+   2 skipped. Signup now has 23 cases, including 15 malformed field/value
+   combinations and an explicit absent response-token assertion on closure.
+   This supersedes the earlier test count, not the stand evidence limitations.
 4. **Remaining stand evidence:** repeat the added resend/expiry cases against
    a local mailbox on the selected immutable stand composition and save sanitized
    results with exact Identity/Core source and image IDs. In-memory mailbox

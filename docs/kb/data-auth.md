@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-24
-checked: 1b31e499
+checked: d8bf2c32
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -139,6 +139,11 @@ link. Verification lifetime is 24 hours; reset lifetime is one hour. Expired
 verification returns 400 without a user/session; an expired reset returns 410
 on first redemption and 400 on reuse. Successful reset revokes user sessions.
 These behaviors live in Identity, not Core's historical users paths below.
+Identity `auth.signup.test.ts` at `3a66930564c3bb2baebfc8d3e85a04d15867fa41`
+checks all 15 combinations of name/email/password with null, number, boolean,
+array and object values, and asserts that closed verification returns neither
+cookie nor response token. Its mailbox is an injected in-memory capture;
+these tests do not establish SMTP delivery on a deployed stand.
 
 
 ### Core delegated chat adapter
