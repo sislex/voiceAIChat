@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-10-15
-checked: 9f17e9b1
+updated: 2026-10-24
+checked: 797f8834
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -135,6 +135,17 @@ target when the project setting changes. Машина merge-рана
 каталог для временного merge-клона. Создание идемпотентно:
 partial unique index и транзакционная проверка оставляют не больше одного активного
 merge-рана задачи, а повторное нажатие возвращает его.
+
+## Prepared repository origin recovery
+
+Kanban's owner implementation resolves a legacy pushed workspace whose origin
+differs from the board project's Git URL when the configured target exists but
+the published source branch is missing there. It requires a unique existing
+project for the workspace origin and existing owner access; it does not change
+project configuration or grant access. The separate prepared-repository merge
+clone retains the normal merge gates. Operator history checks use the machine
+executor and a disposable full-history snapshot instead of server-local Git.
+See `kanban:ci-qa-merge.md#prepared-repository-recovery-sisl-776`.
 
 ## Исполнение и защита main
 
