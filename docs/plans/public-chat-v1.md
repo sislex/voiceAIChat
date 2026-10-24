@@ -98,6 +98,43 @@ Continuation validation: `npm run gate:fast`, `npm run gate:quick -- --base
 contracts or tests for this documentation-only change; no UI test pass is claimed.
 
 
+### Follow-up implementation reconciliation, 2026-10-24
+
+The working tree initially selected clean `dev` at `2c59534a`. Existing task
+branch `SISL-771` already contained `973ef881`, `90559221` and `dc7f8bfd`.
+This continuation reused that branch and merged `dev` without conflicts, preserving
+all three task commits and follow-up implementation `985b9e55`. No owner branch
+or checkout was created.
+
+The now-available [SISL-774 implementation record](../test-evidence/SISL-774.md)
+explicitly distinguishes implemented verification support from verified original
+journals. Both historical hashes remain unverified. The trusted source/authority
+adapter is not commissioned; synthetic tests do not prove either historical claim.
+The currently exposed remote tools do not include `historical_evidence_verify`.
+The remaining follow-up is authorized source commissioning and private receipt/retry
+review, not another implementation of the verifier. Do not bypass the bridge or
+expand access to obtain those originals.
+
+Fresh checks on `MakBook M1 16` returned `arm64`, a clean detached UI owner
+checkout at `7c853031318cf52622665a2666d526427b8e09f5`, and its existing HTTPS
+origin. Noninteractive, command-limited HTTPS `ls-remote` succeeded with the same
+main/dev SHAs recorded above. GitHub API authentication returned `sislex`; PR #187
+remains merged with the same head, merge SHA and timestamp. These observations
+confirm current read transport and API authentication, not Git write access or
+historical log integrity. Previous `npm ci` and SSH probes remain historical
+checks; they were not rerun. Credentials, mirrors, candidate sandbox, accounting,
+dependency pins and production configuration were not changed.
+
+Completion sequence for this continuation: preserve the existing evidence and
+follow-up boundary; validate the documentation diff with `gate:fast`, the required
+quick gate and `git diff --check`; commit on `SISL-771` without pushing. Full
+historical acceptance remains open in the linked follow-up until original bytes
+and the retry decision are independently reviewed.
+
+Validation completed: `npm run gate:fast`, `npm run gate:quick -- --base 2c59534a`
+and `git diff --check` exited 0. Both gates selected no applications, contracts
+or tests for this documentation-only diff. This is not a fresh UI test pass.
+
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
 plan, not a claim that the public site or all listed changes are deployed.
 
