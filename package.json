@@ -14,6 +14,9 @@
   "scripts": {
     "dev:gateway": "node --import tsx scripts/dev-gateway.mjs",
     "dev:component": "node scripts/dev-component.mjs",
+    "dev:stand": "node scripts/dev-stand-local.mjs start",
+    "dev:stand:status": "node scripts/dev-stand-local.mjs status",
+    "dev:stand:stop": "node scripts/dev-stand-local.mjs stop",
     "dev:web": "bash scripts/dev-web.sh",
     "kb": "node packages/kb-tools/cli.mjs",
     "kb:check": "node packages/kb-tools/cli.mjs check",
