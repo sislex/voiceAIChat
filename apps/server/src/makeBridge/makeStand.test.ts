@@ -175,15 +175,19 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect((await f.call({ op: 'options' })).options).toMatchObject({ component: null, stands: [] })
   })
 
-  it.each([{ mode: 'external' }, { state: 'provisioning' }, { machines: ['other', 'agent'] }])('requires a ready managed primary machine: %j', async invalid => {
+  it.each([{ mode: 'external' }, { state: 'provisioning' }, { machines: ['other', 'agent'] },
+    { mode: 'thin-client', state: 'draft' }, { mode: 'thin-client', state: 'failed' },
+    { mode: 'thin-client', machines: ['other', 'agent'] }, { mode: 'thin-client', machines: [] }])('requires a ready supported environment on the primary machine: %j', async invalid => {
     const f = fixture(); Object.assign(f.base, invalid)
     expect((await f.call({ op: 'options' })).options?.machines[0]).toMatchObject({ canCreate: false, reason: 'base_environment_missing' })
     expect(await f.call({ op: 'create', agentId: 'agent' })).toMatchObject({ phase: 'failed', error: 'base_environment_missing' })
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
   })
 
-  it('creates on the host environment, not an environment of the conversation project', async () => {
+  it.each(['managed', 'thin-client'])('offers and creates on the ready %s host environment', async mode => {
     const f = fixture()
+    f.base.mode = mode
+    expect((await f.call({ op: 'options' })).options?.machines[0]).toMatchObject({ canCreate: true, online: true })
     expect(await f.call({ op: 'create', agentId: 'agent' })).toMatchObject({ phase: 'creating', hostProjectId: 'host', standId: 'created', operationId: 'operation' })
     expect(f.fetchImpl).toHaveBeenCalledWith('http://kanban.test/api/projects/host/dev-stands', expect.objectContaining({ method: 'POST', body: JSON.stringify({ machineId: 'agent', baseEnvironmentId: 'base' }) }))
   })
@@ -195,6 +199,28 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect(f.machines.exec).toHaveBeenCalledWith('agent', expect.stringContaining('node -e'), 300_000, undefined, { source: 'console', userId: 'alice' })
     expect(f.fetchImpl).toHaveBeenCalledWith('http://kanban.test/api/projects/host/dev-stands/stand/components/core-ui/live', expect.objectContaining({ method: 'POST', body: JSON.stringify({ workingCopyPath: root }) }))
     expect(f.git.resolve).toHaveBeenCalledWith('alice', 'project', expect.any(String), { write: true })
+  })
+
+  it('attaches a thin-client stand and keeps preview, files and git on the conversation worktree', async () => {
+    const f = fixture()
+    f.base.mode = 'thin-client'
+    f.stand.status = 'ready'
+    f.stand.gateway.urls = ['http://127.0.0.1:5273']
+    f.deps.previewAccess = f.previewAccess
+    const attached = await f.call({ op: 'attach', ...identity })
+    expect(attached).toMatchObject({ phase: 'installing', component: 'core-ui',
+      branch: 'make/new-ui-conversa', workingCopyPath: root, directUrls: ['http://127.0.0.1:5273'] })
+    expect(f.fetchImpl).toHaveBeenCalledWith('http://kanban.test/api/projects/host/dev-stands/stand/components/core-ui/live',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ workingCopyPath: root }) }))
+    f.stand.live.push({ component: 'core-ui', workingCopyPath: root, branch: attached.branch!, head: 'live-sha' })
+    expect(await f.call({ op: 'status', ...identity })).toMatchObject({ phase: 'ready',
+      branch: attached.branch, previewUrl: 'http://core.test:24032/', directUrls: ['http://127.0.0.1:5273'] })
+    expect(f.previewAccess).toHaveBeenCalledWith('alice', 'host', 'stand')
+    expect((await f.call({ op: 'files', action: 'write', path: 'src/App.tsx', content: 'updated' })).files)
+      .toEqual({ action: 'write' })
+    expect(f.machines.fsWrite).toHaveBeenCalledWith('agent', root + '/src/App.tsx', Buffer.from('updated').toString('base64'))
+    await f.call({ op: 'git', operation: { op: 'status' } })
+    expect(f.git.atWorkingCopy).toHaveBeenCalledWith('alice', 'project', expect.any(String), root)
   })
 
   it('uses the lease service only when enabled', async () => {

@@ -54,7 +54,7 @@ interface Deps {
 }
 
 export function readyStandEnvironment(environments: EnvironmentDefinition[], machine: string) {
-  return environments.find(e => e.mode === 'managed' && e.state === 'ready' && e.machines[0] === machine)
+  return environments.find(e => (e.mode === 'managed' || e.mode === 'thin-client') && e.state === 'ready' && e.machines[0] === machine)
 }
 
 export function repositoryId(repository: string | null | undefined): string | null {
