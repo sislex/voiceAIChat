@@ -30,6 +30,18 @@ const CLAUDE_PRICES: { match: RegExp; price: ModelPrice }[] = [
 
 /** Официальные OpenAI цены Standard; ключ — точный реальный modelId. */
 const OPENAI_PRICES: Record<string, { short: ModelPrice; long: ModelPrice }> = {
+  'gpt-6.1-sol': {
+    short: { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
+    long: { input: 4, cacheRead: 0.2, cacheWrite: 5.0, output: 15.0 }
+  },
+  'gpt-6-sol': {
+    short: { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 },
+    long: { input: 4, cacheRead: 0.4, cacheWrite: 5.0, output: 15.0 }
+  },
+  'gpt-6-luna': {
+    short: { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
+    long: { input: 0.2, cacheRead: 0.02, cacheWrite: 0.25, output: 0.75 }
+  },
   'gpt-6-astra': {
     short: { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
     long: { input: 20, cacheRead: 2, cacheWrite: 25, output: 75 }

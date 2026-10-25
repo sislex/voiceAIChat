@@ -124,6 +124,9 @@ describe('меню моделей Codex', () => {
   it('повторяет список CLI по порядку; id = то, что уходит в `codex -m`', () => {
     expect(CODEX_MODELS).toEqual([
       { id: 'gpt-6-astra', label: 'gpt-6-astra (default) — Most capable model for complex, demanding work.' },
+      { id: 'gpt-6.1-sol', label: 'gpt-6.1-sol — Near-Astra performance for complex work at a lower cost.' },
+      { id: 'gpt-6-sol', label: 'gpt-6-sol — Previous Sol model for coding and agentic workflows.' },
+      { id: 'gpt-6-luna', label: 'gpt-6-luna — Efficient model for focused, high-volume tasks.' },
       { id: 'gpt-5.6-sol', label: 'gpt-5.6-sol — Reliable agentic workhorse for everyday tasks.' },
       { id: 'gpt-5.6-terra', label: 'gpt-5.6-terra — Balanced agentic coding model for everyday work.' },
       { id: 'gpt-5.6-luna', label: 'gpt-5.6-luna — Fast and affordable agentic coding model.' },

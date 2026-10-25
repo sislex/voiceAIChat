@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-24
-checked: a5caf05d
+updated: 2026-10-25
+checked: ed05841a
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -633,7 +633,11 @@ SQL-комментариях внутри него **нельзя обратны
 | `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
 | `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов; базовые колонки означают Standard/short context, а `tiers_json` хранит дополнительные сочетания Standard/Batch/Flex/Fast mode и short/long context с nullable-ставками; источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
 
-**Фиксированный каталог Codex/OpenAI.** Источник продуктового порядка — `CODEX_MODELS` в `packages/shared/src/types.ts`: `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`. `DEFAULT_CODEX_MODEL` всегда берётся из первого элемента, поэтому модель по умолчанию — `gpt-6-astra`; неизвестная сохранённая модель остаётся отдельным пунктом UI, но не становится частью каталога. При смене движка в настройках CI выбирается первая разрешённая ролью модель, а при отсутствии разрешённой — первый каталоговый Codex-пресет.
+**Фиксированный каталог Codex/OpenAI.** Источник продуктового порядка — `CODEX_MODELS` в `packages/shared/src/types.ts`: `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`. `DEFAULT_CODEX_MODEL` всегда берётся из первого элемента, поэтому модель по умолчанию — `gpt-6-astra`; неизвестная сохранённая модель остаётся отдельным пунктом UI, но не становится частью каталога. При смене движка в настройках CI выбирается первая разрешённая ролью модель, а при отсутствии разрешённой — первый каталоговый Codex-пресет.
+
+**OpenAI catalog check, 2026-10-25.** Shared's catalog and Standard estimator now include GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna. Official model pages publish input/cached/cache-write/output rates of `2/0.1/2.5/10`, `2/0.2/2.5/10` and `0.1/0.01/0.125/0.5` USD per million tokens. Long-context rates double input/cache and multiply output by 1.5. The schema seeds these exact rates plus Batch/Flex (0.5x) and Fast (2x), for both contexts; existing manually edited rows are preserved. The effective date records this catalog review, not a claimed provider launch date. The REST price editor accepts up to six decimals, including Luna's fractional cache rates. Shared's fallback estimator still supports Standard only. The current contract does not distinguish 30-minute/12-hour cache writes, regional processing or Ultrafast; the seeded cache-write rate is the default 30-minute rate. Specialized audio, image and restricted-access research models are not general Codex presets. Core UI consumers need a published Shared update to receive the new presets.
+
+Sources: [pricing](https://developers.openai.com/api/docs/pricing), [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna).
 
 **Начальные тарифы OpenAI на 08.09.2026.** Точные Standard/short-context ставки и официальный URL хранятся в seed-блоке `apps/server/src/db/schema.ts`; для `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` это соответственно `10/1/12.5/50`, `4/0.4/5/20`, `2/0.2/2.5/12`, `0.2/0.02/0.25/1.2` USD за 1M токенов в порядке input/cached input/cache write/output. `INSERT OR IGNORE` делает повторное применение схемы идемпотентным: ручная цена не перезаписывается, а удалённая seed-строка восстанавливается. Контракт новой базы закреплён сценариями `TC-INT-1` и `TC-INT-2` в `apps/server/src/db/database.test.ts`.
 

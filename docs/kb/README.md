@@ -15,7 +15,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: 0867e94e chore: pin Kanban 0.2.40 and Core UI 1.5.30 (SK-76 release notifications for members, auto-dismiss) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ 645 коммит(ов) в areas после сверки: 3160172e fix: expire widget confirmations with an explicit lifecycle event … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-24 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-25 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-24 | ⚠ 1 коммит(ов) в areas после сверки: a7d6eae0 chore: pin Kanban 0.2.41 (SK-75 owner merge clones, SK-77 merge retry for completed work) |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-24 | ⚠ 9 коммит(ов) в areas после сверки: a7d6eae0 chore: pin Kanban 0.2.41 (SK-75 owner merge clones, SK-77 merge retry for completed work) … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ 226 коммит(ов) в areas после сверки: efb581e2 SISL-736: persist project merge targets and use remote task bases … |
@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 799 коммит(ов) в areas после сверки: 556a06ce Merge dev into SK-68 (task 64cb9254-6e64-4a7d-b8fc-3e14e55f35f0) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 1 коммит(ов) в areas после сверки: 3160172e fix: expire widget confirmations with an explicit lifecycle event |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 35 коммит(ов) в areas после сверки: a7d6eae0 chore: pin Kanban 0.2.41 (SK-75 owner merge clones, SK-77 merge retry for completed work) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 36 коммит(ов) в areas после сверки: ed05841a docs(kb): update after merge 750064db-99fb-4962-b7ff-df199832d33f … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1096 коммит(ов) в areas после сверки: 985b9e55 feat(mcp): add scoped historical journal verification … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a5 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1269. Последние:
+Всего записей: 1270. Последние:
 
+- [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-openai-catalog-20261025.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-openai-catalog-20261025.md) — openai-catalog-20261025
 - [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md) — make-thin-client-core
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md) — sk68-confirmation-contract-verification
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl776-prepared-origin.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl776-prepared-origin.md) — sisl776-prepared-origin
@@ -73,7 +74,6 @@
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md) — scoped-historical-evidence
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence-kb.md) — scoped-historical-evidence-kb
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-multi-repo-merge-recovery.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-multi-repo-merge-recovery.md) — multi-repo-merge-recovery
-- [2026-10-24-pc-radvilovich-tailae39a6-ts-net-confirmation-expiration.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-confirmation-expiration.md) — confirmation-expiration
 
 ## Исторические планы
 

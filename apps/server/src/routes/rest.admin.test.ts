@@ -47,12 +47,13 @@ describe('REST: админ-роуты (только admin)', () => {
 
   it('records price changes and validates decimal precision', async () => {
     const price = { provider: 'codex', model: 'test-model', inputPerMillion: 1.25, cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 2.5, sourceUrl: 'https://example.com/pricing', effectiveAt: Date.now() }
-    expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: { ...price, inputPerMillion: 0.123 } })).statusCode).toBe(400)
+    expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: { ...price, inputPerMillion: 0.1234567 } })).statusCode).toBe(400)
     expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: price })).statusCode).toBe(200)
     const events = (await inj({ method: 'GET', url: '/api/admin/security?group=prices' })).json().events
     expect(events[0]).toMatchObject({ type: 'model_price_changed', user: 'admin' })
     expect(events[0].details).toContain('input=1.25')
     expect(events[0].at).toBeGreaterThan(0)
+    expect((await inj({ method: 'PUT', url: '/api/admin/model-prices', payload: { ...price, cacheWritePerMillion: 0.0625, cachedInputPerMillion: 0.005 } })).statusCode).toBe(200)
   })
 
   it('marks the current administrator session and revokes another device', async () => {
