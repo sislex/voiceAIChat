@@ -1,10 +1,11 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-22
-checked: f047b4158
+updated: 2026-10-25
+checked: d2613457
 areas:
   - apps/server/src
   - packages/knowledge/src
+  - packages/shared/src/environment.ts
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
@@ -862,9 +863,16 @@ list with status `stopped`; Files and Git skip them. A status poll also reads
 the stand's `/operations`: a running Kanban `live-start` job is reported as
 `installing` and `live-stop`/`override` as `switching`, since Kanban's details
 show the live entry only after the job finishes. Kanban detail statuses
-`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
-is the requested agent. The same environment rule applies to `standPreview`.
-Missing bases are reported; Core never provisions a base environment implicitly.
+`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a `managed` or `thin-client` environment in the
+`ready` state whose first machine is the requested agent. The shared
+`readyStandEnvironment` filter in `apps/server/src/makeBridge/projectAdapters.ts`
+is used by Make options/create and `standPreview`; draft/failed thin-client
+bases and bases assigned to another primary machine are rejected. Core never
+provisions a base environment implicitly.
+
+Thin-client attachment reuses the ordinary conversation-worktree path: Kanban
+receives that worktree for component live mode, and subsequent Files/Git operations
+stay scoped to it.
 During creation, Kanban can return 404 for stand details before publishing its
 manifest. Status then queries the same authorized host/stand `/operations`
 endpoint and reports `creating`, retaining `standId` and `hostProjectId`, when
@@ -897,8 +905,10 @@ File operations use the agent filesystem port. Git operations share the
 `projectGit` implementation through a scoped `GitWorkspaceService` view that
 rechecks machine permissions and retains command policy, locking and auditing.
 
-`previewUrl` comes from the stand proxy lease service when configured and is
-null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
+`standPreview` returns the first HTTP(S) address from the stand's `gateway.urls`.
+Make keeps all gateway addresses in `directUrls`; its separate `previewUrl` comes
+from the stand proxy lease service when configured and is null when disabled.
+Kanban and agent
 failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.
