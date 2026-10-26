@@ -153,6 +153,17 @@ export function coreCodeSummary(files) {
   return [...areas].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6).map(([area, count]) => count > 1 ? `${area} (${count})` : area).join(', ') + (areas.size > 6 ? ` и ещё ${areas.size - 6}` : '')
 }
 
+/** Repository scripts that changed npm script commands newly reference (added tokens only). */
+export function scriptReferences(rootScripts) {
+  const paths = (command) => new Set(command ? command.match(/\bscripts\/[\w./-]+\.(?:[cm]?js|py)\b/g) ?? [] : [])
+  const found = new Set()
+  for (const script of rootScripts) {
+    const before = paths(script.before)
+    for (const path of paths(script.after)) if (!before.has(path)) found.add(path)
+  }
+  return [...found].sort()
+}
+
 export function planApplicationChecks(
   files,
   { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins, frozenDesktop = desktopFrozen() } = {}
@@ -222,7 +233,15 @@ export function planApplicationChecks(
   // lock. When the whole replacement is proven, select the replaced owners and the lock
   // consumers instead of treating these files as unknown Core scope.
   const pinFiles = files.filter(isOwnerPinFile)
-  if (pinFiles.length) {
+  // A root package.json that only edits npm scripts replaces no archive: it selects the tooling
+  // tests those script commands newly reference instead of the owner pin checks.
+  const scriptsOnly = pins && !pins.unproven && pinFiles.length === 1 && pinFiles[0] === 'package.json' &&
+    pins.rootScripts?.length > 0 && !pins.packages.length && !pins.tools.length && !pins.images && !pins.archives.length
+  const rootScriptPaths = scriptsOnly ? scriptReferences(pins.rootScripts) : undefined
+  if (scriptsOnly) {
+    tooling = true
+    reasons.push(`Root npm scripts: ${pins.rootScripts.map((script) => script.name).join(', ')}`)
+  } else if (pinFiles.length) {
     if (!pins || pins.unproven) return full(`Не удалось доказать замену закреплённых архивов: ${pins?.unproven ?? pinFiles.join(', ')}`)
     pinChecks = true
     reasons.push(`Закреплённые архивы: ${pins.packages.join(', ') || 'нет'}${pins.tools.length ? `; tools.lock: ${pins.tools.join(', ')}` : ''}${pins.images ? '; теги образов' : ''}`)
@@ -261,7 +280,7 @@ export function planApplicationChecks(
     }
     // Narrow only explicitly reviewed tooling. Gate/build/deploy changes and
     // unknown scripts still exercise the full application fallback.
-    if (/^scripts\/(?:long-run|core-ui-artifact|browser-ui-release|route-budgets|route-compression|operations-restore-drill|operations-backup-retention)(?:\.test)?\.mjs$/.test(file)) {
+    if (/^scripts\/(?:long-run|dev-stand-local|core-ui-artifact|browser-ui-release|route-budgets|route-compression|operations-restore-drill|operations-backup-retention)(?:\.test)?\.mjs$/.test(file)) {
       tooling = true
       if (file === 'scripts/core-ui-artifact.mjs') verifyArtifacts = true
       if (['scripts/route-budgets.mjs', 'scripts/route-compression.mjs'].includes(file))
@@ -301,7 +320,7 @@ export function planApplicationChecks(
     contracts: [...contracts.values()],
     reasons,
     e2eFiles: [...e2eFiles],
-    tooling, verifyArtifacts, pinChecks,
+    tooling, verifyArtifacts, pinChecks, rootScriptPaths,
     pinnedPackages: pins?.packages ?? [],
     // Release narrowing is allowed only for pure archive replacements plus documentation.
     onlyPins: pinChecks && files.every((file) => docs(file) || file === 'package-lock.json' || isOwnerPinFile(file))
