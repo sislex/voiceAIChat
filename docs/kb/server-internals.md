@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-25
-checked: d2613457
+updated: 2026-10-26
+checked: 7ad8ad53
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -617,6 +617,18 @@ Git-операции project mode используют тот же `GitWorkspace
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
 Те же методы проходят через schema-validated `/internal/make/core` RPC.
+
+`makeBridge/projectAdapters.ts` accepts ready `managed`, `thin-client` and
+`local-stand` base environments only when `machines[0]` matches the selected
+machine. Draft, provisioning, failed and other-machine environments cannot
+enable `options.canCreate` or create a stand. For a Core Make conversation
+(`sislex/voiceAIChat`), a `local-stand` host follows the existing live workflow:
+`attach` prepares `<reposRoot>/make-worktrees/<conversationId>` and posts
+`{workingCopyPath}` to `components/core/live`. A matching live binding reports
+`ready`; preview is obtained through the stand proxy at the gateway URL.
+Files and git resolve that conversation checkout, with the existing membership,
+repository, machine and path checks. The local launcher uses the same checkout
+via `SISLEXA_STAND_CORE_SOURCE`; see [local stand setup](deploy.md#isolated-local-stand-without-docker-npm-run-dev-stand).
 
 `server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
 Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is

@@ -45,7 +45,7 @@ describe('Make stand adapter', () => {
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
   })
 
-  it.each(['managed', 'thin-client'])('creates a stand on a ready %s environment, on behalf of the user', async mode => {
+  it.each(['managed', 'thin-client', 'local-stand'])('creates a stand on a ready %s environment, on behalf of the user', async mode => {
     const f = fixture()
     f.db.environments.listEnvironments.mockResolvedValue([{ id: 'base', mode, state: 'ready', machines: ['agent'] }])
     f.fetchImpl.mockResolvedValueOnce(Response.json([]))
@@ -73,7 +73,10 @@ describe('Make stand adapter', () => {
 
   it.each([{ mode: 'external' }, { state: 'provisioning' }, { machines: ['other', 'agent'] },
     { mode: 'thin-client', state: 'draft' }, { mode: 'thin-client', state: 'failed' },
-    { mode: 'thin-client', machines: ['other', 'agent'] }, { mode: 'thin-client', machines: [] }])('does not create on an unsuitable environment: %j', async change => {
+    { mode: 'thin-client', machines: ['other', 'agent'] }, { mode: 'thin-client', machines: [] },
+    { mode: 'local-stand', state: 'draft' }, { mode: 'local-stand', state: 'failed' },
+    { mode: 'local-stand', state: 'provisioning' }, { mode: 'local-stand', machines: ['other', 'agent'] },
+    { mode: 'local-stand', machines: [] }])('does not create on an unsuitable environment: %j', async change => {
     const f = fixture()
     f.fetchImpl.mockResolvedValueOnce(Response.json([]))
     f.db.environments.listEnvironments.mockResolvedValueOnce([{ id: 'base', mode: 'managed', state: 'ready', machines: ['agent'], ...change }])

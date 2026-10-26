@@ -241,7 +241,7 @@ export const RESERVED_ENVIRONMENT_SETTINGS: readonly string[] = [
 ]
 
 /** environments-v2: who owns the environment checkout. */
-export type EnvironmentMode = 'external' | 'managed' | 'thin-client'
+export type EnvironmentMode = 'external' | 'managed' | 'thin-client' | 'local-stand'
 /** Lifecycle of a managed stand. An external environment is always 'ready'. */
 export type EnvironmentState = 'draft' | 'provisioning' | 'ready' | 'failed' | 'removing' | 'removed'
 
