@@ -5,13 +5,15 @@
 // comes from an explicit private configuration file.
 //
 //   npm run dev:stand            start or reuse the stand (idempotent)
+//   npm run dev:stand:run        start and supervise until SIGTERM/SIGINT
 //   npm run dev:stand:status     state of this stand's processes and endpoints
 //   npm run dev:stand:stop       stop only this stand's processes (data is kept)
 //
 // Configuration (environment variables, all optional except the runner file):
 //   SISLEXA_STAND_NAME          stand name, default "local" (database sislexa_stand_<name>)
 //   SISLEXA_STAND_HOME          stand directory, default ~/.sislexa/stands/<name>
-//   SISLEXA_STAND_SOURCES       directory with the owner clones (voiceAIChat, sislexa-core-ui, …), default ~/sislexa-dev
+//   SISLEXA_STAND_SOURCES       directory with the owner clones (voiceAIChat, sislexa-core-ui, …), default shared root or ~/sislexa-dev
+//   SISLEXA_STAND_CORE_SOURCE   prepared Core checkout (no Core worktree or dependency installation)
 //   SISLEXA_STAND_REF           revision for new working copies, default origin/dev
 //   SISLEXA_STAND_PORT_BASE     service port base, default 31000 (Core = base + 787)
 //   SISLEXA_STAND_UI_PORT       UI port, default 35273
@@ -38,7 +40,8 @@ const env = process.env
 const NAME = env.SISLEXA_STAND_NAME || 'local'
 if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(NAME)) fail('SISLEXA_STAND_NAME must be lowercase letters, digits and dashes')
 const HOME = resolve(env.SISLEXA_STAND_HOME || join(homedir(), '.sislexa', 'stands', NAME))
-const SOURCES = resolve(env.SISLEXA_STAND_SOURCES || join(homedir(), 'sislexa-dev'))
+const CORE_SOURCE = env.SISLEXA_STAND_CORE_SOURCE ? resolve(env.SISLEXA_STAND_CORE_SOURCE) : null
+const sourceRoot = repo => repo === 'voiceAIChat' && CORE_SOURCE ? CORE_SOURCE : join(dirs.src, repo)
 const REF = env.SISLEXA_STAND_REF || 'origin/dev'
 const BASE = Number(env.SISLEXA_STAND_PORT_BASE || 31000)
 const UI_PORT = Number(env.SISLEXA_STAND_UI_PORT || 35273)
@@ -51,6 +54,7 @@ const dirs = { src: join(HOME, 'src'), data: join(HOME, 'data'), logs: join(HOME
 const MODE_FILE = join(HOME, 'mode.json')
 const SAVED_SHARE = existsSync(MODE_FILE) ? JSON.parse(readFileSync(MODE_FILE, 'utf8')).share ?? null : null
 const SHARE = env.SISLEXA_STAND_SHARE === undefined ? SAVED_SHARE : env.SISLEXA_STAND_SHARE ? resolve(env.SISLEXA_STAND_SHARE) : null
+const SOURCES = resolve(env.SISLEXA_STAND_SOURCES || SHARE || join(homedir(), 'sislexa-dev'))
 // Shared mode keeps its data and component configuration apart from the isolated stand's.
 const shareDirs = { data: join(dirs.data, 'shared'), components: join(HOME, 'components-shared') }
 
@@ -149,7 +153,13 @@ function sharedServices(shared) {
 }
 const standServices = (secrets, runner, shared) => SHARE ? sharedServices(shared ?? { core: {}, make: {}, secrets: {} }) : services(secrets, runner)
 
-function fail(message) { console.error('dev-stand: ' + message); process.exit(1) }
+let shutdownRun
+let runStopping = false
+const supervised = new Set()
+function fail(message) {
+  if (process.argv[2] === 'run') throw new Error(message)
+  console.error('dev-stand: ' + message); process.exit(1)
+}
 function sh(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', ...opts })
   if (r.status !== 0 && !opts.allowFail) fail(`${cmd} ${args.slice(0, 3).join(' ')} failed: ${(r.stderr || r.stdout || '').trim().split('\n').slice(-3).join(' | ')}`)
@@ -256,7 +266,13 @@ function nodeModuleDirs(root, rel = '') {
 
 function prepareSources() {
   for (const repo of REPOS) {
-    const target = join(dirs.src, repo)
+    // Kanban has already prepared this conversation's checkout and dependencies.
+    if (repo === 'voiceAIChat' && CORE_SOURCE) {
+      if (!existsSync(join(CORE_SOURCE, '.git')) || !existsSync(join(CORE_SOURCE, 'node_modules')))
+        fail('SISLEXA_STAND_CORE_SOURCE must be a prepared Core working copy')
+      continue
+    }
+    const target = sourceRoot(repo)
     const origin = join(SOURCES, repo)
     if (!existsSync(join(target, '.git'))) {
       if (!existsSync(join(origin, '.git'))) fail(`owner clone not found: ${origin} (set SISLEXA_STAND_SOURCES)`)
@@ -285,7 +301,7 @@ function prepareComponents() {
   rmSync(dirs.components, { recursive: true, force: true })
   const origins = { core: P.core, make: P.make, 'playwright-reader': P.playwrightReader, 'web-reader': P.reader, 'image-studio': P.imageStudio,
     'stt-runner': P.stt, 'tts-runner': P.tts, identity: P.identity, billing: P.billing, analytics: P.analytics }
-  const core = join(dirs.src, 'voiceAIChat')
+  const core = sourceRoot('voiceAIChat')
   sh('node', ['--import', 'tsx', 'scripts/component-installation.mjs', '--directory', dirs.components, '--environment', 'stand-' + NAME,
     ...Object.entries(origins).flatMap(([id, p]) => ['--' + id + '-url', url(p)])], { cwd: core })
   // Kanban reaches Core with the internal token; production grants these legacy scopes too.
@@ -331,9 +347,14 @@ function commitOf(dir) { return sh('git', ['-C', dir, 'rev-parse', 'HEAD']).stdo
 function versionOf(dir) { try { return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version } catch { return undefined } }
 
 async function startService(s) {
-  if (runningPid(s.id)) return 'running'
+  if (runStopping) throw new Error('stand is stopping')
+  if (runningPid(s.id)) {
+    if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
+    return 'running'
+  }
   if (s.port && await portOpen(s.port)) fail(`port ${s.port} for ${s.id} is used by another process; change SISLEXA_STAND_PORT_BASE / SISLEXA_STAND_UI_PORT`)
-  const root = join(dirs.src, s.repo)
+  if (runStopping) throw new Error('stand is stopping')
+  const root = sourceRoot(s.repo)
   const cwd = s.cwd ? join(root, s.cwd) : root
   const [api, data] = VERSIONS[s.version ?? s.frontend] ?? []
   const meta = { VC_APPLICATION_COMMIT: commitOf(root), VC_RELEASE_COMMIT: commitOf(root),
@@ -346,7 +367,13 @@ async function startService(s) {
   const child = spawn(s.cmd[0], s.cmd.slice(1), { cwd, detached: true, stdio: ['ignore', out, out],
     env: { ...process.env, ...Object.fromEntries(Object.entries({ ...s.env, ...meta }).map(([k, v]) => [k, String(v)])) } })
   closeSync(out)
+  child.once('error', error => {
+    console.error(`dev-stand: ${s.id}: ${error.message}`)
+    if (shutdownRun) void shutdownRun(1)
+  })
+  if (!child.pid) fail(`could not spawn ${s.id}`)
   writeFileSync(pidFile(s.id), String(child.pid) + '\n')
+  if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
   child.unref()
   if (s.waitFor) {
     const until = Date.now() + 180_000
@@ -406,20 +433,48 @@ async function stop() {
   // The full list also covers the shared mode's Core, Make and Core UI.
   const list = services({}, {}).reverse()
   for (const s of list) {
-    const pid = runningPid(s.id)
-    if (!pid) { rmSync(pidFile(s.id), { force: true }); continue }
+    // A dead npm leader can leave watchers in its process group.
+    let pid
+    try { pid = Number(readFileSync(pidFile(s.id), 'utf8').trim()) } catch {}
+    if (!Number.isInteger(pid) || pid <= 0) { rmSync(pidFile(s.id), { force: true }); continue }
+    const groupAlive = () => alive(-pid) || alive(pid)
     try { process.kill(-pid, 'SIGTERM') } catch { try { process.kill(pid, 'SIGTERM') } catch {} }
     const until = Date.now() + 10_000
-    while (alive(pid) && Date.now() < until) await new Promise(r => setTimeout(r, 200))
-    if (alive(pid)) try { process.kill(-pid, 'SIGKILL') } catch {}
+    while (groupAlive() && Date.now() < until) await new Promise(r => setTimeout(r, 200))
+    if (groupAlive()) try { process.kill(-pid, 'SIGKILL') } catch {}
     rmSync(pidFile(s.id), { force: true })
     console.log(`  ${s.id} stopped`)
   }
   console.log(`dev-stand ${NAME}: stopped; data kept in ${HOME}${SHARE ? '' : ' and database ' + DB_NAME}`)
 }
 
+async function run() {
+  // Stay attached to the agent; detached service groups are owned by this supervisor.
+  let monitor
+  shutdownRun = async code => {
+    if (runStopping) return
+    runStopping = true
+    clearInterval(monitor)
+    try { await stop() } finally { process.exit(code) }
+  }
+  process.on('SIGTERM', () => { void shutdownRun(0) })
+  process.on('SIGINT', () => { void shutdownRun(0) })
+  monitor = setInterval(() => {
+    for (const id of supervised) if (!runningPid(id)) {
+      console.error(`dev-stand: ${id} exited`)
+      void shutdownRun(1)
+      break
+    }
+  }, 250)
+  try { await start() } catch (error) {
+    console.error('dev-stand: ' + error.message)
+    await shutdownRun(1)
+  }
+}
+
 const command = process.argv[2] ?? 'start'
-if (command === 'start') await start()
+if (command === 'run') await run()
+else if (command === 'start') await start()
 else if (command === 'status') await status()
 else if (command === 'stop') await stop()
-else fail(`unknown command ${command} (start | status | stop)`)
+else fail(`unknown command ${command} (start | run | status | stop)`)

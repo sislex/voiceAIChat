@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-26
-checked: 913828b8f
+checked: 7ad8ad53
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -490,6 +490,25 @@ worktree while every API request goes to the stand's servers; the managing
 instance is not restarted or reconfigured. Make edits that worktree only: the
 thin-client stand supports the `core-ui` component, so a conversation in the
 Core project cannot attach to it.
+
+**Core conversations in Make.** On the managing instance, select a ready
+Kanban `local-stand` environment on the project's primary machine and attach a
+Make conversation for `sislex/voiceAIChat` (component `core`). Set the environment's
+`SISLEXA_STAND_SHARE` to the absolute root of the managing dev instance. Make
+creates the conversation checkout at `<reposRoot>/make-worktrees/<conversationId>`
+and posts that path to `components/core/live`. Preview uses the stand gateway
+through Core's stand proxy; editor and git operations use that same checkout.
+
+`npm run dev:stand:run` (or `node scripts/dev-stand-local.mjs run`) starts the
+stand and remains in the foreground for the agent's process supervisor.
+SIGTERM/SIGINT stops the stand's service groups and exits 0; loss of Core or
+Core UI stops the remaining services and exits 1. Startup failures also stop
+the services. `SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
+no voiceAIChat worktree is created and its dependencies are not installed again.
+Other repositories keep the normal source/dependency preparation, defaulting to
+owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).
+Kanban supplies the stand name, shared root, Core checkout, UI/gateway port and
+reserved `SISLEXA_STAND_PORT_BASE`; Core and Make use base + 787 and base + 788.
 
 **Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
 dev-mode instance with `env/secrets.env`, `env/core.env`, `env/make.env`) makes the

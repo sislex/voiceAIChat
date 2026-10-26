@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 800 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 1 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 38 коммит(ов) в areas после сверки: 5994e867e feat(dev): isolated local stand without Docker (npm run dev:stand) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 39 коммит(ов) в areas после сверки: 69e7ce6c6 feat(dev): dev:stand shared mode on a running instance's database … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1097 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 69 коммит(ов) в areas после сверки: ee9f35a52 chore(vendor): move pinned owner archives out of git into the vendor release … |
@@ -43,11 +43,11 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-24 | ⚠ 1 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-25 | ⚠ 1 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-26 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 3 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-24 | ⚠ 6 коммит(ов) в areas после сверки: 5994e867e feat(dev): isolated local stand without Docker (npm run dev:stand) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-24 | ⚠ 7 коммит(ов) в areas после сверки: 69e7ce6c6 feat(dev): dev:stand shared mode on a running instance's database … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-24, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-25, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1272. Последние:
+Всего записей: 1273. Последние:
 
+- [2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-make-core-local-stand.md](log/2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-make-core-local-stand.md) — make-core-local-stand
 - [2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-dev-stand-shared-db.md](log/2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-dev-stand-shared-db.md) — dev-stand-shared-db
 - [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-openai-catalog-20261025.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-openai-catalog-20261025.md) — OpenAI catalog refresh
 - [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md) — make-thin-client-core
@@ -73,7 +74,6 @@
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl763-origin-history-gaps.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl763-origin-history-gaps.md) — sisl763-origin-history-gaps
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-775-owner-history.md) — sisl-775-owner-history
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-771-owner-gate-kb.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl-771-owner-gate-kb.md) — sisl-771-owner-gate-kb
-- [2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-scoped-historical-evidence.md) — scoped-historical-evidence
 
 ## Исторические планы
 

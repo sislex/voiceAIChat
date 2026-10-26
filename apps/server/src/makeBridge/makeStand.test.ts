@@ -9,16 +9,17 @@ import type { StandMachines } from './standWorkspace.js'
 
 const root = '/work/repos/make-worktrees/conversation'
 const identity = { standId: 'stand', hostProjectId: 'host' }
-function fixture() {
+function fixture(component = 'core-ui') {
+  const repository = component === 'core' ? 'sislex/voiceAIChat' : 'sislex/sislexa-core-ui'
   const user = { name: 'alice', role: 'developer', blocked: false }
-  const project = { id: 'project', name: 'UI', gitUrl: 'git@github.com:sislex/sislexa-core-ui.git', ciBaseBranch: 'dev',
+  const project = { id: 'project', name: 'UI', gitUrl: `git@github.com:${repository}.git`, ciBaseBranch: 'dev',
     machines: [{ agentId: 'agent', name: 'Mac', canUse: true, path: '/work/ui', reposRoot: '/work/repos' }] }
   const host = { ...project, id: 'host', name: 'Sislexa', gitUrl: 'sislex/voiceAIChat' }
   const other = { ...host, id: 'other' }
   const projects = [project, host, other]
   const base = { id: 'base', mode: 'managed', state: 'ready', machines: ['agent'] }
   const stand = { standId: 'stand', machineId: 'agent', status: 'running', gateway: { urls: ['http://stand.test/'] },
-    components: { 'core-ui': { repository: 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' } },
+    components: { [component]: { repository, source: 'base', sha: 'abc' } },
     live: [] as Array<{ component: string; workingCopyPath: string; branch: string; head: string; status?: string; error?: string }>,
     operation: undefined as { status: string; phase?: string; error?: string } | undefined }
   const jobs: Array<{ kind: string; component: string | null; status: string; error: string | null }> = []
@@ -56,7 +57,7 @@ function fixture() {
     if (url === '/api/projects/host/dev-stands') return Response.json([stand])
     if (url === '/api/projects/host/dev-stands/stand') return Response.json(stand)
     if (url === '/api/projects/host/dev-stands/stand/operations') return Response.json(jobs)
-    if (url === '/api/projects/other/dev-stands') return Response.json([{ ...stand, components: { core: { repository: 'sislex/voiceAIChat', source: 'base', sha: 'def' } } }])
+    if (url === '/api/projects/other/dev-stands') return Response.json([{ ...stand, components: { [component === 'core' ? 'core-ui' : 'core']: { repository: component === 'core' ? 'sislex/sislexa-core-ui' : 'sislex/voiceAIChat', source: 'base', sha: 'def' } } }])
     if (url.endsWith('/dev-stands')) return Response.json([])
     return Response.json({ error: 'stand_not_found' }, { status: 404 })
   })
@@ -70,7 +71,7 @@ function fixture() {
     makeStandResultSchema.parse(result); validateMakeStandResult(op, result)
     return result
   }
-  const bind = () => stand.live.push({ component: 'core-ui', workingCopyPath: root, branch: 'make/test', head: 'live-sha' })
+  const bind = () => stand.live.push({ component, workingCopyPath: root, branch: 'make/test', head: 'live-sha' })
   return { call, bind, adapter, db, git, machines, fetchImpl, project, host, base, stand, user, deps, previewAccess, jobs }
 }
 
@@ -177,15 +178,18 @@ describe('makeStand concrete Kanban and agent adapters', () => {
 
   it.each([{ mode: 'external' }, { state: 'provisioning' }, { machines: ['other', 'agent'] },
     { mode: 'thin-client', state: 'draft' }, { mode: 'thin-client', state: 'failed' },
-    { mode: 'thin-client', machines: ['other', 'agent'] }, { mode: 'thin-client', machines: [] }])('requires a ready supported environment on the primary machine: %j', async invalid => {
-    const f = fixture(); Object.assign(f.base, invalid)
+    { mode: 'thin-client', machines: ['other', 'agent'] }, { mode: 'thin-client', machines: [] },
+    { mode: 'local-stand', state: 'draft' }, { mode: 'local-stand', state: 'failed' },
+    { mode: 'local-stand', state: 'provisioning' }, { mode: 'local-stand', machines: ['other', 'agent'] },
+    { mode: 'local-stand', machines: [] }])('requires a ready supported environment on the primary machine: %j', async invalid => {
+    const f = fixture(invalid.mode === 'local-stand' ? 'core' : 'core-ui'); Object.assign(f.base, invalid)
     expect((await f.call({ op: 'options' })).options?.machines[0]).toMatchObject({ canCreate: false, reason: 'base_environment_missing' })
     expect(await f.call({ op: 'create', agentId: 'agent' })).toMatchObject({ phase: 'failed', error: 'base_environment_missing' })
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
   })
 
-  it.each(['managed', 'thin-client'])('offers and creates on the ready %s host environment', async mode => {
-    const f = fixture()
+  it.each(['managed', 'thin-client', 'local-stand'])('offers and creates on the ready %s host environment', async mode => {
+    const f = fixture(mode === 'local-stand' ? 'core' : 'core-ui')
     f.base.mode = mode
     expect((await f.call({ op: 'options' })).options?.machines[0]).toMatchObject({ canCreate: true, online: true })
     expect(await f.call({ op: 'create', agentId: 'agent' })).toMatchObject({ phase: 'creating', hostProjectId: 'host', standId: 'created', operationId: 'operation' })
@@ -201,18 +205,19 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect(f.git.resolve).toHaveBeenCalledWith('alice', 'project', expect.any(String), { write: true })
   })
 
-  it('attaches a thin-client stand and keeps preview, files and git on the conversation worktree', async () => {
-    const f = fixture()
-    f.base.mode = 'thin-client'
+  it.each([['thin-client', 'core-ui', 'sislex/sislexa-core-ui'], ['local-stand', 'core', 'sislex/voiceAIChat']])('attaches %s and keeps preview, files and git on the conversation worktree', async (mode, component, repository) => {
+    const f = fixture(component)
+    f.base.mode = mode
+    f.project.gitUrl = repository
     f.stand.status = 'ready'
     f.stand.gateway.urls = ['http://127.0.0.1:5273']
     f.deps.previewAccess = f.previewAccess
     const attached = await f.call({ op: 'attach', ...identity })
-    expect(attached).toMatchObject({ phase: 'installing', component: 'core-ui',
+    expect(attached).toMatchObject({ phase: 'installing', component,
       branch: 'make/new-ui-conversa', workingCopyPath: root, directUrls: ['http://127.0.0.1:5273'] })
-    expect(f.fetchImpl).toHaveBeenCalledWith('http://kanban.test/api/projects/host/dev-stands/stand/components/core-ui/live',
+    expect(f.fetchImpl).toHaveBeenCalledWith(`http://kanban.test/api/projects/host/dev-stands/stand/components/${component}/live`,
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ workingCopyPath: root }) }))
-    f.stand.live.push({ component: 'core-ui', workingCopyPath: root, branch: attached.branch!, head: 'live-sha' })
+    f.stand.live.push({ component, workingCopyPath: root, branch: attached.branch!, head: 'live-sha' })
     expect(await f.call({ op: 'status', ...identity })).toMatchObject({ phase: 'ready',
       branch: attached.branch, previewUrl: 'http://core.test:24032/', directUrls: ['http://127.0.0.1:5273'] })
     expect(f.previewAccess).toHaveBeenCalledWith('alice', 'host', 'stand')
