@@ -131,7 +131,7 @@ function services(secrets, runner) {
       { id, repo, cmd: ['node', '--import', 'tsx', 'scripts/application-frontend-server.mjs'], port: p, version: id, frontend: id,
         env: { PORT: p, VC_DATA_DIR: D(id), VC_APPLICATION_ID: id } }
     ]),
-    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: { VC_API_PORT: P.core, VC_WEB_PORT: P.ui } }
+    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: coreUiEnv() }
   ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
 }
 
@@ -148,7 +148,7 @@ function sharedServices(shared) {
         VC_AGENT_OFFLINE_ALERT_MIN: '0', VC_STAND_PROXY_PORTS: `${port(810)}-${port(814)}` } },
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
-    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: { VC_API_PORT: P.core, VC_WEB_PORT: P.ui } }
+    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: coreUiEnv() }
   ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
 }
 const standServices = (secrets, runner, shared) => SHARE ? sharedServices(shared ?? { core: {}, make: {}, secrets: {} }) : services(secrets, runner)
@@ -156,6 +156,11 @@ const standServices = (secrets, runner, shared) => SHARE ? sharedServices(shared
 let shutdownRun
 let runStopping = false
 const supervised = new Set()
+// Core UI is this stand's front door: its Vite proxies /api straight to the stand Core. A Kanban
+// devProcess passes SISLEXA_STAND_URL (the UI port itself), which would make Vite proxy to itself;
+// a null value removes the variable from the child environment.
+function coreUiEnv() { return { VC_API_PORT: P.core, VC_WEB_PORT: P.ui, SISLEXA_STAND_URL: null } }
+
 function fail(message) {
   if (process.argv[2] === 'run') throw new Error(message)
   console.error('dev-stand: ' + message); process.exit(1)
@@ -365,7 +370,7 @@ async function startService(s) {
   if (s.waitFor) rmSync(join(root, s.waitFor), { force: true })
   const out = openSync(join(dirs.logs, s.id + '.log'), 'a')
   const child = spawn(s.cmd[0], s.cmd.slice(1), { cwd, detached: true, stdio: ['ignore', out, out],
-    env: { ...process.env, ...Object.fromEntries(Object.entries({ ...s.env, ...meta }).map(([k, v]) => [k, String(v)])) } })
+    env: Object.fromEntries(Object.entries({ ...process.env, ...s.env, ...meta }).filter(([, v]) => v !== null).map(([k, v]) => [k, String(v)])) })
   closeSync(out)
   child.once('error', error => {
     console.error(`dev-stand: ${s.id}: ${error.message}`)
