@@ -27,12 +27,17 @@ export function relatedTooling(files, repository = root) {
           .some(candidate => touches(candidate, seen))
       })
   }
-  return walk(resolve(repository, 'scripts')).filter(file => isTest(file) && touches(file))
+  // Scripts tested as child processes are not imported by their tests; the sibling test still owns them.
+  const sibling = file => changed.has(file.replace(/\.test(\.[cm]?js)$/, '$1'))
+  return walk(resolve(repository, 'scripts')).filter(file => isTest(file) && (touches(file) || sibling(file)))
     .map(file => relative(repository, file))
 }
 export function quickPlanCommands(plan, files, repository = root, { task = false } = {}) {
   // Configuration cannot be narrowed by the source import graph.
-  if (!task && (plan.full || files.some(file => /(^|\/)(package(?:-lock)?\.json|tsconfig[^/]*\.json|vitest[^/]*\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s)$/.test(file))))
+  // A root package.json proven to change only npm scripts carries rootScriptPaths instead.
+  const configuration = file => /(^|\/)(package(?:-lock)?\.json|tsconfig[^/]*\.json|vitest[^/]*\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s)$/.test(file) &&
+    !(file === 'package.json' && plan.rootScriptPaths)
+  if (!task && (plan.full || files.some(configuration)))
     return [{ command: 'npm', args: ['run', 'gate:all'] }]
   const workspaces = workspaceEntries(repository), steps = [], tests = new Set()
   const selected = new Set(task
@@ -63,7 +68,14 @@ export function quickPlanCommands(plan, files, repository = root, { task = false
     tests.clear()
     for (const file of selection.files) tests.add(file)
     if (selection.deferred) steps.push({ deferred: selection.deferred })
-  } else if (plan.tooling) for (const file of relatedTooling(files, repository)) tests.add(file)
+  } else if (plan.tooling) {
+    for (const file of relatedTooling(files, repository)) tests.add(file)
+    for (const file of plan.rootScriptPaths ?? []) {
+      if (!existsSync(resolve(repository, file))) continue
+      if (isTest(file)) tests.add(file)
+      else if (/\.[cm]?js$/.test(file)) for (const consumer of relatedTooling([file], repository)) tests.add(consumer)
+    }
+  }
   if (!task && plan.pinChecks) for (const file of OWNER_PIN_TESTS) tests.add(file)
   for (const file of task ? [] : plan.e2eFiles ?? []) tests.add(file)
   if (!task && plan.verifyArtifacts) steps.push({ command: 'npm', args: ['run', 'verify:core-ui'] })

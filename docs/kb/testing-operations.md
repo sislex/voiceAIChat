@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-24
-checked: 21d430c7
+updated: 2026-10-26
+checked: 60141f52c
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -934,10 +934,21 @@ planning. Selected local workspaces run typecheck and build when present,
 changed test files run explicitly, and changed source files are passed to
 `vitest related --run` from their workspace directory. Declared consumer
 contract suites remain selected even when the consumer is also an application.
-Known tooling changes select changed node:test files and transitive static
-import consumers. Unknown paths, gate/build/deploy scripts and configuration or
+Known tooling changes select changed node:test files, transitive static
+import consumers and the sibling `<name>.test.mjs` of a changed `scripts/<name>.mjs`
+(scripts tested as child processes are not imported by their tests). A root
+`package.json` whose diff touches only `scripts` is proven by `ownerPinChanges`
+(`rootScripts`) and selects the tests of repository scripts that the changed
+commands newly reference (`rootScriptPaths`), not `gate:all`; package.json files
+under `apps/` or `packages/`, other root fields and archive replacements keep their
+previous handling. Unknown paths, gate/build/deploy scripts and configuration or
 manifest/lock changes retain `npm run gate:all`. `--dry-run` prints the plan
 and commands without running checks.
+
+Before 2026-10-26 a worker that added one npm script got `gate:all` (about 8 minutes)
+and looped six times on failures in suites unrelated to its diff. Failures outside
+the diff are handled by the rule in the root `AGENTS.md` (rerun those files, compare
+with `origin/dev`, report instead of rerunning the gate).
 
 `npm run test:files -- <repository-relative-test> ...` validates ownership and
 groups files into workspace Vitest, root node:test, or retained E2E Vitest
