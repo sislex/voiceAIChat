@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-25
-checked: 3e3a444b
+updated: 2026-10-26
+checked: 913828b8f
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -490,6 +490,27 @@ worktree while every API request goes to the stand's servers; the managing
 instance is not restarted or reconfigured. Make edits that worktree only: the
 thin-client stand supports the `core-ui` component, so a conversation in the
 Core project cannot attach to it.
+
+**Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
+dev-mode instance with `env/secrets.env`, `env/core.env`, `env/make.env`) makes the
+stand run only Core, Make and Core UI from its working copies, on that instance's
+database. Everything else is reused from the shared instance: secrets and LLM Runner
+settings from its env files, Identity, Kanban, Billing, Reader and the other
+services from its `core.env` URLs, its session secret (so a login on one UI is
+valid on the other; cookies on `127.0.0.1` are shared across ports) and a copy of
+its component configuration (`<home>/components-shared`, owner-only modes kept)
+whose Core↔Make links point at the stand. `VC_CORE_ID` stays the same, as required
+for builds sharing a database. Data directories are `<home>/data/shared/{core,make}`,
+so files written by one instance (attachments, Make workspaces) are not visible to
+the other. The mode is stored in `<home>/mode.json`; switching modes requires
+`npm run dev:stand:stop` first, and an empty `SISLEXA_STAND_SHARE=` returns to the
+isolated stand (its own database is kept).
+
+Limits of shared mode: machines connect to the shared instance's Core, so machine
+operations through the stand Core see them offline. Make stand operations through
+the stand Core fail with `make_request_denied`: Core passes Kanban one-time
+`make_request_*` grants that live in the issuing Core's memory, and the shared
+Kanban verifies them against its own `VC_CORE_URL` (the shared instance).
 
 ### Login and locations on the stand machine
 

@@ -21,6 +21,11 @@
 //   SISLEXA_STAND_RUNNER_FILE   private env file (mode 600) with VC_LLM_RUNNER_CLAUDE_URL,
 //                               VC_LLM_RUNNER_CODEX_URL and VC_LLM_RUNNER_TOKEN,
 //                               default ~/.config/sislexa/dev-stand/runner.env
+//   SISLEXA_STAND_SHARE         root of a running dev-mode instance (e.g. ~/sislexa-dev with env/, run.sh).
+//                               The stand then runs only Core, Make and Core UI from its working copies and
+//                               uses that instance's database, secrets, session secret, LLM Runner and other
+//                               services. The mode is remembered in <home>/mode.json; an empty value switches
+//                               back to the isolated stand. Stop the stand before switching.
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes, scryptSync } from 'node:crypto'
 import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -43,6 +48,11 @@ const DB_URL = `${PG}/${DB_NAME}`
 const RUNNER_FILE = resolve(env.SISLEXA_STAND_RUNNER_FILE || join(homedir(), '.config', 'sislexa', 'dev-stand', 'runner.env'))
 const SELF_REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dirs = { src: join(HOME, 'src'), data: join(HOME, 'data'), logs: join(HOME, 'logs'), run: join(HOME, 'run'), components: join(HOME, 'components'), private: join(HOME, 'private') }
+const MODE_FILE = join(HOME, 'mode.json')
+const SAVED_SHARE = existsSync(MODE_FILE) ? JSON.parse(readFileSync(MODE_FILE, 'utf8')).share ?? null : null
+const SHARE = env.SISLEXA_STAND_SHARE === undefined ? SAVED_SHARE : env.SISLEXA_STAND_SHARE ? resolve(env.SISLEXA_STAND_SHARE) : null
+// Shared mode keeps its data and component configuration apart from the isolated stand's.
+const shareDirs = { data: join(dirs.data, 'shared'), components: join(HOME, 'components-shared') }
 
 const port = n => BASE + n
 const P = {
@@ -58,7 +68,8 @@ const VERSIONS = {
   'web-reader-ui': ['1.0.0', '1.0.0'], 'playwright-reader-ui': ['1.0.0', '1.0.0'], 'image-studio-ui': ['1.0.0', '1.0.0']
 }
 
-const REPOS = ['voiceAIChat', 'sislexa-core-ui', 'sislexa-kanban', 'make', 'identity', 'billing', 'analytics', 'webreader', 'playwrightreader', 'image-studio', 'voice']
+const REPOS = SHARE ? ['voiceAIChat', 'sislexa-core-ui', 'make']
+  : ['voiceAIChat', 'sislexa-core-ui', 'sislexa-kanban', 'make', 'identity', 'billing', 'analytics', 'webreader', 'playwrightreader', 'image-studio', 'voice']
 
 function services(secrets, runner) {
   const D = name => join(dirs.data, name)
@@ -120,6 +131,24 @@ function services(secrets, runner) {
   ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
 }
 
+// Shared mode: Core, Make and Core UI of the stand on the shared instance's database and services.
+function sharedServices(shared) {
+  const D = name => join(shareDirs.data, name)
+  const C = id => join(shareDirs.components, id, 'config.json')
+  const common = { NODE_ENV: 'development', ...shared.secrets }
+  return [
+    { id: 'core', repo: 'voiceAIChat', cmd: ['npm', 'run', '-w', '@voicechat/server', 'dev'], port: P.core, health: '/api/health', version: 'core',
+      env: { ...shared.core, PORT: P.core, SISLEXA_COMPONENT_CONFIG: C('core'), VC_DATA_DIR: D('core'), VC_PUBLIC_URL: url(P.ui),
+        VC_MAKE_URL: url(P.make), VC_MAKE_MCP_PUBLIC_BASE: url(P.make), VC_MCP_PUBLIC_BASE: url(P.core), VC_BROWSER_PREVIEW_BASE: url(P.core),
+        // Machines connect to the shared instance's Core; this Core must not raise offline alerts for them.
+        VC_AGENT_OFFLINE_ALERT_MIN: '0', VC_STAND_PROXY_PORTS: `${port(810)}-${port(814)}` } },
+    { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
+      env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
+    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: { VC_API_PORT: P.core, VC_WEB_PORT: P.ui } }
+  ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
+}
+const standServices = (secrets, runner, shared) => SHARE ? sharedServices(shared ?? { core: {}, make: {}, secrets: {} }) : services(secrets, runner)
+
 function fail(message) { console.error('dev-stand: ' + message); process.exit(1) }
 function sh(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', ...opts })
@@ -160,11 +189,52 @@ function prepareSessionSecret() {
   if (!existsSync(target)) writeFileSync(target, readFileSync(join(dirs.private, 'session.secret')), { mode: 0o600 })
 }
 
+function readEnvFile(file) {
+  return Object.fromEntries(readFileSync(file, 'utf8').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#') && l.includes('='))
+    .map(l => [l.slice(0, l.indexOf('=')).replace(/^export\s+/, ''), l.slice(l.indexOf('=') + 1).replace(/^(['"])(.*)\1$/, '$2')]))
+}
+
+// The shared instance's process environment as its launcher builds it: env/secrets.env, then env/<service>.env.
+function loadShared() {
+  const file = name => join(SHARE, 'env', name + '.env')
+  for (const name of ['secrets', 'core', 'make']) if (!existsSync(file(name))) fail(`shared instance file not found: ${file(name)} (SISLEXA_STAND_SHARE)`)
+  const shared = { secrets: readEnvFile(file('secrets')), core: readEnvFile(file('core')), make: readEnvFile(file('make')) }
+  for (const key of ['VC_DB_URL', 'VC_DATA_DIR', 'SISLEXA_COMPONENT_CONFIG', 'VC_MAKE_URL']) if (!shared.core[key]) fail(`${file('core')} is missing ${key}`)
+  if (!shared.make.VC_CORE_URL) fail(`${file('make')} is missing VC_CORE_URL`)
+  return shared
+}
+
+// Same component identities and keys as the shared instance, so its Identity, Kanban and services trust
+// this Core; only the Core <-> Make links point at the stand's processes.
+function prepareSharedComponents(shared) {
+  const source = dirname(dirname(shared.core.SISLEXA_COMPONENT_CONFIG))
+  rmSync(shareDirs.components, { recursive: true, force: true })
+  // Credentials require owner-only modes on every directory; cpSync does not keep directory modes.
+  sh('cp', ['-Rp', source, shareDirs.components])
+  const rewrite = dir => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) rewrite(path)
+      else if (entry.name.endsWith('.json')) writeFileSync(path, readFileSync(path, 'utf8').split(source).join(shareDirs.components))
+    }
+  }
+  rewrite(shareDirs.components)
+  for (const [id, target, origin] of [['core', 'make', P.make], ['make', 'core', P.core]]) {
+    const file = join(shareDirs.components, id, 'config.json')
+    const config = JSON.parse(readFileSync(file, 'utf8'))
+    for (const dependency of config.dependencies ?? []) if (dependency.applicationId === target) dependency.url = url(origin)
+    writeFileSync(file, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+  }
+  const secret = join(shared.core.VC_DATA_DIR, 'session.secret')
+  if (!existsSync(secret)) fail(`shared session secret not found: ${secret}`)
+  mkdirSync(join(shareDirs.data, 'core'), { recursive: true })
+  writeFileSync(join(shareDirs.data, 'core', 'session.secret'), readFileSync(secret), { mode: 0o600 })
+}
+
 function loadRunner() {
   if (!existsSync(RUNNER_FILE)) fail(`LLM Runner configuration not found: ${RUNNER_FILE}\n  Create it (mode 600) with VC_LLM_RUNNER_CLAUDE_URL, VC_LLM_RUNNER_CODEX_URL and VC_LLM_RUNNER_TOKEN.`)
   if ((statSync(RUNNER_FILE).mode & 0o077) !== 0) fail(`${RUNNER_FILE} must not be readable by group or others (chmod 600)`)
-  const values = Object.fromEntries(readFileSync(RUNNER_FILE, 'utf8').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'))
-    .map(l => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).replace(/^(['"])(.*)\1$/, '$2')]))
+  const values = readEnvFile(RUNNER_FILE)
   const keys = ['VC_LLM_RUNNER_CLAUDE_URL', 'VC_LLM_RUNNER_CODEX_URL', 'VC_LLM_RUNNER_TOKEN']
   const missing = keys.filter(k => !values[k])
   if (missing.length) fail(`${RUNNER_FILE} is missing ${missing.join(', ')}`)
@@ -291,6 +361,10 @@ async function startService(s) {
 async function start() {
   // The component installer creates its directory itself and refuses an existing one.
   for (const d of Object.values(dirs)) if (d !== dirs.components) mkdirSync(d, { recursive: true, mode: d === dirs.private ? 0o700 : 0o755 })
+  if (SHARE !== SAVED_SHARE && readdirSync(dirs.run).some(f => runningPid(f.replace(/\.pid$/, ''))))
+    fail(`the stand runs in ${SAVED_SHARE ? 'shared mode with ' + SAVED_SHARE : 'isolated mode'}; run npm run dev:stand:stop before switching`)
+  writeFileSync(MODE_FILE, JSON.stringify({ share: SHARE }) + '\n')
+  if (SHARE) return startShared()
   const runner = loadRunner()
   const secrets = loadSecrets()
   console.log(`dev-stand ${NAME} → ${HOME}`)
@@ -302,11 +376,21 @@ async function start() {
   console.log(`\nUI: ${url(P.ui)}   Core: ${url(P.core)}   database: ${DB_NAME}\nStatus: npm run dev:stand:status   Stop: npm run dev:stand:stop`)
 }
 
+async function startShared() {
+  const shared = loadShared()
+  console.log(`dev-stand ${NAME} → ${HOME}, shared with ${SHARE}`)
+  prepareSources()
+  prepareSharedComponents(shared)
+  for (const s of sharedServices(shared)) console.log(`  ${s.id.padEnd(26)} ${await startService(s)}${s.port ? '  ' + url(s.port) : ''}`)
+  const database = new URL(shared.core.VC_DB_URL).pathname.slice(1)
+  console.log(`\nUI: ${url(P.ui)}   Core: ${url(P.core)}   database: ${database} (shared with ${SHARE})\nStatus: npm run dev:stand:status   Stop: npm run dev:stand:stop`)
+}
+
 async function status() {
   if (!existsSync(dirs.run)) { console.log(`dev-stand ${NAME}: not created (${HOME})`); return }
-  console.log(`dev-stand ${NAME} (${HOME}), database ${DB_NAME}`)
+  console.log(`dev-stand ${NAME} (${HOME}), ${SHARE ? 'shared with ' + SHARE : 'database ' + DB_NAME}`)
   let up = 0
-  const list = services({}, {})
+  const list = standServices({}, {})
   for (const s of list) {
     const pid = runningPid(s.id)
     let endpoint = ''
@@ -319,6 +403,7 @@ async function status() {
 }
 
 async function stop() {
+  // The full list also covers the shared mode's Core, Make and Core UI.
   const list = services({}, {}).reverse()
   for (const s of list) {
     const pid = runningPid(s.id)
@@ -330,7 +415,7 @@ async function stop() {
     rmSync(pidFile(s.id), { force: true })
     console.log(`  ${s.id} stopped`)
   }
-  console.log(`dev-stand ${NAME}: stopped; data kept in ${HOME} and database ${DB_NAME}`)
+  console.log(`dev-stand ${NAME}: stopped; data kept in ${HOME}${SHARE ? '' : ' and database ' + DB_NAME}`)
 }
 
 const command = process.argv[2] ?? 'start'
