@@ -16,6 +16,7 @@ import { uid } from "@sislexa/identity/server/users/auth"
 import { readCoreUserFile } from '../userFiles.js'
 import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import { conversationThreadCost, ThreadResetError } from '../conversationThread.js'
 import type { ConversationSummaryService } from '../conversationSummary.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -807,6 +808,7 @@ export async function registerRest(
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
     conversationSummary?: () => ConversationSummaryService | undefined
+    resetThread?: import('../turns.js').TurnManager['resetThread']
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1061,11 +1063,29 @@ export async function registerRest(
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 
-  app.post<{ Params: { id: string } }>(REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
-    const conversation = await db.chat.resetConversationThread(uid(req), req.params.id)
+  app.get<{ Params: { id: string } }>(REST.conversationThreadCost(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
-    return conversation
+    return conversationThreadCost(db, uid(req), conversation)
   })
+
+  app.post<{ Params: { id: string }; Body: import('@voicechat/shared').ConversationThreadResetRequest }>(
+    REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
+      const body = req.body
+      if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).some(key => key !== 'summarize') || (body.summarize !== undefined && typeof body.summarize !== 'boolean'))) {
+        return reply.code(400).send({ code: 'invalid_thread_reset' })
+      }
+      if (!await db.chat.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+      if (!opts.resetThread) return reply.code(503).send({ code: 'thread_reset_unavailable' })
+      try {
+        const result = await opts.resetThread(uid(req), req.params.id, body?.summarize ?? true)
+        return result ?? reply.code(404).send({ error: 'not found' })
+      } catch (error) {
+        if (error instanceof ThreadResetError) return reply.code(error.statusCode).send({ code: error.code, error: error.code })
+        throw error
+      }
+    })
 
   app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
     const conversation = await db.chat.getConversation(uid(req), req.params.id)

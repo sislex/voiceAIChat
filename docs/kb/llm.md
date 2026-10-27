@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-24
-checked: 985b9e55
+updated: 2026-10-27
+checked: b231054e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -307,6 +307,46 @@ ports distinct from service ports, and stop the relay/tunnel when the local
 test instance is no longer needed.
 
 ## Разбор потока
+
+### Session cost and summary reset
+
+Shared `threadCost.ts` defines `ConversationThreadCost`, reset request/response,
+`ThreadResetMode`, default thresholds, and the pure cost calculation.
+`GET /api/conversations/:id/thread-cost` reads scalar usage fields through
+`chat.threadTurnCosts`, filtered by provider and the active session id. It never
+loads the message history or activity/request payloads. Core persists the raw
+provider session id as `TurnMeta.sessionId` for both providers; old Codex replies
+can use `codexThreadUsage.sessionId`. Old Claude replies without a session id
+cannot be reliably assigned to a thread and are excluded.
+
+The baseline averages the first up to three measured turns, adding
+`inputTokens + cacheReadTokens`. With no measured replies, it estimates tokens
+from enabled chat instructions, the stored summary and the latest user message
+at four characters per token; estimated duration is zero. Inactive sessions
+have null last/baseline/extra and recommend `ok`. Extra values are signed deltas;
+percentages use the baseline and return zero for a zero denominator.
+Recommendations use the last turn's absolute input including cache:
+`consider` at 300,000 and `reset` at 1,000,000 tokens.
+`VC_THREAD_RESET_CONSIDER_TOKENS` and `VC_THREAD_RESET_RESET_TOKENS` override these
+with positive integers. Reversed thresholds fall back to defaults.
+
+`POST /api/conversations/:id/thread-reset` accepts `{ summarize?: boolean }`
+(default true) and returns `{ ok: true, summary }`. The turn manager excludes
+active, preparing and saving turns with HTTP 409 `turn_active`, and holds
+admission while refreshing the existing summary service and clearing the
+session/context usage. A missing or failed summary leaves the session intact
+(503); `summarize: false` skips refresh. The next turn uses the existing bounded
+cold-start history with the summary. Stored history is preserved.
+
+Canonical conversation settings persist `threadReset: off | hint | auto`,
+default `hint`. Only `auto` resets before a turn when cost recommends `reset`;
+a failed automatic reset reports an error and pauses the queue.
+Resets append a visible system note, “Тред сброшен: было N токенов на ход”, and
+publish existing `chat.message` / `chat.conversation` frames.
+Clients should refetch cost on opening a conversation and after `claude.done`;
+no new WS frame is required. Core UI is a separate owner and can hide its
+indicator on 404 until this Core contract is deployed.
+
 
 `packages/shared/src/streamJson.ts` — построчный парсер stream-json:
 `session` (session_id + окружение хода), `delta` (текстовый дельта-токен),

@@ -1250,6 +1250,8 @@ export interface SessionUsage extends TurnUsage {
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
+  /** Provider session id (without the provider prefix), shared by Claude and Codex. */
+  sessionId?: string
   /** Size summary for service data omitted from a client-facing message. */
   serviceData?: {
     activityEntries: number

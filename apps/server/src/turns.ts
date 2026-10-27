@@ -1,5 +1,6 @@
 import { effectiveCapabilities } from './deploymentApplications.js'
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
+import { conversationThreadCost, resetConversationThread, ThreadResetError } from './conversationThread.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
@@ -55,7 +56,7 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
-  conversationSummary?: { consider(userId: string, conversationId: string): void }
+  conversationSummary?: { consider(userId: string, conversationId: string): void; refresh?(userId: string, conversationId: string): Promise<Conversation | null> }
   /** Клиент конкретного исполнителя из реестра. */
   engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
@@ -296,6 +297,7 @@ export interface TurnManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   /** Снапшот активных ходов пользователя (для claude.active при подключении). */
   active(userId: string): ActiveTurn[]
+  resetThread(userId: string, conversationId: string, summarize?: boolean): Promise<import('@voicechat/shared').ConversationThreadResetResponse | null>
   /**
    * Остановка сервера (деплой/SIGTERM): отменить активные ходы и сохранить их
    * накопленный частичный текст в БД с пометкой interrupted — иначе рестарт
@@ -386,6 +388,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const turns = new Map<string, TurnState>()
   // Закрывает async-окно подготовки prompt/вложений до появления TurnState.
   const starting = new Set<string>()
+  const saving = new Set<string>()
   // Короткое окно атомарной замены хода через «Отправить сейчас»: повторная
   // команда не должна успеть продвинуть другой элемент очереди.
   const restarting = new Set<string>()
@@ -424,6 +427,31 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
+  async function performThreadReset(userId: string, conversationId: string, summarize: boolean): Promise<Conversation | null> {
+    const refresh = deps.conversationSummary?.refresh
+    const conversation = await resetConversationThread(deps.db, refresh ? { refresh } : undefined, userId, conversationId, summarize)
+    if (conversation) {
+      const page = await deps.db.chat.pageMessages(userId, conversationId, 1)
+      const note = page?.messages.at(-1)
+      if (note) broadcast(await clientEvent(deps.db, userId, { t: 'chat.message', conversationId, message: note }), userId)
+      broadcast(await clientEvent(deps.db, userId, { t: 'chat.conversation', conversation }), userId)
+    }
+    return conversation
+  }
+
+  async function resetThread(userId: string, conversationId: string, summarize = true): Promise<import('@voicechat/shared').ConversationThreadResetResponse | null> {
+    if (!await deps.db.chat.getConversation(userId, conversationId)) return null
+    if (turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) throw new ThreadResetError('turn_active', 409)
+    starting.add(conversationId)
+    try {
+      const conversation = await performThreadReset(userId, conversationId, summarize)
+      return conversation ? { ok: true, summary: conversation.summary ?? null } : null
+    } finally {
+      starting.delete(conversationId)
+      track(dispatchNext(userId, conversationId))
+    }
+  }
+
   async function start(req: StartTurnRequest): Promise<void> {
     const conversationId = req.conversationId
     const userId = req.userId
@@ -459,7 +487,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
-    const conv = await deps.db.chat.getConversation(userId, conversationId)
+    let conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
     const backgroundStop = !!deps.chatTextOnly && !!conv &&
       deps.accounting?.stopsInBackground(billingOriginForConversation(conv), !!req.delegation) === true
@@ -516,7 +544,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
-    if (turns.has(conversationId) || starting.has(conversationId)) {
+    if (turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) {
       const messageId = req.messageId ?? [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
       if (!messageId) {
         broadcast({ t: 'claude.error', conversationId, message: 'Не удалось поставить вопрос в очередь.' }, userId)
@@ -535,6 +563,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     starting.add(conversationId)
+    // Refresh after admission: a reset could finish while access checks were awaiting.
+    conv = await deps.db.chat.getConversation(userId, conversationId)
+    if (!conv) { starting.delete(conversationId); return }
+    try {
+      const chatSettings = await deps.db.settings.getChatSettings(userId, conversationId)
+      if (chatSettings?.conversation.threadReset === 'auto' && conv.claudeSessionId) {
+        const cost = await conversationThreadCost(deps.db, userId, conv)
+        if (cost.recommendation === 'reset') {
+          conv = await performThreadReset(userId, conversationId, true) ?? conv
+        }
+      }
+    } catch (error) {
+      try {
+        if (req.fromQueue && req.messageId) await restoreQueuedTurn(req)
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: error instanceof ThreadResetError ? error.code : 'thread_reset_failed' }, userId)
+      } finally { starting.delete(conversationId) }
+      return
+    }
     // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
     await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
 
@@ -1172,6 +1220,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         onDone: async (text, rawMeta) => {
           if (turn.done) return
+          saving.add(conversationId)
           finish()
           const meta = rawMeta ? asTurnSpend(rawMeta) : rawMeta
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
@@ -1192,6 +1241,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
+            ...(codexThreadId ? { sessionId: codexThreadId } : {}),
             ...(deps.make?.turnSnapshot(turnId) ? { makeSnapshotId: deps.make.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
@@ -1330,6 +1380,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           track(prepared.then(async (finalText) => {
             if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
             await emitDone(finalText, await persist(finalText))
+          }).finally(async () => {
+            saving.delete(conversationId)
             await dispatchNext(userId, conversationId)
           }))
         },
@@ -1422,7 +1474,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   async function dispatchNext(userId: string, conversationId: string): Promise<void> {
-    if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId)) {
+    if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) {
       await emitQueue(userId, conversationId)
       return
     }
@@ -1558,7 +1610,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     await emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
     queueMicrotask(() => {
       restarting.delete(conversationId)
-      void start({
+      track(start({
         userId,
         conversationId,
         messageId: merged.message.id,
@@ -1570,7 +1622,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
         await emitQueue(userId, conversationId)
         broadcast({ t: 'claude.error', conversationId, message: error instanceof Error ? error.message : String(error) }, userId)
-      })
+      }))
     })
   }
 
@@ -1637,6 +1689,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
   return {
     start,
+    resetThread,
     cancel,
     editQueued,
     deleteQueued,

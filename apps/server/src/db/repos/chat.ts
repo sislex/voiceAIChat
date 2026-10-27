@@ -841,7 +841,7 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Clears the provider thread and leaves a visible, non-provider-authored audit note. */
-  async resetConversationThread(userId: string, id: string): Promise<Conversation | null> {
+  async resetConversationThread(userId: string, id: string, tokensPerTurn?: number): Promise<Conversation | null> {
     const resetAt = this.now()
     const noteId = this.newId()
     await this.sql.transaction(async () => {
@@ -850,7 +850,7 @@ export class ChatRepo extends BaseRepo {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [id])) as { position: number }).position
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
       await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position)
-        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.', new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
     })
     return await this.getConversation(userId, id)
   }
@@ -1123,6 +1123,31 @@ export class ChatRepo extends BaseRepo {
    * usage (interrupted, failed) are skipped; null when the thread has no priced
    * reply yet.
    */
+  /** SQL projects scalars only: never hydrate activity/request or the message history. */
+  async threadTurnCosts(userId: string, conversationId: string, provider: LlmProvider, sessionId: string): Promise<import('@voicechat/shared').ThreadTurnCost[]> {
+    if (!await this.ownsConversation(userId, conversationId)) return []
+    const meta = "CASE WHEN " + this.j.valid('meta') + " THEN meta ELSE '{}' END"
+    const session = this.j.text(meta, 'sessionId')
+    const codexSession = this.sql.engine === 'postgres'
+      ? `((${meta})::jsonb->'codexThreadUsage'->>'sessionId')`
+      : `json_extract(${meta}, '$.codexThreadUsage.sessionId')`
+    return this.sql.all(`SELECT
+      COALESCE(${this.j.num(meta, 'inputTokens')}, 0) AS "inputTokens",
+      COALESCE(${this.j.num(meta, 'cacheReadTokens')}, 0) AS "cacheReadTokens",
+      COALESCE(${this.j.num(meta, 'outputTokens')}, 0) AS "outputTokens",
+      COALESCE(${this.j.num(meta, 'durationMs')}, 0) AS "durationMs"
+      FROM messages WHERE conversation_id = ? AND engine = ? AND role = 'ai' AND state = 'published'
+      AND COALESCE(${session}, ${codexSession}) = ?
+      ORDER BY history_position, id`, [conversationId, provider, sessionId])
+  }
+
+  async latestUserMessageChars(userId: string, conversationId: string): Promise<number> {
+    if (!await this.ownsConversation(userId, conversationId)) return 0
+    const row = await this.sql.get<{ chars: number }>(`SELECT LENGTH(text) AS chars FROM messages
+      WHERE conversation_id = ? AND role != 'ai' AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1`, [conversationId])
+    return Number(row?.chars ?? 0)
+  }
+
   async lastCodexThreadUsage(conversationId: string): Promise<CodexThreadUsage | null> {
     // Ids first, one meta at a time: a Codex reply carries its whole activity
     // log in `meta` (up to ~12 MB in production), and the core runs with a

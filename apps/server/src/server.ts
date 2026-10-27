@@ -760,6 +760,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
     },
     conversationSummary: () => conversationSummary,
+    resetThread: (userId, conversationId, summarize) => turnManager.resetThread(userId, conversationId, summarize),
     delegatedAssistantKind: grant => {
       const ticket = delegation?.ticketGrant(grant)
       return ticket ? APPLICATION_ASSISTANT_KIND[ticket.applicationId] : undefined

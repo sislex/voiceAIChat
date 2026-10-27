@@ -35,7 +35,7 @@ const conversation = z.object({
   permissionMode: permission.nullable(), title: text, projectId: nullableText, skills: strings,
   contextPresetId: nullableText, kbMode: z.enum(['auto', 'manual', 'off']), disabledContext: strings,
   previewUrl: text.refine(value => { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }).nullable(),
-  previewEngine: z.enum(['proxy', 'chromium']), loadServiceData: z.boolean()
+  previewEngine: z.enum(['proxy', 'chromium']), loadServiceData: z.boolean(), threadReset: z.enum(['off', 'hint', 'auto'])
 }).partial().strict()
 const envelope = { version: z.literal(1), expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }
 const patch = z.discriminatedUnion('owner', [
