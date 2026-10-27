@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: 3bef4da01
+checked: b231054e
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -215,6 +215,22 @@ Local applications retain their direct service upstreams. Disabled and external
 applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
 return Core's `404 application_disabled` instead of proxying to absent services.
 Without a selector, the original direct Caddy upstream defaults are preserved.
+
+Both public and internal HTTPS sites apply `encode zstd gzip` before all
+`handle` branches, including direct Make, Image Studio and Playwright Reader
+upstreams. The response MIME allowlist covers JSON (including +json), JavaScript,
+Wasm, HTML, plain text, CSS and SVG; SSE is deliberately excluded. Requests
+with Range or WebSocket Upgrade and paths ending in `/exec-stream` (or its
+children) bypass encode. Core's existing br/gzip responses are not recompressed.
+The stand lease port block is unchanged.
+
+Validate with `VC_PUBLIC_HOST=localhost caddy validate --config Caddyfile`.
+The live proxy regression test uses the actual public site's configuration,
+temporary loopback ports and a mock upstream:
+`CADDY_BIN=/path/to/caddy npm run test:files -- apps/server/src/infra.caddyCompression.test.ts`.
+It verifies gzip JSON through all four upstream branches, first SSE/exec chunks
+before completion, and a WebSocket `/ws` round-trip. It is skipped without
+`CADDY_BIN`; Caddy 2.10.2 was used for task validation.
 
 Operator verification on 2026-10-19 used a separate Docker project and disposable
 Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
