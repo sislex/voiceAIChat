@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-25
-checked: ed05841a
+updated: 2026-10-28
+checked: c6695573
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -379,6 +379,14 @@ authoritative no-spawn zero charge. Other server modes, internal modules and
 delegated application turns retain hard cancellation; a request's `textOnly`
 field cannot enable the public Stop policy. Regression evidence is in
 `billing/chatAccounting.test.ts` and the public queue case in `turns.test.ts`.
+The accounting test fixture releases its gates and drains accounting before
+closing the runner. Its Fastify runner uses `forceCloseConnections: true`:
+a connected TCP socket that has sent no HTTP headers otherwise keeps
+`runner.close()` pending. A regression explicitly waits for server acceptance
+of such a socket and verifies that close completes without client cooperation;
+its failure path destroys the socket so the test does not strand `afterEach`.
+This bounds fixture transport cleanup without cutting off production background
+settlement.
 
 Billing 1.2.0 exposes finalized personal usage reports derived from durable
 settlements. Analytics 1.2.0 owns active-time intervals and combines those reports
