@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-26
-checked: 7ad8ad53
+updated: 2026-10-27
+checked: b231054e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -138,20 +138,39 @@ Operators must quiesce those writers before the final migration snapshot.
 
 ### Chat message service data
 
-Conversation setting `loadServiceData` defaults to false and is persisted in
-canonical chat settings. `serviceData.ts` applies the shared `stripServiceData`
-helper at REST and event boundaries: conversation and kanban-assistant history,
-draft creation/replay, CC/Codex resume, admin message inspection, message writes,
-`chat.message`, and both metadata fields of `claude.done` (completion, cancellation,
-and shutdown recovery). Enabling the setting returns full metadata. Live active
-turn activity, database readers, context snapshots, and prompt construction retain
-their full data regardless of the setting.
+Completed response diagnostics live in `message_service_data` (message primary
+key with cascading deletion, conversation id, activity, request and creation time).
+Both SQLite and generated PostgreSQL schema create the table at startup.
+ChatRepo writes diagnostics and lightweight message metadata in one transaction,
+including partial/interrupted turns and Desktop imports. Each serialized activity
+entry is capped at 64 KiB; oversized fields carry a truncation marker.
+Requests retain the actual prompt plus messageCount/lastMessageId, never a copy
+of conversation texts. Legacy request.messages is discarded during migration.
+
+Startup schedules batches of at most 50 message ids with a 100 ms pause; it does
+not await the backfill before serving. A keyset cursor avoids rescanning previous
+ids. Each batch reads one legacy meta at a time under message row locks, writes
+diagnostics, then removes the old keys in the same transaction. Restarting is
+idempotent; shutdown cancels the timer and waits for the in-flight batch.
+SQLite batches share the public repository serialization lane with requests.
+
+History queries project legacy activity/request out in SQL even before backfill.
+REST history, writes and both metadata fields of chat.message/claude.done always
+exclude activity and request, regardless of loadServiceData. Lightweight metadata
+retains model, permissionMode, token counts, duration and serviceData byte counts.
+Live activity remains available. Turn startup uses a point query for the latest
+user message, role/text-only cold-start history and a count/id summary. Attachment
+checks read text/attachments only; context inspection loads only the last reply's
+request rather than diagnostics for the entire conversation. Context growth uses a
+bounded SQL projection of model/provider/promptChars/resumed for ten replies; it
+never transfers their prompts or activity.
 
 `GET /api/conversations/:id/messages/:messageId/service-data` returns the stored
 `activity` and `request` for one published message. It applies the same owner and
 scope/project checks as the conversation GET; disabled loading returns 409,
 inaccessible conversations and missing messages return 404. The repository reads
-only that message's metadata rather than loading the complete conversation.
+the separate row with a legacy metadata fallback before migration. The setting
+continues to gate this explicit diagnostic endpoint, not history projection.
 Metadata PATCH merges top-level fields under a database row lock, preserving
 stored activity/request when a client updates only `taskLaunches`. An echoed
 projection's `serviceData` marker and reduced request never replace stored diagnostics.

@@ -103,6 +103,18 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS message_service_data (
+  message_id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  activity TEXT,
+  request TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_message_service_data_conversation
+  ON message_service_data(conversation_id);
+
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
   ON messages(conversation_id, created_at);
 

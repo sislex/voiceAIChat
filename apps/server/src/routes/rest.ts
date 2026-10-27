@@ -456,14 +456,11 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Рост контекста: размеры промптов последних ходов. Отвечает на «почему стало
   // дороже» — из meta.request, без досчёта.
   const prices = await db.llm.listModelPrices()
-  const turnSizes: ContextTurnSize[] = [...messages]
-    .reverse()
-    .filter((message) => message.role === 'ai' && message.meta?.request)
-    .slice(0, 10)
-    .map((message) => {
-      const info = message.meta!.request!
+  const lastRequest = await db.chat.lastMessageRequest(userId, conversation.id)
+  const turnSizes: ContextTurnSize[] = (await db.chat.recentRequestSizes(userId, conversation.id))
+    .map((info) => {
       return {
-        at: message.time,
+        at: info.time,
         model: info.model,
         chars: info.promptChars,
         approxTokens: approxTokens(info.promptChars),
@@ -541,8 +538,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
 
   // Факт последнего хода: `meta.request` сохранённого ответа. Ничего не
   // досчитываем — это ответ на вопрос «что было отправлено», а не прогноз.
-  const lastRequest = [...messages].reverse().find((message) => message.role === 'ai' && message.meta?.request)
-  const request = lastRequest?.meta?.request
+  const request = lastRequest?.request
   const lastTurn: ContextLastTurn | null = request
     ? {
         at: lastRequest!.time,

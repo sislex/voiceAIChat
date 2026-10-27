@@ -39,7 +39,7 @@ describe('paged conversation transport', () => {
       expect(empty.json()).toMatchObject({ messages: [], history: { hasMore: false, oldestId: null, total: 8 } })
       const settings = (await h.db.settings.getChatSettings(h.U, c.id))!
       await h.db.settings.patchChatSettings(h.U, { version: 1, owner: 'conversation', expectedRevision: settings.revision, values: { loadServiceData: true } }, c.id)
-      expect((await h.inj({ method: 'GET', url: url(original[4].id) })).json().messages[0].meta).toEqual(meta)
+      expect((await h.inj({ method: 'GET', url: url(original[4].id) })).json().messages[0].meta).toEqual(stripServiceData(meta))
       expect(list).not.toHaveBeenCalled()
     } finally { list.mockRestore() }
   })

@@ -222,6 +222,28 @@ export class VoiceChatDb {
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
+    this.scheduleServiceDataMigration()
+  }
+
+  private serviceDataTimer: ReturnType<typeof setTimeout> | null = null
+  private serviceDataBatch: Promise<unknown> | null = null
+
+  private scheduleServiceDataMigration(): void {
+    if (this.closed) return
+    this.serviceDataTimer = setTimeout(() => {
+      this.serviceDataTimer = null
+      if (this.closed) return
+      // Use the public port so SQLite migration shares the request serialization lane.
+      this.serviceDataBatch = this.chat.migrateMessageServiceDataBatch().then(count => {
+        if (count) this.scheduleServiceDataMigration()
+      }).catch(error => {
+        if (!this.closed) {
+          console.error('message service data migration failed', error)
+          this.scheduleServiceDataMigration()
+        }
+      })
+    }, 100)
+    this.serviceDataTimer.unref()
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
@@ -1081,6 +1103,8 @@ export class VoiceChatDb {
     await this.lane?.idle()
     if (this.closed) return
     this.closed = true
+    if (this.serviceDataTimer) clearTimeout(this.serviceDataTimer)
+    await this.serviceDataBatch
     if (this.ctx.repos.chat.ftsTimer) clearTimeout(this.ctx.repos.chat.ftsTimer)
     this.ctx.repos.chat.ftsTimer = null
     if (this.dropSchemaOnClose) await this.sql.exec(`DROP SCHEMA IF EXISTS ${this.dropSchemaOnClose} CASCADE`).catch(() => {})

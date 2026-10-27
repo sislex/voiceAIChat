@@ -1257,7 +1257,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const body = req.body
       if (!body || !await db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
       if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
-      const historyFiles = (await db.chat.listMessages(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
+      const historyFiles = (await db.chat.historyFiles(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
       const allowed = (file: MessageAttachment): boolean => {
         if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
         const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
@@ -1353,7 +1353,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const separator = managed.generated.includes('\\') && !managed.generated.includes('/') ? '\\' : '/'
         const sourceParent = body.source.path.slice(0, Math.max(body.source.path.lastIndexOf('/'), body.source.path.lastIndexOf('\\')))
         if (sourceParent !== managed.generated) return reply.code(403).send({ error: 'Публиковать можно только непосредственный файл из .generated этого разговора' }) as never
-        const known = (await db.chat.listMessages(userId, body.conversationId)).some((message) =>
+        const known = (await db.chat.historyFiles(userId, body.conversationId)).some((message) =>
           (message.attachments ?? []).some((file) => file.path === body.source.path && file.agentId === body.source.agentId)
           || parseImages(message.text).images.some((image) => image.path === body.source.path && image.agentId === body.source.agentId)
         )
