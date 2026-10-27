@@ -429,8 +429,20 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return response
     }
     if (action === 'deploy') {
+      // Branch creation itself adds a release record (preparing -> ready); a deployment is a
+      // separate record. Wait for the preparation, then reuse only a real deployment record.
+      const preparation = journal.results.branch?.id
+      if (preparation) {
+        for (let attempt = 0; ; attempt++) {
+          const prepared = await rc(`/${encodeURIComponent(preparation)}`)
+          if (prepared.status === 'ready' || prepared.status === 'released') break
+          if (['failed', 'cancelled'].includes(prepared.status)) throw Error(`Core release preparation ${prepared.status}`)
+          if (attempt >= 270) throw Error('Timed out waiting for Core release preparation')
+          await sleep(10000)
+        }
+      }
       const rows = await rc(''), releases = Array.isArray(rows) ? rows : rows.releases
-      const existing = releases.find(row => row.branch === branch)
+      const existing = releases.find(row => row.branch === branch && row.id !== preparation)
       if (existing) return existing
       return rc('/deploy', 'POST', { branch })
     }

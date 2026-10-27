@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: fc6f71f2
+checked: a3ae502c4
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -438,8 +438,10 @@ step, record the current project setting, temporarily select `main`, resume the
 same journal, and restore the previous setting after branch creation is accepted
 (or if creation fails). The accepted preparation retains its resolved target;
 restoring the development setting does not change its source. Do not alter the
-journal or substitute an ungated development commit. With `--deploy`, POST
-`/releases/deploy` starts deployment and the
+journal or substitute an ungated development commit. With `--deploy`, the runner first polls the
+branch's own preparation record (`preparing` -> `ready`; branch creation itself adds it, so it is never
+mistaken for a deployment — until 2026-10-27 it was, and 0.1.495 waited for a deployment that was never
+started), then POST `/releases/deploy` starts deployment and the
 runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
 the new version for up to ten minutes. Without that flag it stops after branch
 creation. Real publication/deployment and token commissioning are operator
