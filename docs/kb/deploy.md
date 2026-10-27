@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: 06a27ba9
+checked: 68037887c
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -1196,8 +1196,14 @@ The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner
 `JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
 uploaded fixture archives to the real release (removed by the coordinator).
 Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
-`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
-is rewritten.
+`vendor-store.test.mjs`) fails if an archive is tracked. History was rewritten on 2026-10-18 and every
+branch force-pushed, but the stale task branch `SK-19` (main of 2026-10-16) was pushed again from a
+pre-rewrite clone and kept the old 3640-commit history, so every clone still downloaded ~750 MB. It was
+deleted on 2026-10-27 (bundle backup `~/.local/state/sislexa/history-rewrite/SK-19-backup-20261027.bundle`
+on the operator Mac); a fresh clone is ~29 MB. `vendor-archives.test.mjs` TC-04 fails when any archive is
+tracked or any commit in the history of `HEAD` adds `*.tgz`, so a branch built on the old history cannot
+pass the gate (rebase it onto `origin/dev`). GitHub push rulesets are unavailable for this user-owned public
+repository.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
