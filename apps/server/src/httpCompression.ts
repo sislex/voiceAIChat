@@ -1,4 +1,5 @@
 import compress from '@fastify/compress'
+import { registerStaticCompression } from './staticCompression.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, onSendHookHandler } from 'fastify'
 
 const MIN_BYTES = 1024
@@ -19,6 +20,7 @@ function eligible(request: FastifyRequest, reply: FastifyReply, payload: unknown
 
 /** Register before routes, preserving their hooks and all non-compressed headers. */
 export async function registerHttpCompression(app: FastifyInstance): Promise<void> {
+  registerStaticCompression(app)
   const hooks = (value: onSendHookHandler | onSendHookHandler[] | undefined) =>
     value ? (Array.isArray(value) ? value : [value]) : []
   const original = new WeakMap<object, Set<onSendHookHandler>>()

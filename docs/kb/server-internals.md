@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-26
-checked: 7ad8ad53
+updated: 2026-10-27
+checked: 81c4a5fd
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -89,6 +89,25 @@ See [repository module configuration](features/project-knowledge-base.md#reposit
 responses under `/api` and `/internal`, strictly above 1024 bytes. Existing
 route hooks still run; `compress: false` remains an explicit route opt-out.
 Request decompression is disabled.
+
+Static responses use a separate `staticCompression.ts` hook for JS, CSS, HTML,
+JSON, SVG and source maps under `/assets/`, `/applications/:id/` and
+`/ui/releases/`. It negotiates br/gzip (including quality weights), adds
+`Vary: Accept-Encoding` for identity and compressed responses, and sets the
+compressed `Content-Length`. Range, partial, already encoded and SSE responses
+are excluded; HEAD remains identity. Only these static routes may have their
+file streams consumed, with a known length capped at 32 MiB; buffered files
+have the same size cap. API streams are never consumed by this hook.
+
+Each server owns a 64 MiB LRU of compressed buffers keyed by SHA-256 of source
+bytes and encoding. Repeated and concurrent requests reuse compression work;
+changed source bytes cannot reuse stale output. Files are still read on cache
+hits. At four pending compression jobs, additional requests fall back to
+identity. Brotli uses quality 5. Strong ETags become weak for compressed bodies
+and compressed responses omit `Accept-Ranges`. Application frontend MIME types
+also include HTML and source maps. `staticCompression.test.ts` exercises real
+frontend/file routes, decoding, identity lengths, cache reuse/invalidation,
+cache budget, negotiation, Range and conditional responses.
 
 Compression skips WebSocket upgrades, Range requests and partial responses,
 already encoded responses, media and archive MIME types, SSE, and all Node/Web
