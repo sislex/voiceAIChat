@@ -1,12 +1,15 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-27
-checked: 40d07d916
+checked: c29bd3e2
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
+  - packages/shared/src/threadCost.ts
+  - packages/shared/src/chatContract.ts
+  - packages/shared/src/index.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/release.ts
   - packages/shared/src/releaseDisk.ts
@@ -26,13 +29,42 @@ areas:
 
 ## Thread cost client contract
 
-`packages/shared/src/threadCost.ts` defines `ConversationThreadCost`, the encoded
-`thread-cost`/`thread-reset` routes, reset result and `ThreadResetMode`.
-The conversation settings contract accepts `threadReset: off | hint | auto`.
-Core implements cost lookup, summary reset and automatic reset before a turn.
-Consumers must hide controls on HTTP 404 when connected to an older Core and
-refresh cost on conversation open and after `claude.done`. The baseline has input tokens and duration
-only, so clients must not invent baseline cache/output values.
+`packages/shared/src/threadCost.ts`, now re-exported by the Shared package barrel,
+is the source of truth for cost payloads, reset types and `ThreadResetMode`.
+`THREAD_COST_REST.cost(id)` and `.reset(id)` build the GET `thread-cost` and POST
+`thread-reset` paths under `/api/conversations/`, encoding the identifier with
+`encodeURIComponent` (including embedded slashes). Existing `REST` helpers
+remain available. The added `ConversationThreadResetResult` requires a
+`ConversationSummary`; the existing `ConversationThreadResetResponse` permits
+a null/absent summary and remains relevant when `summarize: false` skips refresh.
+Do not infer a runtime non-null guarantee from the new result type.
+
+The baseline contains only input tokens (including cache reads) and duration;
+clients cannot display measured baseline cache/output values. It averages the
+first up to three measured turns, not necessarily just the first turn. `extra`
+contains signed differences and percentages against that baseline. The reset
+recommendation uses absolute last-turn input plus cache, not the extra tokens
+or elapsed-time percentage. Default thresholds are 300,000 (`consider`) and
+1,000,000 (`reset`); use the returned thresholds. Calculation, estimation and
+session filtering are described in [session cost and reset](llm.md#session-cost-and-summary-reset).
+
+`threadReset` belongs to conversation settings alongside `loadServiceData`;
+its default is `hint`. `chatContract.ts` explicitly rejects
+non-string values and strings other than `off`, `hint`, `auto`. Save through
+PATCH `/api/conversations/:id/settings` with `version: 1`, `expectedRevision`,
+`owner: 'conversation'` and `values: { threadReset }`. A stale revision returns
+409 `settings_revision_conflict` with the current snapshot; this differs from
+409 `turn_active` on thread reset. Route implementation is
+`apps/server/src/routes/chatSettings.ts`. Only `auto` triggers Core's pre-turn
+summary reset when the recommendation is `reset` (`apps/server/src/turns.ts`).
+
+Consumer integration requires refreshing cost on conversation open and after
+`claude.done`, and hiding the indicator when an older Core returns route 404;
+no additional WS frame is needed. These are client requirements, not proof of
+a particular Core UI build's behavior. See [Core UI verification boundary](clients.md#chat-ui-and-timeline-thread-cost).
+Shared regressions in `threadCost.test.ts` cover encoded identifiers, accepted
+and rejected setting values, default mode, thresholds, signed deltas and missing
+data. Core HTTP/reset regressions live in `apps/server/src/conversationThread.test.ts`.
 
 ## Voice module configuration
 
