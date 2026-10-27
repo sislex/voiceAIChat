@@ -2189,6 +2189,29 @@ describe('turns: управляемая персистентная очеред�
     await turns.idle()
     db.close()
   })
+
+  it('Отправить сейчас повторяет упавший элемент очереди', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'queue')
+    const failed = await db.chat.addMessage(U, conversation.id, 'u1', 'Упавший вопрос', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db: await db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: failed.id, segments: [{ speakerId: 1, text: failed.text }] })
+    await llm.handlers[0]!.onError('stream disconnected before completion')
+    await turns.idle()
+    const item = (await db.chat.listQueuedTurns(U, conversation.id))[0]!
+    expect(item).toMatchObject({ messageId: failed.id, status: 'failed' })
+
+    await turns.sendQueuedNow(U, conversation.id, item.id)
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.prompt).toContain('Упавший вопрос')
+    expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+    await llm.handlers[1]!.onDone('Ответ')
+    await turns.idle()
+    db.close()
+  })
 })
 
 describe('ProjectMainSnapshotCoordinator', () => {

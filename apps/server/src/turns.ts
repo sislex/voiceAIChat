@@ -1509,7 +1509,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     if (!turn || turn.userId !== userId || !turn.source.messageId) {
       // Без активного хода выбранный элемент становится первым и запускается
-      // сразу, если очередь не удерживает ошибка.
+      // сразу, если очередь не удерживает ошибка. Упавший элемент явной
+      // командой возвращается в очередь — иначе dispatch его не возьмёт.
+      await deps.db.chat.retryQueuedTurn(userId, conversationId, id)
       await deps.db.chat.prioritizeQueuedTurn(userId, conversationId, id)
       await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
       await dispatchNext(userId, conversationId)
