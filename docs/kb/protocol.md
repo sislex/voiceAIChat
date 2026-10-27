@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-24
-checked: 556a06ce
+updated: 2026-10-27
+checked: 05dad7a1e
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -484,9 +484,17 @@ URL руками. Параметризованные пути — функции
 равен input + cache read + cache creation последнего assistant turn; для Codex —
 только `last_token_usage.input_tokens`, а не кумулятивный total потока. Размер окна
 берётся из общей таблицы моделей с консервативным fallback 128k. Поле приходит и в
-`GET REST.conversation(id)`. `POST REST.conversationThreadReset(id)` доступен только
-владельцу, очищает provider session и снимок usage, добавляет системную заметку и
-возвращает обновлённый `Conversation`; чужой и отсутствующий разговор одинаково дают 404.
+`GET REST.conversation(id)`. The legacy `POST /api/conversations/:id/thread/reset`
+(`REST.conversationThreadResetLegacy`) clears the provider session and usage,
+adds a system note and returns the updated `Conversation` without refreshing
+its summary. The new `POST REST.conversationThreadReset(id)` (`/thread-reset`)
+refreshes the summary by default (`summarize: false` skips refresh) and returns
+`{ ok: true, summary }`. Both require ownership and reject active turns with
+409 `turn_active`; foreign and missing conversations return 404.
+`GET REST.conversationThreadCost(id)` (`/thread-cost`) returns scalar usage,
+first-turn baseline, deltas and reset recommendation for the active session.
+Conversation settings include `threadReset: off | hint | auto` (default `hint`).
+See [session cost and reset](llm.md#session-cost-and-summary-reset).
 
 ### Tenant selection
 

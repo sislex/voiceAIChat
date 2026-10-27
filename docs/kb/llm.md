@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-27
-checked: b231054e
+checked: 05dad7a1e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -337,6 +337,10 @@ admission while refreshing the existing summary service and clearing the
 session/context usage. A missing or failed summary leaves the session intact
 (503); `summarize: false` skips refresh. The next turn uses the existing bounded
 cold-start history with the summary. Stored history is preserved.
+The compatibility route `POST /api/conversations/:id/thread/reset`
+(`REST.conversationThreadResetLegacy`) retains its `Conversation` response and
+skips summary refresh, as published clients expect. It uses the same admission
+lock and rejects active turns with 409.
 
 Canonical conversation settings persist `threadReset: off | hint | auto`,
 default `hint`. Only `auto` resets before a turn when cost recommends `reset`;

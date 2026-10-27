@@ -80,6 +80,26 @@ describe('conversation threads', () => {
       expect((await f.db.chat.listMessages(U, f.conv.id)).at(-1)?.meta?.sessionId).toBe('new')
     } finally { await f.close() }
   })
+  it('preserves the published reset route and response while enforcing turn admission', async () => {
+    const f = await fixture('claude')
+    try {
+      await f.add('current', 1000)
+      const refresh = vi.spyOn(f.summary, 'refresh')
+      const url = REST.conversationThreadResetLegacy(f.conv.id)
+      await f.turns.start({ userId: U, conversationId: f.conv.id, segments: [{ speakerId: 1, text: 'Go' }] })
+      expect((await f.app.inject({ method: 'POST', url })).statusCode).toBe(409)
+      await f.handlers()!.onDone('Done')
+      await f.turns.idle()
+      const response = await f.app.inject({ method: 'POST', url })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toMatchObject({ id: f.conv.id, claudeSessionId: null })
+      expect(response.json().contextUsage).toBeUndefined()
+      expect(response.json()).not.toHaveProperty('ok')
+      expect(refresh).not.toHaveBeenCalled()
+      const foreign = await f.db.chat.createConversation('bob', 'Private')
+      expect((await f.app.inject({ method: 'POST', url: REST.conversationThreadResetLegacy(foreign.id) })).statusCode).toBe(404)
+    } finally { await f.close() }
+  })
   it('returns 409 during an active turn and while a reset is generating the summary', async () => {
     const f = await fixture('claude')
     try {

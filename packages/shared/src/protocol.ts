@@ -308,6 +308,8 @@ export const REST = {
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
   conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-reset`,
+  /** Compatibility route for published clients expecting a Conversation response. */
+  conversationThreadResetLegacy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */

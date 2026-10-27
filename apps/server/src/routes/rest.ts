@@ -1063,6 +1063,20 @@ export async function registerRest(
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 
+  // Published clients still use this path and expect a Conversation, not { ok, summary }.
+  app.post<{ Params: { id: string } }>(REST.conversationThreadResetLegacy(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    if (!await db.chat.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+    if (!opts.resetThread) return reply.code(503).send({ code: 'thread_reset_unavailable' })
+    try {
+      const result = await opts.resetThread(uid(req), req.params.id, false)
+      if (!result) return reply.code(404).send({ error: 'not found' })
+      return await db.chat.getConversation(uid(req), req.params.id)
+    } catch (error) {
+      if (error instanceof ThreadResetError) return reply.code(error.statusCode).send({ code: error.code, error: error.code })
+      throw error
+    }
+  })
+
   app.get<{ Params: { id: string } }>(REST.conversationThreadCost(':id').replace('%3Aid', ':id'), async (req, reply) => {
     const conversation = await db.chat.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })

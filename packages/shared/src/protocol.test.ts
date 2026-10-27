@@ -10,6 +10,7 @@ describe('контракт протокола', () => {
     expect(REST.conversation('c')).toBe('/api/conversations/c')
     expect(REST.conversation('c', { limit: 50, before: 'a&b?#' })).toBe('/api/conversations/c?limit=50&before=a%26b%3F%23')
     expect(REST.conversationThreadReset('a/b')).toBe('/api/conversations/a%2Fb/thread-reset')
+    expect(REST.conversationThreadResetLegacy('a/b')).toBe('/api/conversations/a%2Fb/thread/reset')
     expect(REST.conversationThreadCost('a/b')).toBe('/api/conversations/a%2Fb/thread-cost')
   })
   // @testCase TC-CONTRACT-01
