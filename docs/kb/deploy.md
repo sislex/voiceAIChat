@@ -3258,3 +3258,6 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:f778e0ae-afbb-414b-8fd5-c91272d54d23 -->
 - sislex/sislexa-kanban: 0.2.43
+
+<!-- release-train:eb1a80aa-d8cd-45ca-bfee-ae55a0b3ee76 -->
+- sislex/sislexa-kanban: 0.2.44
