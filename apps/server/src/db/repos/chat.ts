@@ -1138,6 +1138,7 @@ export class ChatRepo extends BaseRepo {
       COALESCE(${this.j.num(meta, 'durationMs')}, 0) AS "durationMs"
       FROM messages WHERE conversation_id = ? AND engine = ? AND role = 'ai' AND state = 'published'
       AND COALESCE(${session}, ${codexSession}) = ?
+      AND (${this.j.num(meta, 'inputTokens')} IS NOT NULL OR ${this.j.num(meta, 'cacheReadTokens')} IS NOT NULL)
       ORDER BY history_position, id`, [conversationId, provider, sessionId])
   }
 

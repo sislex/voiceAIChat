@@ -164,6 +164,22 @@ describe('conversation threads', () => {
       expect(await f.db.chat.listQueuedTurns(U, f.conv.id)).toEqual([expect.objectContaining({ messageId: message.id })])
     } finally { await f.close() }
   })
+  it('does not treat a reply without input usage as a zero-cost measured turn', async () => {
+    const f = await fixture('claude')
+    try {
+      await f.db.chat.addMessage(U, f.conv.id, 'ai', 'No usage', '', 'claude', {
+        sessionId: 'current', outputTokens: 50, durationMs: 100
+      })
+      const cost = () => f.app.inject({ url: REST.conversationThreadCost(f.conv.id) })
+      expect((await cost()).json()).toMatchObject({ turnsInThread: 0, last: null, baseline: { source: 'estimate' } })
+      await f.add('current', 1200000)
+      await f.db.chat.addMessage(U, f.conv.id, 'ai', 'No usage again', '', 'claude', { sessionId: 'current' })
+      expect((await cost()).json()).toMatchObject({ turnsInThread: 1, recommendation: 'reset',
+        baseline: { inputTokens: 1200000, source: 'thread-start' } })
+      await f.db.chat.addMessage(U, f.conv.id, 'ai', 'Measured zero', '', 'claude', { sessionId: 'current', inputTokens: 0 })
+      expect((await cost()).json()).toMatchObject({ turnsInThread: 2, recommendation: 'ok', last: { inputTokens: 0 } })
+    } finally { await f.close() }
+  })
   it('supports legacy Codex session attribution and estimates when measured usage is absent', async () => {
     const f = await fixture()
     try {

@@ -1,3 +1,5 @@
+import type { ThreadResetMode } from './threadCost'
+
 /** Opaque server-issued reference; contains no bearer credential. */
 export interface ChatDelegationReference {
   readonly id: string
@@ -181,7 +183,7 @@ export interface ChatSettingsSnapshot {
   version: 1
   revision: number
   account: Readonly<Record<string, ChatSettingValue>>
-  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: 'off' | 'hint' | 'auto' }
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
   /** Device values are echoed by a local adapter and are never persisted by Core. */
   device: Readonly<Record<string, ChatSettingValue>>
 }
@@ -195,7 +197,7 @@ export type ChatSettingsPatch = {
   version: 1
   expectedRevision: number
   owner: 'conversation'
-  values: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: 'off' | 'hint' | 'auto' }
+  values: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
 }
 
 export interface ChatSettingsConflict {
@@ -254,7 +256,7 @@ function cloneSettingRecord(values: Readonly<Record<string, ChatSettingValue>>):
 
 /** Concrete adapter that combines persisted account/conversation state with local device state. */
 export function createChatSettingsSnapshot(input: Omit<ChatSettingsSnapshot, 'conversation'> & {
-  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: 'off' | 'hint' | 'auto' }
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
 }): ChatSettingsSnapshot {
   if (input.version !== 1 || !Number.isSafeInteger(input.revision) || input.revision < 0) throw Error('Invalid settings revision')
   validateSettingValues('account', input.account)
