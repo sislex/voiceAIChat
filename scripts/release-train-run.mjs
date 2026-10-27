@@ -167,7 +167,8 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     if (!existsSync(join(cwd, '.git'))) {
       // An interrupted clone is disposable; only train-owned directories are passed here.
       rmSync(cwd, { recursive: true, force: true })
-      run('git', ['clone', '--no-checkout', '--', remote, cwd], directory)
+      // Partial clone: trees and history only, file contents arrive on checkout.
+      run('git', ['clone', '--no-checkout', '--filter=blob:none', '--', remote, cwd], directory)
       git(cwd, 'checkout', '--detach', source)
       return
     }

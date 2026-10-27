@@ -71,9 +71,9 @@
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-storage.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-storage.md) — message-service-data-storage
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-kb.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-kb.md) — message-service-data-kb
 - [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-zsh-refspec-modifier.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-zsh-refspec-modifier.md) — zsh-refspec-modifier
+- [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-train-partial-clone.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-train-partial-clone.md) — train-partial-clone
 - [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-static-response-compression.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-static-response-compression.md) — static-response-compression
 - [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-static-response-compression-kb.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-static-response-compression-kb.md) — static-response-compression-kb
-- [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev.md) — release-train-from-dev
 
 ## Исторические планы
 

@@ -376,6 +376,8 @@ test('concrete adapters execute fixture owner and Core repositories, APIs, pins 
   assert.ok(f.calls.some(call => call.args?.includes('--package-lock-only')))
   assert.ok(!f.calls.some(call => call.args?.includes('--workspaces')))
   assert.ok(f.calls.some(call => call.args?.join(' ') === 'run gate'))
+  const clones = f.calls.filter(call => call.binary === 'git' && call.args[0] === 'clone')
+  assert.ok(clones.length && clones.every(call => call.args.includes('--filter=blob:none')))
   for (const call of f.calls.filter(call => call.config)) assert.equal(existsSync(call.config), false)
   assert.ok(!readFileSync(join(f.directory, journal.id + '.json'), 'utf8').includes('secret'))
   const count = f.calls.length
