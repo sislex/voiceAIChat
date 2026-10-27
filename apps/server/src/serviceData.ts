@@ -5,22 +5,20 @@ export async function loadsServiceData(db: VoiceChatDb, userId: string, conversa
   return (await db.settings.getChatSettings(userId, conversationId))?.conversation.loadServiceData === true
 }
 
-export function clientMessage(message: Message, enabled: boolean): Message {
-  return enabled || !message.meta ? message : { ...message, meta: stripServiceData(message.meta) }
+export function clientMessage(message: Message, _enabled: boolean): Message {
+  return !message.meta ? message : { ...message, meta: stripServiceData(message.meta) }
 }
 
-/** Project only at transport boundaries; database and prompt readers retain full metadata. */
+/** Completed diagnostics are available only from the single-message endpoint. */
 export async function clientMessages(db: VoiceChatDb, userId: string, conversationId: string, messages?: Message[]): Promise<Message[]> {
-  const enabled = await loadsServiceData(db, userId, conversationId)
-  return (messages ?? await db.chat.listMessages(userId, conversationId)).map(message => clientMessage(message, enabled))
+  return (messages ?? await db.chat.listMessages(userId, conversationId)).map(message => clientMessage(message, false))
 }
 
-export async function clientEvent(db: VoiceChatDb, userId: string, event: ServerMessage): Promise<ServerMessage> {
+export async function clientEvent(_db: VoiceChatDb, _userId: string, event: ServerMessage): Promise<ServerMessage> {
   if (event.t !== 'claude.done' && event.t !== 'chat.message') return event
-  const enabled = await loadsServiceData(db, userId, event.conversationId)
-  if (event.t === 'chat.message') return { ...event, message: clientMessage(event.message, enabled) }
+  if (event.t === 'chat.message') return { ...event, message: clientMessage(event.message, false) }
   return { ...event,
-    ...(event.meta ? { meta: enabled ? event.meta : stripServiceData(event.meta) } : {}),
-    ...(event.message ? { message: clientMessage(event.message, enabled) } : {})
+    ...(event.meta ? { meta: stripServiceData(event.meta) } : {}),
+    ...(event.message ? { message: clientMessage(event.message, false) } : {})
   }
 }

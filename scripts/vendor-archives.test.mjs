@@ -178,3 +178,15 @@ test('bad handoff digest or provenance leaves the old archive and references int
     assert.equal(existsSync(join(dir, 'vendor', next.asset)), false)
   }
 })
+
+// @testCase TC-04
+// History was rewritten on 2026-10-18 to drop committed archives (97 % of the
+// clone). A branch built on the old history (SK-19 brought it back until
+// 2026-10-27) or a forced add must fail the gate instead of reaching GitHub.
+test('no archive is tracked or added anywhere in the history of HEAD', t => {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+  try { git('rev-parse', '--verify', 'HEAD') } catch { return t.skip('not a git checkout') }
+  assert.equal(git('ls-files', '--', '*.tgz'), '', 'archives are tracked; they belong to the vendor release')
+  assert.equal(git('log', '--diff-filter=A', '--format=%h %s', '-1', 'HEAD', '--', '*.tgz'), '',
+    'history adds archives: the branch is built on pre-rewrite history, rebase it onto origin/dev')
+})

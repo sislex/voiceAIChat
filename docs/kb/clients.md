@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-20
-checked: a1015514c
+updated: 2026-10-27
+checked: c29bd3e2
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -53,6 +53,25 @@ snapshot reads keep selection unavailable. Selecting a model before a draft
 has a conversation persists only model fields, and sending waits for that save.
 Failures preserve the draft; navigation and unmount guards prevent stale sends.
 
+
+## Chat UI and timeline: thread-cost
+
+For `thread-cost` / `threadReset` chat-settings lookup, the verified Core-facing
+contract is [Thread cost client contract](protocol.md#thread-cost-client-contract),
+and reset execution is [Session cost and summary reset](llm.md#session-cost-and-summary-reset).
+The server accepts summary-preserving reset at POST `/api/conversations/:id/thread-reset`
+with `summarize: true` (also the default), rejects active turns with 409
+`turn_active`, and persists the reset mode through revisioned conversation-settings
+PATCH. The shared baseline has no cache/output breakdown; clients must not invent one.
+
+This checkout is Core (`voiceAIChat`), despite the task's Core UI project label.
+Renderer implementation belongs to `sislex/sislexa-core-ui` (`core-ui:README.md`).
+Neither `ThreadCostPanel` nor the requested `chat-ui-and-timeline` topic or its DOM
+tests exists here. Consequently, this diff verifies Shared exports, route builders
+and settings validation, not panel rendering, confirmation/busy states, displayed
+numbers, actual `claude.done` refresh wiring or 404 hiding. The reported panel
+behavior still needs verification in the UI owner's source; do not treat the
+consumer requirements in the protocol topic as evidence of a deployed UI change.
 
 ## Independent browser chat hosts
 

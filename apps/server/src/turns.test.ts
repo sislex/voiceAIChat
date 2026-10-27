@@ -1327,7 +1327,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Начало отве')
     expect(ai?.meta?.interrupted).toBe(true)
-    expect(ai?.meta?.activity).toHaveLength(1)
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity).toHaveLength(1)
     await turns.idle()
     db.close()
   })
@@ -1760,8 +1760,8 @@ describe('turns: чередование действий (смещение at)',
     await run(streamer(''), db, conv.id)
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Привет мир')
-    expect(ai?.meta?.activity?.[0]?.at).toBe('Привет '.length)
-    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.at).toBe('Привет '.length)
+    expect(typeof (await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 
@@ -1772,9 +1772,9 @@ describe('turns: чередование действий (смещение at)',
     await run(streamer('Совсем другой итоговый текст'), db, conv.id)
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Совсем другой итоговый текст')
-    expect(ai?.meta?.activity?.[0]?.at).toBeUndefined()
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.at).toBeUndefined()
     // ts не привязан к тексту и остаётся (для длительностей в кратком виде).
-    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
+    expect(typeof (await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 })
@@ -2186,6 +2186,29 @@ describe('turns: управляемая персистентная очеред�
     expect(await db.chat.listMessages(U, conversation.id)).toEqual([
       expect.objectContaining({ id: queued.id, text: 'Ожидающий вопрос' })
     ])
+    await turns.idle()
+    db.close()
+  })
+
+  it('Отправить сейчас повторяет упавший элемент очереди', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'queue')
+    const failed = await db.chat.addMessage(U, conversation.id, 'u1', 'Упавший вопрос', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db: await db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: failed.id, segments: [{ speakerId: 1, text: failed.text }] })
+    await llm.handlers[0]!.onError('stream disconnected before completion')
+    await turns.idle()
+    const item = (await db.chat.listQueuedTurns(U, conversation.id))[0]!
+    expect(item).toMatchObject({ messageId: failed.id, status: 'failed' })
+
+    await turns.sendQueuedNow(U, conversation.id, item.id)
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.prompt).toContain('Упавший вопрос')
+    expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+    await llm.handlers[1]!.onDone('Ответ')
     await turns.idle()
     db.close()
   })

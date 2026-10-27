@@ -1,12 +1,15 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-24
-checked: 556a06ce
+updated: 2026-10-27
+checked: c29bd3e2
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/playwrightReader.ts
   - packages/shared/src/protocol.ts
+  - packages/shared/src/threadCost.ts
+  - packages/shared/src/chatContract.ts
+  - packages/shared/src/index.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/release.ts
   - packages/shared/src/releaseDisk.ts
@@ -23,6 +26,45 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Thread cost client contract
+
+`packages/shared/src/threadCost.ts`, now re-exported by the Shared package barrel,
+is the source of truth for cost payloads, reset types and `ThreadResetMode`.
+`THREAD_COST_REST.cost(id)` and `.reset(id)` build the GET `thread-cost` and POST
+`thread-reset` paths under `/api/conversations/`, encoding the identifier with
+`encodeURIComponent` (including embedded slashes). Existing `REST` helpers
+remain available. The added `ConversationThreadResetResult` requires a
+`ConversationSummary`; the existing `ConversationThreadResetResponse` permits
+a null/absent summary and remains relevant when `summarize: false` skips refresh.
+Do not infer a runtime non-null guarantee from the new result type.
+
+The baseline contains only input tokens (including cache reads) and duration;
+clients cannot display measured baseline cache/output values. It averages the
+first up to three measured turns, not necessarily just the first turn. `extra`
+contains signed differences and percentages against that baseline. The reset
+recommendation uses absolute last-turn input plus cache, not the extra tokens
+or elapsed-time percentage. Default thresholds are 300,000 (`consider`) and
+1,000,000 (`reset`); use the returned thresholds. Calculation, estimation and
+session filtering are described in [session cost and reset](llm.md#session-cost-and-summary-reset).
+
+`threadReset` belongs to conversation settings alongside `loadServiceData`;
+its default is `hint`. `chatContract.ts` explicitly rejects
+non-string values and strings other than `off`, `hint`, `auto`. Save through
+PATCH `/api/conversations/:id/settings` with `version: 1`, `expectedRevision`,
+`owner: 'conversation'` and `values: { threadReset }`. A stale revision returns
+409 `settings_revision_conflict` with the current snapshot; this differs from
+409 `turn_active` on thread reset. Route implementation is
+`apps/server/src/routes/chatSettings.ts`. Only `auto` triggers Core's pre-turn
+summary reset when the recommendation is `reset` (`apps/server/src/turns.ts`).
+
+Consumer integration requires refreshing cost on conversation open and after
+`claude.done`, and hiding the indicator when an older Core returns route 404;
+no additional WS frame is needed. These are client requirements, not proof of
+a particular Core UI build's behavior. See [Core UI verification boundary](clients.md#chat-ui-and-timeline-thread-cost).
+Shared regressions in `threadCost.test.ts` cover encoded identifiers, accepted
+and rejected setting values, default mode, thresholds, signed deltas and missing
+data. Core HTTP/reset regressions live in `apps/server/src/conversationThread.test.ts`.
 
 ## Voice module configuration
 
@@ -462,12 +504,14 @@ The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `
 Новый REST-путь **всегда** добавляется в объект `REST` — клиенты не пишут строки
 URL руками. Параметризованные пути — функции: `REST.conversation(id)`.
 
-Служебные данные завершённого ответа (`TurnMeta.activity` и полный `TurnMeta.request`)
-по умолчанию исключаются из сообщений функцией `stripServiceData`: в сообщении остаются
-размеры в `meta.serviceData` и краткие поля запроса, включая записи `kbContext` без тел
-текста. Настройка разговора `loadServiceData` по умолчанию равна `false`; при включении
-клиент загружает полные `{ activity, request }` одного сообщения через
-`GET REST.messageServiceData(conversationId, messageId)`.
+Completed message history and WS frames never include `activity` or `request`,
+regardless of `loadServiceData`. `stripServiceData` retains byte counts in
+`meta.serviceData` and lightweight fields such as `model` and `permissionMode`.
+The setting defaults to false and gates the explicit on-click endpoint
+`GET REST.messageServiceData(conversationId, messageId)`, returning
+`{ activity, request }` for one published message. `TurnRequestInfo` stores
+`messageCount` and `lastMessageId`; optional `messages` is deprecated for legacy
+client compatibility. Details show the actual `prompt`, not a duplicate transcript.
 
 Для форм сообщений и загрузок есть намеренное дублирование: REST-версия `AddMessageArgs` и `UploadInfo` описана в `packages/shared/src/protocol.ts`, а bridge-версия в `packages/shared/src/ipc.ts` добавляет `conversationId` к сообщению и задаёт `IpcInvokeMap`. Поэтому новое поле вложения или загрузки меняется синхронно в обоих файлах, затем прокидывается серверным route и `packages/ui/src/remote/httpApi.ts`; иначе web и desktop разойдутся по типам или телу запроса.
 
@@ -484,9 +528,17 @@ URL руками. Параметризованные пути — функции
 равен input + cache read + cache creation последнего assistant turn; для Codex —
 только `last_token_usage.input_tokens`, а не кумулятивный total потока. Размер окна
 берётся из общей таблицы моделей с консервативным fallback 128k. Поле приходит и в
-`GET REST.conversation(id)`. `POST REST.conversationThreadReset(id)` доступен только
-владельцу, очищает provider session и снимок usage, добавляет системную заметку и
-возвращает обновлённый `Conversation`; чужой и отсутствующий разговор одинаково дают 404.
+`GET REST.conversation(id)`. The legacy `POST /api/conversations/:id/thread/reset`
+(`REST.conversationThreadResetLegacy`) clears the provider session and usage,
+adds a system note and returns the updated `Conversation` without refreshing
+its summary. The new `POST REST.conversationThreadReset(id)` (`/thread-reset`)
+refreshes the summary by default (`summarize: false` skips refresh) and returns
+`{ ok: true, summary }`. Both require ownership and reject active turns with
+409 `turn_active`; foreign and missing conversations return 404.
+`GET REST.conversationThreadCost(id)` (`/thread-cost`) returns scalar usage,
+first-turn baseline, deltas and reset recommendation for the active session.
+Conversation settings include `threadReset: off | hint | auto` (default `hint`).
+See [session cost and reset](llm.md#session-cost-and-summary-reset).
 
 ### Tenant selection
 
@@ -750,7 +802,10 @@ action или timeout. Детали действий и UI запуска — [u
 атомарно применяет его только при точном совпадении текущего набора и всегда
 возвращает авторитетный `claude.queue`. При cancel-and-merge событие дополнительно
 несёт `removedMessageIds` и новую опубликованную реплику, чтобы все вкладки
-атомарно удалили заменённые сообщения. `claude.done` несёт готовое `message`,
+атомарно удалили заменённые сообщения. `claude.queue.now` без активного хода
+повторяет и упавший (`failed`) элемент: сервер возвращает ему статус `queued`,
+ставит первым и снимает паузу очереди (`ChatRepo.retryQueuedTurn`) — dispatch
+берёт только `queued`. `claude.done` несёт готовое `message`,
 сохранённое сервером: **клиент не сохраняет сообщение сам**.
 
 `claude.active` (снапшот при подключении WS) отдаёт по каждому активному ходу
@@ -939,6 +994,12 @@ the same optional `group` as HTTP.
 WS-сообщений у панели нет: состояние перечитывается кнопкой «Обновить» и после каждой
 мутации (сервер возвращает свежий статус в ответе — иначе UI на секунду показывал бы
 устаревшее состояние).
+
+Скрипты `apps/server/src/git/scripts.ts` на macOS-машинах исполняет zsh, поэтому
+переменная перед двоеточием всегда пишется в фигурных скобках (`"${VC_GIT_BRANCH}:refs/…"`):
+в zsh `$VAR:r…` — модификатор, и refspec превращался в `refs/heads/devefs/…`
+(checkout удалённой ветки падал `couldn't find remote ref`). Правило проверяет
+`scripts.test.ts`.
 
 Гейты по слоям: право `repository:write` на любой POST и возможность проекта `git` —
 из карт `projectPermissionForRequest`/`projectFeatureForRequest` (`users/auth.ts`,
