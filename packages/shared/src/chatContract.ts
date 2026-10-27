@@ -224,7 +224,7 @@ function validateSettingValues(owner: ChatSettingOwner, values: Readonly<Record<
   const allowed = CHAT_SETTING_OWNERS[owner] as readonly string[]
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.includes(key)) throw Error(`Setting ${key} does not belong to ${owner}`)
-    if (key === 'threadReset' && !['off', 'hint', 'auto'].includes(String(value))) throw Error('Invalid threadReset mode')
+    if (key === 'threadReset' && (typeof value !== 'string' || !['off', 'hint', 'auto'].includes(value))) throw Error('Invalid threadReset mode')
     if (key === 'loadServiceData' && typeof value !== 'boolean') throw Error('Setting loadServiceData must be boolean')
     if (!validSettingValue(value)) throw Error(`Invalid setting ${key}`)
   }
