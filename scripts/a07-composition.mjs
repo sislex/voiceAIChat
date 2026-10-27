@@ -7,10 +7,10 @@ import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
 import { ensureVendorArchive, isVendorRef } from './vendor-store.mjs'
 
 export const requiredSources = Object.freeze({
-  '@sislexa/identity': ['sislex/identity', 'bd5dcc9204e419dcf97227f46a19327ee3319e56'],
-  '@sislexa/billing': ['sislex/billing', 'cf8df21281aef55ef606a904f438ac17aef9077a'],
-  '@sislex/llm-runner': ['sislex/llm-runner', 'e3acfddd49f4d1709f99a7af086f6445191f3b0e'],
-  '@sislex/runner-contracts': ['sislex/llm-runner', 'e3acfddd49f4d1709f99a7af086f6445191f3b0e'],
+  '@sislexa/identity': ['sislex/identity', 'b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e'],
+  '@sislexa/billing': ['sislex/billing', 'db6000b7a87cfb200bf7cc697dbafafde6a60171'],
+  '@sislex/llm-runner': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
+  '@sislex/runner-contracts': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
   '@sislexa/sdk': ['sislex/sdk', 'f6313db5ff58cc35fa8dacc90b9844f9706dcfba'],
   '@sislexa/analytics': ['sislex/analytics', 'a85d8ff1dc1e3b4d5f9e2c7bf289669f0e9da942']
 })

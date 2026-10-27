@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-19
-checked: 0e050cbcd
+updated: 2026-10-25
+checked: ed05841a
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -122,6 +122,29 @@ active-operation uniqueness across environments-v2 statuses. Service deployment,
 Kanban/UI integration and production commissioning remain separate tasks.
 
 ## Identity repository and request authentication
+
+Identity PR #35 is merged at `67435604554cb27b1442c711c63f200531aaf380`.
+Core's Identity 1.5.2 archive `sislexa-identity-1.5.2-d3e0e16d58cd.tgz`
+declares source `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e` in
+`release-source.json`; its `apps/server/src/users/auth.ts` matches that
+merged owner implementation. Archive suffixes are not source commit IDs.
+
+In Identity `users/auth.ts`, POST `/api/session/verify` checks
+`signup.enabled` before redeeming a pending token: closure returns 404,
+does not create a user/session and leaves the token available after reopening
+within its lifetime. Signup requires string name/email/password and returns 400
+for other field types; malformed resend email remains a neutral 200 response.
+Resend rotates an unexpired pending verification token, invalidating the earlier
+link. Verification lifetime is 24 hours; reset lifetime is one hour. Expired
+verification returns 400 without a user/session; an expired reset returns 410
+on first redemption and 400 on reuse. Successful reset revokes user sessions.
+These behaviors live in Identity, not Core's historical users paths below.
+Identity `auth.signup.test.ts` at `3a66930564c3bb2baebfc8d3e85a04d15867fa41`
+checks all 15 combinations of name/email/password with null, number, boolean,
+array and object values, and asserts that closed verification returns neither
+cookie nor response token. Its mailbox is an injected in-memory capture;
+these tests do not establish SMTP delivery on a deployed stand.
+
 
 ### Core delegated chat adapter
 
@@ -610,7 +633,11 @@ SQL-комментариях внутри него **нельзя обратны
 | `llm_engines` | реестр HTTP-исполнителей LLM для админки: `name`, `kind` (`claude`/`codex`), `base_url`, открытый `token`, `enabled`, `allowed_roles` (JSON-массив ролей), `is_default`, `created_at` |
 | `model_prices` | поддерживаемые тарифы Codex/OpenAI: USD за 1M обычных, кэшированных, записанных в кэш и выходных токенов; базовые колонки означают Standard/short context, а `tiers_json` хранит дополнительные сочетания Standard/Batch/Flex/Fast mode и short/long context с nullable-ставками; источник и даты тарифа/обновления; стартовые строки обновляются только через `INSERT OR IGNORE` |
 
-**Фиксированный каталог Codex/OpenAI.** Источник продуктового порядка — `CODEX_MODELS` в `packages/shared/src/types.ts`: `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`. `DEFAULT_CODEX_MODEL` всегда берётся из первого элемента, поэтому модель по умолчанию — `gpt-6-astra`; неизвестная сохранённая модель остаётся отдельным пунктом UI, но не становится частью каталога. При смене движка в настройках CI выбирается первая разрешённая ролью модель, а при отсутствии разрешённой — первый каталоговый Codex-пресет.
+**Фиксированный каталог Codex/OpenAI.** Источник продуктового порядка — `CODEX_MODELS` в `packages/shared/src/types.ts`: `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`. `DEFAULT_CODEX_MODEL` всегда берётся из первого элемента, поэтому модель по умолчанию — `gpt-6-astra`; неизвестная сохранённая модель остаётся отдельным пунктом UI, но не становится частью каталога. При смене движка в настройках CI выбирается первая разрешённая ролью модель, а при отсутствии разрешённой — первый каталоговый Codex-пресет.
+
+**OpenAI catalog check, 2026-10-25.** Shared's catalog and Standard estimator now include GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna. Official model pages publish input/cached/cache-write/output rates of `2/0.1/2.5/10`, `2/0.2/2.5/10` and `0.1/0.01/0.125/0.5` USD per million tokens. Long-context rates double input/cache and multiply output by 1.5. The schema seeds these exact rates plus Batch/Flex (0.5x) and Fast (2x), for both contexts; existing manually edited rows are preserved. The effective date records this catalog review, not a claimed provider launch date. The REST price editor accepts up to six decimals, including Luna's fractional cache rates. Shared's fallback estimator still supports Standard only. The current contract does not distinguish 30-minute/12-hour cache writes, regional processing or Ultrafast; the seeded cache-write rate is the default 30-minute rate. Specialized audio, image and restricted-access research models are not general Codex presets. Core UI consumers need a published Shared update to receive the new presets.
+
+Sources: [pricing](https://developers.openai.com/api/docs/pricing), [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna).
 
 **Начальные тарифы OpenAI на 08.09.2026.** Точные Standard/short-context ставки и официальный URL хранятся в seed-блоке `apps/server/src/db/schema.ts`; для `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` это соответственно `10/1/12.5/50`, `4/0.4/5/20`, `2/0.2/2.5/12`, `0.2/0.02/0.25/1.2` USD за 1M токенов в порядке input/cached input/cache write/output. `INSERT OR IGNORE` делает повторное применение схемы идемпотентным: ручная цена не перезаписывается, а удалённая seed-строка восстанавливается. Контракт новой базы закреплён сценариями `TC-INT-1` и `TC-INT-2` в `apps/server/src/db/database.test.ts`.
 
@@ -874,7 +901,7 @@ USD за 1M обычных/кэшированных/записанных в кэ
 
 На `/api/preview` специальная HttpOnly `SameSite=Strict` cookie имеет приоритет
 над общей сессией: HTML-форма и fetch вложенного сайта не владеют CSRF оболочки.
-При прежнем порядке вход в собственный ChatAI внутри Reader возвращал `csrf`
+При прежнем порядке вход в собственный sislexa внутри Reader возвращал `csrf`
 ещё до запроса к сайту. Это не расширяет область preview-cookie: обычные API
 по-прежнему требуют CSRF или Bearer; недействительная preview-cookie не разрешает
 запрос. Проверки — `users/auth.previewSession.test.ts`, полный вход через два
@@ -900,7 +927,7 @@ cookie `vc_preview_run`, а `previewRunUser` в `auth.ts` принимает е�
 
 **Инвайты и саморегистрация (auth-roadmap п.8).** Таблица `invites` и её контракт описаны в `apps/server/src/db/schema.ts` и `packages/shared/src/admin.ts`; админ создаёт ссылку через `POST /api/admin/invites`, получает список через `GET`, отзывает через `DELETE /api/admin/invites/:token`, а создание фиксируется событием `invite_created`. Гость открывает `#/invite/<token>` — `App` до экрана логина рендерит `InviteRegister` (мосты `session.inviteInfo/register`): `GET /api/session/invite/:token` возвращает роль, срок и заметку либо 404 для истёкшего/исчерпанного инвайта; `POST /api/session/register` проверяет логин и пароль, применяет роль инвайта, атомарно расходует использование, пишет `registered` и сразу выдаёт сессию. `pruneInvites()` чистит истёкшие/исчерпанные записи старше недели.
 
-**Системное приглашение по email (auth-roadmap п.9).** У `POST /api/admin/invites` есть необязательный `email`: маршрут обрезает пробелы, приводит адрес к нижнему регистру, проверяет простую email-форму, сначала сохраняет инвайт, затем через общий `Mailer` отправляет письмо «Приглашение в ChatAI» с text/html-вёрсткой и ссылкой `<publicUrl>/#/invite/<token>` (`apps/server/src/routes/admin.ts`). База хранит адрес и время успешного завершения `Mailer.send` в `invites.email`/`emailed_at`; миграция старой SQLite добавляет обе колонки в `VoiceChatDb.migrate()`. Без `VC_SMTP_URL` console-mailer из `apps/server/src/users/mailer.ts` пишет письмо в лог и разрешает вызов, поэтому `emailed_at` выставляется; ошибка SMTP только логируется, не отменяет уже созданный инвайт и оставляет `emailed_at` пустым. Админская форма в `packages/admin-app/src/UsersAdmin.tsx` принимает необязательный адрес, а список показывает получателя и состояние «email отправлен»/«email не отправлен»; инвайт без адреса сохраняет прежний ручной сценарий с копированием ссылки.
+**Системное приглашение по email (auth-roadmap п.9).** У `POST /api/admin/invites` есть необязательный `email`: маршрут обрезает пробелы, приводит адрес к нижнему регистру, проверяет простую email-форму, сначала сохраняет инвайт, затем через общий `Mailer` отправляет письмо «Приглашение в sislexa» с text/html-вёрсткой и ссылкой `<publicUrl>/#/invite/<token>` (`apps/server/src/routes/admin.ts`). База хранит адрес и время успешного завершения `Mailer.send` в `invites.email`/`emailed_at`; миграция старой SQLite добавляет обе колонки в `VoiceChatDb.migrate()`. Без `VC_SMTP_URL` console-mailer из `apps/server/src/users/mailer.ts` пишет письмо в лог и разрешает вызов, поэтому `emailed_at` выставляется; ошибка SMTP только логируется, не отменяет уже созданный инвайт и оставляет `emailed_at` пустым. Админская форма в `packages/admin-app/src/UsersAdmin.tsx` принимает необязательный адрес, а список показывает получателя и состояние «email отправлен»/«email не отправлен»; инвайт без адреса сохраняет прежний ручной сценарий с копированием ссылки.
 
 **Сброс, временный пароль и смена пароля (auth-roadmap пп.10–12).** Колонки `users.reset_code_hash/reset_code_expires/must_change_password`. Админ: `POST /api/admin/users/:name/reset-code` → `{ code (8 символов A–Z0–9), expiresAt (+24 ч) }`, в БД хранится scrypt-хеш кода, событие `reset_code_issued`; кнопка «Код сброса» в карточке пользователя показывает код один раз. Пользователь на экране входа («Есть код сброса от администратора?») отправляет `POST /api/session/reset { name, code, password }`: политика пароля, лимит 5/час с IP, `redeemResetCode` ставит пароль, снимает код/замок/флаг, все сессии отзываются, выдаётся новая (`password_reset`). Временный пароль: `POST /api/admin/users` с `mustChangePassword: true` (флажок включён по умолчанию) → `SessionUser.mustChangePassword` в ответах login/me; preHandler отвечает 403 `{ error: 'password_change_required' }` на любые не-GET запросы к `/api/*` (сессионные роуты публичны), клиент при этом флаге показывает `ChangePasswordDialog` без возможности закрыть (только сменить или выйти). Смена своего пароля — `POST /api/session/password { current, next }` (текущий обязателен, политика, новый ≠ текущему), остальные сессии отзываются, событие `password_changed`; пункт «Сменить пароль» в меню аккаунта. Аватар — поле `UserPersonalization.avatar` (эмодзи или 1–2 символа) на странице персонализации, показывается в кнопке аккаунта сайдбара.
 
@@ -910,7 +937,7 @@ cookie `vc_preview_run`, а `previewRunUser` в `auth.ts` принимает е�
 
 **Переход на cookie-сессию: одноразовый эффект для открытых вкладок.** Старый бандл берёт Bearer из localStorage на каждый запрос. Как только любая вкладка того же origin загрузит новый бандл, `migrateLegacyToken` переносит токен в cookie и удаляет его из localStorage — соседние вкладки со старым бандлом остаются без Authorization, их мутации идут по cookie без `x-vc-csrf` и получают 403 `{ error: 'csrf' }` до перезагрузки (наблюдалось в Release Center сразу после деплоя 0.1.171). Лечится обновлением вкладки; данных не теряет.
 
-**Открытая регистрация с подтверждением email.** Включается администратором: `PUT /api/admin/signup { enabled, role }` (раздел «Открытая регистрация» над инвайтами в админке; хранится в `app_config` как `signup.enabled`/`signup.role`, роль новых по умолчанию developer). Публичный флоу: `GET /api/session/signup` → `{ enabled }` (клиент показывает ссылку «Зарегистрироваться» только при true); `POST /api/session/signup { name, email, password }` — логин `^[a-zA-Z0-9._-]{3,32}$`, email, `checkPasswordPolicy`, лимит 5/час с IP; заявка ложится в `email_verifications` (хеш токена, хеш пароля, 24 ч; повторная заявка на email/логин заменяет прежнюю), уходит письмо со ссылкой `<publicUrl>/#/verify/<token>`; занятый логин — 409, занятый email — тот же `{ ok: true }` без письма (не раскрываем чужие адреса). `POST /api/session/signup/resend { email }` перевыпускает токен ожидающей заявки. `POST /api/session/verify { token }` создаёт пользователя с ролью из настройки и `users.email` (уникальный индекс), пишет `signup_verified` и выдаёт сессию (`issueSession`); клиент `VerifyScreen` затем перезагружает страницу. Письма — `users/mailer.ts`: собственный SMTP-клиент без зависимостей (`smtp://user:pass@host:587` со STARTTLS или `smtps://…:465`, AUTH PLAIN/LOGIN, base64-тело, multipart text+html); без `VC_SMTP_URL` мейлер «консольный» — письмо целиком пишется в лог сервера (`mail (SMTP не настроен…)`), ответ заявки содержит `mailSent: false`, а экран «Проверьте почту» предупреждает об этом. Переменные окружения: `VC_SMTP_URL`, `VC_MAIL_FROM` (`ChatAI <no-reply@домен>`), `VC_PUBLIC_URL` (иначе ссылка строится из `x-forwarded-proto/host`). Для тестов `BuildOptions.mailer` подменяет отправку.
+**Открытая регистрация с подтверждением email.** Включается администратором: `PUT /api/admin/signup { enabled, role }` (раздел «Открытая регистрация» над инвайтами в админке; хранится в `app_config` как `signup.enabled`/`signup.role`, роль новых по умолчанию developer). Публичный флоу: `GET /api/session/signup` → `{ enabled }` (клиент показывает ссылку «Зарегистрироваться» только при true); `POST /api/session/signup { name, email, password }` — логин `^[a-zA-Z0-9._-]{3,32}$`, email, `checkPasswordPolicy`, лимит 5/час с IP; заявка ложится в `email_verifications` (хеш токена, хеш пароля, 24 ч; повторная заявка на email/логин заменяет прежнюю), уходит письмо со ссылкой `<publicUrl>/#/verify/<token>`; занятый логин — 409, занятый email — тот же `{ ok: true }` без письма (не раскрываем чужие адреса). `POST /api/session/signup/resend { email }` перевыпускает токен ожидающей заявки. `POST /api/session/verify { token }` создаёт пользователя с ролью из настройки и `users.email` (уникальный индекс), пишет `signup_verified` и выдаёт сессию (`issueSession`); клиент `VerifyScreen` затем перезагружает страницу. Письма — `users/mailer.ts`: собственный SMTP-клиент без зависимостей (`smtp://user:pass@host:587` со STARTTLS или `smtps://…:465`, AUTH PLAIN/LOGIN, base64-тело, multipart text+html); без `VC_SMTP_URL` мейлер «консольный» — письмо целиком пишется в лог сервера (`mail (SMTP не настроен…)`), ответ заявки содержит `mailSent: false`, а экран «Проверьте почту» предупреждает об этом. Переменные окружения: `VC_SMTP_URL`, `VC_MAIL_FROM` (`sislexa <no-reply@домен>`), `VC_PUBLIC_URL` (иначе ссылка строится из `x-forwarded-proto/host`). Для тестов `BuildOptions.mailer` подменяет отправку.
 
 **CSRF на сессионных роутах.** Префикс `/api/session/` публичный и общий preHandler его не проверяет, поэтому мутации, авторизованные cookie (без Bearer), проверяют `x-vc-csrf` сами (`csrfOk`): logout, logout-all, смена пароля, 2FA enable/disable, notices/seen. Инцидент 2026-08-28 на проде: вкладка со старым бандлом, лишившись localStorage-токена после миграции соседней вкладки, отправила `POST /api/session/logout` без Bearer — браузер приложил cookie, и общая сессия администратора была отозвана; после фикса такой запрос получает 403 и cookie не трогает.
 

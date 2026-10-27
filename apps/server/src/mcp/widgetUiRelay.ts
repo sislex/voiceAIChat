@@ -29,6 +29,8 @@ interface PendingRequest {
   answered: number
   firstError?: string
   timer: NodeJS.Timeout
+  expiresAt: number
+  expire(): void
   resolve(outcome: WidgetUiOutcome): void
 }
 
@@ -89,6 +91,7 @@ export class WidgetUiRelay {
       return Promise.resolve({ ok: false, error: `Слишком много действий в интерфейсе подряд (предел ${WIDGET_UI_RATE_LIMIT} в минуту). Останови цикл и объясни пользователю, что происходит.` })
     }
     const requestId = randomUUID()
+    const expiresAt = Date.now() + timeoutMs
     return new Promise((resolvePromise) => {
       const settle = (outcome: WidgetUiOutcome): void => {
         const entry = this.pending.get(requestId)
@@ -97,20 +100,31 @@ export class WidgetUiRelay {
         this.pending.delete(requestId)
         resolvePromise(outcome)
       }
+      const expire = (): void => {
+        if (!this.pending.has(requestId)) return
+        settle({
+          ok: false,
+          error: action.kind === 'confirm'
+            ? 'Время ожидания подтверждения истекло. Действие не выполнено; это не отказ пользователя и не ошибка оркестрации. Для повторного запроса вызови инструмент снова.'
+            : 'Приложение подключено, но не ответило на действие в интерфейсе.'
+        })
+        if (action.kind === 'confirm') {
+          for (const sink of this.sinks.get(userId) ?? []) {
+            sink({ t: 'widget.action.expired', conversationId, projectId, requestId })
+          }
+        }
+      }
       this.pending.set(requestId, {
         userId,
         conversationId,
         expected: sinks.size,
         answered: 0,
-        timer: setTimeout(() => settle({
-          ok: false,
-          error: action.kind === 'confirm'
-            ? 'Пользователь не ответил на запрос подтверждения.'
-            : 'Приложение подключено, но не ответило на действие в интерфейсе.'
-        }), timeoutMs),
+        expiresAt,
+        expire,
+        timer: setTimeout(expire, timeoutMs),
         resolve: settle
       })
-      const message: ServerMessage = { t: 'widget.action', conversationId, projectId, requestId, action }
+      const message: ServerMessage = { t: 'widget.action', conversationId, projectId, requestId, action, ...(action.kind === 'confirm' ? { expiresAt } : {}) }
       for (const sink of sinks) sink(message)
     })
   }
@@ -119,6 +133,10 @@ export class WidgetUiRelay {
   resolve(userId: string, requestId: string, outcome: WidgetUiOutcome, conversationId?: string): void {
     const entry = this.pending.get(requestId)
     if (!entry || entry.userId !== userId || (conversationId !== undefined && entry.conversationId !== conversationId)) return
+    if (Date.now() >= entry.expiresAt) {
+      entry.expire()
+      return
+    }
     if (outcome.ok) {
       entry.resolve({ ok: true, ...(outcome.result !== undefined ? { result: outcome.result } : {}) })
       return

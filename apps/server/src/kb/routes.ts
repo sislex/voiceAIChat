@@ -157,14 +157,18 @@ export function registerKbRoutes(app: FastifyInstance, kb: KnowledgeBaseService,
  * «Исследовать проект»: запуск сверки статей с кодом и состояние прогона.
  * Гейт — членство в проекте (тот же db.projects.getProject, что и у остальных знаний).
  */
-export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager): void {
-  app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
+export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, research: KbResearchManager | undefined): void {
+  app.post<{ Params: { id: string }; Body: { sinceSha?: string } }>('/api/projects/:id/kb/research', {
+    onRequest: async (_req, reply) => {
+      if (!research) return reply.code(503).send({ error: 'auxiliary_model_disabled', message: 'Исследование проекта недоступно в режиме текстового чата.' })
+    }
+  }, async (req, reply) => {
     const project = await db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
     try {
       // `sinceSha` — режим «по изменениям с коммита <sha>»: ручной фолбэк шага
       // CI-рана «Актуализировать базу знаний» (общий промпт, kb/codeUpdate.ts).
-      return research.start(uid(req), project, { sinceSha: req.body?.sinceSha })
+      return research!.start(uid(req), project, { sinceSha: req.body?.sinceSha })
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
     }
@@ -173,6 +177,6 @@ export function registerKbResearchRoutes(app: FastifyInstance, db: VoiceChatDb, 
   app.get<{ Params: { id: string } }>('/api/projects/:id/kb/research', async (req, reply) => {
     const project = await db.projects.getProject(uid(req), req.params.id)
     if (!project) return reply.code(403).send({ error: 'нет доступа к знаниям этого проекта' })
-    return research.get(req.params.id)
+    return research?.get(req.params.id) ?? null
   })
 }

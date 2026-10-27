@@ -1,6 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-07
+updated: 2026-10-24
+checked: 985b9e55
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -11,6 +12,8 @@ areas:
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/mcp/remoteBashMcp.ts
+  - apps/server/src/mcp/historicalEvidence.ts
+  - apps/server/src/server.ts
   - packages/shared/src/streamJson.ts
   - packages/shared/src/codexStream.ts
   - packages/shared/src/prompt.ts
@@ -31,6 +34,41 @@ areas:
 # LLM: claude/codex CLI, ходы, stream-json, gateway
 
 Module details: `llm-runner:README.md`
+
+## Scoped historical journal verification
+
+Core's remote MCP exposes `historical_evidence_verify(commandId)` through
+`mcp/historicalEvidence.ts`. It reads exact original bytes internally and
+returns only SHA256, byte count, the provisioned expected hash, comparison,
+run/command IDs and observation time. A mismatch is an MCP error even though
+the digest was successfully computed. It never returns journal text, source
+identifiers, credentials or raw adapter errors.
+
+`BuildOptions.historicalEvidence` is an optional trusted adapter, not a new
+permission issuer. Its `resolveRun` must resolve an existing active run capability
+and current per-command grants; `readJournal` supplies an immutable commissioned
+source as a byte stream. The server-provided remote MCP URL carries that
+capability in `evidence`; tool arguments accept only a command UUID, never a path,
+machine, grant or expected hash. Core checks the grant against the URL's project,
+agent and exact cwd, its expiry, and current `db.projects.getProject` access.
+It rechecks authority and the source binding after reading and withholds the
+digest if they changed. Streams exceeding 8 MiB are closed without a digest.
+There is no filesystem or shell fallback and no change to ordinary remote roots.
+
+No production source adapter or capability producer is commissioned by this
+change. With no adapter the operation returns `source_unavailable`; invalid
+scope is denied before a source read. Connecting historical originals remains
+a separate integration prerequisite. The tests use synthetic bytes and do not
+confirm historical hashes from task descriptions.
+
+For SISL-771 (run `4fec4aaf-3645-4c71-9059-97c34501f71c`), the values
+`c93b8b72d269858971335166311ca47d8ea2e3ccc0b1c7b548c4239ea2655f23` for command
+`c8855c44-89ff-4716-878d-5f8fb2126681` and
+`00e1a74178882690bf78e1b6d4fedd18f81ab32657f7e5bb65e0a79a913a6562` for command
+`020ee9a2-c0ef-44af-96cc-0a75a0e6508b` remain task-card claims, not observed
+hashes. The implemented boundary makes an independent hash-only check possible
+once an existing run capability and immutable sources are commissioned; it does
+not by itself make either original available or validate either value.
 
 ## Independent runner boundary
 
@@ -127,6 +165,22 @@ Core фиксирует оба значения до старта хода и п
 помощник формулировки больше не регистрируется сервером:
 `POST /api/prompt/suggest` отвечает 404; внутреннее применение
 `permissionMode` одноразовыми вызовами сохранено.
+
+**Public text-only auxiliary boundary.** With trusted server configuration
+`VC_CHAT_TEXT_ONLY=true`, Core does not construct the semantic KB reranker or
+the conversation-summary service. File and scoped KB searches, auto-context,
+KB MCP and internal KB RPC remain lexical; even an explicit
+`VC_KB_RERANK_PROVIDER=codex` or `claude` cannot enable an unaccounted model call.
+Previously stored summaries remain readable. Explicit summary refresh returns
+its existing 503 unavailable response; the automatic forty-message threshold
+cannot dispatch a summary model. Project research, image retouch, Image Studio
+Core generation (including internal RPC), and both Codex/upstream Anthropic
+gateway transports reject model execution with 503. REST research/retouch and
+the gateway reject before body parsing or external work. Request fields cannot
+re-enable these paths. This deliberately disables auxiliary model features until
+they have their own Billing admission and model-policy integration; it does not
+estimate or manufacture charges. Without the trusted text-only flag, existing
+auxiliary behavior is retained. Prompt suggestions remain unregistered (404).
 
 Статус входа обоих CLI сервер отдаёт на `/api/auth/status`, но сам уже не
 читает локальный `HOME`: при настроенном исполнителе `routes/rest.ts` получает
@@ -643,8 +697,15 @@ Chromium-цели и не исполняет эти команды в iframe. А
 после такого отказа ушёл писать файлы через `python3 -c` в `bash`, не смог и
 закончил ход, не создав ни одной правки, — ран при этом отчитался успехом (защиту
 от этого см. в [features/ci-runner.md](features/ci-runner.md#пустой-ход-модели-не-может-закончиться-успехом)).
-Путь вне `cwd` по-прежнему отвергается, но теперь отказ называет сам `cwd`, и
-модель может исправиться без человека. Границы закреплены в
+Without URL `root` parameters, paths outside `cwd` remain forbidden.
+Repeated `root=<absolute-directory>` query parameters grant access to additional
+owner workspaces on the selected machine. `read`, `edit` and `grep` use the same
+`remotePath` resolver: relative paths still start at `cwd`; absolute paths must
+be inside `cwd` or one of the roots. Rejections list all allowed roots. Roots
+must be absolute directories without `..` or NUL; filesystem roots (`/`, `C:/`)
+are rejected with HTTP 400 before tool execution. Windows comparisons ignore
+case and slash direction. These grants do not apply to other project machines.
+This version of the endpoint exposes no separate `write`, `glob` or `list` tools. Границы закреплены в
 `mcp/remoteBashMcp.test.ts`: абсолютный путь внутри `cwd` доходит до реестра,
 `/repos/other` и сосед с общим префиксом (`/repos/taskX` при `cwd=/repos/task`)
 отклоняются до обращения к машине, `..` внутри абсолютного пути запрещён,

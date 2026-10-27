@@ -1,10 +1,11 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-19
-checked: 0e050cbcd
+updated: 2026-10-26
+checked: 7ad8ad53
 areas:
   - apps/server/src
   - packages/knowledge/src
+  - packages/shared/src/environment.ts
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
@@ -418,7 +419,9 @@ request]}`; the dispatcher (`kanbanBridge/internal.ts`) rejects other method nam
 получает порт как `HttpMachines` (`machinesBridge/httpMachines.ts`): синхронные чтения — из зеркала, которое
 процесс машин наполняет по постоянному WebSocket событий `/internal/events` (снимки машин и PTY-сессий,
 события PTY, кадры владельцам, `agentReady`, журнал команд, запросы авторизации тоннелей); вызовы — RPC
-`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`). Ошибки
+`/internal/rpc` и потоковый exec `/internal/exec-stream` (общий формат `internal/execStream.ts`; пока команда
+работает, сервер раз в 30 с пишет пустую строку — иначе клиент на `fetch`/undici рвёт тело через 5 минут без
+данных, и молчаливая команда вроде снимка прод-базы падала с `terminated`). Ошибки
 файловых операций возвращаются с кодом и восстанавливаются как `AgentFsError`; буфер PTY (`ptyBufferText`) —
 полный, по RPC у процесса машин (тип у порта допускает `Promise`, консольный MCP ждёт `await`). При обрыве шины все машины
 считаются offline до переподключения. Ядро переправляет в процесс машин REST машин и установщики
@@ -614,6 +617,18 @@ Git-операции project mode используют тот же `GitWorkspace
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
 Те же методы проходят через schema-validated `/internal/make/core` RPC.
+
+`makeBridge/projectAdapters.ts` accepts ready `managed`, `thin-client` and
+`local-stand` base environments only when `machines[0]` matches the selected
+machine. Draft, provisioning, failed and other-machine environments cannot
+enable `options.canCreate` or create a stand. For a Core Make conversation
+(`sislex/voiceAIChat`), a `local-stand` host follows the existing live workflow:
+`attach` prepares `<reposRoot>/make-worktrees/<conversationId>` and posts
+`{workingCopyPath}` to `components/core/live`. A matching live binding reports
+`ready`; preview is obtained through the stand proxy at the gateway URL.
+Files and git resolve that conversation checkout, with the existing membership,
+repository, machine and path checks. The local launcher uses the same checkout
+via `SISLEXA_STAND_CORE_SOURCE`; see [local stand setup](deploy.md#isolated-local-stand-without-docker-npm-run-dev-stand).
 
 `server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
 Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is
@@ -860,9 +875,16 @@ list with status `stopped`; Files and Git skip them. A status poll also reads
 the stand's `/operations`: a running Kanban `live-start` job is reported as
 `installing` and `live-stop`/`override` as `switching`, since Kanban's details
 show the live entry only after the job finishes. Kanban detail statuses
-`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a managed, ready environment whose first machine
-is the requested agent. The same environment rule applies to `standPreview`.
-Missing bases are reported; Core never provisions a base environment implicitly.
+`ready`/`degraded` map to `running` and `recovering` to `starting`. Creation selects a host with a `managed` or `thin-client` environment in the
+`ready` state whose first machine is the requested agent. The shared
+`readyStandEnvironment` filter in `apps/server/src/makeBridge/projectAdapters.ts`
+is used by Make options/create and `standPreview`; draft/failed thin-client
+bases and bases assigned to another primary machine are rejected. Core never
+provisions a base environment implicitly.
+
+Thin-client attachment reuses the ordinary conversation-worktree path: Kanban
+receives that worktree for component live mode, and subsequent Files/Git operations
+stay scoped to it.
 During creation, Kanban can return 404 for stand details before publishing its
 manifest. Status then queries the same authorized host/stand `/operations`
 endpoint and reports `creating`, retaining `standId` and `hostProjectId`, when
@@ -895,8 +917,10 @@ File operations use the agent filesystem port. Git operations share the
 `projectGit` implementation through a scoped `GitWorkspaceService` view that
 rechecks machine permissions and retains command policy, locking and auditing.
 
-`previewUrl` comes from the stand proxy lease service when configured and is
-null when disabled; gateway addresses remain in `directUrls`. Kanban and agent
+`standPreview` returns the first HTTP(S) address from the stand's `gateway.urls`.
+Make keeps all gateway addresses in `directUrls`; its separate `previewUrl` comes
+from the stand proxy lease service when configured and is null when disabled.
+Kanban and agent
 failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.

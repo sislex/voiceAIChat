@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-10-27
+checked: 3bef4da01
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -43,6 +43,63 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## Public chat deployment isolation
+
+The limited `sislexa.by` installation is a separate deployment of **sislexa**.
+It does not change the product's default application catalog, model access,
+execution modes or voice policy. The owner's 2026-10-20 instruction preserves
+`http://89.125.68.35/` on its existing full-feature version: no deployment,
+restart, configuration change or data migration there is part of this launch.
+Domain DNS, real mail and the public Codex service account remain commissioning
+work; a passing local candidate is not an already provisioned public target.
+
+The read-only baseline on 2026-10-20 is Core `0.1.480`, commit
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, image `voicechat-server` at
+`sha256:bdef5fdf0080423e188bb9794968196cfdb7ea47b5f271ab4660f1fe1dc20913`.
+HTTP port 80 returns a Caddy 301 to HTTPS; the direct port 8787 health endpoint
+returns 200. A local client's missing TLS issuer is not evidence of an app outage.
+Authenticated `/api/system/applications` reports `coreId=localhost` and all seven
+local apps enabled. Docker inspection confirms Make, Projects, readers, Image
+Studio, Identity, Billing, Analytics and both voice services remain running.
+
+| Boundary | Existing full installation (preserve) | Local public-chat candidate | New public installation (required, not yet provisioned) |
+| --- | --- | --- | --- |
+| Address / Compose project | `89.125.68.35`, `voiceaichat` | M2 `127.0.0.1:23001`, `sx-dev-m2-07fb81fd` | `https://sislexa.by`, distinct target and project |
+| Core / component identity | `localhost` / `production` | `stand-dev-m2-public-chat` for both | Distinct `VC_CORE_ID` and component `environmentId` |
+| Core data | `voicechat-server-data` volume | Stand `dev-864e75ef-dd2/voicechat-data` bind | Dedicated data root/volume and outbox |
+| PostgreSQL / Billing | `voiceaichat_vc-postgres` / `voiceaichat_vc-billing-data` | Stand PostgreSQL / operator `public-chat-v1/billing-data` | Separate database, ledger and backup set |
+| Component state | `/etc/voicechat/components-s3-0.1.334` | Operator `public-chat-v1/components` | New registries, directional grants and session secrets |
+| Listening ports | Existing Caddy 80/443 and Core 8787 | Gateway 23001, Core 17801, loopback only | Own bindings; do not replace/reload the old Caddy |
+
+A new Compose project name alone does **not** isolate Core data: root Compose
+fixes `volumes.vc-data.name` to `voicechat-server-data`. The new installation must
+explicitly override that name or bind a dedicated Core data directory. Inspect
+the fully resolved Compose mount sources, database destination, component roots,
+runner profiles and port bindings before any start. Never copy provider registries,
+stand empty-password policy or the M2 personal Codex login into the public site.
+Internal service names such as `/run/sislexa/provider` can match inside containers;
+their host mount sources and issuance environments must be separate.
+
+The explicit public configuration is `VC_APPLICATIONS=chat,identity`,
+`VC_CHAT_MODELS=codex:gpt-5.6-luna,codex:gpt-5.6-terra,codex:gpt-5.6-sol`,
+`VC_CHAT_TEXT_ONLY=true`, `VC_CHAT_REQUIRE_BILLING=true`, `VC_VOICE=off`, and the
+separate Billing ledger's `5000000` / `Europe/Minsk` daily policy. Unset model
+policy, false text-only/required-Billing flags and default voice-on behavior
+remain available to other deployments. Do not put these public restrictions in
+shared defaults or change the existing production ledger's persisted policy.
+
+Publication and deployment are separate. The existing Release Center project
+`e3dea006-b6f7-45ea-8fa3-97502501456d` targets the old production agent
+`02729d2e-be0f-4621-ac2b-8fd1ff39ff93` and `/usr/local/bin/voicechat-deploy`.
+Do not use that target for this launch, edit its production settings, or invoke
+the installed deploy wrapper. `release-train run` without `--deploy` still merges
+PRs and submits release-branch preparation to that Release Center;
+`run --resume` preserves a journal's original deploy intent and target.
+Consequently neither command is a publication-only shortcut here. Use reviewed
+owner/Core PRs and clean immutable artifact publication, then stop before any
+release-environment operation until a distinct public target is configured.
+See the [reviewed publication sequence](../plans/public-chat-v1.md#reviewed-publication-sequence).
 
 ## Deployment application profiles
 
@@ -113,6 +170,15 @@ profiles and empty tool inventory before enabling registration. Set
 `VC_CHAT_REQUIRE_BILLING=true` on a metered public installation: Core then refuses
 to start without its Billing dependency instead of silently using legacy
 unaccounted turns. Once configured, Billing failures already deny admission.
+
+The same trusted text-only policy also disables auxiliary model work that has
+no Billing admission: semantic KB reranking, automatic/manual conversation
+summaries, project research, image retouch/Image Studio generation, and the
+Anthropic-compatible gateway. KB lexical search and stored summary reads remain
+available. Explicit runner/backend settings cannot re-enable these features in
+public mode. See [the auxiliary boundary](llm.md) and include ambiguous KB input
+and a denied daily-budget admission in release regression; a successful main-turn
+settlement alone does not prove that no auxiliary call was dispatched.
 
 The Billing Compose layer forwards optional `BILLING_DAILY_USER_MICRO_USD`
 and `BILLING_DAILY_USER_TIME_ZONE` without inventing empty defaults. For the
@@ -376,6 +442,95 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
 
+### Isolated local stand without Docker (`npm run dev:stand`)
+
+`npm run dev:stand` (`scripts/dev-stand-local.mjs`) starts a complete Sislexa copy on
+one machine without Docker: Identity, Billing, Analytics, Core, Kanban, Make, Web
+Reader (with the web-recorder build), Playwright Reader, browser runner, Image
+Studio, TTS, STT, automation runner, the three application frontends and Core UI.
+Servers run with `tsx watch`, Core UI with Vite HMR. Only the LLM Runner is
+external. `npm run dev:stand:status` lists this stand's processes and ports;
+`npm run dev:stand:stop` stops only them and keeps the data. A repeated start
+reuses running processes (pid files) and refuses ports held by other processes.
+
+Everything belongs to the stand directory `SISLEXA_STAND_HOME` (default
+`~/.sislexa/stands/<SISLEXA_STAND_NAME>`, name `local`): `src/<repo>` git
+worktrees on branch `stand/<name>` created from the owner clones in
+`SISLEXA_STAND_SOURCES` (default `~/sislexa-dev`) at `SISLEXA_STAND_REF`
+(default `origin/dev`), `data/`, `logs/<service>.log`, `run/<service>.pid`,
+`components/` (generated by `scripts/component-installation.mjs` with the stand
+ports; Core's `legacyScopes` also gets `kanban.core|events|exec`, as in
+production) and `private/` (mode 700: generated secrets and the session secret
+shared by Identity and Core). Dependencies are cloned from the owner clone's
+`node_modules` (APFS clonefile) when `package-lock.json` is identical, otherwise
+installed with `npm ci --prefer-offline`.
+
+Ports are `SISLEXA_STAND_PORT_BASE` (default 31000) plus the production port
+suffix (Core 31787, Kanban 31789, Make 31788, Identity 31798, …), Core UI on
+`SISLEXA_STAND_UI_PORT` (default 35273) and the frontends on UI port + 8..10.
+The Postgres database is `sislexa_stand_<name>` on `SISLEXA_STAND_PG`. When it is
+created, `SISLEXA_STAND_SEED` (a `pg_dump -Fc` file) is restored once; sessions,
+queued turns, conversations (unless `SISLEXA_STAND_KEEP_CONVERSATIONS=1`) and
+remote machines' presence are cleared, and `SISLEXA_STAND_USERS_PASSWORD`, if set,
+becomes every user's test password.
+
+The LLM Runner comes only from `SISLEXA_STAND_RUNNER_FILE` (default
+`~/.config/sislexa/dev-stand/runner.env`, mode 600) with
+`VC_LLM_RUNNER_CLAUDE_URL`, `VC_LLM_RUNNER_CODEX_URL` and `VC_LLM_RUNNER_TOKEN`;
+the start fails without it. Model tool callbacks (Make, KB, Kanban MCP) use
+`127.0.0.1` stand addresses, so the runner must run on the same machine.
+
+To show the stand in the preview of another instance's Make, use the thin-client
+stand (Kanban `environments-service.md`): in that instance create a
+`thin-client` environment for the Core UI project on the local machine with
+`SISLEXA_CORE_URL` = the stand Core and `SISLEXA_TOKEN` = an API token issued by
+the stand, create a dev stand on that environment and attach a Make conversation
+of the Core UI project. The preview UI then runs from the conversation's Make
+worktree while every API request goes to the stand's servers; the managing
+instance is not restarted or reconfigured. Make edits that worktree only: the
+thin-client stand supports the `core-ui` component, so a conversation in the
+Core project cannot attach to it.
+
+**Core conversations in Make.** On the managing instance, select a ready
+Kanban `local-stand` environment on the project's primary machine and attach a
+Make conversation for `sislex/voiceAIChat` (component `core`). Set the environment's
+`SISLEXA_STAND_SHARE` to the absolute root of the managing dev instance. Make
+creates the conversation checkout at `<reposRoot>/make-worktrees/<conversationId>`
+and posts that path to `components/core/live`. Preview uses the stand gateway
+through Core's stand proxy; editor and git operations use that same checkout.
+
+`npm run dev:stand:run` (or `node scripts/dev-stand-local.mjs run`) starts the
+stand and remains in the foreground for the agent's process supervisor.
+SIGTERM/SIGINT stops the stand's service groups and exits 0; loss of Core or
+Core UI stops the remaining services and exits 1. Startup failures also stop
+the services. `SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
+no voiceAIChat worktree is created and its dependencies are not installed again.
+Other repositories keep the normal source/dependency preparation, defaulting to
+owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).
+Kanban supplies the stand name, shared root, Core checkout, UI/gateway port and
+reserved `SISLEXA_STAND_PORT_BASE`; Core and Make use base + 787 and base + 788.
+
+**Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
+dev-mode instance with `env/secrets.env`, `env/core.env`, `env/make.env`) makes the
+stand run only Core, Make and Core UI from its working copies, on that instance's
+database. Everything else is reused from the shared instance: secrets and LLM Runner
+settings from its env files, Identity, Kanban, Billing, Reader and the other
+services from its `core.env` URLs, its session secret (so a login on one UI is
+valid on the other; cookies on `127.0.0.1` are shared across ports) and a copy of
+its component configuration (`<home>/components-shared`, owner-only modes kept)
+whose Core↔Make links point at the stand. `VC_CORE_ID` stays the same, as required
+for builds sharing a database. Data directories are `<home>/data/shared/{core,make}`,
+so files written by one instance (attachments, Make workspaces) are not visible to
+the other. The mode is stored in `<home>/mode.json`; switching modes requires
+`npm run dev:stand:stop` first, and an empty `SISLEXA_STAND_SHARE=` returns to the
+isolated stand (its own database is kept).
+
+Limits of shared mode: machines connect to the shared instance's Core, so machine
+operations through the stand Core see them offline. Make stand operations through
+the stand Core fail with `make_request_denied`: Core passes Kanban one-time
+`make_request_*` grants that live in the issuing Core's memory, and the shared
+Kanban verifies them against its own `VC_CORE_URL` (the shared instance).
+
 ### Login and locations on the stand machine
 
 A stand's base environment is a Docker Compose project whose Postgres database
@@ -412,7 +567,7 @@ Stand runtime files are located as follows:
 - development processes and worktrees are under
   `~/.voicechat/dev-processes/`, whose registry is `registry.json`;
 - the base environment's Compose directory is
-  `<ChatAI data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
+  `<sislexa data>/projects/<projectId>/environments/stands/<baseId>/temporary/repository/`.
 
 `npm run dev:gateway` runs a Node HTTP proxy without Docker. Supply
 `SISLEXA_STAND_MANIFEST` (absolute manifest path), `SISLEXA_BASE_STAND_URL`
@@ -650,6 +805,17 @@ the operation retains its failed exit code and does not claim Compose completed.
 Docker's nanosecond timestamps are normalized to microseconds before parsing so
 the same proof works on production hosts with Python 3.9/3.10; operation time
 boundaries remain milliseconds.
+Recovery also binds the operation's health endpoint to the selected `voicechat`
+container before reading health or writing a receipt. Docker must use a local
+Unix socket; the recorded URL must be plain HTTP on a literal loopback address
+at `/api/health`, without credentials, query or fragment. Its host port and IP
+family must match a published binding of Core's configured `PORT` (8787 by
+default). Health requests bypass proxies and reject redirects. A DNS name,
+reverse proxy, host networking, remote Docker daemon or another stack's published
+port cannot provide this proof and requires a different recovery procedure.
+Matching Core commits alone cannot link one stack's health to another stack's
+container inventory. Rejected target checks preserve the uncertain journal and
+create no recovery receipt.
 This tooling change is validated with disposable fixtures and is not a live Core
 rollout or evidence that S0 is accepted.
 
@@ -1429,7 +1595,7 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
 **Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с
-compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='sislexa <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
 
 ## Почта на проде (настроено 29.08.2026)
 
@@ -3037,6 +3203,6 @@ The subsequent train releases the remaining owners without republishing Make.
 - sislex/webreader: 1.3.2
 - sislex/image-studio: 1.1.3
 - sislex/identity: 1.5.1
-- sislex/sislexa-kanban: 0.2.33
+- sislex/sislexa-kanban: 0.2.42
 
 <!-- release-train:0e091d1f-17fa-431c-9aad-2af913d0d697 -->

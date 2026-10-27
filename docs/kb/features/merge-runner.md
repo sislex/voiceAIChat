@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-10-15
-checked: 9f17e9b1
+updated: 2026-10-24
+checked: 1aa1240a8
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -136,7 +136,38 @@ target when the project setting changes. Машина merge-рана
 partial unique index и транзакционная проверка оставляют не больше одного активного
 merge-рана задачи, а повторное нажатие возвращает его.
 
+## Prepared repository origin recovery
+
+SISL-763 exposed a legacy-origin mismatch: its pushed workspace was published
+to `sislex/sislexa-kanban`, while the board project points to
+`sislex/voiceAIChat`; preflight therefore queried the configured project origin,
+where `SK-763` does not exist. Kanban's owner implementation may resolve the
+saved workspace origin only when it maps to one unique existing project and the
+requesting owner already has access. It neither changes project configuration
+nor grants permissions.
+
+The recovered origin is used through a separate prepared-repository merge clone,
+so the existing merge gates remain mandatory. Operator ancestry checks run Git
+on the selected machine executor against a disposable full-history snapshot,
+not inside the Kanban server container (which has no Git executable). Transport
+or executor failures remain an unknown result rather than evidence that a commit
+is absent from history. See
+`kanban:ci-qa-merge.md#prepared-repository-recovery-sisl-776`.
+
 ## Исполнение и защита main
+
+The implementation now belongs to `sislex/sislexa-kanban`, in
+`apps/server/src/merge/runManager.ts`. Its `docs/kb/ci-qa-merge.md` documents
+multi-repository coordination. Owner merge clones are separate from development
+checkouts and keyed by SHA-256 of the normalized origin URL. A foreign clone is
+renamed for retention and recreated before fetch. Every repository completes
+preparation before sequential lease-protected publication; owner failure fails
+the parent and aborts peers. Already published parts are reported explicitly.
+`POST /api/merge/runs/:runId/reconcile` checks recorded source and current feature
+ancestry in each origin target without pushing. Aggregate containment completes
+the run and moves the card to done; otherwise it records failed with per-part
+results. The endpoint requires task:merge and access to the run's machine.
+
 
 Менеджер использует один процесс-глобальный слот. До мутаций он проверяет
 права и статус задачи в БД, доступность машины и workspace, отсутствие другого

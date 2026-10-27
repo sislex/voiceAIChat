@@ -1,6 +1,6 @@
 # voiceAIChat agent instructions
 
-The product is **Sislexa**. This repository is its Core service. Read this file
+The product is **sislexa**. This repository is its Core service. Read this file
 at the start of every session; load package instructions and `docs/kb/` only when
 the task needs them. Keep this file small.
 
@@ -65,7 +65,11 @@ applications plus the tests of the changed files and of the code they touch
 (`npm run gate:quick -- --base <sha>`; `test:files -- <files>` reruns failed test files first).
 The **full gate** (`npm run gate` / `gate:all`) runs in the background on fresh `main` and in the
 release regression; a failure there becomes a priority fix task. Add tests in the same step as the
-implementation. Unknown root/config/lock changes make the quick gate a full gate. Trust the
+implementation. Unknown root/config/lock changes make the quick gate a full gate (a root
+`package.json` edit limited to `scripts` does not). If the gate fails only in tests your diff does
+not touch, rerun those files once with `test:files`; if they still fail, run them on `origin/dev`.
+When they fail there too or are flaky, do not rerun the gate again: finish and report the files and
+evidence as a pre-existing failure. Trust the
 command exit code, not filtered output. Plan: [delivery-fast-gate](docs/plans/delivery-fast-gate.md);
 details: [testing conventions](docs/kb/conventions.md) and
 [testing operations](docs/kb/testing-operations.md#development-gate-npm-run-gatefast).

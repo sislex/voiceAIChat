@@ -94,7 +94,8 @@ class StandTest(unittest.TestCase):
             'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
         self.env = {**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'],
             'DOCKER': str(self.bin / 'docker'), 'FAKE_LOG': str(self.root / 'calls'),
-            'VC_ENVIRONMENT_START_TIMEOUT': '0.05', 'SECRET': SECRET}
+            # Successful probes spawn Python tools; 50 ms flakes under a parallel Core gate.
+            'VC_ENVIRONMENT_START_TIMEOUT': '2', 'SECRET': SECRET}
 
     def invoke(self, action='provision', args=None, role='primary', **env):
         (self.root / '.env').write_text(''.join(k + "='" + v + "'\n" for k, v in self.values.items()))
@@ -243,7 +244,7 @@ class StandTest(unittest.TestCase):
 
     def test_health_failures_and_redacted_diagnostics(self):
         for env in ({'HEALTH': 'unhealthy'}, {'HEALTH_COMMIT': 'b'*40}, {'FAIL': '-fsS'}, {'HEALTH_NOT_OK': '1'}, {'MISSING_SERVICE': 'postgres'}):
-            code, rows, calls = self.invoke(**env)
+            code, rows, calls = self.invoke(VC_ENVIRONMENT_START_TIMEOUT='0.05', **env)
             self.assertEqual(code, 30)
             self.assertEqual(rows[-1]['stage'], 'health')
             self.assertTrue(any('[redacted]' in r['log'] for r in rows))

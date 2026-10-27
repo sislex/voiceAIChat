@@ -33,7 +33,7 @@ const vendorSpec = (spec) => vendorAssetFromRef(spec) !== null
 export function ownerPinChanges(files, readBefore, readAfter) {
   for (const file of [...MANIFESTS, 'deploy/tools.lock.json', 'package-lock.json'])
     assertReleaseVersions(parse(readAfter(file)), `Owner pins ${file}`)
-  const packages = new Set(), tools = new Set(), archives = []
+  const packages = new Set(), tools = new Set(), archives = [], rootScripts = []
   let images = false
   const assets = new Map()
   for (const file of files.filter(isOwnerPinFile)) {
@@ -76,8 +76,15 @@ export function ownerPinChanges(files, readBefore, readAfter) {
     if (PACKAGE_JSON.test(file)) {
       const before = parse(readBefore(file)), after = parse(readAfter(file))
       if (!before || !after) return { unproven: `${file}: не удалось прочитать` }
-      const rest = (value) => Object.fromEntries(Object.entries(value).filter(([key]) => !DEPENDENCY_FIELDS.includes(key)))
+      // Root npm scripts are proven separately: their consumers are the tests they reference.
+      const own = file === 'package.json' ? ['scripts'] : []
+      const rest = (value) => Object.fromEntries(Object.entries(value).filter(([key]) => !DEPENDENCY_FIELDS.includes(key) && !own.includes(key)))
       if (!same(rest(before), rest(after))) return { unproven: `${file}: изменены поля кроме зависимостей` }
+      if (own.length) {
+        const a = before.scripts ?? {}, b = after.scripts ?? {}
+        for (const name of new Set([...Object.keys(a), ...Object.keys(b)]))
+          if (a[name] !== b[name]) rootScripts.push({ name, before: a[name] ?? null, after: b[name] ?? null })
+      }
       for (const field of DEPENDENCY_FIELDS) {
         const a = before[field] ?? {}, b = after[field] ?? {}
         if (!same(Object.keys(a).sort(), Object.keys(b).sort())) return { unproven: `${file}: изменён состав ${field}` }
@@ -96,5 +103,5 @@ export function ownerPinChanges(files, readBefore, readAfter) {
     if (!name) return { unproven: `vendor/${archive}: архив не описан в манифестах владельцев` }
     packages.add(name)
   }
-  return { packages: [...packages].sort(), tools: [...tools].sort(), images, archives: archives.sort() }
+  return { packages: [...packages].sort(), tools: [...tools].sort(), images, archives: archives.sort(), rootScripts }
 }

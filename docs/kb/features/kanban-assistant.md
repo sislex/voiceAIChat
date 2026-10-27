@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-10-17
-checked: 1855419b
+updated: 2026-10-24
+checked: 556a06ce
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -120,13 +120,31 @@ areas:
   (инцидент 2026-09-02, см. [llm.md](../llm.md));
 - в `auto` обычные изменения применяются сразу;
 - в `confirm` любое изменение спрашивается у пользователя;
-- **необратимое наружу спрашивается всегда**, в обоих режимах: настройки
-  проекта, merge в основную ветку, запуск плана работ.
+- Irreversible-action classification is owned by `allowMutation` in the extracted
+  `sislexa-kanban` repository. The former Core list (project settings, merge and
+  plan start) is historical and must not be used to infer the current policy.
+  Consult `kanban:ci-qa-merge.md` and the owner's `apps/server/src/mcp/kanbanMcp.ts`
+  for `orchestration_start`, operator mode and the `auto`/`confirm` decision.
+  The SK-68 Core diff changes confirmation transport only; it does not establish
+  which tools bypass confirmation or which actions are classified as irreversible.
 
 Подтверждение — не отдельный механизм, а действие UI-моста `confirm`: сервер
 блокирует вызов инструмента (таймаут 5 минут против 15 секунд у остальных
 действий), браузер показывает обычный `useConfirm` с расшифровкой «было →
 стало» (`formatConfirmRows`), ответ возвращается инструменту как `confirmed`.
+
+For the SK-68 confirmation-expiration investigation (also searched under
+`kanban:ci-qa-merge.md`), Core's verified behavior is: a confirmation has an
+absolute five-minute deadline; expiration ends the pending request with an
+explicit retryable tool error and sends `widget.action.expired` to that user's
+clients. A late acceptance is rejected even if the timer callback has not run.
+An explicit `confirmed:false` response is a user decision and sends no expiration
+event. See [the transport contract](../protocol.md)
+and `apps/server/src/mcp/widgetUiRelay.ts` for details. Core UI owns the dialog;
+the optional bridge callback is a contract, not proof that a published client
+already disables its Apply button. The owner policy and UI implementation must
+be verified in their respective repositories before declaring the complete
+`orchestration_start` acceptance scenario delivered.
 
 **Идемпотентность и аудит.** Каждый изменяющий инструмент обёрнут в `mutating`:
 ключ `toolCallKey(conv, turn, tool, args)` не даёт повтору вызова завести

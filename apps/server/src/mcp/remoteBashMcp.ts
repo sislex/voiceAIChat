@@ -6,6 +6,7 @@
 // эндпоинт выполняет команды и не должен быть открыт даже на LAN.
 
 import { z } from 'zod'
+import type { HistoricalEvidence } from './historicalEvidence.js'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -50,7 +51,7 @@ function quoteShell(value: string): string {
  * Приводит абсолютный путь к пути от `cwd`. Windows-путь сравниваем без учёта
  * регистра (там регистр не различает файлы), POSIX — как есть.
  */
-function pathInsideCwd(base: string, absolute: string): string {
+function pathInsideCwd(base: string, absolute: string): string | undefined {
   const slashed = (p: string): string => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '')
   const windows = /^[A-Za-z]:/.test(base) || /^[A-Za-z]:/.test(absolute)
   const fold = (p: string): string => (windows ? p.toLowerCase() : p)
@@ -58,34 +59,55 @@ function pathInsideCwd(base: string, absolute: string): string {
   const a = slashed(absolute)
   if (fold(a) === fold(b)) return ''
   if (fold(a).startsWith(`${fold(b)}/`)) return a.slice(b.length + 1)
-  throw new Error(
-    `Путь за пределами рабочей директории запрещён: рабочая директория — ${base}, ` +
-      `передавай путь внутри неё (относительный или абсолютный)`
-  )
+  return undefined
 }
 
 /**
  * Абсолютный путь на машине по пути, который назвала модель. Относительный
- * считается от `cwd`; абсолютный принимается, если лежит внутри `cwd`.
+ * Relative paths use cwd; absolute paths must be inside cwd or a URL root.
  *
  * Абсолютные пути разрешены намеренно: модель видит их в промпте и в выводе
  * собственных bash-команд, а прежний глухой отказ «путь должен быть
  * относительным» она читала как «инструменты привязаны к чужому workspace» —
  * и уходила править файлы через shell. Так ран d2ba80bc (CHAT-108) закрылся
- * успехом, не создав ни одной правки. Выход за пределы `cwd` по-прежнему
- * запрещён, но теперь отказ называет сам `cwd`, и модель может исправиться.
+ * успехом, не создав ни одной правки. Rejections list cwd and all allowed roots.
  */
-export function remotePath(cwd: string | undefined, inputPath: string): string {
+export function remotePath(cwd: string | undefined, inputPath: string, roots: readonly string[] = []): string {
   if (!cwd) throw new Error('Рабочая директория cwd не задана')
+  validateRoots(roots)
   if (!inputPath || inputPath.includes('\0')) throw new Error('Путь не задан')
-  const relativePath = /^(?:[A-Za-z]:[\\/]|[\\/])/.test(inputPath)
-    ? pathInsideCwd(cwd.replace(/[\\/]+$/, ''), inputPath)
-    : inputPath
-  const parts = relativePath.split(/[\\/]+/)
-  if (parts.includes('..')) throw new Error('Путь за пределами рабочей директории запрещён')
-  const clean = parts.filter((part) => part && part !== '.').join('/')
-  const base = cwd.replace(/[\\/]+$/, '')
+  const allowed = [cwd, ...roots]
+  const rejection = () => new Error(
+    `Путь за пределами рабочей директории запрещён: разрешённые корни — ${allowed.join(', ')}; ` +
+      'передавай относительный путь от cwd или абсолютный внутри разрешённых корней'
+  )
+  if (inputPath.split(/[\\/]+/).includes('..')) throw rejection()
+  let base = cwd
+  let relativePath = inputPath
+  if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(inputPath)) {
+    const matched = allowed.find((root) => pathInsideCwd(root, inputPath) !== undefined)
+    if (matched === undefined) throw rejection()
+    base = matched
+    relativePath = pathInsideCwd(base, inputPath)!
+  }
+  const clean = relativePath.split(/[\\/]+/).filter((part) => part && part !== '.').join('/')
+  base = base.replace(/[\\/]+$/, '')
   return clean ? `${base}/${clean}` : base
+}
+
+/** URL roots are explicit directory grants, never relative paths or filesystem roots. */
+function validateRoots(roots: readonly string[]): void {
+  for (const root of roots) {
+    const normalized = root.replace(/\\/g, '/')
+    const parts = normalized.split('/').filter((part) => part && part !== '.')
+    if (
+      !/^(?:[A-Za-z]:\/|\/)/.test(normalized) ||
+      root.includes('\0') || parts.includes('..') ||
+      parts.length === 0 || (/^[A-Za-z]:/.test(normalized) && parts.length === 1)
+    ) {
+      throw new Error(`Недопустимый root: ${root}; нужен абсолютный каталог без .., не корень файловой системы`)
+    }
+  }
 }
 
 function fileText(dataBase64: string | undefined): string {
@@ -211,7 +233,8 @@ export function registerRemoteBashMcp(
   limits?: () => Promise<ToolOutputLimits>,
   projectMachines?: (projectId: string) => Promise<RemoteMcpMachine[]>,
   fileContexts?: (token: string) => RemoteImageAttachment[] | undefined,
-  commandGate?: CommandGate
+  commandGate?: CommandGate,
+  historicalEvidence?: HistoricalEvidence
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -227,11 +250,19 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string; conv?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const agentId = req.query.agent ?? ''
+        const roots = req.query.root === undefined ? [] : [req.query.root].flat()
+        try {
+          validateRoots(roots)
+        } catch (err) {
+          return reply.code(400).send({ error: errorMessage(err) })
+        }
+        const rootsFor = (target: { agentId: string }): readonly string[] =>
+          target.agentId === agentId ? roots : []
         // ro=1 — фаза плана CI: инструмент нужен для исследования рабочей копии,
         // но менять её нельзя (см. planMode.ts).
         const readOnly = req.query.ro === '1'
@@ -310,6 +341,25 @@ export function registerRemoteBashMcp(
         }
 
         const server = new McpServer({ name: 'remote', version: '1.0.0' })
+        server.registerTool(
+          'historical_evidence_verify',
+          {
+            description: 'Сверяет SHA256 исходного исторического журнала, явно разрешённого текущему рану. Возвращает только хеш и размер, без содержимого и приватных путей. Требует подключённого источника и действующих полномочий рана.',
+            inputSchema: { commandId: z.string().uuid().describe('ID команды из разрешённого набора доказательств рана') }
+          },
+          async ({ commandId }) => {
+            const result = historicalEvidence
+              ? await historicalEvidence.verify({
+                token: req.query.evidence, projectId: req.query.project,
+                agentId, cwd: req.query.cwd
+              }, commandId)
+              : { status: 'source_unavailable' as const }
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+              isError: result.status !== 'verified' || !result.matches
+            }
+          }
+        )
         server.registerTool(
           'bash',
           {
@@ -413,7 +463,7 @@ export function registerRemoteBashMcp(
             const machine = (args as { machine?: string }).machine
             try {
               const target = resolveMachine(machine)
-              const result = await registry.fsRead(target.agentId, remotePath(target.cwd, path))
+              const result = await registry.fsRead(target.agentId, remotePath(target.cwd, path, rootsFor(target)))
               const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
               return {
                 content: [{
@@ -519,7 +569,7 @@ export function registerRemoteBashMcp(
             const machine = (args as { machine?: string }).machine
             try {
               const machineTarget = resolveMachine(machine)
-              const target = remotePath(machineTarget.cwd, path ?? '.')
+              const target = remotePath(machineTarget.cwd, path ?? '.', rootsFor(machineTarget))
               const include = glob ? ` --include=${quoteShell(glob)}` : ''
               const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
               const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
@@ -573,7 +623,7 @@ export function registerRemoteBashMcp(
             try {
               if (readOnly) throw new Error('Отклонено: режим «План» — правки файлов запрещены')
               const target = resolveMachine(machine)
-              const absolutePath = remotePath(target.cwd, path)
+              const absolutePath = remotePath(target.cwd, path, rootsFor(target))
               const current = fileText((await registry.fsRead(target.agentId, absolutePath)).dataBase64)
               const count = current.split(oldString).length - 1
               if (count === 0) throw new Error('Текст oldString не найден')

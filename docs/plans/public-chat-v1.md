@@ -1,4 +1,4 @@
-# Sislexa Chat v1 public launch
+# sislexa Chat v1 public launch
 
 Status: local candidate acceptance and public commissioning preparation, 2026-10-20. This is a launch
 plan, not a claim that the public site or all listed changes are deployed.
@@ -24,6 +24,232 @@ plan, not a claim that the public site or all listed changes are deployed.
 - Acceptance uses the existing M2 Docker stand `dev-m2`, gateway port 23001.
   Preserve data and the existing stand-only empty passwords. Production accounts
   must not inherit the stand's password setting.
+
+## Deployment separation
+
+The domain `sislexa.by` selects one limited deployment configuration; sislexa
+remains the full modular product. The owner explicitly requires the existing
+`http://89.125.68.35/` installation to retain its old version, applications,
+configuration and data. No deploy, restart, registry edit or migration on that
+installation is authorized by this launch plan.
+
+The read-only production baseline is Core 0.1.480 at
+`9c44cb0d211cf23b42de0dcb2735c06ffae8507d`, all seven local apps enabled,
+Compose project `voiceaichat`, Core ID `localhost`, component environment
+`production`. The candidate instead uses project `sx-dev-m2-07fb81fd`, Core and
+component identity `stand-dev-m2-public-chat`, loopback gateway 23001/Core 17801,
+and isolated stand/operator data. Exact boundaries and the fixed Core volume
+name hazard are recorded in the [deployment KB](../kb/deploy.md#public-chat-deployment-isolation).
+
+The public environment is not provisioned yet. Give it its own Core/component
+identity, Compose project, ports, Core/PostgreSQL/Identity/Billing/runner state,
+credentials and backups. A different Compose project alone is insufficient:
+explicitly replace root Compose's fixed `voicechat-server-data` volume name or
+use a dedicated bind. Do not share the old Caddy, database, Billing ledger,
+component provider registries or release target. DNS, mail and the service
+Codex account remain separate operator commissioning work.
+
+## Reviewed publication sequence
+
+At the 2026-10-20 pre-release source freeze, the source route and promotion
+requirements are as follows. Final publication and stand receipts are recorded
+separately against the clean tested Core commit.
+
+| Owner | Reviewed source route | Remaining publication |
+| --- | --- | --- |
+| Core | [#768](https://github.com/sislex/voiceAIChat/pull/768) `integration/public-chat-stand-v1` → `feat/public-chat-launch-v1`, then [#767](https://github.com/sislex/voiceAIChat/pull/767) → `dev` | Final combined gates, reviewed `dev` → `main` promotion and immutable Core release artifact |
+| Core UI | Reviewed owner promotion through `dev` → `main`; exact 1.5.28 source `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c` retained in the immutable tag and archive | [1.5.28 published](https://github.com/sislex/sislexa-core-ui/releases/tag/v1.5.28), downloaded archive verified; strict Core install and 24 consumer checks passed, with one existing skip |
+| Identity | [#36](https://github.com/sislex/identity/pull/36) and [#35](https://github.com/sislex/identity/pull/35) merged into `main`; `dev` synchronized | [1.5.2 published](https://github.com/sislex/identity/releases/tag/v1.5.2), including verified AMD64 image |
+| Billing | Runtime-peer compatibility follow-up [#12](https://github.com/sislex/billing/pull/12), exact source `db6000b7a87cfb200bf7cc697dbafafde6a60171` | [1.2.4 published](https://github.com/sislex/billing/releases/tag/v1.2.4); verified archive accepts runtime `>=1.0.1 <2.0.0` with unchanged ledger implementation |
+| Web Reader | Reviewed owner promotion, exact 1.3.4 source `e0ff32cee8ee80da2953bbfe71c982ecec563cd5` | [1.3.4 published](https://github.com/sislex/webreader/releases/tag/v1.3.4); runtime and contracts archives verified, including visual-enabled owner system acceptance |
+| LLM Runner | [#28](https://github.com/sislex/llm-runner/pull/28) and [#27](https://github.com/sislex/llm-runner/pull/27) merged into `main`; [#29](https://github.com/sislex/llm-runner/pull/29) synchronized `dev` | [0.3.8 published](https://github.com/sislex/llm-runner/releases/tag/v0.3.8), including verified AMD64 image |
+
+1. Integrate the completed follow-up branches into their reviewed owner PRs and
+   freeze the final source SHAs. Run the required owner gates. Publish the new
+   optional analytics contract from its exact reviewed Core SHA as Shared
+   `0.1.43` before the UI consumes it; retain package provenance and hashes.
+2. Use new owner release versions. Existing tags Identity `v1.5.1`, Billing
+   `v1.2.2`, Runner `v0.3.7` and Core UI `v1.5.25` already exist and must not be
+   replaced with candidate bytes. Choose the next unused patch at publication
+   time, run version/KB updates and owner release checks, and review the resulting
+   release commit. Existing owner PR bases differ: do not silently retarget the
+   Identity/Billing/Runner PRs through `dev`. Synchronize owner `dev` with reviewed
+   `main` without force after promotion, resolving divergence explicitly.
+3. From clean owner clones use the existing publication adapter
+   `node --import tsx scripts/owner-release-publish.mjs --source <owner-checkout>`.
+   A canonical UI pack must use the final immutable Core test SHA. Verify each
+   remote tag's actual commit, release manifest, archive hashes and image digest.
+   Publication uploads artifacts; it does not authorize a service restart.
+4. Pin verified owner outputs in the Core integration branch, including the
+   polished UI and compatible contracts. Re-run combined Core/consumer release
+   checks and local-stand acceptance for that exact composition. Complete the
+   stacked Core reviews, then separately review `dev` → `main`; re-gate any
+   changed merge result. Retain the current full-deployment regression evidence.
+5. Stop at reviewed, published artifacts and local candidate evidence. Do not
+   invoke `release-train run`, `run --resume`, `/releases/branches`,
+   `/releases/deploy` or `voicechat-deploy` against the existing Release Center
+   project. Its production target is the protected old IP, and even train without
+   `--deploy` prepares a release there. Commission a distinct public target before
+   considering any public environment action.
+6. Before and after future public commissioning, compare the old installation's
+   health commit, image IDs, mounts, component identities and application manifest
+   with the preserved baseline using read-only checks. A release publication or
+   PR merge alone is not evidence that either running deployment changed.
+
+### Published owners and prepared stand candidates, 2026-10-20
+
+The following clean source commits passed owner gates and independent review.
+Their canonical packages were uploaded under content-addressed names to Core's
+vendor release and downloaded again to verify SHA-256. Local ARM64 images were
+built from exact Git archives and checked against shipped source and runtime
+version metadata. Official AMD64 releases have also been published and their
+remote tags, downloaded archives, image digests and runtime configuration
+verified. Publication has not replaced the running stand or the protected
+production installation.
+
+| Owner | Version and source | Verification |
+| --- | --- | --- |
+| Identity | 1.5.2, `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e`, [#36](https://github.com/sislex/identity/pull/36) | 502 unit tests, 2 browser tests, smoke and 3 package checks; 5 existing PostgreSQL skips remain |
+| Billing | 1.2.3, `a3897238443664a9a49b964bced4f02212e5c7b7`, [#11](https://github.com/sislex/billing/pull/11) | 41 owner tests and package gate; this patch aligns release metadata without changing ledger behavior |
+| LLM Runner | 0.3.8 / contracts 0.1.3, `edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4`, [#28](https://github.com/sislex/llm-runner/pull/28) | 528 owner tests, 20 operational and 10 package/release checks; lifecycle details are master-only and contain no prompt or user/session identifiers |
+
+All three stacks were merged child-first with merge commits. Their resulting
+`main` trees exactly match the verified source trees, and the original source
+commits remain ancestors. Official artifacts retain those verified source SHAs
+rather than being relabeled with the merge commits. A read-only check after
+promotion still reported protected production Core 0.1.480 at `9c44cb0d211c`.
+Identity and Billing `dev` were fast-forwarded to their reviewed `main` commits.
+Runner's historical merge-only divergence was preserved through reviewed
+main-to-dev PR #29; its resulting tree equals `main`.
+
+Shared 0.1.43 was published from
+`6357410e51dc7b2225b83280dc0e17b224648fdf`. Its SHA-256 is
+`dcc38d1c194bc762c97250e7022a0c554c19d9196e3a13e0f7874f1bb8e1698a`.
+It adds the optional Analytics configuration contract consumed by Core UI
+1.5.26. The canonical UI 1.5.26 pack from
+`418913b5a7665a8c277ab7b8a766cade445f6796` passed: 3,590 main UI tests,
+46 browser tests and eight Core system tests, plus owner workspace/tooling
+checks. Its SHA-256 is
+`8a271cf3007501f6bb2383f796a2d7329b8c3f212e7912f0ded63db982257b35`.
+The downloaded vendor archive was verified and pinned in Core. Official
+source promotion/publication is complete: the version tag retains the exact
+tested source, and `main`/`dev` share the reviewed tree after merge commits.
+
+The subsequent combined Core browser gate exposed a mobile universal-search
+focus regression in 1.5.26. The palette opener became inert when its sidebar
+closed. UI 1.5.27 preserves the opener for Escape and moves focus outside the
+closed drawer after result navigation, including same-chat navigation. Its
+canonical pack from `ec82d0285866329e2af42fced75000d9d499cfe7` passed 3,591 main
+UI tests, 47 browser tests and eight Core system tests against the immutable
+Shared 0.1.43 Core fixture. The archive SHA-256 is
+`353e1e0539ca69808758810ee64c748009197ea967fc8de5ca97b758c25e8a73`;
+all 460 file hashes and its clean source provenance were verified. Core now
+pins that archive. All 18 Core universal-search checks passed with their original
+assertions; each viewport starts a fresh document so the restored mobile drawer
+does not leak into the next case. Final combined Core validation and coordinated
+stand cutover remain required after this source freeze.
+
+At the historical Core checkpoint `a191402201fdda825fb1278b6bbb782f6344731b`, the combined
+gate passed 2,231 server, 1,287 shared and 59 enabled browser checks. Native performance
+passed eight scenarios and 48 budget comparisons with zero violations or runtime errors.
+Installed-owner system acceptance then stopped at Playwright Reader: 28 of 29 checks passed;
+the valid 8 MiB upload returned HTTP 413 because its base64/JSON envelope exceeded the SDK's
+default 4 MiB limit. The shared Reader path also retained a 1 MiB parser limit. Web Reader
+1.3.3 from `d9e41a3f6c0ed6ecd08e53523d41a42e60ffd666` applies the existing finite 16 MiB
+command bound to both paths and authenticates shared MCP requests before buffering. Its
+canonical pack passed 561 API, 25 contracts, 151 UI, 218 recorder, two runtime, 688 browser,
+11 tooling/KB/artifact and 31 system checks on immutable Core `a1914022`. Real HTTP MCP
+through Chromium accepted 8 MiB and rejected one additional decoded byte with the same
+encoded length, preserving the selected file. Contracts 1.3.0 payload bytes are unchanged;
+only archive provenance changes. Frontend 1.3.1 remains independently versioned. Official
+[Web Reader 1.3.3](https://github.com/sislex/webreader/releases/tag/v1.3.3) publication and
+downloaded artifact verification are complete. Final Core composition, renewed release gates
+and coordinated stand acceptance remain pending; these historical checkpoints do not
+establish completion of that composition.
+
+The normal Core dependency refresh subsequently exposed a separate metadata
+mismatch: Core linked component-runtime 1.0.1, while the selected Web Reader
+requires newer runtime capabilities already published as 1.4.0. All eight
+archived runtime `src/` files, including tests, match Core byte for byte. The
+selected correction aligns Core's workspace version to 1.4.0 and replaces
+Billing's exact 1.0.1 runtime peer through a reviewed owner release; Web Reader
+1.3.3 stays immutable. [Billing 1.2.4](https://github.com/sislex/billing/releases/tag/v1.2.4)
+is published from `db6000b7a87cfb200bf7cc697dbafafde6a60171`, with the verified
+`>=1.0.1 <2.0.0` runtime peer and unchanged implementation, ledger and standalone
+dependency pins. Its owner gate and ordinary consumer installation/HTTP authority
+checks passed with runtime 1.4.0; the official archive and AMD64 image were
+downloaded and verified. The earlier 31
+Web Reader owner-system passes used a package overlay after the old Core install
+and therefore do not demonstrate that the new dependency graph installs. A
+strict lockfile refresh and `npm ci --strict-peer-deps` now pass for the composed
+dependencies, with the lockfile unchanged by the clean installation. Renewed Core
+gates and installed-owner acceptance remain required after final pins are frozen.
+
+The installed-owner run on Core `0d04afc3febdb0fcca48f167de3f2c5adacc9a21`
+passed all 29 Playwright Reader checks, including the previous upload failure.
+Web Reader passed 29 of 31 checks; both failures were visual-capture waits for
+future screenshot requests after the functional assertions had passed. Streaming
+hosts supply frames without those requests. Web Reader 1.3.4 from
+`e0ff32cee8ee80da2953bbfe71c982ecec563cd5` corrects the owner test synchronization.
+Its canonical pack passed the full owner gate and all 31 system checks on that
+immutable Core with visual capture enabled. Both captured PNGs were inspected:
+the trusted-origin login form and manual-control status with the updated page
+were visible. Runtime implementation and all 11 contract payload files are
+unchanged; release versions and source provenance differ. The official
+[1.3.4 release](https://github.com/sislex/webreader/releases/tag/v1.3.4) and both
+vendor archives were independently verified, then applied through Core's
+canonical composition command. Strict lockfile refresh and
+`npm ci --strict-peer-deps` passed without further lockfile changes; all 125
+runtime and 12 contracts archive files match the installed bytes. Renewed Core
+acceptance and stand cutover remain pending.
+
+Core `5732bd91666805c1a826da21cf5f476dda58e995` subsequently passed the full
+gate, the 48 performance budget checks, and all 68 installed-owner system tests
+with visual capture enabled. The coordinated local cutover preserved all nine
+original users and prior ledgers. Its live concurrent/Stop acceptance nevertheless
+failed: the four intended operations each settled once, totaling 8,154 microUSD,
+but Runner also observed two unaccounted Core service calls. Their metadata and
+the source audit are consistent with the default semantic KB reranker before
+main-turn admission; no retained runtime callsite trace proves that attribution.
+The failed journal and all receipts remain immutable. Core publication is on
+hold while the public auxiliary-model boundary and UI findings are corrected;
+renewed composed gates and live acceptance remain required. The protected old
+production endpoint remains on Core 0.1.480 / `9c44cb0d211cf23b42de0dcb2735c06ffae8507d`.
+
+The corrective Core source `a1015514cab3b4847e58e287eb5fa2e026211851`
+disables unaccounted auxiliary model execution only under the trusted public
+text-only policy. Lexical KB search and stored summary reads remain available;
+ordinary deployments keep their existing behavior. Its required quick gate
+passed 525 related tests with ten existing skips, followed by all 17 focused
+auxiliary-policy regressions. The public mode cannot re-enable these model paths
+through request fields or explicit backend settings.
+
+The composed candidate now pins officially published
+[Core UI 1.5.28](https://github.com/sislex/sislexa-core-ui/releases/tag/v1.5.28)
+from `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`, with archive SHA-256
+`c6796125a7b927e4babf008411553d2d7fad56020f319e81c23175fac8c709c8`
+and Shared 0.1.43. The owner fixes absent voice settings/catalogs and deep links,
+optional capability discovery retries, and the closed LLM select width.
+Its canonical pack and official downloaded artifact verification passed.
+Strict lockfile refresh and `npm ci --strict-peer-deps` both passed without
+changing the applied lockfile; all 463 installed archive files match the
+canonical bytes. Core's unchanged settings and universal-search suites passed
+24 checks, with one existing skip. The auxiliary commit was then fast-forwarded
+into the integration branch without changing the four reviewed UI pin files.
+The new combined Core gate, release performance/system checks, candidate image,
+coordinated cutover and four-operation live acceptance remain pending. Earlier
+failed acceptance and publication holds remain preserved as historical evidence;
+these source and consumer checks do not authorize changes to the protected
+production installation.
+
+Runner's separate synthetic concurrency check used fake CLI responses, not paid
+provider requests: 32 admitted concurrent runs, peak 32, admission p95 53.97 ms,
+zero duplicate executions or unexpected errors. Eight cancellation and eight
+disconnect cases retained accounting through completion. Replay was denied
+before and after restart; four incomplete receipts recovered as uncertain.
+These results establish lifecycle behavior, not real-provider capacity or Billing
+throughput. The bounded two-user live acceptance runs only after final stand
+composition, with previous ledgers and the historical uncertain hold preserved.
 
 ## Audit baseline
 
@@ -51,6 +277,82 @@ loopback web port 23025 and SMTP port 23125. Core and Identity are wired to it;
 stand signup, one-use verification/reset and session revocation checks passed.
 A read-only sandbox by itself does not establish user-data isolation.
 
+## SISL-763 verification and completion plan (2026-10-23)
+
+The task checkout started clean at Core `1b31e499` on `dev`; work continues
+on `SISL-763` on MacBook. Identity PR #35 is merged, not in progress:
+head `3b9e28b82342af4cd9f52745fd567b832ff6889f`, merge/main
+`67435604554cb27b1442c711c63f200531aaf380`. Its merged release PR #36
+contains source `b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e`.
+Core pins `sislexa-identity-1.5.2-d3e0e16d58cd.tgz`; the installed
+`release-source.json` identifies that same `b71a98e` source. The archive
+suffix is not a Git revision. Installed and owner-main `users/auth.ts`
+are identical. Do not reimplement the closure fix or create another fix branch.
+
+Evidence and remaining work:
+
+1. **Preserved historical acceptance:** the October 19 owner gate and two-user
+   Mailpit signup/reset/session-revocation acceptance above remain historical
+   evidence. The PR body names `/private/tmp/sislexa-public-chat-identity-gate.log`;
+   that file was not found on this task's MacBook. The PR has no status checks.
+   The October 20 review records 502 unit tests, 2 browser tests, smoke and
+   3 package checks, with 5 PostgreSQL skips; it names `b71a98e` but its
+   review commit metadata names `bd5dcc9`. Retain this provenance distinction.
+2. **Source behavior verified:** closed signup rejects verification before token
+   redemption; signup fields require strings. Existing owner tests assert no
+   cookie/user on closure, reopening, one-use verification/reset, personal
+   tenant creation and old-session revocation followed by new-password login.
+   The SISL-763 owner test change adds successful resend rotation, expired
+   verification/reset, neutral reset responses, and closed signup/resend.
+3. **Development validation:** run the bounded Identity server task gate from
+   merge `6743560`, then Core `npm run gate:fast` before committing.
+   Identity's `gate:fast` aliases the full gate, so use its bounded
+   `gate:task -- --base 6743560` during development as required by this task.
+   Core `gate:fast` passed with documentation-only selection. The first Identity
+   task gate passed typechecking but had 28 five-second test timeouts (153 passed,
+   2 skipped); a worker-limited repeat exceeded the MCP 300-second timeout and
+   is not counted as a pass. A separate single-worker signup/mailer run passed
+   all 14 tests, including all four added scenarios, without changing timeouts.
+   Final server workspace validation passed with explicit CLI worker limits:
+   `npx vitest run --maxWorkers=1 --minWorkers=1 --reporter=dot` from
+   Identity `apps/server`: 25 files passed, 2 skipped; 181 tests passed,
+   2 skipped, 167.09 seconds. Together with the successful server typecheck,
+   this covers the changed workspace; it does not claim a fresh full owner gate.
+   No test timeouts or assertions were relaxed.
+   Follow-up after failed run 735fe640: the server Vitest configuration now
+   sets both minWorkers and maxWorkers to 1, making the successful concurrency
+   limit reproducible in the workflow without CLI overrides. On MacBook,
+   `npm run gate:task -- --base 67435604554cb27b1442c711c63f200531aaf380`
+   passed with exit 0 in 66.4 seconds, including typecheck: 181 tests passed,
+   2 PostgreSQL tests skipped; 25 files passed and 2 skipped. The printed
+   `tests=183` includes skipped cases. Node was 22.19.0, npm 10.9.3.
+   The previous run's temporary Vitest report is no longer present; its
+   `tests=0` summary alone cannot identify which tests failed because the owner
+   gate counts results only after a successful Vitest process.
+   Reconciliation on 2026-10-24 retained the existing implementation and
+   fast-forwarded owner `SISL-763` to `3a66930564c3bb2baebfc8d3e85a04d15867fa41`
+   from `SK-763`. The same bounded gate passed in 25.8 seconds including
+   typecheck: 193 passed, 2 PostgreSQL tests skipped, 25 files passed and
+   2 skipped. Signup now has 23 cases, including 15 malformed field/value
+   combinations and an explicit absent response-token assertion on closure.
+   This supersedes the earlier test count, not the stand evidence limitations.
+4. **Remaining stand evidence:** repeat the added resend/expiry cases against
+   a local mailbox on the selected immutable stand composition and save sanitized
+   results with exact Identity/Core source and image IDs. In-memory mailbox
+   regression tests do not establish real SMTP delivery, and the historical
+   summary does not explicitly establish these added stand cases. Resolve the
+   stand endpoint/configuration and retained operator evidence before that run.
+5. **Promotion dependency:** review the new tests, run the full owner/release
+   gates in the later workflow and retain PostgreSQL skips as limitations.
+   Public commissioning still requires configured outbound email and canonical
+   `sislexa.by` verification/reset links. Deployment, production configuration
+   replacement and public signup opening require separate owner confirmation.
+
+No production configuration, deployed service, historical user data, spending
+ledger or test-environment restriction is changed by this preparation. MacBook
+validation is not physical-M1 evidence. No new paid-provider requests are needed
+for these tests.
+
 ## Work and acceptance order
 
 | Work item | Required evidence | Status at audit |
@@ -72,7 +374,8 @@ passed; deployment and required stand evidence remain part of acceptance.
 ## Promotion and rollback
 
 1. Finish owner changes and review their PRs. Publish clean immutable artifacts;
-   update Core pins through the existing release mechanism.
+   update Core pins through the reviewed publication sequence above, without
+   invoking the existing production release target.
 2. Back up the stand configuration and PostgreSQL data, record current images
    and dev overrides. Update only this stand through managed operations.
 3. Configure the local mailbox, managed Identity/Billing, model allowlist,
@@ -81,7 +384,8 @@ passed; deployment and required stand evidence remain part of acceptance.
 4. Run acceptance with two new synthetic accounts. Save sanitized evidence and
    machine-readable results in the operator state directory. Delete only the
    test fixtures created for this run when cleanup is needed.
-5. Run release gates and a restore drill. Commission domain/TLS and real email,
+5. Run release gates and a restore drill. On the separate public target,
+   commission domain/TLS and real email,
    then verify real signup/recovery before opening registration publicly.
 6. Observe the first public canary cohort before expanding traffic. On failure,
    close new admission, drain ongoing answers, retain Billing receipts/outbox

@@ -285,7 +285,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:6227264f4c3a9362f4b8db5502cdfdfa6c37d3c1}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:c186513906f98adc4a8db8f37e129fae45b2f9f8}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -409,7 +409,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:3bf4434e9279bd6e292fb34821dca6dbc97ee700}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:e0ff32cee8ee80da2953bbfe71c982ecec563cd5}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -518,7 +518,7 @@ services:
 
   runner-work:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:e3acfddd49f4d1709f99a7af086f6445191f3b0e}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"
@@ -537,7 +537,7 @@ services:
 
   runner-personal:
     profiles: ["local-runner"]
-    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:e3acfddd49f4d1709f99a7af086f6445191f3b0e}
+    image: ${SISLEXA_LLM_RUNNER_IMAGE:-ghcr.io/sislex/llm-runner:edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4}
     environment:
       HOST: 0.0.0.0
       PORT: "8790"

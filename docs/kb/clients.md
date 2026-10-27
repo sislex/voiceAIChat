@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-19
-checked: 8a928747a
+updated: 2026-10-20
+checked: a1015514c
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -19,10 +19,11 @@ Module details: `agent:README.md`
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
 
-The public-chat candidate pins Core UI 1.5.25 from
-`dca609d41698c42e577a4c9bef75c9116ddeeaf3`. Its daily quota panel shows settled
+The public-chat candidate pins Core UI 1.5.28 from
+`f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`. Its daily quota panel shows settled
 spend, remaining allowance and the Europe/Minsk reset. Voice onboarding uses
-optional `CapabilityStatus.configured` from Shared 0.1.42: explicit absence hides
+optional `CapabilityStatus.configured`, introduced in Shared 0.1.42 and retained
+in the installed Shared 0.1.43: explicit absence hides
 both automatic and manual launchers without changing saved onboarding progress.
 Legacy servers fall back to availability only when configuration is unspecified;
 unknown or failed capability reads do not block chat readiness. A configured but
@@ -31,6 +32,18 @@ the mobile model trigger and popup geometry. Core keeps artifact and browser
 integration checks; the implementation and responsive regressions live in the
 Core UI owner repository. Candidate stand evidence and remaining public
 commissioning work are recorded in `docs/plans/public-chat-v1.md`.
+
+Settings and their catalogs gate STT and TTS independently by configured
+presence. Unknown or absent optional voice modules stay hidden; a confirmed
+absent voice deep link falls back to LLM settings without saving preferences.
+A TTS-only configuration does not expose STT or dialog settings. Configured but
+unavailable modules retain diagnostic controls. Bootstrap coalesces capability
+discovery, and a failed optional read does not trigger automatic retries;
+opening Settings or explicitly retrying can request discovery again.
+The closed native LLM select stays within its settings pane on desktop and
+mobile; its expanded operating-system menu remains native. These regressions
+belong to the UI owner, while Core verifies the installed archive and its
+settings/universal-search integration.
 
 The first-chat model picker uses effective account settings supplied by Core.
 The access response is a deny-list, so its entries and shared catalog order

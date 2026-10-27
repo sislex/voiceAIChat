@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ciToolOutputLimits, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
-import { registerRemoteBashMcp, quoteCwd } from './remoteBashMcp'
+import { registerRemoteBashMcp, quoteCwd, remotePath } from './remoteBashMcp'
 import type { AgentRegistry, ExecResult } from '../agents/registry'
 
 const SECRET = 'test-secret'
@@ -43,6 +43,39 @@ async function rpc(
   })
   return { statusCode: res.statusCode, json: () => res.json() }
 }
+
+describe('remotePath', () => {
+  const cwd = '/repos/task'
+  const roots = ['/owners/core/repository', '/owners/kanban/repository']
+  it('accepts each root and keeps relative paths anchored to cwd', () => {
+    for (const root of roots) {
+      expect(remotePath(cwd, root + '/src/a.ts', roots)).toBe(root + '/src/a.ts')
+      expect(remotePath(cwd, root, roots)).toBe(root)
+    }
+    expect(remotePath(cwd, 'src/a.ts', roots)).toBe(cwd + '/src/a.ts')
+    expect(remotePath(cwd, cwd + '/src/a.ts', roots)).toBe(cwd + '/src/a.ts')
+    expect(() => remotePath(cwd, roots[0] + '/a.ts')).toThrow('за пределами')
+  })
+  it.each(['/other/a.ts', '/owners/core/repositoryX/a.ts', '../secret', '/owners/core/repository/../secret'])(
+    'rejects %s and lists every allowed root', (path) => {
+      for (const root of [cwd, ...roots]) {
+        expect(() => remotePath(cwd, path, roots)).toThrow(root)
+      }
+    }
+  )
+  it.each(['relative', '/', '/./', '/owners/../core', 'C:/', 'C:/./', 'C:relative'])(
+    'rejects invalid root %s even for a cwd path', (root) => {
+      expect(() => remotePath(cwd, 'a.ts', [root])).toThrow('Недопустимый root')
+    }
+  )
+  it('rejects a root containing NUL even for a cwd path', () => {
+    expect(() => remotePath(cwd, 'a.ts', ['/owners/\0bad'])).toThrow('Недопустимый root')
+  })
+  it('compares Windows roots without case or slash differences', () => {
+    expect(remotePath('C:/task', 'd:\\Owners\\Core\\a.ts', ['D:/owners/core']))
+      .toBe('D:/owners/core/a.ts')
+  })
+})
 
 describe('quoteCwd', () => {
   it('POSIX: экранирует одинарные кавычки, слэши не трогает', () => {
@@ -293,6 +326,45 @@ describe('remoteBashMcp', () => {
     expect(body.result.content[0].text).toBe('2\ttwo\n3\tthree\n\nПоказаны строки 2–3 из 4.')
     expect(body.result.content[0].text).not.toContain('one')
     expect(readPath).toBe('/repos/task/src/a.ts')
+  })
+
+  it.each(['read', 'edit', 'grep'])('URL roots reach %s and reject paths outside all roots', async (name) => {
+    const paths: string[] = []
+    const registry = {
+      fsRead: async (_id: string, path: string) => {
+        paths.push(path)
+        return { dataBase64: Buffer.from('OLD').toString('base64') }
+      },
+      fsWrite: async (_id: string, path: string) => { paths.push(path); return {} },
+      exec: async (_id: string, command: string) => {
+        paths.push(command)
+        return { exitCode: 0, output: '', timedOut: false }
+      },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeApp(registry)
+    const query = `?k=${SECRET}&agent=a1&cwd=/repos/task&root=/owners/core&root=/owners/kanban`
+    for (const root of ['/owners/core', '/owners/kanban']) {
+      const response = await rpc(app, {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name, arguments: { path: root + '/a.ts', oldString: 'OLD', newString: 'NEW', pattern: 'OLD' } }
+      }, query)
+      expect((response.json() as { result: { isError?: boolean } }).result.isError).toBeFalsy()
+      expect(paths.at(-1)).toContain(root + '/a.ts')
+    }
+    const calls = paths.length
+    const response = await rpc(app, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name, arguments: { path: '/outside/a.ts', oldString: 'OLD', newString: 'NEW', pattern: 'OLD' } }
+    }, query)
+    expect((response.json() as { result: { isError?: boolean } }).result.isError).toBe(true)
+    expect(paths).toHaveLength(calls)
+  })
+
+  it.each(['relative', '/', '/owners/../core'])('rejects invalid URL root %s', async (root) => {
+    app = await makeApp(stubRegistry(new Error('unexpected')))
+    const response = await rpc(app, INIT_BODY, `?k=${SECRET}&agent=a1&cwd=/repos/task&root=${encodeURIComponent(root)}`)
+    expect(response.statusCode).toBe(400)
   })
 
   it('grep ограничивает число совпадений и длину строки', async () => {
