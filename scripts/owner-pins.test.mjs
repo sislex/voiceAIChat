@@ -25,7 +25,8 @@ test('package specs may only move between vendor archives', () => {
   const pkg = (spec, extra = {}) => JSON.stringify({ name: 'x', scripts: { gate: 'g' }, dependencies: { '@sislexa/make': spec, react: '18.3.1' }, ...extra })
   assert.deepEqual(ownerPinChanges(['package.json'], reader({ 'package.json': pkg('file:vendor/make-1.3.0-a.tgz') }), reader({ 'package.json': pkg('file:vendor/make-1.3.1-b.tgz') })).packages, ['@sislexa/make'])
   assert.deepEqual(ownerPinChanges(['apps/server/package.json'], reader({ 'apps/server/package.json': pkg('file:../../vendor/make-1.3.0-a.tgz') }), reader({ 'apps/server/package.json': pkg('file:../../vendor/make-1.3.1-b.tgz') })).packages, ['@sislexa/make'])
-  assert.match(ownerPinChanges(['package.json'], reader({ 'package.json': pkg('file:vendor/a.tgz') }), reader({ 'package.json': pkg('file:vendor/a.tgz', { scripts: { gate: 'other' } }) })).unproven, /кроме зависимостей/)
+  assert.match(ownerPinChanges(['apps/server/package.json'], reader({ 'apps/server/package.json': pkg('file:vendor/a.tgz') }), reader({ 'apps/server/package.json': pkg('file:vendor/a.tgz', { scripts: { gate: 'other' } }) })).unproven, /кроме зависимостей/)
+  assert.match(ownerPinChanges(['package.json'], reader({ 'package.json': pkg('file:vendor/a.tgz') }), reader({ 'package.json': pkg('file:vendor/a.tgz', { workspaces: ['x'] }) })).unproven, /кроме зависимостей/)
   assert.match(ownerPinChanges(['package.json'], reader({ 'package.json': pkg('file:vendor/a.tgz') }), reader({ 'package.json': pkg('^1.0.0') })).unproven, /не архив vendor/)
 })
 
@@ -42,4 +43,12 @@ test('unexplained archives and manifest metadata changes stay unproven', () => {
   assert.match(ownerPinChanges(['vendor/unknown-1.0.0-abc.tgz'], reader({}), reader({ 'vendor/unknown-1.0.0-abc.tgz': 'x' })).unproven, /не описан/)
   const rows = [row('@sislexa/make', '1', 'aaaaaaaa', 'm.tgz')]
   assert.match(ownerPinChanges(['vendor/owner-artifacts.json'], reader({ 'vendor/owner-artifacts.json': manifest(rows, { purpose: 'a' }) }), reader({ 'vendor/owner-artifacts.json': manifest(rows, { purpose: 'b' }) })).unproven, /вне packages/)
+})
+
+test('root npm script edits are reported, not treated as archive replacements', () => {
+  const pkg = (scripts) => JSON.stringify({ name: 'x', scripts, dependencies: { react: '18.3.1' } })
+  const result = ownerPinChanges(['package.json'], reader({ 'package.json': pkg({ gate: 'g', old: 'o' }) }), reader({ 'package.json': pkg({ gate: 'g2', added: 'a' }) }))
+  assert.deepEqual(result.packages, [])
+  assert.deepEqual(result.rootScripts, [
+    { name: 'gate', before: 'g', after: 'g2' }, { name: 'old', before: 'o', after: null }, { name: 'added', before: null, after: 'a' }])
 })

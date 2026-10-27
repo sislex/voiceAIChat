@@ -94,3 +94,16 @@ describe('totalTokens', () => {
     expect(totalTokens({})).toBe(0)
   })
 })
+
+// Published Standard prices, including fractional cache-write rates.
+describe('GPT-6 Sol and Luna rates', () => {
+  it.each([
+    ['gpt-6.1-sol', 14.6, 24.2],
+    ['gpt-6-sol', 14.7, 24.4],
+    ['gpt-6-luna', 0.735, 1.22]
+  ] as const)('%s prices all token types without rounding', (model, short, long) => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheCreationTokens: 1_000_000 }
+    expect(estimateCostUsd(model, usage)).toBeCloseTo(short, 6)
+    expect(estimateCostUsd(model, { ...usage, contextTier: 'long' })).toBeCloseTo(long, 6)
+  })
+})

@@ -156,10 +156,10 @@ function validateModelPrice(body: Partial<ModelPriceInput> | undefined): { ok: t
   if (!provider || !model) return { ok: false, error: 'provider and model required' }
   if (!sourceUrl || !isAbsoluteHttpUrl(sourceUrl)) return { ok: false, error: 'bad sourceUrl' }
   if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0)) return { ok: false, error: 'bad price values' }
-  const cents = (value: number): boolean => Math.abs(value * 100 - Math.round(value * 100)) < 1e-8
-  if (![body!.inputPerMillion!, body!.cachedInputPerMillion!, body!.cacheWritePerMillion!, body!.outputPerMillion!].every(cents)) return { ok: false, error: 'Цены: не более двух знаков после запятой' }
+  const preciseRate = (value: number): boolean => Math.abs(value * 1_000_000 - Math.round(value * 1_000_000)) < 1e-7
+  if (![body!.inputPerMillion!, body!.cachedInputPerMillion!, body!.cacheWritePerMillion!, body!.outputPerMillion!].every(preciseRate)) return { ok: false, error: 'Цены: не более шести знаков после запятой' }
   const tiers = body?.tiers ?? []
-  const validTierValue = (value: number | null): boolean => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && cents(value))
+  const validTierValue = (value: number | null): boolean => value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && preciseRate(value))
   if (!Array.isArray(tiers) || tiers.some((tier) =>
     !['standard', 'batch', 'flex', 'fast'].includes(tier.mode) ||
     !['short', 'long'].includes(tier.context) ||

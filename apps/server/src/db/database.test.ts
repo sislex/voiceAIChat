@@ -26,6 +26,23 @@ const OPENAI_PRICE_EFFECTIVE_AT = 1_788_825_600_000
 
 // @testCase TC-INT-1
 describe('начальные тарифы OpenAI', () => {
+  it('seeds new GPT-6 models without rounding or overwriting custom prices', () => {
+    const raw = new Database(':memory:')
+    try {
+      raw.exec(SCHEMA_SQL)
+      for (const [model, input, cached, write, output] of [
+        ['gpt-6.1-sol', 2, 0.1, 2.5, 10], ['gpt-6-sol', 2, 0.2, 2.5, 10], ['gpt-6-luna', 0.1, 0.01, 0.125, 0.5]
+      ]) {
+        const row = raw.prepare('SELECT * FROM model_prices WHERE model = ?').get(model) as { input_per_million: number; cached_input_per_million: number; cache_write_per_million: number; output_per_million: number; tiers_json: string }
+        expect([row.input_per_million, row.cached_input_per_million, row.cache_write_per_million, row.output_per_million]).toEqual([input, cached, write, output])
+        expect(JSON.parse(row.tiers_json)).toHaveLength(7)
+      }
+      raw.prepare("UPDATE model_prices SET input_per_million = 7 WHERE model = 'gpt-6-luna'").run()
+      raw.exec(SCHEMA_SQL)
+      expect(raw.prepare("SELECT input_per_million FROM model_prices WHERE model = 'gpt-6-luna'").get()).toEqual({ input_per_million: 7 })
+    } finally { raw.close() }
+  })
+
   it('создаёт в новой базе точные Standard short-context тарифы официального источника', () => {
     const raw = new Database(':memory:')
     try {
