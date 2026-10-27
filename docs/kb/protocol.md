@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-10-27
+checked: 6357410e
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -23,6 +23,16 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Thread cost client contract
+
+`packages/shared/src/threadCost.ts` defines `ConversationThreadCost`, the encoded
+`thread-cost`/`thread-reset` routes, reset result and `ThreadResetMode`.
+The conversation settings contract accepts `threadReset: off | hint | auto`.
+These are client contracts; this change does not add Core route handlers or
+automatic reset execution. Consumers must hide controls on HTTP 404 until the
+server implementation is deployed. The baseline has input tokens and duration
+only, so clients must not invent baseline cache/output values.
 
 ## Voice module configuration
 

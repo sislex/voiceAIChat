@@ -1,3 +1,4 @@
+export * from './threadCost'
 export * from './uiPerformance'
 
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
