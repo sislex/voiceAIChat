@@ -353,7 +353,7 @@ it('does not treat local command options as readiness for a delayed search respo
       } })
     })
     const opened = open('Настройки', expected, probe).then(dialog => { completed = true; return dialog })
-    await vi.waitFor(() => expect(intercepted).toBe(true))
+    await vi.waitFor(() => expect(intercepted).toBe(true), { timeout: SEARCH_TIMEOUT })
     const dialog = probe.getByRole('dialog', { name: 'Командная палитра' })
     const localOptions = await dialog.getByRole('option').count()
     expect(localOptions).toBeGreaterThan(0)

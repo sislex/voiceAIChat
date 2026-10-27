@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-26
-checked: 60141f52c
+updated: 2026-10-27
+checked: 81c4a5fd
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -877,7 +877,10 @@ other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
 groups, missing expected IDs/deep links and request cancellation have distinct
 failures. The helper then waits for each requested source/title option to become
 visible. Search observation and option waits retain bounded 10-second limits;
-there is no readiness sleep.
+there is no readiness sleep. The delayed-response fixture also uses
+`SEARCH_TIMEOUT` for its interception wait; Vitest's default one-second
+`vi.waitFor` deadline can expire while the fresh page opens the palette on a
+loaded machine, before the observed request is sent.
 
 The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
 resets its query on reopening and does not retrigger its search effect for an
@@ -1279,7 +1282,11 @@ owner-maintained system acceptance. `gate:release` selects these stages from the
 release diff as described below. Known budget/measurement edits still select their real browser
 measurements directly. The full gate's test stage runs tooling and each workspace
 test script as separate processes, with at most three active by default; set
-`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. Their output
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. The current
+`full-gate.test.mjs` default-value assertion calls `testConcurrency(undefined)`
+without isolating that environment variable: a non-default inherited override
+therefore fails the tooling assertion (`1 !== 3` for value `1`). Keep it unset
+when running the complete suite with this version of that test. Their output
 is buffered and printed in manifest order, all failing workspaces are reported,
 and `[gate:timing] tests/<workspace>` records individual durations.
 Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test

@@ -558,7 +558,10 @@ describe('VoiceChatDb — сообщения', () => {
     }
     await db.chat.addMessage(U, c.id, 'ai', 'ответ', '14:02', 'claude', meta)
     const [m] = await db.chat.listMessages(U, c.id)
-    expect(m.meta).toEqual(meta)
+    const { request, ...light } = meta
+    expect(m.meta).toMatchObject(light)
+    expect(m.meta?.request).toBeUndefined()
+    expect((await db.chat.messageServiceData(U, c.id, m.id))?.request).toEqual(request)
     expect(m.engine).toBe('claude')
   })
 

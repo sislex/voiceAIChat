@@ -530,7 +530,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'message_not_found' }, userId)
       return
     }
-    req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    req.messageId ??= await deps.db.chat.lastUserMessageId(userId, conversationId)
     if (backgroundStop && !turns.has(conversationId) && (!entitlements.userId || deps.accounting!.hasPendingUser(entitlements.userId))) {
       // Another conversation can reserve this user after dispatchNext's check and
       // before this admission. Restore the extracted work without marking it failed.
@@ -545,7 +545,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
     if (turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) {
-      const messageId = req.messageId ?? [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+      const messageId = req.messageId ?? await deps.db.chat.lastUserMessageId(userId, conversationId)
       if (!messageId) {
         broadcast({ t: 'claude.error', conversationId, message: 'Не удалось поставить вопрос в очередь.' }, userId)
         return
@@ -672,7 +672,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
       ? buildPrompt(req.segments, attachmentPaths)
-      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths, conv?.summary?.text)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -1088,11 +1088,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // default_tools_approval_mode в раннере.
     const kanbanMcpOnly = Boolean(kanbanMcpUrl) && provider === 'claude' && !remote && !kanbanExplicitPlan && permissionMode === 'plan'
     if (kanbanMcpOnly) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
-    // Полный контекст хода: все сообщения разговора на момент отправки
-    // (реплика пользователя уже сохранена клиентом перед claude.send).
-    const contextMessages = (await deps.db
-      .chat.listMessages(userId, conversationId))
-      .map((m) => ({ role: m.role, text: m.text }))
+    // Store history references, never duplicate the transcript in every reply.
+    const historySummary = await deps.db.chat.historySummary(userId, conversationId)
     // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
     const requestInfo: TurnRequestInfo = {
       provider,
@@ -1106,7 +1103,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
       ...(executionDisabled ? { execTarget: 'Без машины (команды запрещены)' } : remote ? { execTarget: remote.agentName } : {}),
-      ...(contextMessages.length ? { messages: contextMessages } : {}),
+      ...historySummary,
       ...(kbContext ? { kbContext } : {})
     }
     // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
@@ -1561,7 +1558,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     if (!turn || turn.userId !== userId || !turn.source.messageId) {
       // Без активного хода выбранный элемент становится первым и запускается
-      // сразу, если очередь не удерживает ошибка.
+      // сразу, если очередь не удерживает ошибка. Упавший элемент явной
+      // командой возвращается в очередь — иначе dispatch его не возьмёт.
+      await deps.db.chat.retryQueuedTurn(userId, conversationId, id)
       await deps.db.chat.prioritizeQueuedTurn(userId, conversationId, id)
       await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
       await dispatchNext(userId, conversationId)
