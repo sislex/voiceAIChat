@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 800 коммит(ов) в areas после сверки: 3e3a444b Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 1 коммит(ов) в areas после сверки: 3e3a444b Refresh OpenAI model catalog and preserve fractional token prices |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 3e3a444b Refresh OpenAI model catalog and preserve fractional token prices … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 42 коммит(ов) в areas после сверки: 9f113857 chore: pin Kanban 0.2.42 and Core UI 1.5.31 (local-stand, thin client) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 43 коммит(ов) в areas после сверки: a265dcc8 feat(release-train): support fast releases from dev … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1097 коммит(ов) в areas после сверки: 3e3a444b Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 70 коммит(ов) в areas после сверки: 3c98193c fix(gate): npm-script-only package.json edits stay on the quick gate … |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 4 коммит(ов) в areas после сверки: 7c711c67 feat(make): attach Core conversations to Docker-free local-stand environments (SISL-778) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-26 | ⚠ 2 коммит(ов) в areas после сверки: 9f113857 chore: pin Kanban 0.2.42 and Core UI 1.5.31 (local-stand, thin client) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-26 | ⚠ 3 коммит(ов) в areas после сверки: a265dcc8 feat(release-train): support fast releases from dev … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-25, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,9 +62,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1276. Последние:
+Всего записей: 1277. Последние:
 
 - [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev.md) — release-train-from-dev
+- [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev-kb.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-release-train-from-dev-kb.md) — release-train-from-dev-kb
 - [2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-42-core-ui-1-5-31.md](log/2026-10-27-alexeys-macbook-air-tailae39a6-ts-net-pin-kanban-0-2-42-core-ui-1-5-31.md) — pin-kanban-0-2-42-core-ui-1-5-31
 - [2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-quick-gate-root-scripts.md](log/2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-quick-gate-root-scripts.md) — quick-gate-root-scripts
 - [2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-make-core-local-stand.md](log/2026-10-26-alexeys-macbook-air-tailae39a6-ts-net-make-core-local-stand.md) — make-core-local-stand
@@ -73,7 +74,6 @@
 - [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-make-thin-client-core.md) — make-thin-client-core
 - [2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-dev-stand-local.md](log/2026-10-25-alexeys-macbook-air-tailae39a6-ts-net-dev-stand-local.md) — dev-stand-local
 - [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sk68-confirmation-contract-verification.md) — sk68-confirmation-contract-verification
-- [2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl776-prepared-origin.md](log/2026-10-24-pc-radvilovich-tailae39a6-ts-net-sisl776-prepared-origin.md) — sisl776-prepared-origin
 
 ## Исторические планы
 

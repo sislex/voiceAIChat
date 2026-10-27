@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: b231054e
+checked: a265dcc8
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -343,7 +343,9 @@ configured; rejection (including fast_release_disabled), or a response without
 Existing branches are reconciled only when their SHA and fast mode match.
 Publication, verification, preflight, and optional deploy/health remain in place.
 The journal preserves from-dev mode on `run --resume <id>`; do not repeat mode,
-selection or deploy flags when resuming.
+selection or deploy flags when resuming. The planner text and CLI parsing live in
+`scripts/release-train.mjs`; journal step selection, gate fallback, dev-push
+reconciliation and the Release Center request live in `scripts/release-train-run.mjs`.
 
 Without `--from-dev`, the full-gate/main path described below is unchanged.
 After a fast release, main catches up through a normal dev → main PR only
