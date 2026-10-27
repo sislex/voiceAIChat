@@ -95,7 +95,7 @@ export function coreChanges(repository = root, run = command) {
   return { range: 'origin/main..origin/dev', main, dev, count: commits.length, commits }
 }
 
-export async function planReleaseTrain({ repository = root, worktreeRoot = join(homedir(), 'sislexa-worktrees'), env = process.env, run = command, fetcher = fetch } = {}) {
+export async function planReleaseTrain({ repository = root, worktreeRoot = join(homedir(), 'sislexa-worktrees'), env = process.env, run = command, fetcher = fetch, fromDev = false } = {}) {
   const token = env.GH_TOKEN?.trim() || env.GITHUB_TOKEN?.trim()
   const prerequisites = {
     token: { ok: Boolean(token), detail: token ? 'GitHub token present' : 'GH_TOKEN or GITHUB_TOKEN required' },
@@ -128,7 +128,9 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
       if (item.release.published && !item.release.matchesPinnedCommit) throw Error('Published tag does not match pinned commit')
       if (item.changes.ahead && !scheduled.has(owner)) {
         scheduled.add(owner)
-        steps.push(`${owner}: bump to ${item.proposedVersion}; run owner full gate; merge release/${item.proposedVersion} into main; sync dev; publish from clean clone; verify GitHub release and image`)
+        steps.push(fromDev
+          ? `${owner}: bump to ${item.proposedVersion} on dev; gate:quick -- --base ${pin.commit} (fallback affected-check, then gate); push dev without force; publish dev commit from clean clone; verify GitHub release and image`
+          : `${owner}: bump to ${item.proposedVersion}; run owner full gate; merge release/${item.proposedVersion} into main; sync dev; publish from clean clone; verify GitHub release and image`)
       } else if (!item.changes.ahead && !item.release.matchesPinnedCommit && !scheduled.has(owner)) {
         scheduled.add(owner)
         steps.push(`${owner}: publish pinned ${pin.version} at ${pin.commit} from clean clone; verify GitHub release and image`)
@@ -139,8 +141,10 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
   let core = null
   try { core = coreChanges(repository, run) } catch { errors.push('Core origin/main or origin/dev unavailable; refresh refs outside the planner') }
   if (steps.length) steps.push('Core: pin verified owner versions and images; update deploy KB and log/index')
-  if (steps.length || core?.count) steps.push('Core: run full gate; merge dev into main; Release Center preflight; create Core release branch', 'Production deploy requires a separate explicit operator action')
-  return { schemaVersion: 1, mode: 'plan', ready: Object.values(prerequisites).every(check => check.ok) && !errors.length, prerequisites, applications, core, steps, errors }
+  if (steps.length || core?.count) steps.push(fromDev
+    ? 'Core: pin on dev; gate:quick -- --base origin/main; push dev; verify origin/dev still equals pin; Release Center preflight; create Core release branch from dev with fast: true; no PR to main'
+    : 'Core: run full gate; merge dev into main; Release Center preflight; create Core release branch', 'Production deploy requires a separate explicit operator action')
+  return { schemaVersion: 1, mode: 'plan', fromDev, ready: Object.values(prerequisites).every(check => check.ok) && !errors.length, prerequisites, applications, core, steps, errors }
 }
 
 export function formatPlan(plan) {
@@ -161,8 +165,8 @@ export async function main(args = process.argv.slice(2)) {
     const { runCli } = await import('./release-train-run.mjs')
     return runCli(args.slice(1))
   }
-  if (args[0] !== 'plan' || args.length > 2 || (args[1] && args[1] !== '--json')) throw Error('Usage: node scripts/release-train.mjs plan [--json] | run [--apps a,b] [--deploy] | run --resume <id>')
-  const plan = await planReleaseTrain()
+  if (args[0] !== 'plan' || args.slice(1).some(arg => !['--json', '--from-dev'].includes(arg))) throw Error('Usage: node scripts/release-train.mjs plan [--json] [--from-dev] | run [--apps a,b] [--deploy] [--from-dev] | run --resume <id>')
+  const plan = await planReleaseTrain({ fromDev: args.includes('--from-dev') })
   console.log(args.includes('--json') ? JSON.stringify(plan, null, 2) : formatPlan(plan))
   if (!plan.ready) process.exitCode = 1
 }

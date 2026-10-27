@@ -74,6 +74,17 @@ test('fixture Core and fake GitHub produce a read-only, ordered plan for every o
   assert.deepEqual(readFileSync(join(f.repository, '.git/index')), index)
 })
 
+test('from-dev plan describes quick gates, dev pushes and fast branch creation', async t => {
+  const f = fixture(t, false), plan = await planReleaseTrain({ ...f, fromDev: true })
+  assert.equal(plan.fromDev, true)
+  assert.equal(plan.ready, true)
+  const output = formatPlan(plan)
+  assert.ok(output.includes(`gate:quick -- --base ${f.base}`))
+  assert.match(output, /gate:quick -- --base origin\/main/)
+  assert.match(output, /from dev with fast: true/)
+  assert.doesNotMatch(output, /run full gate|merge dev into main|sync dev/)
+})
+
 test('prerequisite failures retain Core results without sending unauthenticated requests', async t => {
   const f = fixture(t)
   const plan = await planReleaseTrain({ ...f, env: {}, worktreeRoot: join(f.worktreeRoot, 'missing'), run: (binary, args, cwd) => {
