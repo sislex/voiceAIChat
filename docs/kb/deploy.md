@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: 06a27ba9
+checked: 68037887c
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -376,7 +376,7 @@ An owner whose root `package.json` defines a `set-version` script (Make keeps
 itself instead: the runner installs dependencies and runs
 `npm run set-version -- <version>`, then commits every manifest it changed.
 
-The runner creates private clones below
+The runner creates private partial clones (`--filter=blob:none`: history and trees, file contents on checkout) below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
 original owner selection, commits, versions and deploy intent; it skips completed
