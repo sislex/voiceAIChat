@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: 3bef4da01
+checked: b231054e
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -322,7 +322,32 @@ test these adapters without contacting real owners.
 
 ## Release train execution (C01)
 
-`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+`node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
+
+`plan --from-dev [--json]` previews the fast path. `run --from-dev` bumps
+changed owners from their planned dev commit and runs `gate:quick -- --base <pinned commit>`,
+falling back to `affected-check`, then `gate` only when the preceding scripts
+are absent. It pushes the gated commit to dev without force and publishes and
+verifies that exact commit. On a concurrent dev push, it fetches, rebases only
+the train's version/KB commits, invalidates the old gate and gates again before
+retrying. A failed rebase gate remains required on resume.
+
+Core pins on dev, runs `gate:quick -- --base origin/main`, and pushes dev
+without force (including rebase and recheck on a concurrent push). No owner
+release PR or Core dev → main PR is created. After preflight the train checks
+that origin/dev still equals the pin commit and requests
+`POST /releases/branches {branch, baseBranch: 'dev', fast: true}`.
+The Release Center must support fast releases and have fastReleaseTestCommand
+configured; rejection (including fast_release_disabled), or a response without
+`fast: true`, stops the train without falling back to the full path.
+Existing branches are reconciled only when their SHA and fast mode match.
+Publication, verification, preflight, and optional deploy/health remain in place.
+The journal preserves from-dev mode on `run --resume <id>`; do not repeat mode,
+selection or deploy flags when resuming.
+
+Without `--from-dev`, the full-gate/main path described below is unchanged.
+After a fast release, main catches up through a normal dev → main PR only
+on the owner's instruction; the train does not perform that promotion.
 With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
