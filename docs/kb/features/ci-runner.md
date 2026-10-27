@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-10-24
-checked: 8c8ce466
+updated: 2026-10-27
+checked: 50e092a9
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -14,6 +14,7 @@ areas:
   - apps/agent/src/connection.ts
   - apps/agent/src/exec.ts
   - packages/shared/src/temporaryResources.ts
+  - apps/server/src/mcp/runProcesses.ts
   - packages/ui/src/components/ci/TemporaryResources.tsx
   - apps/server/src/automationClient.ts
   - apps/automation-runner/src
@@ -229,6 +230,45 @@ viewport, сборщик запрашивает состояние довере�
 не считается браузерным свидетельством.
 
 ## Защита диска и очистка development-рана
+
+### temporary-cleanup: process registry (SK-93)
+
+Core's `apps/server/src/mcp/runProcesses.ts` stores
+`<task>/.process-<runId>` as a versioned JSON process registry, not a TMPDIR.
+It groups command scopes with stage, cwd and deadline, recording process
+PID/PGID, parent PID, start identity, working directory and listening TCP ports.
+The helper refreshes snapshots while supervising a command; a retained registry
+is evidence to validate against live processes, not proof that they still run.
+The file uses locking and refuses symlink opens. Its format and sweep options
+are defined in that source rather than by the temporary-resource directory
+registry described below.
+
+Cleanup verifies PID, start time and PGID before signalling. It sends SIGTERM,
+waits up to ten seconds, then sends SIGKILL to survivors. A whole group is
+signalled only when all its members are owned; shared groups use individual
+PIDs. A sweep without a run filter also discovers unregistered processes by cwd
+inside the canonical task root. With `expiredOnly`, unexpired registrations
+are protected and unregistered processes must exceed `maxAgeMs` (30 minutes by
+default). The helper excludes itself and its ancestors, and can check root
+device/inode identity. It does not query task status or active runs: the caller
+must establish that cleanup is allowed. Sweep records go to the task-local
+`.process-cleanup.log`; this alone is not a machine-journal integration.
+
+Gradle uses the isolated `<task>/.gradle-<runId>` home. Environment defaults disable
+the Gradle daemon and select in-process Kotlin compilation; the helper does not
+rewrite commands to append a literal `--no-daemon`. Cleanup finds task-local
+`gradlew` wrappers and invokes `--stop` only with existing isolated homes.
+Recorded ports support ownership diagnostics; this Core helper does not allocate
+ports or independently stop foreign port owners.
+
+The [LLM execution section](../llm.md#kanban-run-process-ownership-sk-93) describes
+the Core MCP boundary and retention between model commands. Real process
+fixtures in `apps/server/src/mcp/runProcesses.test.ts` cover command completion,
+retention followed by sweep, cancellation, cwd orphan discovery, age filtering,
+PID identity, Gradle defaults and ten-second escalation. Automatic stage/card
+lifecycle admission belongs to the external `sislexa-kanban` repository.
+
+### Temporary directory resource lifecycle
 
 Перед системным bootstrap нового development-рана `CiRunManager` проверяет свободное
 место рабочей файловой системы через `df -Pk .`. По умолчанию требуется не меньше

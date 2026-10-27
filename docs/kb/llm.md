@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-27
-checked: 0c213fae
+checked: 50e092a9
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/anthropic
   - apps/server/src/cc
   - apps/server/src/mcp/remoteBashMcp.ts
+  - apps/server/src/mcp/runProcesses.ts
   - apps/server/src/mcp/historicalEvidence.ts
   - apps/server/src/server.ts
   - packages/shared/src/streamJson.ts
@@ -37,7 +38,12 @@ Module details: `llm-runner:README.md`
 
 ## Kanban run process ownership (SK-93)
 
-Kanban sends `run` and `stage` query parameters to Core's remote-bash MCP.
+Standalone Kanban model machine commands execute through Core's
+`apps/server/src/mcp/remoteBashMcp.ts` (`/mcp/remote-bash`), which dispatches to
+the selected agent via `registry.exec`. Process ownership therefore requires
+coordinated Kanban and voiceAIChat/Core changes; changing only a Kanban MCP
+implementation does not change this Core execution path. Kanban supplies `run`
+and `stage` query parameters.
 For canonical `projects/<project>/tasks/<task>` working directories on the
 selected machine, Core wraps commands with `mcp/runProcesses.ts` after checking
 the original command against policy and file-read restrictions. Ordinary chats,
@@ -56,6 +62,15 @@ Gradle uses a per-run home with daemon disabled by default; Kotlin compilation
 defaults to in-process. The helper only calls `gradlew --stop` against isolated
 task Gradle homes. Core does not infer lifecycle closure or kill a foreign port
 owner: Kanban's authoritative lifecycle checks admit cleanup.
+
+The MCP wrapper uses `retain: true`: a completed shell command can leave its
+background children alive for the next model command. A timeout or SIGTERM/SIGINT
+to the helper still triggers cleanup; without `retain`, command completion also
+triggers it. The outer agent execution timeout includes an extra 15 seconds for
+cleanup. A missing stage is recorded as `model`. The recorded deadline is the
+command timeout, not an independently resolved CI stage limit. See the
+[temporary-cleanup process registry](features/ci-runner.md#temporary-cleanup-process-registry-sk-93)
+for persisted ownership, sweep safety and diagnostics.
 
 
 ## Scoped historical journal verification
