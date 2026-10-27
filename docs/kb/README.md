@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 800 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 2 коммит(ов) в areas после сверки: d4c75318b fix(queue): send now retries a failed queued turn … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 2 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 45 коммит(ов) в areas после сверки: d4c75318b fix(queue): send now retries a failed queued turn … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 49 коммит(ов) в areas после сверки: 234a529e3 Merge remote-tracking branch 'origin/dev' into fix/queue-now-failed … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1097 коммит(ов) в areas после сверки: 3e3a444b7 Refresh OpenAI model catalog and preserve fractional token prices … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 70 коммит(ов) в areas после сверки: 3c98193cf fix(gate): npm-script-only package.json edits stay on the quick gate … |
@@ -42,8 +42,8 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-20 | ⚠ 3 коммит(ов) в areas после сверки: d4c75318b fix(queue): send now retries a failed queued turn … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-27 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-27 | ⚠ 1 коммит(ов) в areas после сверки: d4c75318b fix(queue): send now retries a failed queued turn |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-27 | ⚠ 1 коммит(ов) в areas после сверки: 7abdcc183 feat(core): cache compressed static assets and enable Caddy encoding |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-27 | ⚠ 2 коммит(ов) в areas после сверки: 234a529e3 Merge remote-tracking branch 'origin/dev' into fix/queue-now-failed … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 4 коммит(ов) в areas после сверки: 7c711c679 feat(make): attach Core conversations to Docker-free local-stand environments (SISL-778) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
