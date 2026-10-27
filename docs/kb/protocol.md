@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-27
-checked: 0a8bc000
+checked: 40d07d916
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -944,6 +944,12 @@ the same optional `group` as HTTP.
 WS-сообщений у панели нет: состояние перечитывается кнопкой «Обновить» и после каждой
 мутации (сервер возвращает свежий статус в ответе — иначе UI на секунду показывал бы
 устаревшее состояние).
+
+Скрипты `apps/server/src/git/scripts.ts` на macOS-машинах исполняет zsh, поэтому
+переменная перед двоеточием всегда пишется в фигурных скобках (`"${VC_GIT_BRANCH}:refs/…"`):
+в zsh `$VAR:r…` — модификатор, и refspec превращался в `refs/heads/devefs/…`
+(checkout удалённой ветки падал `couldn't find remote ref`). Правило проверяет
+`scripts.test.ts`.
 
 Гейты по слоям: право `repository:write` на любой POST и возможность проекта `git` —
 из карт `projectPermissionForRequest`/`projectFeatureForRequest` (`users/auth.ts`,
