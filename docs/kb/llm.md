@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-27
-checked: a167aabff
+checked: b63971f43
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -317,9 +317,11 @@ Shared `threadCost.ts` defines `ConversationThreadCost`, reset request/response,
 loads the message history or activity/request payloads. Core persists the raw
 provider session id as `TurnMeta.sessionId` for both providers; old Codex replies
 can use `codexThreadUsage.sessionId`. Old Claude replies without a session id
-cannot be reliably assigned to a thread and are excluded. Replies without both
-input and cache-read usage are unmeasured and excluded, rather than interpreted
-as zero-cost turns; explicitly measured zero input remains a valid sample.
+cannot be reliably assigned to a thread and are excluded. A reply enters the
+measurement when at least one of `inputTokens` or `cacheReadTokens` is present;
+missing fields in such a row are normalized to zero. A reply with neither field
+is skipped, so it cannot replace the last measured cost or lower its reset
+recommendation. Explicitly measured zero input remains a valid sample.
 
 The baseline averages the first up to three measured turns, adding
 `inputTokens + cacheReadTokens`. With no measured replies, it estimates tokens
