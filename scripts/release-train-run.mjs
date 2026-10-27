@@ -35,16 +35,17 @@ export function execute(binary, args, cwd, options = {}) {
 }
 
 export function parseRunArgs(args) {
-  const options = { apps: [], deploy: false, resume: undefined }
+  const options = { apps: [], deploy: false, fromDev: false, resume: undefined }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--deploy') options.deploy = true
+    else if (args[i] === '--from-dev') options.fromDev = true
     else if (['--apps', '--resume'].includes(args[i]) && args[i + 1] && !args[i + 1].startsWith('-')) {
       const flag = args[i++], value = args[i]
       if (flag === '--apps') options.apps = value.split(',')
       else options.resume = value
-    } else throw Error('Usage: release-train.mjs run [--apps a,b] [--deploy] | run --resume <id>')
+    } else throw Error('Usage: release-train.mjs run [--apps a,b] [--deploy] [--from-dev] | run --resume <id>')
   }
-  if (options.resume && (options.deploy || options.apps.length)) throw Error('Resume uses the journal selection and deploy intent')
+  if (options.resume && (options.deploy || options.fromDev || options.apps.length)) throw Error('Resume uses the journal selection, from-dev mode and deploy intent')
   if (options.resume && !/^[a-zA-Z0-9-]+$/.test(options.resume)) throw Error('Invalid journal id')
   return options
 }
@@ -91,10 +92,10 @@ export function createJournal(plan, options, repository) {
     if (owners.some(owner => owner.repository === row.repository)) continue
     if (!row.changes.ahead && row.release.matchesPinnedCommit) continue
     owners.push({ repository: row.repository, version: row.changes.ahead ? row.proposedVersion : row.pinnedVersion,
-      source: row.changes.ahead ? row.changes.dev : row.pinnedCommit, main: row.changes.main, bump: row.changes.ahead,
+      source: row.changes.ahead ? row.changes.dev : row.pinnedCommit, pinnedCommit: row.pinnedCommit, main: row.changes.main, bump: row.changes.ahead,
       applications: plan.applications.filter(app => app.repository === row.repository).map(app => app.application) })
   }
-  return { schemaVersion: 1, id: randomUUID(), repository: resolve(repository), deploy: options.deploy,
+  return { schemaVersion: 1, id: randomUUID(), repository: resolve(repository), deploy: options.deploy, fromDev: Boolean(options.fromDev),
     core: plan.core, owners, results: {}, status: 'running', pending: null }
 }
 
@@ -108,9 +109,9 @@ export async function executeJournal(journal, directory, adapter) {
   try {
     save()
     const steps = journal.owners.flatMap((owner, index) =>
-      (owner.bump ? ['prepare', 'gate', 'merge', 'sync', 'publish', 'verify'] : ['publish', 'verify'])
+      (owner.bump ? ['prepare', 'gate', ...(journal.fromDev ? ['push'] : ['merge', 'sync']), 'publish', 'verify'] : ['publish', 'verify'])
         .map(action => ({ key: `owner-${index}-${action}`, action, owner })))
-    if (journal.owners.length || journal.core.count) steps.push(...['pin', 'coreGate', 'coreMerge', 'preflight', 'branch',
+    if (journal.owners.length || journal.core.count) steps.push(...['pin', 'coreGate', journal.fromDev ? 'corePush' : 'coreMerge', 'preflight', 'branch',
       ...(journal.deploy ? ['deploy', 'health'] : [])].map(action => ({ key: action, action, owner: null })))
     for (const step of steps) {
       if (Object.hasOwn(journal.results, step.key)) continue
@@ -148,7 +149,7 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       } catch (error) { failure = error }
       if (response?.ok && !failure) return data
       const status = response?.status
-      const message = redact(`${github ? 'GitHub' : 'Release API'} HTTP ${status ?? 'unavailable'}: ${data?.message ?? failure?.message ?? 'Request failed'}${data?.errors ? `; errors: ${JSON.stringify(data.errors)}` : ''}`, env)
+      const message = redact(`${github ? 'GitHub' : 'Release API'} HTTP ${status ?? 'unavailable'}: ${data?.message ?? data?.error ?? failure?.message ?? 'Request failed'}${data?.errors ? `; errors: ${JSON.stringify(data.errors)}` : ''}`, env)
       if (!github || attempt >= 5 || (status !== undefined && status !== 422 && status < 500) || now() >= deadline)
         throw Object.assign(Error(message), { status })
       await sleep(Math.min(1000 * 2 ** attempt, Math.max(0, deadline - now())))
@@ -238,9 +239,33 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     if (action === 'gate') {
       run('npm', ['ci'], cwd)
       const pkg = json(join(cwd, 'package.json'))
-      if (!pkg.scripts?.gate) throw Error('Owner full gate missing')
-      run('npm', ['run', pkg.scripts['gate:release'] ? 'gate:release' : 'gate'], cwd)
+      if (journal.fromDev) {
+        const gate = pkg.scripts?.['gate:quick'] ? 'gate:quick' : pkg.scripts?.['affected-check'] ? 'affected-check' : 'gate'
+        if (!pkg.scripts?.[gate]) throw Error('Owner gate missing')
+        run('npm', ['run', gate, ...(gate === 'gate:quick' ? ['--', '--base', owner.pinnedCommit] : [])], cwd)
+      } else {
+        if (!pkg.scripts?.gate) throw Error('Owner full gate missing')
+        run('npm', ['run', pkg.scripts['gate:release'] ? 'gate:release' : 'gate'], cwd)
+      }
       if (git(cwd, 'status', '--porcelain') || git(cwd, 'rev-parse', 'HEAD') !== result('prepare')) throw Error('Gate changed release inputs')
+    }
+    if (action === 'push') {
+      if (!Object.hasOwn(journal.results, `owner-${index}-gate`)) await adapter('gate', owner, journal)
+      try { git(cwd, 'push', 'origin', `${result('prepare')}:refs/heads/dev`) }
+      catch (error) {
+        if (!/non-fast-forward|fetch first|stale info/i.test(error.message)) throw error
+        git(cwd, 'fetch', 'origin')
+        // Replay only train-created version/KB commits, never the planned dev history.
+        try { git(cwd, 'rebase', '--onto', 'origin/dev', owner.source) }
+        catch (rebaseError) { git(cwd, 'rebase', '--abort'); throw rebaseError }
+        owner.source = git(cwd, 'rev-parse', 'origin/dev')
+        journal.results[`owner-${index}-prepare`] = git(cwd, 'rev-parse', 'HEAD')
+        delete journal.results[`owner-${index}-gate`]
+        await adapter('gate', owner, journal)
+        journal.results[`owner-${index}-gate`] = null
+        git(cwd, 'push', 'origin', `${result('prepare')}:refs/heads/dev`)
+      }
+      return result('prepare')
     }
     if (action === 'merge') {
       const branch = `release/${owner.version}`
@@ -253,7 +278,7 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       git(cwd, 'push', 'origin', `${result('merge')}:refs/heads/dev`)
     }
     if (action === 'publish') {
-      const source = join(workspace, `publish-${index}`), commit = result('merge') ?? owner.source
+      const source = join(workspace, `publish-${index}`), commit = result('push') ?? result('merge') ?? owner.source
       // Rebuild a disposable clean clone on retries; publication reconciles existing tags.
       rmSync(source, { recursive: true, force: true })
       clone(`https://github.com/${owner.repository}.git`, commit, source)
@@ -325,12 +350,12 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return git(cwd, 'rev-parse', 'HEAD')
     }
     if (action === 'coreGate') {
-      run('npm', ['ci'], cwd); run('npm', ['run', 'gate'], cwd)
+      run('npm', ['ci'], cwd); run('npm', journal.fromDev ? ['run', 'gate:quick', '--', '--base', 'origin/main'] : ['run', 'gate'], cwd)
       if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
     }
-    if (action === 'coreMerge') {
+    if (action === 'coreMerge' || action === 'corePush') {
       const coreGate = () => {
-        run('npm', ['ci'], cwd); run('npm', ['run', 'gate'], cwd)
+        run('npm', ['ci'], cwd); run('npm', journal.fromDev ? ['run', 'gate:quick', '--', '--base', 'origin/main'] : ['run', 'gate'], cwd)
         if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
         journal.results.coreGate = null
       }
@@ -358,6 +383,7 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         coreGate()
         git(cwd, 'push', 'origin', `${journal.results.pin}:refs/heads/dev`)
       }
+      if (journal.fromDev) return journal.results.pin
       const remote = git(cwd, 'remote', 'get-url', 'origin')
       const { githubRepository } = await import('./release-train.mjs')
       const slug = githubRepository(remote)
@@ -378,15 +404,28 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       const rows = await rc('/branches'), branches = Array.isArray(rows) ? rows : rows.branches
       const existing = branches.find(row => row.branch === branch)
       if (existing) {
-        if (existing.sha !== journal.results.coreMerge) throw Error('Core release branch provenance mismatch')
+        if (journal.fromDev && existing.fast !== true) throw Error('Release Center did not confirm fast: true; fast release unsupported or disabled')
+        if (existing.sha !== (journal.fromDev ? journal.results.pin : journal.results.coreMerge)) throw Error('Core release branch provenance mismatch')
         return existing
       }
       const check = await rc('/preflight' + (env.RELEASE_CENTER_AGENT_ID ? `?agentId=${encodeURIComponent(env.RELEASE_CENTER_AGENT_ID)}` : ''))
       if (check.ok !== true) throw Error('Release Center preflight blocked')
       const { githubRepository } = await import('./release-train.mjs')
       const slug = githubRepository(git(cwd, 'remote', 'get-url', 'origin'))
-      if ((await gh(`/repos/${slug}/commits/main`)).sha !== journal.results.coreMerge) throw Error('Core main moved after gate')
-      return rc('/branches', 'POST', { branch, baseBranch: 'main', ...(env.RELEASE_CENTER_AGENT_ID ? { agentId: env.RELEASE_CENTER_AGENT_ID } : {}) })
+      if (journal.fromDev) {
+        git(cwd, 'fetch', 'origin')
+        if (git(cwd, 'rev-parse', 'origin/dev') !== journal.results.pin) throw Error('Core dev moved after gate')
+      } else if ((await gh(`/repos/${slug}/commits/main`)).sha !== journal.results.coreMerge) throw Error('Core main moved after gate')
+      let response
+      try {
+        response = await rc('/branches', 'POST', { branch, baseBranch: journal.fromDev ? 'dev' : 'main',
+          ...(journal.fromDev ? { fast: true } : {}), ...(env.RELEASE_CENTER_AGENT_ID ? { agentId: env.RELEASE_CENTER_AGENT_ID } : {}) })
+      } catch (error) {
+        if (journal.fromDev) throw Error(`Fast release from dev rejected; enable fastReleaseTestCommand and fast API support in Release Center. ${error.message}`)
+        throw error
+      }
+      if (journal.fromDev && response.fast !== true) throw Error('Release Center did not confirm fast: true; fast release unsupported or disabled')
+      return response
     }
     if (action === 'deploy') {
       const rows = await rc(''), releases = Array.isArray(rows) ? rows : rows.releases
@@ -420,7 +459,7 @@ export async function runCli(args, env = process.env) {
   if (!(env.GH_TOKEN || env.GITHUB_TOKEN)) throw Error('GitHub token required')
   let journal
   if (options.resume) journal = json(join(directory, `${options.resume}.json`))
-  else journal = createJournal(await planReleaseTrain({ repository, env }), options, repository)
+  else journal = createJournal(await planReleaseTrain({ repository, env, fromDev: options.fromDev }), options, repository)
   if (journal.schemaVersion !== 1 || journal.repository !== repository || (options.resume && journal.id !== options.resume)) throw Error('Journal does not belong to this checkout')
   const target = { url: env.RELEASE_CENTER_URL, project: env.RELEASE_CENTER_PROJECT_ID,
     agent: env.RELEASE_CENTER_AGENT_ID ?? null, health: env.RELEASE_HEALTH_URL ?? null }

@@ -1200,6 +1200,11 @@ export class ChatRepo extends BaseRepo {
     await this.sql.run(`UPDATE conversation_turn_queue SET status = 'failed', updated_at = ? WHERE user_id = ? AND conversation_id = ? AND message_id = ?`, [this.now(), userId, conversationId, messageId])
   }
 
+  /** An explicit "send now" retries a failed item: dispatch only takes queued rows. */
+  async retryQueuedTurn(userId: string, conversationId: string, id: string): Promise<void> {
+    await this.sql.run(`UPDATE conversation_turn_queue SET status = 'queued', updated_at = ? WHERE id = ? AND user_id = ? AND conversation_id = ? AND status = 'failed'`, [this.now(), id, userId, conversationId])
+  }
+
   async addMessage(
     userId: string,
     conversationId: string,
