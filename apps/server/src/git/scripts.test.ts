@@ -39,6 +39,12 @@ describe('безопасность скриптов', () => {
     }
   })
 
+  it('переменная перед двоеточием в фигурных скобках: zsh не читает `:r` как модификатор', () => {
+    // macOS-агент исполняет скрипты в zsh: "$VC_GIT_BRANCH:refs/…" там
+    // превращался в "devefs/…", и checkout удалённой ветки падал.
+    for (const { script } of ALL()) expect(script, script).not.toMatch(/\$[A-Za-z_][A-Za-z0-9_]*:/)
+  })
+
   it('читающие скрипты проходят политику машины без allowWrite и без сети', () => {
     const readOnly = { ...DEFAULT_AGENT_POLICY, allowWrite: false, allowNetwork: false }
     for (const script of [statusScript('main'), branchesScript(false), treeScript('HEAD', ''), fileAtRefScript('HEAD', 'a.txt')]) {

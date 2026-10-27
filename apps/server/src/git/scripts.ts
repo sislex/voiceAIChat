@@ -102,9 +102,9 @@ export function fileAtRefScript(ref: string, path: string, maxBytes: number = GI
     env: { VC_GIT_REF: ref, VC_GIT_PATH: path, VC_GIT_MAX: String(maxBytes) },
     script: [
       mark('size'),
-      'git cat-file -s "$VC_GIT_REF:$VC_GIT_PATH"',
+      'git cat-file -s "${VC_GIT_REF}:${VC_GIT_PATH}"',
       mark('content_b64'),
-      `git cat-file blob "$VC_GIT_REF:$VC_GIT_PATH" | head -c "$VC_GIT_MAX" | base64 | tr -d '\\n'`,
+      `git cat-file blob "\${VC_GIT_REF}:\${VC_GIT_PATH}" | head -c "$VC_GIT_MAX" | base64 | tr -d '\\n'`,
       markAfterB64('done')
     ].join('\n')
   }
@@ -126,7 +126,7 @@ export function checkoutScript(branch: string): GitScript {
       '  git checkout "$VC_GIT_BRANCH"',
       'else',
       `  printf '%s\\n' 'remote'`,
-      '  git fetch --prune origin "+refs/heads/$VC_GIT_BRANCH:refs/remotes/origin/$VC_GIT_BRANCH"',
+      '  git fetch --prune origin "+refs/heads/${VC_GIT_BRANCH}:refs/remotes/origin/${VC_GIT_BRANCH}"',
       '  git checkout -b "$VC_GIT_BRANCH" --track "origin/$VC_GIT_BRANCH"',
       'fi',
       mark('done')

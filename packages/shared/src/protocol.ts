@@ -194,6 +194,7 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationThreadCost: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-cost`,
   conversationSummary: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary`,
   conversationSummaryRefresh: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary/refresh`,
   conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
@@ -306,7 +307,9 @@ export const REST = {
     if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
-  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
+  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-reset`,
+  /** Compatibility route for published clients expecting a Conversation response. */
+  conversationThreadResetLegacy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */

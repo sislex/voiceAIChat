@@ -535,7 +535,7 @@ describe('WS: Claude-стрим', () => {
     expect(doneMsg.message).toBeDefined()
     expect(doneMsg.message?.meta?.activity).toBeUndefined()
     const persisted = (await db.chat.listMessages(U, conv.id)).find((message) => message.role === 'ai')
-    expect(persisted?.meta?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
+    expect((await db.chat.messageServiceData(U, conv.id, persisted!.id))?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {
@@ -865,7 +865,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     }, { timeout: 30_000 })
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
-    expect(saved[0].meta?.request?.provider).toBe('claude')
+    expect((await sdb.chat.messageServiceData(U, conv.id, saved[0].id))?.request?.provider).toBe('claude')
     await cleanupSlow(sapp, sdb, [ws])
   })
 

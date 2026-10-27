@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-27
-checked: 3bef4da01
+checked: 68037887c
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -216,6 +216,22 @@ applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
 return Core's `404 application_disabled` instead of proxying to absent services.
 Without a selector, the original direct Caddy upstream defaults are preserved.
 
+Both public and internal HTTPS sites apply `encode zstd gzip` before all
+`handle` branches, including direct Make, Image Studio and Playwright Reader
+upstreams. The response MIME allowlist covers JSON (including +json), JavaScript,
+Wasm, HTML, plain text, CSS and SVG; SSE is deliberately excluded. Requests
+with Range or WebSocket Upgrade and paths ending in `/exec-stream` (or its
+children) bypass encode. Core's existing br/gzip responses are not recompressed.
+The stand lease port block is unchanged.
+
+Validate with `VC_PUBLIC_HOST=localhost caddy validate --config Caddyfile`.
+The live proxy regression test uses the actual public site's configuration,
+temporary loopback ports and a mock upstream:
+`CADDY_BIN=/path/to/caddy npm run test:files -- apps/server/src/infra.caddyCompression.test.ts`.
+It verifies gzip JSON through all four upstream branches, first SSE/exec chunks
+before completion, and a WebSocket `/ws` round-trip. It is skipped without
+`CADDY_BIN`; Caddy 2.10.2 was used for task validation.
+
 Operator verification on 2026-10-19 used a separate Docker project and disposable
 Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
 Postgres and Caddy, accepted an administrator login, exposed the chat-only
@@ -322,7 +338,34 @@ test these adapters without contacting real owners.
 
 ## Release train execution (C01)
 
-`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+`node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
+
+`plan --from-dev [--json]` previews the fast path. `run --from-dev` bumps
+changed owners from their planned dev commit and runs `gate:quick -- --base <pinned commit>`,
+falling back to `affected-check`, then `gate` only when the preceding scripts
+are absent. It pushes the gated commit to dev without force and publishes and
+verifies that exact commit. On a concurrent dev push, it fetches, rebases only
+the train's version/KB commits, invalidates the old gate and gates again before
+retrying. A failed rebase gate remains required on resume.
+
+Core pins on dev, runs `gate:quick -- --base origin/main`, and pushes dev
+without force (including rebase and recheck on a concurrent push). No owner
+release PR or Core dev → main PR is created. After preflight the train checks
+that origin/dev still equals the pin commit and requests
+`POST /releases/branches {branch, baseBranch: 'dev', fast: true}`.
+The Release Center must support fast releases and have fastReleaseTestCommand
+configured; rejection (including fast_release_disabled), or a response without
+`fast: true`, stops the train without falling back to the full path.
+Existing branches are reconciled only when their SHA and fast mode match.
+Publication, verification, preflight, and optional deploy/health remain in place.
+The journal preserves from-dev mode on `run --resume <id>`; do not repeat mode,
+selection or deploy flags when resuming. The planner text and CLI parsing live in
+`scripts/release-train.mjs`; journal step selection, gate fallback, dev-push
+reconciliation and the Release Center request live in `scripts/release-train-run.mjs`.
+
+Without `--from-dev`, the full-gate/main path described below is unchanged.
+After a fast release, main catches up through a normal dev → main PR only
+on the owner's instruction; the train does not perform that promotion.
 With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
@@ -333,7 +376,7 @@ An owner whose root `package.json` defines a `set-version` script (Make keeps
 itself instead: the runner installs dependencies and runs
 `npm run set-version -- <version>`, then commits every manifest it changed.
 
-The runner creates private clones below
+The runner creates private partial clones (`--filter=blob:none`: history and trees, file contents on checkout) below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
 original owner selection, commits, versions and deploy intent; it skips completed
@@ -1153,8 +1196,14 @@ The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner
 `JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
 uploaded fixture archives to the real release (removed by the coordinator).
 Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
-`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
-is rewritten.
+`vendor-store.test.mjs`) fails if an archive is tracked. History was rewritten on 2026-10-18 and every
+branch force-pushed, but the stale task branch `SK-19` (main of 2026-10-16) was pushed again from a
+pre-rewrite clone and kept the old 3640-commit history, so every clone still downloaded ~750 MB. It was
+deleted on 2026-10-27 (bundle backup `~/.local/state/sislexa/history-rewrite/SK-19-backup-20261027.bundle`
+on the operator Mac); a fresh clone is ~29 MB. `vendor-archives.test.mjs` TC-04 fails when any archive is
+tracked or any commit in the history of `HEAD` adds `*.tgz`, so a branch built on the old history cannot
+pass the gate (rebase it onto `origin/dev`). GitHub push rulesets are unavailable for this user-owned public
+repository.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
@@ -3206,3 +3255,9 @@ The subsequent train releases the remaining owners without republishing Make.
 - sislex/sislexa-kanban: 0.2.42
 
 <!-- release-train:0e091d1f-17fa-431c-9aad-2af913d0d697 -->
+
+<!-- release-train:f778e0ae-afbb-414b-8fd5-c91272d54d23 -->
+- sislex/sislexa-kanban: 0.2.43
+
+<!-- release-train:eb1a80aa-d8cd-45ca-bfee-ae55a0b3ee76 -->
+- sislex/sislexa-kanban: 0.2.44

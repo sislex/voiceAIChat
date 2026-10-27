@@ -122,14 +122,15 @@ describe('REST: conversations/messages/settings', () => {
 
     await db.identity.createUser('outsider-reset', '', 'developer')
     const outsider = signToken({ name: 'outsider-reset', role: 'developer' }, SECRET)
-    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset`, headers: { authorization: `Bearer ${outsider}` } })).statusCode).toBe(404)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread-reset`, headers: { authorization: `Bearer ${outsider}` } })).statusCode).toBe(404)
 
-    const reset = await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread/reset` })
+    const reset = await inj({ method: 'POST', url: `/api/conversations/${created.id}/thread-reset`, payload: { summarize: false } })
     expect(reset.statusCode).toBe(200)
-    expect(reset.json()).toMatchObject({ id: created.id, claudeSessionId: null })
-    expect(reset.json().contextUsage).toBeUndefined()
+    expect(reset.json()).toEqual({ ok: true, summary: null })
     const after = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
-    expect(after.messages.at(-1)).toMatchObject({ role: 'ai', text: expect.stringContaining('контекст потока сброшен') })
+    expect(after.conversation.claudeSessionId).toBeNull()
+    expect(after.conversation.contextUsage).toBeUndefined()
+    expect(after.messages.at(-1)).toMatchObject({ role: 'ai', text: 'Тред сброшен: было 0 токенов на ход' })
     expect(coldStartPrompt(after.messages)).toContain('Сохранённый контекст')
   })
 

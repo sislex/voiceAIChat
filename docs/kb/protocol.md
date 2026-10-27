@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-27
-checked: a3af4a30
+checked: 40d07d916
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -29,9 +29,9 @@ areas:
 `packages/shared/src/threadCost.ts` defines `ConversationThreadCost`, the encoded
 `thread-cost`/`thread-reset` routes, reset result and `ThreadResetMode`.
 The conversation settings contract accepts `threadReset: off | hint | auto`.
-These are client contracts; this change does not add Core route handlers or
-automatic reset execution. Consumers must hide controls on HTTP 404 until the
-server implementation is deployed. The baseline has input tokens and duration
+Core implements cost lookup, summary reset and automatic reset before a turn.
+Consumers must hide controls on HTTP 404 when connected to an older Core and
+refresh cost on conversation open and after `claude.done`. The baseline has input tokens and duration
 only, so clients must not invent baseline cache/output values.
 
 ## Voice module configuration
@@ -472,12 +472,14 @@ The CI MCP broker publishes `preview_start`, `preview_status`, `preview_logs`, `
 Новый REST-путь **всегда** добавляется в объект `REST` — клиенты не пишут строки
 URL руками. Параметризованные пути — функции: `REST.conversation(id)`.
 
-Служебные данные завершённого ответа (`TurnMeta.activity` и полный `TurnMeta.request`)
-по умолчанию исключаются из сообщений функцией `stripServiceData`: в сообщении остаются
-размеры в `meta.serviceData` и краткие поля запроса, включая записи `kbContext` без тел
-текста. Настройка разговора `loadServiceData` по умолчанию равна `false`; при включении
-клиент загружает полные `{ activity, request }` одного сообщения через
-`GET REST.messageServiceData(conversationId, messageId)`.
+Completed message history and WS frames never include `activity` or `request`,
+regardless of `loadServiceData`. `stripServiceData` retains byte counts in
+`meta.serviceData` and lightweight fields such as `model` and `permissionMode`.
+The setting defaults to false and gates the explicit on-click endpoint
+`GET REST.messageServiceData(conversationId, messageId)`, returning
+`{ activity, request }` for one published message. `TurnRequestInfo` stores
+`messageCount` and `lastMessageId`; optional `messages` is deprecated for legacy
+client compatibility. Details show the actual `prompt`, not a duplicate transcript.
 
 Для форм сообщений и загрузок есть намеренное дублирование: REST-версия `AddMessageArgs` и `UploadInfo` описана в `packages/shared/src/protocol.ts`, а bridge-версия в `packages/shared/src/ipc.ts` добавляет `conversationId` к сообщению и задаёт `IpcInvokeMap`. Поэтому новое поле вложения или загрузки меняется синхронно в обоих файлах, затем прокидывается серверным route и `packages/ui/src/remote/httpApi.ts`; иначе web и desktop разойдутся по типам или телу запроса.
 
@@ -494,9 +496,17 @@ URL руками. Параметризованные пути — функции
 равен input + cache read + cache creation последнего assistant turn; для Codex —
 только `last_token_usage.input_tokens`, а не кумулятивный total потока. Размер окна
 берётся из общей таблицы моделей с консервативным fallback 128k. Поле приходит и в
-`GET REST.conversation(id)`. `POST REST.conversationThreadReset(id)` доступен только
-владельцу, очищает provider session и снимок usage, добавляет системную заметку и
-возвращает обновлённый `Conversation`; чужой и отсутствующий разговор одинаково дают 404.
+`GET REST.conversation(id)`. The legacy `POST /api/conversations/:id/thread/reset`
+(`REST.conversationThreadResetLegacy`) clears the provider session and usage,
+adds a system note and returns the updated `Conversation` without refreshing
+its summary. The new `POST REST.conversationThreadReset(id)` (`/thread-reset`)
+refreshes the summary by default (`summarize: false` skips refresh) and returns
+`{ ok: true, summary }`. Both require ownership and reject active turns with
+409 `turn_active`; foreign and missing conversations return 404.
+`GET REST.conversationThreadCost(id)` (`/thread-cost`) returns scalar usage,
+first-turn baseline, deltas and reset recommendation for the active session.
+Conversation settings include `threadReset: off | hint | auto` (default `hint`).
+See [session cost and reset](llm.md#session-cost-and-summary-reset).
 
 ### Tenant selection
 
@@ -760,7 +770,10 @@ action или timeout. Детали действий и UI запуска — [u
 атомарно применяет его только при точном совпадении текущего набора и всегда
 возвращает авторитетный `claude.queue`. При cancel-and-merge событие дополнительно
 несёт `removedMessageIds` и новую опубликованную реплику, чтобы все вкладки
-атомарно удалили заменённые сообщения. `claude.done` несёт готовое `message`,
+атомарно удалили заменённые сообщения. `claude.queue.now` без активного хода
+повторяет и упавший (`failed`) элемент: сервер возвращает ему статус `queued`,
+ставит первым и снимает паузу очереди (`ChatRepo.retryQueuedTurn`) — dispatch
+берёт только `queued`. `claude.done` несёт готовое `message`,
 сохранённое сервером: **клиент не сохраняет сообщение сам**.
 
 `claude.active` (снапшот при подключении WS) отдаёт по каждому активному ходу
@@ -949,6 +962,12 @@ the same optional `group` as HTTP.
 WS-сообщений у панели нет: состояние перечитывается кнопкой «Обновить» и после каждой
 мутации (сервер возвращает свежий статус в ответе — иначе UI на секунду показывал бы
 устаревшее состояние).
+
+Скрипты `apps/server/src/git/scripts.ts` на macOS-машинах исполняет zsh, поэтому
+переменная перед двоеточием всегда пишется в фигурных скобках (`"${VC_GIT_BRANCH}:refs/…"`):
+в zsh `$VAR:r…` — модификатор, и refspec превращался в `refs/heads/devefs/…`
+(checkout удалённой ветки падал `couldn't find remote ref`). Правило проверяет
+`scripts.test.ts`.
 
 Гейты по слоям: право `repository:write` на любой POST и возможность проекта `git` —
 из карт `projectPermissionForRequest`/`projectFeatureForRequest` (`users/auth.ts`,

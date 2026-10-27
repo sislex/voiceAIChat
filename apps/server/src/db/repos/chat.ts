@@ -2,6 +2,7 @@
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
 import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type ReasoningEffort, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, type ConversationGroup, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { stripServiceData, type ClaudeLogEntry, type TurnRequestInfo } from '@voicechat/shared'
 import { MAKE_KIND } from '@voicechat/make-contracts/make'
 import { MESSAGES_FTS_SQL } from '../schema.js'
 import { toFtsMatchQuery, toPgTsQuery } from '../fts.js'
@@ -191,7 +192,149 @@ function decodeSearchCursor(cursor: string | null | undefined): { score: number;
   if (!Number.isFinite(score) || !Number.isInteger(rowid)) return null
   return { score, rowid }
 }
+/** Limit the serialized UTF-8 entry, including duplicate raw/detail tool output. */
+function boundedActivity(entry: ClaudeLogEntry): ClaudeLogEntry {
+  const max = 64 * 1024
+  const size = Buffer.byteLength(JSON.stringify(entry))
+  if (size <= max) return entry
+  const result = { ...entry }
+  const marker = ` [обрезано ${Math.ceil(size / 1024)} КБ исходной записи]`
+  for (const key of ['raw', 'detail', 'summary', 'tool', 'toolUseId'] as const) {
+    const value = result[key]
+    if (!value) continue
+    result[key] = value.slice(0, 2048) + marker
+  }
+  return result
+}
+
+function compactRequest(request: TurnRequestInfo): TurnRequestInfo {
+  const { messages, ...rest } = request
+  return { ...rest, ...(messages && rest.messageCount === undefined ? { messageCount: messages.length } : {}) }
+}
+
 export class ChatRepo extends BaseRepo {
+  /** Always remove legacy diagnostics in SQL, before transferring/parsing history. */
+  private messageColumns(alias = ''): string {
+    const p = alias ? alias + '.' : ''
+    const m = p + 'meta'
+    const marker = this.sql.engine === 'postgres'
+      ? `jsonb_build_object('activityEntries', CASE WHEN jsonb_typeof(${m}::jsonb->'activity') = 'array' THEN jsonb_array_length(${m}::jsonb->'activity') ELSE 0 END, 'activityBytes', COALESCE(octet_length((${m}::jsonb->'activity')::text),0), 'requestBytes', COALESCE(octet_length((${m}::jsonb->'request')::text),0))`
+      : `json_object('activityEntries', COALESCE(json_array_length(${m}, '$.activity'),0), 'activityBytes', COALESCE(length(CAST(json_extract(${m}, '$.activity') AS BLOB)),0), 'requestBytes', COALESCE(length(CAST(json_extract(${m}, '$.request') AS BLOB)),0))`
+    const light = this.sql.engine === 'postgres'
+      ? `CASE WHEN jsonb_exists(${m}::jsonb, 'activity') OR jsonb_exists(${m}::jsonb, 'request') THEN ((${m}::jsonb - 'activity' - 'request') || jsonb_strip_nulls(jsonb_build_object('model', COALESCE(${m}::jsonb->'model', ${m}::jsonb#>'{request,model}'), 'permissionMode', COALESCE(${m}::jsonb->'permissionMode', ${m}::jsonb#>'{request,permissionMode}'))) || jsonb_build_object('serviceData', COALESCE(${m}::jsonb->'serviceData', ${marker})))::text ELSE ${m} END`
+      : `CASE WHEN json_valid(${m}) AND (json_type(${m}, '$.activity') IS NOT NULL OR json_type(${m}, '$.request') IS NOT NULL) THEN json_set(json_patch(json_remove(${m}, '$.activity', '$.request'), json_object('model', COALESCE(json_extract(${m}, '$.model'), json_extract(${m}, '$.request.model')), 'permissionMode', COALESCE(json_extract(${m}, '$.permissionMode'), json_extract(${m}, '$.request.permissionMode')))), '$.serviceData', json(COALESCE(json_extract(${m}, '$.serviceData'), ${marker}))) ELSE ${m} END`
+    return ['id','conversation_id','role','text','time','created_at','engine','exec_target','attachments','state','history_position'].map(k => p + k).join(', ') + ', ' + light + ' AS meta'
+  }
+
+  private async storeServiceData(id: string, conversationId: string, meta: TurnMeta): Promise<TurnMeta> {
+    const activity = meta.activity?.map(boundedActivity)
+    const request = meta.request ? compactRequest(meta.request) : undefined
+    if (activity !== undefined || request !== undefined) {
+      await this.sql.run(`INSERT INTO message_service_data (message_id, conversation_id, activity, request, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(message_id) DO UPDATE SET
+          activity = COALESCE(excluded.activity, message_service_data.activity),
+          request = COALESCE(excluded.request, message_service_data.request)`,
+        [id, conversationId, activity === undefined ? null : JSON.stringify(activity), request === undefined ? null : JSON.stringify(request), this.now()])
+      const stored = await this.sql.get<{ activity: string | null; request: string | null }>(
+        'SELECT activity, request FROM message_service_data WHERE message_id = ?', [id])
+      return stripServiceData({ ...meta, serviceData: undefined,
+        activity: stored?.activity ? JSON.parse(stored.activity) : undefined,
+        request: stored?.request ? JSON.parse(stored.request) : undefined })
+    }
+    return stripServiceData(meta)
+  }
+
+  private serviceDataCursor = ''
+
+  /** A bounded transaction; lock each message before reading, like metadata PATCH. */
+  async migrateMessageServiceDataBatch(limit = 50): Promise<number> {
+    const result = await this.sql.transaction(async () => {
+      const condition = this.sql.engine === 'postgres'
+        ? "(jsonb_exists(meta::jsonb, 'activity') OR jsonb_exists(meta::jsonb, 'request'))"
+        : "json_valid(meta) AND (json_type(meta, '$.activity') IS NOT NULL OR json_type(meta, '$.request') IS NOT NULL)"
+      const ids = await this.sql.all<{ id: string }>(
+        `SELECT id FROM messages WHERE id > ? ORDER BY id LIMIT ?`, [this.serviceDataCursor, Math.max(1, Math.min(50, limit))])
+      for (const { id } of ids) {
+        const locked = await this.sql.run(`UPDATE messages SET id = id WHERE id = ? AND ${condition}`, [id])
+        if (!locked.changes) continue
+        const row = await this.sql.get<{ conversation_id: string; meta: string | null }>(`SELECT conversation_id, meta FROM messages WHERE id = ? AND ${condition}`, [id])
+        if (!row?.meta) continue
+        const meta = parseMeta(row.meta)
+        if (!meta) continue
+        // Existing separate values win when resuming an interrupted older migration.
+        const stored = await this.sql.get<{ activity: string | null; request: string | null }>('SELECT activity, request FROM message_service_data WHERE message_id = ?', [id])
+        const light = await this.storeServiceData(id, row.conversation_id, { ...meta,
+          ...(stored?.activity ? { activity: JSON.parse(stored.activity) } : {}),
+          ...(stored?.request ? { request: JSON.parse(stored.request) } : {}) })
+        await this.sql.run('UPDATE messages SET meta = ? WHERE id = ?', [JSON.stringify(light), id])
+      }
+      return { count: ids.length, cursor: ids.at(-1)?.id }
+    })
+    if (result.cursor) this.serviceDataCursor = result.cursor
+    return result.count
+  }
+
+  async getMessage(userId: string, conversationId: string, messageId: string): Promise<Message | null> {
+    if (!await this.ownsConversation(userId, conversationId)) return null
+    const row = await this.sql.get<MessageRow>(`SELECT ${this.messageColumns()} FROM messages WHERE id = ? AND conversation_id = ? AND state = 'published'`, [messageId, conversationId])
+    return row ? this.messageRows([row])[0] : null
+  }
+
+  async lastUserMessageId(userId: string, conversationId: string): Promise<string | undefined> {
+    if (!await this.ownsConversation(userId, conversationId)) return undefined
+    return (await this.sql.get<{ id: string }>("SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' AND role <> 'ai' ORDER BY history_position DESC, id DESC LIMIT 1", [conversationId]))?.id
+  }
+
+  async historyText(userId: string, conversationId: string): Promise<Array<{ role: MessageRole; text: string }>> {
+    if (!await this.ownsConversation(userId, conversationId)) return []
+    return this.sql.all("SELECT role, text FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
+  }
+
+  async historyFiles(userId: string, conversationId: string): Promise<Array<{ text: string; attachments?: MessageAttachment[] }>> {
+    if (!await this.ownsConversation(userId, conversationId)) return []
+    const rows = await this.sql.all<{ text: string; attachments: string | null }>("SELECT text, attachments FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
+    return rows.map(row => ({ text: row.text, attachments: parseAttachments(row.attachments) }))
+  }
+
+  async historySummary(userId: string, conversationId: string): Promise<{ messageCount: number; lastMessageId?: string }> {
+    if (!await this.ownsConversation(userId, conversationId)) return { messageCount: 0 }
+    const count = await this.sql.get<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ? AND state = 'published'", [conversationId])
+    const last = await this.sql.get<{ id: string }>("SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1", [conversationId])
+    return { messageCount: Number(count?.n ?? 0), ...(last ? { lastMessageId: last.id } : {}) }
+  }
+
+  /** Bounded scalar-only history for context growth; never transfer stored prompts/activity. */
+  async recentRequestSizes(userId: string, conversationId: string): Promise<Array<Pick<TurnRequestInfo, 'provider' | 'model' | 'promptChars' | 'resumed'> & { time: string }>> {
+    if (!await this.ownsConversation(userId, conversationId)) return []
+    const legacy = this.sql.engine === 'postgres' ? "(m.meta::jsonb->'request')::text" : "json_extract(m.meta, '$.request')"
+    const rows = await this.sql.all<{ time: string; provider: TurnRequestInfo['provider']; model: string; promptChars: number; resumed: string | number | boolean }>(
+      `WITH recent AS (
+        SELECT m.time, COALESCE(s.request, ${legacy}) AS request
+        FROM messages m LEFT JOIN message_service_data s ON s.message_id = m.id
+        WHERE m.conversation_id = ? AND m.role = 'ai' AND m.state = 'published'
+          AND COALESCE(s.request, ${legacy}) IS NOT NULL
+        ORDER BY m.history_position DESC, m.id DESC LIMIT 10)
+       SELECT time, ${this.j.text('request', 'provider')} AS provider,
+         ${this.j.text('request', 'model')} AS model,
+         ${this.j.num('request', 'promptChars')} AS "promptChars",
+         ${this.j.text('request', 'resumed')} AS resumed FROM recent`, [conversationId])
+    return rows.map(row => ({ ...row, promptChars: Number(row.promptChars), resumed: row.resumed === true || row.resumed === 1 || row.resumed === 'true' }))
+  }
+
+  async lastMessageRequest(userId: string, conversationId: string): Promise<{ time: string; request?: TurnRequestInfo } | null> {
+    if (!await this.ownsConversation(userId, conversationId)) return null
+    const row = await this.sql.get<{ id: string; time: string }>("SELECT id, time FROM messages WHERE conversation_id = ? AND role = 'ai' AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1", [conversationId])
+    if (!row) return null
+    const legacyRequest = this.sql.engine === 'postgres'
+      ? "(m.meta::jsonb->'request')::text"
+      : "json_extract(m.meta, '$.request')"
+    const data = await this.sql.get<{ request: string | null }>(
+      `SELECT COALESCE(s.request, ${legacyRequest}) AS request
+       FROM messages m LEFT JOIN message_service_data s ON s.message_id = m.id WHERE m.id = ?`, [row.id])
+    return { time: row.time, request: data?.request ? compactRequest(JSON.parse(data.request)) : undefined }
+  }
+
   /** Lock the legacy row as well as the canonical revision during mixed-client writes. */
   async lockChatSettings(userId: string, id: string): Promise<void> {
     await this.sql.run('UPDATE conversations SET id = id WHERE id = ? AND user_id = ?', [id, userId])
@@ -539,7 +682,7 @@ export class ChatRepo extends BaseRepo {
   async summaryMessages(userId: string, conversationId: string): Promise<{ summary: Conversation['summary']; messages: Message[] } | null> {
     const conversation = await this.getConversation(userId, conversationId)
     if (!conversation) return null
-    const rows = await this.sql.all<MessageRow>(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+    const rows = await this.sql.all<MessageRow>(`SELECT ${this.messageColumns()} FROM messages WHERE conversation_id = ? AND state = 'published'
       AND history_position > COALESCE((SELECT history_position FROM messages WHERE id = ? AND conversation_id = ?), 0)
       ORDER BY history_position, id`, [conversationId, conversation.summary?.coversUntilMessageId ?? '', conversationId])
     return { summary: conversation.summary, messages: this.messageRows(rows) }
@@ -841,7 +984,7 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Clears the provider thread and leaves a visible, non-provider-authored audit note. */
-  async resetConversationThread(userId: string, id: string): Promise<Conversation | null> {
+  async resetConversationThread(userId: string, id: string, tokensPerTurn?: number): Promise<Conversation | null> {
     const resetAt = this.now()
     const noteId = this.newId()
     await this.sql.transaction(async () => {
@@ -850,7 +993,7 @@ export class ChatRepo extends BaseRepo {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [id])) as { position: number }).position
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
       await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position)
-        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.', new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
     })
     return await this.getConversation(userId, id)
   }
@@ -1028,7 +1171,7 @@ export class ChatRepo extends BaseRepo {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`, [messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target, details.length ? JSON.stringify(details) : null, historyPosition])
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [createdAt, conversationId, userId])
 
-      const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === messageId)
+      const message = await this.getMessage(userId, conversationId, messageId)
       if (!message) throw new Error('merged message not found')
       return { message, payload, replacedMessageIds: [activeMessageId, queued.message_id] as [string, string] }
     })
@@ -1044,7 +1187,7 @@ export class ChatRepo extends BaseRepo {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
       await this.sql.run(`UPDATE messages SET state = 'published', history_position = ? WHERE id = ? AND conversation_id = ? AND state = 'queued'`, [position, row.message_id, conversationId])
       await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [row.id])
-      const message = (await this.listMessages(userId, conversationId)).find((item) => item.id === row.message_id)
+      const message = await this.getMessage(userId, conversationId, row.message_id)
       if (!message) throw new Error('queued message not found')
       if (!publish) {
         await this.sql.run(`UPDATE messages SET state = 'queued', history_position = NULL WHERE id = ? AND conversation_id = ?`, [row.message_id, conversationId])
@@ -1055,6 +1198,11 @@ export class ChatRepo extends BaseRepo {
 
   async markQueuedTurnFailed(userId: string, conversationId: string, messageId: string): Promise<void> {
     await this.sql.run(`UPDATE conversation_turn_queue SET status = 'failed', updated_at = ? WHERE user_id = ? AND conversation_id = ? AND message_id = ?`, [this.now(), userId, conversationId, messageId])
+  }
+
+  /** An explicit "send now" retries a failed item: dispatch only takes queued rows. */
+  async retryQueuedTurn(userId: string, conversationId: string, id: string): Promise<void> {
+    await this.sql.run(`UPDATE conversation_turn_queue SET status = 'queued', updated_at = ? WHERE id = ? AND user_id = ? AND conversation_id = ? AND status = 'failed'`, [this.now(), id, userId, conversationId])
   }
 
   async addMessage(
@@ -1075,7 +1223,7 @@ export class ChatRepo extends BaseRepo {
     }
     const id = requestedId ?? this.newId()
     const existing = requestedId
-      ? (await this.sql.get(`SELECT * FROM messages WHERE id = ? AND conversation_id = ?`, [requestedId, conversationId])) as MessageRow | undefined
+      ? (await this.sql.get(`SELECT ${this.messageColumns()} FROM messages WHERE id = ? AND conversation_id = ?`, [requestedId, conversationId])) as MessageRow | undefined
       : undefined
     if (existing) {
       return {
@@ -1097,10 +1245,14 @@ export class ChatRepo extends BaseRepo {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
     )
     const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ?, context_usage_json = COALESCE(?, context_usage_json) WHERE id = ?`)
-    const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(meta) : null
+    const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(stripServiceData(meta)) : null
     await this.sql.transaction(async () => {
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
       await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
+      if (meta) {
+        meta = await this.storeServiceData(id, conversationId, meta)
+        await this.sql.run('UPDATE messages SET meta = ? WHERE id = ?', [JSON.stringify(meta), id])
+      }
       await touch.run(createdAt, contextUsage ? JSON.stringify(contextUsage) : null, conversationId)
     })
     return {
@@ -1123,6 +1275,32 @@ export class ChatRepo extends BaseRepo {
    * usage (interrupted, failed) are skipped; null when the thread has no priced
    * reply yet.
    */
+  /** SQL projects scalars only: never hydrate activity/request or the message history. */
+  async threadTurnCosts(userId: string, conversationId: string, provider: LlmProvider, sessionId: string): Promise<import('@voicechat/shared').ThreadTurnCost[]> {
+    if (!await this.ownsConversation(userId, conversationId)) return []
+    const meta = "CASE WHEN " + this.j.valid('meta') + " THEN meta ELSE '{}' END"
+    const session = this.j.text(meta, 'sessionId')
+    const codexSession = this.sql.engine === 'postgres'
+      ? `((${meta})::jsonb->'codexThreadUsage'->>'sessionId')`
+      : `json_extract(${meta}, '$.codexThreadUsage.sessionId')`
+    return this.sql.all(`SELECT
+      COALESCE(${this.j.num(meta, 'inputTokens')}, 0) AS "inputTokens",
+      COALESCE(${this.j.num(meta, 'cacheReadTokens')}, 0) AS "cacheReadTokens",
+      COALESCE(${this.j.num(meta, 'outputTokens')}, 0) AS "outputTokens",
+      COALESCE(${this.j.num(meta, 'durationMs')}, 0) AS "durationMs"
+      FROM messages WHERE conversation_id = ? AND engine = ? AND role = 'ai' AND state = 'published'
+      AND COALESCE(${session}, ${codexSession}) = ?
+      AND (${this.j.num(meta, 'inputTokens')} IS NOT NULL OR ${this.j.num(meta, 'cacheReadTokens')} IS NOT NULL)
+      ORDER BY history_position, id`, [conversationId, provider, sessionId])
+  }
+
+  async latestUserMessageChars(userId: string, conversationId: string): Promise<number> {
+    if (!await this.ownsConversation(userId, conversationId)) return 0
+    const row = await this.sql.get<{ chars: number }>(`SELECT LENGTH(text) AS chars FROM messages
+      WHERE conversation_id = ? AND role != 'ai' AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1`, [conversationId])
+    return Number(row?.chars ?? 0)
+  }
+
   async lastCodexThreadUsage(conversationId: string): Promise<CodexThreadUsage | null> {
     // Ids first, one meta at a time: a Codex reply carries its whole activity
     // log in `meta` (up to ~12 MB in production), and the core runs with a
@@ -1195,11 +1373,14 @@ export class ChatRepo extends BaseRepo {
   /** Read one message's diagnostics without materializing the conversation history. */
   async messageServiceData(userId: string, conversationId: string, messageId: string): Promise<import('@voicechat/shared').MessageServiceData | null> {
     if (!await this.ownsConversation(userId, conversationId)) return null
-    const row = await this.sql.get<{ meta: string | null }>(
-      "SELECT meta FROM messages WHERE id = ? AND conversation_id = ? AND state = 'published'", [messageId, conversationId])
+    const row = await this.sql.get<{ activity: string | null; request: string | null; meta: string | null }>(
+      `SELECT s.activity, s.request, CASE WHEN s.message_id IS NULL THEN m.meta ELSE NULL END AS meta
+       FROM messages m LEFT JOIN message_service_data s ON s.message_id = m.id
+       WHERE m.id = ? AND m.conversation_id = ? AND m.state = 'published'`, [messageId, conversationId])
     if (!row) return null
-    const meta = row.meta ? parseMeta(row.meta) : undefined
-    return { activity: meta?.activity, request: meta?.request }
+    const legacy = row.meta ? parseMeta(row.meta) : undefined
+    const request = row.request ? JSON.parse(row.request) as TurnRequestInfo : legacy?.request
+    return { activity: row.activity ? JSON.parse(row.activity) : legacy?.activity, request: request ? compactRequest(request) : undefined }
   }
 
   /** Merge top-level metadata under a row lock so partial client patches preserve diagnostics. */
@@ -1214,9 +1395,9 @@ export class ChatRepo extends BaseRepo {
       // and serviceData is derived transport metadata, never persisted state.
       if (serviceData) { delete patch.request; delete patch.activity }
       const merged = { ...(row?.meta ? parseMeta(row.meta) : {}), ...patch }
-      delete merged.serviceData
-      await this.sql.run('UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?', [JSON.stringify(merged), messageId, conversationId])
-      const message = (await this.listMessages(userId, conversationId)).find(item => item.id === messageId)
+      const light = await this.storeServiceData(messageId, conversationId, merged)
+      await this.sql.run('UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?', [JSON.stringify(light), messageId, conversationId])
+      const message = await this.getMessage(userId, conversationId, messageId)
       if (!message) throw new Error('message not found')
       return message
     })
@@ -1230,7 +1411,7 @@ export class ChatRepo extends BaseRepo {
 
   async listMessages(userId: string, conversationId: string): Promise<Message[]> {
     if (!(await this.ownsConversation(userId, conversationId))) return []
-    const rows = (await this.sql.all(`SELECT * FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
+    const rows = (await this.sql.all(`SELECT ${this.messageColumns()} FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
     return this.messageRows(rows)
   }
 
@@ -1240,11 +1421,11 @@ export class ChatRepo extends BaseRepo {
     const match = this.sql.engine === 'postgres' ? toPgTsQuery(query) : toFtsMatchQuery(query)
     if (!match || !this.ftsReady) return []
     const rows = this.sql.engine === 'postgres'
-      ? await this.sql.all<MessageRow>(`SELECT m.* FROM messages m
+      ? await this.sql.all<MessageRow>(`SELECT ${this.messageColumns('m')} FROM messages m
           WHERE m.conversation_id = ? AND m.state = 'published'
             AND m.text_tsv @@ to_tsquery('simple', ?)
           ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
-      : await this.sql.all<MessageRow>(`SELECT m.* FROM messages_fts
+      : await this.sql.all<MessageRow>(`SELECT ${this.messageColumns('m')} FROM messages_fts
           JOIN messages m ON m.rowid = messages_fts.rowid
           WHERE m.conversation_id = ? AND m.state = 'published' AND messages_fts MATCH ?
           ORDER BY CASE WHEN m.history_position IS NULL THEN 0 ELSE 1 END DESC, m.history_position DESC, m.id DESC LIMIT ?`, [conversationId, match, limit])
@@ -1264,12 +1445,12 @@ export class ChatRepo extends BaseRepo {
       const index = all.findIndex((message) => message.id === messageId)
       return index < 0 ? [] : all.slice(Math.max(0, index - around), index + around + 1)
     }
-    const before = await this.sql.all<MessageRow>(`SELECT * FROM messages
+    const before = await this.sql.all<MessageRow>(`SELECT ${this.messageColumns()} FROM messages
       WHERE conversation_id = ? AND state = 'published' AND history_position < ?
       ORDER BY history_position DESC, id DESC LIMIT ?`, [conversationId, center.history_position, around])
-    const selected = await this.sql.get<MessageRow>(`SELECT * FROM messages
+    const selected = await this.sql.get<MessageRow>(`SELECT ${this.messageColumns()} FROM messages
       WHERE conversation_id = ? AND id = ? AND state = 'published'`, [conversationId, messageId])
-    const after = await this.sql.all<MessageRow>(`SELECT * FROM messages
+    const after = await this.sql.all<MessageRow>(`SELECT ${this.messageColumns()} FROM messages
       WHERE conversation_id = ? AND state = 'published' AND history_position > ?
       ORDER BY history_position ASC, id ASC LIMIT ?`, [conversationId, center.history_position, around])
     return this.messageRows([...before.reverse(), ...(selected ? [selected] : []), ...after])
@@ -1292,7 +1473,7 @@ export class ChatRepo extends BaseRepo {
       const samePartition = cursor && (cursor.history_position === null) === nullPosition
       const bound = !samePartition ? '' : nullPosition ? 'AND id < ?' : 'AND (history_position, id) < (?, ?)'
       rows.push(...await this.sql.all<MessageRow>(
-        `SELECT * FROM messages WHERE conversation_id = ? AND state = 'published'
+        `SELECT ${this.messageColumns()} FROM messages WHERE conversation_id = ? AND state = 'published'
          AND history_position IS ${nullPosition ? '' : 'NOT '}NULL ${bound}
          ORDER BY history_position DESC, id DESC LIMIT ?`,
         [conversationId, ...(samePartition ? nullPosition ? [cursor.id] : [cursor.history_position, cursor.id] : []), limit + 1 - rows.length]))
@@ -1530,7 +1711,12 @@ export class ChatRepo extends BaseRepo {
         if (!(await this.ownsConversation(userId, c.id))) continue
         for (const m of item.messages) {
           if (m.conversationId !== c.id) continue
-          messagesImported += Number((await insertMessage.run(m.id, c.id, m.role, m.text, m.time, m.createdAt, m.engine ?? null, m.meta ? JSON.stringify(m.meta) : null, m.execTarget ?? null)).changes)
+          const inserted = Number((await insertMessage.run(m.id, c.id, m.role, m.text, m.time, m.createdAt, m.engine ?? null, m.meta ? JSON.stringify(stripServiceData(m.meta)) : null, m.execTarget ?? null)).changes)
+          messagesImported += inserted
+          if (inserted && m.meta) {
+            const light = await this.storeServiceData(m.id, c.id, m.meta)
+            await this.sql.run('UPDATE messages SET meta = ? WHERE id = ?', [JSON.stringify(light), m.id])
+          }
         }
       }
     })
