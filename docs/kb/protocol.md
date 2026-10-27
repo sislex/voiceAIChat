@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-27
-checked: 97742971
+checked: 0a8bc000
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
