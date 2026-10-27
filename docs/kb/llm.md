@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-24
-checked: 985b9e55
+updated: 2026-10-27
+checked: a3af4a30
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -34,6 +34,29 @@ areas:
 # LLM: claude/codex CLI, ходы, stream-json, gateway
 
 Module details: `llm-runner:README.md`
+
+## Kanban run process ownership (SK-93)
+
+Kanban sends `run` and `stage` query parameters to Core's remote-bash MCP.
+For canonical `projects/<project>/tasks/<task>` working directories on the
+selected machine, Core wraps commands with `mcp/runProcesses.ts` after checking
+the original command against policy and file-read restrictions. Ordinary chats,
+shared production paths and explicitly selected other machines keep their
+existing execution behavior.
+
+The machine helper starts a new process session, records PID/PGID/start identity,
+cwd and listening TCP ports in `<task>/.process-<runId>`, and retains background
+children between model commands. Kanban owns stage/run cancellation and periodic
+orphan sweeping; the wire/file protocol matches
+`sislexa-kanban:apps/server/src/ci/runProcesses.ts`. Both repositories have real
+process fixtures for port ownership, stage cleanup, cancellation, PID reuse,
+orphan cwd discovery and SIGTERM-to-SIGKILL escalation.
+
+Gradle uses a per-run home with daemon disabled by default; Kotlin compilation
+defaults to in-process. The helper only calls `gradlew --stop` against isolated
+task Gradle homes. Core does not infer lifecycle closure or kill a foreign port
+owner: Kanban's authoritative lifecycle checks admit cleanup.
+
 
 ## Scoped historical journal verification
 

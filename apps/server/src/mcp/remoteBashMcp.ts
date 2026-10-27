@@ -16,6 +16,7 @@ import { AgentFsError } from '../agents/registry.js'
 import type { MachinesService } from '../machines/service.js'
 import { evaluatePlanModeCommand } from './planMode.js'
 import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
+import { processCommand, processTaskRoot } from './runProcesses.js'
 
 export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
@@ -250,7 +251,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string; run?: string; stage?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -420,10 +421,12 @@ export function registerRemoteBashMcp(
                 }
               }
               const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
-              const shellCommand = cwd
-                ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}`
-                : command
-              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
+              // Kanban supplies ownership; policy/file-read checks above still inspect the original command.
+              const processRoot = cwd && req.query.run && target.agentId === agentId ? processTaskRoot(cwd) : null
+              const shellCommand = processRoot
+                ? processCommand(command, cwd!, {}, timeoutMs, { root: processRoot, runId: req.query.run!, stage: req.query.stage ?? 'model', retain: true })
+                : cwd ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}` : command
+              const res = await registry.exec(target.agentId, shellCommand, timeoutMs + (processRoot ? 15_000 : 0), abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
               // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
               // самое ценное для fix-loop, и терять их из-за обрезки нельзя.

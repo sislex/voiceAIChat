@@ -44,6 +44,30 @@ async function rpc(
   return { statusCode: res.statusCode, json: () => res.json() }
 }
 
+it('wraps Kanban task commands with persisted process ownership after the command policy check', async () => {
+  let dispatched = ''
+  const inspected: string[] = []
+  const registry = { exec: async (_id: string, command: string) => {
+    dispatched = command; return { exitCode: 0, timedOut: false, output: '' }
+  }, platformOf: () => 'darwin' } as unknown as AgentRegistry
+  const app = Fastify()
+  registerRemoteBashMcp(app, registry, SECRET, undefined, undefined, undefined, async input => {
+    inspected.push(input.command)
+    return { allowed: true } as never
+  })
+  await app.ready()
+  try {
+    await rpc(app, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } })
+    const query = '?k=' + SECRET + '&agent=a1&cwd=' + encodeURIComponent('/storage/projects/p/tasks/t/repository') + '&run=run-1&stage=component-qa'
+    await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'bash', arguments: { command: 'npm run storybook --ci', timeout_ms: 120000 } } }, query)
+    expect(inspected).toEqual(['npm run storybook --ci'])
+    expect(dispatched).toContain('start_new_session=True')
+    expect(dispatched).toContain('"runId":"run-1"')
+    expect(dispatched).toContain('"stage":"component-qa"')
+    expect(dispatched).toContain('"retain":true')
+  } finally { await app.close() }
+})
+
 describe('remotePath', () => {
   const cwd = '/repos/task'
   const roots = ['/owners/core/repository', '/owners/kanban/repository']
