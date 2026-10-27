@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 9 коммит(ов) в areas после сверки: 9f113857 chore: pin Kanban 0.2.42 and Core UI 1.5.31 (local-stand, thin client) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ код изменён 2026-10-27, сверка 2026-09-29 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-25 | ⚠ 7 коммит(ов) в areas после сверки: b63971f4 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-27 | ⚠ 3 коммит(ов) в areas после сверки: 14a72181 Merge remote-tracking branch 'origin/dev' into chore/train-partial-clone … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-27 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-24 | ⚠ 17 коммит(ов) в areas после сверки: 80f3fbbf Pin release train eb1a80aa-d8cd-45ca-bfee-ae55a0b3ee76 … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ код изменён 2026-10-15, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ код изменён 2026-10-27, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ код изменён 2026-10-27, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 7 коммит(ов) в areas после сверки: b63971f4 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: b63971f4 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 68 коммит(ов) в areas после сверки: c29bd3e2 Merge dev into SCU-25 (task b9f254f4-4670-4aa4-b894-a0836b9af17a) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 69 коммит(ов) в areas после сверки: fc6f71f2 docs(kb): update after merge b9f254f4-4670-4aa4-b894-a0836b9af17a … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ код изменён 2026-10-27, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ код изменён 2026-10-26, сверка 2026-09-30 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,7 +62,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1293. Последние:
+Всего записей: 1294. Последние:
 
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md) — thread-reset-usage-validation
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-compatibility.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-compatibility.md) — thread-reset-compatibility
