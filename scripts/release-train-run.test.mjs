@@ -248,11 +248,20 @@ function fixture(t, realGit = true) {
       assert.equal(init.headers.Authorization, `Bearer ${env.RELEASE_CENTER_TOKEN}`)
       if (path.endsWith('/preflight')) return reply({ ok: !failPreflight })
       if (path.endsWith('/branches')) {
-        if (method === 'POST') branches.push({ branch: body.branch, sha: git(repository, 'rev-parse', body.baseBranch), fast: body.fast === true, version: '1.0.1' })
+        if (method === 'POST') {
+          // Like Release Center: creating a branch also creates its preparation release record.
+          branches.push({ id: 'preparation', branch: body.branch, sha: git(repository, 'rev-parse', body.baseBranch), fast: body.fast === true, version: '1.0.1' })
+          releases.push({ id: 'preparation', branch: body.branch, status: 'preparing', polls: 0 })
+        }
         return reply(method === 'POST' ? branches.at(-1) : branches)
       }
       if (path.endsWith('/deploy')) { releases.push({ id: 'deployment', branch: body.branch, status: 'succeeded' }); return reply(releases.at(-1)) }
       if (path.endsWith('/deployment')) return reply(releases.at(-1))
+      if (path.endsWith('/preparation')) {
+        const preparation = releases.find(row => row.id === 'preparation')
+        if (++preparation.polls > 1) preparation.status = 'ready'
+        return reply(preparation)
+      }
       return reply(releases)
     }
     assert.equal(init.headers.Authorization, `Bearer ${env.GH_TOKEN}`)
@@ -276,7 +285,7 @@ function fixture(t, realGit = true) {
     if (pr) return reply(pr)
     throw Error(`Unexpected fixture request: ${path}`)
   }
-  return { directory, repository, plan, env, run, fetcher, calls, git, owner,
+  return { directory, repository, plan, env, run, fetcher, calls, git, owner, sleep: async () => {},
     failPublish: value => { failPublish = value }, failPreflight: value => { failPreflight = value } }
 }
 
@@ -424,6 +433,8 @@ for (const fromDev of [false, true]) test(`lost responses reconcile without dupl
   await executeJournal(journal, f.directory, adapter)
   assert.equal(f.calls.filter(call => call.url?.endsWith('/branches') && call.method === 'POST').length, 1)
   assert.equal(f.calls.filter(call => call.url?.endsWith('/deploy') && call.method === 'POST').length, 1)
+  // The deployment waited for the preparation record instead of mistaking it for a deployment.
+  assert.ok(f.calls.filter(call => call.url?.endsWith('/preparation')).length >= 2)
 })
 
 test('preflight blocks branch creation, and an active journal lock blocks execution', async t => {
