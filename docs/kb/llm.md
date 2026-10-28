@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-27
-checked: 50e092a9
+updated: 2026-10-28
+checked: 4a7d3c72
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -110,7 +110,22 @@ not by itself make either original available or validate either value.
 
 ## Independent runner boundary
 
-Core consumes LLM Runner 0.3.1 from `sislex/llm-runner`. The `apps/llm-runner`
+Runner 0.3.8 already provides master-only
+`GET /v1/admin/lifecycle?details=true`: its `runs` members and `activeRuns`
+come from the same RunManager snapshot. Member metadata includes run ID,
+provider kind, accounting presence, start time, lifecycle phase and authenticated
+caller category; it excludes prompts and credentials.
+
+The SISL-766 Runner source fix starts its two-second output flush deadline at
+child `exit`, rather than waiting for `close` (which can be held by a
+descendant's inherited pipes). A real-child regression and accounted/unaccounted
+tests cover removal from the aggregate, one-time finalization and lease release.
+This fixes a reproduced lifecycle defect; it does not prove why the historical
+Mailpit acceptance observed one member after settlement. That journey must be
+repeated with member diagnostics on the fixed Runner composition.
+
+
+Core consumes LLM Runner 0.3.8 from `sislex/llm-runner`. The `apps/llm-runner`
 workspace, local CLI/profile wrappers and their internal suites are removed.
 `RemoteLlmClient` executes turns; `RunnerFsClient` reads login state, history,
 files and `/v1/mcp/servers` with the authenticated user namespace and configured
