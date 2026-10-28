@@ -64,3 +64,4 @@ storybook-static/
 
 # Owner archives live in the GitHub release `vendor` (see vendor/README.md); never commit them.
 vendor/*.tgz
+vendor/android/*.apk

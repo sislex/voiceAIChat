@@ -352,6 +352,8 @@ services:
       HOST: 0.0.0.0
       PORT: "8793"
       VC_DATA_DIR: /data
+      # Fetch pinned private Android release assets in the standalone Machines service.
+      VC_GITHUB_TOKEN: ${VC_GITHUB_TOKEN:-}
       VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Без `:?`: compose подставляет переменные всех сервисов независимо от профилей; без базы процесс сам завершится с понятной ошибкой.
       VC_DB_URL: ${VC_DB_URL:-}

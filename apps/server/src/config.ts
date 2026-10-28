@@ -40,6 +40,7 @@ export interface ServerConfig {
   agentOfflineAlertMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
+  androidManifestPath?: string
   /** Отдельный macOS ARM64 DMG приложения безопасного подключения машины. */
   loginApplicationPath?: string
   /** Owner-built panel directories explicitly selected by deployment configuration. */
@@ -283,6 +284,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     agentOfflineAlertMs: env.VC_AGENT_OFFLINE_ALERT_MIN !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_ALERT_MIN) || 0) * 60_000 : 10 * 60_000,
     longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,
     agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
+    androidManifestPath: env.VC_ANDROID_MANIFEST ?? (AUTODISCOVER ? fileURLToPath(new URL('../../../vendor/android/android-release.json', import.meta.url)) : undefined),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     loginApplicationPath: env.VC_LOGIN_APPLICATION ?? (AUTODISCOVER ? findDmg(REPO.loginApplicationDir) : undefined),
     webDir: env.VC_WEB_DIR,

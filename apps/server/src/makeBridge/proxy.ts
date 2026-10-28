@@ -27,6 +27,8 @@ export interface ServiceProxyOptions {
   name: string
   baseUrl: string
   prefixes: readonly string[]
+  /** Explicit public downloads complete before API authentication. */
+  publicGetPaths?: readonly string[]
   fetchImpl?: typeof fetch
   bodyLimit?: number
   timeoutMs?: number
@@ -84,8 +86,13 @@ export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOpt
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: opts.bodyLimit ?? 16 * 1024 * 1024 }, (_req, body, done) => done(null, body))
     for (const prefix of opts.prefixes) {
-      scope.all(prefix, forward)
-      scope.all(`${prefix}/*`, forward)
+      const onRequest = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+        if (['GET', 'HEAD'].includes(req.method) && opts.publicGetPaths?.includes(req.url.split('?')[0]!)) {
+          await forward(req, reply)
+        }
+      }
+      scope.all(prefix, { onRequest }, forward)
+      scope.all(`${prefix}/*`, { onRequest }, forward)
     }
   })
 }

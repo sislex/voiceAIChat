@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "android": {
+    "url": "https://github.com/sislex/agent/releases/download/android-v0.1.1/sislexa-android-7d90ff455a4a.apk",
+    "filename": "sislexa-android-7d90ff455a4a.apk",
+    "sha256": "b281a6a44f1c5e406b36ee2aa36422e2b0ac752ee5a03e5c0545aa4ce7ea190c",
+    "size": 40480098,
+    "commit": "7d90ff455a4a495185bbb76d4bfc6f1b27c0d005",
+    "versionName": "0.1.1",
+    "versionCode": 2,
+    "minSdk": 26,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ]
+  }
+}

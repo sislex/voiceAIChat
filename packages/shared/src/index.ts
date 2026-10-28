@@ -1,6 +1,8 @@
 export * from './threadCost'
 export * from './uiPerformance'
 
+export * from './androidRelease'
+
 // @voicechat/shared — общие типы, контракт протокола и чистая логика,
 // переиспользуемые desktop/server/web.
 
