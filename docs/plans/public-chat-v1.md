@@ -353,6 +353,49 @@ ledger or test-environment restriction is changed by this preparation. MacBook
 validation is not physical-M1 evidence. No new paid-provider requests are needed
 for these tests.
 
+## SISL-785: blocked Mailpit material handoff (2026-10-28)
+
+Acceptance remains incomplete. The task started at Core `4a7d3c72`; its branch
+is `SISL-785`. A `remote:read` request for the operator directory specified by
+SISL-766, `/Users/alexeyrozhnov/.local/state/sislexa/operator/public-chat-v1`,
+was denied because it lies outside the task checkout and task `owners` roots.
+This establishes a scope denial, not the existence or absence of the source.
+A checkout filename search excluding `.git` and `node_modules` found no Mailpit
+or SISL-766 files. The retained scenario/configuration has not been inspected.
+
+The code confirms that `remotePath` uses cwd and explicit server URL roots
+(`apps/server/src/mcp/remoteBashMcp.ts:76`, `:254`). The available
+`historical_evidence_verify` operation only returns journal hashes
+(`remoteBashMcp.ts:344`, `historicalEvidence.ts:38`); it cannot provide scripts or
+configuration. Its optional adapter is supplied by `BuildOptions.historicalEvidence`
+(`server.ts:205`, `:876`). No material-export/provisioning tool is exposed to this
+turn. No shell, symlink, alternate-machine or identity fallback was used to read
+the denied directory, and no permission expansion was made.
+
+Required platform handoff before the rerun:
+
+1. Provide the reviewed, non-secret retained scenario and launch instructions as
+   regular files in this task checkout, for example `artifacts/SISL-785/inputs/`.
+   Include provenance and SHA256 digests; identify redactions/adaptations. Do not
+   copy the whole operator root: it also holds Billing and component state
+   (`docs/kb/deploy.md:71`–`72`). Credentials must remain platform-managed.
+2. Supply sanitized Mailpit/stand configuration, assigned machine and endpoints,
+   exact Core/Identity/Runner/Billing composition, and the authorized platform
+   operation to start the stopped stand. Historical M2 ports in this document
+   do not prove availability on the task's selected M1 machine.
+3. Supply the authorized `activeRuns` observation mechanism and a task-local
+   results directory. Confirm the inputs with `remote:read`, then run registration
+   → Luna/Terra → history → reconnect → Stop, recording per-step outcomes and
+   `activeRuns` before/during execution and with bounded polling after Stop.
+   Retain sanitized results and version provenance separately from historical
+   evidence. A unit-test pass cannot substitute for this stand acceptance.
+
+Current results: materials not provisioned; scenario not executed; `activeRuns`
+not observed; no new Mailpit results. Full SISL-766 acceptance and attribution of
+historical `activeRuns=1` remain unconfirmed. This investigation does not implement
+a platform transfer facility or duplicate the prepared Runner fix. Dependency
+pinning, releases, live mail and `sislexa.by` remain outside scope.
+
 ## Work and acceptance order
 
 | Work item | Required evidence | Status at audit |
