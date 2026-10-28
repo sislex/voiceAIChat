@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-28
-checked: e5adbf843
+checked: 201b069b
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -12,6 +12,8 @@ areas:
   - packages/identity-client
   - packages/identity-contracts
   - apps/server/src/uploads.ts
+  - apps/server/src/server.ts
+  - apps/server/src/routes/rest.abuse.test.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
   - packages/shared/src/admin.ts
@@ -657,6 +659,8 @@ Sources: [pricing](https://developers.openai.com/api/docs/pricing), [GPT-6.1 Sol
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
 
+Приём `POST /api/uploads` в `apps/server/src/server.ts` ограничен в `preHandler` до валидации содержимого, декодирования и обращения к хранилищу двумя процессными скользящими окнами: не более 300 попыток суммарно и 20 попыток на аутентифицированного пользователя за 60 секунд. Пользовательский ключ не зависит от сессии и IP, поэтому повторный вход или смена адреса бюджет не обходят; другой пользователь сохраняет собственный бюджет, пока не исчерпан общий. Невалидные запросы тоже расходуют лимит. Отказ возвращает 429, `Retry-After` и `{ error: 'upload_rate_limit', retryAfterSec }`; отклонённый трафик не продлевает окно, а перезапуск процесса очищает счётчики. Интеграционный контракт вместе с публичными auth-лимитами закреплён в `apps/server/src/routes/rest.abuse.test.ts`.
+
 `llm_engines` живёт в той же схеме без отдельного migration-фреймворка:
 `schema.ts` создаёт таблицу и индексы на новых базах, а `VoiceChatDb.migrate()`
 добавляет недостающие колонки и индексы на уже существующих. Это важно для
@@ -887,7 +891,7 @@ USD за 1M обычных/кэшированных/записанных в кэ
 
 **Проекты** (таблицы `projects`/`project_members`/`project_machines`/`kanban_columns`/`tasks`, доступ по членству, а не по единственному владельцу) — см. [projects.md](projects.md).
 
-**Rate-limit входа (auth-roadmap п.1).** `POST /api/session/login` считает попытки двумя `SlidingWindowLimiter` (`apps/server/src/make/rateLimit.ts`): по `req.ip` и по имени (в нижнем регистре), 10 за 10 минут каждый; превышение — 429 с заголовком `Retry-After` и телом `{ error, retryAfterSec }`. Успешный вход счётчик не сбрасывает (окно скользящее), поэтому 11-я попытка с одного IP за окно блокируется даже при верном пароле. Лимитеры живут в памяти процесса — после рестарта сервера обнуляются; за прокси нужен корректный `trustProxy`, иначе все клиенты делят один IP.
+**Rate-limit публичной авторизации.** Реализация принадлежит Identity, а Core проверяет её через настоящие HTTP-маршруты в `apps/server/src/routes/rest.abuse.test.ts`. `POST /api/session/login` считает попытки по IP (30 за 10 минут) и по нормализованному имени без учёта регистра и крайних пробелов (10 за 10 минут), поэтому смена IP не обходит бюджет имени. `POST /api/session/register` ограничен пятью попытками за окно даже для невалидного инвайта; `POST /api/session/signup` — пятью попытками с IP за час, причём ранний невалидный запрос не отправляет письмо. Превышение возвращает 429 с `Retry-After`; после окончания окна запрос снова допускается. Лимитеры живут в памяти процесса и обнуляются после рестарта; за прокси нужен корректный `trustProxy`, иначе клиенты разделят один IP-бюджет.
 
 **Политика пароля (auth-roadmap п.2).** `checkPasswordPolicy(password, { name })` из `@shared/passwordPolicy` — общий для сервера и форм: пустой, короче `PASSWORD_MIN_LENGTH` (10), один повторяющийся символ, из списка частых или содержащий логин → текст причины. `POST /api/admin/users` отвечает 400 с этим текстом; в админке placeholder поля пароля напоминает про 10 символов. Опционально `VC_HIBP_CHECK=1` включает `pwnedCount` (`users/pwned.ts`): SHA-1 пароля, наружу — только 5 hex-символов префикса (`api.pwnedpasswords.com/range/`), таймаут 3 с, ошибка сети — fail-open. Пароли, заведённые до правила (в т.ч. пустые), не трогаются: политика проверяется только при установке.
 
