@@ -94,8 +94,10 @@ class StandTest(unittest.TestCase):
             'volumes': {'vc-data': {'name': PROJECT + '-server-data'}}}
         self.env = {**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'],
             'DOCKER': str(self.bin / 'docker'), 'FAKE_LOG': str(self.root / 'calls'),
-            # Successful probes spawn Python tools; 50 ms flakes under a parallel Core gate.
-            'VC_ENVIRONMENT_START_TIMEOUT': '2', 'SECRET': SECRET}
+            # Successful probes spawn Python tools; 50 ms flakes under a parallel Core gate, and
+            # 2 s flaked once the snapshot restore waits ~2 s for pg_isready. Success returns at
+            # once, so a generous bound costs nothing; timeout cases pass their own 0.05 s.
+            'VC_ENVIRONMENT_START_TIMEOUT': '30', 'SECRET': SECRET}
 
     def invoke(self, action='provision', args=None, role='primary', **env):
         (self.root / '.env').write_text(''.join(k + "='" + v + "'\n" for k, v in self.values.items()))
