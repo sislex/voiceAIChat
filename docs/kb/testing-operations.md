@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-27
-checked: 81c4a5fd
+updated: 2026-10-28
+checked: 4a7d3c72
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -135,6 +135,16 @@ must mount the full App with the real Sidebar, palette and styles; testing the
 Sidebar alone misses its interaction with palette navigation. Selecting another
 result or a result in the current chat must close the drawer and leave focus
 outside hidden/inert content, including when only the URL query changes.
+
+The installed Core UI 1.5.31 source is `14b837d944b2377e84d6411b9e52111164280697`
+(see the installed `release-source.json`). Its Shell DOM regressions already cover
+absent Analytics requests, deployment-filtered product navigation and tariff rows,
+storage reads gated by machine access, and first-run state without voice onboarding.
+`App` supplies TTS configuration separately from health to ChatColumn. The owner
+browser settings/sidebar tests now target 1440×900 and 360×800; full-App palette
+focus also covers 360×800 in both themes. Server model notice coverage remains in
+`apps/server/src/turns.modelNotices.test.ts`: deployment-projected inherited models
+produce no warning, while explicit overrides and transport errors retain notices.
 
 ### Shared chat exact-artifact acceptance (U10)
 

@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 804 коммит(ов) в areas после сверки: b63971f43 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 7 коммит(ов) в areas после сверки: b63971f43 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: b63971f43 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 76 коммит(ов) в areas после сверки: e5adbf843 fix(test): close requestless accounting runner connections … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 77 коммит(ов) в areas после сверки: 4a7d3c72c docs(kb): update after merge da3da85d-d4c7-479f-88b5-3c777f00494a … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1100 коммит(ов) в areas после сверки: b63971f43 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 70 коммит(ов) в areas после сверки: 3c98193cf fix(gate): npm-script-only package.json edits stay on the quick gate … |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 13 коммит(ов) в areas после сверки: c29bd3e26 Merge dev into SCU-25 (task b9f254f4-4670-4aa4-b894-a0836b9af17a) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-27 | ⚠ 10 коммит(ов) в areas после сверки: c6695573c Pin release train 6b611f55-d658-468c-9238-725e430804a4 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-28 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-27, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,8 +62,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1299. Последние:
+Всего записей: 1300. Последние:
 
+- [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-acceptance.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-acceptance.md) — chat-only-ui-acceptance
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-accounting-runner-cleanup.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-accounting-runner-cleanup.md) — accounting-runner-cleanup
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md) — thread-reset-usage-validation
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-compatibility.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-compatibility.md) — thread-reset-compatibility
@@ -73,7 +74,6 @@
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-cost-contract-kb.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-cost-contract-kb.md) — thread-cost-contract-kb
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-sk-93-run-processes.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-sk-93-run-processes.md) — sk-93-run-processes
 - [2026-10-27-pc-radvilovich-tailae39a6-ts-net-sk-93-process-ownership-kb.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-sk-93-process-ownership-kb.md) — sk-93-process-ownership-kb
-- [2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-storage.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-message-service-data-storage.md) — message-service-data-storage
 
 ## Исторические планы
 
