@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-29
+checked: 7d907bda
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -1144,3 +1144,19 @@ RPC `machines.devProcess` (and the machines process RPC `devProcess` in remote m
 The registry expands the contract's `owner/name` repository shorthand (`DEV_COMPONENT_REGISTRY`) into
 `https://github.com/owner/name.git` before `devProcess.start`, because the agent passes the value to
 `git clone`; full URLs, scp-style remotes and local paths are unchanged.
+
+## Android supervisor and bundle persistence
+
+In the Agent owner repository at `origin/dev` commit `7d90ff4`, Android starts the
+runtime with `VC_AGENT_SUPERVISOR=android` in `AgentService.kt`. `SelfUpdater`
+receives that environment value, and `apps/agent/src/connection.ts` includes it as
+`supervisor` in `agent.register`; this is the signal Core uses for automatic bundle
+offers.
+
+`apps/android/app/src/main/java/com/sislexa/android/Runtime.kt` does not replace an
+existing `voicechat-agent.cjs` while unpacking APK assets, so a bundle installed by
+self-update survives an APK upgrade. The same runtime restores
+`voicechat-agent.cjs.prev` when a pending self-update has remained unconfirmed for
+90 seconds, then clears the pending marker. Consequently the self-updated JS bundle
+remains the delivery path for new Agent behavior on upgraded Android installs while
+APK bundle replacement is intentionally suppressed.
