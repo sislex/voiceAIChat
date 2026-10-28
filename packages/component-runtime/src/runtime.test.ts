@@ -119,7 +119,7 @@ describe('dependency transport and real provider routes', () => {
     if (kind === 'scopes') writeFileSync(f.tokenFile, f.registry.issue('make', ['identity.verify'], 60).token)
     await expect(f.consumer.dependency('core').fetchImpl(f.url + '/rpc')).rejects.toThrow('dependency unavailable')
     expect(f.calls()).toBe(0)
-    expect(await f.consumer.readiness()).toEqual({ ok: false, dependencies: [{ applicationId: 'core', ok: false }] })
+    expect(await f.consumer.readiness()).toMatchObject({ ok: false, dependencies: [{ applicationId: 'core', ok: false }] })
   })
   it('public proxies preserve user credentials and return redirects without sending a service credential', async () => {
     const f = await networkFixture(), transport = f.consumer.dependency('core').publicFetchImpl

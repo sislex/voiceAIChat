@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew installed Sislexa component grants
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=1000
+UMask=0077
+ExecStart=/bin/bash /usr/local/lib/voicechat/component-rotation.sh
+TimeoutStartSec=300
+NoNewPrivileges=true

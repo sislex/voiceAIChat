@@ -62,6 +62,7 @@
     "build:app": "node --import tsx scripts/application-build.mjs",
     "build:frontends": "node --import tsx scripts/application-frontend.mjs",
     "components:init": "node --import tsx scripts/component-installation.mjs",
+    "components:rotate": "node --import tsx scripts/component-rotation.mjs",
     "components:token": "node --import tsx packages/component-runtime/src/cli.ts",
     "qa:voice-live": "vitest run --config e2e/vitest.live.config.ts",
     "verify:core-ui": "node scripts/core-ui-artifact.mjs",
