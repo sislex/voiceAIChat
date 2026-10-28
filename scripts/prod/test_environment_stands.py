@@ -503,6 +503,18 @@ class AdminPasswordHashTest(unittest.TestCase):
         self.assertIn('12345', log)
         self.assertNotIn('stand-only-password', log)
 
+    def test_hash_falls_back_to_node_without_hashlib_scrypt(self):
+        # macOS system Python (LibreSSL) has no hashlib.scrypt; the Node path must give the same vector.
+        import hashlib
+        salt = bytes.fromhex('0102030405060708090a0b0c0d0e0f10')
+        saved = hashlib.__dict__.pop('scrypt', None)
+        try:
+            self.assertEqual(scrypt_password_hash('probe', salt),
+                             'scrypt$0102030405060708090a0b0c0d0e0f10$87aac9e7319723e3bf411415b528251b1eea1b4497eb7788618d785f740933bd')
+        finally:
+            if saved is not None:
+                hashlib.scrypt = saved
+
 
 class StandComposeTest(unittest.TestCase):
     def test_external_application_credentials_reach_only_core(self):
