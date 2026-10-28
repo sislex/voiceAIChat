@@ -485,7 +485,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   // Preview may request migrations without the default test account.
-  if (!(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
+  // Managed Identity owns account bootstrap; its availability must not gate Core startup.
+  if (!managedIdentity && !(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
     await db.identity.ensureAdmin(opts.config.adminPassword)
   }
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и

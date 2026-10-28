@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-28
-checked: 4a7d3c72
+checked: 71010d396
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -750,7 +750,11 @@ refuses restoration unless its public schema is empty, restores with `pg_restore
 its stderr tail goes to the private `restore.log` next to `VC_ENVIRONMENT_OVERRIDES`), and applies
 `environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
 sets the first account as administrator with `VC_ADMIN_PASSWORD`, and disables stored SMTP and
-external-integration settings. Snapshot archives are transport artifacts: the caller owns their
+external-integration settings. The host Python must provide `hashlib.scrypt` for
+Identity-compatible password hashes. Apple's Command Line Tools Python may omit
+it: the snapshot-restore test then fails during sanitization. Select a Python
+build with scrypt on PATH for the scripts and gate (verify with
+`python3 -c 'import hashlib; assert hasattr(hashlib, "scrypt")'`). Snapshot archives are transport artifacts: the caller owns their
 one-time transfer and deletion; these scripts never inspect or modify any other checkout or
 directory.
 
@@ -1940,11 +1944,53 @@ Initialization now creates fifteen distinct credentials across nine providers,
 including Identity verification for Billing and Billing reserve/execute grants for
 Core. Each consumer receives only its declared provider scopes. Existing installation directories are rejected. The default credential
 lifetime is 30 days (`--ttl` is bounded by each provider's configured policy).
-Track the returned expiry metadata and rotate before expiry. The CLI never prints
-secrets. Provider-local `components:token`/tool `token` commands issue, list and
-revoke credentials; transfer a newly issued private file to the consumer, replace
-its outgoing file atomically, then revoke the old token ID. Grant-policy edits
-require a provider restart; revocation takes effect immediately for RPC requests.
+Renew installed credentials before expiry with `npm run components:rotate --
+--directory /private/sislexa-components --days 7`. Dry-run is the default;
+add `--apply` to publish replacements. Run as the common registry/file owner
+(UID 1000 in the production installation), with Node 22 and the checkout's
+installed dependencies. The command opens each installed provider registry,
+matches the outgoing credential by digest (including expired, never revoked
+credentials), retains its scopes and issues the maximum TTL allowed by the
+current grant. It verifies authorization before and after an atomic rename,
+preserves UID/GID/mode, syncs the file and directory, and only then revokes the
+old grant. A failed pre-publication check revokes the unused replacement; a
+post-publication failure retains both grants for recovery. Revoked or mismatched
+credentials fail closed and require operator investigation, not automatic renewal.
+The private `.rotation-lock` directory excludes concurrent rotations. After a
+killed process, verify no rotation is running before removing a stale lock.
+The CLI prints only provider/consumer IDs, expiry and actions; never secrets.
+
+`deploy/voicechat-component-rotation.timer` runs hourly with up to five minutes
+of jitter and catches missed runs after boot. Its service reads
+`VC_REPO_DIR` and `SISLEXA_COMPONENTS_DIR` from
+`/etc/voicechat/production.env` before switching to UID 1000. The host must expose
+Node 22 on systemd's PATH, and that UID must be able to read the checkout and own
+the private installation. A successful `voicechat-deploy` installs/enables the
+timer when `SISLEXA_COMPONENTS_DIR` is configured. For an existing installation,
+root can run `bash scripts/prod/component-rotation.sh --install` from the verified
+release checkout; this preserves the operator environment and does not rerun the
+production installer. Inspect `systemctl status voicechat-component-rotation.timer`
+and `journalctl -u voicechat-component-rotation.service`.
+
+`GET /v1/ready` reports `nearestExpiresAt` and each dependency's
+`expiresAt` plus `warning: "component_token_expiring"` at seven days or less.
+Monitor this warning and failed rotation service runs. Rotation JSON also emits
+that warning for credentials found inside the seven-day window. Readiness stays
+200 for valid expiring grants and becomes 503 on dependency failure. Expiry is
+learned from successful authorize responses; a cold start with an already expired
+grant reports a failed dependency with null expiry. A known expiry is retained
+during a failure only while the credential digest is unchanged.
+Core skips local administrator bootstrap when managed Identity is configured:
+an expired Identity grant leaves the process and liveness endpoint running,
+while readiness and Identity-dependent requests return 503. Replacing the outgoing
+file restores readiness without restarting Core.
+
+Provider-local `components:token`/tool `token` commands remain available for
+manual issue/list/revoke. Grant-policy edits require a provider restart;
+revocation takes effect immediately for RPC requests. The former manual-only
+procedure in historical deployment reports is superseded by this timer workflow;
+the tests cover all 18 grants, including Core→Identity and Billing→Identity,
+and expired-token recovery.
 
 Billing 1.0.0 is an independently pinned service in `deploy/tools.lock.json` and
 the application catalog. Append `deploy/compose.billing.yml` after the Identity
