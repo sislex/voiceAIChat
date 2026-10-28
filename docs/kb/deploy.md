@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-28
-checked: 1fe03a8e
+updated: 2026-10-29
+checked: d3f2998b
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -3325,3 +3325,6 @@ The subsequent train releases the remaining owners without republishing Make.
 - sislex/image-studio: 1.1.4
 - sislex/voice: 1.1.1
 - sislex/sislexa-kanban: 0.2.48
+
+<!-- release-train:c6077abb-5f8d-404f-b078-6c33ffa974df -->
+- sislex/sislexa-kanban: 0.2.49
