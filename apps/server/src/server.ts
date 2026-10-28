@@ -40,7 +40,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { SlidingWindowLimiter, applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -1185,9 +1185,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     queueMicrotask(() => { void generatedCleanup.run() })
   }
 
+  // Process-wide admission also bounds the number of user keys admitted per window.
+  const uploadTotal = new SlidingWindowLimiter(300, 60_000, () => Date.now())
+  const uploadByUser = new SlidingWindowLimiter(20, 60_000, () => Date.now())
   app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
     REST.uploads,
-    { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
+    { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
+      // The auth guard runs first; sessions and IP changes share the same user budget.
+      const total = uploadTotal.hit('uploads')
+      const verdict = total.ok ? uploadByUser.hit(uid(req)) : total
+      if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec))
+        .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
+    } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
       const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
       const userId = uid(req)
