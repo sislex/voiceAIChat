@@ -289,6 +289,97 @@ function fixture(t, realGit = true) {
     failPublish: value => { failPublish = value }, failPreflight: value => { failPreflight = value } }
 }
 
+for (const mode of ['advance', 'rewritten', 'unrelated', 'unchanged', 'full']) {
+  test(`failed kb:check prepare resumes with ${mode} dev`, async t => {
+    const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+    pkg.scripts['kb:check'] = 'check'; pkg.scripts['gate:quick'] = 'quick'
+    put(join(f.owner, 'package.json'), pkg)
+    f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'KB contract')
+    const planned = f.git(f.owner, 'rev-parse', 'HEAD')
+    f.git(f.owner, 'branch', '-f', 'dev', planned)
+    f.plan.applications[0].changes.dev = planned
+    const journal = createJournal(f.plan, { apps: [], fromDev: mode !== 'full' }, f.repository)
+    const messages = []
+    t.mock.method(console, 'log', message => messages.push(message))
+    const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+      if (binary === 'npm' && args.join(' ') === 'run kb:check' && !existsSync(join(cwd, 'kb-fixed')))
+        throw Error('kb:check: architecture.md/tests.md stale')
+      return f.run(binary, args, cwd, options)
+    } })
+    await assert.rejects(executeJournal(journal, f.directory, adapter), /owner-0-prepare.*\n.*kb:check/)
+    assert.equal(journal.owners[0].source, planned)
+    const cwd = join(f.directory, journal.id, 'owner-0')
+    assert.notEqual(f.git(cwd, 'status', '--porcelain'), '')
+    writeFileSync(join(cwd, '.git/info/exclude'), 'stale-build\nnode_modules/\n')
+    writeFileSync(join(cwd, 'stale-build'), 'ignored partial output')
+    mkdirSync(join(cwd, 'node_modules'), { recursive: true })
+    writeFileSync(join(cwd, 'node_modules/keep'), 'installed')
+    f.git(f.owner, 'checkout', '--detach', mode === 'rewritten' ? f.plan.applications[0].pinnedCommit : planned)
+    if (mode === 'unrelated') f.git(f.owner, 'checkout', '--orphan', 'rewritten-dev')
+    writeFileSync(join(f.owner, 'kb-fixed'), 'reviewed')
+    f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Fix knowledge review')
+    const fixed = f.git(f.owner, 'rev-parse', 'HEAD')
+    if (mode !== 'unchanged') f.git(f.owner, 'branch', '-f', 'dev', fixed)
+    const resumed = read(join(f.directory, journal.id + '.json'))
+    if (mode !== 'advance') {
+      await assert.rejects(executeJournal(resumed, f.directory, adapter),
+        ['rewritten', 'unrelated'].includes(mode) ? /dev переписан, нужен новый план/ : /kb:check/)
+      assert.equal(resumed.owners[0].source, planned)
+      assert.equal(messages.length, 0)
+      return
+    }
+    await executeJournal(resumed, f.directory, adapter)
+    assert.equal(resumed.status, 'completed')
+    assert.equal(existsSync(join(cwd, 'stale-build')), false)
+    assert.equal(existsSync(join(cwd, 'node_modules/keep')), true)
+    assert.equal(resumed.owners[0].source, fixed)
+    assert.deepEqual(resumed.owners[0].sourceAdvances, [{ from: planned, to: fixed }])
+    assert.deepEqual(messages, [`owner sislex/identity: source advanced ${planned} → ${fixed}`])
+    assert.equal(read(join(f.directory, journal.id + '.json')).owners[0].source, fixed)
+    assert.equal(f.git(cwd, 'merge-base', fixed, resumed.results['owner-0-prepare']), fixed)
+    assert.ok(f.calls.some(c => c.binary === 'npm' && c.cwd === cwd && c.args.join(' ') === `run gate:quick -- --base ${resumed.owners[0].pinnedCommit}`))
+    const calls = f.calls.length
+    await executeJournal(resumed, f.directory, adapter)
+    assert.equal(f.calls.length, calls)
+  })
+}
+
+test('reusing a published release verifies its exact SHA without prepare, push or publish', async t => {
+  const f = fixture(t, false)
+  f.plan.applications[0].reuseRelease = { version: '1.0.1', commit: 'b'.repeat(40) }
+  f.plan.applications[0].changes.ahead = false
+  f.plan.applications[0].release.matchesPinnedCommit = true
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  const actions = []
+  await executeJournal(journal, f.directory, (action, owner, saved) => {
+    actions.push(action)
+    if (action === 'verify') assert.equal(saved.results['owner-0-publish'], 'b'.repeat(40))
+  })
+  assert.equal(journal.owners[0].source, 'b'.repeat(40))
+  assert.equal(journal.owners[0].bump, false)
+  assert.deepEqual(actions, ['verify', 'pin', 'coreGate', 'corePush', 'preflight', 'branch'])
+})
+
+test('prepare without a bump commit does not reconcile knowledge topics', async t => {
+  const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+  pkg.version = '1.0.1'; pkg.scripts['kb:check'] = 'check'
+  put(join(f.owner, 'package.json'), pkg)
+  put(join(f.owner, 'apps/server/package.json'), { version: '1.0.1' })
+  // Match the runner's manifest serialization and the fixture lock refresh.
+  for (const file of ['package.json', 'apps/server/package.json'])
+    writeFileSync(join(f.owner, file), JSON.stringify(read(join(f.owner, file)), null, 2) + '\n')
+  put(join(f.owner, 'package-lock.json'), { version: '1.0.1' })
+  mkdirSync(join(f.owner, 'docs/kb'), { recursive: true })
+  writeFileSync(join(f.owner, 'docs/kb/tests.md'), '---\nchecked: aaaaaaa\nareas:\n  - package.json\n---\n')
+  f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Already bumped')
+  f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  const result = await concreteAdapter(f)('prepare', journal.owners[0], journal)
+  assert.equal(result, journal.owners[0].source)
+  assert.ok(!f.calls.some(call => call.args?.includes('touch')))
+  assert.ok(!f.calls.some(call => call.binary === 'git' && call.args[0] === 'commit'))
+})
+
 test('knowledge topics covering bumped manifests', t => {
   const dir = mkdtempSync(join(tmpdir(), 'kb-topics-')); t.after(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(join(dir, 'deploy.md'), '---\ntitle: Deploy\nareas:\n  - package.json\n  - scripts/\n---\n# Deploy\n')

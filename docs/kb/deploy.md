@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-28
-checked: 4a7d3c72
+checked: 8b7b5e49
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -316,6 +316,12 @@ Owner branch heads are resolved through the GitHub REST API before paginated
 comparison. The planner checks the published `v<pinned-version>` release against
 the actual tag commit, not its potentially moving `target_commitish`. Missing
 releases, draft releases and mismatched commits are distinguished in JSON.
+When the proposed next patch is already published, the planner resolves its actual
+tag commit and compares it with dev. Identical dev or a fast-forward whose complete
+file diff stays within `docs/kb/` reuses that release at the tag commit: the journal
+skips prepare, gate, push and publication, but still verifies provenance and images
+before pinning Core. Renames from outside KB, diverged history, code changes and
+GitHub's saturated 300-file comparison block reuse and require a new version.
 Core commits come from local `origin/main..origin/dev`; refresh these refs before
 planning. The planner never fetches, clones, creates directories, writes Git
 state, logs into Docker, publishes, or deploys.
@@ -371,6 +377,8 @@ owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
 
 The version bump writes the root and application manifests and refreshes the lock.
+Prepare reconciles KB topics only when it actually created a bump commit; an
+already matching version does not create a standalone KB reconciliation commit.
 An owner whose root `package.json` defines a `set-version` script (Make keeps
 `apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
 itself instead: the runner installs dependencies and runs
@@ -379,8 +387,15 @@ itself instead: the runner installs dependencies and runs
 The runner creates private partial clones (`--filter=blob:none`: history and trees, file contents on checkout) below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
-original owner selection, commits, versions and deploy intent; it skips completed
-steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
+original owner selection, versions and deploy intent; it skips completed
+steps. For a retried incomplete owner prepare in from-dev mode, the runner fetches
+origin/dev and accepts only a fast-forward from the saved owner source. It resets
+partial version/KB edits in its private clone (including ignored output, preserving
+node_modules), checks out the source, records the new source and its
+from/to history in the journal, and prints `owner X: source advanced A → B`.
+Rewritten dev history requires a new plan. Completed prepare and published
+owners keep their recorded commits. The read-only planner also reports a missing
+`node_modules/.bin/tsx` as a blocked dependencies prerequisite. Do not edit journals or run the same journal concurrently. A `.json.lock`
 file excludes competing runners; after a hard process/host crash, confirm the
 runner is no longer active before removing its stale lock and resuming. Clone
 directories remain available for diagnosis. Failures identify the journal and failed
@@ -750,7 +765,11 @@ refuses restoration unless its public schema is empty, restores with `pg_restore
 its stderr tail goes to the private `restore.log` next to `VC_ENVIRONMENT_OVERRIDES`), and applies
 `environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
 sets the first account as administrator with `VC_ADMIN_PASSWORD`, and disables stored SMTP and
-external-integration settings. Snapshot archives are transport artifacts: the caller owns their
+external-integration settings. The Python interpreter used by the stand scripts must provide `hashlib.scrypt`;
+macOS system Python builds without it fail during password sanitization. For local
+gates, put a Python build with scrypt support first in PATH (including the
+`python3` used by subprocesses and shell scripts).
+Snapshot archives are transport artifacts: the caller owns their
 one-time transfer and deletion; these scripts never inspect or modify any other checkout or
 directory.
 
