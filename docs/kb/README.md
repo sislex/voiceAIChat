@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-20 | ⚠ 11 коммит(ов) в areas после сверки: 5dc2eb40 fix(components): enable scheduled renewal and verify expired grant recovery … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-09-29 | ⚠ код изменён 2026-10-27, сверка 2026-09-29 (по датам: правки того же дня не видны — поставь checked) |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-28 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-28 | ⚠ 5 коммит(ов) в areas после сверки: e6cdeba0 Merge remote-tracking branch 'origin/dev' into sisl-786-merge … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-28 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-27 | ⚠ 6 коммит(ов) в areas после сверки: e6cdeba0 Merge remote-tracking branch 'origin/dev' into sisl-786-merge … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-09-17 | ⚠ код изменён 2026-10-15, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-09-13 | ⚠ код изменён 2026-10-27, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ код изменён 2026-10-28, сверка 2026-09-17 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 10 коммит(ов) в areas после сверки: e6cdeba0 Merge remote-tracking branch 'origin/dev' into sisl-786-merge … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: b63971f4 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 89 коммит(ов) в areas после сверки: 84ae8f26 test(search): isolate response diagnostics from palette readiness … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 90 коммит(ов) в areas после сверки: 1fe03a8e docs(kb): update after merge 4833ca1d-8912-4250-b56c-df797e90ed53 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ код изменён 2026-10-28, сверка 2026-09-13 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ код изменён 2026-10-26, сверка 2026-09-30 (по датам: правки того же дня не видны — поставь checked) |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1307. Последние:
+Всего записей: 1308. Последние:
 
 - [2026-10-28-pc-radvilovich-tailae39a6-ts-net-sisl-788-search-diagnostics.md](log/2026-10-28-pc-radvilovich-tailae39a6-ts-net-sisl-788-search-diagnostics.md) — sisl-788-search-diagnostics
 - [2026-10-28-pc-radvilovich-tailae39a6-ts-net-sisl-786-universal-search-diagnostics-kb.md](log/2026-10-28-pc-radvilovich-tailae39a6-ts-net-sisl-786-universal-search-diagnostics-kb.md) — sisl-786-universal-search-diagnostics-kb
 - [2026-10-28-pc-radvilovich-tailae39a6-ts-net-component-token-auto-renewal.md](log/2026-10-28-pc-radvilovich-tailae39a6-ts-net-component-token-auto-renewal.md) — component-token-auto-renewal
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-sisl-766-runner-lifetime.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-sisl-766-runner-lifetime.md) — sisl-766-runner-lifetime
+- [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-65446cd4-9c6d-417f-a3c9-88a0ab94b700.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-65446cd4-9c6d-417f-a3c9-88a0ab94b700.md) — release-train-65446cd4-9c6d-417f-a3c9-88a0ab94b700
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-3f7314f6-67ef-4810-a2da-99473f62f3d7.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-3f7314f6-67ef-4810-a2da-99473f62f3d7.md) — release-train-3f7314f6-67ef-4810-a2da-99473f62f3d7
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-public-abuse-limits.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-public-abuse-limits.md) — public-abuse-limits
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-test-map.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-test-map.md) — chat-only-ui-test-map
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-acceptance.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-chat-only-ui-acceptance.md) — chat-only-ui-acceptance
 - [2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-accounting-runner-cleanup.md](log/2026-10-28-alexeys-macbook-air-tailae39a6-ts-net-accounting-runner-cleanup.md) — accounting-runner-cleanup
-- [2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md](log/2026-10-27-pc-radvilovich-tailae39a6-ts-net-thread-reset-usage-validation.md) — thread-reset-usage-validation
 
 ## Исторические планы
 
