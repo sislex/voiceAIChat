@@ -372,6 +372,57 @@ configuration. Its optional adapter is supplied by `BuildOptions.historicalEvide
 turn. No shell, symlink, alternate-machine or identity fallback was used to read
 the denied directory, and no permission expansion was made.
 
+### Platform ownership verified in the task repository
+
+The follow-up investigation found the concrete transport boundary:
+
+- `apps/server/src/kanban/core.ts:34`–`36` exposes `fsRead`, `fsWrite` and
+  `fsMkdir` to the trusted Kanban service. `kanbanBridge/internal.ts:33`–`37`
+  dispatches these operations; `kanbanBridge/localCore.ts:24` delegates them to
+  the existing machines service. These primitives do not select, sanitize or
+  bind an operator bundle to a task.
+- `KanbanUploads` (`kanban/core.ts:52`–`55`) exposes metadata and bytes of an
+  already registered upload. `kanbanBridge/localCore.ts:27`–`32` reads a local
+  upload by ID and returns null for a machine-hosted upload. This is not an
+  operator-state exporter and does not register the missing Mailpit materials.
+- Task preparation and run orchestration belong to external `sislexa-kanban`.
+  `apps/server/src/kanban/boundary.test.ts:16`–`23`, `:40`–`44` explicitly
+  assert the absence of those implementations in Core. The checkout's
+  `owner-repo` directory is empty. This investigation is scoped to the available
+  SISL-785 repository; the owning service's implementation was not inspected.
+- `scripts/kanban-stand-prepare.mjs:50` prepares an external Kanban checkout for
+  Core e2e tests. `scripts/prod/environment_stand.py:418` builds/pulls services,
+  optionally restores snapshots and starts Compose. Neither is the missing
+  task-input publisher; neither was invoked to provision this stand.
+- The task input directory `artifacts/SISL-785/inputs/` is absent. No placeholder
+  bundle has been created or represented as retained evidence.
+
+**Remaining platform operation (continue under SISL-785, no duplicate card):**
+The authorized operator must select and sanitize the retained source files and
+provide their provenance. The task-preparation owner (`sislexa-kanban`) must
+bind that approved bundle to task `b1742ac7-ca2b-4bd2-bffc-bd2d9af3b1cd` and the
+current run workspace, then materialize only those approved bytes as regular
+files under `<run cwd>/artifacts/SISL-785/inputs/` before launching the worker.
+The existing Core machine write/mkdir transport is the available integration
+point, not proof that the owner already implements a publisher. Determining or
+implementing that publisher requires follow-up in the owner component and the
+operator's actual bundle; adding a second task preparer or granting source-root
+access in Core would not complete this handoff.
+
+The owner follow-up must verify destination/task/run binding, rejection of
+traversal and symlink escapes, missing or unapproved sources and digest mismatch,
+and ensure a failed/partial transfer does not mark inputs ready. Its successful
+receipt must identify the files and digests. Then this worker must verify actual
+bridge readability. These are outstanding checks, not implemented behavior or
+passing test results. A separately prepared, identified Mailpit stand is still
+required before executing the scenario. Documentation and development gates do
+not satisfy either acceptance prerequisite.
+
+Validation of this ownership investigation: `npm run test:files --
+apps/server/src/kanban/boundary.test.ts apps/server/src/kanbanBridge/internal.test.ts`
+passed both files (11 tests). This checks the existing Core boundary and RPC
+behavior, not material publishing or Mailpit acceptance.
+
 Required platform handoff before the rerun:
 
 1. Provide the reviewed, non-secret retained scenario and launch instructions as
