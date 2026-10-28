@@ -5,6 +5,7 @@ After=local-fs.target
 [Service]
 Type=oneshot
 User=1000
+EnvironmentFile=/etc/voicechat/production.env
 UMask=0077
 ExecStart=/bin/bash /usr/local/lib/voicechat/component-rotation.sh
 TimeoutStartSec=300

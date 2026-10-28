@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-28
-checked: e5adbf843
+checked: 71010d396
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -1015,7 +1015,11 @@ delegation, durable usage accounting and budget reservation are still planned,
 not provided by these component tokens.
 
 Private outgoing files are reread for rotation; successful dependency checks are
-keyed by credential digest. Public proxies retain the user's Authorization header
+keyed by credential digest. Readiness exposes the nearest known expiry and a
+seven-day warning without credential values. The installation rotator can recover
+expired, non-revoked grants by digest; it never renews a revoked grant. Managed
+Identity bootstrap does not block Core startup; requests remain denied with 503
+until the dependency's grant is restored. Public proxies retain the user's Authorization header
 and do not replace it with a component secret. Readiness failures omit secret
 values, private paths and raw upstream response bodies. Installation and rotation
 commands are documented in `deploy.md`.

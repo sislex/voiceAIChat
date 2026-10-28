@@ -1,9 +1,47 @@
 import {afterEach,expect,it} from 'vitest'
 import {VoiceChatDb} from './db/database.js'
 import {createIdentityStoreClient} from '@sislexa/identity/client/rpc'
-import {existsSync,readdirSync,mkdtempSync,rmSync} from 'node:fs'
+import {existsSync,readdirSync,mkdtempSync,rmSync,readFileSync,writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+it('starts with an expired Identity grant and recovers after outgoing token replacement', async () => {
+ const {default: Fastify} = await import('fastify')
+ const {ComponentRuntime} = await import('@sislexa/component-runtime')
+ const {ComponentTokenRegistry} = await import('../../../packages/component-runtime/src/registry.js')
+ const {buildServer} = await import('./server.js')
+ const {loadConfig} = await import('./config.js')
+ const root = mkdtempSync(join(tmpdir(), 'identity-expired-'))
+ const contract = JSON.parse(readFileSync(new URL('../component-contract.json', import.meta.url), 'utf8'))
+ const scopes = contract.dependencies.find((d: {applicationId: string}) => d.applicationId === 'identity').scopes
+ const providerContract = {schemaVersion: 1 as const, applicationId: 'identity', provides: scopes, legacyScopes: [], dependencies: []}
+ const providerConfig = {schemaVersion: 1 as const, environmentId: 'test', registryDirectory: join(root, 'provider'), grants: [{consumerId: 'core', scopes, maxTtlSeconds: 2592000}], legacyScopes: [], dependencies: []}
+ let time = Date.now() - 120000
+ const registry = new ComponentTokenRegistry(providerContract, providerConfig, () => time)
+ const old = registry.issue('core', scopes, 60)
+ time = Date.now()
+ const provider = Fastify()
+ new ComponentRuntime(providerContract, providerConfig, {applicationId: 'identity', version: '1.5.2', apiVersion: '1.1.0', dataVersion: '1.0.0', commit: 'a'.repeat(40)}, registry, fetch, () => time).register(provider)
+ const url = await provider.listen({host: '127.0.0.1', port: 0})
+ const tokenFile = join(root, 'identity.token'), configFile = join(root, 'config.json')
+ writeFileSync(tokenFile, old.token, {mode: 0o600})
+ writeFileSync(configFile, JSON.stringify({schemaVersion: 1, environmentId: 'test', registryDirectory: join(root, 'core-provider'), grants: [], legacyScopes: [], dependencies: [{applicationId: 'identity', url, tokenFile}]}))
+ let core: Awaited<ReturnType<typeof buildServer>> | undefined
+ try {
+  core = await buildServer({sessionSecret: 'expired-test', config: loadConfig({PORT: '0', VC_DATA_DIR: root, SISLEXA_COMPONENT_CONFIG: configFile})})
+  expect((await core.inject({url: '/api/health'})).statusCode).toBe(200)
+  const failed = await core.inject({url: '/v1/ready'})
+  expect(failed.statusCode).toBe(503)
+  expect(failed.json()).toMatchObject({ok: false, dependencies: [{applicationId: 'identity', ok: false}]})
+  const denied = await core.inject({url: '/api/me', headers: {authorization: 'Bearer user-session'}})
+  expect(denied.statusCode).toBe(503)
+  writeFileSync(tokenFile, registry.issue('core', scopes, 2592000).token)
+  const recovered = await core.inject({url: '/v1/ready'})
+  expect(recovered.statusCode).toBe(200)
+  expect(recovered.json().nearestExpiresAt).toBe(time + 2592000000)
+  expect(failed.body).not.toContain(old.token)
+ } finally { await core?.close(); await provider.close(); rmSync(root, {recursive: true, force: true}) }
+})
+
 const databases:VoiceChatDb[]=[]
 afterEach(async()=>{for(const db of databases.splice(0))await db.close()})
 it('serves both admin user-list queries with live activity from remote Identity',async()=>{
