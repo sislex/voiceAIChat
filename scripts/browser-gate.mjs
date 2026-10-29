@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { availableParallelism } from 'node:os'
-import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { availableParallelism, tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { prepareKanbanStand } from './kanban-stand-prepare.mjs'
@@ -56,6 +56,14 @@ export function runBrowserBatches(batches, execute, record = (_results) => {}) {
   return results
 }
 
+// tsx children open an IPC socket at $TMPDIR/tsx-<uid>/<pid>.pipe. macOS limits socket paths to
+// 104 bytes, and merge runs set TMPDIR deep inside the merge clone: truncated paths collide and the
+// second Core/Kanban stand process dies with EADDRINUSE. Long temp roots are swapped for /tmp.
+export const MAX_TMPDIR_LENGTH = 40
+export function shortTmpdir(current = process.env.TMPDIR || tmpdir(), make = () => mkdtempSync('/tmp/vc-e2e-')) {
+  return current.replace(/\/+$/, '').length > MAX_TMPDIR_LENGTH ? make() : null
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const root = resolve(import.meta.dirname, '..')
@@ -70,8 +78,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     }
     const directory = resolve(root, 'artifacts/gate-timings'); mkdirSync(directory, { recursive: true })
     const startedAt = new Date().toISOString()
-    runBrowserBatches(batches, (command, args) => spawnSync(command, args, { cwd: root, stdio: 'inherit' }), results => {
-      writeFileSync(resolve(directory, 'browser.json'), JSON.stringify({ startedAt, results }, null, 2))
-    })
+    const shortTemp = shortTmpdir()
+    const env = shortTemp ? { ...process.env, TMPDIR: shortTemp } : process.env
+    try {
+      runBrowserBatches(batches, (command, args) => spawnSync(command, args, { cwd: root, stdio: 'inherit', env }), results => {
+        writeFileSync(resolve(directory, 'browser.json'), JSON.stringify({ startedAt, results }, null, 2))
+      })
+    } finally { if (shortTemp) rmSync(shortTemp, { recursive: true, force: true }) }
   } catch (error) { console.error(error.message); process.exitCode = error.exitCode || 1 }
 }
