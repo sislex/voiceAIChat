@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-29
-checked: bdb94391
+checked: d8d2a71f
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -3312,7 +3312,7 @@ production host (private link `10.77.0.2:8798`).
 
 ## Published Make 1.8.1 pin (2026-10-19)
 
-Core pins Make 1.8.1 at `0d3ccf01ee7c46700594b7a4034ea757e48cb60f` in the tools lock and
+Core pins Make 1.8.1 at `e716089b55eb17059f51591fa88cd0506ac1c062` in the tools lock and
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
@@ -3361,3 +3361,7 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:9368cd51-13a3-49cc-b9b4-70d50694bdd8 -->
 - sislex/sislexa-kanban: 0.2.52
+
+<!-- release-train:8247f9e7-3198-40e6-92df-94caa6365e7c -->
+- sislex/make: 1.8.4
+- sislex/sislexa-kanban: 0.2.54
