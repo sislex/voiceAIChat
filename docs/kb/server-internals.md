@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 2b9bba5e
+checked: 6829b466
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -820,7 +820,9 @@ Successful completion persists the final boundary atomically and emits
 `chat.conversation`. Per-attempt failures emit structured JSON directly to stdout:
 `conversation_summary_failed`, conversation id, model, error class/message,
 batch message count and prompt characters, without attaching history or prompts.
-This bypasses disabled Fastify logging. Failed background runs keep the prior
+Fastify is created with `logger: false`; the previous `app.log.warn` wiring therefore
+dropped these errors entirely. Direct stdout logging keeps them on the same container
+log channel as `api_request_problem`. Failed background runs keep the prior
 summary and move the next automatic attempt to the following 40-message boundary.
 The summary REST refresh bypasses the threshold. Thread reset adds a persisted,
 bounded deterministic fallback if refresh leaves uncovered messages; see

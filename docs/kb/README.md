@@ -64,18 +64,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1330. Последние:
+Всего записей: 1331. Последние:
 
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md) — android-agent-auto-update
+- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-logging-gap.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-logging-gap.md) — thread-reset-summary-logging-gap
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-fallback.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-fallback.md) — thread-reset-summary-fallback
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md) — thread-reset-kb-reconciliation
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md) — sisl-794-kb-reconcile
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md) — release-train-health-validation
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md) — release-train-health-retries
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c6077abb-5f8d-404f-b078-6c33ffa974df.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c6077abb-5f8d-404f-b078-6c33ffa974df.md) — release-train-c6077abb-5f8d-404f-b078-6c33ffa974df
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c0568900-fb04-4678-a8e4-663e9a1cea8f.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c0568900-fb04-4678-a8e4-663e9a1cea8f.md) — release-train-c0568900-fb04-4678-a8e4-663e9a1cea8f
 
 ## Исторические планы
 
