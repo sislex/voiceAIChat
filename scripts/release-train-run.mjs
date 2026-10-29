@@ -132,7 +132,7 @@ export async function executeJournal(journal, directory, adapter) {
 }
 
 export function concreteAdapter({ repository, directory, env = process.env, run = execute, fetcher = fetch,
-  sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now }) {
+  sleep = ms => new Promise(done => setTimeout(done, ms)), now = Date.now, log = console.log }) {
   const token = env.GH_TOKEN || env.GITHUB_TOKEN
   let deadline = Infinity
   const remaining = () => {
@@ -153,9 +153,9 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       const status = response?.status
       const message = redact(`${github ? 'GitHub' : 'Release API'} HTTP ${status ?? 'unavailable'}: ${data?.message ?? data?.error ?? failure?.message ?? 'Request failed'}${data?.errors ? `; errors: ${JSON.stringify(data.errors)}` : ''}`, env)
       if (!github || attempt >= 5 || (status !== undefined && status !== 422 && status < 500) || now() >= deadline)
-        throw Object.assign(Error(message), { status })
+        throw Object.assign(Error(message), { status, transient: Boolean(failure && !(failure instanceof SyntaxError) && (!response || response.ok)) })
       await sleep(Math.min(1000 * 2 ** attempt, Math.max(0, deadline - now())))
-      if (now() >= deadline) throw Object.assign(Error(message), { status })
+      if (now() >= deadline) throw Object.assign(Error(message), { status, transient: Boolean(failure && !(failure instanceof SyntaxError) && (!response || response.ok)) })
     }
   }
   const gh = (path, method = 'GET', body = undefined) => request('https://api.github.com', path, method, body)
@@ -485,16 +485,49 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return rc('/deploy', 'POST', { branch })
     }
     if (action === 'health') {
-      for (let attempt = 0; attempt < 120; attempt++) {
-        const release = await rc(`/${encodeURIComponent(journal.results.deploy.id)}`)
-        if (['failed', 'cancelled'].includes(release.status)) throw Error('Core deployment failed')
-        try {
-          const response = await fetcher(`${env.RELEASE_HEALTH_URL}/api/health`, { redirect: 'error', signal: AbortSignal.timeout(10000) })
-          if (response.ok && (await response.json()).version === version) return { version }
-        } catch {}
-        await new Promise(done => setTimeout(done, 5000))
-      }
-      throw Error('Timed out waiting for new Core version')
+      const previousDeadline = deadline
+      deadline = now() + 300000
+      let lastVersion = 'unavailable', lastError = 'No health response'
+      const expectedCommit = journal.results.branch?.sha
+      try {
+        for (let attempt = 0; now() < deadline; attempt++) {
+          try {
+            const release = await rc(`/${encodeURIComponent(journal.results.deploy.id)}`)
+            if (['failed', 'cancelled'].includes(release.status)) throw Error('Core deployment failed')
+            let response
+            try {
+              response = await fetcher(`${env.RELEASE_HEALTH_URL}/api/health`, {
+                redirect: 'error', signal: AbortSignal.timeout(Math.min(10000, remaining()))
+              })
+            } catch (error) {
+              throw Object.assign(Error(`Core health unavailable: ${error.message}`), { transient: true })
+            }
+            if (!response.ok) throw Object.assign(Error(`Core health HTTP ${response.status}`), {
+              transient: response.status === 502 || response.status === 503
+            })
+            let health
+            try { health = await response.json() } catch (error) {
+              throw Object.assign(Error(`Core health body unavailable: ${error.message}`), { transient: !(error instanceof SyntaxError) })
+            }
+            lastVersion = health.version ?? 'missing'
+            if (health.version !== version) throw Error(`Core health version mismatch: expected ${version}; last observed version: ${lastVersion}`)
+            const commit = health.application?.commit ?? health.commit
+            if (expectedCommit && commit && commit !== expectedCommit)
+              throw Error(`Core health commit mismatch: expected ${expectedCommit}; observed ${commit}; last observed version: ${lastVersion}`)
+            return { version }
+          } catch (error) {
+            // Only transport failures and restart gateway statuses are retryable.
+            if (!(error.transient || (Object.hasOwn(error, 'status') &&
+              (error.status === undefined || error.status === 502 || error.status === 503)))) throw error
+            lastError = error.message
+          }
+          if (now() >= deadline) break
+          const delay = Math.min(1000 * 2 ** Math.min(attempt, 4), 10000, deadline - now())
+          log(redact(`Core health retry ${attempt + 1} in ${delay}ms: ${lastError}; last observed version: ${lastVersion}`, env))
+          await sleep(delay)
+        }
+        throw Error(`Core health timed out after 5 minutes; last observed version: ${lastVersion}; ${lastError}`)
+      } finally { deadline = previousDeadline }
     }
   }
   return async (...args) => {

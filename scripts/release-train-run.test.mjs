@@ -104,6 +104,101 @@ for (const stage of ['release', 'manifest', 'docker']) {
   }
 }
 
+for (const endpoint of ['center', 'health']) for (const failure of ['network', 'body', 502, 503]) {
+  for (const permanent of [false, true]) test(`health retries ${endpoint} ${failure}: ${permanent ? 'bounded failure' : 'completed'}`, async t => {
+    const f = apiFixture(t)
+    const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+    journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+      branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+    const logs = [], waits = []
+    let failures = 0
+    const adapter = concreteAdapter({ ...f,
+      env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+      log: message => logs.push(message),
+      sleep: async ms => { waits.push(ms); await f.sleep(ms) },
+      fetcher: async (url, options) => {
+        assert.ok(options.signal instanceof AbortSignal)
+        if (url.includes(endpoint + '.test') && (++failures <= 2 || permanent)) {
+          if (failure === 'network') throw Error('fetch failed ' + f.env.GH_TOKEN)
+          if (failure === 'body') return { ok: true, status: 200, json: async () => { throw TypeError('terminated ' + f.env.GH_TOKEN) } }
+          // Gateway errors often have non-JSON bodies.
+          return new Response('temporarily unavailable', { status: failure })
+        }
+        return Response.json(url.includes('center.test') ? { status: 'succeeded' } :
+          { version: '1.0.1', application: { commit: 'expected' } })
+      }
+    })
+    if (permanent) {
+      await assert.rejects(executeJournal(journal, f.directory, adapter), /stopped at health.*\n.*timed out after 5 minutes; last observed version: unavailable/)
+      assert.equal(f.now(), 300000)
+      const saved = read(join(f.directory, journal.id + '.json'))
+      assert.equal(saved.pending, 'health')
+      assert.equal(saved.status, 'failed')
+      assert.match(saved.error, /last observed version: unavailable/)
+      assert.ok(!saved.error.includes(f.env.GH_TOKEN))
+    } else {
+      await executeJournal(journal, f.directory, adapter)
+      assert.equal(journal.status, 'completed')
+      assert.equal(failures, 3)
+      assert.deepEqual(waits, [1000, 2000])
+    }
+    assert.equal(logs.length, waits.length)
+    assert.match(logs[0], /Core health retry 1 in 1000ms/)
+    assert.ok(logs.every(line => !line.includes(f.env.GH_TOKEN)))
+  })
+}
+
+test('health stops with the last observed version after transient failures', async t => {
+  const f = apiFixture(t)
+  const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+  journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+    branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+  let attempts = 0
+  const logs = []
+  const adapter = concreteAdapter({ ...f,
+    env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+    log: message => logs.push(message),
+    fetcher: async url => {
+      if (url.includes('center.test')) return Response.json({ status: 'succeeded' })
+      if (++attempts <= 2) throw TypeError('fetch failed')
+      return Response.json({ version: '1.0.0' })
+    }
+  })
+  await assert.rejects(executeJournal(journal, f.directory, adapter),
+    /stopped at health.*\n.*expected 1.0.1; last observed version: 1.0.0/)
+  assert.equal(attempts, 3)
+  assert.equal(f.now(), 3000)
+  assert.equal(logs.length, 2)
+  const saved = read(join(f.directory, journal.id + '.json'))
+  assert.equal(saved.pending, 'health')
+  assert.equal(saved.status, 'failed')
+  assert.match(saved.error, /last observed version: 1.0.0/)
+})
+
+for (const outcome of ['version', 'commit', 'unauthorized', 'failed', 'cancelled']) {
+  test(`health fails fast on ${outcome} and retains diagnostics`, async t => {
+    const f = apiFixture(t)
+    const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+    journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+      branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+    const adapter = concreteAdapter({ ...f,
+      env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+      fetcher: async url => {
+        if (url.includes('center.test')) return Response.json({ status: ['failed', 'cancelled'].includes(outcome) ? outcome : 'succeeded' })
+        if (outcome === 'unauthorized') return new Response('', { status: 401 })
+        return Response.json({ version: outcome === 'version' ? '1.0.0' : '1.0.1',
+          application: { commit: outcome === 'commit' ? 'wrong' : 'expected' } })
+      }
+    })
+    await assert.rejects(executeJournal(journal, f.directory, adapter), /stopped at health/)
+    assert.equal(f.now(), 0)
+    const saved = read(join(f.directory, journal.id + '.json'))
+    assert.equal(saved.pending, 'health')
+    if (outcome === 'version') assert.match(saved.error, /expected 1.0.1; last observed version: 1.0.0/)
+    if (outcome === 'commit') assert.match(saved.error, /commit mismatch: expected expected; observed wrong/)
+  })
+}
+
 test('child failure records command, exit code and redacted final 40 lines in journal', async t => {
   const token = randomUUID()
   const f = fixture(t, false), journal = createJournal(f.plan, { apps: [] }, f.repository)
