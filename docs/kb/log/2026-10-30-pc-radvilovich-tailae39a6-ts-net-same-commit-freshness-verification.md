@@ -20,6 +20,14 @@ author: voiceAIChat agent
 - docs/kb/kb-workflow.md
 - packages/kb-tools/README.md (operator publication and consumer pins)
 
-## Existing repository issues
+## Release-pin reconciliation after the project gate failure
 
-Global `kb check --strict` reports five unrelated topics invalidated by the preceding release-pin commit 2b107639: features/ci-runner, features/releases, stt-runner, testing-operations and tts-runner. Their checkpoints were not changed without reviewing their implementations. Release publication and consumer pin updates remain operator-owned.
+The project gate required reconciliation of five topics invalidated by release-pin commit 2b107639. For each topic, the complete diff of its declared areas from checked commit 2b9bba5e to HEAD contains exactly one change: docker-compose.yml advances the Kanban image from 9f79c185f95c0e05a70e3de38c584c67b9442a4c to ed43627176a6880b38584a9088f3d888b9968ab8. The current image matches Kanban 0.2.55 in deploy/tools.lock.json.
+
+- features/ci-runner: reviewed the Core boundary and Compose Kanban service; no changes to tracked CI contracts, Core adapters or Automation Runner source.
+- features/releases: reviewed the Core release boundary and Compose Kanban service; no changes to tracked release contracts, build/deploy/gate scripts or host adapters.
+- stt-runner: reviewed the topic and its area diff; STT client/session/config and service configuration are unchanged.
+- tts-runner: reviewed the topic and its area diff; TTS client/session/config and service configuration are unchanged.
+- testing-operations: reviewed the development gate guidance and its area diff; scripts, test configurations and other deployment configuration are unchanged.
+
+The topic descriptions do not pin the old Kanban image, so no behavior-text change is required for this pin-only delta. Their checkpoints are refreshed after this review; the strict command and its scope remain unchanged. Release publication and consumer pin updates remain operator-owned.
