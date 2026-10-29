@@ -776,10 +776,7 @@ export class ChatRepo extends BaseRepo {
     reasoningEffort?: ReasoningEffort,
     deepThinking?: boolean
   ): Promise<Conversation | null> {
-    // Make-чату машина не назначается: ход её всё равно игнорирует, а запись
-    // в БД возвращала бы мусор, который чистит миграция. Явное «none» проходит.
-    const makeChat = ((await this.sql.get(`SELECT assistant_kind FROM conversations WHERE id = ? AND user_id = ?`, [id, userId])) as { assistant_kind: string | null } | undefined)?.assistant_kind === 'make'
-    const target = makeChat && execTarget !== 'none' ? null : execTarget
+    const target = execTarget
     const fields: string[] = []
     const values: unknown[] = []
     if (execTarget !== undefined) {
@@ -788,7 +785,7 @@ export class ChatRepo extends BaseRepo {
     }
     if (workdir !== undefined) {
       fields.push('workdir = ?')
-      values.push(makeChat ? null : workdir)
+      values.push(workdir)
     }
     if (skillNames !== undefined) {
       fields.push('skill_names = ?')

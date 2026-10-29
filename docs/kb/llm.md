@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-28
-checked: 4a7d3c72
+updated: 2026-10-29
+checked: bdb94391
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -504,41 +504,42 @@ Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта �
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make работает без remote-моста и сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому остаются только `mcp__make__*`. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
+**Режим Make-разговора (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому встроенные инструменты недоступны: остаются `mcp__make__*` и scoped remote MCP из следующего абзаца. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
 
 Codex ≥0.15 требует одобрения любого MCP-вызова, поэтому раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`). Это разрешает вызовы Make MCP в неплановых режимах без включения встроенных инструментов; политику записи файлов продолжает держать сам Make MCP через `ro=1`.
 
-**Make-чат к машине не ходит вообще (2026-09-04).** Раньше исключение работало
-только «без машины»: назначенная чату машина давала remote-bash-мост, а у роли
-`admin` вместе с ним и встроенные `Bash`/`Write`/`Read` — то есть модель Make
-могла править файлы на машине, включая общую копию проекта. Теперь `turns.ts`
-(флаг `makeChat`) для Make игнорирует машину целиком: `resolveConversationMachine`
-не вызывается, `remote` не собирается, отсутствие или offline машины не блокирует
-ход, `MAKE_ONLY_DISALLOWED_TOOLS` запрещаются при любой роли и режиме, а Codex-ход
-Make остаётся в `plan` тоже при любой роли. Причина — та же, что и у удаления
-Make-push: общая копия проекта (`…/projects/<id>/worktree`) принадлежит git-потоку
-(задачи, CI, релизы), и правка мимо коммита оставляет её dirty. Мастерская при
-этом не теряет ничего: `make_*` пишут в `<dataDir>/make/<conversationId>` и машины
-не требуют. Снимок контекста (`routes/rest.ts`) повторяет это правило: для
-Make-чата `resolution` = null, поэтому «Машина выполнения», рабочая директория,
-навыки и `mcp-remote-*` показываются недоступными, а `disallowedTools` содержат
-встроенные инструменты. Единственное действие Make с репозиторием — разовое
-обновление общей копии до `origin/<base>` при создании чата: `refreshProjectMain`
-в `server.ts` (передаётся в `registerRest`) вызывается из `POST /api/conversations`
-при `assistantKind: 'make'` с проектом, best-effort и без `await` — нет машины, она
-offline или синхронизация упала, чат всё равно создаётся, а причина уходит в лог
-(`make_chat_project_refresh_failed`). Оставшиеся с прежних времён привязки
-Make-чатов к машине снимает миграция `database.ts` (`UPDATE conversations SET
-exec_target = NULL, workdir = NULL WHERE assistant_kind = 'make'`, идемпотентно;
-явное `exec_target = 'none'` сохраняется как осознанный выбор пользователя), а
-`setConversationExecTarget` больше не даёт записать машину и каталог Make-чату —
-остальные поля того же вызова (`permission_mode`, движок, модель, навыки)
-сохраняются. Тесты: `turns.test.ts` («Make с назначенной машиной всё равно не
-получает remote-мост» — машина наследуется как default-машина проекта, «Make на
-Codex остаётся в плане даже у admin»), `rest.conversations.test.ts` («новый
-Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет») и
-`db/database.test.ts` («снимает с Make-чатов привязку к машине и каталог, а «none»
-и чужие чаты не трогает»).
+**Make attachments and scoped machines (2026-10-29).** Make retains its explicit
+`execTarget` and `workdir` in settings and across database startup. It does not
+inherit a default machine. The context snapshot reports that explicit machine
+and folder. Built-in shell/file tools remain disabled for both providers;
+Make requests also set the runner's `toolOnly` flag so Codex cannot obtain its
+normal remote-mode local sandbox bypass.
+
+Every Make turn receives the Core remote MCP with `make=1`, `conv`, `turn` and
+a short-lived `files` token. The prompt lists upload IDs and names;
+`image {path: uploadId}` returns typed image content even without a machine.
+The file broker unregisters the token when the turn finishes. With an explicit
+machine, the URL also carries `agent` and the configured `cwd`; other project
+machines and inherited project folders are not granted.
+
+The scoped endpoint permits only `pwd` and `ls [path]` through bash, because
+an arbitrary shell cannot be confined by changing its working directory.
+Read/image/edit and single-file literal grep validate paths on the agent,
+rejecting traversal, outside paths, symlinks and Git metadata. Missing workdir
+disables machine tools. Project edits continue through Make tools.
+
+`attachment_to_make {uploadId,path}`, `machine_to_make {machinePath,path}`
+and `make_to_machine {path,machinePath}` move bytes server-side with a 10 MiB
+limit; incomplete machine reads are rejected. All three reject writes in plan
+mode. The Core adapter uses authorized `GET/PUT /api/make/:id/files/raw?path=...`
+and passes the turn ID on writes; it never writes the Make checkout directly.
+Tools are registered only when both embedded raw routes exist; remote Make is
+probed by reading an existing project file through the authorized raw endpoint.
+The currently pinned Make package lacks these routes, so transfers remain gated
+until the binary-file card supplies them. External ticket-delegated Make does
+not expose the local machine bridge.
+Tests cover broker registration/cleanup, both providers, typed images, binary
+transfers, plan restrictions, traversal, symlinks and settings persistence.
 
 ## Канбан: инструменты `mcp__kanban__*`
 

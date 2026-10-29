@@ -875,7 +875,45 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (token) => remoteFileBroker.get(token),
     commandGate,
     opts.historicalEvidence ? new HistoricalEvidence(opts.historicalEvidence,
-      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined
+      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined,
+    {
+      // Raw routes are supplied by the Make owner package. Older packages expose no transfers.
+      available: async (conversationId) => {
+        if (app.hasRoute({ method: 'GET', url: '/api/make/:id/files/raw' }) &&
+          app.hasRoute({ method: 'PUT', url: '/api/make/:id/files/raw' })) return true
+        // A remote Make uses a wildcard proxy, so probe an existing file through the same authority.
+        if (!makeRemote) return false
+        try {
+          const userId = await db.chat.conversationOwner(conversationId)
+          const file = (await make.service.listFiles(conversationId))[0]
+          if (!userId || !file) return false
+          const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(file.path)
+          return makeRequests.run(userId, 'GET', url, async authorization =>
+            (await app.inject({ method: 'GET', url, headers: { authorization } })).statusCode === 200)
+        } catch { return false }
+      },
+      read: async (conversationId, path) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path)
+        return makeRequests.run(userId, 'GET', url, async authorization => {
+          const response = await app.inject({ method: 'GET', url, headers: { authorization } })
+          if (response.statusCode !== 200) throw new Error('Make raw read failed: ' + response.statusCode)
+          return response.rawPayload.toString('base64')
+        })
+      },
+      write: async (conversationId, path, dataBase64, turn) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path) +
+          (turn ? '&turn=' + encodeURIComponent(turn) : '')
+        await makeRequests.run(userId, 'PUT', url, async authorization => {
+          const response = await app.inject({ method: 'PUT', url, headers: { authorization, 'content-type': 'application/octet-stream' },
+            payload: Buffer.from(dataBase64, 'base64') })
+          if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('Make raw write failed: ' + response.statusCode)
+        })
+      }
+    }
   )
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.

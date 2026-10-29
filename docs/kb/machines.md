@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-29
-checked: 7d907bda
+checked: bdb94391
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -662,6 +662,16 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 плана, и в fix-loop, потому что живёт в самом инструменте `bash`.
 
 ## Выбор машины для чата
+
+Make conversations are an explicit exception to default-machine inheritance:
+only a saved `execTarget` grants machine access, and only its saved `workdir`
+is exposed. The remote MCP `make=1` scope has no other-machine selector.
+Its bash tool supports only directory inspection (`pwd`, `ls`); file operations
+reject outside paths, symlinks and Git metadata through fixed agent-side
+validation. Make project writes use the raw Make API, never a machine checkout.
+Attachment images remain available by upload ID without any machine.
+See [Make tools](llm.md#make-инструменты-mcp-make) for transfer capability gating.
+
 
 Страница настроек разговора хранит отдельно для каждого чата цель
 `conversations.exec_target`, рабочий каталог `workdir` и JSON-список включённых
