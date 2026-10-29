@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-29
-checked: 0d77320f
+checked: bdb94391
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -504,7 +504,7 @@ Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта �
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make работает без remote-моста и сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому остаются только `mcp__make__*`. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
+**Режим Make-разговора (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому встроенные инструменты недоступны: остаются `mcp__make__*` и scoped remote MCP из следующего абзаца. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
 
 Codex ≥0.15 требует одобрения любого MCP-вызова, поэтому раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`). Это разрешает вызовы Make MCP в неплановых режимах без включения встроенных инструментов; политику записи файлов продолжает держать сам Make MCP через `ro=1`.
 
