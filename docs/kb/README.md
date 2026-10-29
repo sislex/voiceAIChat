@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-29 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-29 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-29 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-30 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-29 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-29 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1338. Последние:
+Всего записей: 1339. Последние:
 
+- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
@@ -75,7 +76,6 @@
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md) — thread-reset-kb-reconciliation
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md) — sisl-794-kb-reconcile
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md) — release-train-health-validation
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md) — release-train-health-retries
 
 ## Исторические планы
 
