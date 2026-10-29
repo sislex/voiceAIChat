@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-10-05
-checked: 8e052b52
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -10,7 +10,8 @@ areas:
   - AGENTS.md
   - .claude/commands/kb-update.md
   - apps/server/src/kb/codeUpdate.ts
-  - apps/server/src/ci/modelHooks.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - apps/server/src/kb/modelDocs.ts
   - packages/shared/src/kbGaps.ts
 ---
@@ -174,6 +175,28 @@ npm run kb:index      # перегенерировать docs/kb/README.md
 npm run kb:log -- <slug>   # новая запись журнала (дата+машина+slug в имени файла)
 node scripts/kb.mjs touch protocol   # поставить сегодняшнюю дату в updated
 ```
+
+## Reconciliation after repository extraction
+
+The CLI implementation is `packages/kb-tools/kb.mjs`; `scripts/kb.mjs` is a
+compatibility entry point. Strict mode fails for stale topics, missing package
+`AGENTS.md` files and broken relative Markdown links. Freshness uses all commits
+in `checked..HEAD` touching `areas`; when that commit is unavailable, it falls
+back to commit dates. `touch` records the current HEAD, not uncommitted code.
+
+Compare each topic with its tracked implementation before touching it. For moved
+code, verify the current consumer port and replace deleted area paths with the
+actual Core contract/adapter. Preserve owner implementation notes until the owner
+KB covers them, but identify historical paths explicitly. Avoid self-referential
+`docs/kb` areas: track runtime configuration such as `docs/kb/modules.md` and the
+indexing implementation instead. Keep a per-topic evidence map in the session log,
+regenerate the index and rerun strict mode after commits, because documentation
+under another topic's area can invalidate that topic too.
+
+Kanban owns `MergeRunManager` and its model hooks. The Core copies of
+`apps/server/src/ci/modelHooks.ts` and `merge/` no longer exist; Core retains
+`kb/codeUpdate.ts`, `kb/modelDocs.ts` and its RPC boundary. Manager references in
+the merge-workflow section above refer to the extracted Kanban owner.
 
 ## Почему нет merge-конфликтов
 

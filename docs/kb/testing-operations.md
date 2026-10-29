@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-29
-checked: 656a5c81
+checked: 4aa06d23
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -18,6 +18,22 @@ areas:
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`
+
+## Browser temporary paths and release verification
+
+`browser-gate.mjs` replaces a TMPDIR longer than 40 characters with a unique
+`/tmp/vc-e2e-*` directory for child processes, then removes it in `finally`.
+This avoids macOS Unix-socket path collisions in deeply nested task/merge
+checkouts; the parent environment is unchanged. Browser batches remain bounded
+to one or two workers and the reviewed parallel-suite allowlist.
+
+`release-train-run.mjs` gives post-deploy health verification a separate five-minute
+budget. Transport failures and HTTP 502/503 retry with bounded backoff; an observed
+version or commit mismatch fails immediately. The expected commit comes from the
+journal's release branch result. Owner docs-only release reuse is proven by
+`release-train.mjs`: GitHub comparison must be ahead/identical, contain fewer than
+300 files, and include only `docs/kb/` paths (including previous rename paths).
+A saturated or unverified comparison requires a new release version.
 
 ## Task gate for the dev lane
 
