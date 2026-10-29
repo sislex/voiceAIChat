@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-29
-checked: 355efc40
+checked: f8a57433
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -458,7 +458,14 @@ branch's own preparation record (`preparing` -> `ready`; branch creation itself 
 mistaken for a deployment — until 2026-10-27 it was, and 0.1.495 waited for a deployment that was never
 started), then POST `/releases/deploy` starts deployment and the
 runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
-the new version for up to ten minutes. Without that flag it stops after branch
+the new version for up to five minutes. Connection failures and HTTP 502/503
+from either endpoint retry with 1/2/4/8-second backoff capped at 10 seconds;
+requests and sleeps are bounded by the remaining time. Each retry logs its
+reason and the last observed version with secrets redacted. A successful health
+response with a different version, or a reported commit different from the release
+branch SHA, fails immediately. Failed/cancelled deployments and other HTTP errors
+also fail immediately. Timeout diagnostics retain the last observed version
+(`unavailable` if no successful health response arrived). Without that flag it stops after branch
 creation. Real publication/deployment and token commissioning are operator
 actions, separate from fixture verification of the implementation.
 
