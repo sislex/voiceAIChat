@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-10-29 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-29 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-29 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-29 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-10-29 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
@@ -36,7 +36,7 @@
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-29 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-29 | ✓ |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-29 | ✓ |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-30 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-29 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-29 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
@@ -64,18 +64,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1339. Последние:
+Всего записей: 1343. Последние:
 
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
+- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md) — sisl-10799-local-stand-kb
+- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-same-commit-topic-freshness-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-same-commit-topic-freshness-kb.md) — same-commit-topic-freshness-kb
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md) — android-agent-auto-update
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-logging-gap.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-logging-gap.md) — thread-reset-summary-logging-gap
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-fallback.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-summary-fallback.md) — thread-reset-summary-fallback
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-thread-reset-kb-reconciliation.md) — thread-reset-kb-reconciliation
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md) — sisl-794-kb-reconcile
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md) — release-train-health-validation
 
 ## Исторические планы
 

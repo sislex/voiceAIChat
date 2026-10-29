@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-30
-checked: 32a7625f
+checked: b8f5f017
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -525,7 +525,10 @@ and changing frontend routing restarts Core. Ports held by other processes are r
 Frontend servers take version, commit and apiVersion from the freshly built
 `dist/manifest.json`, rather than the launcher's static API defaults.
 Readiness failures include the last 4 KiB / 20 lines of the failing service log.
-The `run` supervisor checks logs every five seconds: files over 8 MiB retain a
+In supervised `run` mode this diagnostic is written to stderr before rollback stops
+the service groups, so an operation runner can retain the bounded cause instead of
+only the readiness error code. The `run` supervisor checks logs every five seconds:
+files over 8 MiB retain a
 4 KiB tail in `.log.1` and are truncated in place so open append descriptors
 continue writing to the same file. Startup also checks this limit.
 
