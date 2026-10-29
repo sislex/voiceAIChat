@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-28
-checked: 84ae8f26
+updated: 2026-10-29
+checked: 656a5c81
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -449,6 +449,10 @@ missing their separate dependencies produces TS2307 for `electron` and
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
 закреплённого коммита), сьюты пропускаются и печатают причину. `VC_E2E_STAND_LOG=1` выводит
 логи обоих процессов. Письма приглашений шлёт канбан, поэтому SMTP-приёмник получают оба.
+Если `TMPDIR` длиннее 40 символов (merge-раны задают его внутри merge-клона), `browser-gate.mjs`
+запускает сьюты с коротким каталогом `/tmp/vc-e2e-*`: `tsx` открывает IPC-сокет
+`$TMPDIR/tsx-<uid>/<pid>.pipe`, а macOS ограничивает путь сокета 104 байтами — обрезанные пути
+совпадали, и второй процесс стенда падал с `EADDRINUSE` («Канбан завершился с кодом 1»).
 Кнопка «+ Новый проект» видна раньше, чем раздел догрузил данные канбана: окно открывается
 повторным кликом до появления диалога, иначе первый сценарий нестабилен.
 
@@ -1302,6 +1306,19 @@ drill against the retained set before applying a production retention plan.
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
 
 ## Единый frontend quality gate
+
+The Core/Kanban project browser fixture in `e2e/kanbanStand.ts` always pipes
+both child streams through `e2e/standDiagnostics.ts`. Each child retains the last
+80 lines; individual lines over 8192 characters are omitted to bound memory.
+Startup exit (including signals), spawn errors and health timeouts include the
+captured output; health requests have a one-second timeout within the overall
+90-second deadline. Effective `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` and the
+fixture admin password are redacted. `VC_E2E_STAND_LOG=1` additionally echoes
+redacted, complete lines; it does not bypass capture. Per-stream UTF-8 decoding
+and line framing preserve secrets split across chunks. Unit coverage is in
+`scripts/stand-diagnostics.test.mjs`, included in `test:tooling`.
+No automatic startup retry is applied without evidence of a transient bind race.
+
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
 owner-built product/Core UI artifact verification, and retained Core functional

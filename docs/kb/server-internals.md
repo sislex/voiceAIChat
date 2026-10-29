@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-27
-checked: 0a8bc000
+updated: 2026-10-29
+checked: 7d907bda
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1109,3 +1109,20 @@ observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
 reads when the Duplex fills. Agent disconnect/error closes the stream. The
 MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
+
+## Automatic agent bundle offers
+
+After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
+`systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned
+by `servedAgent()` is strictly newer than the reported agent version, Core sends
+`agent.update { version, sha256 }` once for that WebSocket connection and records
+`agent_update_sent`. Equal or newer agents are never offered a downgrade. Missing
+or unknown supervisors retain the registry's version-gated `agent.updateAvailable`
+hint instead of receiving the automatic update command. A repeated registration
+frame on the same connection is ignored.
+
+The local compatibility contract in `packages/shared/src/agentProtocol.ts` widens
+only the registration message's optional `supervisor` to include `android`, because
+the pinned `@sislexa/agent-contracts` archive predates that owner-side extension.
+The server consumes this widened `AgentToServer` type; the remaining owner protocol
+and the dev-process extensions keep their existing sources.

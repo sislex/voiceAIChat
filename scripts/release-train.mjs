@@ -1,6 +1,6 @@
 // @ts-check
 import { spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync, lstatSync, realpathSync } from 'node:fs'
+import { readFileSync, readdirSync, lstatSync, realpathSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -71,6 +71,20 @@ export async function pinnedRelease(repository, version, commit, get) {
   return { tag, published, commit: target.sha, matchesPinnedCommit: published && target.sha.toLowerCase() === commit.toLowerCase() }
 }
 
+// GitHub compare returns at most 300 files; a saturated list cannot prove docs-only changes.
+export async function reusableRelease(repository, version, dev, get) {
+  const release = await pinnedRelease(repository, version, dev, get)
+  if (!release.published) return null
+  if (release.commit !== dev) {
+    const comparison = await get(`/repos/${repository}/compare/${release.commit}...${dev}`)
+    const docs = path => typeof path === 'string' && path.startsWith('docs/kb/')
+    if (!['ahead', 'identical'].includes(comparison.status) || !Array.isArray(comparison.files)
+      || comparison.files.length >= 300 || comparison.files.some(file => !docs(file.filename) || (file.previous_filename && !docs(file.previous_filename))))
+      throw Error(`Published v${version} has non-KB or unverified changes on dev; a new version is required`)
+  }
+  return { version, commit: release.commit }
+}
+
 export function protectedWorktrees(directory, run = command) {
   try {
     if (lstatSync(directory).isSymbolicLink() || realpathSync(directory) !== resolve(directory)) throw Error('Unsafe root')
@@ -100,14 +114,22 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
   const prerequisites = {
     token: { ok: Boolean(token), detail: token ? 'GitHub token present' : 'GH_TOKEN or GITHUB_TOKEN required' },
     docker: { ok: false, detail: 'Docker daemon unreachable' },
-    worktrees: protectedWorktrees(worktreeRoot, run)
+    worktrees: protectedWorktrees(worktreeRoot, run),
+    dependencies: { ok: existsSync(join(repository, 'node_modules/.bin/tsx')),
+      detail: 'Core checkout requires node_modules/.bin/tsx; install dependencies before running the release train' }
   }
   try { run('docker', ['info', '--format', '{{.ServerVersion}}'], repository); prerequisites.docker = { ok: true, detail: 'Docker daemon reachable' } } catch {}
   const errors = [], applications = [], steps = []
   const lock = JSON.parse(readFileSync(join(repository, 'deploy/tools.lock.json'), 'utf8'))
   if (!lock.tools || typeof lock.tools !== 'object' || Array.isArray(lock.tools)) throw Error('Invalid tools lock')
+  // These owners are also embedded as immutable package archives. Pinning only tools.lock
+  // would make Core internally inconsistent, so keep them out of an automated train until
+  // the pin step knows how to rebuild every coupled artifact and lock.
+  const artifactPath = join(repository, 'deploy/s3-provider-artifacts.json')
+  const artifactManifest = existsSync(artifactPath) ? JSON.parse(readFileSync(artifactPath, 'utf8')) : { providers: [] }
+  const embeddedOwners = new Set((artifactManifest.providers ?? []).map(row => githubRepository(row.repository)).filter(Boolean))
   const get = githubClient(token ?? '', fetcher)
-  const comparisons = new Map(), releases = new Map(), scheduled = new Set(), ownerPins = new Map()
+  const comparisons = new Map(), releases = new Map(), reusable = new Map(), scheduled = new Set(), ownerPins = new Map()
   for (const [application, pin] of Object.entries(lock.tools)) {
     const owner = githubRepository(pin.repository)
     if (!owner) continue
@@ -126,7 +148,16 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
       item.release = releases.get(key)
       if (item.changes.status === 'diverged') throw Error('Owner main and dev diverged; reconcile before release')
       if (item.release.published && !item.release.matchesPinnedCommit) throw Error('Published tag does not match pinned commit')
-      if (item.changes.ahead && !scheduled.has(owner)) {
+      if (item.changes.ahead && embeddedOwners.has(owner))
+        throw Error('Owner is embedded in deploy/s3-provider-artifacts.json; release train cannot pin it until the embedded archives, package lock and required sources are updated')
+      if (item.changes.ahead || item.changes.dev !== pin.commit) {
+        if (!reusable.has(owner)) reusable.set(owner, await reusableRelease(owner, item.proposedVersion, item.changes.dev, get))
+        item.reuseRelease = reusable.get(owner)
+      }
+      if (item.reuseRelease && !scheduled.has(owner)) {
+        scheduled.add(owner)
+        steps.push(`${owner}: reuse published ${item.reuseRelease.version} at ${item.reuseRelease.commit}; verify GitHub release and image (no prepare/push)`)
+      } else if (item.changes.ahead && !scheduled.has(owner)) {
         scheduled.add(owner)
         steps.push(fromDev
           ? `${owner}: bump to ${item.proposedVersion} on dev; gate:quick -- --base ${pin.commit} (fallback affected-check, then gate); push dev without force; publish dev commit from clean clone; verify GitHub release and image`
