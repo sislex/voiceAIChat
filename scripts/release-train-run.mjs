@@ -90,13 +90,14 @@ export function createJournal(plan, options, repository) {
   const owners = []
   for (const row of selected) {
     if (owners.some(owner => owner.repository === row.repository)) continue
-    if (!row.changes.ahead && row.release.matchesPinnedCommit) continue
-    owners.push({ repository: row.repository, version: row.changes.ahead ? row.proposedVersion : row.pinnedVersion,
-      source: row.changes.ahead ? row.changes.dev : row.pinnedCommit, pinnedCommit: row.pinnedCommit, main: row.changes.main, bump: row.changes.ahead,
+    if (!row.changes.ahead && row.release.matchesPinnedCommit && !row.reuseRelease) continue
+    owners.push({ repository: row.repository, version: row.reuseRelease?.version ?? (row.changes.ahead ? row.proposedVersion : row.pinnedVersion),
+      source: row.reuseRelease?.commit ?? (row.changes.ahead ? row.changes.dev : row.pinnedCommit), pinnedCommit: row.pinnedCommit, main: row.changes.main, bump: row.changes.ahead && !row.reuseRelease,
+      reuseRelease: Boolean(row.reuseRelease),
       applications: plan.applications.filter(app => app.repository === row.repository).map(app => app.application) })
   }
   return { schemaVersion: 1, id: randomUUID(), repository: resolve(repository), deploy: options.deploy, fromDev: Boolean(options.fromDev),
-    core: plan.core, owners, results: {}, status: 'running', pending: null }
+    core: plan.core, owners, results: Object.fromEntries(owners.flatMap((owner, index) => owner.reuseRelease ? [[`owner-${index}-publish`, owner.source]] : [])), status: 'running', pending: null }
 }
 
 // Atomic checkpoints plus an exclusive process lock. In-flight operations must reconcile
@@ -115,8 +116,9 @@ export async function executeJournal(journal, directory, adapter) {
       ...(journal.deploy ? ['deploy', 'health'] : [])].map(action => ({ key: action, action, owner: null })))
     for (const step of steps) {
       if (Object.hasOwn(journal.results, step.key)) continue
+      const retry = journal.pending === step.key
       journal.pending = step.key; journal.status = 'running'; save()
-      try { journal.results[step.key] = await adapter(step.action, step.owner, journal) ?? null }
+      try { journal.results[step.key] = await adapter(step.action, step.owner, journal, { retry, save }) ?? null }
       catch (error) {
         journal.status = 'failed'; journal.error = redact(error.message); save()
         throw Error(`Release train ${journal.id} stopped at ${step.key}; run --resume ${journal.id}\n${journal.error}`)
@@ -196,7 +198,7 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return await callback(options)
     } finally { rmSync(config, { recursive: true, force: true }) }
   }
-  const adapter = async (action, owner, journal) => {
+  const adapter = async (action, owner, journal, { retry = false, save = () => {} } = {}) => {
     const workspace = join(directory, journal.id); mkdirSync(workspace, { recursive: true })
     const index = owner ? journal.owners.indexOf(owner) : -1
     const cwd = join(workspace, owner ? `owner-${index}` : 'core')
@@ -204,6 +206,24 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
     const lock = json(join(repository, 'deploy/tools.lock.json'))
     if (action === 'prepare') {
       clone(`https://github.com/${owner.repository}.git`, owner.source, cwd)
+      if (journal.fromDev && retry && !Object.hasOwn(journal.results, `owner-${index}-publish`)) {
+        const source = git(cwd, 'rev-parse', 'origin/dev')
+        try { git(cwd, 'merge-base', '--is-ancestor', owner.source, source) }
+        catch { throw Error(`owner ${owner.repository}: dev переписан, нужен новый план`) }
+        if (source !== owner.source) {
+          const previous = owner.source
+          owner.source = source
+          ;(owner.sourceAdvances ??= []).push({ from: previous, to: source })
+          save()
+          console.log(`owner ${owner.repository}: source advanced ${previous} → ${source}`)
+        }
+      }
+      if (retry) {
+        // The prepare checkout is disposable; retain only installed dependencies.
+        git(cwd, 'reset', '--hard', owner.source)
+        git(cwd, 'clean', '-fdx', '-e', 'node_modules/')
+        git(cwd, 'checkout', '--detach', owner.source)
+      }
       let files = [...new Set(['package.json', ...owner.applications.map(app => join(lock.tools[app].workspace, 'package.json'))])]
       const pkg = json(join(cwd, 'package.json')), kb = Boolean(pkg.scripts?.['kb:check'])
       const ownerBump = ownerVersionCommand(pkg, owner.version)
@@ -217,8 +237,9 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         files = [...new Set([...files, ...git(cwd, 'diff', '--name-only').split('\n').filter(file => file.endsWith('package.json'))])]
       } else run('npm', ['install', '--package-lock-only'], cwd)
       git(cwd, 'add', '--', ...files, 'package-lock.json')
-      if (git(cwd, 'diff', '--cached', '--name-only')) git(cwd, 'commit', '-m', `Release ${owner.version}`)
-      if (kb) {
+      const bumped = Boolean(git(cwd, 'diff', '--cached', '--name-only'))
+      if (bumped) git(cwd, 'commit', '-m', `Release ${owner.version}`)
+      if (kb && bumped) {
         const kbDir = join(cwd, existsSync(join(cwd, 'kb.config.json')) ? json(join(cwd, 'kb.config.json')).kbDir ?? 'docs/kb' : 'docs/kb')
         const topics = topicsCoveringFiles(kbDir, [...files, 'package-lock.json'])
         const touch = existsSync(join(cwd, 'scripts/kb.mjs')) ? ['node', ['scripts/kb.mjs', 'touch']] : ['npx', ['--no-install', 'sislexa-kb', 'touch']]
@@ -369,13 +390,30 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         try { git(cwd, 'rebase', '--onto', 'origin/dev', `${journal.results.pin}^`) }
         catch (rebaseError) {
           const conflicts = git(cwd, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean)
-          if (conflicts.length !== 1 || conflicts[0] !== 'docs/kb/README.md') {
+          const index = 'docs/kb/README.md'
+          const topics = conflicts.filter(file => file !== index)
+          if (!conflicts.length || topics.some(file => !/^docs\/kb\/[^/]+\.md$/.test(file))) {
             git(cwd, 'rebase', '--abort'); throw rebaseError
           }
           try {
-            git(cwd, 'checkout', '--ours', '--', 'docs/kb/README.md')
+            if (conflicts.includes(index)) git(cwd, 'checkout', '--ours', '--', index)
+            for (const topic of topics) {
+              const source = readFileSync(join(cwd, topic), 'utf8')
+              const frontmatterEnd = source.indexOf('\n---', 4)
+              const marker = source.indexOf('<<<<<<<')
+              if (frontmatterEnd < 0 || marker < 0 || marker > frontmatterEnd
+                || source.indexOf('<<<<<<<', frontmatterEnd) >= 0)
+                throw Error(`KB conflict outside release frontmatter: ${topic}`)
+              // During rebase "ours" is concurrent dev. Keep its metadata, while retaining
+              // Git's already merged body (including the release pin marker and SHA updates).
+              const resolved = source.replace(/<<<<<<<[^\n]*\n([\s\S]*?)=======\n[\s\S]*?>>>>>>>[^\n]*(?:\n|$)/g, '$1')
+              if (resolved.includes('<<<<<<<') || resolved.includes('=======') || resolved.includes('>>>>>>>'))
+                throw Error(`Unsupported KB frontmatter conflict: ${topic}`)
+              writeFileSync(join(cwd, topic), resolved)
+              run(process.execPath, ['scripts/kb.mjs', 'touch', topic], cwd)
+            }
             run('npm', ['run', 'kb:index'], cwd)
-            git(cwd, 'add', '--', 'docs/kb/README.md')
+            git(cwd, 'add', '--', ...new Set([index, ...conflicts]))
             run('git', ['-c', 'core.editor=true', 'rebase', '--continue'], cwd)
           } catch (resolutionError) { git(cwd, 'rebase', '--abort'); throw resolutionError }
         }

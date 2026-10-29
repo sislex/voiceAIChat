@@ -27,6 +27,10 @@ function fixture(t, realGit = true) {
   const pin = { repository: 'https://github.com/acme/voice', version: '1.2.9', commit: base }
   writeFileSync(join(repository, 'deploy/tools.lock.json'), JSON.stringify({ tools: { stt: pin, tts: pin, local: { repository: 'https://example.test/local' } } }))
   if (realGit) { git('add', '.'); git('commit', '-m', 'fixture lock') }
+  mkdirSync(join(repository, 'node_modules/.bin'), { recursive: true })
+  writeFileSync(join(repository, 'node_modules/.bin/tsx'), '')
+  writeFileSync(join(repository, '.gitignore'), 'node_modules/\n')
+  if (realGit) { git('add', '.gitignore'); git('commit', '-m', 'ignore dependencies') }
   const calls = []
   const fetcher = async (url, options) => {
     calls.push(url)
@@ -38,6 +42,7 @@ function fixture(t, realGit = true) {
     else if (url.includes('/compare/')) data = { status: 'ahead', ahead_by: 1, commits: [{ sha: 'd'.repeat(40), commit: { message: 'Owner change\nbody' } }] }
     else if (url.endsWith('/releases/tags/v1.2.9')) data = { draft: false, published_at: '2026-01-01', target_commitish: 'main' }
     else if (url.endsWith('/commits/v1.2.9')) data = { sha: base }
+    else if (url.endsWith('/releases/tags/v1.2.10')) return new Response('', { status: 404 })
     else throw Error('Unexpected request')
     return new Response(JSON.stringify(data))
   }
@@ -68,7 +73,7 @@ test('fixture Core and fake GitHub produce a read-only, ordered plan for every o
   assert.match(plan.steps[1], /pin verified/)
   assert.match(formatPlan(plan), /dev ahead: true \(1; ahead\)/)
   assert.ok(!JSON.stringify(plan).includes(fixtureToken))
-  assert.equal(f.calls.length, 5)
+  assert.equal(f.calls.length, 6)
   assert.equal(f.git('status', '--porcelain=v1'), before)
   assert.equal(f.git('show-ref'), refs)
   assert.deepEqual(readFileSync(join(f.repository, '.git/index')), index)
@@ -85,8 +90,35 @@ test('from-dev plan describes quick gates, dev pushes and fast branch creation',
   assert.doesNotMatch(output, /run full gate|merge dev into main|sync dev/)
 })
 
+for (const scenario of ['identical', 'merged', 'kb', 'code', 'rename', 'diverged', 'truncated', 'draft']) {
+  test(`planner handles already published next version: ${scenario}`, async t => {
+    const f = fixture(t, false), released = ['identical', 'merged'].includes(scenario) ? 'd'.repeat(40) : 'e'.repeat(40)
+    const plan = await planReleaseTrain({ ...f, fromDev: true, fetcher: async (url, options) => {
+      if (url.endsWith('/releases/tags/v1.2.10')) return Response.json({ draft: scenario === 'draft', published_at: 'today' })
+      if (url.endsWith('/commits/v1.2.10')) return Response.json({ sha: released })
+      if (url.includes(`/compare/${released}...`)) return Response.json({
+        status: scenario === 'diverged' ? 'diverged' : 'ahead',
+        files: scenario === 'truncated' ? Array.from({ length: 300 }, () => ({ filename: 'docs/kb/topic.md' }))
+          : [{ filename: scenario === 'code' ? 'src/index.ts' : 'docs/kb/topic.md',
+            ...(scenario === 'rename' ? { previous_filename: 'src/index.ts' } : {}) }]
+      })
+      if (scenario === 'merged' && url.includes('/compare/')) return Response.json({ status: 'identical', ahead_by: 0, commits: [] })
+      return f.fetcher(url, options)
+    } })
+    const reuse = ['identical', 'merged', 'kb'].includes(scenario)
+    assert.equal(plan.ready, reuse || scenario === 'draft')
+    if (reuse) {
+      assert.deepEqual(plan.applications[0].reuseRelease, { version: '1.2.10', commit: released })
+      assert.match(plan.steps[0], /reuse published.*no prepare\/push/)
+      assert.ok(!plan.steps.some(step => step.includes('bump to')))
+    } else if (scenario === 'draft') assert.match(plan.steps[0], /bump to/)
+    else assert.match(plan.applications[0].error, /new version is required/)
+  })
+}
+
 test('prerequisite failures retain Core results without sending unauthenticated requests', async t => {
   const f = fixture(t)
+  rmSync(join(f.repository, 'node_modules/.bin/tsx'))
   const plan = await planReleaseTrain({ ...f, env: {}, worktreeRoot: join(f.worktreeRoot, 'missing'), run: (binary, args, cwd) => {
     if (binary === 'docker') throw Error('unavailable')
     return command(binary, args, cwd)
@@ -96,6 +128,15 @@ test('prerequisite failures retain Core results without sending unauthenticated 
   assert.equal(plan.core.count, 1)
   assert.equal(f.calls.length, 0)
   assert.equal(plan.applications.length, 2)
+})
+
+test('planner preflight reports missing tsx before execution', async t => {
+  const f = fixture(t)
+  rmSync(join(f.repository, 'node_modules/.bin/tsx'))
+  const plan = await planReleaseTrain(f)
+  assert.equal(plan.ready, false)
+  assert.equal(plan.prerequisites.dependencies.ok, false)
+  assert.match(formatPlan(plan), /BLOCKED dependencies:.*node_modules\/\.bin\/tsx/)
 })
 
 test('protected root accepts clean fixture repositories and rejects dirty, symlink and stray entries', t => {
