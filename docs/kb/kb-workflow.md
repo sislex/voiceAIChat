@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-10-30
-checked: 2b107639
+checked: 68d5e9a4
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -184,9 +184,11 @@ node scripts/kb.mjs touch protocol   # поставить сегодняшнюю
 
 The CLI implementation is `packages/kb-tools/kb.mjs`; `scripts/kb.mjs` is a
 compatibility entry point. Strict mode fails for stale topics, missing package
-`AGENTS.md` files and broken relative Markdown links. Freshness uses all commits
-in `checked..HEAD` touching `areas`; when that commit is unavailable, it falls
-back to commit dates. `touch` records the current HEAD, not uncommitted code.
+`AGENTS.md` files and broken relative Markdown links. Freshness uses commits
+in `checked..HEAD` touching `areas`, excluding commits that also modify the
+same topic file. When `checked` is unavailable, it falls back to commit dates.
+`touch` records the current HEAD, so it can run before a combined code/topic
+commit without making that commit invalidate its own topic.
 
 Compare each topic with its tracked implementation before touching it. For moved
 code, verify the current consumer port and replace deleted area paths with the
