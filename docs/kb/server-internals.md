@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 60b96a2d
+checked: c45e8e32
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1005,8 +1005,11 @@ user values travel as base64 JSON. A registered conversation worktree can be
 reused only on its existing branch. Local preparation with no explicit branch or
 new-branch request reuses the default conversation branch when it exists locally
 or on origin (local takes precedence); only an absent branch is created from `dev`.
-Explicit new-branch requests and non-local defaults still fail with `branch_exists`
-when taken. If the selected branch is checked out in another registered worktree,
+For a component attachment, Core sends the same conversation default
+`make/conversation-<conversationId[:8]>` while keeping a component-specific
+worktree path, so an earlier stand's branch history is retained instead of being
+recreated. Explicit new-branch requests and non-local defaults still fail with
+`branch_exists` when taken. If the selected branch is checked out in another registered worktree,
 attachment fails with `branch_checked_out: <absolute path>`; Core preserves this
 message for the caller and does not start component live mode. It does not move
 or force-checkout that other working copy. New branches start from the requested remote base, otherwise
