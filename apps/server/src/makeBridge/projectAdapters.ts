@@ -82,7 +82,8 @@ export function repositoryId(repository: string | null | undefined): string | nu
 }
 
 function makeStandErrorCode(code: string, status?: number): string {
-  return (MAKE_STAND_ERROR_CODES as readonly string[]).includes(code) ? code
+  return code.startsWith('branch_checked_out: /') ? code
+    : (MAKE_STAND_ERROR_CODES as readonly string[]).includes(code) ? code
     : /machine|offline|stand_preview_unavailable/.test(code) ? 'machine_unavailable'
     : /base_environment/.test(code) ? 'base_environment_missing'
     : /ref_not_found|unknown_branch/.test(code) ? 'branch_not_found'

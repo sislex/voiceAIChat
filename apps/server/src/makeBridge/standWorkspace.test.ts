@@ -87,6 +87,22 @@ describe('agent worktree program', () => {
     expect(fs.existsSync(f.root)).toBe(false)
   })
 
+  it.each(['make/test', 'existing', 'remote'])('prepares the local default branch %s without replacing its history', defaultBranch => {
+    const f = fixture()
+    expect(f.run({ action: 'prepare', local: true, defaultBranch })).toMatchObject({ exitCode: 0, root: f.root, branch: defaultBranch })
+    const args = defaultBranch === 'existing'
+      ? ['worktree', 'add', '--', f.root, defaultBranch]
+      : ['worktree', 'add', '-b', defaultBranch, '--', f.root, 'origin/' + (defaultBranch === 'remote' ? 'remote' : 'dev')]
+    expect(f.spawnSync).toHaveBeenCalledWith('git', args, expect.any(Object))
+  })
+
+  it('reports the path when the default branch is checked out elsewhere', () => {
+    const f = fixture()
+    f.refs.add('refs/heads/dev')
+    expect(f.run({ action: 'prepare', local: true, defaultBranch: 'dev' })).toMatchObject({ exitCode: 1, error: 'branch_checked_out: ' + f.project })
+    expect(f.spawnSync.mock.calls.some(([, argv]) => argv[0] === 'worktree' && argv[1] === 'add')).toBe(false)
+  })
+
   it.each(['existing', 'remote'])('attaches an existing branch %s', branch => {
     const f = fixture()
     expect(f.run({ action: 'prepare', branch })).toMatchObject({ exitCode: 0, branch })

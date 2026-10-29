@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: b8f5f017
+checked: 60b96a2d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1002,8 +1002,14 @@ machine's `path` or `reposRoot`. The component repository is cloned once into
 fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
 The fixed agent-side Node program launches Git with argv and `shell: false`;
 user values travel as base64 JSON. A registered conversation worktree can be
-reused only on its existing branch. A taken new branch name fails with
-`branch_exists`. New branches start from the requested remote base, otherwise
+reused only on its existing branch. Local preparation with no explicit branch or
+new-branch request reuses the default conversation branch when it exists locally
+or on origin (local takes precedence); only an absent branch is created from `dev`.
+Explicit new-branch requests and non-local defaults still fail with `branch_exists`
+when taken. If the selected branch is checked out in another registered worktree,
+attachment fails with `branch_checked_out: <absolute path>`; Core preserves this
+message for the caller and does not start component live mode. It does not move
+or force-checkout that other working copy. New branches start from the requested remote base, otherwise
 the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
 for component live mode. Status reads Kanban details; detach disables live
 without deleting the worktree or branch and refuses to disable another

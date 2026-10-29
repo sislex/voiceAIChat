@@ -86,9 +86,12 @@ try {
       if (!git(project, ['check-ref-format', '--branch', branch], true).ok) fail('branch_not_found');
       const local = git(project, ['show-ref', '--verify', '--quiet', 'refs/heads/' + branch], true).ok;
       const remote = git(project, ['show-ref', '--verify', '--quiet', 'refs/remotes/origin/' + branch], true).ok;
-      if (!a.branch && (local || remote)) fail('branch_exists');
+      const reuseDefault = a.local && !a.branch && !a.newBranch;
+      if (!a.branch && !reuseDefault && (local || remote)) fail('branch_exists');
+      const occupied = list.find(entry => entry.split('\n').includes('branch refs/heads/' + branch));
+      if (occupied) fail('branch_checked_out: ' + occupied.split('\n').find(line => line.startsWith('worktree ')).slice(9));
       fs.mkdirSync(parent, { recursive: true });
-      if (a.branch) {
+      if (a.branch || (reuseDefault && (local || remote))) {
         if (!local && !remote) fail('branch_not_found');
         git(project, local ? ['worktree', 'add', '--', root, branch] : ['worktree', 'add', '-b', branch, '--', root, 'origin/' + branch]);
       } else {

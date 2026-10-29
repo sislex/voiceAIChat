@@ -86,6 +86,21 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     const payload = command.match(/'([A-Za-z0-9+/=]+)'$/)![1]!
     expect(JSON.parse(Buffer.from(payload, 'base64').toString())).toMatchObject({ local: true, seedRoot: '/stand/shared' })
   })
+  it('preserves the occupied worktree path in a component attachment error', async () => {
+    const f = fixture('core')
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components['core-ui'] = { repository: 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' }
+    const error = 'branch_checked_out: /work/old-ui/make-worktrees/conversation'
+    f.machines.exec.mockResolvedValue({ exitCode: 1, timedOut: false, output: JSON.stringify({ error }) })
+    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'component', action: 'attach', component: 'core-ui', ...identity })
+    expect(result).toMatchObject({ phase: 'failed', error })
+    makeStandResultSchema.parse(result)
+    const payload = f.machines.exec.mock.calls[0]![1].match(/'([A-Za-z0-9+/=]+)'$/)![1]!
+    expect(JSON.parse(Buffer.from(payload, 'base64').toString())).toMatchObject({ local: true, defaultBranch: 'make/conversation-conversa', conversation: 'conversation-core-ui', baseBranch: 'dev' })
+    expect(f.fetchImpl.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
   it('routes a secondary component to its own checkout and retains the primary binding', async () => {
     const f = fixture('core'); f.bind()
     f.base.mode = 'local-stand'
