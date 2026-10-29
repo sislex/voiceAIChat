@@ -2,8 +2,8 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-10-30
+checked: 68d5e9a4
 areas:
   - docs/kb/modules.md
   - packages/knowledge/src
