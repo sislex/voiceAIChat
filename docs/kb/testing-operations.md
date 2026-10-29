@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-29
-checked: 2f711fadb
+checked: 656a5c81
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1306,6 +1306,19 @@ drill against the retained set before applying a production retention plan.
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
 
 ## Единый frontend quality gate
+
+The Core/Kanban project browser fixture in `e2e/kanbanStand.ts` always pipes
+both child streams through `e2e/standDiagnostics.ts`. Each child retains the last
+80 lines; individual lines over 8192 characters are omitted to bound memory.
+Startup exit (including signals), spawn errors and health timeouts include the
+captured output; health requests have a one-second timeout within the overall
+90-second deadline. Effective `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` and the
+fixture admin password are redacted. `VC_E2E_STAND_LOG=1` additionally echoes
+redacted, complete lines; it does not bypass capture. Per-stream UTF-8 decoding
+and line framing preserve secrets split across chunks. Unit coverage is in
+`scripts/stand-diagnostics.test.mjs`, included in `test:tooling`.
+No automatic startup retry is applied without evidence of a transient bind race.
+
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
 owner-built product/Core UI artifact verification, and retained Core functional
