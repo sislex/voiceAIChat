@@ -1,11 +1,10 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-27
-checked: c29bd3e2
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
-  - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
-  - packages/shared/src/playwrightReader.ts
+  - packages/shared/src/androidRelease.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/threadCost.ts
   - packages/shared/src/chatContract.ts
@@ -19,13 +18,21 @@ areas:
   - packages/shared/src/devStand.ts
   - packages/shared/src/devProcess.ts
   - packages/shared/src/llm.ts
-  - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
-  - packages/ui/src/remote
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Android download contract
+
+`REST.androidApp` and `REST.androidApk` name public GET endpoints
+`/api/app/android` and `/api/app/android/apk`. The manifest substitutes the Core
+APK URL for the upstream location. The binary handler verifies pinned size and
+SHA-256 before responding, including before a 304; unavailable pins return 404,
+invalid/unavailable artifacts return 503. See [client distribution](clients.md#android-apk-distribution).
+Agent registration accepts the additive `supervisor: 'android'` value without
+replacing the owner's remaining wire contract.
 
 ## Thread cost client contract
 

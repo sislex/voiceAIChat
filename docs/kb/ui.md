@@ -1,6 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-07
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -65,9 +66,9 @@ Conversation groups follow the same owner boundary: Core owns contracts, transpo
 Product story discovery and accessibility checks run in the Make, Image Studio,
 Web Reader, Playwright Reader and Identity repositories. Their UI workspace
 `stories.a11y.dom.test.tsx` composes all local stories with UI providers and uses
-the shared axe serious/critical policy. Core's Storybook and axe shards include
-only Core modules; no `node_modules/@sislexa` story globs or product-story shims.
-Core-owned examples may still embed public external widgets and load their styles.
+the shared axe serious/critical policy. Core UI's Storybook and axe shards run in `sislexa-core-ui` and include
+its composition modules; Core has no local React/Storybook source workspaces.
+Core UI-owned examples may embed public external widgets and load their styles.
 See `testing-operations.md` for browser-test transfer and remaining extraction work.
 ## External UI library ownership
 
@@ -94,8 +95,8 @@ in the UI owner repository.
 
 Make and Reader panels are owner-built artifacts. Core's frontend preparation
 verifies their public manifest, source metadata and integrity without rebuilding
-them. Owner stories/axe suites run only in their repositories; Core's story
-matrix covers Core modules and examples composing public owner widgets.
+them. Owner stories/axe suites run only in their repositories; the Core UI owner's story
+matrix covers host modules and examples composing public owner widgets.
 
 Реальный `App.tsx` подключает четыре панели через `createApplicationPanel`, включая
 surface `shared` у Make; их исходники не импортируются в bundle оболочки.
@@ -110,8 +111,9 @@ IIFE/CSS получают hashed имена и SHA-384 integrity. Ссылка �
 собственном `VC_DATA_DIR/assets`, чтобы открытые вкладки переживали замену версии.
 Автоматического GC этого кеша нет; при очистке учитывают живые вкладки и окно rollback.
 
-В разработке сервер читает `packages/*-app/dist`; `dev:web` делает начальную сборку
-панелей и следит за их изменениями отдельным управляемым процессом. На площадке
+In development, Core resolves the installed owner frontend artifacts.
+`dev:web` verifies them, serves `@sislexa/core-ui/web` and starts the Core UI proxy;
+source editing and HMR run in the corresponding owner repository. На площадке
 `VC_APPLICATION_FRONTENDS` — JSON-карта id → URL своих статических контейнеров;
 ядро раздаёт их через тот же `/applications` gateway. Пустая карта сохраняет
 локальный fallback общего Docker-образа; неизвестное приложение/путь не получает SPA.

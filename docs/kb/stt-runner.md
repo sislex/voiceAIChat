@@ -1,12 +1,13 @@
 ---
 title: STT Runner: внутренний протокол, ресурсы и lifecycle
-updated: 2026-10-07
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - apps/server/src/stt
   - apps/server/src/session.ts
   - apps/server/src/server.ts
   - apps/server/src/config.ts
-  - packages/shared/src/stt.ts
+  - apps/server/src/stt/client.ts
   - Dockerfile
   - docker-compose.yml
 ---
@@ -23,7 +24,7 @@ Module details: `voice:README.md`
 
 ## Протокол v1
 
-Источник форм и runtime-валидации — `packages/shared/src/stt.ts`.
+The versioned wire types and validators are owned by `@voicechat/voice-contracts/stt` in `sislex/voice`. Core's `stt/client.ts` defines its consumer port; `stt/remoteClient.ts` imports the owner protocol.
 
 Клиент открывает WS `/v1/transcribe`, первым текстовым кадром отправляет `start` со `schemaVersion=1`, runId, моделью, языком и фиксированным форматом mono PCM16 16 kHz; затем идут бинарные PCM-кадры и текстовый `end` или `cancel`.
 

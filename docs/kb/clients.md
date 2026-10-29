@@ -1,12 +1,14 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-29
-checked: ee0b3856
+checked: 4aa06d23
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
   - scripts/core-ui-artifact.mjs
   - scripts/dev-ui-proxy.mjs
+  - apps/server/src/routes/androidApp.ts
+  - packages/shared/src/androidRelease.ts
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -45,7 +47,7 @@ Tests inject the pin path and fetch dependency.
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
 
-The public-chat candidate pins Core UI 1.5.28 from
+The historical public-chat candidate pinned Core UI 1.5.28 from
 `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`. Its daily quota panel shows settled
 spend, remaining allowance and the Europe/Minsk reset. Voice onboarding uses
 optional `CapabilityStatus.configured`, introduced in Shared 0.1.42 and retained

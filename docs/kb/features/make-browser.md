@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-10-15
-checked: 3b651104
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -42,7 +42,18 @@ Chromium, иначе `panel`. Движок меняется переключен
 Режим `panel` выполняет действия только в клиенте, где открыт этот чат Web Reader.
 Для работы без открытой панели нужен движок Chromium.
 
-## Выпуск (2026-09-30)
+## Scoped Make execution
+
+Browser binding is independent of machine selection. Make uses only an explicitly
+configured conversation `execTarget` and `workdir`; no implicit project-machine
+fallback is applied. Both Claude and Codex receive `toolOnly: true`. Core provides
+scoped remote file tools and optional transfers to Make through owner raw-file
+routes; `mcp/makeFiles.ts` enforces a 10 MiB limit and rejects traversal, symlinks
+and protected paths. Attachment bytes are not forwarded as ordinary runner
+attachments in Make turns. `makeBrowserSession` still verifies the linked chat's
+owner, Reader kind and required capability before exposing browser tools.
+
+## Historical release (2026-09-30)
 
 Core закрепляет Web Reader 1.3.0 (`3a662223`, маршрут в каждом ответе и
 `browser_capabilities`), его контракты 1.3.0 из того же коммита, Make 1.3.1

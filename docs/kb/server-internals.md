@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 7d907bda
+checked: 4aa06d23
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -22,6 +22,20 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Make file transport admission
+
+Make turns use explicit conversation machine/workdir settings and scoped MCP
+file access; `db/chat` no longer clears these fields on write or restart.
+`mcp/makeFiles.ts` validates machine paths and 10 MiB transfers.
+`server.ts` supplies transfers through authenticated owner `/api/make/:id/files/raw`
+routes. Embedded availability requires both GET and PUT registrations; remote
+availability probes an existing file through the authenticated Core proxy.
+Older owner packages without these routes do not advertise transfers.
+
+Android release endpoints are registered by the Machines module; the Machines
+proxy allows only exact GET/HEAD public download paths before forwarded auth.
+See [Android distribution](clients.md#android-apk-distribution).
 
 ## Запуск и dependency injection
 
