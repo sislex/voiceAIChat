@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-10-29
-checked: 4aa06d23
+checked: a21b9596
 
 areas:
   - packages/shared/src/projects.ts
@@ -41,7 +41,12 @@ paths describe the extracted Kanban implementation. `packages/ui` paths belong
 to `sislexa-core-ui`; Agent and LLM Runner source paths belong to their owners.
 Detailed migration notes are retained until owner KB coverage is available;
 Core freshness verifies Core contracts and integration, not every owner release.
-Owner document identifiers are listed in [modules.md](modules.md).
+Owner document identifiers are listed in [modules.md](modules.md). The identifier
+`kanban:README.md` is not a path in the Core checkout: it resolves to the indexed
+`docs/kb/README.md` of the registered `sislex/sislexa-kanban` module. Inspect the
+module status and indexed SHA through the KB module API when that document is not
+returned; do not search for a local `kanban:README.md` file or infer that Kanban
+implementation moved back into Core.
 
 ## Operator assistant model
 

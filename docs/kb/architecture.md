@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-29
-checked: 4aa06d23
+checked: a21b9596
 areas:
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/server.ts
