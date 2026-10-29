@@ -23,7 +23,7 @@ async function until(check) {
   throw Error('timed out')
 }
 function alive(pid) { try { process.kill(pid, 0); return true } catch { return false } }
-async function fixture(t) {
+async function fixture(t, external = false) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'local-stand-')))
   const home = join(root, 'stand'), core = join(root, 'conversation'), shared = join(root, 'shared'), bin = join(root, 'bin')
   const write = async (path, data) => { await mkdir(resolve(path, '..'), { recursive: true }); await writeFile(path, data) }
@@ -31,7 +31,8 @@ async function fixture(t) {
   const service = join(root, 'service.cjs')
   await write(service, `const fs = require('node:fs'); const http = require('node:http');
 fs.writeFileSync(process.cwd() + '/started.json', JSON.stringify({ cwd: process.cwd(), pid: process.pid }));
-http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || process.env.VC_WEB_PORT), '127.0.0.1');
+if (process.cwd().endsWith('/packages/make-app')) { fs.mkdirSync('dist', {recursive:true}); fs.writeFileSync('dist/manifest.json', '{}'); setInterval(() => {}, 1000); }
+else http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || process.env.VC_WEB_PORT), '127.0.0.1');
 `)
   for (const command of ['npm', 'npx']) {
     await write(join(bin, command), '#!/bin/sh\nexec "' + process.execPath + '" "' + service + '"\n')
@@ -45,6 +46,8 @@ http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || 
     execFileSync('git', ['-C', repo, 'add', 'package.json', 'package-lock.json'])
     execFileSync('git', ['-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'fixture'])
   }
+  await write(join(shared, 'make', 'packages', 'make-app', 'package.json'), '{"version":"1.0.0"}')
+  await write(join(shared, 'make', 'scripts', 'application-frontend-server.mjs'), "import '" + service + "'\n")
   await write(join(shared, 'env', 'secrets.env'), 'VC_INTERNAL_TOKEN=test\n')
   await write(join(shared, 'env', 'core.env'), [
     'VC_DB_URL=postgres://localhost/shared',
@@ -69,6 +72,7 @@ http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || 
   let output = ''
   const child = spawn(process.execPath, [script, 'run'], { env: { ...process.env, PATH: bin + ':' + process.env.PATH,
     SISLEXA_STAND_REF: 'HEAD', SISLEXA_STAND_SOURCES: '', SISLEXA_STAND_NAME: 'test', SISLEXA_STAND_HOME: home, SISLEXA_STAND_SHARE: shared,
+    SISLEXA_STAND_MAKE_SOURCE: external ? join(shared, 'make') : '', SISLEXA_STAND_CORE_UI_SOURCE: external ? join(shared, 'sislexa-core-ui') : '',
     SISLEXA_STAND_CORE_SOURCE: core, SISLEXA_STAND_PORT_BASE: String(base), SISLEXA_STAND_UI_PORT: String(uiPort) },
     stdio: ['ignore', 'pipe', 'pipe'] })
   child.stdout.on('data', b => { output += b }); child.stderr.on('data', b => { output += b })
@@ -76,7 +80,7 @@ http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || 
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
     await exited
-    for (const id of ['core', 'make', 'core-ui']) {
+    for (const id of ['core', 'make', 'core-ui', 'make-ui', 'make-ui-build']) {
       try { const pid = Number(await readFile(join(home, 'run', id + '.pid'), 'utf8')); process.kill(-pid, 'SIGKILL') } catch {}
     }
     await rm(root, { recursive: true, force: true })
@@ -86,8 +90,17 @@ http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || 
   for (const id of ['core', 'make', 'core-ui']) pids[id] = Number(await readFile(join(home, 'run', id + '.pid'), 'utf8'))
   assert.equal(JSON.parse(await readFile(join(core, 'started.json'), 'utf8')).cwd, core)
   await assert.rejects(access(join(home, 'src', 'voiceAIChat')))
+  if (external) for (const repo of ['make', 'sislexa-core-ui']) {
+    assert.equal(JSON.parse(await readFile(join(shared, repo, 'started.json'), 'utf8')).cwd, join(shared, repo))
+    await assert.rejects(access(join(home, 'src', repo)))
+  }
   return { child, exited, pids }
 }
+test('runs all three prepared conversation checkouts without creating stand worktrees', { timeout: 30000 }, async t => {
+  const f = await fixture(t, true)
+  f.child.kill('SIGTERM')
+  assert.deepEqual(await f.exited, { code: 0, signal: null })
+})
 for (const signal of ['SIGTERM', 'SIGINT']) test('run stops its processes on ' + signal + ' and uses the supplied Core checkout', { timeout: 30000 }, async t => {
   const f = await fixture(t)
   f.child.kill(signal)

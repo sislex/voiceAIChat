@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, standPreviewResultSchema, transferTaskResultSchema,
-  makeStandResultSchema, makeStandOptionsSchema, projectModeRpcSchemas, validateMakeStandResult,
+  makeStandResultSchema, makeStandOptionsSchema, validateMakeStandResult,
   RpcError, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
-import type { PreviewOperation } from './projectAdapters.js'
+import { extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
 
 // Compatibility with make-contracts 1.4: preserve new result fields and accept live operations.
 // Keep all other methods on the owner's schema-validated dispatcher.
@@ -18,6 +18,7 @@ const transferResult = transferTaskResultSchema.extend({
 })
 
 const standResult = makeStandResultSchema.extend({
+  components: z.array(z.object({ component: z.enum(['core', 'core-ui', 'make']), branch: z.string().nullable(), workingCopyPath: z.string().min(1), phase: makeStandResultSchema.shape.phase })).optional(),
   options: makeStandOptionsSchema.extend({
     stands: z.array(makeStandOptionsSchema.shape.stands.element.extend({
       conversationWorktree: z.object({ branch: z.string().min(1) }).optional()
@@ -37,10 +38,11 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         return standPreviewResultSchema.parse(await preview.apply(core, parsed.data))
       }
       if (request.method === 'makeStand') {
-        const parsed = projectModeRpcSchemas.makeStand.args.safeParse(request.args)
+        const parsed = z.tuple([z.string().min(1), z.string().min(1), extendedStandOperationSchema]).safeParse(request.args)
         if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
-        const result = standResult.parse(await core.makeStand(...parsed.data))
-        try { validateMakeStandResult(parsed.data[2], result) }
+        const operation = parsed.data[2] as Parameters<MakeCore['makeStand']>[2]
+        const result = standResult.parse(await core.makeStand(parsed.data[0], parsed.data[1], operation))
+        try { validateMakeStandResult(operation, result) }
         catch { throw new RpcError(502, 'Mismatched Make stand result') }
         return result
       }

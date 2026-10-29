@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-29
-checked: 3ff02d02
+checked: 2b107639
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -570,7 +570,15 @@ through Core's stand proxy; editor and git operations use that same checkout.
 stand and remains in the foreground for the agent's process supervisor.
 SIGTERM/SIGINT stops the stand's service groups and exits 0; loss of Core or
 Core UI stops the remaining services and exits 1. Startup failures also stop
-the services. `SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
+the services. `SISLEXA_STAND_CORE_SOURCE`, `SISLEXA_STAND_CORE_UI_SOURCE` and
+`SISLEXA_STAND_MAKE_SOURCE` select prepared checkouts for Core, Core UI and Make.
+Each supplied path must contain `.git` and `node_modules`; preparation skips worktree
+creation and dependency installation for that repository. In shared mode an external
+Make source also starts its frontend build watcher and frontend server on port base +
+802, and routes `make-ui` through that server. Core UI retains Vite HMR and Make API
+retains `tsx watch`.
+
+`SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
 no voiceAIChat worktree is created and its dependencies are not installed again.
 Other repositories keep the normal source/dependency preparation, defaulting to
 owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).

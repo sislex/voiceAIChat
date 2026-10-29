@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 6829b466
+checked: 2b107639
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -657,6 +657,20 @@ the `statusCode` and code of errors that carry them: stand proxy
 exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
+
+Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
+for core, core-ui and make. Optional `component` on files/git selects the attached
+repository; omission selects the conversation's primary repository. Core validates
+this extension locally without changing the pinned make-contracts archive.
+Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
+the primary retains its existing path. Local preparation seeds repository clones
+from `~/sislexa-dev/<repository>`, restricts fetch to dev and make/*, and defaults
+new branches to `make/conversation-<id8>`. Non-local stands reject secondary
+components. Stand state includes attached component paths, branches and phases.
+Delivery accepts an optional component; list/sync accept the same query parameter.
+Each selected repository is submitted independently to the existing coordinator.
+
+
 
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
 текущего участника. Структуру и дизайн рабочей копии он читает только через
