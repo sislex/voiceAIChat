@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-29
-checked: 4aa06d23
+checked: 2b9bba5e
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,11 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Current additive contracts
+
+`ConversationSummary.source` is optional (`model | fallback`). Thread reset
+persists `fallback` when model summarization is unavailable or leaves uncovered
+messages; successful model summaries may omit the field. Consumers must accept
+older summaries without it. See [summary reset](llm.md#session-cost-and-summary-reset).
 
 - `threadCost.ts` owns provider-session cost estimates and `ThreadResetMode`
   (`off | hint | auto`). Conversation settings default to `hint`; the canonical

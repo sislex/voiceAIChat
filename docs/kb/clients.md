@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-29
-checked: 4aa06d23
+checked: 2b9bba5e
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -83,6 +83,11 @@ Failures preserve the draft; navigation and unmount guards prevent stale sends.
 
 
 ## Chat UI and timeline: thread-cost
+
+A successful thread reset can return `summary.source: 'fallback'` when model
+summarization fails or is unavailable. The optional field lets clients label the
+summary as simplified; its absence is valid for older and model-generated
+summaries. This Core contract does not itself add an owner UI label.
 
 For `thread-cost` / `threadReset` chat-settings lookup, the verified Core-facing
 contract is [Thread cost client contract](protocol.md#thread-cost-client-contract),
