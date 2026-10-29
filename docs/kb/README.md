@@ -42,12 +42,12 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-29 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-29 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-29 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: f43bcd8e feat(make): support multi-repository local conversation stands |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: f43bcd8e feat(make): support multi-repository local conversation stands |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-29 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: 2b107639 Pin release train d66a749b-74f2-47a9-b11d-b2de98e84523 |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: 2b107639 Pin release train d66a749b-74f2-47a9-b11d-b2de98e84523 |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-29 | ⚠ 2 коммит(ов) в areas после сверки: f43bcd8e feat(make): support multi-repository local conversation stands … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: 2b107639 Pin release train d66a749b-74f2-47a9-b11d-b2de98e84523 |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-29 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
