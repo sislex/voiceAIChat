@@ -124,11 +124,18 @@ function shaExists(sha) {
   }
 }
 
-/** Коммиты, затронувшие areas после сверки (`checked`). */
-function commitsSinceChecked(sha, paths) {
+/** Area commits after checked, excluding commits that also update this topic. */
+function commitsSinceChecked(sha, paths, topicPath) {
   if (paths.length === 0) return []
-  const out = git(['log', '--format=%h %s', `${sha}..HEAD`, '--', ...gitHistoryPaths(paths)])
-  return out ? out.split('\n') : []
+  const range = `${sha}..HEAD`
+  const out = git(['log', '--format=%H %h %s', range, '--', ...gitHistoryPaths(paths)])
+  if (!out) return []
+  const topicCommits = new Set(git([
+    'log', '--format=%H', range, '--', `:(literal)${relative(ROOT, topicPath).replaceAll('\\', '/')}`
+  ]).split('\n'))
+  return out.split('\n')
+    .filter(line => !topicCommits.has(line.split(' ')[0]))
+    .map(line => line.slice(line.indexOf(' ') + 1))
 }
 
 /**
@@ -139,7 +146,7 @@ function commitsSinceChecked(sha, paths) {
 function staleness(topic) {
   if (topic.areas.length === 0) return { stale: false, why: '' }
   if (shaExists(topic.checked)) {
-    const commits = commitsSinceChecked(topic.checked, topic.areas)
+    const commits = commitsSinceChecked(topic.checked, topic.areas, topic.path)
     if (commits.length === 0) return { stale: false, why: '' }
     return {
       stale: true,

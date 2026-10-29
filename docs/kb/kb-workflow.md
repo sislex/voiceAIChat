@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-10-30
+checked: 2b107639
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -58,9 +58,13 @@ areas:                        # пути/каталоги, за которыми
 ---
 ```
 
-`node scripts/kb.mjs check` смотрит `git log <checked>..HEAD -- <areas>`: если после
-сверки в этих путях были коммиты — тема помечена как устаревшая, с номером и темой
-первого такого коммита. Оба поля ставит `kb.mjs touch`, руками их писать не нужно.
+`node scripts/kb.mjs check` inspects `git log <checked>..HEAD -- <areas>` and
+excludes commits that also modify this topic file. Running `touch` before a
+combined code/topic commit therefore does not make the topic stale, even though
+`checked` points to the parent commit. Later area commits without a change to
+this topic still make it stale; updating a different topic does not exempt them.
+A touch-only commit is also safe. Both metadata fields are set by `kb.mjs touch`.
+The missing/invalid SHA date fallback remains unchanged.
 
 **Почему sha, а не только дата.** Дата ловит только правки прошлых дней. В этом
 репозитории несколько агентов коммитят в один день, и сверка по датам молча
