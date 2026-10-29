@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-29
-checked: 2b107639
+checked: ee8b963d
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -582,7 +582,7 @@ retains `tsx watch`.
 no voiceAIChat worktree is created and its dependencies are not installed again.
 Other repositories keep the normal source/dependency preparation, defaulting to
 owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).
-Kanban supplies the stand name, shared root, Core checkout, UI/gateway port and
+Kanban supplies the stand name, shared root, every attached component checkout, UI/gateway port and
 reserved `SISLEXA_STAND_PORT_BASE`; Core and Make use base + 787 and base + 788.
 
 **Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 2b107639
+checked: ee8b963d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -658,17 +658,8 @@ exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
 
-Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
-for core, core-ui and make. Optional `component` on files/git selects the attached
-repository; omission selects the conversation's primary repository. Core validates
-this extension locally without changing the pinned make-contracts archive.
-Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
-the primary retains its existing path. Local preparation seeds repository clones
-from `~/sislexa-dev/<repository>`, restricts fetch to dev and make/*, and defaults
-new branches to `make/conversation-<id8>`. Non-local stands reject secondary
-components. Stand state includes attached component paths, branches and phases.
-Delivery accepts an optional component; list/sync accept the same query parameter.
-Each selected repository is submitted independently to the existing coordinator.
+See [conversation stand worktrees](#make-conversation-stand-worktrees) for local
+multi-repository bindings and component routing.
 
 
 
@@ -929,6 +920,18 @@ RPC event client is required to keep a link alive.
 
 ## Make conversation stand worktrees
 
+Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
+for core, core-ui and make. Optional `component` on files/git selects the attached
+repository; omission selects the conversation's primary repository. Core validates
+this extension locally without changing the pinned make-contracts archive.
+Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
+the primary retains its existing path. Local preparation seeds repository clones
+from `~/sislexa-dev/<repository>`, restricts fetch to dev and make/*, and defaults
+new branches to `make/conversation-<id8>`. Non-local stands reject secondary
+components. Stand state includes attached component paths, branches and phases.
+Delivery accepts an optional component; list/sync accept the same query parameter.
+Each selected repository is submitted independently to the existing coordinator.
+
 `MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
 embedded and remote Make. Core checks the conversation owner and resolves its
 project through `db.chat.makeConversationProject`; project viewers cannot use
@@ -1007,7 +1010,9 @@ operator commissioning, not part of worktree attachment.
 
 Core owns the concrete routes registered by `routes/standDeliveries.ts`:
 `POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
-`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`{branch, title, component?}` and returns the coordinator's `{runId, taskId}`;
+`component` selects core, core-ui or make. List, sync and sync status accept the
+same optional query parameter.
 `GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
 `POST .../sync-dev` returns `StandSyncResult`.
 `GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
@@ -1022,9 +1027,10 @@ are exported from Shared. These exact routes take precedence over the Kanban pro
 
 `makeBridge/standDeliveries.ts` checks project access, repository write permission
 for mutations, the stand's machine and the Git workspace write policy. The working
-copy comes only from the authorized Kanban manifest's live entries. It selects
-the entry matching the project repository, or a single live entry on a host
-project; ambiguous multi-component bindings fail closed. History is filtered by
+copy comes only from the authorized Kanban manifest's live entries. An explicit
+component selects its live entry. Otherwise it selects the entry matching the
+project repository, or a single live entry on a host project; unresolved
+ambiguous bindings fail closed. History is filtered by
 that repository and live branch, and access is rechecked even on cache hits.
 
 `standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
