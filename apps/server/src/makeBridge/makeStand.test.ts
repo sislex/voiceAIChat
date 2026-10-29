@@ -27,7 +27,7 @@ function fixture(component = 'core-ui') {
     identity: { getUser: vi.fn(async () => user) },
     chat: { conversationOwner: vi.fn(async () => 'alice'), getConversation: vi.fn(async () => ({ assistantKind: 'make', title: 'New UI' })), makeConversationProject: vi.fn(async () => 'project') },
     projects: { listProjects: vi.fn(async () => projects), getProject: vi.fn(async (_u, id) => projects.find(p => p.id === id) ?? null) },
-    environments: { listEnvironments: vi.fn(async (_u, id) => id === 'host' ? [base] : []) }
+    environments: { listEnvironments: vi.fn(async (_u, id) => id === 'host' ? [base] : []), listSettings: vi.fn(async () => [{ key: 'SISLEXA_STAND_SHARE', secret: false, value: '/stand/shared' }]) }
   }
   const git = {
     resolve: vi.fn(async () => ({ agentId: 'agent', path: '/work/ui' })),
@@ -76,6 +76,16 @@ function fixture(component = 'core-ui') {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('passes the host environment shared root to local clone preparation', async () => {
+    const f = fixture('core')
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    await f.call({ op: 'attach', ...identity })
+    expect(f.db.environments.listSettings).toHaveBeenCalledWith('alice', 'host', 'base')
+    const command = f.machines.exec.mock.calls[0]![1]
+    const payload = command.match(/'([A-Za-z0-9+/=]+)'$/)![1]!
+    expect(JSON.parse(Buffer.from(payload, 'base64').toString())).toMatchObject({ local: true, seedRoot: '/stand/shared' })
+  })
   it('routes a secondary component to its own checkout and retains the primary binding', async () => {
     const f = fixture('core'); f.bind()
     f.base.mode = 'local-stand'

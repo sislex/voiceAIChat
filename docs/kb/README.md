@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-29 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-29 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-29 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-29 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-30 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-29 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-29 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-29 | ✓ |
@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-29 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-29 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-29 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-30 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-29 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-29 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1337. Последние:
+Всего записей: 1338. Последние:
 
+- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md) — android-agent-auto-update
@@ -75,7 +76,6 @@
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-sisl-794-kb-reconcile.md) — sisl-794-kb-reconcile
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md) — release-train-health-validation
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md) — release-train-health-retries
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-d66a749b-74f2-47a9-b11d-b2de98e84523.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-d66a749b-74f2-47a9-b11d-b2de98e84523.md) — release-train-d66a749b-74f2-47a9-b11d-b2de98e84523
 
 ## Исторические планы
 

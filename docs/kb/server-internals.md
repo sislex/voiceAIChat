@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-29
-checked: cb33bccf
+updated: 2026-10-30
+checked: 32a7625f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -933,8 +933,11 @@ make-contracts archive does not need to publish the extension first.
 
 Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
 the primary retains its existing path. Local preparation in
-`makeBridge/standWorkspace.ts` seeds repository clones from
-`~/sislexa-dev/<repository>`, rewrites origin to the registry URL, restricts fetch
+`makeBridge/standWorkspace.ts` seeds repository clones from the host environment's
+`SISLEXA_STAND_SHARE/<repository>` (or explicit `SISLEXA_STAND_SOURCES`).
+Core passes this root in the agent payload; the agent can also use those environment
+variables, but never derives the seed from its HOME. A missing/non-absolute root
+or missing seed fails before cloning. Preparation rewrites origin to the registry URL, restricts fetch
 to `dev` and `make/*`, and defaults new branches to
 `make/conversation-<id8>`. Non-local stands reject secondary components. Attaching
 passes the selected live path to Kanban; detaching one secondary component removes

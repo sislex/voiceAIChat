@@ -50,6 +50,21 @@ describe('agent worktree program', () => {
     expect(f.spawnSync).toHaveBeenCalledWith('git', ['clone', '--no-checkout', '--', 'https://github.com/sislex/project.git', f.project], expect.objectContaining({ cwd: f.dir, shell: false }))
     expect(f.run({ action: 'prepare', repositoryUrl: 'https://github.com/other/project.git' })).toMatchObject({ exitCode: 1, error: 'operation_conflict' })
   })
+  it('seeds local clones from the stand root independently of the agent HOME', () => {
+    const f = fixture()
+    fs.rmSync(f.project, { recursive: true })
+    const seedRoot = path.join(f.dir, 'shared')
+    fs.mkdirSync(path.join(seedRoot, 'project', '.git'), { recursive: true })
+    expect(f.run({ action: 'prepare', local: true, seedRoot })).toMatchObject({ exitCode: 0, root: f.root })
+    expect(f.spawnSync).toHaveBeenCalledWith('git', ['clone', '--no-checkout', '--', path.join(seedRoot, 'project'), f.project], expect.any(Object))
+    expect(f.spawnSync).toHaveBeenCalledWith('git', ['remote', 'set-url', 'origin', 'https://github.com/sislex/project.git'], expect.any(Object))
+  })
+  it.each([undefined, 'relative', '/missing-stand-seed'])('rejects an unavailable local seed %s before cloning', seedRoot => {
+    const f = fixture()
+    fs.rmSync(f.project, { recursive: true })
+    expect(f.run({ action: 'prepare', local: true, seedRoot })).toMatchObject({ error: 'branch_not_found' })
+    expect(f.spawnSync).not.toHaveBeenCalled()
+  })
   it('fetches origin then adds a worktree using argv from the remote base', () => {
     const f = fixture()
     expect(f.prepare()).toMatchObject({ exitCode: 0, root: f.root, branch: 'make/test' })

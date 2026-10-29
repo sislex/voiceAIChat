@@ -59,7 +59,9 @@ try {
   } else if (a.action === 'prepare') {
     if (!fs.existsSync(path.join(project, '.git'))) {
       if (fs.existsSync(project)) fail('operation_conflict');
-      const seed = a.local ? path.join(require('node:os').homedir(), 'sislexa-dev', a.repoName) : null;
+      const seedRoot = a.seedRoot || process.env.SISLEXA_STAND_SOURCES || process.env.SISLEXA_STAND_SHARE;
+      if (a.local && (!seedRoot || !path.isAbsolute(seedRoot))) fail('branch_not_found');
+      const seed = a.local ? path.join(seedRoot, a.repoName) : null;
       if (seed && !fs.existsSync(path.join(seed, '.git'))) fail('branch_not_found');
       git(repos, ['clone', '--no-checkout', '--', seed || a.repositoryUrl, project]);
       if (seed) git(project, ['remote', 'set-url', 'origin', a.repositoryUrl]);

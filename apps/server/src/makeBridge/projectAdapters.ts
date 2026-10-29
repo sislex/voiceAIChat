@@ -347,7 +347,11 @@ export class MakeProjectAdapters {
         state.phase = 'preparing'
         this.standProgress.set(lock!, state)
         const slug = (conversation.title ?? 'conversation').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'conversation'
-        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', ...location, conversation: copyId,
+        const settings = environment?.mode === 'local-stand'
+          ? await this.deps.db.environments.listSettings(user, hostProjectId, environment.id) : []
+        const seedRoot = settings.find(s => s.key === 'SISLEXA_STAND_SOURCES' && !s.secret)?.value
+          || settings.find(s => s.key === 'SISLEXA_STAND_SHARE' && !s.secret)?.value
+        const prepared = await workspaceCommand(machines, user, machine.agentId, { action: 'prepare', ...location, conversation: copyId, seedRoot,
           branch: op.op === 'attach' ? op.branch : undefined, newBranch: environment?.mode === 'local-stand' ? undefined : op.op === 'attach' ? op.newBranch : undefined, baseBranch: environment?.mode === 'local-stand' ? 'dev' : op.op === 'attach' ? op.baseBranch ?? (project.ciBaseBranch || 'main') : 'dev', defaultBranch: environment?.mode === 'local-stand' ? 'make/conversation-' + conversationId.slice(0, 8) : 'make/' + slug + '-' + conversationId.slice(0, 8), local: environment?.mode === 'local-stand' })
         if (prepared.root !== root) throw new Error('path_outside_working_copy')
         state.branch = prepared.branch

@@ -30,7 +30,7 @@
 //                               back to the isolated stand. Stop the stand before switching.
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash, randomBytes, scryptSync } from 'node:crypto'
-import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -150,7 +150,7 @@ function sharedServices(shared) {
     ...(preparedSource('make') ? [
       { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json', env: {} },
       { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(802),
-        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_DATA_DIR: null, VC_APPLICATION_API_VERSION: '1.1.0', VC_APPLICATION_DATA_VERSION: '1.0.0' } }
+        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_DATA_DIR: null } }
     ] : []),
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
@@ -184,9 +184,9 @@ function runningPid(id) {
 function portOpen(p) {
   return new Promise(done => { const s = connect(p, '127.0.0.1'); s.once('connect', () => { s.destroy(); done(true) }); s.once('error', () => done(false)) })
 }
-async function waitHttp(p, path, ms) {
+async function waitHttp(p, path, ms, isAlive = () => true) {
   const until = Date.now() + ms
-  while (Date.now() < until) {
+  while (Date.now() < until && isAlive()) {
     try { const r = await fetch(url(p) + path, { signal: AbortSignal.timeout(3000) }); if (r.status < 500) return r.status } catch {}
     await new Promise(r => setTimeout(r, 1000))
   }
@@ -355,26 +355,66 @@ function prepareDatabase() {
   } else console.log(`  database ${DB_NAME}: empty (set SISLEXA_STAND_SEED to start from a copy)`)
 }
 
+function logTail(id) {
+  const file = join(dirs.logs, id + '.log')
+  let fd
+  try {
+    const size = statSync(file).size
+    const buffer = Buffer.alloc(Math.min(size, 4096))
+    fd = openSync(file, 'r')
+    readSync(fd, buffer, 0, buffer.length, size - buffer.length)
+    return buffer.toString('utf8').split('\n').slice(-20).join('\n')
+  } catch { return '' } finally { if (fd !== undefined) closeSync(fd) }
+}
+function serviceFailure(id, message) {
+  return `${id} ${message}; ${join(dirs.logs, id + '.log')}\n${logTail(id)}`
+}
+function rotateLogs() {
+  if (!existsSync(dirs.logs)) return
+  for (const file of readdirSync(dirs.logs).filter(f => f.endsWith('.log'))) {
+    const path = join(dirs.logs, file)
+    if (statSync(path).size <= 8 * 1024 * 1024) continue
+    // Keep the same inode: detached services hold O_APPEND descriptors.
+    writeFileSync(path + '.1', logTail(file.slice(0, -4)))
+    truncateSync(path, 0)
+  }
+}
+
 function commitOf(dir) { return sh('git', ['-C', dir, 'rev-parse', 'HEAD']).stdout.trim() }
 function versionOf(dir) { try { return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version } catch { return undefined } }
 
 async function startService(s) {
   if (runStopping) throw new Error('stand is stopping')
+  const root = sourceRoot(s.repo)
+  const stateFile = join(dirs.run, s.id + '.source.json')
+  // Include routing: attaching/detaching Make must also restart Core's frontend proxy.
+  const signature = JSON.stringify({ root, config: createHash('sha256').update(JSON.stringify({ cmd: s.cmd, env: s.env })).digest('hex') })
+  let previous
+  try { previous = readFileSync(stateFile, 'utf8') } catch {}
+  if (runningPid(s.id) && previous !== signature) await stopService(s.id)
   if (runningPid(s.id)) {
     if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
     return 'running'
   }
   if (s.port && await portOpen(s.port)) fail(`port ${s.port} for ${s.id} is used by another process; change SISLEXA_STAND_PORT_BASE / SISLEXA_STAND_UI_PORT`)
   if (runStopping) throw new Error('stand is stopping')
-  const root = sourceRoot(s.repo)
   const cwd = s.cwd ? join(root, s.cwd) : root
   const [api, data] = VERSIONS[s.version ?? s.frontend] ?? []
   const meta = { VC_APPLICATION_COMMIT: commitOf(root), VC_RELEASE_COMMIT: commitOf(root),
     ...(s.env.VC_APPLICATION_VERSION ? {} : { VC_APPLICATION_VERSION: versionOf(s.frontend ? join(root, s.cwd ?? `packages/${s.frontend.replace(/-ui$/, '')}-app`) : root) ?? '0.0.0' }),
     ...(api ? { VC_APPLICATION_API_VERSION: api, VC_APPLICATION_DATA_VERSION: data } : {}) }
-  if (s.frontend && !s.cwd) meta.VC_APPLICATION_VERSION = versionOf(join(root, 'packages', s.frontend.replace(/-ui$/, '') + '-app')) ?? meta.VC_APPLICATION_VERSION
+  if (s.frontend && !s.cwd) {
+    const file = join(root, 'packages', s.frontend.replace(/-ui$/, '') + '-app', 'dist', 'manifest.json')
+    const manifest = JSON.parse(readFileSync(file, 'utf8'))
+    for (const key of ['version', 'commit', 'apiVersion'])
+      if (typeof manifest[key] !== 'string' || !manifest[key]) fail(`invalid frontend metadata ${key}: ${file}`)
+    Object.assign(meta, { VC_APPLICATION_VERSION: manifest.version, VC_APPLICATION_COMMIT: manifest.commit,
+      VC_RELEASE_VERSION: manifest.version, VC_RELEASE_COMMIT: manifest.commit,
+      VC_APPLICATION_API_VERSION: manifest.apiVersion })
+  }
   for (const [key, value] of Object.entries(s.env)) if (/_DIR$/.test(key) && typeof value === 'string' && value.startsWith(dirs.data)) mkdirSync(value, { recursive: true })
   if (s.waitFor) rmSync(join(root, s.waitFor), { force: true })
+  rotateLogs()
   const out = openSync(join(dirs.logs, s.id + '.log'), 'a')
   const child = spawn(s.cmd[0], s.cmd.slice(1), { cwd, detached: true, stdio: ['ignore', out, out],
     env: Object.fromEntries(Object.entries({ ...process.env, ...s.env, ...meta }).filter(([, v]) => v !== null).map(([k, v]) => [k, String(v)])) })
@@ -385,14 +425,15 @@ async function startService(s) {
   })
   if (!child.pid) fail(`could not spawn ${s.id}`)
   writeFileSync(pidFile(s.id), String(child.pid) + '\n')
+  writeFileSync(stateFile, signature, { mode: 0o600 })
   if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
   child.unref()
   if (s.waitFor) {
     const until = Date.now() + 180_000
-    while (!existsSync(join(root, s.waitFor)) && Date.now() < until) await new Promise(r => setTimeout(r, 1000))
-    if (!existsSync(join(root, s.waitFor))) fail(`${s.id} did not produce ${s.waitFor}; see ${join(dirs.logs, s.id + '.log')}`)
+    while (!existsSync(join(root, s.waitFor)) && child.exitCode === null && child.signalCode === null && Date.now() < until) await new Promise(r => setTimeout(r, 1000))
+    if (!existsSync(join(root, s.waitFor))) fail(serviceFailure(s.id, `did not produce ${s.waitFor}`))
   } else if (s.port) {
-    if (await waitHttp(s.port, s.health ?? '/', 180_000) === null) fail(`${s.id} did not answer on ${url(s.port)}; see ${join(dirs.logs, s.id + '.log')}`)
+    if (await waitHttp(s.port, s.health ?? '/', 180_000, () => child.exitCode === null && child.signalCode === null) === null) fail(serviceFailure(s.id, `did not answer on ${url(s.port)}`))
   }
   return 'started'
 }
@@ -420,7 +461,10 @@ async function startShared() {
   console.log(`dev-stand ${NAME} → ${HOME}, shared with ${SHARE}`)
   prepareSources()
   prepareSharedComponents(shared)
-  for (const s of sharedServices(shared)) console.log(`  ${s.id.padEnd(26)} ${await startService(s)}${s.port ? '  ' + url(s.port) : ''}`)
+  const list = sharedServices(shared)
+  for (const file of readdirSync(dirs.run).filter(f => f.endsWith('.pid')))
+    if (!list.some(s => file === s.id + '.pid')) await stopService(file.slice(0, -4))
+  for (const s of list) console.log(`  ${s.id.padEnd(26)} ${await startService(s)}${s.port ? '  ' + url(s.port) : ''}`)
   const database = new URL(shared.core.VC_DB_URL).pathname.slice(1)
   console.log(`\nUI: ${url(P.ui)}   Core: ${url(P.core)}   database: ${database} (shared with ${SHARE})\nStatus: npm run dev:stand:status   Stop: npm run dev:stand:stop`)
 }
@@ -441,32 +485,39 @@ async function status() {
   if (up && up < list.length) process.exitCode = 1
 }
 
-async function stop() {
-  // The full list also covers the shared mode's Core, Make and Core UI.
-  const list = services({}, {}).reverse()
-  for (const s of list) {
+async function stopService(id) {
+    supervised.delete(id)
     // A dead npm leader can leave watchers in its process group.
     let pid
-    try { pid = Number(readFileSync(pidFile(s.id), 'utf8').trim()) } catch {}
-    if (!Number.isInteger(pid) || pid <= 0) { rmSync(pidFile(s.id), { force: true }); continue }
+    try { pid = Number(readFileSync(pidFile(id), 'utf8').trim()) } catch {}
+    if (!Number.isInteger(pid) || pid <= 0) { rmSync(pidFile(id), { force: true }); return }
     const groupAlive = () => alive(-pid) || alive(pid)
     try { process.kill(-pid, 'SIGTERM') } catch { try { process.kill(pid, 'SIGTERM') } catch {} }
     const until = Date.now() + 10_000
     while (groupAlive() && Date.now() < until) await new Promise(r => setTimeout(r, 200))
     if (groupAlive()) try { process.kill(-pid, 'SIGKILL') } catch {}
-    rmSync(pidFile(s.id), { force: true })
-    console.log(`  ${s.id} stopped`)
-  }
+    rmSync(pidFile(id), { force: true })
+    rmSync(join(dirs.run, id + '.source.json'), { force: true })
+    console.log(`  ${id} stopped`)
+}
+
+async function stop() {
+  // Include services removed from the current configuration (e.g. detached Make UI).
+  if (existsSync(dirs.run)) for (const file of readdirSync(dirs.run).filter(f => f.endsWith('.pid')).reverse())
+    await stopService(file.slice(0, -4))
   console.log(`dev-stand ${NAME}: stopped; data kept in ${HOME}${SHARE ? '' : ' and database ' + DB_NAME}`)
 }
 
 async function run() {
   // Stay attached to the agent; detached service groups are owned by this supervisor.
   let monitor
+  const logMonitor = setInterval(rotateLogs, 5000)
+  logMonitor.unref()
   shutdownRun = async code => {
     if (runStopping) return
     runStopping = true
     clearInterval(monitor)
+    clearInterval(logMonitor)
     try { await stop() } finally { process.exit(code) }
   }
   process.on('SIGTERM', () => { void shutdownRun(0) })

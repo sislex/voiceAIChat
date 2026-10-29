@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-29
-checked: ee8b963d
+updated: 2026-10-30
+checked: 32a7625f
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -518,7 +518,16 @@ Studio, TTS, STT, automation runner, the three application frontends and Core UI
 Servers run with `tsx watch`, Core UI with Vite HMR. Only the LLM Runner is
 external. `npm run dev:stand:status` lists this stand's processes and ports;
 `npm run dev:stand:stop` stops only them and keeps the data. A repeated start
-reuses running processes (pid files) and refuses ports held by other processes.
+reuses running processes only when their source root and launch configuration match
+the hashed record in `run/<service>.source.json`; missing or changed records restart
+the service process group. Detaching Make also stops its frontend and watcher,
+and changing frontend routing restarts Core. Ports held by other processes are refused.
+Frontend servers take version, commit and apiVersion from the freshly built
+`dist/manifest.json`, rather than the launcher's static API defaults.
+Readiness failures include the last 4 KiB / 20 lines of the failing service log.
+The `run` supervisor checks logs every five seconds: files over 8 MiB retain a
+4 KiB tail in `.log.1` and are truncated in place so open append descriptors
+continue writing to the same file. Startup also checks this limit.
 
 Everything belongs to the stand directory `SISLEXA_STAND_HOME` (default
 `~/.sislexa/stands/<SISLEXA_STAND_NAME>`, name `local`): `src/<repo>` git
