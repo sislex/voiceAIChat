@@ -788,6 +788,9 @@ describe('REST: conversations/messages/settings', () => {
     const agent = await inj({ method: 'GET', url: '/api/agents/app' })
     expect(agent.statusCode).toBe(404)
     expect(agent.json().error).toContain('не собрано')
+    for (const url of ['/api/app/android', '/api/app/android/apk']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode).toBe(404)
+    }
     const desktop = await inj({ method: 'GET', url: '/api/app/desktop' })
     expect(desktop.statusCode).toBe(404)
   })

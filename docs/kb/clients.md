@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-27
-checked: c29bd3e2
+updated: 2026-10-29
+checked: ee0b3856
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -14,6 +14,32 @@ areas:
 Module details: `web-reader:README.md`
 Module details: `core-ui:README.md`
 Module details: `agent:README.md`
+
+## Android APK distribution
+
+Core pins the owner's `android-release.json` in `vendor/android/`. The
+`AndroidReleaseManifest` contract and REST paths are in `packages/shared`.
+The 0.1.1 pin adds versionName 0.1.1 and versionCode 2, verified against
+`apps/android/app/build.gradle.kts` at owner commit
+`7d90ff455a4a495185bbb76d4bfc6f1b27c0d005`; the owner's release script does not
+yet emit these fields.
+
+`GET /api/app/android` publicly returns schemaVersion 1 and the android fields,
+with url replaced by `/api/app/android/apk`. No upstream URL or credentials are
+returned. The APK endpoint verifies size and SHA-256 of the exact response bytes
+before sending them, including before 304. Both endpoints support ETag and
+`Cache-Control: no-cache`; missing pins return 404, invalid pins or unavailable/
+corrupt binaries return 503. APK responses use the Android package MIME type and
+an attachment filename. Public handlers complete during onRequest, before the
+Identity/forwarded-auth preHandler; the Machines proxy does this only for GET/HEAD
+on these two exact paths.
+
+`VC_ANDROID_MANIFEST` overrides the pin location; normal runtime defaults to the
+repository pin. A matching APK can be placed beside the manifest (ignored by Git).
+Otherwise Core fetches the pinned URL, using server-only `VC_GITHUB_TOKEN` with
+GitHub's release-asset API for private releases, and retains downloaded bytes in
+memory. Compose forwards this token to both Core and the standalone Machines service. Download failure remains a 503, never a redirect to private GitHub.
+Tests inject the pin path and fetch dependency.
 
 ## Core UI distribution
 

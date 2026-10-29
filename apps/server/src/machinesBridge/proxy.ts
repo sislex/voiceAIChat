@@ -5,14 +5,15 @@
 // процесс машин само (Caddy не знает, включён ли профиль), кадр в кадр, с исходным IP в x-forwarded-for.
 import type { FastifyInstance } from 'fastify'
 import { WebSocket, type RawData } from 'ws'
+import { REST } from '@voicechat/shared'
 import { registerServiceProxy } from '../makeBridge/proxy.js'
 
 /** Всё, что регистрируют `routes/agents.ts` и `storageMigration/routes.ts`; полноту держит `proxy.test.ts`. */
-export const MACHINES_PROXY_PREFIXES = ['/api/agents', '/api/login-application', '/api/app/desktop', '/api/storage-migrations', '/api/conversations/:id/storage', '/api/conversations/:id/machines'] as const
+export const MACHINES_PROXY_PREFIXES = ['/api/agents', '/api/login-application', '/api/app/desktop', '/api/app/android', '/api/storage-migrations', '/api/conversations/:id/storage', '/api/conversations/:id/machines'] as const
 
 export function registerMachinesProxy(app: FastifyInstance, opts: { machinesUrl: string; fetchImpl?: typeof fetch; timeoutMs?: number }): void {
   // Запись файла через проводник — base64 до десятков мегабайт (лимит WS агента 48 МБ).
-  registerServiceProxy(app, { name: 'machines', baseUrl: opts.machinesUrl, prefixes: MACHINES_PROXY_PREFIXES, bodyLimit: 64 * 1024 * 1024, ...opts })
+  registerServiceProxy(app, { name: 'machines', baseUrl: opts.machinesUrl, prefixes: MACHINES_PROXY_PREFIXES, publicGetPaths: [REST.androidApp, REST.androidApk], bodyLimit: 64 * 1024 * 1024, ...opts })
 }
 
 export interface AgentWsProxyOptions {
