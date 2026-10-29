@@ -122,6 +122,12 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
   const errors = [], applications = [], steps = []
   const lock = JSON.parse(readFileSync(join(repository, 'deploy/tools.lock.json'), 'utf8'))
   if (!lock.tools || typeof lock.tools !== 'object' || Array.isArray(lock.tools)) throw Error('Invalid tools lock')
+  // These owners are also embedded as immutable package archives. Pinning only tools.lock
+  // would make Core internally inconsistent, so keep them out of an automated train until
+  // the pin step knows how to rebuild every coupled artifact and lock.
+  const artifactPath = join(repository, 'deploy/s3-provider-artifacts.json')
+  const artifactManifest = existsSync(artifactPath) ? JSON.parse(readFileSync(artifactPath, 'utf8')) : { providers: [] }
+  const embeddedOwners = new Set((artifactManifest.providers ?? []).map(row => githubRepository(row.repository)).filter(Boolean))
   const get = githubClient(token ?? '', fetcher)
   const comparisons = new Map(), releases = new Map(), reusable = new Map(), scheduled = new Set(), ownerPins = new Map()
   for (const [application, pin] of Object.entries(lock.tools)) {
@@ -142,6 +148,8 @@ export async function planReleaseTrain({ repository = root, worktreeRoot = join(
       item.release = releases.get(key)
       if (item.changes.status === 'diverged') throw Error('Owner main and dev diverged; reconcile before release')
       if (item.release.published && !item.release.matchesPinnedCommit) throw Error('Published tag does not match pinned commit')
+      if (item.changes.ahead && embeddedOwners.has(owner))
+        throw Error('Owner is embedded in deploy/s3-provider-artifacts.json; release train cannot pin it until the embedded archives, package lock and required sources are updated')
       if (item.changes.ahead || item.changes.dev !== pin.commit) {
         if (!reusable.has(owner)) reusable.set(owner, await reusableRelease(owner, item.proposedVersion, item.changes.dev, get))
         item.reuseRelease = reusable.get(owner)

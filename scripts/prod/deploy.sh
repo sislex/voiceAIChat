@@ -498,6 +498,15 @@ for ((i = 1; i <= HEALTH_TRIES; i++)); do
     fi
     log "=== деплой успешен: $(curl -fsS -m 5 "$HEALTH_URL") ==="
     delivery_authority verify
+    # The launcher exports VC_REPO_DIR only; load the timer settings in a subshell.
+    if [[ -r /etc/voicechat/production.env ]]; then
+      (
+        source /etc/voicechat/production.env
+        if [[ -n ${SISLEXA_COMPONENTS_DIR:-} ]]; then
+          bash "$REPO/scripts/prod/component-rotation.sh" --install
+        fi
+      )
+    fi
     cleanup_old_releases || log 'release cleanup failed after successful health check'
     exit 0
   fi

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-28
-checked: ad906d23
+updated: 2026-10-29
+checked: 2f711fadb
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -449,6 +449,10 @@ missing their separate dependencies produces TS2307 for `electron` and
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
 закреплённого коммита), сьюты пропускаются и печатают причину. `VC_E2E_STAND_LOG=1` выводит
 логи обоих процессов. Письма приглашений шлёт канбан, поэтому SMTP-приёмник получают оба.
+Если `TMPDIR` длиннее 40 символов (merge-раны задают его внутри merge-клона), `browser-gate.mjs`
+запускает сьюты с коротким каталогом `/tmp/vc-e2e-*`: `tsx` открывает IPC-сокет
+`$TMPDIR/tsx-<uid>/<pid>.pipe`, а macOS ограничивает путь сокета 104 байтами — обрезанные пути
+совпадали, и второй процесс стенда падал с `EADDRINUSE` («Канбан завершился с кодом 1»).
 Кнопка «+ Новый проект» видна раньше, чем раздел догрузил данные канбана: окно открывается
 повторным кликом до появления диалога, иначе первый сценарий нестабилен.
 
@@ -909,6 +913,20 @@ keeps the expected option hidden after a successful real response and verifies
 that readiness waits for visibility. Negative cases cover old and unrelated
 responses, a response before the triggering action completes, HTTP 400/503,
 unavailable sources, missing hits and aborted requests.
+
+HTTP 400/503, unavailable-source and empty-result diagnostics use a controlled
+main-frame browser fetch after registering the route and response observer.
+They assert the intercepted request identity and status, then call
+`checkSearchResponse()`, the same validator used by `open()` before option
+visibility checks. This removes cold palette opening and client debounce from
+the diagnostic observation deadline; the 10-second search limit is unchanged.
+`VC_SEARCH_DIAGNOSTIC_STRESS=1` repeats each of these four cases 20 times
+(Vitest repeats, not retries) while ordinary runs retain 18 cases. Run it with
+the seven-file parallel browser batch and `VC_E2E_WORKERS=2` to exercise load.
+The observer-identity fixture's route-count waits also use `SEARCH_TIMEOUT`
+instead of Vitest's default one-second deadline. Its cleanup releases the
+action barrier and settles the observation so a failed route assertion cannot
+leak an unhandled rejection into later cases.
 
 Navigation remains six separate `it.each(SEARCH_SOURCES)` cases, each checking
 the deep link after reload, plus the kanban-message context case. Existing

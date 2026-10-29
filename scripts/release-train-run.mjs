@@ -390,13 +390,30 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
         try { git(cwd, 'rebase', '--onto', 'origin/dev', `${journal.results.pin}^`) }
         catch (rebaseError) {
           const conflicts = git(cwd, 'diff', '--name-only', '--diff-filter=U').split('\n').filter(Boolean)
-          if (conflicts.length !== 1 || conflicts[0] !== 'docs/kb/README.md') {
+          const index = 'docs/kb/README.md'
+          const topics = conflicts.filter(file => file !== index)
+          if (!conflicts.length || topics.some(file => !/^docs\/kb\/[^/]+\.md$/.test(file))) {
             git(cwd, 'rebase', '--abort'); throw rebaseError
           }
           try {
-            git(cwd, 'checkout', '--ours', '--', 'docs/kb/README.md')
+            if (conflicts.includes(index)) git(cwd, 'checkout', '--ours', '--', index)
+            for (const topic of topics) {
+              const source = readFileSync(join(cwd, topic), 'utf8')
+              const frontmatterEnd = source.indexOf('\n---', 4)
+              const marker = source.indexOf('<<<<<<<')
+              if (frontmatterEnd < 0 || marker < 0 || marker > frontmatterEnd
+                || source.indexOf('<<<<<<<', frontmatterEnd) >= 0)
+                throw Error(`KB conflict outside release frontmatter: ${topic}`)
+              // During rebase "ours" is concurrent dev. Keep its metadata, while retaining
+              // Git's already merged body (including the release pin marker and SHA updates).
+              const resolved = source.replace(/<<<<<<<[^\n]*\n([\s\S]*?)=======\n[\s\S]*?>>>>>>>[^\n]*(?:\n|$)/g, '$1')
+              if (resolved.includes('<<<<<<<') || resolved.includes('=======') || resolved.includes('>>>>>>>'))
+                throw Error(`Unsupported KB frontmatter conflict: ${topic}`)
+              writeFileSync(join(cwd, topic), resolved)
+              run(process.execPath, ['scripts/kb.mjs', 'touch', topic], cwd)
+            }
             run('npm', ['run', 'kb:index'], cwd)
-            git(cwd, 'add', '--', 'docs/kb/README.md')
+            git(cwd, 'add', '--', ...new Set([index, ...conflicts]))
             run('git', ['-c', 'core.editor=true', 'rebase', '--continue'], cwd)
           } catch (resolutionError) { git(cwd, 'rebase', '--abort'); throw resolutionError }
         }

@@ -213,7 +213,7 @@ services:
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
     profiles: ["make"]
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:888deb62b04406036885bab9e36a608362fd2d71}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:0d3ccf01ee7c46700594b7a4034ea757e48cb60f}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -261,7 +261,7 @@ services:
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
     profiles: ["image-studio"]
-    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c3988f22015e2a21f6e2dc255b4966eae972fbf1}
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:3a6b3f28ec2e5749293d9289981f4a0b4f48628d}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -285,7 +285,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:400db07a2882506b538662b6c26f1206e820f56c}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:4d88b94223b8b88d5ede816fd82672409122d924}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -437,7 +437,7 @@ services:
 
   stt-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
+    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:d7af7b602106415f4c1df39fd6d0932e2baf9c83}
     mem_limit: 6g
     cpus: 2
     environment:
@@ -553,7 +553,7 @@ services:
 
   tts-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
+    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:d7af7b602106415f4c1df39fd6d0932e2baf9c83}
     environment:
       HOST: 0.0.0.0
       PORT: "8791"
