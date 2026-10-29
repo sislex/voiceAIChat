@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-29
-checked: bdb94391
+checked: 2dd38b0b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -391,8 +391,16 @@ with positive integers. Reversed thresholds fall back to defaults.
 (default true) and returns `{ ok: true, summary }`. The turn manager excludes
 active, preparing and saving turns with HTTP 409 `turn_active`, and holds
 admission while refreshing the existing summary service and clearing the
-session/context usage. A missing or failed summary leaves the session intact
-(503); `summarize: false` skips refresh. The next turn uses the existing bounded
+session/context usage. Summary failures never produce 503: after refresh, any
+uncovered published messages are saved as a deterministic fallback summary.
+This includes an unavailable service, thrown error, null result or a background
+run covering an older boundary. The fallback retains up to 4,000 characters of
+prior summary plus newest-first message excerpts (2,000 characters each), capped
+at 12,000 characters total, and advances the boundary to the last pending message.
+The optional shared `summary.source: 'fallback'` is persisted in
+`conversations.summary_source` and returned through REST/WS for degraded-summary
+UI. A missing conversation remains 404; turn admission still returns 409.
+`summarize: false` skips refresh. The next turn uses the existing bounded
 cold-start history with the summary. Stored history is preserved.
 The compatibility route `POST /api/conversations/:id/thread/reset`
 (`REST.conversationThreadResetLegacy`) retains its `Conversation` response and
@@ -401,7 +409,7 @@ lock and rejects active turns with 409.
 
 Canonical conversation settings persist `threadReset: off | hint | auto`,
 default `hint`. Only `auto` resets before a turn when cost recommends `reset`;
-a failed automatic reset reports an error and pauses the queue.
+a summary failure uses the same fallback and allows queued work to continue.
 Resets append a visible system note, “Тред сброшен: было N токенов на ход”, and
 publish existing `chat.message` / `chat.conversation` frames.
 Clients should refetch cost on opening a conversation and after `claude.done`;

@@ -50,6 +50,7 @@ interface ConversationRow {
   summary_text: string | null
   summary_covers_message_id: string | null
   summary_updated_at: number | null
+  summary_source: string | null
   context_usage_json: string | null
 }
 
@@ -689,8 +690,8 @@ export class ChatRepo extends BaseRepo {
   }
 
   async setConversationSummary(userId: string, conversationId: string, summary: NonNullable<Conversation['summary']>): Promise<Conversation | null> {
-    const changed = await this.sql.run(`UPDATE conversations SET summary_text = ?, summary_covers_message_id = ?, summary_updated_at = ?
-      WHERE id = ? AND user_id = ?`, [summary.text, summary.coversUntilMessageId, summary.updatedAt, conversationId, userId])
+    const changed = await this.sql.run(`UPDATE conversations SET summary_text = ?, summary_covers_message_id = ?, summary_updated_at = ?, summary_source = ?
+      WHERE id = ? AND user_id = ?`, [summary.text, summary.coversUntilMessageId, summary.updatedAt, summary.source ?? null, conversationId, userId])
     return changed.changes ? await this.getConversation(userId, conversationId) : null
   }
 
@@ -1973,7 +1974,8 @@ export class ChatRepo extends BaseRepo {
       updatedAt: row.updated_at,
       messageCount,
       ...(row.summary_text && row.summary_covers_message_id && row.summary_updated_at !== null
-        ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at } }
+        ? { summary: { text: row.summary_text, coversUntilMessageId: row.summary_covers_message_id, updatedAt: row.summary_updated_at,
+          ...(row.summary_source === 'fallback' || row.summary_source === 'model' ? { source: row.summary_source } : {}) } }
         : {}),
       ...(() => {
         const usage = parseJsonValue<ConversationContextUsage | null>(row.context_usage_json, null)

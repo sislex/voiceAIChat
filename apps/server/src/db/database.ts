@@ -443,6 +443,7 @@ export class VoiceChatDb {
       ['summary_text', 'TEXT'],
       ['summary_covers_message_id', 'TEXT'],
       ['summary_updated_at', 'INTEGER'],
+      ['summary_source', 'TEXT'],
       ['context_usage_json', 'TEXT'],
       ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
     ] as const) {

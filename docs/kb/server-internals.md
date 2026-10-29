@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 4aa06d23
+checked: 2dd38b0b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -808,13 +808,23 @@ expose the same bounded prompt and its size; stored messages remain unchanged.
 
 `conversationSummary.ts` supplies the rolling summary consumed by that cold
 start. After 40 published messages beyond the stored boundary it starts a
-deduplicated background run with the cheapest configured runner model. The run
+deduplicated background run with the cheapest configured runner model. Each call
 has a fresh session, plan permission, disabled execution and no tools. It folds
-the previous summary together with only the messages after the boundary, caps
-the saved result at 1,500 words, persists all three summary fields atomically,
-and emits `chat.conversation`. Runner failures are logged, never fail the chat
-turn, and move the next automatic attempt to the following 40-message boundary.
-The summary REST refresh uses the same service but bypasses the threshold.
+messages oldest first in 20,000-character batches, truncating each message text
+to 2,000 characters. Prior and generated summaries are capped at 8,000 characters;
+generated summaries also retain the 1,500-word limit. The full prompt is capped
+at 32,000 characters. Each failed or empty response retries once through the
+other configured runner (Codex Luna primary, Claude Haiku secondary when both
+exist). Each attempt times out after 30 seconds and cancels its runner handle.
+Successful completion persists the final boundary atomically and emits
+`chat.conversation`. Per-attempt failures emit structured JSON directly to stdout:
+`conversation_summary_failed`, conversation id, model, error class/message,
+batch message count and prompt characters, without attaching history or prompts.
+This bypasses disabled Fastify logging. Failed background runs keep the prior
+summary and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh bypasses the threshold. Thread reset adds a persisted,
+bounded deterministic fallback if refresh leaves uncovered messages; see
+[Session cost and summary reset](llm.md#session-cost-and-summary-reset).
 
 ## Account profile query path
 

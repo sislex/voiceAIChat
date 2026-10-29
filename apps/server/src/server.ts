@@ -803,14 +803,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
   conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
     db,
-    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
-    // when this installation only has a Claude runner.
+    // Prefer Codex; retry failed chunks once through the other configured runner.
     client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
     model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    fallback: (opts.codex || opts.config.llmRunnerCodexUrl) && (opts.claude || opts.config.llmRunnerClaudeUrl)
+      ? { client: claude, model: 'haiku' } : undefined,
     publish: async (userId, conversation) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
-    },
-    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+    }
   })
   const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
