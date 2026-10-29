@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-09-17 | ⚠ 808 коммит(ов) в areas после сверки: 603f2600 feat(android): serve pinned Android APK releases … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-24 | ⚠ 11 коммит(ов) в areas после сверки: 603f2600 feat(android): serve pinned Android APK releases … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-20 | ⚠ 6 коммит(ов) в areas после сверки: b63971f4 Merge dev into SISL-783 (task 34ced7e4-a7cc-4c2b-9041-560e800d7670) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 105 коммит(ов) в areas после сверки: 5f60e034 Pin release train 9368cd51-13a3-49cc-b9b4-70d50694bdd8 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-20 | ⚠ 106 коммит(ов) в areas после сверки: 861038a1 WIP: work of run 9d846935-1aab-400d-95c4-eac59e02c2cf interrupted by Ран прерван перезапуском сервера. … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-09-13 | ⚠ 1103 коммит(ов) в areas после сверки: e6cdeba0 Merge remote-tracking branch 'origin/dev' into sisl-786-merge … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-01 | ⚠ код изменён 2026-10-18, сверка 2026-10-01 (по датам: правки того же дня не видны — поставь checked) |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-09-30 | ⚠ 70 коммит(ов) в areas после сверки: 3c98193c fix(gate): npm-script-only package.json edits stay on the quick gate … |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-20 | ⚠ 16 коммит(ов) в areas после сверки: 4caacd9a Merge dev into SISL-790 (task a2054cc0-353b-4547-8ace-264ed7c02163) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-07 | ⚠ код изменён 2026-10-29, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-07 | ⚠ код изменён 2026-10-20, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-29 | ⚠ 9 коммит(ов) в areas после сверки: 5f60e034 Pin release train 9368cd51-13a3-49cc-b9b4-70d50694bdd8 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-29 | ⚠ 10 коммит(ов) в areas после сверки: 861038a1 WIP: work of run 9d846935-1aab-400d-95c4-eac59e02c2cf interrupted by Ран прерван перезапуском сервера. … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-07 | ⚠ код изменён 2026-10-29, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-07 | ⚠ код изменён 2026-10-29, сверка 2026-10-07 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -62,18 +62,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1320. Последние:
+Всего записей: 1321. Последние:
 
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-agent-auto-update.md) — android-agent-auto-update
+- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-validation.md) — release-train-health-validation
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-health-retries.md) — release-train-health-retries
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c6077abb-5f8d-404f-b078-6c33ffa974df.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-c6077abb-5f8d-404f-b078-6c33ffa974df.md) — release-train-c6077abb-5f8d-404f-b078-6c33ffa974df
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-9368cd51-13a3-49cc-b9b4-70d50694bdd8.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-9368cd51-13a3-49cc-b9b4-70d50694bdd8.md) — release-train-9368cd51-13a3-49cc-b9b4-70d50694bdd8
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-26e9a829-e0ac-4eb2-966b-8502b3e339cd.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-26e9a829-e0ac-4eb2-966b-8502b3e339cd.md) — release-train-26e9a829-e0ac-4eb2-966b-8502b3e339cd
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-0348163b-5198-438a-8f44-1ba988e89941.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-release-train-0348163b-5198-438a-8f44-1ba988e89941.md) — release-train-0348163b-5198-438a-8f44-1ba988e89941
 - [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-browser-gate-short-tmpdir.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-browser-gate-short-tmpdir.md) — browser-gate-short-tmpdir
-- [2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-android-routes-conversation-groups.md](log/2026-10-29-alexeys-macbook-air-tailae39a6-ts-net-android-routes-conversation-groups.md) — android-routes-conversation-groups
 
 ## Исторические планы
 

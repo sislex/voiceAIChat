@@ -148,6 +148,33 @@ for (const endpoint of ['center', 'health']) for (const failure of ['network', '
   })
 }
 
+test('health stops with the last observed version after transient failures', async t => {
+  const f = apiFixture(t)
+  const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+  journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+    branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+  let attempts = 0
+  const logs = []
+  const adapter = concreteAdapter({ ...f,
+    env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+    log: message => logs.push(message),
+    fetcher: async url => {
+      if (url.includes('center.test')) return Response.json({ status: 'succeeded' })
+      if (++attempts <= 2) throw TypeError('fetch failed')
+      return Response.json({ version: '1.0.0' })
+    }
+  })
+  await assert.rejects(executeJournal(journal, f.directory, adapter),
+    /stopped at health.*\n.*expected 1.0.1; last observed version: 1.0.0/)
+  assert.equal(attempts, 3)
+  assert.equal(f.now(), 3000)
+  assert.equal(logs.length, 2)
+  const saved = read(join(f.directory, journal.id + '.json'))
+  assert.equal(saved.pending, 'health')
+  assert.equal(saved.status, 'failed')
+  assert.match(saved.error, /last observed version: 1.0.0/)
+})
+
 for (const outcome of ['version', 'commit', 'unauthorized', 'failed', 'cancelled']) {
   test(`health fails fast on ${outcome} and retains diagnostics`, async t => {
     const f = apiFixture(t)
