@@ -1,29 +1,29 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-09-16
-checked: a92960ef
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - packages/shared/src/projects.ts
-  - apps/server/src/kanban/module.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - apps/server/src/db/repos/tasks.ts
   - apps/server/src/db/repos/qa.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
-  - apps/server/src/routes/projects.ts
-  - apps/server/src/routes/qa.ts
-  - apps/server/src/ci/componentQa.ts
-  - apps/server/src/ci/integrationTests.ts
-  - apps/server/src/ci/runManager.ts
-  - apps/server/src/ci/modelHooks.ts
-  - apps/server/src/ci/autopilotResume.ts
-  - apps/server/src/ci/runAdmission.ts
-  - packages/ui/src/components/kanban/TaskCard.tsx
-  - packages/ui/src/components/kanban/TaskModal.tsx
-  - packages/ui/src/components/ci/RunFeed.tsx
-  - packages/ui/src/components/ProjectSettings.tsx
 ---
 
 # Автопроход задачи по QA-конвейеру
+
+## Current Core boundary
+
+Core retains project/task contracts and SQL transitions. `autoPilotSnapshot`
+and `transitionAutoPilotTask` are in `db/repos/tasks.ts`; `recordAutoPilotEvent`
+is in `db/repos/qa.ts`, not the `database.ts` facade. The board-driven tick,
+retry scheduling and runner dispatch execute in Kanban.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Включение и настройки
 

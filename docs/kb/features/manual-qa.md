@@ -1,27 +1,32 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-09-17
-checked: afbca61a
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
-  - apps/server/src/routes/qa.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
+  - apps/server/src/db/repos/qa.ts
+  - apps/server/src/db/repos/ci.ts
   - apps/server/src/server.ts
-  - apps/server/src/ci/runManager.ts
-  - apps/server/src/ci/componentQa.ts
-  - apps/server/src/ci/workspaceDeps.ts
-  - apps/server/src/ci/infraErrors.ts
-  - apps/server/src/ci/integrationTests.ts
-  - apps/server/src/ci/testStages.ts
-  - apps/server/src/ci/modelHooks.ts
-  - packages/ui/src/components/qa
-  - packages/ui/src/remote/qaBridge.ts
 ---
 
 # Структурированное ручное QA
+
+## Current Core boundary
+
+Core retains QA contracts in `qa.ts` and persistence in `db/repos/qa.ts`
+and `db/repos/ci.ts`. Manual sessions and generic stage runs belong to the QA
+repository; Component QA and Integration Tests belong to the CI repository.
+Execution and `/api/qa` handlers run in Kanban, behind Core's proxy.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Место в workflow
 

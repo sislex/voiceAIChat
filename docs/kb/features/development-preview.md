@@ -2,30 +2,29 @@
 id: development-preview
 title: Development CI: isolated Docker preview and browser evidence
 kind: feature
-updated: 2026-09-17
-checked: 46bdd433
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - packages/shared/src/developmentPreview.ts
   - packages/shared/src/ci.ts
-  - apps/server/src/ci/developmentPreview.ts
-  - apps/server/src/ci/developmentPreviewDocker.ts
-  - apps/server/src/ci/developmentPreviewBrowser.ts
-  - apps/server/src/ci/modelHooks.ts
-  - apps/server/src/ci/ciCommandsMcp.ts
-  - apps/server/src/kanban/module.ts
-  - apps/server/src/routes/ci.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - apps/server/src/db/repos/ci.ts
   - apps/server/docker/development-guard.Dockerfile
-  - apps/llm-runner/src/previewGrants.ts
-  - apps/llm-runner/src/auth.ts
-  - apps/llm-runner/src/server.ts
-  - apps/llm-runner/src/cli/claudeCli.ts
-  - apps/llm-runner/src/cli/codexCli.ts
-  - packages/ui/src/components/ci/CiTaskSettings.tsx
-  - packages/ui/src/components/ci/RunFeed.tsx
 ---
 
 # Development CI: isolated Docker preview and browser evidence
+
+## Current Core boundary
+
+Core retains settings, normalization, grant and evidence contracts in
+`developmentPreview.ts`; defaults are disabled, 120-second startup, 30-minute
+TTL and two attempts. The validator permits at most two hours TTL and three
+attempts. Kanban owns Docker lifecycle; the LLM Runner owner owns preview grants.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Place in the CI workflow
 

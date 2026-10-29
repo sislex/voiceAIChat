@@ -3,19 +3,16 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-10-29
-checked: b3ddfb522
+checked: 4aa06d23
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
-  - apps/server/src/ci
-  - apps/server/src/cleanup
-  - apps/agent/src/connection.ts
-  - apps/agent/src/exec.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - packages/shared/src/temporaryResources.ts
   - apps/server/src/mcp/runProcesses.ts
-  - packages/ui/src/components/ci/TemporaryResources.tsx
   - apps/server/src/automationClient.ts
   - apps/automation-runner/src
   - packages/shared/src/automation.ts
@@ -27,29 +24,13 @@ areas:
   - apps/server/src/kb/autoContext.ts
   - apps/server/src/kb/kbMcp.ts
   - packages/shared/src/kbGaps.ts
-  - apps/server/src/routes/ci.ts
-  - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
   - apps/server/src/mcp/remoteBashMcp.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
-  - apps/agent/src/exec.ts
-  - apps/agent/src/gitAccess.ts
-  - packages/shared/src/gitAccess.ts
   - packages/shared/src/agentProtocol.ts
-  - packages/ui/src/App.tsx
-  - packages/ui/src/components/ProjectMachineGitAccess.tsx
-  - packages/ui/src/components/ci
-  - packages/ui/src/components/kanban/KanbanBoard.tsx
-  - packages/ui/src/components/kanban/TaskCard.tsx
-  - packages/ui/src/components/kanban/TaskModal.tsx
-  - packages/ui/src/components/kanban/TaskPreparationTab.tsx
-  - packages/ui/src/components/ProjectBoard.tsx
-  - packages/ui/src/styles/app.css
-  - packages/ui/src/remote/ciBridge.ts
-  - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/store/domains/projectsStore.ts
+  - apps/server/src/db/repos/ci.ts
 symbols:
   - createCiRunManager
   - clarifyBudget
@@ -84,6 +65,17 @@ packages:
 ---
 
 # CI-раннер канбана
+
+## Current Core boundary
+
+Core retains `packages/shared/src/ci.ts`, SQL state in `db/repos/ci.ts`,
+Automation Runner and the machine/MCP/KB ports. `getCiRunLog` defaults to 5000
+lines and caps explicit requests at 20000. Execution hooks and cleanup managers
+run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Development preview (CHAT-447)
 

@@ -1,27 +1,30 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-09-13
-checked: 09e82a75
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
-  - packages/shared/src/preview.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
-  - packages/shared/src/version.ts
-  - apps/agent/src/connection.ts
   - apps/server/src/agents/registry.ts
   - apps/server/src/db/database.ts
-  - apps/server/src/preview
-  - apps/server/src/routes/featurePreview.ts
-  - packages/ui/src/components/preview
-  - packages/ui/src/remote/featurePreviewBridge.ts
-  - packages/ui-foundation/src/lib/clipboard.ts
-  - apps/desktop/src/renderer/src/main.tsx
-  - packages/ui/src/components/ProjectSettings.tsx
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - compose.preview.yml
   - Dockerfile
 ---
 
 # Feature-preview окружения задач
+
+## Current Core boundary
+
+Core receives `PreviewEnvironment` from `@voicechat/browser-contracts/preview`
+and lists previews through `KanbanService.previews`. `kanbanBridge/remote.ts`
+forwards tunnel authorization/closure callbacks. Preview managers and task
+preview routes execute in Kanban; Core retains machine tunnel infrastructure.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Development-run preview
 
@@ -79,7 +82,11 @@ Feature-preview — отдельное управляемое окружение
 
 `compose.preview.yml` содержит app и статический Storybook, публикует оба сервиса только на loopback и использует отдельный named volume для preview-данных. Сервисы имеют CPU/memory limits, собственные healthchecks, не получают production data, LLM CLI-профили или credentials. Порты берутся из диапазона 18000–19999: allocator проверяет bind на машине и исключает порты сохранённых окружений.
 
-В `Dockerfile` Storybook собирается отдельной веткой `storybook-build` командой `npm run build:storybook` и отдаётся target `storybook-runtime` через nginx. Production target эту сборку не выполняет. App и Storybook собираются из одного workspace и после успешного запуска получают один commit SHA.
+`Dockerfile` verifies the pinned Core UI artifact with `npm run verify:core-ui`.
+The `storybook-runtime` target copies `node_modules/@sislexa/core-ui/storybook`
+into nginx; it does not compile local renderer sources. The app serves the web
+assets from the same pinned owner package. A Core workspace SHA identifies the
+preview composition, while the renderer source commit comes from the owner pin.
 
 ## Фактические границы реализации
 

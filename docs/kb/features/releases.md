@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -10,31 +10,34 @@ areas:
   - scripts/application-deploy.mjs
   - scripts/application-gate.mjs
   - scripts/application-compatibility.mjs
-  - apps/server/src/routes/applicationReleases.ts
   - packages/shared/src/release.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/projects.ts
-  - apps/server/src/releases
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - scripts/affected-check.mjs
   - scripts/prod/deploy.sh
   - Dockerfile
   - docker-compose.yml
   - apps/server/src/makeBridge/remote.ts
-  - apps/server/src/routes/releases.ts
-  - apps/server/src/routes/projects.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/server.ts
-  - packages/ui/src/components/releases
-  - packages/ui/src/components/ProjectSettings.tsx
-  - packages/ui/src/components/ProjectPage.tsx
-  - packages/ui/src/App.tsx
-  - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/styles/app.css
 ---
 
 # Версионные release-ветки и публикация в production
+
+## Current Core boundary
+
+Core retains release contracts, application build/deploy/gate scripts and
+artifact pins. The Release Center manager runs in Kanban; release updates arrive
+through `KanbanService.board.subscribeReleases`. See
+[release gate selection](release-gate-plan.md) for the current Core planner.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Source-owned tool releases
 
