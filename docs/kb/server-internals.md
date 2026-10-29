@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 9316c399
+checked: 7f58f555
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -922,15 +922,29 @@ RPC event client is required to keep a link alive.
 
 Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
 for core, core-ui and make. Optional `component` on files/git selects the attached
-repository; omission selects the conversation's primary repository. Core validates
-this extension locally without changing the pinned make-contracts archive.
+repository; omission selects the conversation's primary repository. The primary
+binding remains the top-level stand result while `components` reports every live
+checkout with its component, branch, path and phase. Core validates this extension
+locally in `makeBridge/coreRpc.ts` and `makeBridge/projectAdapters.ts`, so the
+pinned make-contracts archive does not need to publish the extension first.
+
 Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
-the primary retains its existing path. Local preparation seeds repository clones
-from `~/sislexa-dev/<repository>`, restricts fetch to dev and make/*, and defaults
-new branches to `make/conversation-<id8>`. Non-local stands reject secondary
-components. Stand state includes attached component paths, branches and phases.
-Delivery accepts an optional component; list/sync accept the same query parameter.
-Each selected repository is submitted independently to the existing coordinator.
+the primary retains its existing path. Local preparation in
+`makeBridge/standWorkspace.ts` seeds repository clones from
+`~/sislexa-dev/<repository>`, rewrites origin to the registry URL, restricts fetch
+to `dev` and `make/*`, and defaults new branches to
+`make/conversation-<id8>`. Non-local stands reject secondary components. Attaching
+passes the selected live path to Kanban; detaching one secondary component removes
+only that component's live binding and leaves the other attached repositories
+addressable.
+
+The local launcher in `scripts/dev-stand-local.mjs` accepts prepared Core, Core UI
+and Make checkouts through `SISLEXA_STAND_CORE_SOURCE`,
+`SISLEXA_STAND_CORE_UI_SOURCE` and `SISLEXA_STAND_MAKE_SOURCE`. Each override must
+already contain `.git` and `node_modules`; the launcher skips its own worktree and
+install for that repository. Core keeps `tsx` development execution, Core UI keeps
+Vite HMR, and an external Make checkout runs both its watched API and frontend
+build/server so visible Make UI changes come from the conversation checkout.
 
 `MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
 embedded and remote Make. Core checks the conversation owner and resolves its
@@ -1028,10 +1042,14 @@ are exported from Shared. These exact routes take precedence over the Kanban pro
 `makeBridge/standDeliveries.ts` checks project access, repository write permission
 for mutations, the stand's machine and the Git workspace write policy. The working
 copy comes only from the authorized Kanban manifest's live entries. An explicit
-component selects its live entry. Otherwise it selects the entry matching the
-project repository, or a single live entry on a host project; unresolved
-ambiguous bindings fail closed. History is filtered by
-that repository and live branch, and access is rechecked even on cache hits.
+component selects exactly that live entry; otherwise Core prefers the entry whose
+repository matches the project and falls back only when the stand has one live
+entry. Missing or ambiguous selection fails closed. Submission resolves the
+selected component's repository and branch, verifies the requested branch against
+the live branch and sends that repository alone to the existing coordinator.
+History and both sync operations use the same repository+branch selection, while
+the busy lock is scoped to the selected machine and working-copy root. Access is
+rechecked even on cache hits.
 
 `standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
 agent. Real paths, Git common directory and origin are checked against the
