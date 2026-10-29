@@ -112,11 +112,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   const settings = await db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = (await db.identity.getUser(viewer))?.role ?? 'developer'
-  // Make-чат к машине не подключается (`turns.ts`: makeChat), поэтому снимок не
-  // показывает ни её, ни remote-инструменты как доступные: иначе панель обещала
-  // бы Bash на машине, которого ход не даёт.
+  // Match turn execution: Make uses the explicitly configured machine only.
   const makeChat = conversation.assistantKind === 'make'
-  const resolution = makeChat ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
+  const resolution = makeChat && (!conversation.execTarget || conversation.execTarget === 'none') ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? (await db.machines.listUsableAgents(userId, conversation.projectId)).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
   const project = conversation.projectId ? await db.projects.getProject(userId, conversation.projectId) : null
@@ -164,9 +162,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
    * любой роли, включая админа. Пока снимок этого не знал, обычный пользователь
    * в Make-чате видел «Только планирование», а ход шёл с правкой файлов проекта.
    */
-  const makeOnlyExecution = makeChat && provider === 'claude'
+  const makeOnlyExecution = makeChat
     && (conversation.permissionMode ?? settings.permissionMode) !== 'plan'
-  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (makeChat && provider === 'codex')
+  const permissionMode: PermissionMode = (!makeChat && conversation.execTarget === 'none')
     || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
     ? 'plan'
     : (conversation.permissionMode ?? settings.permissionMode)
@@ -176,7 +174,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // их не подключает.
   const kbMode: KbContextMode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
-  const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
+  const workdir = makeChat ? conversation.workdir : conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = await db.chat.listMessages(userId, conversationId)
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.

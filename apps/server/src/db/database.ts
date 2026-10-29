@@ -558,20 +558,7 @@ export class VoiceChatDb {
       CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_del AFTER DELETE ON messages
       BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = OLD.conversation_id; END;
     `)
-    // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
-    // прежних времён привязки — мусор, который вводит в заблуждение: панель
-    // показывала машину и каталог, которых ход не использует. Явное «без машины»
-    // (`none`) сохраняем: это осознанный выбор пользователя, совпадающий с новым
-    // поведением. Идемпотентно — второй запуск не находит строк.
-    if (convCols.some((c) => c.name === 'assistant_kind')) {
-      await this.sql.exec(`
-        UPDATE conversations
-        SET exec_target = CASE WHEN exec_target = 'none' THEN exec_target ELSE NULL END,
-            workdir = NULL
-        WHERE assistant_kind = 'make'
-          AND ((exec_target IS NOT NULL AND exec_target <> 'none') OR workdir IS NOT NULL)
-      `)
-    }
+    // Make conversations retain their explicit machine and folder across restarts.
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = (await this.sql.all(`PRAGMA table_info(projects)`)) as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'tenant_id')) {

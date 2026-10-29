@@ -1442,6 +1442,16 @@ describe('REST: conversations/messages/settings', () => {
     expect(snapshot.disallowedTools).toContain('Write')
   })
 
+  it('shows the configured Make machine and folder in the context snapshot', async () => {
+    const machine = await db.machines.createAgent(U, 'Make assets')
+    const conv = await db.chat.createConversation(U, 'Make', 'make')
+    await db.chat.setConversationExecTarget(U, conv.id, machine.id, '/assets')
+    const snapshot = (await inj({ method: 'GET', url: '/api/conversations/' + conv.id + '/context-snapshot' })).json()
+    expect(JSON.stringify(snapshot)).toContain('/assets')
+    expect(JSON.stringify(snapshot)).toContain('Make assets')
+    expect(snapshot.disallowedTools).toContain('Write')
+  })
+
   it('база знаний объявляет эффект инструментов, а не блока промпта', async () => {
     // `knowledge-mode` не убирает статический блок: автоконтекст БЗ зависит от
     // текста сообщения. Зато он гасит инструменты mcp__kb__*, и объявленный
