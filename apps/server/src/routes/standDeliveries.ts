@@ -4,6 +4,8 @@ import { GitError } from '../git/workspaceService.js'
 import type { StandDeliveries } from '../makeBridge/standDeliveries.js'
 
 export function registerStandDeliveryRoutes(app: FastifyInstance, service: StandDeliveries) {
+  type Query = { component?: 'core' | 'core-ui' | 'make' }
+  const componentSchema = { querystring: { type: 'object', properties: { component: { type: 'string', enum: ['core', 'core-ui', 'make'] } }, additionalProperties: false } }
   type Params = { id: string; standId: string }
   const base = '/api/projects/:id/dev-stands/:standId'
   async function handle(reply: FastifyReply, work: () => Promise<unknown>) {
@@ -14,12 +16,12 @@ export function registerStandDeliveryRoutes(app: FastifyInstance, service: Stand
       return reply.code(503).send({ error: 'stand_delivery_unavailable' })
     }
   }
-  app.get<{ Params: Params }>(base + '/deliveries', (req, reply) =>
-    handle(reply, () => service.list(uid(req), req.params.id, req.params.standId)))
+  app.get<{ Params: Params; Querystring: Query }>(base + '/deliveries', { schema: componentSchema }, (req, reply) =>
+    handle(reply, () => service.list(uid(req), req.params.id, req.params.standId, req.query.component)))
   app.post<{ Params: Params }>(base + '/deliveries', (req, reply) =>
     handle(reply, () => service.submit(uid(req), req.params.id, req.params.standId, req.body)))
-  app.get<{ Params: Params }>(base + '/sync-dev/status', (req, reply) =>
-    handle(reply, () => service.behind(uid(req), req.params.id, req.params.standId)))
-  app.post<{ Params: Params }>(base + '/sync-dev', (req, reply) =>
-    handle(reply, () => service.sync(uid(req), req.params.id, req.params.standId)))
+  app.get<{ Params: Params; Querystring: Query }>(base + '/sync-dev/status', { schema: componentSchema }, (req, reply) =>
+    handle(reply, () => service.behind(uid(req), req.params.id, req.params.standId, req.query.component)))
+  app.post<{ Params: Params; Querystring: Query }>(base + '/sync-dev', { schema: componentSchema }, (req, reply) =>
+    handle(reply, () => service.sync(uid(req), req.params.id, req.params.standId, req.query.component)))
 }

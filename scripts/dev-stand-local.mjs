@@ -40,8 +40,9 @@ const env = process.env
 const NAME = env.SISLEXA_STAND_NAME || 'local'
 if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(NAME)) fail('SISLEXA_STAND_NAME must be lowercase letters, digits and dashes')
 const HOME = resolve(env.SISLEXA_STAND_HOME || join(homedir(), '.sislexa', 'stands', NAME))
-const CORE_SOURCE = env.SISLEXA_STAND_CORE_SOURCE ? resolve(env.SISLEXA_STAND_CORE_SOURCE) : null
-const sourceRoot = repo => repo === 'voiceAIChat' && CORE_SOURCE ? CORE_SOURCE : join(dirs.src, repo)
+const SOURCE_KEYS = { voiceAIChat: 'SISLEXA_STAND_CORE_SOURCE', 'sislexa-core-ui': 'SISLEXA_STAND_CORE_UI_SOURCE', make: 'SISLEXA_STAND_MAKE_SOURCE' }
+const preparedSource = repo => env[SOURCE_KEYS[repo]] ? resolve(env[SOURCE_KEYS[repo]]) : null
+const sourceRoot = repo => preparedSource(repo) || join(dirs.src, repo)
 const REF = env.SISLEXA_STAND_REF || 'origin/dev'
 const BASE = Number(env.SISLEXA_STAND_PORT_BASE || 31000)
 const UI_PORT = Number(env.SISLEXA_STAND_UI_PORT || 35273)
@@ -142,10 +143,15 @@ function sharedServices(shared) {
   const common = { NODE_ENV: 'development', ...shared.secrets }
   return [
     { id: 'core', repo: 'voiceAIChat', cmd: ['npm', 'run', '-w', '@voicechat/server', 'dev'], port: P.core, health: '/api/health', version: 'core',
-      env: { ...shared.core, PORT: P.core, SISLEXA_COMPONENT_CONFIG: C('core'), VC_DATA_DIR: D('core'), VC_PUBLIC_URL: url(P.ui),
+      env: { ...shared.core, ...(preparedSource('make') ? { VC_APPLICATION_FRONTENDS: JSON.stringify({ ...JSON.parse(shared.core.VC_APPLICATION_FRONTENDS || '{}'), 'make-ui': url(port(802)) }) } : {}), PORT: P.core, SISLEXA_COMPONENT_CONFIG: C('core'), VC_DATA_DIR: D('core'), VC_PUBLIC_URL: url(P.ui),
         VC_MAKE_URL: url(P.make), VC_MAKE_MCP_PUBLIC_BASE: url(P.make), VC_MCP_PUBLIC_BASE: url(P.core), VC_BROWSER_PREVIEW_BASE: url(P.core),
         // Machines connect to the shared instance's Core; this Core must not raise offline alerts for them.
         VC_AGENT_OFFLINE_ALERT_MIN: '0', VC_STAND_PROXY_PORTS: `${port(810)}-${port(814)}` } },
+    ...(preparedSource('make') ? [
+      { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json', env: {} },
+      { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(802),
+        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_DATA_DIR: null, VC_APPLICATION_API_VERSION: '1.1.0', VC_APPLICATION_DATA_VERSION: '1.0.0' } }
+    ] : []),
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
     { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: coreUiEnv() }
@@ -272,9 +278,10 @@ function nodeModuleDirs(root, rel = '') {
 function prepareSources() {
   for (const repo of REPOS) {
     // Kanban has already prepared this conversation's checkout and dependencies.
-    if (repo === 'voiceAIChat' && CORE_SOURCE) {
-      if (!existsSync(join(CORE_SOURCE, '.git')) || !existsSync(join(CORE_SOURCE, 'node_modules')))
-        fail('SISLEXA_STAND_CORE_SOURCE must be a prepared Core working copy')
+    const prepared = preparedSource(repo)
+    if (prepared) {
+      if (!existsSync(join(prepared, '.git')) || !existsSync(join(prepared, 'node_modules')))
+        fail(`${SOURCE_KEYS[repo]} must be a prepared ${repo} working copy`)
       continue
     }
     const target = sourceRoot(repo)

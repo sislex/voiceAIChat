@@ -76,6 +76,46 @@ function fixture(component = 'core-ui') {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it('routes a secondary component to its own checkout and retains the primary binding', async () => {
+    const f = fixture('core'); f.bind()
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components.make = { repository: 'sislex/make', source: 'base', sha: 'abc' }
+    f.stand.live.push({ component: 'make', workingCopyPath: root + '-make', branch: 'make/conversation-conversa', head: 'sha' })
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: root + '-make', target: root + '-make/a.ts', directory: false }) })
+    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'files', action: 'write', component: 'make', path: 'a.ts', content: 'updated' })
+    expect(result.phase).toBe('ready')
+    expect(result.component).toBe('core')
+    expect(result.workingCopyPath).toBe(root)
+    expect(f.machines.fsWrite).toHaveBeenCalledWith('agent', root + '-make/a.ts', Buffer.from('updated').toString('base64'))
+    expect(result.components?.map(c => c.component)).toEqual(['core', 'make'])
+    f.base.mode = 'managed'
+    expect((await f.adapter.makeStand('alice', 'conversation', { op: 'git', component: 'make', operation: { op: 'status' } })).phase).toBe('failed')
+  })
+
+  it.each(['make', 'core-ui'] as const)('runs status, commit and push in the attached %s repository', async component => {
+    const f = fixture('core'); f.bind()
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components[component] = { repository: component === 'make' ? 'sislex/make' : 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' }
+    const secondaryRoot = root + '-' + component
+    f.stand.live.push({ component, workingCopyPath: secondaryRoot, branch: 'make/conversation-conversa', head: 'sha' })
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: secondaryRoot, target: secondaryRoot, directory: true }) })
+    const operations: Array<Extract<MakeStandOperation, { op: 'git' }>['operation']> = [
+      { op: 'status' }, { op: 'commit', message: 'Update component', files: ['a.ts'] }, { op: 'push' }
+    ]
+    for (const operation of operations) {
+      const result = await f.adapter.makeStand('alice', 'conversation', { op: 'git', component, operation })
+      expect(result.phase).toBe('ready')
+      expect(result.git?.op).toBe(operation.op)
+      expect(result).toMatchObject({ component: 'core', workingCopyPath: root, branch: 'make/test' })
+    }
+    expect(f.git.atWorkingCopy).toHaveBeenCalledTimes(3)
+    expect(f.git.atWorkingCopy).toHaveBeenLastCalledWith('alice', 'project', expect.any(String), secondaryRoot)
+    expect(f.git.commit).toHaveBeenCalled()
+    expect(f.git.push).toHaveBeenCalled()
+  })
+
   it('keeps a missing manifest creating for a running create job', async () => {
     const f = fixture()
     f.jobs.push({ kind: 'create', component: null, status: 'running', error: null })

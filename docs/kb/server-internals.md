@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-29
-checked: 6829b466
+checked: cb33bccf
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -658,6 +658,11 @@ exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
 
+See [conversation stand worktrees](#make-conversation-stand-worktrees) for local
+multi-repository bindings and component routing.
+
+
+
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
 текущего участника. Структуру и дизайн рабочей копии он читает только через
 read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
@@ -915,6 +920,35 @@ RPC event client is required to keep a link alive.
 
 ## Make conversation stand worktrees
 
+Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
+for core, core-ui and make. Optional `component` on files/git selects the attached
+repository; omission selects the conversation's primary repository. The primary
+binding remains the top-level stand result even after an operation against a
+secondary checkout, while `components` reports every matching live checkout with
+its component, branch, path and phase. Files/Git fail with
+`component_not_in_stand` when the selected component has no conversation-owned
+live entry. Core validates this extension locally in
+`makeBridge/coreRpc.ts` and `makeBridge/projectAdapters.ts`, so the pinned
+make-contracts archive does not need to publish the extension first.
+
+Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
+the primary retains its existing path. Local preparation in
+`makeBridge/standWorkspace.ts` seeds repository clones from
+`~/sislexa-dev/<repository>`, rewrites origin to the registry URL, restricts fetch
+to `dev` and `make/*`, and defaults new branches to
+`make/conversation-<id8>`. Non-local stands reject secondary components. Attaching
+passes the selected live path to Kanban; detaching one secondary component removes
+only that component's live binding and leaves the other attached repositories
+addressable.
+
+The local launcher in `scripts/dev-stand-local.mjs` accepts prepared Core, Core UI
+and Make checkouts through `SISLEXA_STAND_CORE_SOURCE`,
+`SISLEXA_STAND_CORE_UI_SOURCE` and `SISLEXA_STAND_MAKE_SOURCE`. Each override must
+already contain `.git` and `node_modules`; the launcher skips its own worktree and
+install for that repository. Core keeps `tsx` development execution, Core UI keeps
+Vite HMR, and an external Make checkout runs both its watched API and frontend
+build/server so visible Make UI changes come from the conversation checkout.
+
 `MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
 embedded and remote Make. Core checks the conversation owner and resolves its
 project through `db.chat.makeConversationProject`; project viewers cannot use
@@ -993,7 +1027,9 @@ operator commissioning, not part of worktree attachment.
 
 Core owns the concrete routes registered by `routes/standDeliveries.ts`:
 `POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
-`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`{branch, title, component?}` and returns the coordinator's `{runId, taskId}`;
+`component` selects core, core-ui or make. List, sync and sync status accept the
+same optional query parameter.
 `GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
 `POST .../sync-dev` returns `StandSyncResult`.
 `GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
@@ -1008,10 +1044,17 @@ are exported from Shared. These exact routes take precedence over the Kanban pro
 
 `makeBridge/standDeliveries.ts` checks project access, repository write permission
 for mutations, the stand's machine and the Git workspace write policy. The working
-copy comes only from the authorized Kanban manifest's live entries. It selects
-the entry matching the project repository, or a single live entry on a host
-project; ambiguous multi-component bindings fail closed. History is filtered by
-that repository and live branch, and access is rechecked even on cache hits.
+copy comes only from the authorized Kanban manifest's live entries. The optional
+body `component` on submission and query `component` on history/sync select exactly
+that live entry. Without it Core prefers the entry whose repository matches the
+project and falls back only when the stand has one live entry; missing or ambiguous
+selection fails closed with `stand_working_copy_ambiguous`. Submission resolves the
+selected component's repository and branch, verifies the requested branch against
+the live branch and sends only that repository to the existing coordinator, so a
+multi-repository delivery is represented by one request/task per selected
+repository. History and both sync operations reuse the same repository+branch
+selection, while the busy lock is scoped to the selected machine and working-copy
+root. Access is rechecked even on cache hits.
 
 `standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
 agent. Real paths, Git common directory and origin are checked against the

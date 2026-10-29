@@ -59,10 +59,18 @@ try {
   } else if (a.action === 'prepare') {
     if (!fs.existsSync(path.join(project, '.git'))) {
       if (fs.existsSync(project)) fail('operation_conflict');
-      git(repos, ['clone', '--no-checkout', '--', a.repositoryUrl, project]);
+      const seed = a.local ? path.join(require('node:os').homedir(), 'sislexa-dev', a.repoName) : null;
+      if (seed && !fs.existsSync(path.join(seed, '.git'))) fail('branch_not_found');
+      git(repos, ['clone', '--no-checkout', '--', seed || a.repositoryUrl, project]);
+      if (seed) git(project, ['remote', 'set-url', 'origin', a.repositoryUrl]);
     }
     if (git(project, ['remote', 'get-url', 'origin']).output.replace(/\.git$/, '') !== a.repositoryUrl.replace(/\.git$/, '')) fail('operation_conflict');
-    git(project, ['fetch', 'origin']);
+    if (a.local) {
+      git(project, ['config', '--unset-all', 'remote.origin.fetch'], true);
+      git(project, ['config', '--add', 'remote.origin.fetch', '+refs/heads/dev:refs/remotes/origin/dev']);
+      git(project, ['config', '--add', 'remote.origin.fetch', '+refs/heads/make/*:refs/remotes/origin/make/*']);
+    }
+    git(project, ['fetch', '--no-tags', 'origin']);
     const list = git(project, ['worktree', 'list', '--porcelain']).output.split('\n\n');
     const existing = list.find(x => x.split('\n').includes('worktree ' + root));
     if (existing) {
