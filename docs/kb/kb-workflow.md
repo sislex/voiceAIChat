@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-10-30
-checked: 68d5e9a4
+checked: 495279c8
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -58,13 +58,16 @@ areas:                        # пути/каталоги, за которыми
 ---
 ```
 
-`node scripts/kb.mjs check` inspects `git log <checked>..HEAD -- <areas>` and
-excludes commits that also modify this topic file. Running `touch` before a
-combined code/topic commit therefore does not make the topic stale, even though
-`checked` points to the parent commit. Later area commits without a change to
-this topic still make it stale; updating a different topic does not exempt them.
-A touch-only commit is also safe. Both metadata fields are set by `kb.mjs touch`.
-The missing/invalid SHA date fallback remains unchanged.
+`node scripts/kb.mjs check` строит список коммитов из
+`git log <checked>..HEAD -- <areas>`, а затем исключает из него по полному SHA
+коммиты, которые одновременно изменили файл именно проверяемой темы. Поэтому
+`touch` можно выполнить до общего коммита кода и темы: хотя `checked` указывает
+на его родителя, такой коммит не делает тему устаревшей. Последующий коммит в
+`areas` без изменения этой темы по-прежнему помечает её устаревшей; изменение
+другой темы исключения не даёт. Коммит только с результатом `touch` тоже
+безопасен. Реализация находится в `packages/kb-tools/kb.mjs`, сценарии закреплены
+в `packages/kb-tools/cli.test.mjs`. Оба поля метаданных ставит `kb.mjs touch`;
+фолбэк по датам для отсутствующего или невалидного SHA не изменился.
 
 **Почему sha, а не только дата.** Дата ловит только правки прошлых дней. В этом
 репозитории несколько агентов коммитят в один день, и сверка по датам молча
