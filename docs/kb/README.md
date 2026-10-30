@@ -49,7 +49,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-30 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-10-29 | ✓ |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-29 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-10-30 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
 
@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1350. Последние:
+Всего записей: 1351. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
@@ -72,10 +72,10 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md) — application-frontend-deployment-sources
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
-- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md) — sisl-10799-local-stand-kb
 
 ## Исторические планы
 

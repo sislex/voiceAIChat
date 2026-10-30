@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-10-30
+checked: 49ed3138
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -115,7 +115,16 @@ In development, Core resolves the installed owner frontend artifacts.
 `dev:web` verifies them, serves `@sislexa/core-ui/web` and starts the Core UI proxy;
 source editing and HMR run in the corresponding owner repository. На площадке
 `VC_APPLICATION_FRONTENDS` — JSON-карта id → URL своих статических контейнеров;
-ядро раздаёт их через тот же `/applications` gateway. Пустая карта сохраняет
+ядро раздаёт их через тот же `/applications` gateway.
+Core validates every configured frontend ID before filtering sources; unknown IDs
+throw even when no deployment application is enabled. An override is retained
+when the frontend ID itself or an owning application listed in its
+`APPLICATION_CATALOG.runtimeDependencies` is enabled and local in the deployment.
+Thus `make-ui` follows `make`, `web-reader-ui` follows `web-reader`,
+`playwright-reader-ui` follows `playwright-reader`, and `image-studio-ui` follows
+`image-studio`. Disabled or external owners do not activate these source overrides.
+The registration and manifest proxy behavior is covered by
+`apps/server/src/deploymentApplications.server.test.ts`. Пустая карта сохраняет
 локальный fallback общего Docker-образа; неизвестное приложение/путь не получает SPA.
 При сборке вне Git локальный manifest явно имеет `development:true, commit:null`;
 OCI-выпуск приложения требует настоящий полный SHA.

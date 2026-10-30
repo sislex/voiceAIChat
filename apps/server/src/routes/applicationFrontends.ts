@@ -5,7 +5,8 @@ import { createRequire } from 'node:module'
 import { join, extname } from 'node:path'
 import {
   APPLICATION_CATALOG,
-  parseApplicationFrontendManifest
+  parseApplicationFrontendManifest,
+  type DeploymentManifest
 } from '@voicechat/shared'
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -24,12 +25,22 @@ const mime: Record<string, string> = {
 export function registerApplicationFrontends(
   app: FastifyInstance,
   sources: Record<string, string> = {},
-  localRoot = repo
+  localRoot = repo,
+  deployment?: DeploymentManifest
 ): void {
   const require = createRequire(join(localRoot, 'package.json'))
   for (const id of Object.keys(sources))
     if (!APPLICATION_CATALOG.some((item) => item.id === id && item.frontend))
       throw new Error(`Неизвестный frontend ${id}`)
+  // Validate every configured ID before filtering out inactive owners.
+  if (deployment) {
+    sources = Object.fromEntries(Object.entries(sources).filter(([id]) => {
+      const frontend = APPLICATION_CATALOG.find(item => item.id === id)!
+      return deployment.applications.some(application =>
+        application.enabled && application.location === 'local' &&
+        (application.id === id || frontend.runtimeDependencies.includes(application.id)))
+    }))
+  }
   app.get<{ Params: { id: string; '*': string } }>(
     '/applications/:id/*',
     async (req, reply) => {

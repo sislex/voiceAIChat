@@ -42,6 +42,6 @@ it('раздаёт отдельный dist и не подменяет отсут
 it('площадка не может назначить путь несуществующему приложению', () => {
   const app = Fastify()
   expect(() =>
-    registerApplicationFrontends(app, { fake: 'http://localhost:8080' })
+    registerApplicationFrontends(app, { fake: 'http://localhost:8080' }, undefined, { coreId: 'test', applications: [] })
   ).toThrow('Неизвестный frontend')
 })
