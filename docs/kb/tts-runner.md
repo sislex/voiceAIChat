@@ -1,7 +1,7 @@
 ---
 title: TTS Runner: ресурсный API, движки и жизненный цикл WAV
 updated: 2026-10-30
-checked: 91f51154
+checked: cbbf27a5
 areas:
   - apps/server/src/tts
   - apps/server/src/tts/client/types.ts
