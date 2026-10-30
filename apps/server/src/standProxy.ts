@@ -105,9 +105,17 @@ export class StandProxy {
   }
   private async forward(lease: Lease, req: IncomingMessage, res?: ServerResponse, socket?: Duplex, head?: Buffer): Promise<void> {
     const deny = (code: number) => { if (res) { res.writeHead(code); res.end() } else socket?.end('HTTP/1.1 ' + code + ' Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n') }
-    let user: string | null = null
-    try { user = req.headers.cookie ? await this.deps.session(req.headers.cookie) : null } catch {}
-    if (this.closed || lease.expiresAt <= this.now() || user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
+    const path = (req.url ?? '').split('?')[0]!
+    const publicArtifact = !!res && (req.method === 'GET' || req.method === 'HEAD') &&
+      /^\/applications\/[a-z][a-z0-9-]+\/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$/.test(path) &&
+      !path.split('/').some(part => part === '.' || part === '..')
+    if (this.closed || lease.expiresAt <= this.now()) return deny(401)
+    if (!publicArtifact) {
+      let user: string | null = null
+      try { user = req.headers.cookie ? await this.deps.session(req.headers.cookie) : null } catch {}
+      if (user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
+    }
+    if (this.closed || lease.expiresAt <= this.now()) return deny(401)
     if (res?.destroyed || socket?.destroyed) return
     lease.expiresAt = this.now() + IDLE_MS
     if (res && lease.inject === 'make-inspector' && this.deps.inspectorScript && (req.method === 'GET' || req.method === 'HEAD') && (req.url ?? '').split('?')[0] === INSPECTOR_SCRIPT_PATH) {
@@ -122,7 +130,8 @@ export class StandProxy {
     let tunnel: Duplex
     try { tunnel = this.deps.connect(lease.machineId, lease.gatewayPort) } catch { return deny(502) }
     lease.sockets.add(tunnel); tunnel.once('close', () => lease.sockets.delete(tunnel))
-    const upstream = request({ hostname: '127.0.0.1', port: lease.gatewayPort, method: req.method, path: req.url, headers: standHeaders(req.headers, lease.key, lease.origin, lease.gatewayPort), createConnection: () => tunnel })
+    const requestHeaders = publicArtifact ? { ...req.headers, cookie: undefined } : req.headers
+    const upstream = request({ hostname: '127.0.0.1', port: lease.gatewayPort, method: req.method, path: req.url, headers: standHeaders(requestHeaders, lease.key, lease.origin, lease.gatewayPort), createConnection: () => tunnel })
     const touch = () => { lease.expiresAt = this.now() + IDLE_MS }
     tunnel.on('data', touch)
     req.on('data', touch)

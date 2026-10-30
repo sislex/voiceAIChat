@@ -58,6 +58,60 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it('serves public application artifacts without credentials only on live leases', async () => {
+    const seen: Array<{ method?: string; url?: string; cookie?: string }> = []
+    const gateway = createServer((req, res) => {
+      seen.push({ method: req.method, url: req.url, cookie: req.headers.cookie })
+      res.setHeader('set-cookie', 'vc_session=stand; Path=/')
+      res.end('artifact')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const d = deps()
+    const tunnel = vi.fn(() => connect(ports[3]!, '127.0.0.1'))
+    let now = 1000
+    const proxy = new StandProxy({ ...d, connect: tunnel, now: () => now })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1')
+    d.member.mockClear()
+    // Use raw request paths so dot segments are not normalized by fetch/URL.
+    const send = (method: string, path: string, cookie?: string) => new Promise<{ status: number; cookie?: string }>((resolve, reject) => {
+      const req = request({ hostname: '127.0.0.1', port: ports[0], method, path,
+        headers: { connection: 'close', ...(cookie ? { cookie } : {}) } }, res => {
+        res.resume()
+        res.on('end', () => resolve({ status: res.statusCode!, cookie: res.headers['set-cookie']?.[0]?.split(';')[0] }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    const first = await send('GET', '/applications/make-ui/manifest.json')
+    expect(first.status).toBe(200)
+    expect(first.cookie).toMatch(/^sxs_[a-f0-9]+_vc_session=stand$/)
+    expect((await send('HEAD', '/applications/make-ui/assets/app.js?v=1')).status).toBe(200)
+    expect((await send('GET', '/applications/make-ui/app.css', 'vc_session=alice; ' + first.cookie)).status).toBe(200)
+    expect(seen).toEqual([
+      { method: 'GET', url: '/applications/make-ui/manifest.json', cookie: undefined },
+      { method: 'HEAD', url: '/applications/make-ui/assets/app.js?v=1', cookie: undefined },
+      { method: 'GET', url: '/applications/make-ui/app.css', cookie: undefined }
+    ])
+    expect(d.session).not.toHaveBeenCalled()
+    expect(d.member).not.toHaveBeenCalled()
+    for (const [method, path] of [
+      ['GET', '/api/settings'],
+      ['POST', '/applications/make-ui/manifest.json'],
+      ['GET', '/applications/x/../api'],
+      ['GET', '/applications/make-ui/../api'],
+      ['GET', '/applications/make-ui/assets/./app.js'],
+      ['GET', '/applications/make-ui/%2e%2e/api'],
+      ['GET', '/applications/make-ui/assets%2fapp.js'],
+      ['GET', '/applications/Make-ui/manifest.json']
+    ]) expect((await send(method!, path!)).status).toBe(401)
+    expect(tunnel).toHaveBeenCalledTimes(3)
+    now = lease.expiresAt
+    expect((await send('GET', '/applications/make-ui/manifest.json')).status).toBe(401)
+    expect(tunnel).toHaveBeenCalledTimes(3)
+  })
+
   it.each([undefined, 'make-inspector'] as const)('keeps working leases for each request hostname with injection %s', async inject => {
     const gateway = createServer((_req, res) => res.end('stand preview'))
     await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 4e0952cd
+checked: d1cc9cc3
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1143,8 +1143,19 @@ origin and reuse key, so different request hosts still share the same lease.
 Each hostname-specific lease consumes a pool port. The disabled or exhausted pool returns HTTP 503 with
 `stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
 deadline; expiry and Core shutdown close listeners and all their connections.
-Every HTTP request and WebSocket upgrade checks the current cookie session
-against the lease owner and rechecks project membership before opening a tunnel.
+HTTP GET/HEAD requests for public application frontend artifacts bypass session
+and membership checks, but still require a live, unexpired lease. The raw path
+without its query must match the following expression and contain no `.` or `..`
+segments:
+
+```regex
+^/applications/[a-z][a-z0-9-]+/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$
+```
+
+These requests forward no cookies, including lease-prefixed stand cookies.
+This supports credential-free manifest and SRI asset loading inside stand previews.
+Every other HTTP request and every WebSocket upgrade checks the current cookie
+session against the lease owner and rechecks project membership before opening a tunnel.
 
 Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
 upstream, with the prefix removed. Response Set-Cookie names receive the prefix
