@@ -225,13 +225,14 @@ describe('stand proxy listeners', () => {
     await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
     cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
     const inspectorScript = vi.fn(async (cookie: string) => ({ statusCode: 200, headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' }, body: Buffer.from('window.__inspector=' + JSON.stringify(cookie)) }))
-    const proxy = new StandProxy({ ...deps(), publicScheme, ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript })
+    const previewInspectorScript = vi.fn(async (parentOrigin: string) => ({ statusCode: 200, headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=300' }, body: Buffer.from('window.parentOrigin=' + JSON.stringify(parentOrigin)) }))
+    const proxy = new StandProxy({ ...deps(), publicScheme, ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript, previewInspectorScript })
     cleanup.push(() => proxy.close())
     const ordinary = await proxy.access('alice', 'p', 's', '127.0.0.1')
-    const opted = await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })
+    const opted = await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject: 'make-inspector' })
     expect(opted.url).not.toBe(ordinary.url)
     expect(opted.url).toBe(publicScheme + '://127.0.0.1:' + ports[1] + '/')
-    expect((await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
+    expect((await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
     const read = (base: string, path: string) => new Promise<{ body: Buffer; headers: import('node:http').IncomingHttpHeaders; status: number | undefined }>((resolve, reject) => {
       // Caddy terminates TLS; the Core listener receives HTTP with an unrelated Host.
       const req = request(new URL(path, base.replace(/^https:/, 'http:')), { agent: false, headers: { cookie: 'vc_session=alice', host: 'incoming.example:24016' } }, res => {
@@ -244,7 +245,8 @@ describe('stand proxy listeners', () => {
     for (const path of ['/', '/gzip', '/br', '/deflate', '/body', '/chunked']) {
       const result = await read(opted.url, path)
       expect(result.headers['transfer-encoding']).toBeUndefined()
-      const script = '<script src="' + opted.url + 'api/make/inspector.js" data-vc-make-inspector></script>'
+      const script = '<script src="' + opted.url + 'api/make/inspector.js" data-vc-make-inspector></script>' +
+        '<script src="' + opted.url + '__sislexa/preview-inspector.js"></script>'
       expect(result.body.toString()).toBe(path === '/body' ? '<body class="app">' + script + 'hello</body>' : html.replace('</head>', script + '</head>'))
       expect(result.status).toBe(200)
       expect(result.headers['content-length']).toBe(String(result.body.length))
@@ -265,6 +267,14 @@ describe('stand proxy listeners', () => {
     expect(served.headers['cache-control']).toBe('public, max-age=300')
     expect(served.headers['content-length']).toBe(String(served.body.length))
     expect(inspectorScript).toHaveBeenCalledTimes(1)
+    const executor = await read(opted.url, '/__sislexa/preview-inspector.js?parentOrigin=https://forged.example')
+    expect(executor.status).toBe(200)
+    expect(executor.body.toString()).toBe('window.parentOrigin=' + JSON.stringify(publicScheme + '://127.0.0.1:25273'))
+    expect(executor.headers['cache-control']).toBe('no-store')
+    expect(executor.headers['content-type']).toBe('text/javascript')
+    expect(previewInspectorScript).toHaveBeenCalledWith(publicScheme + '://127.0.0.1:25273')
+    expect((await read(ordinary.url, '/__sislexa/preview-inspector.js')).body.toString()).toBe(html)
+    expect(previewInspectorScript).toHaveBeenCalledTimes(1)
     const plain = await read(ordinary.url, '/api/make/inspector.js')
     expect(plain.body.toString()).toBe(html)
     expect(inspectorScript).toHaveBeenCalledTimes(1)

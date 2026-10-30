@@ -976,9 +976,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
     let previewMcpUrl: string | undefined
-    let previewSurface: 'panel' | 'chromium' | undefined
-    // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
-    // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
+    let previewSurface: 'panel' | 'chromium' | 'make-preview' | undefined
     // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
     const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
     const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
@@ -986,7 +984,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
-    // The Make turn acts on the bound reader conversation, never on the Make chat itself.
+    if (!req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
+      previewSurface = 'make-preview'
+      prompt += '\n\n' + [
+        '## Превью Make (make-preview)',
+        'Инструменты mcp__browser__* выполняют действия в открытом превью пользователя в панели Make. Пользователь видит каждое действие.',
+        'Сначала вызови browser_capabilities и используй только поддерживаемые действия. Для визуальной проверки используй screenshot, если он поддерживается, иначе read.',
+        'Ошибка make_preview_closed означает, что нужно попросить пользователя открыть превью Make.',
+        'Файлы проекта меняй только инструментами make_*.'
+      ].join('\n')
+    }
+    // A bound Make browser keeps priority and uses the reader conversation.
     const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
     if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
       previewMcpUrl = externalMakeBrowser

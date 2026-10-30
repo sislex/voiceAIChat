@@ -1704,12 +1704,18 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
-  it('без Make-сессии браузер в ход Make не подключается', async () => {
+  it('Make without a bound browser gets tools for its own visible preview', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make'); const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tokens() })
     await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
-    expect(rec.last()?.previewMcpUrl).toBeUndefined()
-    expect(rec.last()?.prompt).not.toContain('## Браузер Make')
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${make.id}`)}`)
+    expect(rec.last()?.previewSurface).toBe('make-preview')
+    expect(rec.last()?.prompt).toContain('## Превью Make (make-preview)')
+    expect(rec.last()?.prompt).toContain('Пользователь видит каждое действие')
+    expect(rec.last()?.prompt).toContain('browser_capabilities')
+    expect(rec.last()?.prompt).toContain('make_preview_closed')
+    expect(rec.last()?.prompt).toContain('screenshot')
+    expect(rec.last()?.prompt).toContain('иначе read')
     await turns.idle()
     db.close()
   })

@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 08d00a08
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -43,6 +43,20 @@ Chromium, иначе `panel`. Движок меняется переключен
 Для работы без открытой панели нужен движок Chromium.
 
 ## Scoped Make execution
+
+Without a bound browser, non-delegated Make turns receive the Core preview MCP
+URL with a signed token for the Make conversation itself and
+`previewSurface: 'make-preview'`. The prompt says actions are visible in the
+user's open Make preview, requires `browser_capabilities` first, recommends
+`screenshot` when supported and `read` otherwise, and treats
+`make_preview_closed` as a request to open the preview. A bound Reader browser
+retains priority and its capability checks; no Make preview fallback replaces
+an unavailable bound browser.
+
+Core's session subscribes each user's sockets to the preview relay and forwards
+`preview.result` with its conversation ID. The Reader Core bridge preserves
+the Make conversation ID on actions and translates relay disconnect/timeout
+errors for Make into `make_preview_closed` with an instruction to open Make.
 
 Browser binding is independent of machine selection. Make uses only an explicitly
 configured conversation `execTarget` and `workdir`; no implicit project-machine

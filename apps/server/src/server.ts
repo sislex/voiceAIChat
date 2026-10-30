@@ -700,6 +700,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
       return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
     },
+    previewInspectorScript: async parentOrigin => {
+      const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin) })
+      return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
+    },
     stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
   })
   registerStandProxy(app, standProxy, standSession)
@@ -1755,7 +1759,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       authStatus,
       preview: {
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
-        resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
+        resolve: (userId, requestId, outcome, conversationId) => previewRelay.resolve(userId, requestId, outcome, conversationId)
       },
       make: { subscribe: (userId, sink) => make.service.subscribe(userId, sink) },
       widgetUi: {

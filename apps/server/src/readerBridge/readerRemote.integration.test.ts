@@ -144,19 +144,32 @@ describe('ядро (reader remote) + отдельный процесс Web Reade
     expect(machineRequests.length).toBe(count)
   })
 
-  it('MCP «browser»: подписанный токен из другого процесса принят; действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии', async () => {
-    // Токен выдан «в процессе канбана» — другой экземпляр с тем же секретом.
-    const turn = createPreviewTurnTokens(MCP).issue({ userId: 'ann', conversationId })
+  it.each(['chat', 'make'] as const)('MCP browser routes %s conversation actions through Core sockets', async kind => {
+    const targetId = kind === 'make' ? (await db.chat.createConversation('ann', 'Make preview', 'make')).id : conversationId
+    const turn = createPreviewTurnTokens(MCP).issue({ userId: 'ann', conversationId: targetId })
     // Без подключённого клиента relay ядра отвечает отказом — ответ пришёл из ядра по RPC.
     const offline = await callTool(readerUrl, turn, 'read')
     expect(offline.isError).toBe(true)
-    expect(offline.text).toContain('не подключена')
+    expect(offline.text).toContain(kind === 'make' ? 'make_preview_closed' : 'не подключена')
     // Клиент ядра онлайн: отвечает на preview.action — результат возвращается модели через ридер.
     const ws = await connect(coreUrl, annToken)
     try {
+      if (kind === 'make') {
+        // A connected client with no handler must not leave the model waiting indefinitely.
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const response = await fetch(coreUrl + INTERNAL_READER_CORE_PATH, {
+          method: 'POST', headers: { ...json, authorization: `Bearer ${INTERNAL}` },
+          body: JSON.stringify({ method: 'previewAction', args: ['ann', targetId, { kind: 'read' }, 20] })
+        })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ result: { ok: false, error: expect.stringContaining('make_preview_closed') } })
+      }
       ws.on('message', (data: Buffer) => {
         const m = JSON.parse(data.toString()) as ServerMessage
-        if (m.t === 'preview.action') ws.send(JSON.stringify({ t: 'preview.result', conversationId: m.conversationId, requestId: m.requestId, ok: true, result: { url: 'https://a.b/', title: 'Панель' } }))
+        if (m.t === 'preview.action') {
+          expect(m.conversationId).toBe(targetId)
+          ws.send(JSON.stringify({ t: 'preview.result', conversationId: m.conversationId, requestId: m.requestId, ok: true, result: { url: 'https://a.b/', title: 'Панель' } }))
+        }
       })
       await new Promise((r) => setTimeout(r, 100))
       const viaCore = await callTool(coreUrl, turn, 'read')

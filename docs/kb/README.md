@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1353. Последние:
+Всего записей: 1354. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
@@ -72,10 +72,10 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md) — make-preview-core
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md) — frontend-owner-overrides-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md) — application-frontend-deployment-sources
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
-- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 
 ## Исторические планы
 

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 08d00a08
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1192,11 +1192,18 @@ The injection mode is stored on the lease and included in its reuse key, so
 ordinary callers retain separate, unmodified leases. The public access route
 does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
 responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
-`</head>` (or after the opening `<body>`). Its URL uses the incoming request's
-Host and socket scheme: `/api/make/inspector.js`. On injected leases the proxy answers
+`</head>` (or after the opening `<body>`). Its URL uses the lease's configured origin and the path
+`/api/make/inspector.js`, including behind TLS termination. On injected leases the proxy answers
 `GET /api/make/inspector.js` itself through `deps.inspectorScript` (Core injects its own
 route with the caller's cookie), so the stand's Core version never has to serve it;
-ordinary leases forward that path to the stand. Rewritten responses receive a
+ordinary leases forward that path to the stand. Inspector-enabled leases also
+inject `<script src="<lease origin>/__sislexa/preview-inspector.js"></script>`.
+Core serves that path through its Reader proxy at
+`/api/preview/inspector.js?parentOrigin=<encoded lease parent origin>` and forces
+`Cache-Control: no-store`. The saved parent origin, including its port, is used
+instead of the script request Host or query parameters. Both scripts must pass
+the HTML helper's CSP checks before the response is rewritten.
+Rewritten responses receive a
 byte-accurate Content-Length; Content-Encoding and stale entity validators are
 removed. Enforced CSP must allow the script; restrictive or unrecognized source
 policies and documents with CSP meta tags are left untouched. Non-HTML bodies,

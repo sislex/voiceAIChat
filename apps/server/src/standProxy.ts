@@ -72,9 +72,11 @@ export interface StandProxyDeps {
   connect(machine: string, port: number): Duplex
   /** Serves the Make inspector script on injected leases so the stand itself never has to know the route. */
   inspectorScript?(cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
+  previewInspectorScript?(parentOrigin: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
   now?: () => number
 }
 const INSPECTOR_SCRIPT_PATH = '/api/make/inspector.js'
+const PREVIEW_INSPECTOR_SCRIPT_PATH = '/__sislexa/preview-inspector.js'
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
 
 export class StandProxy {
@@ -151,6 +153,15 @@ export class StandProxy {
       res.end(req.method === 'HEAD' ? undefined : script.body)
       return
     }
+    if (res && lease.inject === 'make-inspector' && path === PREVIEW_INSPECTOR_SCRIPT_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
+      if (!this.deps.previewInspectorScript) return deny(502)
+      let script: { statusCode: number; headers: Record<string, string>; body: Buffer }
+      try { script = await this.deps.previewInspectorScript(lease.parentOrigin) } catch { return deny(502) }
+      if (res.destroyed) return
+      res.writeHead(script.statusCode, { ...script.headers, 'cache-control': 'no-store', 'content-length': String(script.body.length) })
+      res.end(req.method === 'HEAD' ? undefined : script.body)
+      return
+    }
     let tunnel: Duplex
     try { tunnel = this.deps.connect(lease.machineId, lease.gatewayPort) } catch { return deny(502) }
     lease.sockets.add(tunnel); tunnel.once('close', () => lease.sockets.delete(tunnel))
@@ -172,7 +183,7 @@ export class StandProxy {
             const chunks: Buffer[] = []
             for await (const chunk of response) chunks.push(Buffer.from(chunk))
             const original = Buffer.concat(chunks)
-            const rewritten = await injectInspectorHtml(original, headers, scriptUrl)
+            const rewritten = await injectInspectorHtml(original, headers, scriptUrl, [lease.origin + PREVIEW_INSPECTOR_SCRIPT_PATH])
             if (res.destroyed) return
             if (rewritten) {
               headers['content-length'] = String(rewritten.length)
