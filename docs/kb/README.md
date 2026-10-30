@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1355. Последние:
+Всего записей: 1356. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
@@ -72,10 +72,10 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md) — make-preview-kb-verify
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md) — make-preview-kb-reconciliation
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md) — make-preview-core
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md) — frontend-owner-overrides-kb
-- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md) — application-frontend-deployment-sources
 
 ## Исторические планы
 
