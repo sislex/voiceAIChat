@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-10-30 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-30 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-29 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ⚠ 1 коммит(ов) в areas после сверки: 883a572a chore(kb-tools): release 0.1.1 |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-10-30 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1351. Последние:
+Всего записей: 1353. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
@@ -72,10 +72,10 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md) — frontend-owner-overrides-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md) — application-frontend-deployment-sources
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
-- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
 
 ## Исторические планы
 

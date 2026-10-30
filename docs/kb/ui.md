@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-10-30
-checked: 49ed3138
+checked: 441398b7
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -116,11 +116,11 @@ In development, Core resolves the installed owner frontend artifacts.
 source editing and HMR run in the corresponding owner repository. На площадке
 `VC_APPLICATION_FRONTENDS` — JSON-карта id → URL своих статических контейнеров;
 ядро раздаёт их через тот же `/applications` gateway.
-Core validates every configured frontend ID before filtering sources; unknown IDs
-throw even when no deployment application is enabled. An override is retained
-when the frontend ID itself or an owning application listed in its
-`APPLICATION_CATALOG.runtimeDependencies` is enabled and local in the deployment.
-Thus `make-ui` follows `make`, `web-reader-ui` follows `web-reader`,
+Core validates every configured frontend ID against `APPLICATION_CATALOG` before
+filtering sources, so an unknown ID throws even when no deployment application is
+enabled. An override is retained when the frontend ID itself or an application
+listed in that frontend's `runtimeDependencies` is enabled and local in the
+deployment. Thus `make-ui` follows `make`, `web-reader-ui` follows `web-reader`,
 `playwright-reader-ui` follows `playwright-reader`, and `image-studio-ui` follows
 `image-studio`. Disabled or external owners do not activate these source overrides.
 The registration and manifest proxy behavior is covered by
