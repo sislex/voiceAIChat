@@ -13,7 +13,7 @@
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-30 | ✓ |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-30 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-30 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-29 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-30 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-29 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-30 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-30 | ✓ |
@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1360. Последние:
+Всего записей: 1361. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md) — stand-proxy-stable-cookie-keys
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
