@@ -411,7 +411,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:e0ff32cee8ee80da2953bbfe71c982ecec563cd5}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:93f6b3481c01461d87468de9764d82c9a241bde6}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
