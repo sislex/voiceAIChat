@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-30
-checked: 7eea67be
+checked: 91f51154
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -3300,6 +3300,12 @@ enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
 optional hostname override, otherwise Core uses the access request's Host
 (without its original port). Keep this hostname equal to the browser's Core
 hostname so its session cookie reaches the listener.
+
+Stand cookie prefixes survive Core restarts when the existing session signing
+secret and lease identity are preserved. Core uses its persistent session secret
+for the lease-key HMAC; no additional environment secret is required. Listener
+port reassignment does not change the cookie namespace. Secret rotation does.
+See [stand proxy cookie identity](server-internals.md#dev-stand-access-proxy).
 
 `VC_STAND_PROXY_PUBLIC_SCHEME` accepts `http` or `https`; by default it follows
 the protocol of `VC_PUBLIC_URL`, falling back to `http` when that URL is absent.

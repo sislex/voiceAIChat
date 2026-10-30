@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-30
-checked: 7eea67be
+checked: 91f51154
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -803,6 +803,12 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 `apps/server/src/users/passwords.ts`.
 
 ## Сессии и авторизация запросов
+
+Core also supplies its existing session signing secret to the dev stand proxy.
+The proxy derives stable cookie namespace keys with HMAC-SHA256, allowing a
+recreated lease to recognize existing stand cookies after a Core restart.
+This does not replace session authentication or project membership checks.
+See [stand proxy cookie identity](server-internals.md#dev-stand-access-proxy).
 
 `POST /api/session/login` → подписанный токен (секрет — `<dataDir>` файл, либо
 эфемерный; в тестах инъектируется `sessionSecret`). Клиент шлёт
