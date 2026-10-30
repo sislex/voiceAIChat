@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-30
-checked: 68d5e9a4
+checked: 78f28530
 areas:
   - docs/kb/modules.md
   - packages/knowledge/src

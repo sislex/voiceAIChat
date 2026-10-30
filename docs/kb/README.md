@@ -27,7 +27,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-10-30 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-30 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-29 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ⚠ 1 коммит(ов) в areas после сверки: 883a572a chore(kb-tools): release 0.1.1 |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-10-30 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
@@ -38,13 +38,13 @@
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-30 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-30 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-30 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-29 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-30 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-29 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-30 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-30 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-30 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-29 | ✓ |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-30 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-30 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-30 | ✓ |
@@ -64,7 +64,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1354. Последние:
+Всего записей: 1355. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
@@ -72,10 +72,10 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md) — make-preview-kb-reconciliation
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md) — make-preview-core
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-frontend-owner-overrides-kb.md) — frontend-owner-overrides-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-application-frontend-deployment-sources.md) — application-frontend-deployment-sources
-- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
 
 ## Исторические планы
 

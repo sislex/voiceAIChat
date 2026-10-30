@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 78f28530
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts

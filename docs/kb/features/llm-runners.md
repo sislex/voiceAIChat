@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 78f28530
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
@@ -96,6 +96,12 @@ Compose по умолчанию направляет Claude и Codex в `runner-
 `LlmRunnerHealth`, пути `LLM_RUNNER` и заголовок `x-run-id`. Туда же ушёл
 `kbToolHint`: системный хинт про `mcp__kb__*` попадает в argv, а argv собирает
 исполнитель.
+
+Core's `RemoteLlmClient` spreads the complete `LlmRequest` into the
+`/v1/run` body, including `previewMcpUrl` and `previewSurface`.
+The surface union now includes `make-preview` for the user's open Make iframe.
+Core assembles the Make-specific capability/closed-preview instructions in
+`turns.ts`; bound Reader sessions retain `panel`/`chromium`.
 
 ## Исполнитель ничего не разбирает
 

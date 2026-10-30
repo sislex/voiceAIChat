@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 78f28530
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 78f28530
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -773,6 +773,16 @@ Relay хранит у pending-запроса `userId`, `conversationId` и `requ
 может только панель текущего Reader-маршрута, чей id записан активным для вкладки в
 `localStorage` (фокус вкладки обновляет claim). Ответ несёт conversation/registration
 контекст, поэтому одинаково подключённые вкладки не подменяют активный Web Reader.
+
+The same wire messages also carry actions for Make conversations:
+Core issues the preview MCP token for that Make conversation and labels the
+LLM request `previewSurface: 'make-preview'`. `server.ts` forwards the optional
+`conversationId` from session results into `PreviewActionRelay.resolve`, so
+a supplied mismatching conversation cannot settle the request. The Reader Core
+bridge maps disconnected or timed-out Make relay requests to
+`make_preview_closed`. The Reader-specific active-panel rules above describe
+Reader UI; Make panel handler registration belongs to the independent Make/Core
+UI owners. See [Make routing](features/make-browser.md#scoped-make-execution).
 
 Самодиагностика из `packages/ui/src/webReaderDiagnostics.ts` выполняет один
 последовательный сценарий на same-origin `/api/preview/diagnostics`. Страница

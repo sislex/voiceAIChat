@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-10-30
+checked: 78f28530
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,11 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Current additive contracts
+
+`LlmRequest.previewSurface` accepts `panel | chromium | make-preview`.
+The additive `make-preview` value identifies the user's open Make iframe;
+its `previewMcpUrl` token addresses the Make conversation. A bound browser
+continues to use the Reader conversation and `panel` or `chromium`.
 
 `ConversationSummary.source` is optional (`model | fallback`). Thread reset
 persists `fallback` when model summarization is unavailable or leaves uncovered

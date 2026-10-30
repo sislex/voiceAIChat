@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-30
-checked: 2f8053a1
+checked: 78f28530
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -677,6 +677,14 @@ Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/
 клиентам по WS (`preview.action`/`preview.result`) и ждёт ответ, исполняет его
 браузер с активным чатом хода. Module details: `web-reader:README.md`.
 
+For non-delegated Make turns without a bound browser, `turns.ts` issues
+`previewMcpUrl` for the Make conversation itself and sets
+`previewSurface: 'make-preview'`. The prompt explicitly targets the user's
+open Make panel, requires `browser_capabilities` first and uses `screenshot`
+when supported, otherwise `read`. `make_preview_closed` asks the user to open
+that preview. Bound Reader browsers keep their own conversation token and
+`panel`/`chromium` surface. See [Make browser routing](features/make-browser.md#scoped-make-execution).
+
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
 в CI-ране. Ран берёт режим не у чата, а у проекта (`ci_kb_context_mode`) и
@@ -911,7 +919,7 @@ details («встроенный запуск CLI на сервере», когд
 
 **Инструменты модели зависят от вида чата, и список должен это отражать.**
 Кроме `mcp__remote__*` (машина) и `mcp__kb__*` (база знаний) ход подключает
-`mcp__browser__*` в чатах с превью (кроме Make), `mcp__console__*` в «Консоли с
+`mcp__browser__*` в чатах с превью (включая Make), `mcp__console__*` в «Консоли с
 ассистентом», `mcp__make__*` в Make и `mcp__kanban__*` в ходах панели
 ассистента. В снимке это пункты `mcp-browser-preview`, `mcp-console-pty`,
 `mcp-make-files`, `mcp-kanban-board` с замком причины `kind`
