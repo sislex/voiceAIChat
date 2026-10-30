@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: ef91cbd0
+checked: 87065968
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1164,6 +1164,18 @@ headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
 to the leased proxy origin becomes the gateway origin, while foreign origins
 remain unchanged. SSE responses stream without buffering and WebSocket upgrades
 retain their initial bytes in both directions.
+
+Each lease remembers the Core parent origin at creation: the lease scheme plus
+the request Host passed to `access()`, including its port. Reusing a lease keeps
+that original parent. Forwarded enforced CSP `frame-ancestors` directives gain
+the parent and lease origins, including every policy in multiple or comma-joined
+headers. This permits nested Make previews when the outer Core page and the stand
+use different ports; browsers check every ancestor, not just the immediate frame.
+Directives containing `'none'` stay unchanged. `X-Frame-Options: SAMEORIGIN`
+is removed when enforced CSP already has `frame-ancestors`; otherwise it is
+replaced by an additional CSP policy `frame-ancestors 'self' <parent> <lease>`.
+Other directives, report-only CSP and other X-Frame-Options values are preserved.
+Responses without framing headers receive no new policy.
 
 Internal callers can opt in with
 `standProxy.access(user, project, stand, host, port?, { inject: 'make-inspector' })`.

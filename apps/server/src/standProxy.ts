@@ -35,9 +35,33 @@ export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: 
 export function standCookies(cookies: string[] | undefined, key: string): string[] | undefined {
   return cookies?.map(cookie => 'sxs_' + key + '_' + cookie.split(';').filter((part, i) => i === 0 || !/^\s*domain\s*=/i.test(part)).join(';'))
 }
+// CSP applies to the entire ancestor chain, including the Core page outside the lease.
+export function standFrameHeaders(headers: IncomingHttpHeaders, parentOrigin: string, origin: string): IncomingHttpHeaders {
+  const result = { ...headers }
+  let hasFrameAncestors = false
+  const rewrite = (value: string) => value.replace(/(^|[;,])(\s*frame-ancestors)(?=\s|;|,|$)([^;,]*)/gi, (directive, separator: string, name: string, sources: string) => {
+    hasFrameAncestors = true
+    const tokens = sources.trim().split(/\s+/)
+    if (tokens.some(token => token.toLowerCase() === "'none'")) return directive
+    const additions = [...new Set([parentOrigin, origin])].filter(source => !tokens.includes(source))
+    return separator + name + sources.trimEnd() + (additions.length ? ' ' + additions.join(' ') : '')
+  })
+  const csp = result['content-security-policy']
+  if (Array.isArray(csp)) result['content-security-policy'] = csp.map(rewrite)
+  else if (csp !== undefined) result['content-security-policy'] = rewrite(csp)
+  const xfo = result['x-frame-options']
+  if (typeof xfo === 'string' && xfo.trim().toUpperCase() === 'SAMEORIGIN') {
+    delete result['x-frame-options']
+    if (!hasFrameAncestors) {
+      const policy = "frame-ancestors 'self' " + [...new Set([parentOrigin, origin])].join(' ')
+      result['content-security-policy'] = csp === undefined ? policy : [...(Array.isArray(csp) ? csp : [csp]), policy]
+    }
+  }
+  return result
+}
 type Target = { machineId: string; gatewayPort: number }
 export type StandProxyAccessOptions = { inject?: 'make-inspector' }
-type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; server: Server; sockets: Set<Duplex> }
+type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; parentOrigin: string; server: Server; sockets: Set<Duplex> }
 export interface StandProxyDeps {
   ports: number[]
   publicHost?: string
@@ -85,7 +109,7 @@ export class StandProxy {
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()
-          const candidate: Lease = { ...target, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
+          const candidate: Lease = { ...target, parentOrigin: new URL((this.deps.publicScheme ?? 'http') + '://' + host).origin, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
           server.on('connection', socket => { candidate.sockets.add(socket); socket.on('close', () => candidate.sockets.delete(socket)) })
           server.on('request', (req, res) => { void this.forward(candidate, req, res).catch(() => res.destroy()) })
           server.on('upgrade', (req, socket, head) => {
@@ -138,7 +162,7 @@ export class StandProxy {
     upstream.on('error', () => { tunnel.destroy(); if (res && !res.headersSent) deny(502); else { res?.destroy(); socket?.destroy() } })
     upstream.on('response', response => {
       response.on('error', () => { res?.destroy(); socket?.destroy(); tunnel.destroy() })
-      const headers = { ...response.headers }
+      const headers = standFrameHeaders(response.headers, lease.parentOrigin, lease.origin)
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
       if (res) {
         res.on('close', () => { response.destroy(); tunnel.destroy() })
@@ -167,7 +191,7 @@ export class StandProxy {
     })
     upstream.on('upgrade', (response, remote, remoteHead) => {
       if (!socket) { remote.destroy(); return }
-      const headers = { ...response.headers }
+      const headers = standFrameHeaders(response.headers, lease.parentOrigin, lease.origin)
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
       socket.write('HTTP/1.1 101 Switching Protocols\r\n' + Object.entries(headers).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).filter(v => v !== undefined).map(v => k + ': ' + v + '\r\n')).join('') + '\r\n')
       if (remoteHead.length) socket.write(remoteHead)

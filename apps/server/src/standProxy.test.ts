@@ -7,7 +7,7 @@ import { WebSocket, WebSocketServer } from 'ws'
 import Fastify from 'fastify'
 import { AgentRegistry } from './agents/registry.js'
 import { AGENT_VERSION } from '@sislexa/agent-contracts'
-import { IDLE_MS, StandProxy, proxyPorts, registerStandProxy, standCookies, standHeaders } from './standProxy.js'
+import { IDLE_MS, StandProxy, proxyPorts, registerStandProxy, standCookies, standHeaders, standFrameHeaders } from './standProxy.js'
 
 const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24016', '24017', '24018', '24019']).map(Number)
 const cleanup: Array<() => Promise<unknown> | unknown> = []
@@ -18,6 +18,24 @@ function deps() {
     connect: vi.fn(() => { throw new Error('No tunnel') }) }
 }
 describe('stand proxy policy', () => {
+  it('rewrites every CSP policy while preserving explicit denial and unrelated headers', () => {
+    const parent = 'http://127.0.0.1:25273', lease = 'http://127.0.0.1:28810'
+    const allowed = "frame-ancestors 'self' " + parent + ' ' + lease
+    const headers = {
+      'content-security-policy': ["default-src 'self'; frame-ancestors 'self'", "frame-ancestors 'none', frame-ancestors 'self'; img-src *"],
+      'x-frame-options': 'SAMEORIGIN',
+      'content-security-policy-report-only': "frame-ancestors 'none'",
+    }
+    expect(standFrameHeaders(headers, parent, lease)).toEqual({
+      'content-security-policy': ["default-src 'self'; " + allowed, "frame-ancestors 'none', " + allowed + '; img-src *'],
+      'content-security-policy-report-only': "frame-ancestors 'none'",
+    })
+    expect(headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(standFrameHeaders({ 'content-security-policy': allowed }, parent, lease)['content-security-policy']).toBe(allowed)
+    expect(standFrameHeaders({ 'x-frame-options': 'DENY' }, parent, lease)).toEqual({ 'x-frame-options': 'DENY' })
+    expect(standFrameHeaders({ 'content-security-policy': "default-src 'self'" }, parent, lease)).toEqual({ 'content-security-policy': "default-src 'self'" })
+  })
+
   it.each([1023, 65536, 6006.5, '6006', null])('rejects invalid target port %s at the route', async port => {
     const d = deps(); const proxy = new StandProxy(d)
     const app = Fastify(); registerStandProxy(app, proxy, d.session); cleanup.push(() => app.close())
@@ -58,6 +76,41 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it.each(['http', 'https'] as const)('allows the Core ancestor through %s leases without weakening explicit denial', async publicScheme => {
+    const gateway = createServer((req, res) => {
+      if (req.url === '/self') res.setHeader('content-security-policy', "default-src 'self'; frame-ancestors 'self'")
+      if (req.url === '/none') {
+        res.setHeader('content-security-policy', "frame-ancestors 'none'")
+        res.setHeader('x-frame-options', 'SAMEORIGIN')
+      }
+      if (req.url === '/multiple') res.setHeader('content-security-policy', ["frame-ancestors 'self'", "img-src *; FRAME-ANCESTORS https://trusted.example, frame-ancestors 'self'"])
+      if (req.url === '/xfo' || req.url === '/xfo-csp') res.setHeader('x-frame-options', 'sameorigin')
+      if (req.url === '/xfo-csp') res.setHeader('content-security-policy', "default-src 'self'")
+      res.end('preview')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const proxy = new StandProxy({ ...deps(), publicScheme, connect: () => connect(ports[3]!, '127.0.0.1') })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1:25273')
+    const origins = publicScheme + '://127.0.0.1:25273 ' + new URL(lease.url).origin
+    const allowed = "frame-ancestors 'self' " + origins
+    for (const [path, expected] of [
+      ['/self', "default-src 'self'; " + allowed],
+      ['/none', "frame-ancestors 'none'"],
+      ['/multiple', allowed + ', img-src *; FRAME-ANCESTORS https://trusted.example ' + origins + ', ' + allowed],
+      ['/xfo', allowed],
+      ['/xfo-csp', "default-src 'self', " + allowed],
+      ['/plain', null],
+    ] as const) {
+      // HTTPS leases are terminated outside this HTTP listener; request Host is not the parent.
+      const result = await fetch(lease.url.replace(/^https:/, 'http:') + path.slice(1), { headers: { cookie: 'vc_session=alice', host: 'unrelated.example', connection: 'close' } })
+      expect(result.headers.get('content-security-policy'), path).toBe(expected)
+      expect(result.headers.get('x-frame-options'), path).toBeNull()
+      expect(await result.text()).toBe('preview')
+    }
+  })
+
   it('serves public application artifacts without credentials only on live leases', async () => {
     const seen: Array<{ method?: string; url?: string; cookie?: string }> = []
     const gateway = createServer((req, res) => {
