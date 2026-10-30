@@ -64,18 +64,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1357. Последние:
+Всего записей: 1358. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-frame-ancestors.md) — stand-proxy-frame-ancestors
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-preview-inspector-session.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-preview-inspector-session.md) — stand-preview-inspector-session
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-preview-inspector-auth-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-preview-inspector-auth-kb.md) — stand-preview-inspector-auth-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md) — make-preview-kb-verify
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md) — make-preview-kb-reconciliation
-- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-core.md) — make-preview-core
 
 ## Исторические планы
 
