@@ -12,7 +12,7 @@ export const CI_COMMANDS_MCP_PATH = '/mcp/ci-commands'
 
 /** Всё, что регистрируют роуты кластера и его MCP. Исходники кластера живут в `sislexa-kanban`. */
 export const KANBAN_PROXY_PREFIXES = [
-  '/api/projects', '/api/ci', '/api/qa', '/api/project-types', '/api/widget-tools', '/api/merge', '/api/invitations',
+  '/api/kanban/handoff', '/api/projects', '/api/ci', '/api/qa', '/api/project-types', '/api/widget-tools', '/api/merge', '/api/invitations',
   '/api/improvements', '/api/orchestrations', '/api/task-preparation', '/api/session/invitation', '/api/admin/project-types',
   KANBAN_MCP_PATH, CI_COMMANDS_MCP_PATH
 ] as const

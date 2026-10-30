@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-24
-checked: 556a06ce
+updated: 2026-10-30
+checked: a3af4a30
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -23,6 +23,19 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Operator handoff
+
+Core proxies `/api/kanban/handoff/*` to Kanban. The Kanban owner implements
+signed export/import, journals, task continuation and the transfer coordinator.
+`POST /api/agents/:id/switch-operator` requires an administrator who owns the
+machine and accepts serverUrl, a target-issued machine token and timeoutMs.
+It sends `agent.switchOperator`; AgentRegistry correlates the result by both
+request ID and agent ID, returning switched/failed. Missing support times out
+without claiming a successful switch. The response and audit log omit tokens.
+The caller obtains the target token from the existing target-machine token
+rotation route; handoff does not provision target projects or grant access.
+Runtime installation and production deployment are not part of this protocol.
 
 ## Voice module configuration
 
