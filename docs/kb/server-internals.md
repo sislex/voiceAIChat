@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 2d610322
+checked: db707735
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1200,7 +1200,13 @@ ordinary leases forward that path to the stand. Inspector-enabled leases also
 inject `<script src="<lease origin>/__sislexa/preview-inspector.js"></script>`.
 Core serves that path through its Reader proxy at
 `/api/preview/inspector.js?parentOrigin=<encoded lease parent origin>` and forces
-`Cache-Control: no-store`. The saved parent origin, including its port, is used
+`Cache-Control: no-store`. After authenticating the lease owner, the proxy passes
+both the saved parent origin and the request cookie to `previewInspectorScript`.
+Core forwards that cookie to `app.inject`, because its `/api/preview*` routes
+require a session even when Web Reader serves the script publicly. Non-2xx
+script responses and retrieval exceptions become an empty HTTP 502 response,
+so upstream authorization errors are never served as JavaScript.
+The saved parent origin, including its port, is used
 instead of the script request Host or query parameters. Both scripts must pass
 the HTML helper's CSP checks before the response is rewritten.
 Rewritten responses receive a

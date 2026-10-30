@@ -700,8 +700,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
       return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
     },
-    previewInspectorScript: async parentOrigin => {
-      const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin) })
+    previewInspectorScript: async (parentOrigin, cookie) => {
+      const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin), headers: { cookie } })
       return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
     },
     stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)

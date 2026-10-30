@@ -72,7 +72,7 @@ export interface StandProxyDeps {
   connect(machine: string, port: number): Duplex
   /** Serves the Make inspector script on injected leases so the stand itself never has to know the route. */
   inspectorScript?(cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
-  previewInspectorScript?(parentOrigin: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
+  previewInspectorScript?(parentOrigin: string, cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
   now?: () => number
 }
 const INSPECTOR_SCRIPT_PATH = '/api/make/inspector.js'
@@ -156,7 +156,8 @@ export class StandProxy {
     if (res && lease.inject === 'make-inspector' && path === PREVIEW_INSPECTOR_SCRIPT_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
       if (!this.deps.previewInspectorScript) return deny(502)
       let script: { statusCode: number; headers: Record<string, string>; body: Buffer }
-      try { script = await this.deps.previewInspectorScript(lease.parentOrigin) } catch { return deny(502) }
+      try { script = await this.deps.previewInspectorScript(lease.parentOrigin, req.headers.cookie ?? '') } catch { return deny(502) }
+      if (script.statusCode < 200 || script.statusCode >= 300) return deny(502)
       if (res.destroyed) return
       res.writeHead(script.statusCode, { ...script.headers, 'cache-control': 'no-store', 'content-length': String(script.body.length) })
       res.end(req.method === 'HEAD' ? undefined : script.body)

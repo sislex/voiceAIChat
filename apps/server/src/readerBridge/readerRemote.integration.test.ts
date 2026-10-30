@@ -24,6 +24,31 @@ import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { INTERNAL_READER_CORE_PATH, READER_HEALTH_PATH } from '@voicechat/web-reader-contracts'
 import { buildReaderServer, type ReaderServer } from '@sislexa/web-reader/standalone'
 
+const standProxyDeps = vi.hoisted(() => ({ current: undefined as ConstructorParameters<typeof import('../standProxy.js').StandProxy>[0] | undefined }))
+vi.mock('../standProxy.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../standProxy.js')>()
+  return {
+    ...original,
+    StandProxy: class extends original.StandProxy {
+      constructor(deps: ConstructorParameters<typeof original.StandProxy>[0]) {
+        super(deps)
+        standProxyDeps.current = deps
+      }
+    }
+  }
+})
+
+const inspectorFetch = vi.hoisted(() => vi.fn<typeof fetch>())
+vi.mock('./proxy.js', async importOriginal => {
+  const original = await importOriginal<typeof import('./proxy.js')>()
+  return {
+    ...original,
+    registerReaderProxy: (app: FastifyInstance, opts: Parameters<typeof original.registerReaderProxy>[1]) =>
+      original.registerReaderProxy(app, { ...opts, fetchImpl: (url, init) =>
+        String(url).includes('/api/preview/inspector.js?') ? inspectorFetch(url, init) : fetch(url, init) })
+  }
+})
+
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
 const MCP = 'mcp-secret'
@@ -104,6 +129,25 @@ async function callTool(base: string, turn: string, name: string, args: Record<s
 }
 
 describe('ядро (reader remote) + отдельный процесс Web Reader', () => {
+  it('forwards the lease cookie through Core when fetching the preview inspector from Web Reader', async () => {
+    const script = standProxyDeps.current!.previewInspectorScript!
+    const parentOrigin = 'http://127.0.0.1:25273'
+    const javascript = 'window.previewInspectorReady = true;'
+    inspectorFetch.mockResolvedValue(new Response(javascript, { status: 200, headers: { 'content-type': 'text/javascript' } }))
+    expect((await script(parentOrigin, '')).statusCode).toBe(401)
+    expect(inspectorFetch).not.toHaveBeenCalled()
+    const cookie = 'vc_session=' + annToken
+    const response = await script(parentOrigin, cookie)
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('javascript')
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.body.toString()).toBe(javascript)
+    expect(inspectorFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = inspectorFetch.mock.calls[0]!
+    expect(url).toBe(readerUrl + '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin))
+    expect(new Headers(init!.headers).get('cookie')).toBe(cookie)
+  })
+
   it('app.internal возвращает ресурсы ядра через RPC, сохраняя отдельную авторизацию страницы', async () => {
     const preview = (path: string) => fetch(`${coreUrl}/api/preview?url=${encodeURIComponent('https://app.internal' + path)}`, { headers: annAuth })
     const health = await preview('/api/health')
