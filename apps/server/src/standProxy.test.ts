@@ -13,11 +13,60 @@ const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24016', '24017', '
 const cleanup: Array<() => Promise<unknown> | unknown> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 function deps() {
-  return { ports: [ports[0]!], member: vi.fn(async () => true), stand: vi.fn(async () => ({ machineId: 'm', gatewayPort: ports[3]! })),
+  return { secret: 'stand-proxy-test-secret', ports: [ports[0]!], member: vi.fn(async () => true), stand: vi.fn(async () => ({ machineId: 'm', gatewayPort: ports[3]! })),
     session: vi.fn(async (cookie: string) => cookie.includes('vc_session=alice') ? 'alice' : cookie.includes('vc_session=bob') ? 'bob' : null),
     connect: vi.fn(() => { throw new Error('No tunnel') }) }
 }
 describe('stand proxy policy', () => {
+  it('preserves cookie keys across restarts and isolates every lease identity field and secret', async () => {
+    const gateway = createServer((req, res) => {
+      res.setHeader('set-cookie', 'vc_session=stand; Path=/; HttpOnly')
+      res.end(req.headers.cookie ?? '')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const open = async (overrides: {
+      secret?: string; user?: string; project?: string; stand?: string; host?: string;
+      port?: number; inject?: 'make-inspector'; listener?: number; cookie?: string
+    } = {}) => {
+      const user = overrides.user ?? 'alice'
+      const proxy = new StandProxy({
+        ...deps(), secret: overrides.secret ?? deps().secret, ports: [overrides.listener ?? ports[0]!],
+        connect: () => connect(ports[3]!, '127.0.0.1')
+      })
+      try {
+        const lease = await proxy.access(user, overrides.project ?? 'p', overrides.stand ?? 's',
+          overrides.host ?? '127.0.0.1:25273', overrides.port, { inject: overrides.inject })
+        // Connect locally even when testing a different parent hostname.
+        const url = new URL(lease.url); url.hostname = '127.0.0.1'
+        const response = await fetch(url, { headers: {
+          cookie: 'vc_session=' + user + (overrides.cookie ? '; ' + overrides.cookie : ''), connection: 'close'
+        } })
+        expect(response.status).toBe(200)
+        const cookie = response.headers.get('set-cookie')!.split(';')[0]!
+        const key = /^sxs_([a-f0-9]{32})_vc_session=stand$/.exec(cookie)?.[1]
+        expect(key).toBeDefined()
+        return { cookie, key, body: await response.text() }
+      } finally { await proxy.close() }
+    }
+    const first = await open()
+    const restarted = await open({ cookie: first.cookie, listener: ports[1] })
+    expect(restarted.key).toBe(first.key)
+    expect(restarted.cookie).toBe(first.cookie)
+    expect(restarted.body).toBe('vc_session=stand')
+    // Core and proxy listener ports do not affect host-scoped cookie identity.
+    expect((await open({ host: '127.0.0.1:25274' })).key).toBe(first.key)
+    for (const variant of [
+      { user: 'bob' }, { project: 'other-project' }, { stand: 'other-stand' },
+      { host: 'localhost:25273' }, { port: ports[3] }, { inject: 'make-inspector' as const },
+      { secret: 'different-secret' }
+    ]) {
+      const isolated = await open({ ...variant, cookie: first.cookie })
+      expect(isolated.key).not.toBe(first.key)
+      expect(isolated.body).toBe('')
+    }
+  })
+
   it('rewrites every CSP policy while preserving explicit denial and unrelated headers', () => {
     const parent = 'http://127.0.0.1:25273', lease = 'http://127.0.0.1:28810'
     const allowed = "frame-ancestors 'self' " + parent + ' ' + lease

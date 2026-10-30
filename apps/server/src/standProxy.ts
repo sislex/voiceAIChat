@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { canInjectInspector, injectInspectorHtml } from './htmlInject.js'
@@ -63,6 +63,8 @@ type Target = { machineId: string; gatewayPort: number }
 export type StandProxyAccessOptions = { inject?: 'make-inspector' }
 type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; parentOrigin: string; server: Server; sockets: Set<Duplex> }
 export interface StandProxyDeps {
+  /** Persistent Core signing secret; keeps stand cookie names stable across restarts. */
+  secret: string
   ports: number[]
   publicHost?: string
   publicScheme?: 'http' | 'https'
@@ -111,7 +113,7 @@ export class StandProxy {
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()
-          const candidate: Lease = { ...target, parentOrigin: new URL((this.deps.publicScheme ?? 'http') + '://' + host).origin, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
+          const candidate: Lease = { ...target, parentOrigin: new URL((this.deps.publicScheme ?? 'http') + '://' + host).origin, inject: options.inject, user, projectId, standId, port, key: createHmac('sha256', this.deps.secret).update(id).digest('hex').slice(0, 32), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
           server.on('connection', socket => { candidate.sockets.add(socket); socket.on('close', () => candidate.sockets.delete(socket)) })
           server.on('request', (req, res) => { void this.forward(candidate, req, res).catch(() => res.destroy()) })
           server.on('upgrade', (req, socket, head) => {

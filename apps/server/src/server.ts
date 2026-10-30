@@ -691,6 +691,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
   }
   const standProxy = new StandProxy({
+    secret: sessionSecret,
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
     publicScheme: opts.config.standProxyPublicScheme,
     session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),

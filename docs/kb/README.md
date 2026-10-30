@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1358. Последние:
+Всего записей: 1359. Последние:
 
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md) — stand-proxy-stable-cookie-keys
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
@@ -75,7 +76,6 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-verify.md) — make-preview-kb-verify
-- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-make-preview-kb-reconciliation.md) — make-preview-kb-reconciliation
 
 ## Исторические планы
 

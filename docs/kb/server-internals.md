@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 5347e190
+checked: ee79b61c
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1166,7 +1166,17 @@ This supports credential-free manifest and SRI asset loading inside stand previe
 Every other HTTP request and every WebSocket upgrade checks the current cookie
 session against the lease owner and rechecks project membership before opening a tunnel.
 
-Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+Lease cookie keys are the first 32 hex characters of HMAC-SHA256 using Core's
+persistent session signing secret and
+`JSON.stringify([user, projectId, standId, port ?? null, inject ?? null, hostname])`,
+where hostname is the effective hostname described above. Recreating a lease
+after Core restarts preserves its `sxs_<leaseKey>_` cookie prefix, even if the
+allocated listener port changes. User, project, stand, requested target port,
+injection mode, hostname and secret isolate cookie namespaces; rotating the
+secret changes the prefix. Core passes its existing session secret to
+`StandProxy`; no additional secret is generated for leases.
+
+Only cookies beginning with that lease's `sxs_<leaseKey>_` prefix pass
 upstream, with the prefix removed. Response Set-Cookie names receive the prefix
 and Domain attributes are removed. Core authorization and internal forwarding
 headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
