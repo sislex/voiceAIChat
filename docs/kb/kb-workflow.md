@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-10-30
-checked: 495279c8
+checked: 49ed3138
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -239,19 +239,23 @@ the merge-workflow section above refer to the extracted Kanban owner.
 
 The release owner builds the dependency-free CLI in Core with
 `npm run pack:kb-tools -- artifacts/kb-tools`. This produces
-`sislexa-kb-tools-0.1.0.tgz` and `integrity.json` (commit, SHA-256 and npm
+`sislexa-kb-tools-0.1.1.tgz` and `integrity.json` (commit, SHA-256 and npm
 integrity). Publishing the archive is a separate operator action. The package
 is independently packed, outside Core's application workspaces.
 
+Version 0.1.1 (2026-10-30) treats a topic updated in the same commit as the
+code it describes as fresh, so `check --strict` no longer fails right after
+such a commit. Module repositories pin 0.1.1.
+
 1. Copy the reviewed release archive to the module's
-   `vendor/sislexa-kb-tools-0.1.0.tgz`, verify its SHA-256 against the release
+   `vendor/sislexa-kb-tools-0.1.1.tgz`, verify its SHA-256 against the release
    integrity manifest, and commit the archive with the dependency pin.
 2. Add this dev dependency and these scripts to the module's `package.json`:
 
    ```json
    {
      "devDependencies": {
-       "@sislexa/kb-tools": "file:vendor/sislexa-kb-tools-0.1.0.tgz"
+       "@sislexa/kb-tools": "file:vendor/sislexa-kb-tools-0.1.1.tgz"
      },
      "scripts": {
        "kb": "sislexa-kb",
