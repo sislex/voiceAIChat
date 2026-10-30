@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: d1cc9cc3
+checked: ef91cbd0
 areas:
   - apps/server/src
   - packages/knowledge/src

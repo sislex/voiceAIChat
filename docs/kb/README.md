@@ -64,9 +64,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1348. Последние:
+Всего записей: 1349. Последние:
 
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
@@ -75,7 +76,6 @@
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-sources.md) — sisl-10799-local-stand-sources
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-sisl-10799-local-stand-kb.md) — sisl-10799-local-stand-kb
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-same-commit-topic-freshness-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-same-commit-topic-freshness-kb.md) — same-commit-topic-freshness-kb
-- [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-component-branch-reuse-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-component-branch-reuse-kb.md) — conversation-component-branch-reuse-kb
 
 ## Исторические планы
 
