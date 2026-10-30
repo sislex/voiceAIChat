@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-30
-checked: 78f28530
+checked: 7eea67be
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -910,6 +910,12 @@ USD за 1M обычных/кэшированных/записанных в кэ
 **Живые изменения списка.** `SessionHub` (`apps/server/src/users/sessionHub.ts`, аналог `BoardHub`) публикует изменения; WS-соединение знает свой `sid` (прокинут из `server.ts` в `createSession`) и получает адресный `session.revoked`, если завершили именно его, иначе — `sessions.update`. Клиент: мост `window.session.onSessionsChanged`; окно сессий слушает только «список устарел», а выход по `revoked` делает `App` через `session.expire()` — сессию могут завершить и при закрытом окне, а серверный `logout` на мёртвом токене ответил бы 401 и оставил человека на нерабочем экране.
 
 **Cookie-сессия и CSRF (auth-roadmap п.5).** Логин, помимо `token` в теле, ставит `vc_session=<тот же HMAC-токен>; Path=/; HttpOnly; SameSite=Strict` (+`Secure`, если `x-forwarded-proto`/протокол https) и читаемую `vc_csrf` (случайная строка, в теле — `csrf`). PreHandler берёт токен в порядке Bearer → preview-cookie (только на разрешённых путях превью) → `vc_session`; если авторизация пришла из обычной `vc_session`, любой не-GET/HEAD/OPTIONS запрос обязан нести заголовок `x-vc-csrf`, равный cookie `vc_csrf`, иначе 403 `{ error: 'csrf' }` — чужой сайт cookie отправит, заголовок поставить не сможет. WS-upgrade принимает `vc_session` из Cookie, если нет `?token=`. Logout гасит обе cookie (и preview). Web-клиент (`remote/session.ts`) держит Bearer только в памяти после свежего входа, `authHeaders()` добавляет Bearer при наличии и `x-vc-csrf` всегда при cookie-сессии; при старте `migrateLegacyToken` отправляет унаследованный localStorage-токен на `POST /api/session/cookie` и удаляет его из localStorage. `WsClient` получает маркер `'cookie'` вместо токена и подключается без query. Desktop и агенты продолжают ходить с Bearer — для них CSRF не требуется.
+
+Stand preview executor retrieval also passes through Core authentication:
+`server.ts` forwards the authenticated lease request cookie in the internal
+`app.inject` call to `/api/preview/inspector.js`. The lease's prior owner and
+membership checks do not bypass authentication of that internal request.
+See [Dev stand access proxy](server-internals.md#dev-stand-access-proxy).
 
 На `/api/preview` специальная HttpOnly `SameSite=Strict` cookie имеет приоритет
 над общей сессией: HTML-форма и fetch вложенного сайта не владеют CSRF оболочки.

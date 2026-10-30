@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
 updated: 2026-10-30
-checked: 2d610322
+checked: 7eea67be
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -66,6 +66,18 @@ routes; `mcp/makeFiles.ts` enforces a 10 MiB limit and rejects traversal, symlin
 and protected paths. Attachment bytes are not forwarded as ordinary runner
 attachments in Make turns. `makeBrowserSession` still verifies the linked chat's
 owner, Reader kind and required capability before exposing browser tools.
+
+### Stand preview executor authentication
+
+On inspector-enabled stand leases, Core serves
+`/__sislexa/preview-inspector.js` through its authenticated Reader proxy.
+After checking the lease owner and project membership, `StandProxy.forward`
+passes the saved parent origin and the request cookie to
+`previewInspectorScript`; `server.ts` forwards that cookie in `app.inject`.
+A non-2xx script response becomes an empty HTTP 502 instead of a JavaScript
+response carrying an authorization error. See
+[Dev stand access proxy](../server-internals.md#dev-stand-access-proxy)
+for cookie isolation and injection rules.
 
 ## Historical release (2026-09-30)
 
