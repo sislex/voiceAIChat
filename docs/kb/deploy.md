@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-30
-checked: b8f5f017
+checked: 2f8053a1
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -112,6 +112,13 @@ pins and distinguish installed packages from reachable runtime services. Other e
 `chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
 tickets. External URLs must be HTTPS without credentials, query or fragment.
 No selector preserves legacy Core modes.
+
+`VC_APPLICATION_FRONTENDS` uses frontend catalog IDs (for example `make-ui`),
+while `VC_APPLICATIONS` uses owner IDs (`make`). Core validates the frontend map
+before retaining overrides for enabled local owners through catalog runtime
+dependencies. Disabled and external owners do not activate those overrides;
+unselected sources retain the installed artifact fallback. See
+[product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 `VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
 `provider:model-id` entries from the shared model catalog. For the first public

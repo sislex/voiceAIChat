@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-10-30
+checked: 2f8053a1
 areas:
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/server.ts
@@ -34,7 +34,15 @@ Their delegation and one-use ticket endpoints remain available.
 
 `GET /api/system/applications` exposes the deployment manifest to authenticated
 clients. Disabled application routes and external application UI prefixes return
-`404 { error: 'application_disabled' }`, including `/applications/:id/*` assets.
+`404 { error: 'application_disabled' }`. For `/applications/:id/*`, that request
+guard matches deployment application IDs directly; it does not infer owners
+from frontend IDs such as `make-ui`.
+
+Frontend source overrides use a separate owner-aware registration filter:
+`server.ts` passes the deployment to `registerApplicationFrontends`, which
+validates all configured IDs, then retains sources whose ID or catalog runtime
+dependency is enabled and local. Filtering an override does not remove the
+installed artifact fallback. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 Core authentication intersects tenant capabilities with enabled applications;
 queued turns apply the same intersection when refreshing tenant entitlements.
 Voice STT/TTS capabilities belong to Chat. External applications retain tenant

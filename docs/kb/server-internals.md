@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: 29ec7724
+checked: 2f8053a1
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -36,6 +36,15 @@ Older owner packages without these routes do not advertise transfers.
 Android release endpoints are registered by the Machines module; the Machines
 proxy allows only exact GET/HEAD public download paths before forwarded auth.
 See [Android distribution](clients.md#android-apk-distribution).
+
+## Application frontend registration
+
+`buildServer` passes the complete `applicationFrontends` map and deployment to
+`registerApplicationFrontends`. Registration rejects unknown frontend IDs before
+filtering sources, then accepts an enabled local frontend ID or an enabled local
+owner from its catalog runtime dependencies. The gateway still validates paths,
+manifest IDs and source URLs, and uses the installed owner artifact when there
+is no selected override. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 ## Запуск и dependency injection
 

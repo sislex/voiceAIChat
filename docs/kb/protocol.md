@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-29
-checked: 9316c399
+updated: 2026-10-30
+checked: 2f8053a1
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -23,6 +23,17 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Application frontend gateway
+
+`GET /applications/:id/manifest.json` returns the configured source manifest
+when the frontend or its catalog owner is enabled and local. Frontend IDs such
+as `make-ui` are distinct from deployment IDs such as `make`; registration
+validates every source ID before filtering. Without a selected source, the
+existing installed-artifact fallback applies. The manifest response keeps
+`Cache-Control: no-store`; asset paths, manifest identity and source URL checks
+remain in `routes/applicationFrontends.ts`. See
+[product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 ## Android download contract
 
