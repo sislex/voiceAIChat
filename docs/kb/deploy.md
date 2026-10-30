@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-30
-checked: 422cbebe
+updated: 2026-10-31
+checked: 75ca944b
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -3345,13 +3345,13 @@ production host (private link `10.77.0.2:8798`).
 
 ## Published Make 1.8.1 pin (2026-10-19)
 
-Core pins Make 1.8.1 at `e716089b55eb17059f51591fa88cd0506ac1c062` in the tools lock and
+Core pins Make 1.8.1 at `06329ca4f5c5a00342101a56f32e243b6ea4c4a4` in the tools lock and
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-pin:playwright-reader-1.2.6 -->
-- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+- Playwright Reader 1.2.6: verified API and browser images at `c5642e5ffb708e71da63dc9132c8313e249cd069`.
 
 <!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
 - sislex/webreader: 1.3.2
@@ -3404,3 +3404,11 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:32212279-576e-468f-8fe5-48ccbe0bc7ab -->
 - sislex/webreader: 1.3.5
+
+<!-- release-train:e0dce216-35c4-4bbc-a8ff-5eb263aae7a7 -->
+- sislex/make: 1.8.5
+- sislex/playwrightreader: 1.2.7
+- sislex/webreader: 1.3.6
+- sislex/image-studio: 1.1.5
+- sislex/voice: 1.1.2
+- sislex/sislexa-kanban: 0.2.56

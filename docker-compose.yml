@@ -213,7 +213,7 @@ services:
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
     profiles: ["make"]
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:e716089b55eb17059f51591fa88cd0506ac1c062}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:06329ca4f5c5a00342101a56f32e243b6ea4c4a4}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -237,7 +237,7 @@ services:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
     profiles: ["playwright-reader"]
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:386b14a004ceb4cac02023984e841897b85ed26c}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:c5642e5ffb708e71da63dc9132c8313e249cd069}
     mem_limit: 256m
     depends_on:
       browser-runner: {condition: service_started, required: false}
@@ -261,7 +261,7 @@ services:
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
     profiles: ["image-studio"]
-    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:3a6b3f28ec2e5749293d9289981f4a0b4f48628d}
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:9dca9c9357617d52754d32d480952f1ac9f3aa30}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -285,7 +285,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:ed43627176a6880b38584a9088f3d888b9968ab8}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:0eeb2109905214356752ecee7292142b2fcf4a0e}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -411,7 +411,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:93f6b3481c01461d87468de9764d82c9a241bde6}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:d3d7be5cf110f4557b322a26cc37c6f26a78982e}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -439,7 +439,7 @@ services:
 
   stt-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:d7af7b602106415f4c1df39fd6d0932e2baf9c83}
+    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:ecf2a5f1f1c6016799f28be497d255ae437d83f8}
     mem_limit: 6g
     cpus: 2
     environment:
@@ -463,7 +463,7 @@ services:
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
     profiles: ["browser-runner"]
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:386b14a004ceb4cac02023984e841897b85ed26c}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:c5642e5ffb708e71da63dc9132c8313e249cd069}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"
@@ -555,7 +555,7 @@ services:
 
   tts-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:d7af7b602106415f4c1df39fd6d0932e2baf9c83}
+    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:ecf2a5f1f1c6016799f28be497d255ae437d83f8}
     environment:
       HOST: 0.0.0.0
       PORT: "8791"

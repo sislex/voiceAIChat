@@ -5,43 +5,43 @@
       "package": "@sislexa/make",
       "workspace": "apps/make",
       "repository": "https://github.com/sislex/make",
-      "version": "1.8.4",
-      "commit": "e716089b55eb17059f51591fa88cd0506ac1c062"
+      "version": "1.8.5",
+      "commit": "06329ca4f5c5a00342101a56f32e243b6ea4c4a4"
     },
     "playwright-reader": {
       "package": "@sislexa/playwright-reader",
       "workspace": "apps/playwright-reader",
       "repository": "https://github.com/sislex/playwrightreader",
-      "version": "1.2.6",
-      "commit": "386b14a004ceb4cac02023984e841897b85ed26c"
+      "version": "1.2.7",
+      "commit": "c5642e5ffb708e71da63dc9132c8313e249cd069"
     },
     "web-reader": {
       "package": "@sislexa/web-reader",
       "workspace": "apps/web-reader",
       "repository": "https://github.com/sislex/webreader",
-      "version": "1.3.5",
-      "commit": "93f6b3481c01461d87468de9764d82c9a241bde6"
+      "version": "1.3.6",
+      "commit": "d3d7be5cf110f4557b322a26cc37c6f26a78982e"
     },
     "image-studio": {
       "package": "@sislexa/image-studio",
       "workspace": "apps/image-studio",
       "repository": "https://github.com/sislex/image-studio",
-      "version": "1.1.4",
-      "commit": "3a6b3f28ec2e5749293d9289981f4a0b4f48628d"
+      "version": "1.1.5",
+      "commit": "9dca9c9357617d52754d32d480952f1ac9f3aa30"
     },
     "stt-runner": {
       "package": "@sislexa/voice",
       "workspace": "apps/stt-runner",
       "repository": "https://github.com/sislex/voice",
-      "version": "1.1.1",
-      "commit": "d7af7b602106415f4c1df39fd6d0932e2baf9c83"
+      "version": "1.1.2",
+      "commit": "ecf2a5f1f1c6016799f28be497d255ae437d83f8"
     },
     "tts-runner": {
       "package": "@sislexa/voice",
       "workspace": "apps/tts-runner",
       "repository": "https://github.com/sislex/voice",
-      "version": "1.1.1",
-      "commit": "d7af7b602106415f4c1df39fd6d0932e2baf9c83"
+      "version": "1.1.2",
+      "commit": "ecf2a5f1f1c6016799f28be497d255ae437d83f8"
     },
     "identity": {
       "package": "@sislexa/identity",
@@ -75,8 +75,8 @@
       "package": "@sislexa/kanban",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/sislexa-kanban",
-      "version": "0.2.55",
-      "commit": "ed43627176a6880b38584a9088f3d888b9968ab8"
+      "version": "0.2.56",
+      "commit": "0eeb2109905214356752ecee7292142b2fcf4a0e"
     }
   }
 }
