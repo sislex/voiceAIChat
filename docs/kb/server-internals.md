@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-30
-checked: c45e8e32
+checked: 2fba5154
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1132,8 +1132,15 @@ and validated `gateway.port` select the upstream; clients cannot supply a
 target machine or TCP port. The shared response is `{url, expiresAt}`, with
 `expiresAt` expressed as Unix milliseconds.
 
-Allocation is serialized. A user/project/stand tuple reuses its lease; target
-changes replace it. The disabled or exhausted pool returns HTTP 503 with
+Allocation is serialized. Leases are keyed by user, project, stand, requested
+port, injection mode and effective hostname; target changes replace the matching
+lease. Without `VC_STAND_PROXY_PUBLIC_HOST`, the effective hostname comes from
+the request Host (normalized by URL parsing, without its port). Different page
+hostnames, such as `localhost` and `127.0.0.1`, receive separate listeners and
+matching origins so the browser sends its host-scoped Core session cookie.
+With `VC_STAND_PROXY_PUBLIC_HOST` configured, its hostname is used for both the
+origin and reuse key, so different request hosts still share the same lease.
+Each hostname-specific lease consumes a pool port. The disabled or exhausted pool returns HTTP 503 with
 `stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
 deadline; expiry and Core shutdown close listeners and all their connections.
 Every HTTP request and WebSocket upgrade checks the current cookie session

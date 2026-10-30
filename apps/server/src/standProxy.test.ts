@@ -58,6 +58,48 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it.each([undefined, 'make-inspector'] as const)('keeps working leases for each request hostname with injection %s', async inject => {
+    const gateway = createServer((_req, res) => res.end('stand preview'))
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const tunnel = vi.fn((_machine: string, port: number) => connect({ host: '127.0.0.1', port }))
+    const d = deps()
+    const proxy = new StandProxy({ ...d, ports: ports.slice(0, 2), connect: tunnel })
+    cleanup.push(() => proxy.close())
+    const local = await proxy.access('alice', 'p', 's', 'localhost:25273', undefined, { inject })
+    const ip = await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject })
+    expect(new URL(local.url).hostname).toBe('localhost')
+    expect(new URL(ip.url).hostname).toBe('127.0.0.1')
+    expect(new URL(local.url).port).not.toBe(new URL(ip.url).port)
+    expect((await proxy.access('alice', 'p', 's', 'LOCALHOST:25274', undefined, { inject })).url).toBe(local.url)
+    for (const url of [local.url, ip.url]) {
+      const result = await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+        // Force IPv4 because proxy listeners bind 0.0.0.0 and localhost may resolve to ::1.
+        const req = request(url, { family: 4, agent: false, headers: { cookie: 'vc_session=alice' } }, res => {
+          let body = ''
+          res.setEncoding('utf8')
+          res.on('data', chunk => { body += chunk }); res.on('error', reject)
+          res.on('end', () => resolve({ status: res.statusCode, body }))
+        })
+        req.on('error', reject); req.end()
+      })
+      expect(result).toEqual({ status: 200, body: 'stand preview' })
+    }
+    expect(tunnel).toHaveBeenCalledTimes(2)
+    expect(tunnel).toHaveBeenCalledWith('m', ports[3])
+    const app = Fastify(); registerStandProxy(app, proxy, d.session); cleanup.push(() => app.close())
+    const exhausted = await app.inject({ method: 'POST', url: '/api/dev-stand-access', headers: { host: 'third.example:25273', cookie: 'vc_session=alice' }, payload: { projectId: 'p', standId: 's' } })
+    expect(exhausted.statusCode).toBe(503)
+    expect(exhausted.json()).toEqual({ error: 'stand_proxy_unavailable' })
+  })
+  it('reuses the configured public hostname across request hosts with a single port', async () => {
+    const proxy = new StandProxy({ ...deps(), publicHost: 'preview.example', publicScheme: 'https' })
+    cleanup.push(() => proxy.close())
+    const local = await proxy.access('alice', 'p', 's', 'localhost:25273')
+    const ip = await proxy.access('alice', 'p', 's', '127.0.0.1:25273')
+    expect(local.url).toBe('https://preview.example:' + ports[0] + '/')
+    expect(ip.url).toBe(local.url)
+  })
   it.each(['http', 'https'] as const)('injects the %s lease origin behind TLS termination and preserves other responses', async publicScheme => {
     const html = '<html><head></head><body>Привет</body></html>'
     const gateway = createServer((req, res) => {

@@ -76,11 +76,12 @@ export class StandProxy {
     return this.serial(async () => {
       if (this.closed) fail(503, 'stand_proxy_unavailable')
       await this.expire()
-      const id = JSON.stringify([user, projectId, standId, port ?? null, options.inject ?? null])
+      const hostname = new URL('http://' + (this.deps.publicHost || host)).hostname
+      // Core session cookies are host-scoped, so each page hostname needs its own origin.
+      const id = JSON.stringify([user, projectId, standId, port ?? null, options.inject ?? null, hostname])
       let lease = this.leases.get(id)
       if (lease && (lease.machineId !== target.machineId || lease.gatewayPort !== target.gatewayPort)) { await this.remove(id, lease); lease = undefined }
       if (!lease) {
-        const hostname = new URL('http://' + (this.deps.publicHost || host)).hostname
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()

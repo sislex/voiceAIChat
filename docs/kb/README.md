@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1345. Последние:
+Всего записей: 1346. Последние:
 
+- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-topic-freshness.md) — same-commit-topic-freshness
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-same-commit-freshness-verification.md) — same-commit-freshness-verification
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-stand-source-restart-kb-recheck.md) — stand-source-restart-kb-recheck
@@ -75,7 +76,6 @@
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-component-branch-reuse-kb.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-component-branch-reuse-kb.md) — conversation-component-branch-reuse-kb
 - [2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-branch-reuse.md](log/2026-10-30-alexeys-macbook-air-tailae39a6-ts-net-conversation-branch-reuse.md) — conversation-branch-reuse
 - [2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-sisl791-stand-diagnostics.md) — sisl791-stand-diagnostics
-- [2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md](log/2026-10-29-pc-radvilovich-tailae39a6-ts-net-android-apk-distribution.md) — android-apk-distribution
 
 ## Исторические планы
 
