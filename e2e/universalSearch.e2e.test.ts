@@ -82,6 +82,20 @@ async function observeSearch(target: Page, query: string, action: () => Promise<
   }
 }
 
+// Keep response diagnostics independent of palette mounting/debounce and DOM readiness.
+async function checkSearchResponse(response: Response, query: string, wanted: SearchHit[]) {
+  const body = await response.text()
+  expect(response.ok(), 'Search "' + query + '" HTTP ' + response.status() + ': ' + body).toBe(true)
+  const result = JSON.parse(body) as UniversalSearchResult
+  expect(result.groups.filter(group => group.status !== 'ok'), 'Unavailable search sources for ' + query).toEqual([])
+  const hits = result.groups.flatMap(group => group.hits)
+  expect(hits.length, 'No search results for ' + query).toBeGreaterThan(0)
+  for (const hit of wanted) {
+    expect(hits.some(value => value.id === hit.id && value.href === hit.href),
+      'Missing expected search hit: ' + hit.source + '/' + hit.title).toBe(true)
+  }
+}
+
 async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
   const started = performance.now()
   const stages: Record<string, number> = {}
@@ -104,15 +118,8 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
       await dialog.getByRole('combobox').fill(query, { timeout: SEARCH_TIMEOUT })
       mark('filled')
     }, mark)
-    const body = await response.text()
-    expect(response.ok(), 'Search "' + query + '" HTTP ' + response.status() + ': ' + body).toBe(true)
-    const result = JSON.parse(body) as UniversalSearchResult
-    expect(result.groups.filter(group => group.status !== 'ok'), 'Unavailable search sources for ' + query).toEqual([])
-    const hits = result.groups.flatMap(group => group.hits)
-    expect(hits.length, 'No search results for ' + query).toBeGreaterThan(0)
+    await checkSearchResponse(response, query, wanted)
     for (const hit of wanted) {
-      expect(hits.some(value => value.id === hit.id && value.href === hit.href),
-        'Missing expected search hit: ' + hit.source + '/' + hit.title).toBe(true)
       // A successful response precedes React's commit; wait for the specific option.
       await dialog.getByRole('group', { name: SEARCH_LABELS[hit.source], exact: true })
         .getByRole('option').filter({ hasText: hit.title }).first().waitFor({ timeout: SEARCH_TIMEOUT })
@@ -265,6 +272,8 @@ it('checks the running application health, authenticated search and anonymous de
 it('observes only a new matching browser request, including a response before action completion', async () => {
   const probe = await page.context().newPage()
   const pending: import('playwright').Route[] = []
+  let actionRelease = () => {}
+  let observed: Promise<Response> | undefined
   try {
     await probe.goto(base + '/#/chat/' + chatId)
     await probe.route('**/api/universal-search', route => { pending.push(route) })
@@ -274,18 +283,19 @@ it('observes only a new matching browser request, including a response before ac
       }).catch(() => {}) }, { query, origin, method })
     // This request predates observation; its otherwise identical response is stale.
     await send('PaletteNeedle')
-    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    await vi.waitFor(() => expect(pending).toHaveLength(1), { timeout: SEARCH_TIMEOUT })
     let completed = false
-    let actionRelease!: () => void
     const actionBarrier = new Promise<void>(resolve => { actionRelease = resolve })
-    const observed = observeSearch(probe, 'PaletteNeedle', async () => {
+    observed = observeSearch(probe, 'PaletteNeedle', async () => {
       await send('different-query')
       await send('PaletteNeedle', base.replace('127.0.0.1', 'localhost'))
       await send('PaletteNeedle', base, 'GET')
       await send('PaletteNeedle')
       await actionBarrier
     }).then(response => { completed = true; return response })
-    await vi.waitFor(() => expect(pending).toHaveLength(5))
+    // Route assertions can fail first; keep their pending observation handled.
+    void observed.catch(() => {})
+    await vi.waitFor(() => expect(pending).toHaveLength(5), { timeout: SEARCH_TIMEOUT })
     for (const route of pending.slice(0, 4)) {
       const received = probe.waitForResponse(response => response.request() === route.request())
       await route.fulfill({ status: 200, body: '{"groups":[]}', headers: { 'access-control-allow-origin': '*' } })
@@ -298,7 +308,11 @@ it('observes only a new matching browser request, including a response before ac
     await received
     actionRelease()
     expect((await observed).request()).toBe(current.request())
-  } finally { await probe.close() }
+  } finally {
+    actionRelease()
+    await probe.close()
+    await observed?.catch(() => {})
+  }
 })
 
 // @testCase TC-2
@@ -311,12 +325,27 @@ it.each([
   const probe = await page.context().newPage()
   try {
     await probe.goto(base + '/#/chat/' + chatId)
-    await probe.route('**/api/universal-search', route => route.fulfill({
-      status, contentType: 'application/json', body: JSON.stringify(body)
+    // Exercise the same validator as open(), but trigger a controlled browser
+    // request: cold UI mounting and its debounce are not part of HTTP diagnostics.
+    // observeSearch arms request/response listeners before evaluate starts fetch.
+    let intercepted: Request | undefined
+    await probe.route(base + '/api/universal-search', async route => {
+      intercepted = route.request()
+      await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+    })
+    const response = await observeSearch(probe, 'PaletteNeedle', () => probe.evaluate(async () => {
+      await fetch('/api/universal-search', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: 'PaletteNeedle' })
+      })
     }))
-    await expect(open('PaletteNeedle', expected, probe)).rejects.toThrow(message)
+    expect(intercepted).toBeDefined()
+    expect(response.request()).toBe(intercepted)
+    expect(response.status()).toBe(status)
+    await expect(checkSearchResponse(response, 'PaletteNeedle', expected)).rejects.toThrow(message)
+    console.log('[palette:diagnostic] HTTP ' + status + ' intercepted response checked')
   } finally { await probe.close() }
-})
+}, { repeats: process.env.VC_SEARCH_DIAGNOSTIC_STRESS === '1' ? 19 : 0 })
 
 // @testCase TC-2
 it('reports a missing expected hit and an aborted browser request separately', async () => {
@@ -353,7 +382,7 @@ it('does not treat local command options as readiness for a delayed search respo
       } })
     })
     const opened = open('Настройки', expected, probe).then(dialog => { completed = true; return dialog })
-    await vi.waitFor(() => expect(intercepted).toBe(true))
+    await vi.waitFor(() => expect(intercepted).toBe(true), { timeout: SEARCH_TIMEOUT })
     const dialog = probe.getByRole('dialog', { name: 'Командная палитра' })
     const localOptions = await dialog.getByRole('option').count()
     expect(localOptions).toBeGreaterThan(0)

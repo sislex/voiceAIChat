@@ -1,5 +1,6 @@
 import { effectiveCapabilities } from './deploymentApplications.js'
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
+import { conversationThreadCost, resetConversationThread, ThreadResetError } from './conversationThread.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
@@ -55,7 +56,7 @@ export interface TurnManagerDeps {
   claude: LlmClient
   /** Альтернативный движок Codex (используется при settings.llmProvider='codex'). */
   codex?: LlmClient
-  conversationSummary?: { consider(userId: string, conversationId: string): void }
+  conversationSummary?: { consider(userId: string, conversationId: string): void; refresh?(userId: string, conversationId: string): Promise<Conversation | null> }
   /** Клиент конкретного исполнителя из реестра. */
   engineClient?: (engine: { id: string; kind: 'claude' | 'codex'; baseUrl: string; token: string }) => LlmClient
   /** Поиск компактного контекста проекта перед ходом. */
@@ -117,7 +118,7 @@ export interface TurnManagerDeps {
   resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Короткоживущий контекст вложений для бинарного remote:image. */
   remoteFileTool?: {
-    register(token: string, attachments: Array<{ path: string; name: string; dataBase64: string }>): void
+    register(token: string, attachments: Array<{ path: string; name: string; uploadId?: string; dataBase64: string }>): void
     unregister(token: string): void
   }
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
@@ -296,6 +297,7 @@ export interface TurnManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   /** Снапшот активных ходов пользователя (для claude.active при подключении). */
   active(userId: string): ActiveTurn[]
+  resetThread(userId: string, conversationId: string, summarize?: boolean): Promise<import('@voicechat/shared').ConversationThreadResetResponse | null>
   /**
    * Остановка сервера (деплой/SIGTERM): отменить активные ходы и сохранить их
    * накопленный частичный текст в БД с пометкой interrupted — иначе рестарт
@@ -386,6 +388,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const turns = new Map<string, TurnState>()
   // Закрывает async-окно подготовки prompt/вложений до появления TurnState.
   const starting = new Set<string>()
+  const saving = new Set<string>()
   // Короткое окно атомарной замены хода через «Отправить сейчас»: повторная
   // команда не должна успеть продвинуть другой элемент очереди.
   const restarting = new Set<string>()
@@ -424,6 +427,31 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
+  async function performThreadReset(userId: string, conversationId: string, summarize: boolean): Promise<Conversation | null> {
+    const refresh = deps.conversationSummary?.refresh
+    const conversation = await resetConversationThread(deps.db, refresh ? { refresh } : undefined, userId, conversationId, summarize)
+    if (conversation) {
+      const page = await deps.db.chat.pageMessages(userId, conversationId, 1)
+      const note = page?.messages.at(-1)
+      if (note) broadcast(await clientEvent(deps.db, userId, { t: 'chat.message', conversationId, message: note }), userId)
+      broadcast(await clientEvent(deps.db, userId, { t: 'chat.conversation', conversation }), userId)
+    }
+    return conversation
+  }
+
+  async function resetThread(userId: string, conversationId: string, summarize = true): Promise<import('@voicechat/shared').ConversationThreadResetResponse | null> {
+    if (!await deps.db.chat.getConversation(userId, conversationId)) return null
+    if (turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) throw new ThreadResetError('turn_active', 409)
+    starting.add(conversationId)
+    try {
+      const conversation = await performThreadReset(userId, conversationId, summarize)
+      return conversation ? { ok: true, summary: conversation.summary ?? null } : null
+    } finally {
+      starting.delete(conversationId)
+      track(dispatchNext(userId, conversationId))
+    }
+  }
+
   async function start(req: StartTurnRequest): Promise<void> {
     const conversationId = req.conversationId
     const userId = req.userId
@@ -459,7 +487,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
-    const conv = await deps.db.chat.getConversation(userId, conversationId)
+    let conv = await deps.db.chat.getConversation(userId, conversationId)
     const accountedTurn = !!deps.accounting && !!conv
     const backgroundStop = !!deps.chatTextOnly && !!conv &&
       deps.accounting?.stopsInBackground(billingOriginForConversation(conv), !!req.delegation) === true
@@ -502,7 +530,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'message_not_found' }, userId)
       return
     }
-    req.messageId ??= [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    req.messageId ??= await deps.db.chat.lastUserMessageId(userId, conversationId)
     if (backgroundStop && !turns.has(conversationId) && (!entitlements.userId || deps.accounting!.hasPendingUser(entitlements.userId))) {
       // Another conversation can reserve this user after dispatchNext's check and
       // before this admission. Restore the extracted work without marking it failed.
@@ -516,8 +544,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
-    if (turns.has(conversationId) || starting.has(conversationId)) {
-      const messageId = req.messageId ?? [...await deps.db.chat.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
+    if (turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) {
+      const messageId = req.messageId ?? await deps.db.chat.lastUserMessageId(userId, conversationId)
       if (!messageId) {
         broadcast({ t: 'claude.error', conversationId, message: 'Не удалось поставить вопрос в очередь.' }, userId)
         return
@@ -535,6 +563,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     starting.add(conversationId)
+    // Refresh after admission: a reset could finish while access checks were awaiting.
+    conv = await deps.db.chat.getConversation(userId, conversationId)
+    if (!conv) { starting.delete(conversationId); return }
+    try {
+      const chatSettings = await deps.db.settings.getChatSettings(userId, conversationId)
+      if (chatSettings?.conversation.threadReset === 'auto' && conv.claudeSessionId) {
+        const cost = await conversationThreadCost(deps.db, userId, conv)
+        if (cost.recommendation === 'reset') {
+          conv = await performThreadReset(userId, conversationId, true) ?? conv
+        }
+      }
+    } catch (error) {
+      try {
+        if (req.fromQueue && req.messageId) await restoreQueuedTurn(req)
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        await emitQueue(userId, conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: error instanceof ThreadResetError ? error.code : 'thread_reset_failed' }, userId)
+      } finally { starting.delete(conversationId) }
+      return
+    }
     // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
     await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
 
@@ -610,11 +658,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
     // решает, существует ли каталог и можно ли в него перейти.
     const desiredCwd = settings.workdir ?? undefined
-    const attachments = req.attachments?.length
-      ? (await Promise.all(
-          req.attachments.map((id) => loadAttachment(deps.resolveUpload?.(id)))
-        )).filter((att): att is LlmAttachment => Boolean(att))
-      : []
+    const loadedAttachments = await Promise.all((req.attachments ?? []).map(async (uploadId) => ({
+      uploadId, attachment: await loadAttachment(deps.resolveUpload?.(uploadId))
+    })))
+    const attachments = loadedAttachments.flatMap(({ attachment }) => attachment ? [attachment] : [])
+    const makeAttachmentLabels = loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
+      ? [JSON.stringify({ uploadId, name: attachment.runnerName })] : [])
     const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
@@ -623,8 +672,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // ```image — созданная картинка показывается прямо в сообщении.
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
-      ? buildPrompt(req.segments, attachmentPaths)
-      : coldStartPrompt(await deps.db.chat.listMessages(userId, conversationId), attachmentPaths, conv?.summary?.text)
+      ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -763,23 +812,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptQ
-    /**
-     * Make-чат к машине не ходит вообще. Его инструменты `make_*` пишут только в
-     * мастерскую (`<dataDir>/make/<conversationId>`), а любой доступ к машине —
-     * это доступ к общей копии проекта, которая принадлежит git-потоку (задачи,
-     * CI, релизы): файл, положенный туда мимо коммита, оставлял копию dirty и
-     * ломал системную синхронизацию с origin. Поэтому назначенная чату машина для
-     * Make игнорируется целиком: ни remote-bash, ни блокировок по её статусу.
-     * Единственное, что Make делает с репозиторием, — разовое обновление копии до
-     * origin/<base> при создании чата (`refreshProjectMain` в `server.ts`).
-     */
+    // Make uses only an explicitly configured machine; project/default machines are not inherited.
+    // The remote endpoint confines its operations to workdir; project writes use the Make API.
     const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     // The server's tool-free policy needs neither a machine nor Git preflight,
     // regardless of saved or request-level machine preferences.
-    const machine = makeChat || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
-      ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
+    const machine = (makeChat && (!conv?.execTarget || conv.execTarget === 'none')) || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
+      ...(!makeChat && req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
     const executionDisabled = deps.chatTextOnly === true || machine?.source === 'disabled'
@@ -935,9 +976,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
     let previewMcpUrl: string | undefined
-    let previewSurface: 'panel' | 'chromium' | undefined
-    // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
-    // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
+    let previewSurface: 'panel' | 'chromium' | 'make-preview' | undefined
     // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
     const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
     const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
@@ -945,7 +984,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
-    // The Make turn acts on the bound reader conversation, never on the Make chat itself.
+    if (!req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
+      previewSurface = 'make-preview'
+      prompt += '\n\n' + [
+        '## Превью Make (make-preview)',
+        'Инструменты mcp__browser__* выполняют действия в открытом превью пользователя в панели Make. Пользователь видит каждое действие.',
+        'Сначала вызови browser_capabilities и используй только поддерживаемые действия. Для визуальной проверки используй screenshot, если он поддерживается, иначе read.',
+        'Ошибка make_preview_closed означает, что нужно попросить пользователя открыть превью Make.',
+        'Файлы проекта меняй только инструментами make_*.'
+      ].join('\n')
+    }
+    // A bound Make browser keeps priority and uses the reader conversation.
     const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
     if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
       previewMcpUrl = externalMakeBrowser
@@ -983,7 +1033,20 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
-    if (target && deps.agents && deps.mcpBaseUrl) {
+    if (makeChat && deps.remoteFileTool && deps.mcpBaseUrl) {
+      remoteFileToken = randomUUID()
+      deps.remoteFileTool.register(remoteFileToken, loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
+        ? [{ uploadId, path: attachment.serverPath, name: attachment.runnerName, dataBase64: attachment.dataBase64 }] : []))
+      remote = {
+        mcpUrl: deps.mcpBaseUrl + '&make=1&conv=' + encodeURIComponent(conversationId) +
+          '&turn=' + encodeURIComponent(turnId) + '&files=' + encodeURIComponent(remoteFileToken) +
+          (target ? '&agent=' + encodeURIComponent(target) : '') +
+          (target && conv?.workdir ? '&cwd=' + encodeURIComponent(conv.workdir) : ''),
+        agentName: target ? deps.agents?.nameOf(target) ?? target : 'Вложения Make'
+      }
+      prompt += '\n\nВложения: remote.image {path: uploadId}. Перенос файлов (если Make raw API доступен): attachment_to_make, machine_to_make, make_to_machine. Байты переносит сервер. Файлы проекта изменяй только инструментами Make. Машина ограничена папкой чата; bash поддерживает только pwd и ls, grep — буквальный поиск в одном файле.'
+    }
+    if (!makeChat && target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
         starting.delete(conversationId)
         broadcast({ t: 'claude.error', conversationId, message: `Выбранная машина «${deps.agents.nameOf(target) ?? target}» offline` }, userId)
@@ -1040,11 +1103,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // default_tools_approval_mode в раннере.
     const kanbanMcpOnly = Boolean(kanbanMcpUrl) && provider === 'claude' && !remote && !kanbanExplicitPlan && permissionMode === 'plan'
     if (kanbanMcpOnly) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
-    // Полный контекст хода: все сообщения разговора на момент отправки
-    // (реплика пользователя уже сохранена клиентом перед claude.send).
-    const contextMessages = (await deps.db
-      .chat.listMessages(userId, conversationId))
-      .map((m) => ({ role: m.role, text: m.text }))
+    // Store history references, never duplicate the transcript in every reply.
+    const historySummary = await deps.db.chat.historySummary(userId, conversationId)
     // Детали запроса для панели «Подробнее» (всё, что мы отправили модели).
     const requestInfo: TurnRequestInfo = {
       provider,
@@ -1058,7 +1118,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
       ...(executionDisabled ? { execTarget: 'Без машины (команды запрещены)' } : remote ? { execTarget: remote.agentName } : {}),
-      ...(contextMessages.length ? { messages: contextMessages } : {}),
+      ...historySummary,
       ...(kbContext ? { kbContext } : {})
     }
     // Окружение хода из system/init (инструменты/навыки/mcp) — только claude.
@@ -1129,9 +1189,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
         ...(deps.chatTextOnly ? { textOnly: true } : {}),
+        ...(makeChat ? { toolOnly: true } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
-        ...(attachments.length ? { attachments } : {}),
+        ...(!makeChat && attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(historyMcpUrl ? { historyMcpUrl } : {}),
@@ -1172,6 +1233,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         onDone: async (text, rawMeta) => {
           if (turn.done) return
+          saving.add(conversationId)
           finish()
           const meta = rawMeta ? asTurnSpend(rawMeta) : rawMeta
           // Итоговая модель: из потока CLI → из настроек → у Codex с пустой
@@ -1192,6 +1254,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
+            ...(codexThreadId ? { sessionId: codexThreadId } : {}),
             ...(deps.make?.turnSnapshot(turnId) ? { makeSnapshotId: deps.make.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
@@ -1330,6 +1393,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           track(prepared.then(async (finalText) => {
             if (saved) return // flushInterrupted уже сохранил (сервер останавливается)
             await emitDone(finalText, await persist(finalText))
+          }).finally(async () => {
+            saving.delete(conversationId)
             await dispatchNext(userId, conversationId)
           }))
         },
@@ -1422,7 +1487,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   async function dispatchNext(userId: string, conversationId: string): Promise<void> {
-    if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId)) {
+    if (await deps.db.chat.isTurnQueuePaused(userId, conversationId) || turns.has(conversationId) || starting.has(conversationId) || saving.has(conversationId)) {
       await emitQueue(userId, conversationId)
       return
     }
@@ -1509,7 +1574,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     if (!turn || turn.userId !== userId || !turn.source.messageId) {
       // Без активного хода выбранный элемент становится первым и запускается
-      // сразу, если очередь не удерживает ошибка.
+      // сразу, если очередь не удерживает ошибка. Упавший элемент явной
+      // командой возвращается в очередь — иначе dispatch его не возьмёт.
+      await deps.db.chat.retryQueuedTurn(userId, conversationId, id)
       await deps.db.chat.prioritizeQueuedTurn(userId, conversationId, id)
       await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
       await dispatchNext(userId, conversationId)
@@ -1558,7 +1625,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     await emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
     queueMicrotask(() => {
       restarting.delete(conversationId)
-      void start({
+      track(start({
         userId,
         conversationId,
         messageId: merged.message.id,
@@ -1570,7 +1637,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
         await emitQueue(userId, conversationId)
         broadcast({ t: 'claude.error', conversationId, message: error instanceof Error ? error.message : String(error) }, userId)
-      })
+      }))
     })
   }
 
@@ -1637,6 +1704,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
   return {
     start,
+    resetThread,
     cancel,
     editQueued,
     deleteQueued,

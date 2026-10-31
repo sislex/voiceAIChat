@@ -59,10 +59,20 @@ try {
   } else if (a.action === 'prepare') {
     if (!fs.existsSync(path.join(project, '.git'))) {
       if (fs.existsSync(project)) fail('operation_conflict');
-      git(repos, ['clone', '--no-checkout', '--', a.repositoryUrl, project]);
+      const seedRoot = a.seedRoot || process.env.SISLEXA_STAND_SOURCES || process.env.SISLEXA_STAND_SHARE;
+      if (a.local && (!seedRoot || !path.isAbsolute(seedRoot))) fail('branch_not_found');
+      const seed = a.local ? path.join(seedRoot, a.repoName) : null;
+      if (seed && !fs.existsSync(path.join(seed, '.git'))) fail('branch_not_found');
+      git(repos, ['clone', '--no-checkout', '--', seed || a.repositoryUrl, project]);
+      if (seed) git(project, ['remote', 'set-url', 'origin', a.repositoryUrl]);
     }
     if (git(project, ['remote', 'get-url', 'origin']).output.replace(/\.git$/, '') !== a.repositoryUrl.replace(/\.git$/, '')) fail('operation_conflict');
-    git(project, ['fetch', 'origin']);
+    if (a.local) {
+      git(project, ['config', '--unset-all', 'remote.origin.fetch'], true);
+      git(project, ['config', '--add', 'remote.origin.fetch', '+refs/heads/dev:refs/remotes/origin/dev']);
+      git(project, ['config', '--add', 'remote.origin.fetch', '+refs/heads/make/*:refs/remotes/origin/make/*']);
+    }
+    git(project, ['fetch', '--no-tags', 'origin']);
     const list = git(project, ['worktree', 'list', '--porcelain']).output.split('\n\n');
     const existing = list.find(x => x.split('\n').includes('worktree ' + root));
     if (existing) {
@@ -76,9 +86,12 @@ try {
       if (!git(project, ['check-ref-format', '--branch', branch], true).ok) fail('branch_not_found');
       const local = git(project, ['show-ref', '--verify', '--quiet', 'refs/heads/' + branch], true).ok;
       const remote = git(project, ['show-ref', '--verify', '--quiet', 'refs/remotes/origin/' + branch], true).ok;
-      if (!a.branch && (local || remote)) fail('branch_exists');
+      const reuseDefault = a.local && !a.branch && !a.newBranch;
+      if (!a.branch && !reuseDefault && (local || remote)) fail('branch_exists');
+      const occupied = list.find(entry => entry.split('\n').includes('branch refs/heads/' + branch));
+      if (occupied) fail('branch_checked_out: ' + occupied.split('\n').find(line => line.startsWith('worktree ')).slice(9));
       fs.mkdirSync(parent, { recursive: true });
-      if (a.branch) {
+      if (a.branch || (reuseDefault && (local || remote))) {
         if (!local && !remote) fail('branch_not_found');
         git(project, local ? ['worktree', 'add', '--', root, branch] : ['worktree', 'add', '-b', branch, '--', root, 'origin/' + branch]);
       } else {

@@ -3,20 +3,12 @@ title: Feature-preview окружения задач
 updated: 2026-10-31
 checked: c2aed75b
 areas:
-  - packages/shared/src/preview.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
-  - packages/shared/src/version.ts
-  - apps/agent/src/connection.ts
   - apps/server/src/agents/registry.ts
   - apps/server/src/db/database.ts
-  - apps/server/src/preview
-  - apps/server/src/routes/featurePreview.ts
-  - packages/ui/src/components/preview
-  - packages/ui/src/remote/featurePreviewBridge.ts
-  - packages/ui-foundation/src/lib/clipboard.ts
-  - apps/desktop/src/renderer/src/main.tsx
-  - packages/ui/src/components/ProjectSettings.tsx
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - compose.preview.yml
   - Dockerfile
 ---
@@ -42,6 +34,17 @@ It adds no preview start, stop, migration or recovery operation. See
 [operator handoff](../protocol.md#operator-handoff). The older checked SHA is
 unavailable in this history; this review uses the current registry/Compose/Docker
 sources and verifies the removed local paths explicitly.
+
+## Current Core boundary
+
+Core receives `PreviewEnvironment` from `@voicechat/browser-contracts/preview`
+and lists previews through `KanbanService.previews`. `kanbanBridge/remote.ts`
+forwards tunnel authorization/closure callbacks. Preview managers and task
+preview routes execute in Kanban; Core retains machine tunnel infrastructure.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Development-run preview
 
@@ -102,6 +105,12 @@ Feature-preview — отдельное управляемое окружение
 The `storybook-build` stage runs `npm run verify:core-ui`; `storybook-runtime`
 copies the pinned Core UI Storybook artifact into nginx. Its owner SHA may differ
 from Core's SHA; the artifact is not rebuilt from this workspace's UI sources.
+
+`Dockerfile` verifies the pinned Core UI artifact with `npm run verify:core-ui`.
+The `storybook-runtime` target copies `node_modules/@sislexa/core-ui/storybook`
+into nginx; it does not compile local renderer sources. The app serves the web
+assets from the same pinned owner package. A Core workspace SHA identifies the
+preview composition, while the renderer source commit comes from the owner pin.
 
 ## Фактические границы реализации
 

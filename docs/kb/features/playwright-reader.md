@@ -1,23 +1,13 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-31
+checked: 76b6a6fb
 areas:
-  - apps/browser-runner/src
   - apps/server/src/browser
-  - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/routes/browserShots.ts
-  - packages/shared/src/playwrightReader.ts
-  - packages/shared/src/browserFrames.ts
-  - packages/shared/src/browserProfile.ts
   - packages/shared/src/types.ts
   - packages/shared/src/ipc.ts
-  - packages/playwright-reader-app
-  - packages/ui/src/App.tsx
-  - packages/playwright-reader-app/src/components/BrowserSessionPane.tsx
-  - packages/ui/src/remote
-  - packages/ui/src/store/domains/chatStore.ts
   - apps/server/src/db/database.ts
   - apps/server/src/routes/rest.ts
 ---
@@ -33,11 +23,13 @@ Saved PNGs use the existing CI browser-shot URL contract. Screenshots remain aft
 ## Независимый frontend domain
 
 API, UI and contracts are now owned by [`sislex/playwrightreader`](https://github.com/sislex/playwrightreader).
-The matching paths in Core are compatibility adapters over the integrity-pinned
-`@sislexa/playwright-reader` archive. Implementation paths below refer to that
-repository; browser-runner and Core bridges still belong to this repository.
-Adapter gates execute the complete upstream suites, and Storybook indexes the
-installed upstream story sources. See `deploy/tools.lock.json` for the exact
+Core consumes the integrity-pinned `@sislexa/playwright-reader` archive directly.
+The former product and browser-runner workspaces are removed; only Core bridges,
+authorization, browser-target selection and screenshot routes remain here.
+Implementation paths below refer to the extracted owner. Product unit, Storybook
+and system suites run in the owner; Core retains consumer integration checks.
+`playwrightReaderBridge/localCore.ts` verifies conversation ownership and the
+`playwright-reader.use` capability before supplying model targets. See `deploy/tools.lock.json` for the exact
 release revision and [deployment](../deploy.md#independent-tool-source-releases)
 for the separate API/frontend processes.
 

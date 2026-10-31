@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-10-15
-checked: 8b6a5a7a
+updated: 2026-10-31
+checked: 242d084b
 
 areas:
   - packages/shared/src/qa.ts
@@ -9,15 +9,23 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/server.ts
-  - apps/server/src/kanban/module.ts
-  - apps/server/src/ci/modelHooks.ts
-  - packages/ui/src/components/kanban/TaskPreparationTab.tsx
-  - packages/ui/src/components/ClarificationNotification.tsx
-  - packages/ui/src/App.tsx
-  - packages/ui/src/remote/httpApi.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
+  - apps/server/src/db/repos/tasks.ts
 ---
 
 # Интерактивная подготовка задачи и Development Brief
+
+## Current Core boundary
+
+Core retains `DevelopmentReadiness` and its pure gate in `qa.ts`, with
+attempt/event/question persistence in `db/repos/tasks.ts`. Preparation execution,
+strict response parsing and REST routes run in Kanban. Core's bridge delivers
+`preparationRun` updates and provides machine, KB and upload access.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Попытки и жизненный цикл
 
@@ -127,7 +135,7 @@ CHAT-466 additionally rejects duplicate JSON member names before any field norma
 
 Репозиторий доступен через read-only remote MCP машины из неизменяемого снимка попытки; рабочая директория берётся из соответствующей записи `project_machines.path`. Для совместимого запуска старого клиента без явного selection сервер выбирает личную машину проекта по умолчанию, машину проекта по умолчанию либо первую разрешённую машину с непустым `path`. Если подходящей машины нет, CLI запускается с `executionDisabled`, а prompt и лог получают конкретную диагностику; offline-машина также явно отмечается, но инструменту оставлено вернуть точную ошибку соединения. До формирования снимка модель обязана найти и прочитать тематический раздел БЗ, затем через `readOnlyRemote` найти и прочитать релевантные контракты, типы, клиентские компоненты и тесты. Встроенный Bash CLI отключён, MCP-мост работает с `ro=1`, а prompt разрешает чтение и поиск только в рабочей директории проекта и `docs/kb`, ограничивает Bash командами `ls`, `find`, `git status/log/diff`, исследование — 12 вызовами инструментов, 8 файлами, 24 000 символов полезных выдержек и 120 секундами на вызов; edit, deploy, package managers, сборки, тесты и изменения процессов, данных или окружения запрещены.
 
-В `sources` перечисляются только фактически прочитанные источники с точными `refs`, статусом `available`, `absent` или `unavailable` и диагностикой. Schema v2 не проходит гейт без доступных источников видов `knowledge` и `code`, а критичный источник с иным статусом даёт отдельную причину отказа. При расхождении источником истины служит код, а закрытое расхождение фиксируется в `decisions`. Вопрос пользователю допустим только после исследования при недоступности критичного источника, существенном противоречии требований или необходимости продуктового решения; запрашивать доступ к уже настроенной машине или репозиторию prompt запрещает. Неполнота БЗ на этом read-only этапе только фиксируется как пробел для последующей безопасной актуализации, сама подготовка документы не меняет.
+В `sources` перечисляются только фактически прочитанные источники с точными `refs`, статусом `available`, `absent` или `unavailable` и диагностикой. Schema v2 requires an available `code` source. It also requires an available `knowledge` source unless `knowledgeBase: 'absent'` is explicit; unavailable critical sources fail independently. При расхождении источником истины служит код, а закрытое расхождение фиксируется в `decisions`. Вопрос пользователю допустим только после исследования при недоступности критичного источника, существенном противоречии требований или необходимости продуктового решения; запрашивать доступ к уже настроенной машине или репозиторию prompt запрещает. Неполнота БЗ на этом read-only этапе только фиксируется как пробел для последующей безопасной актуализации, сама подготовка документы не меняет.
 
 CHAT-470 adds coverage links TC-BRIEF-1, TC-BRIEF-2 and TC-BRIEF-KB-1 to the existing strict-output and schema regressions. The KB consistency test executes the documented nullable-link normalization and rejects both reported textual prefixes. No prose extraction or additional coercion was introduced.
 

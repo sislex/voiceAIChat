@@ -81,6 +81,11 @@ function timedStart(events, { fail } = {}) {
 }
 
 test('selectAffected выбирает пакеты и безопасный fallback', async (t) => {
+  await t.test('file storage stays isolated and depends on shared/runtime', () => {
+    assert.deepEqual(ids(selectAffected(['packages/file-storage/src/service.ts'])), ['file-storage'])
+    assert.deepEqual([...dependenciesOf('file-storage')].sort(), ['component-runtime', 'shared'])
+  })
+
   await t.test('правка только server', () => {
     const decision = selectAffected(['apps/server/src/server.ts'])
     assert.equal(decision.full, false)
@@ -95,7 +100,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -105,14 +110,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+      assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -126,7 +131,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 })
 
@@ -171,8 +176,21 @@ test('e2e, frontend-quality и настройки агентов не включ
   }
 })
 
-test('parseOptions разбирает базу диффа, режим и jobs', () => {
+test('parseOptions разбирает базу диффа, режим и jobs', (t) => {
+  // Kanban task runs export BASE_BRANCH=dev; isolate and restore it while
+  // checking the unset, empty and configured defaults.
+  const originalBaseBranch = process.env.BASE_BRANCH
+  t.after(() => {
+    if (originalBaseBranch === undefined) delete process.env.BASE_BRANCH
+    else process.env.BASE_BRANCH = originalBaseBranch
+  })
+  delete process.env.BASE_BRANCH
   assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  process.env.BASE_BRANCH = ''
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  process.env.BASE_BRANCH = 'dev'
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/dev', fast: false })
+  delete process.env.BASE_BRANCH
   assert.deepEqual(parseOptions(['--fast', '--worktree']), { jobs: 2, base: 'HEAD', fast: true })
   assert.deepEqual(parseOptions(['--base', 'origin/release/1.2.0', '--jobs', '4']), { jobs: 4, base: 'origin/release/1.2.0', fast: false })
   assert.throws(() => parseOptions(['--base']), /--base требует git-ref/)

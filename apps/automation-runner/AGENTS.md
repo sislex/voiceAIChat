@@ -1,9 +1,15 @@
-# Automation Runner
+# @voicechat/automation-runner
 
-Follow the [root instructions](../../AGENTS.md).
-Read [runner integration](../../docs/kb/features/ci-runner.md) and
-[the service contract](../../docs/automation-runner.md) before changes.
+Durable HTTP job execution service. Read the root AGENTS.md first.
 
-The package exports src/server.ts; src/index.ts owns process startup.
-Preserve bearer authentication on /v1 routes, durable queue state and injected
-executor/machine/LLM ports. Keep tests beside the implementation.
+- `server.ts` builds Fastify with injected store, executor and machine/LLM ports.
+  All `/v1/` requests require the configured runner bearer token.
+- `queue.ts` owns execution and cancellation; `store.ts` owns persisted jobs,
+  idempotency keys, events and pause/resume state. Preserve restart behavior.
+- Public contracts live in `packages/shared/src/automation.ts`.
+  Keep Kanban workflow orchestration outside this service.
+- Use `.js` relative imports for the `tsx` ESM runtime.
+- Focused checks: `npm run -w @voicechat/automation-runner typecheck` and
+  `npm run -w @voicechat/automation-runner test`.
+
+See [runner operation](../../docs/automation-runner.md).

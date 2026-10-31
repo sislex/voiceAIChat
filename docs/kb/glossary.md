@@ -1,13 +1,15 @@
 ---
 title: Словарь терминов: роли, сервисы, стенды, выпуск, техника
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-10-31
+checked: 76b6a6fb
 areas:
   - AGENTS.md
   - docs/plans/dev-lane-v1.md
   - docs/plans/make-stand-v1.md
   - packages/shared/src/devStand.ts
   - packages/shared/src/applicationCatalog.ts
+  - scripts/task-gate.mjs
+  - scripts/vendor-store.mjs
 ---
 
 # Словарь терминов
@@ -109,8 +111,9 @@ areas:
 - **Ветки**: `main` — проверенная; `dev` — «непроверенный main», куда интегратор вливает
   задачи; `release/0.1.N` — ветка выпуска ядра; `make/<slug>` — ветки бесед Make.
   **Перенос (promotion) `dev → main`** — по расписанию или по команде, с полным гейтом.
-- **Гейты (gates)** — наборы проверок с кодом выхода. `gate:task` — только изменённый
-  модуль, бюджет 100 тестов / 60 с; `gate:quick` — typecheck и затронутые тесты;
+- **Gates** are validation commands with exit status. `gate:task` selects changed
+  modules with a budget of 1000 test cases / 300 seconds; `gate:quick` runs
+  typechecks and affected tests;
   `gate` / `gate:all` — полный набор, включая браузерные; `gate:release` — плюс
   производительность и системные проверки владельцев; `kb:check` — свежесть базы знаний.
   См. [testing](testing-operations.md).
@@ -126,10 +129,12 @@ areas:
   положить чужой пакет внутрь своего репозитория, чтобы сборка не зависела от npm и
   сети. Имя файла несёт версию и начало sha256 (`sislexa-make-1.4.6-f9a821d8da13.tgz`),
   а `vendor/owner-artifacts.json` — происхождение каждого архива. В `package.json` такие
-  зависимости записаны как `file:../../vendor/<архив>`.
+  dependencies now use immutable URLs under the Core GitHub `vendor` release.
+  Archives are downloaded/cache material, not committed binaries; legacy `file:`
+  references remain readable by the tooling.
 - **Закрепление (pin, «пин»)** — фиксация точной версии зависимости или образа, чтобы
   сборка и деплой всегда брали одно и то же. Для пакетов: положить архив в `vendor/`,
-  прописать его в `package.json` (`file:…`), `package-lock.json`,
+  record its immutable release URL in `package.json`, `package-lock.json`,
   `dependency-snapshots.json` и `vendor/owner-artifacts.json`. Для сервисов-образов
   (Kanban, Make, Reader): записать версию и коммит в `deploy/tools.lock.json` и тег образа
   в `docker-compose.yml`. Делает `release-composition apply --dir <каталог с выпусками>`;
@@ -161,6 +166,16 @@ areas:
   которая недоступна по ssh (M1).
 - **Настройка задачи (configure)** — базовый SHA, разрешённые пути, команды подготовки
   (`npm ci`) и гейта, ресурсы.
+
+## File storage and task-gate evidence
+
+- **File storage** — the `@sislexa/file-storage` workspace: blob node, HTTP
+  client and coordinator. `file-storage` is its service catalog ID;
+  `file-storage-node` is the Docker target. See [architecture](architecture.md).
+- **GATE-TASK-CASE** — every reported test case, including successful cases.
+  **GATE-TASK-FAILED** repeats the failed case and its error at the end of
+  the gate report, before the total test count and time. See
+  [testing operations](testing-operations.md#task-gate-for-the-dev-lane).
 
 ## База знаний
 

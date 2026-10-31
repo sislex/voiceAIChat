@@ -222,6 +222,28 @@ export class VoiceChatDb {
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
+    this.scheduleServiceDataMigration()
+  }
+
+  private serviceDataTimer: ReturnType<typeof setTimeout> | null = null
+  private serviceDataBatch: Promise<unknown> | null = null
+
+  private scheduleServiceDataMigration(): void {
+    if (this.closed) return
+    this.serviceDataTimer = setTimeout(() => {
+      this.serviceDataTimer = null
+      if (this.closed) return
+      // Use the public port so SQLite migration shares the request serialization lane.
+      this.serviceDataBatch = this.chat.migrateMessageServiceDataBatch().then(count => {
+        if (count) this.scheduleServiceDataMigration()
+      }).catch(error => {
+        if (!this.closed) {
+          console.error('message service data migration failed', error)
+          this.scheduleServiceDataMigration()
+        }
+      })
+    }, 100)
+    this.serviceDataTimer.unref()
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
@@ -421,6 +443,7 @@ export class VoiceChatDb {
       ['summary_text', 'TEXT'],
       ['summary_covers_message_id', 'TEXT'],
       ['summary_updated_at', 'INTEGER'],
+      ['summary_source', 'TEXT'],
       ['context_usage_json', 'TEXT'],
       ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
     ] as const) {
@@ -536,20 +559,7 @@ export class VoiceChatDb {
       CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_del AFTER DELETE ON messages
       BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = OLD.conversation_id; END;
     `)
-    // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
-    // прежних времён привязки — мусор, который вводит в заблуждение: панель
-    // показывала машину и каталог, которых ход не использует. Явное «без машины»
-    // (`none`) сохраняем: это осознанный выбор пользователя, совпадающий с новым
-    // поведением. Идемпотентно — второй запуск не находит строк.
-    if (convCols.some((c) => c.name === 'assistant_kind')) {
-      await this.sql.exec(`
-        UPDATE conversations
-        SET exec_target = CASE WHEN exec_target = 'none' THEN exec_target ELSE NULL END,
-            workdir = NULL
-        WHERE assistant_kind = 'make'
-          AND ((exec_target IS NOT NULL AND exec_target <> 'none') OR workdir IS NOT NULL)
-      `)
-    }
+    // Make conversations retain their explicit machine and folder across restarts.
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = (await this.sql.all(`PRAGMA table_info(projects)`)) as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'tenant_id')) {
@@ -1081,6 +1091,8 @@ export class VoiceChatDb {
     await this.lane?.idle()
     if (this.closed) return
     this.closed = true
+    if (this.serviceDataTimer) clearTimeout(this.serviceDataTimer)
+    await this.serviceDataBatch
     if (this.ctx.repos.chat.ftsTimer) clearTimeout(this.ctx.repos.chat.ftsTimer)
     this.ctx.repos.chat.ftsTimer = null
     if (this.dropSchemaOnClose) await this.sql.exec(`DROP SCHEMA IF EXISTS ${this.dropSchemaOnClose} CASCADE`).catch(() => {})

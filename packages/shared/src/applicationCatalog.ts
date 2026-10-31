@@ -36,6 +36,17 @@ const definition = (id: string, name: string, paths: string[], options: Partial<
 });
 function createApplicationCatalog(): readonly ApplicationDefinition[] {
   return [
+  definition("file-storage", "File storage", ["packages/file-storage"], {
+    workspaces: ["@sislexa/file-storage"],
+    buildDependencies: ["shared", "component-runtime"],
+    kind: "service",
+    services: ["file-storage-node"],
+    entrypoint: "packages/file-storage/src/node/main.ts",
+    healthPath: "/v1/health",
+    dataPaths: ["blobs"],
+    configuration: ["VC_FILE_STORAGE_NODE_ID", "VC_FILE_STORAGE_DIR", "VC_FILE_STORAGE_CAPACITY_BYTES", "VC_FILE_STORAGE_TOKEN_FILE", "SISLEXA_COMPONENT_CONFIG"],
+    isolation: { tests: true, build: false, deploy: false },
+  }),
   definition("core", "Ядро", ["apps/server", "packages/knowledge"], {
     "workspaces": [
       "@voicechat/server",

@@ -52,6 +52,8 @@ export interface MessageAttachment {
   size: number
   /** Машина-источник; отсутствие означает сервер. */
   agentId?: string
+  /** File in the storage service; when set, `path` is display-only and `agentId` is absent. */
+  storage?: import('./fileStorage').StorageFileRef
   caption?: string
   /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
   retouch?: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRecord
@@ -870,6 +872,8 @@ export interface ConversationMembershipMutation {
 }
 
 export interface ConversationSummary {
+  /** Absent for model summaries written by older servers. */
+  source?: 'model' | 'fallback'
   text: string
   coversUntilMessageId: string
   updatedAt: number
@@ -1250,6 +1254,8 @@ export interface SessionUsage extends TurnUsage {
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
+  /** Provider session id (without the provider prefix), shared by Claude and Codex. */
+  sessionId?: string
   /** Size summary for service data omitted from a client-facing message. */
   serviceData?: {
     activityEntries: number
@@ -1278,14 +1284,16 @@ export interface TurnMeta extends TurnUsage {
   codexThreadUsage?: CodexThreadUsage
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */
   request?: TurnRequestInfo
+  /** Lightweight action state, available without fetching diagnostics. */
+  permissionMode?: string
   /** Legacy-предложение одной задачи; читается UI для обратной совместимости. */
   taskLaunch?: TaskLaunchRequest
   /** Независимые предложения задач и их персистентное состояние. */
   taskLaunches?: TaskLaunchProposal[]
   /**
    * Активность хода (команды/thinking/результаты) для подробного вида сообщения.
-   * Собирается всегда и персистится в составе `meta` (JSON-колонка), поэтому
-   * подробный вид доступен и после перезагрузки/переоткрытия разговора.
+   * Persisted separately in message_service_data; loaded explicitly for details.
+   * History and completion frames never contain this field.
    */
   activity?: ClaudeLogEntry[]
   /**
@@ -1360,12 +1368,10 @@ export interface TurnRequestInfo {
   slashCommands?: string[]
   /** MCP-серверы хода (из system/init CLI). */
   mcpServers?: string[]
-  /**
-   * Полный контекст разговора на момент хода: все сообщения (история + текущая
-   * реплика), как они лежали в БД при отправке. При --resume история хранится в
-   * сессии CLI и повторно не пересылается, но показывается здесь для наглядности.
-   */
+  /** @deprecated Legacy records only; new writes retain counts, never a history copy. */
   messages?: TurnContextMessage[]
+  messageCount?: number
+  lastMessageId?: string
 }
 
 /** Одно сообщение контекста хода (роль + текст). */

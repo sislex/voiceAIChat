@@ -1,27 +1,32 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-09-13
-checked: 2f962970
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
-  - apps/server/src/ci/integrationTests.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/database.qa.test.ts
   - apps/server/src/db/repos/ci.ts
-  - apps/server/src/routes/qa.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
+  - apps/server/src/db/repos/qa.ts
   - apps/server/src/server.ts
-  - packages/ui/src/components/qa/QaStageRunPanel.tsx
-  - packages/ui/src/components/kanban/TaskModal.tsx
-  - packages/ui/src/components/kanban/TaskCard.tsx
-  - packages/ui/src/components/kanban/KanbanBoard.tsx
-  - packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx
-  - packages/ui/src/styles/app.css
-  - packages/ui/src/remote/qaBridge.ts
 ---
 
 # Раны QA-этапов: отдельные сущности и вкладки карточки
+
+## Current Core boundary
+
+Core retains `QaRunStage` contracts and `db/repos/qa.ts` stage-run persistence.
+The `qaStage` bridge event carries project/task/stage, including `manual_qa`;
+Core relays it through `subscribeQaStages`. Generic stage execution and the
+specialized Component QA/Integration Tests managers run in Kanban.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Панели этапов живут на событиях, а не на опросе (2026-09-06)
 
@@ -73,7 +78,9 @@ areas:
 «Предметный контур Integration Tests» ниже. Для `component_qa` используется специализированный `component_qa_runs`, а
 `automated_qa` исполняет `createAutomatedQaRunner` поверх общего `CommandExecutor`.
 
-`startQaStageRun` создаёт queued-попытку, после чего Automated QA runner берёт
+`startQaStageRun` inserts a `running` attempt with `current_step='starting'`;
+`markAutomatedQaRunning` advances it to `tests` from either `queued` or `running`.
+The Automated QA runner then uses
 `projects.automated_qa_command` (дефолт `npm test`), pushed development-workspace
 и его машину. Команда исполняется с `CI=1` и общим 30-минутным бюджетом; stdout
 потоково дописывается в `qa_stage_runs.log_json`. Exit code 0 завершает gate и

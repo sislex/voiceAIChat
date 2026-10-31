@@ -194,6 +194,7 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationThreadCost: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-cost`,
   conversationSummary: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary`,
   conversationSummaryRefresh: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary/refresh`,
   conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
@@ -306,7 +307,9 @@ export const REST = {
     if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
-  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
+  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-reset`,
+  /** Compatibility route for published clients expecting a Conversation response. */
+  conversationThreadResetLegacy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
@@ -395,6 +398,8 @@ export const REST = {
   loginEnrollmentRedeem: '/api/login-application/enrollments/redeem',
   loginEnrollmentStatus: (id: string) => `/api/login-application/enrollments/${encodeURIComponent(id)}`,
   desktopApp: '/api/app/desktop',
+  androidApp: '/api/app/android',
+  androidApk: '/api/app/android/apk',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   agentStorages: (id: string) => `/api/agents/${encodeURIComponent(id)}/storages`,
   conversationStorage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/storage`,
@@ -736,6 +741,8 @@ export interface UploadInfo {
   mimeType: string
   size: number
   agentId?: string
+  /** Set when the file was stored in the storage service instead of a machine. */
+  storage?: import('./fileStorage').StorageFileRef
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */

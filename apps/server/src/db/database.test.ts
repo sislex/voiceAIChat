@@ -558,7 +558,10 @@ describe('VoiceChatDb — сообщения', () => {
     }
     await db.chat.addMessage(U, c.id, 'ai', 'ответ', '14:02', 'claude', meta)
     const [m] = await db.chat.listMessages(U, c.id)
-    expect(m.meta).toEqual(meta)
+    const { request, ...light } = meta
+    expect(m.meta).toMatchObject(light)
+    expect(m.meta?.request).toBeUndefined()
+    expect((await db.chat.messageServiceData(U, c.id, m.id))?.request).toEqual(request)
     expect(m.engine).toBe('claude')
   })
 
@@ -1109,7 +1112,7 @@ describe('VoiceChatDb — миграции', () => {
     }
   })
 
-  it.skipIf(ON_POSTGRES)('снимает с Make-чатов привязку к машине и каталог, а «none» и чужие чаты не трогает', async () => {
+  it.skipIf(ON_POSTGRES)('preserves Make machine settings through database initialization and updates', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-db-make-machine-'))
     const file = join(dir, 'voicechat.db')
     const raw = new Database(file)
@@ -1152,21 +1155,19 @@ describe('VoiceChatDb — миграции', () => {
 
     await db.ready
     try {
-      // Привязка Make-чата снята: ход её всё равно игнорирует, а панель показывала
-      // машину и каталог, которых нет в работе.
-      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, workdir: null })
+      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: 'agent-1', workdir: '/Users/dev/ChatAI/projects/p1/worktree' })
       // Явное «без машины» — осознанный выбор пользователя, он сохраняется.
       expect((await db.chat.getConversation('admin', 'm2'))?.execTarget).toBe('none')
       // Обычный чат работает на машине: его привязка не трогается.
       expect(await db.chat.getConversation('admin', 'c1')).toMatchObject({ execTarget: 'agent-1', workdir: '/repo' })
 
-      // Повторно назначить машину Make-чату нельзя и через API.
+      // Explicit settings survive subsequent API updates.
       const machine = await db.machines.createAgent('admin', 'Ноутбук')
       await db.chat.setConversationExecTarget('admin', 'm1', machine.id, '/repo')
-      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, workdir: null })
+      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: machine.id, workdir: '/repo' })
       // Прочие настройки того же вызова сохраняются.
       await db.chat.setConversationExecTarget('admin', 'm1', machine.id, '/repo', undefined, undefined, undefined, 'plan')
-      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: null, permissionMode: 'plan' })
+      expect(await db.chat.getConversation('admin', 'm1')).toMatchObject({ execTarget: machine.id, permissionMode: 'plan' })
     } finally {
       await db.close()
       rmSync(dir, { recursive: true, force: true })

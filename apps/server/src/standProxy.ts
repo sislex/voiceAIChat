@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { canInjectInspector, injectInspectorHtml } from './htmlInject.js'
@@ -35,10 +35,36 @@ export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: 
 export function standCookies(cookies: string[] | undefined, key: string): string[] | undefined {
   return cookies?.map(cookie => 'sxs_' + key + '_' + cookie.split(';').filter((part, i) => i === 0 || !/^\s*domain\s*=/i.test(part)).join(';'))
 }
+// CSP applies to the entire ancestor chain, including the Core page outside the lease.
+export function standFrameHeaders(headers: IncomingHttpHeaders, parentOrigin: string, origin: string): IncomingHttpHeaders {
+  const result = { ...headers }
+  let hasFrameAncestors = false
+  const rewrite = (value: string) => value.replace(/(^|[;,])(\s*frame-ancestors)(?=\s|;|,|$)([^;,]*)/gi, (directive, separator: string, name: string, sources: string) => {
+    hasFrameAncestors = true
+    const tokens = sources.trim().split(/\s+/)
+    if (tokens.some(token => token.toLowerCase() === "'none'")) return directive
+    const additions = [...new Set([parentOrigin, origin])].filter(source => !tokens.includes(source))
+    return separator + name + sources.trimEnd() + (additions.length ? ' ' + additions.join(' ') : '')
+  })
+  const csp = result['content-security-policy']
+  if (Array.isArray(csp)) result['content-security-policy'] = csp.map(rewrite)
+  else if (csp !== undefined) result['content-security-policy'] = rewrite(csp)
+  const xfo = result['x-frame-options']
+  if (typeof xfo === 'string' && xfo.trim().toUpperCase() === 'SAMEORIGIN') {
+    delete result['x-frame-options']
+    if (!hasFrameAncestors) {
+      const policy = "frame-ancestors 'self' " + [...new Set([parentOrigin, origin])].join(' ')
+      result['content-security-policy'] = csp === undefined ? policy : [...(Array.isArray(csp) ? csp : [csp]), policy]
+    }
+  }
+  return result
+}
 type Target = { machineId: string; gatewayPort: number }
 export type StandProxyAccessOptions = { inject?: 'make-inspector' }
-type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; server: Server; sockets: Set<Duplex> }
+type Lease = Target & StandProxyAccessOptions & { user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; parentOrigin: string; server: Server; sockets: Set<Duplex> }
 export interface StandProxyDeps {
+  /** Persistent Core signing secret; keeps stand cookie names stable across restarts. */
+  secret: string
   ports: number[]
   publicHost?: string
   publicScheme?: 'http' | 'https'
@@ -48,9 +74,11 @@ export interface StandProxyDeps {
   connect(machine: string, port: number): Duplex
   /** Serves the Make inspector script on injected leases so the stand itself never has to know the route. */
   inspectorScript?(cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
+  previewInspectorScript?(parentOrigin: string, cookie: string): Promise<{ statusCode: number; headers: Record<string, string>; body: Buffer }>
   now?: () => number
 }
 const INSPECTOR_SCRIPT_PATH = '/api/make/inspector.js'
+const PREVIEW_INSPECTOR_SCRIPT_PATH = '/__sislexa/preview-inspector.js'
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
 
 export class StandProxy {
@@ -76,15 +104,16 @@ export class StandProxy {
     return this.serial(async () => {
       if (this.closed) fail(503, 'stand_proxy_unavailable')
       await this.expire()
-      const id = JSON.stringify([user, projectId, standId, port ?? null, options.inject ?? null])
+      const hostname = new URL('http://' + (this.deps.publicHost || host)).hostname
+      // Core session cookies are host-scoped, so each page hostname needs its own origin.
+      const id = JSON.stringify([user, projectId, standId, port ?? null, options.inject ?? null, hostname])
       let lease = this.leases.get(id)
       if (lease && (lease.machineId !== target.machineId || lease.gatewayPort !== target.gatewayPort)) { await this.remove(id, lease); lease = undefined }
       if (!lease) {
-        const hostname = new URL('http://' + (this.deps.publicHost || host)).hostname
         for (const port of this.deps.ports) {
           if ([...this.leases.values()].some(l => l.port === port)) continue
           const server = createServer()
-          const candidate: Lease = { ...target, inject: options.inject, user, projectId, standId, port, key: randomBytes(16).toString('hex'), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
+          const candidate: Lease = { ...target, parentOrigin: new URL((this.deps.publicScheme ?? 'http') + '://' + host).origin, inject: options.inject, user, projectId, standId, port, key: createHmac('sha256', this.deps.secret).update(id).digest('hex').slice(0, 32), expiresAt: 0, origin: (this.deps.publicScheme ?? 'http') + '://' + hostname + ':' + port, server, sockets: new Set() }
           server.on('connection', socket => { candidate.sockets.add(socket); socket.on('close', () => candidate.sockets.delete(socket)) })
           server.on('request', (req, res) => { void this.forward(candidate, req, res).catch(() => res.destroy()) })
           server.on('upgrade', (req, socket, head) => {
@@ -104,9 +133,17 @@ export class StandProxy {
   }
   private async forward(lease: Lease, req: IncomingMessage, res?: ServerResponse, socket?: Duplex, head?: Buffer): Promise<void> {
     const deny = (code: number) => { if (res) { res.writeHead(code); res.end() } else socket?.end('HTTP/1.1 ' + code + ' Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n') }
-    let user: string | null = null
-    try { user = req.headers.cookie ? await this.deps.session(req.headers.cookie) : null } catch {}
-    if (this.closed || lease.expiresAt <= this.now() || user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
+    const path = (req.url ?? '').split('?')[0]!
+    const publicArtifact = !!res && (req.method === 'GET' || req.method === 'HEAD') &&
+      /^\/applications\/[a-z][a-z0-9-]+\/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$/.test(path) &&
+      !path.split('/').some(part => part === '.' || part === '..')
+    if (this.closed || lease.expiresAt <= this.now()) return deny(401)
+    if (!publicArtifact) {
+      let user: string | null = null
+      try { user = req.headers.cookie ? await this.deps.session(req.headers.cookie) : null } catch {}
+      if (user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
+    }
+    if (this.closed || lease.expiresAt <= this.now()) return deny(401)
     if (res?.destroyed || socket?.destroyed) return
     lease.expiresAt = this.now() + IDLE_MS
     if (res && lease.inject === 'make-inspector' && this.deps.inspectorScript && (req.method === 'GET' || req.method === 'HEAD') && (req.url ?? '').split('?')[0] === INSPECTOR_SCRIPT_PATH) {
@@ -118,17 +155,28 @@ export class StandProxy {
       res.end(req.method === 'HEAD' ? undefined : script.body)
       return
     }
+    if (res && lease.inject === 'make-inspector' && path === PREVIEW_INSPECTOR_SCRIPT_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
+      if (!this.deps.previewInspectorScript) return deny(502)
+      let script: { statusCode: number; headers: Record<string, string>; body: Buffer }
+      try { script = await this.deps.previewInspectorScript(lease.parentOrigin, req.headers.cookie ?? '') } catch { return deny(502) }
+      if (script.statusCode < 200 || script.statusCode >= 300) return deny(502)
+      if (res.destroyed) return
+      res.writeHead(script.statusCode, { ...script.headers, 'cache-control': 'no-store', 'content-length': String(script.body.length) })
+      res.end(req.method === 'HEAD' ? undefined : script.body)
+      return
+    }
     let tunnel: Duplex
     try { tunnel = this.deps.connect(lease.machineId, lease.gatewayPort) } catch { return deny(502) }
     lease.sockets.add(tunnel); tunnel.once('close', () => lease.sockets.delete(tunnel))
-    const upstream = request({ hostname: '127.0.0.1', port: lease.gatewayPort, method: req.method, path: req.url, headers: standHeaders(req.headers, lease.key, lease.origin, lease.gatewayPort), createConnection: () => tunnel })
+    const requestHeaders = publicArtifact ? { ...req.headers, cookie: undefined } : req.headers
+    const upstream = request({ hostname: '127.0.0.1', port: lease.gatewayPort, method: req.method, path: req.url, headers: standHeaders(requestHeaders, lease.key, lease.origin, lease.gatewayPort), createConnection: () => tunnel })
     const touch = () => { lease.expiresAt = this.now() + IDLE_MS }
     tunnel.on('data', touch)
     req.on('data', touch)
     upstream.on('error', () => { tunnel.destroy(); if (res && !res.headersSent) deny(502); else { res?.destroy(); socket?.destroy() } })
     upstream.on('response', response => {
       response.on('error', () => { res?.destroy(); socket?.destroy(); tunnel.destroy() })
-      const headers = { ...response.headers }
+      const headers = standFrameHeaders(response.headers, lease.parentOrigin, lease.origin)
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
       if (res) {
         res.on('close', () => { response.destroy(); tunnel.destroy() })
@@ -138,7 +186,7 @@ export class StandProxy {
             const chunks: Buffer[] = []
             for await (const chunk of response) chunks.push(Buffer.from(chunk))
             const original = Buffer.concat(chunks)
-            const rewritten = await injectInspectorHtml(original, headers, scriptUrl)
+            const rewritten = await injectInspectorHtml(original, headers, scriptUrl, [lease.origin + PREVIEW_INSPECTOR_SCRIPT_PATH])
             if (res.destroyed) return
             if (rewritten) {
               headers['content-length'] = String(rewritten.length)
@@ -157,7 +205,7 @@ export class StandProxy {
     })
     upstream.on('upgrade', (response, remote, remoteHead) => {
       if (!socket) { remote.destroy(); return }
-      const headers = { ...response.headers }
+      const headers = standFrameHeaders(response.headers, lease.parentOrigin, lease.origin)
       if (headers['set-cookie']) headers['set-cookie'] = standCookies(headers['set-cookie'], lease.key)
       socket.write('HTTP/1.1 101 Switching Protocols\r\n' + Object.entries(headers).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).filter(v => v !== undefined).map(v => k + ': ' + v + '\r\n')).join('') + '\r\n')
       if (remoteHead.length) socket.write(remoteHead)

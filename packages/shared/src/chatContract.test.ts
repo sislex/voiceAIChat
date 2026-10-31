@@ -116,7 +116,11 @@ describe('chat settings adapter', () => {
 describe('immutable chat contract artifact', () => {
   // @testCase TC-REG-08
   it('publishes group routes and permissions with a stable digest', () => {
-    expect(CHAT_CONTRACT_ARTIFACT.contractVersion).toBe('1.1.0')
+    expect(CHAT_CONTRACT_ARTIFACT.contractVersion).toBe('1.2.0')
+    expect(CHAT_CONTRACT_ARTIFACT.rest).toMatchObject({
+      conversationThreadCost: '/api/conversations/:conversationId/thread-cost',
+      conversationThreadReset: '/api/conversations/:conversationId/thread-reset'
+    })
     expect(CHAT_CONTRACT_ARTIFACT.rest).toMatchObject({
       conversationGroups: '/api/conversation-groups',
       conversationGroup: '/api/conversation-groups/:groupId',

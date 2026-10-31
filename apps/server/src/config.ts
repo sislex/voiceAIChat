@@ -40,10 +40,13 @@ export interface ServerConfig {
   agentOfflineAlertMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
+  androidManifestPath?: string
   /** Отдельный macOS ARM64 DMG приложения безопасного подключения машины. */
   loginApplicationPath?: string
   /** Owner-built panel directories explicitly selected by deployment configuration. */
   applicationFrontends?: Record<string, string>
+  /** Allow configured sources to replace pinned frontend archives. */
+  applicationFrontendsOverride?: boolean
   /** Published Core UI directory served by the API process when VC_WEB_DIR is set. */
   webDir?: string
   /** Persistent immutable browser releases and atomic activation record. */
@@ -283,6 +286,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     agentOfflineAlertMs: env.VC_AGENT_OFFLINE_ALERT_MIN !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_ALERT_MIN) || 0) * 60_000 : 10 * 60_000,
     longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,
     agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
+    androidManifestPath: env.VC_ANDROID_MANIFEST ?? (AUTODISCOVER ? fileURLToPath(new URL('../../../vendor/android/android-release.json', import.meta.url)) : undefined),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     loginApplicationPath: env.VC_LOGIN_APPLICATION ?? (AUTODISCOVER ? findDmg(REPO.loginApplicationDir) : undefined),
     webDir: env.VC_WEB_DIR,
@@ -303,6 +307,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
     applicationFrontends: env.VC_APPLICATION_FRONTENDS ? JSON.parse(env.VC_APPLICATION_FRONTENDS) as Record<string, string> : undefined,
+    applicationFrontendsOverride: env.NODE_ENV !== 'production' || env.VC_APPLICATION_FRONTENDS_OVERRIDE === '1',
     imageStudioMode: mode('image-studio', env.VC_IMAGE_STUDIO_MODE),
     imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
     makeMode: mode('make', env.VC_MAKE_MODE),

@@ -18,7 +18,16 @@ def scrypt_password_hash(password, salt=None):
     N=16384, r=8, p=1, 32-byte key, 16-byte salt); a pgcrypto bcrypt hash never matches."""
     import hashlib
     salt = os.urandom(16) if salt is None else salt
-    digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+    if hasattr(hashlib, 'scrypt'):
+        digest = hashlib.scrypt(password.encode('utf-8'), salt=salt, n=16384, r=8, p=1, dklen=32, maxmem=64 * 1024 * 1024)
+    else:
+        # macOS system Python links LibreSSL without scrypt; Node is present on every stand host.
+        # The password travels on stdin, never in argv.
+        digest = bytes.fromhex(subprocess.run([os.environ.get('VC_NODE', 'node'), '-e',
+            "const c=require('crypto');let d='';process.stdin.on('data',x=>d+=x).on('end',()=>"
+            "process.stdout.write(c.scryptSync(d,Buffer.from(process.argv[1],'hex'),32,"
+            "{N:16384,r:8,p:1,maxmem:64*1024*1024}).toString('hex')))", salt.hex()],
+            input=password, capture_output=True, text=True, check=True, timeout=60).stdout.strip())
     return 'scrypt$' + salt.hex() + '$' + digest.hex()
 
 RESERVED = '''VC_ENVIRONMENT_ID COMPOSE_PROJECT_NAME COMPOSE_FILE COMPOSE_PROFILES

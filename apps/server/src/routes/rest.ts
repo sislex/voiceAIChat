@@ -16,6 +16,7 @@ import { uid } from "@sislexa/identity/server/users/auth"
 import { readCoreUserFile } from '../userFiles.js'
 import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigured.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import { conversationThreadCost, ThreadResetError } from '../conversationThread.js'
 import type { ConversationSummaryService } from '../conversationSummary.js'
 import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
@@ -111,11 +112,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   const settings = await db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = (await db.identity.getUser(viewer))?.role ?? 'developer'
-  // Make-чат к машине не подключается (`turns.ts`: makeChat), поэтому снимок не
-  // показывает ни её, ни remote-инструменты как доступные: иначе панель обещала
-  // бы Bash на машине, которого ход не даёт.
+  // Match turn execution: Make uses the explicitly configured machine only.
   const makeChat = conversation.assistantKind === 'make'
-  const resolution = makeChat ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
+  const resolution = makeChat && (!conversation.execTarget || conversation.execTarget === 'none') ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? (await db.machines.listUsableAgents(userId, conversation.projectId)).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
   const project = conversation.projectId ? await db.projects.getProject(userId, conversation.projectId) : null
@@ -163,9 +162,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
    * любой роли, включая админа. Пока снимок этого не знал, обычный пользователь
    * в Make-чате видел «Только планирование», а ход шёл с правкой файлов проекта.
    */
-  const makeOnlyExecution = makeChat && provider === 'claude'
+  const makeOnlyExecution = makeChat
     && (conversation.permissionMode ?? settings.permissionMode) !== 'plan'
-  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (makeChat && provider === 'codex')
+  const permissionMode: PermissionMode = (!makeChat && conversation.execTarget === 'none')
     || (role !== 'admin' && !machineAvailable && !makeOnlyExecution)
     ? 'plan'
     : (conversation.permissionMode ?? settings.permissionMode)
@@ -175,7 +174,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // их не подключает.
   const kbMode: KbContextMode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
-  const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
+  const workdir = makeChat ? conversation.workdir : conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = await db.chat.listMessages(userId, conversationId)
   // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
   // истории: иначе размер в панели не совпадёт с отправленным.
@@ -456,14 +455,11 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Рост контекста: размеры промптов последних ходов. Отвечает на «почему стало
   // дороже» — из meta.request, без досчёта.
   const prices = await db.llm.listModelPrices()
-  const turnSizes: ContextTurnSize[] = [...messages]
-    .reverse()
-    .filter((message) => message.role === 'ai' && message.meta?.request)
-    .slice(0, 10)
-    .map((message) => {
-      const info = message.meta!.request!
+  const lastRequest = await db.chat.lastMessageRequest(userId, conversation.id)
+  const turnSizes: ContextTurnSize[] = (await db.chat.recentRequestSizes(userId, conversation.id))
+    .map((info) => {
       return {
-        at: message.time,
+        at: info.time,
         model: info.model,
         chars: info.promptChars,
         approxTokens: approxTokens(info.promptChars),
@@ -541,8 +537,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
 
   // Факт последнего хода: `meta.request` сохранённого ответа. Ничего не
   // досчитываем — это ответ на вопрос «что было отправлено», а не прогноз.
-  const lastRequest = [...messages].reverse().find((message) => message.role === 'ai' && message.meta?.request)
-  const request = lastRequest?.meta?.request
+  const request = lastRequest?.request
   const lastTurn: ContextLastTurn | null = request
     ? {
         at: lastRequest!.time,
@@ -807,6 +802,7 @@ export async function registerRest(
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
     conversationSummary?: () => ConversationSummaryService | undefined
+    resetThread?: import('../turns.js').TurnManager['resetThread']
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1061,11 +1057,43 @@ export async function registerRest(
     return { conversation, messages: await clientMessages(db, uid(req), req.params.id) }
   })
 
-  app.post<{ Params: { id: string } }>(REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
-    const conversation = await db.chat.resetConversationThread(uid(req), req.params.id)
-    if (!conversation) return reply.code(404).send({ error: 'not found' })
-    return conversation
+  // Published clients still use this path and expect a Conversation, not { ok, summary }.
+  app.post<{ Params: { id: string } }>(REST.conversationThreadResetLegacy(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    if (!await db.chat.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+    if (!opts.resetThread) return reply.code(503).send({ code: 'thread_reset_unavailable' })
+    try {
+      const result = await opts.resetThread(uid(req), req.params.id, false)
+      if (!result) return reply.code(404).send({ error: 'not found' })
+      return await db.chat.getConversation(uid(req), req.params.id)
+    } catch (error) {
+      if (error instanceof ThreadResetError) return reply.code(error.statusCode).send({ code: error.code, error: error.code })
+      throw error
+    }
   })
+
+  app.get<{ Params: { id: string } }>(REST.conversationThreadCost(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const conversation = await db.chat.getConversation(uid(req), req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    return conversationThreadCost(db, uid(req), conversation)
+  })
+
+  app.post<{ Params: { id: string }; Body: import('@voicechat/shared').ConversationThreadResetRequest }>(
+    REST.conversationThreadReset(':id').replace('%3Aid', ':id'), async (req, reply) => {
+      const body = req.body
+      if (body !== undefined && (!body || typeof body !== 'object' || Array.isArray(body) ||
+        Object.keys(body).some(key => key !== 'summarize') || (body.summarize !== undefined && typeof body.summarize !== 'boolean'))) {
+        return reply.code(400).send({ code: 'invalid_thread_reset' })
+      }
+      if (!await db.chat.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
+      if (!opts.resetThread) return reply.code(503).send({ code: 'thread_reset_unavailable' })
+      try {
+        const result = await opts.resetThread(uid(req), req.params.id, body?.summarize ?? true)
+        return result ?? reply.code(404).send({ error: 'not found' })
+      } catch (error) {
+        if (error instanceof ThreadResetError) return reply.code(error.statusCode).send({ code: error.code, error: error.code })
+        throw error
+      }
+    })
 
   app.get<{ Params: { id: string } }>(REST.conversationSummary(':id').replace('%3Aid', ':id'), async (req, reply) => {
     const conversation = await db.chat.getConversation(uid(req), req.params.id)

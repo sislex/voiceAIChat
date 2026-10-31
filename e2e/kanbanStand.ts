@@ -16,6 +16,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { freePort } from './free-port'
+import { StandDiagnostics } from './standDiagnostics'
 
 export const ROOT = resolve(__dirname, '..')
 export const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
@@ -57,15 +58,6 @@ export function kanbanStandUnavailable(): string | null {
     if (git('status', '--porcelain', '--untracked-files=no')) return `в ${KANBAN_SOURCE} есть незакоммиченные изменения`
   }
   return null
-}
-
-async function waitFor(url: string, what: string, child: ChildProcess, seconds = 90): Promise<void> {
-  for (let i = 0; i < seconds; i++) {
-    if (child.exitCode !== null) throw new Error(`${what} завершился с кодом ${child.exitCode}`)
-    try { if ((await fetch(url)).ok) return } catch { /* ещё не поднялся */ }
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  throw new Error(`${what} не поднялся за ${seconds} с`)
 }
 
 async function startPostgres(): Promise<{ url: string; stop: () => void }> {
@@ -110,25 +102,29 @@ export async function startKanbanStand(opts: { adminPassword: string; env?: Reco
     const shared = { VC_DB_URL: postgres.url, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_PUBLIC_URL: base, ...opts.env }
     const coreData = await mkdtemp(join(tmpdir(), 'vc-e2e-core-')), kanbanData = await mkdtemp(join(tmpdir(), 'vc-e2e-kanban-'))
     dirs.push(coreData, kanbanData)
-    const log = process.env.VC_E2E_STAND_LOG === '1' ? 'inherit' : 'ignore'
+    const secrets = [shared.VC_INTERNAL_TOKEN, shared.VC_MCP_SECRET, opts.adminPassword]
+    const coreLog = new StandDiagnostics(secrets, process.env.VC_E2E_STAND_LOG === '1')
+    const kanbanLog = new StandDiagnostics(secrets, process.env.VC_E2E_STAND_LOG === '1')
     const core = spawn('npx', ['tsx', 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
       env: { ...process.env, ...shared, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: coreData, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: opts.adminPassword,
         VC_KANBAN_MODE: 'remote', VC_KANBAN_URL: kanbanUrl, VC_KANBAN_MCP_PUBLIC_BASE: kanbanUrl },
-      stdio: log
+      stdio: ['ignore', 'pipe', 'pipe']
     })
     children.push(core)
-    await waitFor(`${base}/api/health`, 'Ядро', core)
+    coreLog.attach(core)
+    await coreLog.waitFor(`${base}/api/health`, 'Ядро', core)
     const kanban = spawn('npx', ['tsx', 'src/kanban/standalone/index.ts'], {
       cwd: join(KANBAN_SOURCE, 'apps/server'),
       env: { ...process.env, ...shared, PORT: String(kanbanPort), HOST: '127.0.0.1', VC_DATA_DIR: kanbanData, VC_CORE_URL: base,
         VC_MCP_PUBLIC_BASE: base, VC_KANBAN_MCP_PUBLIC_BASE: kanbanUrl,
         // Модель стенду не нужна: адрес исполнителя обязателен при старте, но не вызывается.
         VC_LLM_RUNNER_URL: 'http://127.0.0.1:9' },
-      stdio: log
+      stdio: ['ignore', 'pipe', 'pipe']
     })
     children.push(kanban)
-    await waitFor(`${kanbanUrl}/v1/health`, 'Канбан', kanban)
+    kanbanLog.attach(kanban)
+    await kanbanLog.waitFor(`${kanbanUrl}/v1/health`, 'Канбан', kanban)
     return { base, stop }
   } catch (error) {
     await stop()

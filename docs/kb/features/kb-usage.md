@@ -2,8 +2,8 @@
 id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
-updated: 2026-08-28
-checked: 6713ad47
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -12,20 +12,14 @@ areas:
   - apps/server/src/kb/routes.ts
   - apps/server/src/turns.ts
   - apps/server/src/kb/autoContext.ts
+  - packages/knowledge/src
+  - apps/server/src/db/repos/kb.ts
+  - apps/server/src/db/repos/kbHit.ts
   - apps/server/src/kb/taskQuery.ts
-  - apps/server/src/ci/modelHooks.ts
-  - apps/server/src/ci/kbHit.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - packages/shared/src/kb.ts
   - packages/shared/src/kbGaps.ts
-  - packages/ui/src/components/kb
-  - packages/ui/src/components/ChatColumn.tsx
-  - packages/ui/src/components/ConversationSettings.tsx
-  - packages/ui/src/App.tsx
-  - packages/ui/src/lib/kbUsage.ts
-  - packages/ui/src/store/domains/chatStore.ts
-  - packages/ui/src/remote/kbBridge.ts
 symbols:
   - createKbUsageTracker
   - registerKbMcp
@@ -81,6 +75,17 @@ related:
 ## Назначение
 
 Панель использования БЗ открывается из вкладки «Общее» настроек активного разговора и сохраняет историческую статистику: какие разделы базы знаний получила модель, сколько раз, сколько это дало символов и токенов (оценка), а также агрегат по всем чатам проекта. Считается только то, что видела модель: авто-инъекция контекста сервером и вызовы инструментов `mcp__kb__*`. Ручной поиск человека на странице «База знаний» в телеметрию не попадает — иначе метрика «сколько раз модель обращалась» врала бы.
+
+## Current implementation map
+
+Auto-context, task-query parsing, the turn-token broker and read-only MCP tool
+definitions now live in `packages/knowledge/src`; Core's `kb/autoContext.ts` and
+`kb/taskQuery.ts` are compatibility re-exports. `kb/usage.ts` remains the concrete
+Core telemetry writer. The package defines a 3500-character chat budget and a
+separate `CI_KB_AUTO_CONTEXT_BUDGET` of 1600 characters; both include navigation
+and formatting. `db/repos/kb.ts` owns persisted reports and
+`db/repos/kbHit.ts` owns the hit calculation used by the CI repository.
+Kanban model hooks run in `sislexa-kanban`; UI paths below belong to Core UI.
 
 ## Два источника обращений
 

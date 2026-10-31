@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-25
-checked: ed05841a
+updated: 2026-10-31
+checked: 76b6a6fb
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -12,6 +12,8 @@ areas:
   - packages/identity-client
   - packages/identity-contracts
   - apps/server/src/uploads.ts
+  - apps/server/src/server.ts
+  - apps/server/src/routes/rest.abuse.test.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
   - packages/shared/src/admin.ts
@@ -379,6 +381,14 @@ authoritative no-spawn zero charge. Other server modes, internal modules and
 delegated application turns retain hard cancellation; a request's `textOnly`
 field cannot enable the public Stop policy. Regression evidence is in
 `billing/chatAccounting.test.ts` and the public queue case in `turns.test.ts`.
+The accounting test fixture releases its gates and drains accounting before
+closing the runner. Its Fastify runner uses `forceCloseConnections: true`:
+a connected TCP socket that has sent no HTTP headers otherwise keeps
+`runner.close()` pending. A regression explicitly waits for server acceptance
+of such a socket and verifies that close completes without client cooperation;
+its failure path destroys the socket so the test does not strand `afterEach`.
+This bounds fixture transport cleanup without cutting off production background
+settlement.
 
 Billing 1.2.0 exposes finalized personal usage reports derived from durable
 settlements. Analytics 1.2.0 owns active-time intervals and combines those reports
@@ -649,6 +659,8 @@ Sources: [pricing](https://developers.openai.com/api/docs/pricing), [GPT-6.1 Sol
 `:memory:` через `BuildOptions.db`. Вложения — `apps/server/src/uploads.ts`
 (`POST /api/uploads` → id, путь резолвится в промпт для модели).
 
+Приём `POST /api/uploads` в `apps/server/src/server.ts` ограничен в `preHandler` до валидации содержимого, декодирования и обращения к хранилищу двумя процессными скользящими окнами: не более 300 попыток суммарно и 20 попыток на аутентифицированного пользователя за 60 секунд. Пользовательский ключ не зависит от сессии и IP, поэтому повторный вход или смена адреса бюджет не обходят; другой пользователь сохраняет собственный бюджет, пока не исчерпан общий. Невалидные запросы тоже расходуют лимит. Отказ возвращает 429, `Retry-After` и `{ error: 'upload_rate_limit', retryAfterSec }`; отклонённый трафик не продлевает окно, а перезапуск процесса очищает счётчики. Интеграционный контракт вместе с публичными auth-лимитами закреплён в `apps/server/src/routes/rest.abuse.test.ts`.
+
 `llm_engines` живёт в той же схеме без отдельного migration-фреймворка:
 `schema.ts` создаёт таблицу и индексы на новых базах, а `VoiceChatDb.migrate()`
 добавляет недостающие колонки и индексы на уже существующих. Это важно для
@@ -792,6 +804,12 @@ FTS5 не должна валить старт (тогда `searchMessages` пр
 
 ## Сессии и авторизация запросов
 
+Core also supplies its existing session signing secret to the dev stand proxy.
+The proxy derives stable cookie namespace keys with HMAC-SHA256, allowing a
+recreated lease to recognize existing stand cookies after a Core restart.
+This does not replace session authentication or project membership checks.
+See [stand proxy cookie identity](server-internals.md#dev-stand-access-proxy).
+
 `POST /api/session/login` → подписанный токен (секрет — `<dataDir>` файл, либо
 эфемерный; в тестах инъектируется `sessionSecret`). Клиент шлёт
 `Authorization: Bearer …` во все `/api/*` и передаёт токен в WS. Глобальный
@@ -879,7 +897,7 @@ USD за 1M обычных/кэшированных/записанных в кэ
 
 **Проекты** (таблицы `projects`/`project_members`/`project_machines`/`kanban_columns`/`tasks`, доступ по членству, а не по единственному владельцу) — см. [projects.md](projects.md).
 
-**Rate-limit входа (auth-roadmap п.1).** `POST /api/session/login` считает попытки двумя `SlidingWindowLimiter` (`apps/server/src/make/rateLimit.ts`): по `req.ip` и по имени (в нижнем регистре), 10 за 10 минут каждый; превышение — 429 с заголовком `Retry-After` и телом `{ error, retryAfterSec }`. Успешный вход счётчик не сбрасывает (окно скользящее), поэтому 11-я попытка с одного IP за окно блокируется даже при верном пароле. Лимитеры живут в памяти процесса — после рестарта сервера обнуляются; за прокси нужен корректный `trustProxy`, иначе все клиенты делят один IP.
+**Rate-limit публичной авторизации.** Реализация принадлежит Identity, а Core проверяет её через настоящие HTTP-маршруты в `apps/server/src/routes/rest.abuse.test.ts`. `POST /api/session/login` считает попытки по IP (30 за 10 минут) и по нормализованному имени без учёта регистра и крайних пробелов (10 за 10 минут), поэтому смена IP не обходит бюджет имени. `POST /api/session/register` ограничен пятью попытками за окно даже для невалидного инвайта; `POST /api/session/signup` — пятью попытками с IP за час, причём ранний невалидный запрос не отправляет письмо. Превышение возвращает 429 с `Retry-After`; после окончания окна запрос снова допускается. Лимитеры живут в памяти процесса и обнуляются после рестарта; за прокси нужен корректный `trustProxy`, иначе клиенты разделят один IP-бюджет.
 
 **Политика пароля (auth-roadmap п.2).** `checkPasswordPolicy(password, { name })` из `@shared/passwordPolicy` — общий для сервера и форм: пустой, короче `PASSWORD_MIN_LENGTH` (10), один повторяющийся символ, из списка частых или содержащий логин → текст причины. `POST /api/admin/users` отвечает 400 с этим текстом; в админке placeholder поля пароля напоминает про 10 символов. Опционально `VC_HIBP_CHECK=1` включает `pwnedCount` (`users/pwned.ts`): SHA-1 пароля, наружу — только 5 hex-символов префикса (`api.pwnedpasswords.com/range/`), таймаут 3 с, ошибка сети — fail-open. Пароли, заведённые до правила (в т.ч. пустые), не трогаются: политика проверяется только при установке.
 
@@ -898,6 +916,12 @@ USD за 1M обычных/кэшированных/записанных в кэ
 **Живые изменения списка.** `SessionHub` (`apps/server/src/users/sessionHub.ts`, аналог `BoardHub`) публикует изменения; WS-соединение знает свой `sid` (прокинут из `server.ts` в `createSession`) и получает адресный `session.revoked`, если завершили именно его, иначе — `sessions.update`. Клиент: мост `window.session.onSessionsChanged`; окно сессий слушает только «список устарел», а выход по `revoked` делает `App` через `session.expire()` — сессию могут завершить и при закрытом окне, а серверный `logout` на мёртвом токене ответил бы 401 и оставил человека на нерабочем экране.
 
 **Cookie-сессия и CSRF (auth-roadmap п.5).** Логин, помимо `token` в теле, ставит `vc_session=<тот же HMAC-токен>; Path=/; HttpOnly; SameSite=Strict` (+`Secure`, если `x-forwarded-proto`/протокол https) и читаемую `vc_csrf` (случайная строка, в теле — `csrf`). PreHandler берёт токен в порядке Bearer → preview-cookie (только на разрешённых путях превью) → `vc_session`; если авторизация пришла из обычной `vc_session`, любой не-GET/HEAD/OPTIONS запрос обязан нести заголовок `x-vc-csrf`, равный cookie `vc_csrf`, иначе 403 `{ error: 'csrf' }` — чужой сайт cookie отправит, заголовок поставить не сможет. WS-upgrade принимает `vc_session` из Cookie, если нет `?token=`. Logout гасит обе cookie (и preview). Web-клиент (`remote/session.ts`) держит Bearer только в памяти после свежего входа, `authHeaders()` добавляет Bearer при наличии и `x-vc-csrf` всегда при cookie-сессии; при старте `migrateLegacyToken` отправляет унаследованный localStorage-токен на `POST /api/session/cookie` и удаляет его из localStorage. `WsClient` получает маркер `'cookie'` вместо токена и подключается без query. Desktop и агенты продолжают ходить с Bearer — для них CSRF не требуется.
+
+Stand preview executor retrieval also passes through Core authentication:
+`server.ts` forwards the authenticated lease request cookie in the internal
+`app.inject` call to `/api/preview/inspector.js`. The lease's prior owner and
+membership checks do not bypass authentication of that internal request.
+See [Dev stand access proxy](server-internals.md#dev-stand-access-proxy).
 
 На `/api/preview` специальная HttpOnly `SameSite=Strict` cookie имеет приоритет
 над общей сессией: HTML-форма и fetch вложенного сайта не владеют CSRF оболочки.
@@ -1007,7 +1031,11 @@ delegation, durable usage accounting and budget reservation are still planned,
 not provided by these component tokens.
 
 Private outgoing files are reread for rotation; successful dependency checks are
-keyed by credential digest. Public proxies retain the user's Authorization header
+keyed by credential digest. Readiness exposes the nearest known expiry and a
+seven-day warning without credential values. The installation rotator can recover
+expired, non-revoked grants by digest; it never renews a revoked grant. Managed
+Identity bootstrap does not block Core startup; requests remain denied with 503
+until the dependency's grant is restored. Public proxies retain the user's Authorization header
 and do not replace it with a component secret. Readiness failures omit secret
 values, private paths and raw upstream response bodies. Installation and rotation
 commands are documented in `deploy.md`.

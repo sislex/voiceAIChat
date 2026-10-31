@@ -2,10 +2,12 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-09-12
-checked: e1ce913f
+updated: 2026-10-31
+checked: 242d084b
 areas:
-  - apps/llm-runner/src
+  - apps/server/src/llm
+  - apps/server/src/config.ts
+  - apps/server/src/routes/admin.ts
   - packages/shared/src/llm.ts
   - apps/server/src/claude/types.ts
   - apps/server/src/server.ts
@@ -29,6 +31,14 @@ aliases:
 
 # Исполнители LLM: контейнеры с claude/codex CLI
 
+## Repository boundary
+
+`sislex/llm-runner` owns CLI spawning, profiles and runner HTTP implementation.
+`apps/llm-runner` references below describe that extracted owner, not a Core
+workspace. Core owns `llm/remoteClient.ts`, `llm/runnerFsClient.ts`, engine
+selection and the Shared request contract. Runner-internal lifecycle details
+are retained as migration context; consult `llm-runner:README.md` for owner updates.
+
 `spawn` CLI уезжает из контейнера сервера в отдельный процесс — **исполнитель**
 (`apps/llm-runner`). Мотив не в изоляции ради изоляции: под одной установкой
 Claude Code нельзя одновременно держать рабочую и личную подписку, а CLI ещё и
@@ -47,9 +57,9 @@ Claude Code нельзя одновременно держать рабочую 
 логина — сервер их больше не содержит как источник истины.
 
 Для самих ходов сервер уже ходит в исполнитель по HTTP через `RemoteLlmClient`, а
-для профильных файлов и проводника — через `RunnerFsClient`. Прямой импорт
-`@voicechat/server` → `@voicechat/llm-runner` остаётся только для локального
-fallback CLI-классов, когда URL исполнителя не настроен.
+для профильных файлов и проводника — через `RunnerFsClient`. There is no embedded CLI fallback. `server.ts` selects an injected client,
+a configured `RemoteLlmClient`, or `unconfiguredLlmClient()` for each provider.
+Missing runner configuration does not stop unrelated Core modules from booting.
 
 Срез реестра исполнителей уже реализован: SQLite-таблица `llm_engines` хранит
 `name/kind/base_url/token/enabled/allowed_roles/is_default`, а админка web UI
@@ -86,6 +96,12 @@ Compose по умолчанию направляет Claude и Codex в `runner-
 `LlmRunnerHealth`, пути `LLM_RUNNER` и заголовок `x-run-id`. Туда же ушёл
 `kbToolHint`: системный хинт про `mcp__kb__*` попадает в argv, а argv собирает
 исполнитель.
+
+Core's `RemoteLlmClient` spreads the complete `LlmRequest` into the
+`/v1/run` body, including `previewMcpUrl` and `previewSurface`.
+The surface union now includes `make-preview` for the user's open Make iframe.
+Core assembles the Make-specific capability/closed-preview instructions in
+`turns.ts`; bound Reader sessions retain `panel`/`chromium`.
 
 ## Исполнитель ничего не разбирает
 

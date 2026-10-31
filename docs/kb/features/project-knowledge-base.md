@@ -11,7 +11,6 @@ areas:
   - scripts/kb-search.mjs
   - apps/server/src/kb
   - packages/shared/src/kb.ts
-  - packages/ui/src/components/KnowledgeBase.tsx
 symbols:
   - FileKnowledgeBaseService
   - ScopedKnowledgeBase
@@ -165,9 +164,30 @@ without it a module stays `failed` with `KB source fetch failed`. In production 
 from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voicechat` service
 (before 0.1.413 only the `kanban` service received it, so private modules such as Make failed).
 
+## Implementation ownership and freshness
+
+`packages/knowledge/src` owns indexing, scoped visibility, source snapshots,
+auto-context and read-only MCP definitions. Core's `kb/` files provide host
+adapters, HTTP transport, usage persistence and research. The `kbRpc` decorator
+uses the Shared RPC registry with live host identity; request filters cannot
+supply a different viewer. UI implementation belongs to `sislexa-core-ui`.
+
+Freshness tracks the executable package and host adapters plus `docs/kb/modules.md`,
+which is parsed as runtime registration input. It does not track all of `docs/kb`:
+a content edit or freshness/log commit is not a change to the KB implementation,
+and that self-reference would make this topic stale immediately after its own
+reconciliation commit. The index is already excluded by the checker itself.
+
+Module registration does not prove content availability. If an owner document is
+missing from search, inspect `/api/kb/modules` for its indexed SHA/status before
+assuming that its topic was removed; refresh failures preserve the last successful
+snapshot. Keep Core migration notes until the owner KB actually covers them.
+
 ## Назначение
 
-База знаний быстро отвечает, как реализованы фичи voiceAIChat, где находятся ключевые символы и какие протоколы используются. Markdown в `docs/kb` остаётся единственным источником истины и проходит обычный Git review. UI работает только на чтение.
+База знаний быстро отвечает, как реализованы фичи voiceAIChat, где находятся ключевые символы и какие протоколы используются. Repository Markdown is versioned through Git review. Personal and project articles
+also live in `kb_documents`; authenticated write/delete APIs enforce their scopes.
+Code remains authoritative when documentation disagrees with implementation.
 
 Генерируемый `docs/kb/README.md` исключён из Git pathspec расчёта свежести тем. Иначе тема с широкой областью `docs/kb` считала commit самого индекса новым изменением, следующий `kb:index` снова переписывал индекс, а release-ворота БЗ образовывали бесконечную петлю.
 
@@ -258,4 +278,4 @@ UI опрашивает `GET` того же маршрута раз в три с
 
 ## Тесты
 
-`apps/server/src/kb/service.test.ts` проверяет точный символ, русский lexical-поиск, budget и reranking. `kb/taskQuery.test.ts` — разбор описания на прозу и код (шум вроде `read`, `cat -n`, `${режим}` в символы не попадает). `kb/autoContext.test.ts` — бюджет, обрезка первого блока, кодовая дорожка и причина пустой выдачи. `kb/taskInjection.test.ts` — регрессия на дословных описаниях CHAT-54/68/70 по настоящей `docs/kb`: на кодовых описаниях инъекция обязана быть непустой. `kb/access.test.ts` — контроль доступа: не-участник не достаёт знания чужого проекта ни фильтром, ни по id, ни широким поиском; персональные видит только владелец; скелет появляется у нового проекта. `kb/research.test.ts` — разбор ответа модели и запись статей (CLI мокается). `KnowledgeBase.dom.test.tsx` проверяет три раздела, выбор проекта, запуск исследования и запись своей статьи.
+`apps/server/src/kb/service.test.ts` проверяет точный символ, русский lexical-поиск, budget и reranking. `packages/knowledge/src/taskQuery.test.ts` — разбор описания на прозу и код (шум вроде `read`, `cat -n`, `${режим}` в символы не попадает). `packages/knowledge/src/autoContext.test.ts` — бюджет, обрезка первого блока, кодовая дорожка и причина пустой выдачи. `kb/taskInjection.test.ts` — регрессия на дословных описаниях CHAT-54/68/70 по настоящей `docs/kb`: на кодовых описаниях инъекция обязана быть непустой. `kb/access.test.ts` — контроль доступа: не-участник не достаёт знания чужого проекта ни фильтром, ни по id, ни широким поиском; персональные видит только владелец; скелет появляется у нового проекта. `kb/research.test.ts` — разбор ответа модели и запись статей (CLI мокается). `KnowledgeBase.dom.test.tsx` проверяет три раздела, выбор проекта, запуск исследования и запись своей статьи.

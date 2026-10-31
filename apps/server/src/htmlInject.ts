@@ -46,8 +46,8 @@ export function canInjectInspector(headers: IncomingHttpHeaders, scriptUrl: stri
 }
 
 /** Returns undefined when the original bytes and headers must be preserved. Callers buffer the whole body, so chunked upstreams are fine; they must drop Transfer-Encoding when they set Content-Length. */
-export async function injectInspectorHtml(body: Buffer, headers: IncomingHttpHeaders, scriptUrl: string): Promise<Buffer | undefined> {
-  if (!canInjectInspector(headers, scriptUrl)) return undefined
+export async function injectInspectorHtml(body: Buffer, headers: IncomingHttpHeaders, scriptUrl: string, additionalScriptUrls: string[] = []): Promise<Buffer | undefined> {
+  if (![scriptUrl, ...additionalScriptUrls].every(url => canInjectInspector(headers, url))) return undefined
   try {
     const encoding = headers['content-encoding']?.toLowerCase()
     const decoded = encoding && encoding !== 'identity' ? await decoders[encoding as keyof typeof decoders](body) : body
@@ -59,6 +59,7 @@ export async function injectInspectorHtml(body: Buffer, headers: IncomingHttpHea
     const offset = head?.index ?? (openingBody ? openingBody.index + openingBody[0].length : undefined)
     if (offset === undefined) return undefined
     const script = `<script src="${scriptUrl.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}" data-vc-make-inspector></script>`
-    return Buffer.from(html.slice(0, offset) + script + html.slice(offset))
+    const additional = additionalScriptUrls.map(url => `<script src="${url.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"></script>`).join('')
+    return Buffer.from(html.slice(0, offset) + script + additional + html.slice(offset))
   } catch { return undefined }
 }

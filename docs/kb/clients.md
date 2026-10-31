@@ -1,12 +1,14 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-20
-checked: a1015514c
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
   - scripts/core-ui-artifact.mjs
   - scripts/dev-ui-proxy.mjs
+  - apps/server/src/routes/androidApp.ts
+  - packages/shared/src/androidRelease.ts
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
@@ -15,11 +17,37 @@ Module details: `web-reader:README.md`
 Module details: `core-ui:README.md`
 Module details: `agent:README.md`
 
+## Android APK distribution
+
+Core pins the owner's `android-release.json` in `vendor/android/`. The
+`AndroidReleaseManifest` contract and REST paths are in `packages/shared`.
+The 0.1.1 pin adds versionName 0.1.1 and versionCode 2, verified against
+`apps/android/app/build.gradle.kts` at owner commit
+`7d90ff455a4a495185bbb76d4bfc6f1b27c0d005`; the owner's release script does not
+yet emit these fields.
+
+`GET /api/app/android` publicly returns schemaVersion 1 and the android fields,
+with url replaced by `/api/app/android/apk`. No upstream URL or credentials are
+returned. The APK endpoint verifies size and SHA-256 of the exact response bytes
+before sending them, including before 304. Both endpoints support ETag and
+`Cache-Control: no-cache`; missing pins return 404, invalid pins or unavailable/
+corrupt binaries return 503. APK responses use the Android package MIME type and
+an attachment filename. Public handlers complete during onRequest, before the
+Identity/forwarded-auth preHandler; the Machines proxy does this only for GET/HEAD
+on these two exact paths.
+
+`VC_ANDROID_MANIFEST` overrides the pin location; normal runtime defaults to the
+repository pin. A matching APK can be placed beside the manifest (ignored by Git).
+Otherwise Core fetches the pinned URL, using server-only `VC_GITHUB_TOKEN` with
+GitHub's release-asset API for private releases, and retains downloaded bytes in
+memory. Compose forwards this token to both Core and the standalone Machines service. Download failure remains a 503, never a redirect to private GitHub.
+Tests inject the pin path and fetch dependency.
+
 ## Core UI distribution
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
 
-The public-chat candidate pins Core UI 1.5.28 from
+The historical public-chat candidate pinned Core UI 1.5.28 from
 `f86cdd2db9e4e002f1fd14da36bed6fa1119eb2c`. Its daily quota panel shows settled
 spend, remaining allowance and the Europe/Minsk reset. Voice onboarding uses
 optional `CapabilityStatus.configured`, introduced in Shared 0.1.42 and retained
@@ -53,6 +81,30 @@ snapshot reads keep selection unavailable. Selecting a model before a draft
 has a conversation persists only model fields, and sending waits for that save.
 Failures preserve the draft; navigation and unmount guards prevent stale sends.
 
+
+## Chat UI and timeline: thread-cost
+
+A successful thread reset can return `summary.source: 'fallback'` when model
+summarization fails or is unavailable. The optional field lets clients label the
+summary as simplified; its absence is valid for older and model-generated
+summaries. This Core contract does not itself add an owner UI label.
+
+For `thread-cost` / `threadReset` chat-settings lookup, the verified Core-facing
+contract is [Thread cost client contract](protocol.md#thread-cost-client-contract),
+and reset execution is [Session cost and summary reset](llm.md#session-cost-and-summary-reset).
+The server accepts summary-preserving reset at POST `/api/conversations/:id/thread-reset`
+with `summarize: true` (also the default), rejects active turns with 409
+`turn_active`, and persists the reset mode through revisioned conversation-settings
+PATCH. The shared baseline has no cache/output breakdown; clients must not invent one.
+
+This checkout is Core (`voiceAIChat`), despite the task's Core UI project label.
+Renderer implementation belongs to `sislex/sislexa-core-ui` (`core-ui:README.md`).
+Neither `ThreadCostPanel` nor the requested `chat-ui-and-timeline` topic or its DOM
+tests exists here. Consequently, this diff verifies Shared exports, route builders
+and settings validation, not panel rendering, confirmation/busy states, displayed
+numbers, actual `claude.done` refresh wiring or 404 hiding. The reported panel
+behavior still needs verification in the UI owner's source; do not treat the
+consumer requirements in the protocol topic as evidence of a deployed UI change.
 
 ## Independent browser chat hosts
 
