@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a3f637de
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -66,6 +66,22 @@ Its public contract is `packages/shared/src/fileStorage.ts`.
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+
+Core's file PUT/GET routes stream bodies through the coordinator and node client.
+PUT uses a raw Fastify body stream; GET sends the node response stream directly.
+The node writes a temporary file through a pipeline and serves blobs with
+`createReadStream`. HTTP node clients share one undici `Agent` with keep-alive
+and HTTP/2 negotiation for HTTPS nodes. `VC_FILE_STORAGE_MAX_FILE_BYTES` configures
+Core and node limits (default 1 GiB). The coordinator checks declared lengths
+before transfer and counts streamed bytes against file, owner quota and placement
+capacity limits; failed writes roll back metadata and clean up the new blob.
+The compatibility `readFile` method still collects bytes; REST uses `readFileStream`.
+
+Thumbnail reads enforce the file's read ACL, accept PNG/JPEG/WebP/GIF sources up
+to 32 MiB, and use an injected generator. Derived WebP/JPEG blobs are cached on
+the source node by blob ID, size (128/256/512) and format; source cleanup also
+removes these variants. Thumbnail processing explicitly collects source bytes.
+Chat upload responses advertise `thumbnailAvailable` for supported image MIME types.
 
 For shared Make, Core's authenticated browser proxy replaces browser credentials
 with a Core-issued user delegation and the paired Core-to-Make service token.

@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-01 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
