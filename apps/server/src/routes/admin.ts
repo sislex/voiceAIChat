@@ -230,9 +230,14 @@ export function registerAdminRoutes(
   mailer?: Mailer,
   publicUrl?: string | null,
   /** Хаб сессий: отзыв админом должен доехать до владельца так же живо, как свой. */
-  sessionHub?: Pick<SessionHub, 'emit'>
+  sessionHub?: Pick<SessionHub, 'emit'>,
+  fileStorage?: { usage(userId: string): Promise<import('@voicechat/shared/fileStorage').StorageUsage> }
 ): void {
   const guard = { preHandler: requireAdmin }
+  // FS-3 is optional while deployments still pin pre-quota Identity releases.
+  const identity = db.identity as typeof db.identity & {
+    setUserStorageQuota?: (name: string, bytes: number | null) => Promise<unknown>
+  }
   const baseUrl = (req: FastifyRequest): string =>
     (publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   const inviteLink = (req: FastifyRequest, token: string): string =>
@@ -393,7 +398,7 @@ export function registerAdminRoutes(
   }
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = async (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk?: Awaited<ReturnType<typeof usersBulk>>, withAgents = true): Promise<AdminUserInfo> => {
+  const toInfo = async (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; storageQuotaBytes?: number | null; email?: string | null } = {}, bulk?: Awaited<ReturnType<typeof usersBulk>>, withAgents = true): Promise<AdminUserInfo> => {
     bulk ??= await usersBulk()
     const online = bulk.online
     // Версия и телеметрия нужны админке для «обновить до актуальной» (п.16) и для
@@ -410,6 +415,8 @@ export function registerAdminRoutes(
     return {
       failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null,
       mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null,
+      storageQuotaBytes: lock.storageQuotaBytes ?? null,
+      ...(fileStorage ? { storageUsage: await fileStorage.usage(name) } : {}),
       llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt,
       // Список людей получает только счётчики: полный набор машин там нужен
       // одной строке «0 из 2 онлайн», а стоит килобайты на каждого человека.
@@ -551,10 +558,24 @@ export function registerAdminRoutes(
     }
   )
 
-  app.patch<{ Params: { name: string }; Body: { role?: string; llmLimitUsd?: number | null } }>(
+  app.patch<{ Params: { name: string }; Body: { role?: string; llmLimitUsd?: number | null; storageQuotaBytes?: number | null } }>(
     REST.adminUser(':name').replace('%3Aname', ':name'),
     guard,
     async (req, reply) => {
+      if ('storageQuotaBytes' in (req.body ?? {})) {
+        const quota = req.body.storageQuotaBytes
+        if (quota !== null && (typeof quota !== 'number' || !Number.isSafeInteger(quota) || quota < 0))
+          return reply.code(400).send({ error: 'storageQuotaBytes must be a non-negative safe integer or null' })
+        // Quota edits are a separate operation, like the dedicated IPC command.
+        if (req.body.role !== undefined || req.body.llmLimitUsd !== undefined)
+          return reply.code(400).send({ error: 'storageQuotaBytes must be updated separately' })
+        if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+        if (!identity.setUserStorageQuota)
+          return reply.code(503).send({ error: 'Identity storage quota API unavailable' })
+        await identity.setUserStorageQuota(req.params.name, quota)
+        const u = (await db.identity.getUser(req.params.name))!
+        return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
+      }
       // Лимит расхода LLM (п.17) можно менять отдельно от роли: тело только с llmLimitUsd.
       if ('llmLimitUsd' in (req.body ?? {}) && req.body?.role === undefined) {
         if (!await db.identity.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })

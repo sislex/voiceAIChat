@@ -454,6 +454,7 @@ export interface IpcInvokeMap {
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
   /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
   'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
+  'admin:setUserStorageQuota': { arg: { name: string; storageQuotaBytes: number | null }; result: AdminUserInfo }
   /** Открытая регистрация: настройка. */
   'admin:signupConfig': { arg: void; result: SignupConfig }
   'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }; result: SignupConfig }
@@ -1488,6 +1489,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:inviteDelete',
   'admin:resetCode',
   'admin:setUserLlmLimit',
+  'admin:setUserStorageQuota',
   'admin:signupConfig',
   'admin:setSignupConfig',
   'admin:makeStats',

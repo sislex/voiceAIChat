@@ -30,7 +30,8 @@ describe('shared services', () => {
     } finally { rmSync(root, { recursive: true }) }
   })
   it('retries one transient error and preserves session core; never retries used tickets', async () => {
-    const transport = vi.fn<typeof fetch>().mockRejectedValueOnce(Error('network')).mockResolvedValueOnce(Response.json({ user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt: Date.now() + 60000, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt: Date.now() + 60000 } }))
+    const expiresAt = Date.now() + 60000
+    const transport = vi.fn<typeof fetch>().mockRejectedValueOnce(Error('network')).mockResolvedValueOnce(Response.json({ user: { name: 'alice', role: 'admin' }, tenantId: null, capabilities: [], expiresAt, delegation: { token: 'sxd_' + 'd'.repeat(43), expiresAt } }))
     const registry = new TrustedCoreRegistry(() => 'secret', transport)
     registry.add(entry('core-a'))
     const session = await registry.redeem('core-a', { ticket: 'opaque', application: 'make' })

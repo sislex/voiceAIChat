@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 713d61e0
+checked: 193ed998
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -42,6 +42,29 @@ Identity method exists, then normalizes through `storageQuotaBytes()` with
 `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
 charge the space owner. Direct shares and accepted links are checked on every
 operation; revoking a link deletes its acceptances immediately.
+
+Core admin quota management is exposed by `PATCH /api/admin/users/:name`
+with `{ storageQuotaBytes: number | null }`. Values must be non-negative safe
+integers; zero disallows additional bytes, and null restores the deployment
+default. Quota changes are separate from role/LLM-limit changes (mixed bodies
+return 400). The route uses the existing admin guard, checks that the user exists,
+and calls Identity's `setUserStorageQuota`. The pinned Identity 1.5.2 archive
+does not provide FS-3 methods: the setter returns 503 when absent instead of
+reporting a successful no-op. Deployments need an FS-3-capable Identity to persist
+quota overrides.
+
+`AdminUserInfo.storageQuotaBytes` is the nullable override from Identity's user
+row, so listing users does not call a new RPC method on older Identity releases.
+When file storage is enabled, `storageUsage` contains the storage service's
+`StorageUsage`, including current owner bytes/file count and effective
+`quotaBytes` after the deployment fallback. Disabled storage omits usage rather
+than reporting zero. Both embedded and standalone admin servers pass the storage
+service to the admin routes. Shared IPC declares `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result; Core UI wiring
+is a separate consumer change after contract publication.
+Route tests in `rest.auth.test.ts` exercise the Identity port, persisted storage
+metadata usage, validation, null reset, authorization, missing users and the
+pre-FS-3 compatibility response.
 
 ## Project integration tokens
 
