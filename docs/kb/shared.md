@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 0c05e703
+checked: 47b29314
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src

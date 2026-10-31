@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 225be89b
+checked: 47b29314
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -71,12 +71,11 @@ title must contain 1..200 characters. The response is `StorageSpace`.
 Readers, writers and unrelated users receive 403.
 
 Owner-only `POST STORAGE_REST.mergeDuplicates(id)` merges the matching
-`(ownerId, kind, ref)` group for chat/make-project spaces. Send `{}` first:
-the dry-run response identifies the survivor, deleted IDs, moves, conflicts,
-revoked share IDs and a preview token. Apply with
-`{dryRun:false, previewToken}`. A changed group or conflicting path returns
-409 without mutation. Personal spaces and malformed requests return 400.
-See [duplicate cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+`(ownerId, kind, ref)` group for chat/make-project spaces. The contract and
+archive behavior are defined once above; a changed snapshot returns 409 without
+mutation, while same-path older versions are preserved at their reported
+`toPath`. Personal spaces and malformed requests return 400. See
+[duplicate cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 
 ## Operator handoff
 

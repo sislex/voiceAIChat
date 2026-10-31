@@ -1,6 +1,7 @@
 ---
 title: Module ownership map
-updated: 2026-10-07
+updated: 2026-10-31
+checked: 47b29314
 areas: []
 ---
 
@@ -44,6 +45,12 @@ to its managed list. See [repository module behavior](features/project-knowledge
 | `voice` | `sislex/voice` | `voice:README.md` (`docs/kb`) | STT/TTS services, microphone UI and voice contracts |
 | `knowledge` | knowledge service repository | нет (пока не заведена) | Multi-repository KB indexing, search, context and KB UI |
 | `delivery-control` | `sislex/delivery-control` | нет (пока не заведена) | Delivery scheduling, workers, release commissioning and recovery |
+
+A value such as `make:README.md` is resolved by the repository-module KB
+integration against the registered Make repository and its `docs/kb` root; it
+is not expected to exist as a local file in the Core checkout. If that owner
+document cannot be queried, Core source can establish only the shared contract
+and integration boundary, not Make's internal lookup, import or UI behavior.
 
 The exact artifact versions and source commits consumed by Core are operational
 state and therefore remain in [deploy.md](deploy.md), not in owner topics.

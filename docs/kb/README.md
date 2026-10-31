@@ -39,7 +39,7 @@
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-31 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-31 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-31 | ✓ |
-| [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
+| [modules.md](modules.md) | Module ownership map | 2026-10-31 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-31 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-31 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1400. Последние:
+Всего записей: 1401. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md) — sisl-808-storage-idempotency
