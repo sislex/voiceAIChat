@@ -1,0 +1,43 @@
+# Run from the repository: docker compose -f deploy/compose.file-storage.example.yml up --build -d
+# Create two different private token files in deploy/secrets/ before starting.
+services:
+  storage-10:
+    build:
+      context: ..
+      target: file-storage-node
+    environment:
+      VC_FILE_STORAGE_NODE_ID: storage-10
+      VC_FILE_STORAGE_DIR: /data/blobs
+      VC_FILE_STORAGE_CAPACITY_BYTES: "10000000000"
+      VC_FILE_STORAGE_TOKEN_FILE: /run/secrets/storage_token
+    ports:
+      - "127.0.0.1:8795:8795"
+    volumes:
+      - storage-10:/data
+    secrets:
+      - source: storage-10-token
+        target: storage_token
+  storage-60:
+    build:
+      context: ..
+      target: file-storage-node
+    environment:
+      VC_FILE_STORAGE_NODE_ID: storage-60
+      VC_FILE_STORAGE_DIR: /data/blobs
+      VC_FILE_STORAGE_CAPACITY_BYTES: "60000000000"
+      VC_FILE_STORAGE_TOKEN_FILE: /run/secrets/storage_token
+    ports:
+      - "127.0.0.1:8796:8795"
+    volumes:
+      - storage-60:/data
+    secrets:
+      - source: storage-60-token
+        target: storage_token
+volumes:
+  storage-10:
+  storage-60:
+secrets:
+  storage-10-token:
+    file: ./secrets/storage-10.token
+  storage-60-token:
+    file: ./secrets/storage-60.token

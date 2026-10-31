@@ -1,8 +1,12 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-31
-checked: 98722e6a
+checked: e5d9748f
 areas:
+  - packages/file-storage
+  - packages/shared/src/applicationCatalog.ts
+  - scripts/affected-check.mjs
+  - deploy/compose.file-storage.example.yml
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/server.ts
   - apps/server/src/llm
@@ -52,6 +56,45 @@ remains Core infrastructure even in a chat-only deployment.
 
 `sislex/sislexa-core-ui` owns the Core browser client, renderer, UI modules, stories and internal UI gates. Generic UI Kit/Foundation remain in `sislex/sielexa-ui`. Core consumes a versioned static archive with source provenance and per-file hashes; there is no local compatibility workspace. API contracts remain authored in Core and are exported from an exact committed SHA for UI consumption. Changes to an owner package reach consumers only through an explicit pinned archive upgrade and compatibility checks.
 
+
+## File storage service
+
+`packages/file-storage` (`@sislexa/file-storage`) owns the Fastify blob node,
+HTTP node client and coordinator library. It imports no `apps/server` code.
+Its workspace is registered in the application catalog and affected-package graph.
+Its unchanged public contract is `packages/shared/src/fileStorage.ts`.
+Core HTTP routes, SQL persistence and health polling are separate host work.
+
+The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
+`VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and
+`VC_FILE_STORAGE_TOKEN_FILE`; `SISLEXA_COMPONENT_CONFIG` selects managed
+component-runtime authorization for `file-storage.blobs`. All blob/health calls
+require bearer authentication. One process exclusively owns each directory.
+Validated blobs publish through temporary-file rename, capacity mutations
+serialize, and startup recomputes published-blob usage. Temporary files do not
+count toward logical capacity; disk exhaustion still returns `storage_full`.
+
+`createFileStorageService` takes metadata, node clients, cached node info, owner
+quota, clock and unique ID ports. `StorageMetadataStore.transaction` must
+serialize quota/revision decisions across coordinators, commit atomically, roll
+back failures and never retry callbacks containing node I/O.
+`createMemoryMetadataStore` implements these semantics for tests.
+Quota usage includes every file in the owner's spaces, even collaborator writes.
+Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
+
+Owners manage shares and spaces; read/write collaborators receive the matching
+file operations. Link description and acceptance both require an authenticated
+user ID, and only accepted links add access/list visibility. Access is recalculated
+from current shares, so revocation is immediate. Write replacement stores a new
+blob before metadata commit and deletes the previous blob afterward. Failed
+post-commit cleanup invokes the optional `onCleanupError` host port; hosts must
+reconcile orphan blobs after crashes or offline cleanup.
+
+See [package usage and adapter requirements](../../packages/file-storage/README.md)
+and [two-node compose example](../../deploy/compose.file-storage.example.yml).
+Docker target `file-storage-node` exposes 8795; the example has independent
+10 GB and 60 GB volumes and tokens. Tests cover real HTTP transport, atomic write
+failure, capacity races, cross-coordinator quota/revision races and sharing.
 
 ## Direct external libraries
 

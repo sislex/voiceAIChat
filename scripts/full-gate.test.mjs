@@ -200,6 +200,7 @@ test('full gate creates one process per test-bearing workspace without changing 
     '@voicechat/shared',
     '@voicechat/knowledge',
     '@sislexa/component-runtime',
+    '@sislexa/file-storage',
     '@voicechat/automation-runner',
     '@voicechat/server'
   ])

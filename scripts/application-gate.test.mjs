@@ -24,6 +24,12 @@ test('missing local catalog edges fail before executing commands', async () => {
     await assert.rejects(main(['core', '--dry-run']), /Missing build dependency.*core -> shared/)
   } finally { app.buildDependencies = previous }
 })
+test('file storage selects its own workspace checks', () => {
+  const plan = planApplicationChecks(['packages/file-storage/src/service.ts'])
+  assert.equal(plan.full, false)
+  assert.deepEqual(plan.applications.map(app => app.id), ['file-storage'])
+})
+
 test('catalog owns every current workspace and every local dependency', () => {
   assert.doesNotThrow(() => validateApplicationDependencies())
 })
