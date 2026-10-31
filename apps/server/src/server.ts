@@ -519,7 +519,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }) : undefined) : undefined
   // External applications with a service credential receive Core-issued delegations from redeemed tickets.
   const ticketStore = ticketOptions.tickets ?? new ApplicationTickets()
-  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'external')
+  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled
+    && (a.location === 'external' || id === 'make' && !!ticketOptions.serviceTokens?.make))
     && !!ticketOptions.credentials[id]
   const ticketDelegation = deployment.applications.some(a => ticketApplications(a.id))
     ? { delegations: ticketStore.delegations, enabled: ticketApplications } : undefined
@@ -575,7 +576,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
       // Ticket delegations may also create a conversation of their application's kind (checked by the route).
       const createsConversation = req.method === 'POST' && req.url.split('?')[0] === '/api/conversations' && isTicketDelegationToken(grant)
-      if (!createsConversation && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      const makeApi = isTicketDelegationToken(grant) && delegation.ticketGrant(grant)?.applicationId === 'make'
+        && /^\/api\/(?:storage(?:\/|$)|make(?:\/|$)|preview\/make(?:-shared)?(?:\/|$))/.test(req.url)
+      if (!createsConversation && !makeApi && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
       if (isTicketDelegationToken(grant)) {
         // Ticket delegations are bearer-bound to the issuing application's own service credential.
         const ticket = delegation.ticketGrant(grant)
@@ -1011,7 +1014,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
   // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
-  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl })
+  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl,
+    ...(ticketApplications('make') && ticketOptions.serviceTokens?.make ? {
+      prepareHeaders: (req, headers) => {
+        // Only Core's authenticated request user can mint an application delegation.
+        for (const name of ['authorization', 'cookie', 'x-vc-csrf', 'x-sislexa-core-id', 'x-sislexa-delegation', 'x-sislexa-mcp-token', 'x-sislexa-tenant-id']) headers.delete(name)
+        if (!req.user) return
+        headers.set('authorization', `Bearer ${ticketOptions.serviceTokens!.make}`)
+        headers.set('x-sislexa-core-id', deployment.coreId)
+        headers.set('x-sislexa-delegation', ticketStore.delegations.issue({
+          applicationId: 'make', coreId: deployment.coreId, userId: req.user.name,
+          tenantId: req.user.account?.tenantId ?? null, sid: null, expiresAt: Date.now() + 5 * 60_000,
+        }).token)
+      },
+    } : {}),
+  })
   // Канбан отдельным процессом: общая база (Postgres), пути канбана ядро переправляет туда, состояние
   // машин/KB/виджета отдаёт по `/internal/*`, ленты событий принимает обратно (docs/plans/kanban-service.md).
   const kanbanRemote = opts.config.kanbanMode === 'remote'

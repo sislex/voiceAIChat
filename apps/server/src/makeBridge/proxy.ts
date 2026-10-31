@@ -15,6 +15,8 @@ export const MAKE_PROXY_PREFIXES = ['/api/make', '/api/preview/make', '/api/prev
 
 export interface MakeProxyOptions {
   makeUrl: string
+  /** Runs after Core's authentication guard; replaces browser credentials for shared Make. */
+  prepareHeaders?: (req: FastifyRequest, headers: Headers) => void
   fetchImpl?: typeof fetch
   /** Импорт ZIP шлёт base64 до 12 МБ; запас — на JSON-обёртку. */
   bodyLimit?: number
@@ -25,6 +27,7 @@ export interface MakeProxyOptions {
 export interface ServiceProxyOptions {
   /** Имя сервиса — для лога и кода ошибки `<name>_unavailable`. */
   name: string
+  prepareHeaders?: (req: FastifyRequest, headers: Headers) => void
   baseUrl: string
   prefixes: readonly string[]
   /** Explicit public downloads complete before API authentication. */
@@ -56,6 +59,7 @@ export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOpt
     headers.set('x-forwarded-host', String(req.headers.host ?? ''))
     headers.set('x-forwarded-proto', String(req.headers['x-forwarded-proto'] ?? req.protocol))
     headers.set(REQUEST_ID_HEADER, req.id)
+    opts.prepareHeaders?.(req, headers)
     const body = req.body as Buffer | undefined
     const hasBody = Boolean(body && body.length) && !['GET', 'HEAD'].includes(req.method)
     // DELETE без тела браузер шлёт с `content-type: application/json` и `content-length: 0`; fetch
