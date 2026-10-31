@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-27
-checked: 0a8bc000
+updated: 2026-10-31
+checked: 98722e6a
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -22,6 +22,29 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Make file transport admission
+
+Make turns use explicit conversation machine/workdir settings and scoped MCP
+file access; `db/chat` no longer clears these fields on write or restart.
+`mcp/makeFiles.ts` validates machine paths and 10 MiB transfers.
+`server.ts` supplies transfers through authenticated owner `/api/make/:id/files/raw`
+routes. Embedded availability requires both GET and PUT registrations; remote
+availability probes an existing file through the authenticated Core proxy.
+Older owner packages without these routes do not advertise transfers.
+
+Android release endpoints are registered by the Machines module; the Machines
+proxy allows only exact GET/HEAD public download paths before forwarded auth.
+See [Android distribution](clients.md#android-apk-distribution).
+
+## Application frontend registration
+
+`buildServer` passes the complete `applicationFrontends` map and deployment to
+`registerApplicationFrontends`. Registration rejects unknown frontend IDs before
+filtering sources, then accepts an enabled local frontend ID or an enabled local
+owner from its catalog runtime dependencies. The gateway still validates paths,
+manifest IDs and source URLs, and uses the installed owner artifact when there
+is no selected override. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 ## Запуск и dependency injection
 
@@ -644,6 +667,11 @@ exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
 
+See [conversation stand worktrees](#make-conversation-stand-worktrees) for local
+multi-repository bindings and component routing.
+
+
+
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
 текущего участника. Структуру и дизайн рабочей копии он читает только через
 read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
@@ -794,13 +822,25 @@ expose the same bounded prompt and its size; stored messages remain unchanged.
 
 `conversationSummary.ts` supplies the rolling summary consumed by that cold
 start. After 40 published messages beyond the stored boundary it starts a
-deduplicated background run with the cheapest configured runner model. The run
+deduplicated background run with the cheapest configured runner model. Each call
 has a fresh session, plan permission, disabled execution and no tools. It folds
-the previous summary together with only the messages after the boundary, caps
-the saved result at 1,500 words, persists all three summary fields atomically,
-and emits `chat.conversation`. Runner failures are logged, never fail the chat
-turn, and move the next automatic attempt to the following 40-message boundary.
-The summary REST refresh uses the same service but bypasses the threshold.
+messages oldest first in 20,000-character batches, truncating each message text
+to 2,000 characters. Prior and generated summaries are capped at 8,000 characters;
+generated summaries also retain the 1,500-word limit. The full prompt is capped
+at 32,000 characters. Each failed or empty response retries once through the
+other configured runner (Codex Luna primary, Claude Haiku secondary when both
+exist). Each attempt times out after 30 seconds and cancels its runner handle.
+Successful completion persists the final boundary atomically and emits
+`chat.conversation`. Per-attempt failures emit structured JSON directly to stdout:
+`conversation_summary_failed`, conversation id, model, error class/message,
+batch message count and prompt characters, without attaching history or prompts.
+Fastify is created with `logger: false`; the previous `app.log.warn` wiring therefore
+dropped these errors entirely. Direct stdout logging keeps them on the same container
+log channel as `api_request_problem`. Failed background runs keep the prior
+summary and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh bypasses the threshold. Thread reset adds a persisted,
+bounded deterministic fallback if refresh leaves uncovered messages; see
+[Session cost and summary reset](llm.md#session-cost-and-summary-reset).
 
 ## Account profile query path
 
@@ -889,6 +929,38 @@ RPC event client is required to keep a link alive.
 
 ## Make conversation stand worktrees
 
+Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
+for core, core-ui and make. Optional `component` on files/git selects the attached
+repository; omission selects the conversation's primary repository. The primary
+binding remains the top-level stand result even after an operation against a
+secondary checkout, while `components` reports every matching live checkout with
+its component, branch, path and phase. Files/Git fail with
+`component_not_in_stand` when the selected component has no conversation-owned
+live entry. Core validates this extension locally in
+`makeBridge/coreRpc.ts` and `makeBridge/projectAdapters.ts`, so the pinned
+make-contracts archive does not need to publish the extension first.
+
+Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
+the primary retains its existing path. Local preparation in
+`makeBridge/standWorkspace.ts` seeds repository clones from the host environment's
+`SISLEXA_STAND_SHARE/<repository>` (or explicit `SISLEXA_STAND_SOURCES`).
+Core passes this root in the agent payload; the agent can also use those environment
+variables, but never derives the seed from its HOME. A missing/non-absolute root
+or missing seed fails before cloning. Preparation rewrites origin to the registry URL, restricts fetch
+to `dev` and `make/*`, and defaults new branches to
+`make/conversation-<id8>`. Non-local stands reject secondary components. Attaching
+passes the selected live path to Kanban; detaching one secondary component removes
+only that component's live binding and leaves the other attached repositories
+addressable.
+
+The local launcher in `scripts/dev-stand-local.mjs` accepts prepared Core, Core UI
+and Make checkouts through `SISLEXA_STAND_CORE_SOURCE`,
+`SISLEXA_STAND_CORE_UI_SOURCE` and `SISLEXA_STAND_MAKE_SOURCE`. Each override must
+already contain `.git` and `node_modules`; the launcher skips its own worktree and
+install for that repository. Core keeps `tsx` development execution, Core UI keeps
+Vite HMR, and an external Make checkout runs both its watched API and frontend
+build/server so visible Make UI changes come from the conversation checkout.
+
 `MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
 embedded and remote Make. Core checks the conversation owner and resolves its
 project through `db.chat.makeConversationProject`; project viewers cannot use
@@ -939,8 +1011,17 @@ machine's `path` or `reposRoot`. The component repository is cloned once into
 fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
 The fixed agent-side Node program launches Git with argv and `shell: false`;
 user values travel as base64 JSON. A registered conversation worktree can be
-reused only on its existing branch. A taken new branch name fails with
-`branch_exists`. New branches start from the requested remote base, otherwise
+reused only on its existing branch. Local preparation with no explicit branch or
+new-branch request reuses the default conversation branch when it exists locally
+or on origin (local takes precedence); only an absent branch is created from `dev`.
+For a component attachment, Core sends the same conversation default
+`make/conversation-<conversationId[:8]>` while keeping a component-specific
+worktree path, so an earlier stand's branch history is retained instead of being
+recreated. Explicit new-branch requests and non-local defaults still fail with
+`branch_exists` when taken. If the selected branch is checked out in another registered worktree,
+attachment fails with `branch_checked_out: <absolute path>`; Core preserves this
+message for the caller and does not start component live mode. It does not move
+or force-checkout that other working copy. New branches start from the requested remote base, otherwise
 the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
 for component live mode. Status reads Kanban details; detach disables live
 without deleting the worktree or branch and refuses to disable another
@@ -967,7 +1048,9 @@ operator commissioning, not part of worktree attachment.
 
 Core owns the concrete routes registered by `routes/standDeliveries.ts`:
 `POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
-`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`{branch, title, component?}` and returns the coordinator's `{runId, taskId}`;
+`component` selects core, core-ui or make. List, sync and sync status accept the
+same optional query parameter.
 `GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
 `POST .../sync-dev` returns `StandSyncResult`.
 `GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
@@ -982,10 +1065,17 @@ are exported from Shared. These exact routes take precedence over the Kanban pro
 
 `makeBridge/standDeliveries.ts` checks project access, repository write permission
 for mutations, the stand's machine and the Git workspace write policy. The working
-copy comes only from the authorized Kanban manifest's live entries. It selects
-the entry matching the project repository, or a single live entry on a host
-project; ambiguous multi-component bindings fail closed. History is filtered by
-that repository and live branch, and access is rechecked even on cache hits.
+copy comes only from the authorized Kanban manifest's live entries. The optional
+body `component` on submission and query `component` on history/sync select exactly
+that live entry. Without it Core prefers the entry whose repository matches the
+project and falls back only when the stand has one live entry; missing or ambiguous
+selection fails closed with `stand_working_copy_ambiguous`. Submission resolves the
+selected component's repository and branch, verifies the requested branch against
+the live branch and sends only that repository to the existing coordinator, so a
+multi-repository delivery is represented by one request/task per selected
+repository. History and both sync operations reuse the same repository+branch
+selection, while the busy lock is scoped to the selected machine and working-copy
+root. Access is rechecked even on cache hits.
 
 `standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
 agent. Real paths, Git common directory and origin are checked against the
@@ -1051,14 +1141,42 @@ and validated `gateway.port` select the upstream; clients cannot supply a
 target machine or TCP port. The shared response is `{url, expiresAt}`, with
 `expiresAt` expressed as Unix milliseconds.
 
-Allocation is serialized. A user/project/stand tuple reuses its lease; target
-changes replace it. The disabled or exhausted pool returns HTTP 503 with
+Allocation is serialized. Leases are keyed by user, project, stand, requested
+port, injection mode and effective hostname; target changes replace the matching
+lease. Without `VC_STAND_PROXY_PUBLIC_HOST`, the effective hostname comes from
+the request Host (normalized by URL parsing, without its port). Different page
+hostnames, such as `localhost` and `127.0.0.1`, receive separate listeners and
+matching origins so the browser sends its host-scoped Core session cookie.
+With `VC_STAND_PROXY_PUBLIC_HOST` configured, its hostname is used for both the
+origin and reuse key, so different request hosts still share the same lease.
+Each hostname-specific lease consumes a pool port. The disabled or exhausted pool returns HTTP 503 with
 `stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
 deadline; expiry and Core shutdown close listeners and all their connections.
-Every HTTP request and WebSocket upgrade checks the current cookie session
-against the lease owner and rechecks project membership before opening a tunnel.
+HTTP GET/HEAD requests for public application frontend artifacts bypass session
+and membership checks, but still require a live, unexpired lease. The raw path
+without its query must match the following expression and contain no `.` or `..`
+segments:
 
-Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+```regex
+^/applications/[a-z][a-z0-9-]+/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$
+```
+
+These requests forward no cookies, including lease-prefixed stand cookies.
+This supports credential-free manifest and SRI asset loading inside stand previews.
+Every other HTTP request and every WebSocket upgrade checks the current cookie
+session against the lease owner and rechecks project membership before opening a tunnel.
+
+Lease cookie keys are the first 32 hex characters of HMAC-SHA256 using Core's
+persistent session signing secret and
+`JSON.stringify([user, projectId, standId, port ?? null, inject ?? null, hostname])`,
+where hostname is the effective hostname described above. Recreating a lease
+after Core restarts preserves its `sxs_<leaseKey>_` cookie prefix, even if the
+allocated listener port changes. User, project, stand, requested target port,
+injection mode, hostname and secret isolate cookie namespaces; rotating the
+secret changes the prefix. Core passes its existing session secret to
+`StandProxy`; no additional secret is generated for leases.
+
+Only cookies beginning with that lease's `sxs_<leaseKey>_` prefix pass
 upstream, with the prefix removed. Response Set-Cookie names receive the prefix
 and Domain attributes are removed. Core authorization and internal forwarding
 headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
@@ -1066,17 +1184,42 @@ to the leased proxy origin becomes the gateway origin, while foreign origins
 remain unchanged. SSE responses stream without buffering and WebSocket upgrades
 retain their initial bytes in both directions.
 
+Each lease remembers the Core parent origin at creation: the lease scheme plus
+the request Host passed to `access()`, including its port. Reusing a lease keeps
+that original parent. Forwarded enforced CSP `frame-ancestors` directives gain
+the parent and lease origins, including every policy in multiple or comma-joined
+headers. This permits nested Make previews when the outer Core page and the stand
+use different ports; browsers check every ancestor, not just the immediate frame.
+Directives containing `'none'` stay unchanged. `X-Frame-Options: SAMEORIGIN`
+is removed when enforced CSP already has `frame-ancestors`; otherwise it is
+replaced by an additional CSP policy `frame-ancestors 'self' <parent> <lease>`.
+Other directives, report-only CSP and other X-Frame-Options values are preserved.
+Responses without framing headers receive no new policy.
+
 Internal callers can opt in with
 `standProxy.access(user, project, stand, host, port?, { inject: 'make-inspector' })`.
 The injection mode is stored on the lease and included in its reuse key, so
 ordinary callers retain separate, unmodified leases. The public access route
 does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
 responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
-`</head>` (or after the opening `<body>`). Its URL uses the incoming request's
-Host and socket scheme: `/api/make/inspector.js`. On injected leases the proxy answers
+`</head>` (or after the opening `<body>`). Its URL uses the lease's configured origin and the path
+`/api/make/inspector.js`, including behind TLS termination. On injected leases the proxy answers
 `GET /api/make/inspector.js` itself through `deps.inspectorScript` (Core injects its own
 route with the caller's cookie), so the stand's Core version never has to serve it;
-ordinary leases forward that path to the stand. Rewritten responses receive a
+ordinary leases forward that path to the stand. Inspector-enabled leases also
+inject `<script src="<lease origin>/__sislexa/preview-inspector.js"></script>`.
+Core serves that path through its Reader proxy at
+`/api/preview/inspector.js?parentOrigin=<encoded lease parent origin>` and forces
+`Cache-Control: no-store`. After authenticating the lease owner, the proxy passes
+both the saved parent origin and the request cookie to `previewInspectorScript`.
+Core forwards that cookie to `app.inject`, because its `/api/preview*` routes
+require a session even when Web Reader serves the script publicly. Non-2xx
+script responses and retrieval exceptions become an empty HTTP 502 response,
+so upstream authorization errors are never served as JavaScript.
+The saved parent origin, including its port, is used
+instead of the script request Host or query parameters. Both scripts must pass
+the HTML helper's CSP checks before the response is rewritten.
+Rewritten responses receive a
 byte-accurate Content-Length; Content-Encoding and stale entity validators are
 removed. Enforced CSP must allow the script; restrictive or unrecognized source
 policies and documents with CSP meta tags are left untouched. Non-HTML bodies,
@@ -1109,3 +1252,20 @@ observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
 reads when the Duplex fills. Agent disconnect/error closes the stream. The
 MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
+
+## Automatic agent bundle offers
+
+After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
+`systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned
+by `servedAgent()` is strictly newer than the reported agent version, Core sends
+`agent.update { version, sha256 }` once for that WebSocket connection and records
+`agent_update_sent`. Equal or newer agents are never offered a downgrade. Missing
+or unknown supervisors retain the registry's version-gated `agent.updateAvailable`
+hint instead of receiving the automatic update command. A repeated registration
+frame on the same connection is ignored.
+
+The local compatibility contract in `packages/shared/src/agentProtocol.ts` widens
+only the registration message's optional `supervisor` to include `android`, because
+the pinned `@sislexa/agent-contracts` archive predates that owner-side extension.
+The server consumes this widened `AgentToServer` type; the remaining owner protocol
+and the dev-process extensions keep their existing sources.

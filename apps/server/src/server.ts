@@ -40,7 +40,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { SlidingWindowLimiter, applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -485,7 +485,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   // Preview may request migrations without the default test account.
-  if (!(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
+  // Managed Identity owns account bootstrap; its availability must not gate Core startup.
+  if (!managedIdentity && !(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
     await db.identity.ensureAdmin(opts.config.adminPassword)
   }
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
@@ -690,6 +691,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
   }
   const standProxy = new StandProxy({
+    secret: sessionSecret,
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
     publicScheme: opts.config.standProxyPublicScheme,
     session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
@@ -698,6 +700,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const reply = await app.inject({ method: 'GET', url: '/api/make/inspector.js', headers: cookie ? { cookie } : {} })
       const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
       return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
+    },
+    previewInspectorScript: async (parentOrigin, cookie) => {
+      const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin), headers: { cookie } })
+      return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
     },
     stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
   })
@@ -802,14 +808,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
   conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
     db,
-    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
-    // when this installation only has a Claude runner.
+    // Prefer Codex; retry failed chunks once through the other configured runner.
     client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
     model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    fallback: (opts.codex || opts.config.llmRunnerCodexUrl) && (opts.claude || opts.config.llmRunnerClaudeUrl)
+      ? { client: claude, model: 'haiku' } : undefined,
     publish: async (userId, conversation) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
-    },
-    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+    }
   })
   const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
@@ -874,7 +880,45 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (token) => remoteFileBroker.get(token),
     commandGate,
     opts.historicalEvidence ? new HistoricalEvidence(opts.historicalEvidence,
-      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined
+      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined,
+    {
+      // Raw routes are supplied by the Make owner package. Older packages expose no transfers.
+      available: async (conversationId) => {
+        if (app.hasRoute({ method: 'GET', url: '/api/make/:id/files/raw' }) &&
+          app.hasRoute({ method: 'PUT', url: '/api/make/:id/files/raw' })) return true
+        // A remote Make uses a wildcard proxy, so probe an existing file through the same authority.
+        if (!makeRemote) return false
+        try {
+          const userId = await db.chat.conversationOwner(conversationId)
+          const file = (await make.service.listFiles(conversationId))[0]
+          if (!userId || !file) return false
+          const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(file.path)
+          return makeRequests.run(userId, 'GET', url, async authorization =>
+            (await app.inject({ method: 'GET', url, headers: { authorization } })).statusCode === 200)
+        } catch { return false }
+      },
+      read: async (conversationId, path) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path)
+        return makeRequests.run(userId, 'GET', url, async authorization => {
+          const response = await app.inject({ method: 'GET', url, headers: { authorization } })
+          if (response.statusCode !== 200) throw new Error('Make raw read failed: ' + response.statusCode)
+          return response.rawPayload.toString('base64')
+        })
+      },
+      write: async (conversationId, path, dataBase64, turn) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path) +
+          (turn ? '&turn=' + encodeURIComponent(turn) : '')
+        await makeRequests.run(userId, 'PUT', url, async authorization => {
+          const response = await app.inject({ method: 'PUT', url, headers: { authorization, 'content-type': 'application/octet-stream' },
+            payload: Buffer.from(dataBase64, 'base64') })
+          if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('Make raw write failed: ' + response.statusCode)
+        })
+      }
+    }
   )
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
@@ -1185,9 +1229,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     queueMicrotask(() => { void generatedCleanup.run() })
   }
 
+  // Process-wide admission also bounds the number of user keys admitted per window.
+  const uploadTotal = new SlidingWindowLimiter(300, 60_000, () => Date.now())
+  const uploadByUser = new SlidingWindowLimiter(20, 60_000, () => Date.now())
   app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
     REST.uploads,
-    { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
+    { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
+      // The auth guard runs first; sessions and IP changes share the same user budget.
+      const total = uploadTotal.hit('uploads')
+      const verdict = total.ok ? uploadByUser.hit(uid(req)) : total
+      if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec))
+        .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
+    } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
       const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
       const userId = uid(req)
@@ -1707,7 +1760,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       authStatus,
       preview: {
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
-        resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
+        resolve: (userId, requestId, outcome, conversationId) => previewRelay.resolve(userId, requestId, outcome, conversationId)
       },
       make: { subscribe: (userId, sink) => make.service.subscribe(userId, sink) },
       widgetUi: {
@@ -1902,7 +1955,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, Object.fromEntries(Object.entries(opts.config.applicationFrontends ?? {}).filter(([id]) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'local'))))
+  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment, opts.config.applicationFrontendsOverride)
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
   if (opts.config.readerMode === 'embedded') {

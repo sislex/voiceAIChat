@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-27
-checked: 81c4a5fd
+updated: 2026-10-31
+checked: 98722e6a
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -18,6 +18,22 @@ areas:
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`
+
+## Browser temporary paths and release verification
+
+`browser-gate.mjs` replaces a TMPDIR longer than 40 characters with a unique
+`/tmp/vc-e2e-*` directory for child processes, then removes it in `finally`.
+This avoids macOS Unix-socket path collisions in deeply nested task/merge
+checkouts; the parent environment is unchanged. Browser batches remain bounded
+to one or two workers and the reviewed parallel-suite allowlist.
+
+`release-train-run.mjs` gives post-deploy health verification a separate five-minute
+budget. Transport failures and HTTP 502/503 retry with bounded backoff; an observed
+version or commit mismatch fails immediately. The expected commit comes from the
+journal's release branch result. Owner docs-only release reuse is proven by
+`release-train.mjs`: GitHub comparison must be ahead/identical, contain fewer than
+300 files, and include only `docs/kb/` paths (including previous rename paths).
+A saturated or unverified comparison requires a new release version.
 
 ## Task gate for the dev lane
 
@@ -135,6 +151,22 @@ must mount the full App with the real Sidebar, palette and styles; testing the
 Sidebar alone misses its interaction with palette navigation. Selecting another
 result or a result in the current chat must close the drawer and leave focus
 outside hidden/inert content, including when only the URL query changes.
+
+The installed Core UI 1.5.31 source is
+`14b837d944b2377e84d6411b9e52111164280697` (see the installed
+`release-source.json`). Its Shell DOM regressions map the remaining chat-only
+requirements to
+`App.analytics`, `App.applications`, `AccountPage`, `App.chat` and `ChatColumn`:
+Analytics absence/outage, deployment-filtered product navigation and tariff rows,
+storage reads gated by machine access, TTS presence, and first-run state without
+voice onboarding. `App` supplies TTS configuration separately from health to
+ChatColumn. Owner `sidebarFocus` and `paletteFocus` browser regressions cover focus
+outside the hidden mobile sidebar; settings/sidebar checks target 1440×900 and
+360×800, while the full-App palette matrix covers 360×800 in both themes. The
+SISL-767 acceptance also asserts that the saved answer remains visible without
+TTS. Server model notice coverage remains in
+`apps/server/src/turns.modelNotices.test.ts`: deployment-projected inherited models
+produce no warning, while explicit overrides and transport errors retain notices.
 
 ### Shared chat exact-artifact acceptance (U10)
 
@@ -433,6 +465,10 @@ missing their separate dependencies produces TS2307 for `electron` and
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
 закреплённого коммита), сьюты пропускаются и печатают причину. `VC_E2E_STAND_LOG=1` выводит
 логи обоих процессов. Письма приглашений шлёт канбан, поэтому SMTP-приёмник получают оба.
+Если `TMPDIR` длиннее 40 символов (merge-раны задают его внутри merge-клона), `browser-gate.mjs`
+запускает сьюты с коротким каталогом `/tmp/vc-e2e-*`: `tsx` открывает IPC-сокет
+`$TMPDIR/tsx-<uid>/<pid>.pipe`, а macOS ограничивает путь сокета 104 байтами — обрезанные пути
+совпадали, и второй процесс стенда падал с `EADDRINUSE` («Канбан завершился с кодом 1»).
 Кнопка «+ Новый проект» видна раньше, чем раздел догрузил данные канбана: окно открывается
 повторным кликом до появления диалога, иначе первый сценарий нестабилен.
 
@@ -894,6 +930,20 @@ that readiness waits for visibility. Negative cases cover old and unrelated
 responses, a response before the triggering action completes, HTTP 400/503,
 unavailable sources, missing hits and aborted requests.
 
+HTTP 400/503, unavailable-source and empty-result diagnostics use a controlled
+main-frame browser fetch after registering the route and response observer.
+They assert the intercepted request identity and status, then call
+`checkSearchResponse()`, the same validator used by `open()` before option
+visibility checks. This removes cold palette opening and client debounce from
+the diagnostic observation deadline; the 10-second search limit is unchanged.
+`VC_SEARCH_DIAGNOSTIC_STRESS=1` repeats each of these four cases 20 times
+(Vitest repeats, not retries) while ordinary runs retain 18 cases. Run it with
+the seven-file parallel browser batch and `VC_E2E_WORKERS=2` to exercise load.
+The observer-identity fixture's route-count waits also use `SEARCH_TIMEOUT`
+instead of Vitest's default one-second deadline. Its cleanup releases the
+action barrier and settles the observation so a failed route assertion cannot
+leak an unhandled rejection into later cases.
+
 Navigation remains six separate `it.each(SEARCH_SOURCES)` cases, each checking
 the deep link after reload, plus the kanban-message context case. Existing
 authentication, secret exclusion, keyboard, touch, focus and geometry checks
@@ -1272,6 +1322,19 @@ drill against the retained set before applying a production retention plan.
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
 
 ## Единый frontend quality gate
+
+The Core/Kanban project browser fixture in `e2e/kanbanStand.ts` always pipes
+both child streams through `e2e/standDiagnostics.ts`. Each child retains the last
+80 lines; individual lines over 8192 characters are omitted to bound memory.
+Startup exit (including signals), spawn errors and health timeouts include the
+captured output; health requests have a one-second timeout within the overall
+90-second deadline. Effective `VC_INTERNAL_TOKEN`, `VC_MCP_SECRET` and the
+fixture admin password are redacted. `VC_E2E_STAND_LOG=1` additionally echoes
+redacted, complete lines; it does not bypass capture. Per-stream UTF-8 decoding
+and line framing preserve secrets split across chunks. Unit coverage is in
+`scripts/stand-diagnostics.test.mjs`, included in `test:tooling`.
+No automatic startup retry is applied without evidence of a transient bind race.
+
 
 `gate:all` delegates to `scripts/full-gate.mjs`: workspace typechecks/tests,
 owner-built product/Core UI artifact verification, and retained Core functional

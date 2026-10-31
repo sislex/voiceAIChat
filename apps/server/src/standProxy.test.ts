@@ -7,17 +7,84 @@ import { WebSocket, WebSocketServer } from 'ws'
 import Fastify from 'fastify'
 import { AgentRegistry } from './agents/registry.js'
 import { AGENT_VERSION } from '@sislexa/agent-contracts'
-import { IDLE_MS, StandProxy, proxyPorts, registerStandProxy, standCookies, standHeaders } from './standProxy.js'
+import { IDLE_MS, StandProxy, proxyPorts, registerStandProxy, standCookies, standHeaders, standFrameHeaders } from './standProxy.js'
 
 const ports = (process.env.DELIVERY_PORTS?.match(/\d+/g) ?? ['24016', '24017', '24018', '24019']).map(Number)
 const cleanup: Array<() => Promise<unknown> | unknown> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 function deps() {
-  return { ports: [ports[0]!], member: vi.fn(async () => true), stand: vi.fn(async () => ({ machineId: 'm', gatewayPort: ports[3]! })),
+  return { secret: 'stand-proxy-test-secret', ports: [ports[0]!], member: vi.fn(async () => true), stand: vi.fn(async () => ({ machineId: 'm', gatewayPort: ports[3]! })),
     session: vi.fn(async (cookie: string) => cookie.includes('vc_session=alice') ? 'alice' : cookie.includes('vc_session=bob') ? 'bob' : null),
     connect: vi.fn(() => { throw new Error('No tunnel') }) }
 }
 describe('stand proxy policy', () => {
+  it('preserves cookie keys across restarts and isolates every lease identity field and secret', async () => {
+    const gateway = createServer((req, res) => {
+      res.setHeader('set-cookie', 'vc_session=stand; Path=/; HttpOnly')
+      res.end(req.headers.cookie ?? '')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const open = async (overrides: {
+      secret?: string; user?: string; project?: string; stand?: string; host?: string;
+      port?: number; inject?: 'make-inspector'; listener?: number; cookie?: string
+    } = {}) => {
+      const user = overrides.user ?? 'alice'
+      const proxy = new StandProxy({
+        ...deps(), secret: overrides.secret ?? deps().secret, ports: [overrides.listener ?? ports[0]!],
+        connect: () => connect(ports[3]!, '127.0.0.1')
+      })
+      try {
+        const lease = await proxy.access(user, overrides.project ?? 'p', overrides.stand ?? 's',
+          overrides.host ?? '127.0.0.1:25273', overrides.port, { inject: overrides.inject })
+        // Connect locally even when testing a different parent hostname.
+        const url = new URL(lease.url); url.hostname = '127.0.0.1'
+        const response = await fetch(url, { headers: {
+          cookie: 'vc_session=' + user + (overrides.cookie ? '; ' + overrides.cookie : ''), connection: 'close'
+        } })
+        expect(response.status).toBe(200)
+        const cookie = response.headers.get('set-cookie')!.split(';')[0]!
+        const key = /^sxs_([a-f0-9]{32})_vc_session=stand$/.exec(cookie)?.[1]
+        expect(key).toBeDefined()
+        return { cookie, key, body: await response.text() }
+      } finally { await proxy.close() }
+    }
+    const first = await open()
+    const restarted = await open({ cookie: first.cookie, listener: ports[1] })
+    expect(restarted.key).toBe(first.key)
+    expect(restarted.cookie).toBe(first.cookie)
+    expect(restarted.body).toBe('vc_session=stand')
+    // Core and proxy listener ports do not affect host-scoped cookie identity.
+    expect((await open({ host: '127.0.0.1:25274' })).key).toBe(first.key)
+    for (const variant of [
+      { user: 'bob' }, { project: 'other-project' }, { stand: 'other-stand' },
+      { host: 'localhost:25273' }, { port: ports[3] }, { inject: 'make-inspector' as const },
+      { secret: 'different-secret' }
+    ]) {
+      const isolated = await open({ ...variant, cookie: first.cookie })
+      expect(isolated.key).not.toBe(first.key)
+      expect(isolated.body).toBe('')
+    }
+  })
+
+  it('rewrites every CSP policy while preserving explicit denial and unrelated headers', () => {
+    const parent = 'http://127.0.0.1:25273', lease = 'http://127.0.0.1:28810'
+    const allowed = "frame-ancestors 'self' " + parent + ' ' + lease
+    const headers = {
+      'content-security-policy': ["default-src 'self'; frame-ancestors 'self'", "frame-ancestors 'none', frame-ancestors 'self'; img-src *"],
+      'x-frame-options': 'SAMEORIGIN',
+      'content-security-policy-report-only': "frame-ancestors 'none'",
+    }
+    expect(standFrameHeaders(headers, parent, lease)).toEqual({
+      'content-security-policy': ["default-src 'self'; " + allowed, "frame-ancestors 'none', " + allowed + '; img-src *'],
+      'content-security-policy-report-only': "frame-ancestors 'none'",
+    })
+    expect(headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(standFrameHeaders({ 'content-security-policy': allowed }, parent, lease)['content-security-policy']).toBe(allowed)
+    expect(standFrameHeaders({ 'x-frame-options': 'DENY' }, parent, lease)).toEqual({ 'x-frame-options': 'DENY' })
+    expect(standFrameHeaders({ 'content-security-policy': "default-src 'self'" }, parent, lease)).toEqual({ 'content-security-policy': "default-src 'self'" })
+  })
+
   it.each([1023, 65536, 6006.5, '6006', null])('rejects invalid target port %s at the route', async port => {
     const d = deps(); const proxy = new StandProxy(d)
     const app = Fastify(); registerStandProxy(app, proxy, d.session); cleanup.push(() => app.close())
@@ -58,6 +125,137 @@ describe('stand proxy policy', () => {
   })
 })
 describe('stand proxy listeners', () => {
+  it.each(['http', 'https'] as const)('allows the Core ancestor through %s leases without weakening explicit denial', async publicScheme => {
+    const gateway = createServer((req, res) => {
+      if (req.url === '/self') res.setHeader('content-security-policy', "default-src 'self'; frame-ancestors 'self'")
+      if (req.url === '/none') {
+        res.setHeader('content-security-policy', "frame-ancestors 'none'")
+        res.setHeader('x-frame-options', 'SAMEORIGIN')
+      }
+      if (req.url === '/multiple') res.setHeader('content-security-policy', ["frame-ancestors 'self'", "img-src *; FRAME-ANCESTORS https://trusted.example, frame-ancestors 'self'"])
+      if (req.url === '/xfo' || req.url === '/xfo-csp') res.setHeader('x-frame-options', 'sameorigin')
+      if (req.url === '/xfo-csp') res.setHeader('content-security-policy', "default-src 'self'")
+      res.end('preview')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const proxy = new StandProxy({ ...deps(), publicScheme, connect: () => connect(ports[3]!, '127.0.0.1') })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1:25273')
+    const origins = publicScheme + '://127.0.0.1:25273 ' + new URL(lease.url).origin
+    const allowed = "frame-ancestors 'self' " + origins
+    for (const [path, expected] of [
+      ['/self', "default-src 'self'; " + allowed],
+      ['/none', "frame-ancestors 'none'"],
+      ['/multiple', allowed + ', img-src *; FRAME-ANCESTORS https://trusted.example ' + origins + ', ' + allowed],
+      ['/xfo', allowed],
+      ['/xfo-csp', "default-src 'self', " + allowed],
+      ['/plain', null],
+    ] as const) {
+      // HTTPS leases are terminated outside this HTTP listener; request Host is not the parent.
+      const result = await fetch(lease.url.replace(/^https:/, 'http:') + path.slice(1), { headers: { cookie: 'vc_session=alice', host: 'unrelated.example', connection: 'close' } })
+      expect(result.headers.get('content-security-policy'), path).toBe(expected)
+      expect(result.headers.get('x-frame-options'), path).toBeNull()
+      expect(await result.text()).toBe('preview')
+    }
+  })
+
+  it('serves public application artifacts without credentials only on live leases', async () => {
+    const seen: Array<{ method?: string; url?: string; cookie?: string }> = []
+    const gateway = createServer((req, res) => {
+      seen.push({ method: req.method, url: req.url, cookie: req.headers.cookie })
+      res.setHeader('set-cookie', 'vc_session=stand; Path=/')
+      res.end('artifact')
+    })
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const d = deps()
+    const tunnel = vi.fn(() => connect(ports[3]!, '127.0.0.1'))
+    let now = 1000
+    const proxy = new StandProxy({ ...d, connect: tunnel, now: () => now })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1')
+    d.member.mockClear()
+    // Use raw request paths so dot segments are not normalized by fetch/URL.
+    const send = (method: string, path: string, cookie?: string) => new Promise<{ status: number; cookie?: string }>((resolve, reject) => {
+      const req = request({ hostname: '127.0.0.1', port: ports[0], method, path,
+        headers: { connection: 'close', ...(cookie ? { cookie } : {}) } }, res => {
+        res.resume()
+        res.on('end', () => resolve({ status: res.statusCode!, cookie: res.headers['set-cookie']?.[0]?.split(';')[0] }))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    const first = await send('GET', '/applications/make-ui/manifest.json')
+    expect(first.status).toBe(200)
+    expect(first.cookie).toMatch(/^sxs_[a-f0-9]+_vc_session=stand$/)
+    expect((await send('HEAD', '/applications/make-ui/assets/app.js?v=1')).status).toBe(200)
+    expect((await send('GET', '/applications/make-ui/app.css', 'vc_session=alice; ' + first.cookie)).status).toBe(200)
+    expect(seen).toEqual([
+      { method: 'GET', url: '/applications/make-ui/manifest.json', cookie: undefined },
+      { method: 'HEAD', url: '/applications/make-ui/assets/app.js?v=1', cookie: undefined },
+      { method: 'GET', url: '/applications/make-ui/app.css', cookie: undefined }
+    ])
+    expect(d.session).not.toHaveBeenCalled()
+    expect(d.member).not.toHaveBeenCalled()
+    for (const [method, path] of [
+      ['GET', '/api/settings'],
+      ['POST', '/applications/make-ui/manifest.json'],
+      ['GET', '/applications/x/../api'],
+      ['GET', '/applications/make-ui/../api'],
+      ['GET', '/applications/make-ui/assets/./app.js'],
+      ['GET', '/applications/make-ui/%2e%2e/api'],
+      ['GET', '/applications/make-ui/assets%2fapp.js'],
+      ['GET', '/applications/Make-ui/manifest.json']
+    ]) expect((await send(method!, path!)).status).toBe(401)
+    expect(tunnel).toHaveBeenCalledTimes(3)
+    now = lease.expiresAt
+    expect((await send('GET', '/applications/make-ui/manifest.json')).status).toBe(401)
+    expect(tunnel).toHaveBeenCalledTimes(3)
+  })
+
+  it.each([undefined, 'make-inspector'] as const)('keeps working leases for each request hostname with injection %s', async inject => {
+    const gateway = createServer((_req, res) => res.end('stand preview'))
+    await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
+    cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
+    const tunnel = vi.fn((_machine: string, port: number) => connect({ host: '127.0.0.1', port }))
+    const d = deps()
+    const proxy = new StandProxy({ ...d, ports: ports.slice(0, 2), connect: tunnel })
+    cleanup.push(() => proxy.close())
+    const local = await proxy.access('alice', 'p', 's', 'localhost:25273', undefined, { inject })
+    const ip = await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject })
+    expect(new URL(local.url).hostname).toBe('localhost')
+    expect(new URL(ip.url).hostname).toBe('127.0.0.1')
+    expect(new URL(local.url).port).not.toBe(new URL(ip.url).port)
+    expect((await proxy.access('alice', 'p', 's', 'LOCALHOST:25274', undefined, { inject })).url).toBe(local.url)
+    for (const url of [local.url, ip.url]) {
+      const result = await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+        // Force IPv4 because proxy listeners bind 0.0.0.0 and localhost may resolve to ::1.
+        const req = request(url, { family: 4, agent: false, headers: { cookie: 'vc_session=alice' } }, res => {
+          let body = ''
+          res.setEncoding('utf8')
+          res.on('data', chunk => { body += chunk }); res.on('error', reject)
+          res.on('end', () => resolve({ status: res.statusCode, body }))
+        })
+        req.on('error', reject); req.end()
+      })
+      expect(result).toEqual({ status: 200, body: 'stand preview' })
+    }
+    expect(tunnel).toHaveBeenCalledTimes(2)
+    expect(tunnel).toHaveBeenCalledWith('m', ports[3])
+    const app = Fastify(); registerStandProxy(app, proxy, d.session); cleanup.push(() => app.close())
+    const exhausted = await app.inject({ method: 'POST', url: '/api/dev-stand-access', headers: { host: 'third.example:25273', cookie: 'vc_session=alice' }, payload: { projectId: 'p', standId: 's' } })
+    expect(exhausted.statusCode).toBe(503)
+    expect(exhausted.json()).toEqual({ error: 'stand_proxy_unavailable' })
+  })
+  it('reuses the configured public hostname across request hosts with a single port', async () => {
+    const proxy = new StandProxy({ ...deps(), publicHost: 'preview.example', publicScheme: 'https' })
+    cleanup.push(() => proxy.close())
+    const local = await proxy.access('alice', 'p', 's', 'localhost:25273')
+    const ip = await proxy.access('alice', 'p', 's', '127.0.0.1:25273')
+    expect(local.url).toBe('https://preview.example:' + ports[0] + '/')
+    expect(ip.url).toBe(local.url)
+  })
   it.each(['http', 'https'] as const)('injects the %s lease origin behind TLS termination and preserves other responses', async publicScheme => {
     const html = '<html><head></head><body>Привет</body></html>'
     const gateway = createServer((req, res) => {
@@ -76,13 +274,14 @@ describe('stand proxy listeners', () => {
     await new Promise<void>((resolve, reject) => { gateway.once('error', reject); gateway.listen(ports[3], '127.0.0.1', resolve) })
     cleanup.push(() => { gateway.closeAllConnections(); return new Promise<void>(resolve => gateway.close(() => resolve())) })
     const inspectorScript = vi.fn(async (cookie: string) => ({ statusCode: 200, headers: { 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' }, body: Buffer.from('window.__inspector=' + JSON.stringify(cookie)) }))
-    const proxy = new StandProxy({ ...deps(), publicScheme, ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript })
+    const previewInspectorScript = vi.fn(async (parentOrigin: string) => ({ statusCode: 200, headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=300' }, body: Buffer.from('window.parentOrigin=' + JSON.stringify(parentOrigin)) }))
+    const proxy = new StandProxy({ ...deps(), publicScheme, ports: ports.slice(0, 2), connect: (_machine, port) => connect({ host: '127.0.0.1', port }), inspectorScript, previewInspectorScript })
     cleanup.push(() => proxy.close())
     const ordinary = await proxy.access('alice', 'p', 's', '127.0.0.1')
-    const opted = await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })
+    const opted = await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject: 'make-inspector' })
     expect(opted.url).not.toBe(ordinary.url)
     expect(opted.url).toBe(publicScheme + '://127.0.0.1:' + ports[1] + '/')
-    expect((await proxy.access('alice', 'p', 's', '127.0.0.1', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
+    expect((await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject: 'make-inspector' })).url).toBe(opted.url)
     const read = (base: string, path: string) => new Promise<{ body: Buffer; headers: import('node:http').IncomingHttpHeaders; status: number | undefined }>((resolve, reject) => {
       // Caddy terminates TLS; the Core listener receives HTTP with an unrelated Host.
       const req = request(new URL(path, base.replace(/^https:/, 'http:')), { agent: false, headers: { cookie: 'vc_session=alice', host: 'incoming.example:24016' } }, res => {
@@ -95,7 +294,8 @@ describe('stand proxy listeners', () => {
     for (const path of ['/', '/gzip', '/br', '/deflate', '/body', '/chunked']) {
       const result = await read(opted.url, path)
       expect(result.headers['transfer-encoding']).toBeUndefined()
-      const script = '<script src="' + opted.url + 'api/make/inspector.js" data-vc-make-inspector></script>'
+      const script = '<script src="' + opted.url + 'api/make/inspector.js" data-vc-make-inspector></script>' +
+        '<script src="' + opted.url + '__sislexa/preview-inspector.js"></script>'
       expect(result.body.toString()).toBe(path === '/body' ? '<body class="app">' + script + 'hello</body>' : html.replace('</head>', script + '</head>'))
       expect(result.status).toBe(200)
       expect(result.headers['content-length']).toBe(String(result.body.length))
@@ -116,10 +316,31 @@ describe('stand proxy listeners', () => {
     expect(served.headers['cache-control']).toBe('public, max-age=300')
     expect(served.headers['content-length']).toBe(String(served.body.length))
     expect(inspectorScript).toHaveBeenCalledTimes(1)
+    const executor = await read(opted.url, '/__sislexa/preview-inspector.js?parentOrigin=https://forged.example')
+    expect(executor.status).toBe(200)
+    expect(executor.body.toString()).toBe('window.parentOrigin=' + JSON.stringify(publicScheme + '://127.0.0.1:25273'))
+    expect(executor.headers['cache-control']).toBe('no-store')
+    expect(executor.headers['content-type']).toBe('text/javascript')
+    expect(previewInspectorScript).toHaveBeenCalledWith(publicScheme + '://127.0.0.1:25273', 'vc_session=alice')
+    expect((await read(ordinary.url, '/__sislexa/preview-inspector.js')).body.toString()).toBe(html)
+    expect(previewInspectorScript).toHaveBeenCalledTimes(1)
     const plain = await read(ordinary.url, '/api/make/inspector.js')
     expect(plain.body.toString()).toBe(html)
     expect(inspectorScript).toHaveBeenCalledTimes(1)
   })
+  it.each([302, 401, 500])('returns 502 instead of serving a failed preview inspector response (%s)', async statusCode => {
+    const previewInspectorScript = vi.fn(async () => ({ statusCode, headers: { 'content-type': 'text/javascript' }, body: Buffer.from('{"error":"unauthorized"}') }))
+    const d = deps()
+    const proxy = new StandProxy({ ...d, previewInspectorScript })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', 'p', 's', '127.0.0.1:25273', undefined, { inject: 'make-inspector' })
+    const response = await fetch(lease.url + '__sislexa/preview-inspector.js', { headers: { cookie: 'vc_session=alice' } })
+    expect(response.status).toBe(502)
+    expect(await response.text()).toBe('')
+    expect(response.headers.get('content-type')).toBeNull()
+    expect(d.connect).not.toHaveBeenCalled()
+  })
+
   it('keys leases by requested port and forwards to that port', async () => {
     const d = deps(); d.ports = ports.slice(0, 3)
     const proxy = new StandProxy(d); cleanup.push(() => proxy.close())

@@ -1,3 +1,4 @@
+import { registerAndroidAppRoutes } from './androidApp.js'
 import { vpnMachineView } from '../machines/vpn/telemetry.js'
 // REST для машин-агентов: список (с онлайн-статусом), создание (одноразовый
 // токен), удаление (отзыв токена + разрыв соединения).
@@ -33,6 +34,8 @@ export interface AppArtifacts {
   agentApp?: string
   desktopApp?: string
   loginApplication?: string
+  androidManifest?: string
+  githubToken?: string
 }
 
 /** Отдаёт .dmg на скачивание или 404 с подсказкой, как собрать. */
@@ -415,6 +418,8 @@ export async function registerAgentRoutes(
     reply.header('Cache-Control', 'no-store')
     try { return { version: servedAgent().version } } catch { return { version: AGENT_VERSION } }
   })
+
+  registerAndroidAppRoutes(app, { manifestPath: artifacts.androidManifest, githubToken: artifacts.githubToken })
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>

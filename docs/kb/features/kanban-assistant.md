@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-10-24
-checked: 556a06ce
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -9,24 +9,30 @@ areas:
   - packages/shared/src/llm.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
-  - apps/server/src/mcp/kanbanMcp.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - apps/server/src/mcp/widgetUiRelay.ts
   - apps/server/src/mcp/widgetContext.ts
-  - apps/server/src/orchestration/runManager.ts
-  - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
   - apps/server/src/session.ts
   - apps/server/src/server.ts
   - apps/server/src/turns.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
-  - packages/ui/src/App.tsx
-  - packages/ui/src/components/KanbanAssistant.tsx
-  - packages/ui/src/lib/widgetUiActions.ts
-  - packages/ui/src/remote/index.ts
 ---
 
 # Канбан-ассистент
+
+## Current Core boundary
+
+Core retains `WidgetContextStore`, `WidgetUiRelay`, turn assembly and Shared
+widget contracts. `/mcp/kanban` is proxied to Kanban. The public renderer bridge
+supports optional `expiresAt` and `onExpired`; the owner UI must fence delayed
+actions. Kanban owns the MCP tool handlers and orchestration manager.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 Ассистент страницы проекта работает так же, как ассистенты Make и Консоли:
 инструментами в цикле, а не JSON-предложениями. Прежний envelope `propose.*`

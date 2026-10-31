@@ -1,7 +1,7 @@
 import { calculateThreadCost, THREAD_COST_THRESHOLDS, resumeSessionIdFor, effectiveChatInstructions,
   chatInstructionHints, type Conversation, type ConversationThreadCost } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
-import type { ConversationSummaryService } from './conversationSummary.js'
+import { fallbackSummary, logSummaryFailure, type ConversationSummaryService } from './conversationSummary.js'
 
 export class ThreadResetError extends Error {
   constructor(readonly code: string, readonly statusCode: number) { super(code) }
@@ -41,16 +41,21 @@ export async function resetConversationThread(
   if (!conv) return null
   const cost = await conversationThreadCost(db, userId, conv)
   if (summarize) {
-    if (!summary) throw new ThreadResetError('summary_unavailable', 503)
-    // Existing refresh is best effort. Verify its boundary before discarding the session.
+    try {
+      await summary?.refresh(userId, conversationId)
+    } catch (error) {
+      logSummaryFailure({
+        event: 'conversation_summary_failed', conversationId, model: 'summary-service',
+        reason: error instanceof Error ? error.name : 'summary_failed',
+        error: error instanceof Error ? error.message : String(error),
+        messageCount: 0, promptChars: 0
+      })
+    }
+    // Re-read after any in-flight background run: cover only its remaining messages.
     const pending = await db.chat.summaryMessages(userId, conversationId)
-    const target = pending?.messages.at(-1)?.id
-    let refreshed = await summary.refresh(userId, conversationId)
-    if (!refreshed) return null
-    // An already running background summary may cover an earlier boundary.
-    if (target && refreshed.summary?.coversUntilMessageId !== target) {
-      refreshed = await summary.refresh(userId, conversationId)
-      if (!refreshed || refreshed.summary?.coversUntilMessageId !== target) throw new ThreadResetError('summary_failed', 503)
+    if (!pending) return null
+    if (pending.messages.length) {
+      await db.chat.setConversationSummary(userId, conversationId, fallbackSummary(pending.summary, pending.messages))
     }
   }
   return db.chat.resetConversationThread(userId, conversationId,

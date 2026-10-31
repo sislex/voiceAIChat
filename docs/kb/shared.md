@@ -1,20 +1,48 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-20
-checked: a19140220
+updated: 2026-10-30
+checked: 78f28530
 areas:
   - packages/shared/src
 ---
 
 # Общий пакет: типы, контракты и чистая логика
 
-`packages/shared` — единственный источник истины для данных, которыми обмениваются UI, сервер, desktop и компаньон-агент. Пакет не имеет runtime-зависимостей, не обращается к DOM, сети, файловой системе или процессам и экспортирует исходный TypeScript через `src/index.ts`. Изменение публичного поведения начинается здесь, затем реализуется на обеих сторонах транспорта.
+`packages/shared` defines Core contracts and pure logic consumed by the server and clients. It declares explicit owner-contract dependencies in `package.json` and exports TypeScript through `src/index.ts`. Its own logic does not access DOM, network, filesystem or processes. Changes to Core public behavior start here and are implemented on both sides of the transport; extracted protocols remain owned by their published packages.
 
 `llm.ts` — контракт LLM: `LlmRequest`/`LlmClient` (их собирает сервер) плюс
 протокол исполнителя v1: тело `LlmRunBody`, кадры `LlmRunFrame`,
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## Current additive contracts
+
+`LlmRequest.previewSurface` accepts `panel | chromium | make-preview`.
+The additive `make-preview` value identifies the user's open Make iframe;
+its `previewMcpUrl` token addresses the Make conversation. A bound browser
+continues to use the Reader conversation and `panel` or `chromium`.
+
+`ConversationSummary.source` is optional (`model | fallback`). Thread reset
+persists `fallback` when model summarization is unavailable or leaves uncovered
+messages; successful model summaries may omit the field. Consumers must accept
+older summaries without it. See [summary reset](llm.md#session-cost-and-summary-reset).
+
+- `threadCost.ts` owns provider-session cost estimates and `ThreadResetMode`
+  (`off | hint | auto`). Conversation settings default to `hint`; the canonical
+  chat handoff artifact is version 1.2.0 and includes thread-cost/reset routes.
+- `stripServiceData` removes `activity` and `request` even when a size summary is
+  already present. Lightweight `model`, `permissionMode` and `sessionId` remain
+  available; new request metadata stores message counts/last ID rather than a
+  duplicate history. Diagnostic payloads are loaded separately.
+- `androidRelease.ts` validates the pinned APK manifest; `agentProtocol.ts`
+  extends the owner's register frame with `supervisor: 'android'` while retaining
+  the dev-process response extension.
+- `RendererWidgetUiBridge.onAction` carries optional `expiresAt`, and optional
+  `onExpired` supports older hosts. `EnvironmentMode` also includes `thin-client`
+  and `local-stand`; this is a type contract, not proof of owner commissioning.
+- Model catalog additions and fallback estimates live in `types.ts` and
+  `pricing.ts`; deployed Billing prices remain independently configured.
 
 ## Карта модулей
 
@@ -72,7 +100,16 @@ consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
 prevent checking subsequent consumers; the overall exit status is nonzero.
 See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
-### sislexa operation and consumption contracts
+### Operation and consumption ownership
+
+Operation, usage and billing contracts have moved to `@sislexa/sdk`.
+The historical `platformOperation.ts`, `platformUsage.ts` and `billing.ts`
+implementations described below are no longer Core Shared source files.
+Use explicit owner exports instead of adding local copies or runtime barrel
+re-exports. Identity owns stable account subjects; Core owns admission and
+transport integration with those public contracts.
+
+### Historical sislexa operation and consumption contracts
 
 `platformOperation.ts` defines version 1 accounting context with immutable user ID,
 identity issuer, calling client, payer, environment, initiating module, project,

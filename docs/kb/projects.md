@@ -1,30 +1,52 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-30
+checked: 78f28530
 
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
   - packages/shared/src/qa.ts
-  - apps/server/src/routes/projects.ts
-  - apps/server/src/projects
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
+  - apps/server/src/db/repos/tasks.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/ipc.ts
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
-  - apps/server/src/mcp/makeMcp.ts
-  - apps/server/src/ci/modelHooks.ts
   - packages/shared/src/llm.ts
   - packages/shared/src/prompt.ts
   - packages/shared/src/types.ts
-  - packages/ui/src/store/react.tsx
   - owner-repo
 ---
 
 # Проекты и канбан-доска
+
+## Kanban implementation ownership
+
+`sislex/sislexa-kanban` owns task preparation, board workflow, CI/QA, merge,
+release, autopilot and preview execution. Core supports remote/off Kanban only.
+`apps/server/src/kanban/boundary.test.ts` prohibits local manager/route copies.
+Core retains public Shared contracts, SQL schema/repositories and the
+`kanban/core.ts` and `kanban/service.ts` ports. `kanbanBridge/proxy.ts` forwards
+project/task APIs after Core authorization; specific Core routes still take
+precedence over the wildcard proxy. The remote bridge receives board, run,
+preparation, QA, repository, release and notification events for Core sessions.
+
+In this topic and linked feature topics, historical `apps/server/src/ci`,
+`merge`, `preview`, `orchestration`, `releases`, `kanban/module.ts` and task-route
+paths describe the extracted Kanban implementation. `packages/ui` paths belong
+to `sislexa-core-ui`; Agent and LLM Runner source paths belong to their owners.
+Detailed migration notes are retained until owner KB coverage is available;
+Core freshness verifies Core contracts and integration, not every owner release.
+Owner document identifiers are listed in [modules.md](modules.md). The identifier
+`kanban:README.md` is not a path in the Core checkout: it resolves to the indexed
+`docs/kb/README.md` of the registered `sislex/sislexa-kanban` module. Inspect the
+module status and indexed SHA through the KB module API when that document is not
+returned; do not search for a local `kanban:README.md` file or infer that Kanban
+implementation moved back into Core.
 
 ## Operator assistant model
 

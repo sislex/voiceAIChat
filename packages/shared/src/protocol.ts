@@ -398,6 +398,8 @@ export const REST = {
   loginEnrollmentRedeem: '/api/login-application/enrollments/redeem',
   loginEnrollmentStatus: (id: string) => `/api/login-application/enrollments/${encodeURIComponent(id)}`,
   desktopApp: '/api/app/desktop',
+  androidApp: '/api/app/android',
+  androidApk: '/api/app/android/apk',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   agentStorages: (id: string) => `/api/agents/${encodeURIComponent(id)}/storages`,
   conversationStorage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/storage`,

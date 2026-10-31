@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-27
-checked: 50e092a9
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -110,7 +110,22 @@ not by itself make either original available or validate either value.
 
 ## Independent runner boundary
 
-Core consumes LLM Runner 0.3.1 from `sislex/llm-runner`. The `apps/llm-runner`
+Runner 0.3.8 already provides master-only
+`GET /v1/admin/lifecycle?details=true`: its `runs` members and `activeRuns`
+come from the same RunManager snapshot. Member metadata includes run ID,
+provider kind, accounting presence, start time, lifecycle phase and authenticated
+caller category; it excludes prompts and credentials.
+
+The SISL-766 Runner source fix starts its two-second output flush deadline at
+child `exit`, rather than waiting for `close` (which can be held by a
+descendant's inherited pipes). A real-child regression and accounted/unaccounted
+tests cover removal from the aggregate, one-time finalization and lease release.
+This fixes a reproduced lifecycle defect; it does not prove why the historical
+Mailpit acceptance observed one member after settlement. That journey must be
+repeated with member diagnostics on the fixed Runner composition.
+
+
+Core consumes LLM Runner 0.3.8 from `sislex/llm-runner`. The `apps/llm-runner`
 workspace, local CLI/profile wrappers and their internal suites are removed.
 `RemoteLlmClient` executes turns; `RunnerFsClient` reads login state, history,
 files and `/v1/mcp/servers` with the authenticated user namespace and configured
@@ -376,8 +391,16 @@ with positive integers. Reversed thresholds fall back to defaults.
 (default true) and returns `{ ok: true, summary }`. The turn manager excludes
 active, preparing and saving turns with HTTP 409 `turn_active`, and holds
 admission while refreshing the existing summary service and clearing the
-session/context usage. A missing or failed summary leaves the session intact
-(503); `summarize: false` skips refresh. The next turn uses the existing bounded
+session/context usage. Summary failures never produce 503: after refresh, any
+uncovered published messages are saved as a deterministic fallback summary.
+This includes an unavailable service, thrown error, null result or a background
+run covering an older boundary. The fallback retains up to 4,000 characters of
+prior summary plus newest-first message excerpts (2,000 characters each), capped
+at 12,000 characters total, and advances the boundary to the last pending message.
+The optional shared `summary.source: 'fallback'` is persisted in
+`conversations.summary_source` and returned through REST/WS for degraded-summary
+UI. A missing conversation remains 404; turn admission still returns 409.
+`summarize: false` skips refresh. The next turn uses the existing bounded
 cold-start history with the summary. Stored history is preserved.
 The compatibility route `POST /api/conversations/:id/thread/reset`
 (`REST.conversationThreadResetLegacy`) retains its `Conversation` response and
@@ -386,7 +409,7 @@ lock and rejects active turns with 409.
 
 Canonical conversation settings persist `threadReset: off | hint | auto`,
 default `hint`. Only `auto` resets before a turn when cost recommends `reset`;
-a failed automatic reset reports an error and pauses the queue.
+a summary failure uses the same fallback and allows queued work to continue.
 Resets append a visible system note, “Тред сброшен: было N токенов на ход”, and
 publish existing `chat.message` / `chat.conversation` frames.
 Clients should refetch cost on opening a conversation and after `claude.done`;
@@ -489,41 +512,42 @@ Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта �
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
 
-**Make без машины (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make работает без remote-моста и сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому остаются только `mcp__make__*`. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
+**Режим Make-разговора (roadmap-3 п.2).** Общее UI-правило «у non-admin нет машины — План» не применяется к разговору `assistantKind: 'make'`: Make сохраняет выбранный пользователем режим. Сервер одинаково для Claude и Codex передаёт сохранённый `permissionMode` и всегда задаёт `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …), поэтому встроенные инструменты недоступны: остаются `mcp__make__*` и scoped remote MCP из следующего абзаца. Итоговый режим конкретного хода определяет read-only Make MCP: явный `plan`, одноходовый «Только спросить» и автоплан большого запроса добавляют `ro=1`; `acceptEdits` и `bypassPermissions` его не добавляют. «Только спросить» после завершения хода восстанавливает прежний режим, а автоплан не записывает `plan` в разговор.
 
 Codex ≥0.15 требует одобрения любого MCP-вызова, поэтому раннер регистрирует каждый HTTP-MCP с `-c mcp_servers.<name>.default_tools_approval_mode="approve"` (`mcpServerArgs` в `codexCli.ts`). Это разрешает вызовы Make MCP в неплановых режимах без включения встроенных инструментов; политику записи файлов продолжает держать сам Make MCP через `ro=1`.
 
-**Make-чат к машине не ходит вообще (2026-09-04).** Раньше исключение работало
-только «без машины»: назначенная чату машина давала remote-bash-мост, а у роли
-`admin` вместе с ним и встроенные `Bash`/`Write`/`Read` — то есть модель Make
-могла править файлы на машине, включая общую копию проекта. Теперь `turns.ts`
-(флаг `makeChat`) для Make игнорирует машину целиком: `resolveConversationMachine`
-не вызывается, `remote` не собирается, отсутствие или offline машины не блокирует
-ход, `MAKE_ONLY_DISALLOWED_TOOLS` запрещаются при любой роли и режиме, а Codex-ход
-Make остаётся в `plan` тоже при любой роли. Причина — та же, что и у удаления
-Make-push: общая копия проекта (`…/projects/<id>/worktree`) принадлежит git-потоку
-(задачи, CI, релизы), и правка мимо коммита оставляет её dirty. Мастерская при
-этом не теряет ничего: `make_*` пишут в `<dataDir>/make/<conversationId>` и машины
-не требуют. Снимок контекста (`routes/rest.ts`) повторяет это правило: для
-Make-чата `resolution` = null, поэтому «Машина выполнения», рабочая директория,
-навыки и `mcp-remote-*` показываются недоступными, а `disallowedTools` содержат
-встроенные инструменты. Единственное действие Make с репозиторием — разовое
-обновление общей копии до `origin/<base>` при создании чата: `refreshProjectMain`
-в `server.ts` (передаётся в `registerRest`) вызывается из `POST /api/conversations`
-при `assistantKind: 'make'` с проектом, best-effort и без `await` — нет машины, она
-offline или синхронизация упала, чат всё равно создаётся, а причина уходит в лог
-(`make_chat_project_refresh_failed`). Оставшиеся с прежних времён привязки
-Make-чатов к машине снимает миграция `database.ts` (`UPDATE conversations SET
-exec_target = NULL, workdir = NULL WHERE assistant_kind = 'make'`, идемпотентно;
-явное `exec_target = 'none'` сохраняется как осознанный выбор пользователя), а
-`setConversationExecTarget` больше не даёт записать машину и каталог Make-чату —
-остальные поля того же вызова (`permission_mode`, движок, модель, навыки)
-сохраняются. Тесты: `turns.test.ts` («Make с назначенной машиной всё равно не
-получает remote-мост» — машина наследуется как default-машина проекта, «Make на
-Codex остаётся в плане даже у admin»), `rest.conversations.test.ts` («новый
-Make-чат проекта разово обновляет общую копию до origin, обычный чат — нет») и
-`db/database.test.ts` («снимает с Make-чатов привязку к машине и каталог, а «none»
-и чужие чаты не трогает»).
+**Make attachments and scoped machines (2026-10-29).** Make retains its explicit
+`execTarget` and `workdir` in settings and across database startup. It does not
+inherit a default machine. The context snapshot reports that explicit machine
+and folder. Built-in shell/file tools remain disabled for both providers;
+Make requests also set the runner's `toolOnly` flag so Codex cannot obtain its
+normal remote-mode local sandbox bypass.
+
+Every Make turn receives the Core remote MCP with `make=1`, `conv`, `turn` and
+a short-lived `files` token. The prompt lists upload IDs and names;
+`image {path: uploadId}` returns typed image content even without a machine.
+The file broker unregisters the token when the turn finishes. With an explicit
+machine, the URL also carries `agent` and the configured `cwd`; other project
+machines and inherited project folders are not granted.
+
+The scoped endpoint permits only `pwd` and `ls [path]` through bash, because
+an arbitrary shell cannot be confined by changing its working directory.
+Read/image/edit and single-file literal grep validate paths on the agent,
+rejecting traversal, outside paths, symlinks and Git metadata. Missing workdir
+disables machine tools. Project edits continue through Make tools.
+
+`attachment_to_make {uploadId,path}`, `machine_to_make {machinePath,path}`
+and `make_to_machine {path,machinePath}` move bytes server-side with a 10 MiB
+limit; incomplete machine reads are rejected. All three reject writes in plan
+mode. The Core adapter uses authorized `GET/PUT /api/make/:id/files/raw?path=...`
+and passes the turn ID on writes; it never writes the Make checkout directly.
+Tools are registered only when both embedded raw routes exist; remote Make is
+probed by reading an existing project file through the authorized raw endpoint.
+The currently pinned Make package lacks these routes, so transfers remain gated
+until the binary-file card supplies them. External ticket-delegated Make does
+not expose the local machine bridge.
+Tests cover broker registration/cleanup, both providers, typed images, binary
+transfers, plan restrictions, traversal, symlinks and settings persistence.
 
 ## Канбан: инструменты `mcp__kanban__*`
 
@@ -652,6 +676,14 @@ Codex получает `-c mcp_servers.kb.url=…` до ветвления plan/
 (`packages/shared/src/previewActions.ts`); сервер лишь транслирует действие
 клиентам по WS (`preview.action`/`preview.result`) и ждёт ответ, исполняет его
 браузер с активным чатом хода. Module details: `web-reader:README.md`.
+
+For non-delegated Make turns without a bound browser, `turns.ts` issues
+`previewMcpUrl` for the Make conversation itself and sets
+`previewSurface: 'make-preview'`. The prompt explicitly targets the user's
+open Make panel, requires `browser_capabilities` first and uses `screenshot`
+when supported, otherwise `read`. `make_preview_closed` asks the user to open
+that preview. Bound Reader browsers keep their own conversation token and
+`panel`/`chromium` surface. See [Make browser routing](features/make-browser.md#scoped-make-execution).
 
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
@@ -887,7 +919,7 @@ details («встроенный запуск CLI на сервере», когд
 
 **Инструменты модели зависят от вида чата, и список должен это отражать.**
 Кроме `mcp__remote__*` (машина) и `mcp__kb__*` (база знаний) ход подключает
-`mcp__browser__*` в чатах с превью (кроме Make), `mcp__console__*` в «Консоли с
+`mcp__browser__*` в чатах с превью (включая Make), `mcp__console__*` в «Консоли с
 ассистентом», `mcp__make__*` в Make и `mcp__kanban__*` в ходах панели
 ассистента. В снимке это пункты `mcp-browser-preview`, `mcp-console-pty`,
 `mcp-make-files`, `mcp-kanban-board` с замком причины `kind`

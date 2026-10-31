@@ -7,7 +7,12 @@ import { registerInternalRoutes } from '../routes/internal.js'
 
 describe('/internal/make/core project methods', () => {
   const transfer = { targetProjectId: 'p', targetRepository: 'core-ui', title: 'Button', files: ['Button.tsx'], designConversationId: 'design' }
+  const componentState = { standId: 's', hostProjectId: 'p', machineId: 'agent', component: 'core', branch: 'make/test', workingCopyPath: '/core', phase: 'ready', previewUrl: null, directUrls: [],
+    components: [{ component: 'make', branch: 'make/test', workingCopyPath: '/make', phase: 'ready' }] }
   const cases = [
+    ['makeStand', ['alice', 'conversation', { op: 'component', action: 'attach', component: 'make', standId: 's', hostProjectId: 'p' }], componentState],
+    ['makeStand', ['alice', 'conversation', { op: 'files', action: 'read', component: 'make', path: 'file.ts' }], { ...componentState, files: { action: 'read', content: 'make' } }],
+    ['makeStand', ['alice', 'conversation', { op: 'git', component: 'core-ui', operation: { op: 'push' } }], { ...componentState, git: { op: 'push', output: 'done' } }],
     ['listProjects', ['alice'], []],
     ['projectStructure', ['alice', 'p'], []],
     ['projectDesign', ['alice', 'p', '.'], { tokens: [], themes: [], components: [] }],

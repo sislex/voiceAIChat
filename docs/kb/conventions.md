@@ -1,13 +1,14 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-10-31
+checked: 98722e6a
 areas:
   - package.json
-  - packages/ui/vitest.config.ts
   - packages/shared/tsconfig.json
   - apps/server/tsconfig.json
-  - apps/llm-runner/tsconfig.json
+  - scripts/application-gate.mjs
+  - scripts/quick-gate.mjs
+  - scripts/task-gate.mjs
 ---
 
 # Конвенции: код, тесты, гейты, коммиты
@@ -39,7 +40,7 @@ step through promotion or a pull request.
   follow the surrounding comment density. Effective 2026-09-11, Make maintains
   English comments and Markdown in `apps/make`, `packages/make-app`, and
   `packages/make-contracts`, including generated comments, exported Markdown,
-  and its dedicated plans. The user also requests English communication.
+  and its dedicated plans. Communicate in Russian unless the user requests otherwise.
 - TypeScript strict везде; в `packages/ui` дополнительно `noUnusedLocals`,
   `noUnusedParameters`, `noImplicitOverride`.
 - **Импорты**: в `apps/server` и `apps/llm-runner` — с расширением `.js`
@@ -50,16 +51,16 @@ step through promotion or a pull request.
   моков; всё внешнее (spawn, fetch, сокет, БД) **инъектируется параметром** —
   отсюда `SpawnFn`, `BuildOptions`, `AgentSocket` и т.п. Новый модуль,
   дёргающий процесс или сеть напрямую без возможности подмены, — против конвенции.
-- Никаких новых зависимостей без нужды: `packages/shared` вообще без `dependencies`,
-  монорепо на голых npm workspaces (без turbo/nx/lerna).
+- Keep dependencies explicit and justified. Shared declares published owner-contract
+  packages; its logic remains free of DOM/network/filesystem/process access.
+  Core uses npm workspaces without turbo/nx/lerna.
 
 ## Тесты
 
-`vitest run` в каждом воркспейсе. Файлы — рядом с исходником: `*.test.ts` для
-логики, `*.dom.test.tsx` для компонентов (jsdom + Testing Library, setup —
-`packages/ui/src/test/setup.ts`, фейковые мосты — `src/test/fakeApi.ts`). Сейчас в
-репозитории ~465 тестовых файлов, из них 76% в трёх пакетах: `packages/ui` (149),
-`apps/server` (130), `packages/shared` (78). Тест пишется в том же шаге, что и код.
+Core unit tests live beside source as `*.test.ts` and use Vitest. Renderer DOM
+tests, Storybook and Electron implementation tests belong to their owners.
+Historical `packages/ui` and Electron paths below describe the former monorepo;
+use the owner package instructions for those commands.
 
 Что принято покрывать: чистые функции (`shared`) — таблицей случаев; сервер —
 через `fastify.inject()` и ws-клиент с моками движков; UI — поведением
@@ -80,23 +81,19 @@ release/0.1.265, 2026-09-08). Тесты, которым нужен сам
 Postgres по таймингу» больше не заводим — так был пойден двойной development-ран.
 
 ```bash
-npm run gate:fast                      # гейт приложений по рабочему диффу от HEAD
-npm run -w @voicechat/ui test          # один пакет
-npm run -w @voicechat/server test
-npm run test:desktop                   # desktop — свой node_modules
-npm run test                           # все воркспейсы
+npm run gate:fast                      # application checks for the working diff
+npm run gate:quick -- --base <sha>      # task typecheck/build and affected tests
+npm run test:files -- <files>           # focused failure rerun
+npm run kb:check -- --strict           # stale topics, package coverage and links
 ```
 
-Полный гейт репозитория — `npm run verify`: typecheck + test всех воркспейсов,
-сборка, плюс desktop и agent-tray (у них свой `node_modules`). Перед пушем удобнее
-гонять его, чем собирать команды руками.
-
-A fresh worktree needs separate installs for all three non-workspace Electron
-apps before a gate that selects them: `npm ci --prefix apps/desktop`,
-`npm ci --prefix apps/agent-tray`, and `npm ci --prefix apps/login-application`.
-The root `npm ci` does not install their Electron or electron-vite dependencies.
-Use `gate:fast -- --dry-run` and the application catalog to check the full selected
-set; shared-code changes can select these consumers even during Make work.
+`gate:all` is the complete Core gate; promotion and release run full validation.
+Development uses the task's required quick gate. Core's local workspaces are
+Shared, Knowledge, component-runtime, Automation Runner and Server. Agent and
+Desktop are pinned owner artifacts, not extra installs under `apps/`.
+`gate:fast -- --dry-run` previews application selection. A root `package.json`
+change limited to npm scripts selects referenced tooling tests; it does not
+force the full application gate. Other unknown/config changes retain fallback.
 
 ## Покрытие: пороги по каталогам, когда пакет считать целиком бессмысленно
 

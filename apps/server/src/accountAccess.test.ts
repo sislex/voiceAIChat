@@ -199,7 +199,7 @@ it('checks each Reader capability independently at the model callback boundary',
   const { db, app } = await fixture()
   const { createLocalPlaywrightReaderCore } = await import('./playwrightReaderBridge/localCore.js')
   const { createLocalReaderCore } = await import('./readerBridge/localCore.js')
-  const relay = { request: vi.fn() }
+  const relay = { request: vi.fn().mockResolvedValue({ ok: true }) }
   const chromium = createLocalPlaywrightReaderCore({ db, issuePreviewRunKey: async () => '', logBrowserShot: async () => {} })
   const reader = createLocalReaderCore({ app, db, relay, machines: { isOnline: () => false, http: vi.fn() }, runKeys: { issue: () => '' }, previews: async () => [], shotsRoot: '/unused', publish: () => {} })
   const conversation = await db.chat.createConversation('alice', 'Reader', 'web-recorder', null, 'web-reader')

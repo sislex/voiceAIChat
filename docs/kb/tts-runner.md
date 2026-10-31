@@ -1,9 +1,10 @@
 ---
 title: TTS Runner: ресурсный API, движки и жизненный цикл WAV
-updated: 2026-10-07
+updated: 2026-10-31
+checked: 98722e6a
 areas:
   - apps/server/src/tts
-  - packages/shared/src/tts.ts
+  - apps/server/src/tts/client/types.ts
   - apps/server/src/session.ts
   - apps/server/src/server.ts
   - apps/server/src/config.ts
@@ -17,7 +18,7 @@ Module details: `voice:README.md`
 
 ## Граница подсистемы
 
-Основной сервер не импортирует реализации движков: production использует `RemoteTtsClient`, а тесты инъектируют `FakeTtsClient`. Общий versioned-контракт запросов, ресурсов, health и стабильных кодов ошибок находится в `packages/shared/src/tts.ts`.
+Основной сервер не импортирует реализации движков: production использует `RemoteTtsClient`, а тесты инъектируют `FakeTtsClient`. The versioned request, resource, health and error contracts come from `@voicechat/voice-contracts/tts`, owned by `sislex/voice`.
 
 ## Движки и голоса
 

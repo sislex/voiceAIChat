@@ -870,6 +870,8 @@ export interface ConversationMembershipMutation {
 }
 
 export interface ConversationSummary {
+  /** Absent for model summaries written by older servers. */
+  source?: 'model' | 'fallback'
   text: string
   coversUntilMessageId: string
   updatedAt: number

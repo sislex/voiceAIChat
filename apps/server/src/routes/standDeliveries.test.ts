@@ -69,6 +69,20 @@ it.each([
   } finally { await f.close() }
 })
 
+it('submits each selected repository and scopes sync to that component', async () => {
+  const f = await fixture()
+  Object.assign(f.stand.components, { make: { repository: 'sislex/make', sha, source: 'live' } })
+  f.stand.live.push({ component: 'make', workingCopyPath: '/work/repos/make-worktrees/conversation-make', branch: candidate.branch })
+  try {
+    const response = await f.app.inject({ method: 'POST', url: f.url + '/deliveries', payload: { component: 'make', branch: candidate.branch, title: 'Make change' } })
+    expect(response.statusCode).toBe(200)
+    expect(f.received[0]?.body).toMatchObject({ repository: 'sislex/make', title: 'Make change' })
+    const synced = await f.app.inject({ method: 'POST', url: f.url + '/sync-dev?component=make', payload: {} })
+    expect(synced.statusCode).toBe(200)
+    expect(f.git.atWorkingCopy).toHaveBeenLastCalledWith('alice', 'project', expect.any(String), '/work/repos/make-worktrees/conversation-make')
+  } finally { await f.close() }
+})
+
 it('forwards the agent HEAD with the project token and authenticated author, without pushing', async () => {
   const f = await fixture()
   try {

@@ -1,6 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-07
+updated: 2026-10-31
+checked: 2d3648b5
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -65,9 +66,9 @@ Conversation groups follow the same owner boundary: Core owns contracts, transpo
 Product story discovery and accessibility checks run in the Make, Image Studio,
 Web Reader, Playwright Reader and Identity repositories. Their UI workspace
 `stories.a11y.dom.test.tsx` composes all local stories with UI providers and uses
-the shared axe serious/critical policy. Core's Storybook and axe shards include
-only Core modules; no `node_modules/@sislexa` story globs or product-story shims.
-Core-owned examples may still embed public external widgets and load their styles.
+the shared axe serious/critical policy. Core UI's Storybook and axe shards run in `sislexa-core-ui` and include
+its composition modules; Core has no local React/Storybook source workspaces.
+Core UI-owned examples may embed public external widgets and load their styles.
 See `testing-operations.md` for browser-test transfer and remaining extraction work.
 ## External UI library ownership
 
@@ -94,8 +95,8 @@ in the UI owner repository.
 
 Make and Reader panels are owner-built artifacts. Core's frontend preparation
 verifies their public manifest, source metadata and integrity without rebuilding
-them. Owner stories/axe suites run only in their repositories; Core's story
-matrix covers Core modules and examples composing public owner widgets.
+them. Owner stories/axe suites run only in their repositories; the Core UI owner's story
+matrix covers host modules and examples composing public owner widgets.
 
 Реальный `App.tsx` подключает четыре панели через `createApplicationPanel`, включая
 surface `shared` у Make; их исходники не импортируются в bundle оболочки.
@@ -110,10 +111,35 @@ IIFE/CSS получают hashed имена и SHA-384 integrity. Ссылка �
 собственном `VC_DATA_DIR/assets`, чтобы открытые вкладки переживали замену версии.
 Автоматического GC этого кеша нет; при очистке учитывают живые вкладки и окно rollback.
 
-В разработке сервер читает `packages/*-app/dist`; `dev:web` делает начальную сборку
-панелей и следит за их изменениями отдельным управляемым процессом. На площадке
+In development, Core resolves the installed owner frontend artifacts.
+`dev:web` verifies them, serves `@sislexa/core-ui/web` and starts the Core UI proxy;
+source editing and HMR run in the corresponding owner repository. На площадке
 `VC_APPLICATION_FRONTENDS` — JSON-карта id → URL своих статических контейнеров;
-ядро раздаёт их через тот же `/applications` gateway. Пустая карта сохраняет
+ядро раздаёт их через тот же `/applications` gateway.
+Core validates every configured frontend ID against `APPLICATION_CATALOG` before
+filtering sources, so an unknown ID throws even when no deployment application is
+enabled. An override is retained when the frontend ID itself or an application
+listed in that frontend's `runtimeDependencies` is enabled and local in the
+deployment. Thus `make-ui` follows `make`, `web-reader-ui` follows `web-reader`,
+`playwright-reader-ui` follows `playwright-reader`, and `image-studio-ui` follows
+`image-studio`. Disabled or external owners do not activate these source overrides.
+
+Production additionally prefers pinned owner archives (frontend catalog entries
+with `external.package`) over `VC_APPLICATION_FRONTENDS`. Only
+`VC_APPLICATION_FRONTENDS_OVERRIDE=1` explicitly enables their overrides when
+`NODE_ENV=production`; other values do not. Development keeps local working-copy
+overrides. Frontends without a pinned owner package still accept configured
+sources. A missing or broken installed pinned artifact returns an error rather
+than silently switching to a container.
+This prevents the SISL-10804 regression reported on 2026-10-31: retaining local
+owner overrides also allowed old production Reader containers to supersede the
+release's pinned archives. The policy applies equally to manifests and assets.
+At startup the gateway logs each frontend's selected `pinned` or `override`
+source and the validated manifest's version/commit; unavailable or invalid
+manifests log null metadata and `manifest_unavailable` without preventing boot.
+Manifest UI versions can differ from the npm owner package version.
+The registration and manifest proxy behavior is covered by
+`apps/server/src/deploymentApplications.server.test.ts`. Пустая карта сохраняет
 локальный fallback общего Docker-образа; неизвестное приложение/путь не получает SPA.
 При сборке вне Git локальный manifest явно имеет `development:true, commit:null`;
 OCI-выпуск приложения требует настоящий полный SHA.

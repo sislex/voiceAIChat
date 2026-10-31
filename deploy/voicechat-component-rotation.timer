@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Sislexa component grant expiry hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+Unit=voicechat-component-rotation.service
+
+[Install]
+WantedBy=timers.target

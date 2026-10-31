@@ -32,6 +32,7 @@ export async function createComponentRuntime(options: ComponentRuntimeOptions): 
 }
 export class ComponentRuntime {
   private readonly verified = new Map<string, number>()
+  private readonly expirations = new Map<string, { digest: string; expiresAt: number }>()
   constructor(readonly contract: ComponentContract, readonly config: ComponentConfig, readonly metadata: ApplicationRuntimeMetadata,
     readonly registry: ComponentTokenRegistry | undefined, private readonly transport: typeof fetch, private readonly now: () => number) {}
   dependency(id: string, options: { timeoutMs?: number } = {}): { url: string; fetchImpl: typeof fetch; publicFetchImpl: typeof fetch; token: string } {
@@ -77,15 +78,25 @@ export class ComponentRuntime {
     if (!response.ok) throw Error('Dependency access denied')
     const authorization = await response.json() as { consumerId?: string; providerId?: string; environmentId?: string; expiresAt?: number }
     if (authorization.consumerId !== this.contract.applicationId || authorization.providerId !== id || authorization.environmentId !== this.config.environmentId || typeof authorization.expiresAt !== 'number' || authorization.expiresAt <= this.now()) throw Error('Wrong dependency grant')
+    this.expirations.set(id, { digest: key, expiresAt: authorization.expiresAt })
     this.verified.clear()
     this.verified.set(key, Math.min(this.now() + 5000, authorization.expiresAt))
   }
-  async readiness(): Promise<{ ok: boolean; dependencies: { applicationId: string; ok: boolean }[] }> {
+  async readiness() {
     const dependencies = await Promise.all(this.config.dependencies.map(async d => {
-      try { await this.verify(d.applicationId, readSecret(d.tokenFile)); return { applicationId: d.applicationId, ok: true } }
-      catch { return { applicationId: d.applicationId, ok: false } }
+      let ok = false, expiresAt: number | null = null
+      try {
+        const token = readSecret(d.tokenFile)
+        const key = d.applicationId + ':' + createHash('sha256').update(token).digest('hex')
+        try { await this.verify(d.applicationId, token); ok = true } catch { /* Report safe dependency status. */ }
+        const known = this.expirations.get(d.applicationId)
+        if (known?.digest === key) expiresAt = known.expiresAt
+      } catch { /* Missing or invalid private file. */ }
+      return { applicationId: d.applicationId, ok, expiresAt,
+        warning: expiresAt !== null && expiresAt - this.now() <= 7 * 86400000 ? 'component_token_expiring' : null }
     }))
-    return { ok: dependencies.every(d => d.ok), dependencies }
+    const expirations = dependencies.flatMap(d => d.expiresAt === null ? [] : [d.expiresAt])
+    return { ok: dependencies.every(d => d.ok), nearestExpiresAt: expirations.length ? Math.min(...expirations) : null, dependencies }
   }
   register(app: FastifyInstance): void {
     app.get(COMPONENT_METADATA_PATH, async () => ({ application: this.metadata, environmentId: this.config.environmentId }))

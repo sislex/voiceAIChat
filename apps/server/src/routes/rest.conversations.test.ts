@@ -788,6 +788,9 @@ describe('REST: conversations/messages/settings', () => {
     const agent = await inj({ method: 'GET', url: '/api/agents/app' })
     expect(agent.statusCode).toBe(404)
     expect(agent.json().error).toContain('не собрано')
+    for (const url of ['/api/app/android', '/api/app/android/apk']) {
+      expect((await app.inject({ method: 'GET', url })).statusCode).toBe(404)
+    }
     const desktop = await inj({ method: 'GET', url: '/api/app/desktop' })
     expect(desktop.statusCode).toBe(404)
   })
@@ -1436,6 +1439,16 @@ describe('REST: conversations/messages/settings', () => {
     expect(snapshot.summary.permissionMode.value).not.toBe('plan')
     // Встроенные инструменты в списке запрещённых — модель их не получит.
     expect(snapshot.disallowedTools).toContain('Bash')
+    expect(snapshot.disallowedTools).toContain('Write')
+  })
+
+  it('shows the configured Make machine and folder in the context snapshot', async () => {
+    const machine = await db.machines.createAgent(U, 'Make assets')
+    const conv = await db.chat.createConversation(U, 'Make', 'make')
+    await db.chat.setConversationExecTarget(U, conv.id, machine.id, '/assets')
+    const snapshot = (await inj({ method: 'GET', url: '/api/conversations/' + conv.id + '/context-snapshot' })).json()
+    expect(JSON.stringify(snapshot)).toContain('/assets')
+    expect(JSON.stringify(snapshot)).toContain('Make assets')
     expect(snapshot.disallowedTools).toContain('Write')
   })
 

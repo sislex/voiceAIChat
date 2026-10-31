@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-30
+checked: 78f28530
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -663,6 +663,16 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 
 ## Выбор машины для чата
 
+Make conversations are an explicit exception to default-machine inheritance:
+only a saved `execTarget` grants machine access, and only its saved `workdir`
+is exposed. The remote MCP `make=1` scope has no other-machine selector.
+Its bash tool supports only directory inspection (`pwd`, `ls`); file operations
+reject outside paths, symlinks and Git metadata through fixed agent-side
+validation. Make project writes use the raw Make API, never a machine checkout.
+Attachment images remain available by upload ID without any machine.
+See [Make tools](llm.md#make-инструменты-mcp-make) for transfer capability gating.
+
+
 Страница настроек разговора хранит отдельно для каждого чата цель
 `conversations.exec_target`, рабочий каталог `workdir` и JSON-список включённых
 навыков `skill_names`. Смена настроек одного чата не затрагивает остальные.
@@ -1144,3 +1154,19 @@ RPC `machines.devProcess` (and the machines process RPC `devProcess` in remote m
 The registry expands the contract's `owner/name` repository shorthand (`DEV_COMPONENT_REGISTRY`) into
 `https://github.com/owner/name.git` before `devProcess.start`, because the agent passes the value to
 `git clone`; full URLs, scp-style remotes and local paths are unchanged.
+
+## Android supervisor and bundle persistence
+
+In the Agent owner repository at `origin/dev` commit `7d90ff4`, Android starts the
+runtime with `VC_AGENT_SUPERVISOR=android` in `AgentService.kt`. `SelfUpdater`
+receives that environment value, and `apps/agent/src/connection.ts` includes it as
+`supervisor` in `agent.register`; this is the signal Core uses for automatic bundle
+offers.
+
+`apps/android/app/src/main/java/com/sislexa/android/Runtime.kt` does not replace an
+existing `voicechat-agent.cjs` while unpacking APK assets, so a bundle installed by
+self-update survives an APK upgrade. The same runtime restores
+`voicechat-agent.cjs.prev` when a pending self-update has remained unconfirmed for
+90 seconds, then clears the pending marker. Consequently the self-updated JS bundle
+remains the delivery path for new Agent behavior on upgraded Android installs while
+APK bundle replacement is intentionally suppressed.

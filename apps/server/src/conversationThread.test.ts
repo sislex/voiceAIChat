@@ -4,7 +4,7 @@ import { REST, type LlmClient, type LlmRequest, type LlmStreamHandlers, type Llm
 import { VoiceChatDb } from './db/database.js'
 import { createTurnManager } from './turns.js'
 import { createConversationSummaryService } from './conversationSummary.js'
-import { conversationThreadCost, threadCostThresholds } from './conversationThread.js'
+import { conversationThreadCost, resetConversationThread, threadCostThresholds } from './conversationThread.js'
 import { registerRest } from './routes/rest.js'
 
 const U = 'alice'
@@ -42,6 +42,21 @@ async function fixture(provider: LlmProvider = 'codex') {
 afterEach(() => vi.unstubAllEnvs())
 
 describe('conversation threads', () => {
+  it.each(['missing', 'throw', 'null', 'failed-runners'] as const)('resets when summary service is %s', async mode => {
+    const f = await fixture()
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const message = await f.add('current', 1000)
+      const failing: LlmClient = { send(_request, h) { queueMicrotask(() => h.onError('offline')); return { cancel() {} } } }
+      const service = mode === 'missing' ? undefined : mode === 'failed-runners'
+        ? createConversationSummaryService({ db: f.db, client: failing, model: 'primary', fallback: { client: failing, model: 'secondary' } })
+        : { refresh: async () => { if (mode === 'throw') throw new Error('offline'); return null } }
+      const result = await resetConversationThread(f.db, service, U, f.conv.id, true)
+      expect(result).toMatchObject({ claudeSessionId: null, summary: { source: 'fallback', coversUntilMessageId: message.id } })
+      expect(await resetConversationThread(f.db, service, U, 'missing', true)).toBeNull()
+    } finally { log.mockRestore(); await f.close() }
+  })
+
   it('GET scopes lightweight usage to the current provider/session and hides foreign conversations', async () => {
     const f = await fixture()
     try {
@@ -138,18 +153,20 @@ describe('conversation threads', () => {
       expect((await f.mode('invalid')).statusCode).toBe(400)
     } finally { await f.close() }
   })
-  it('keeps the session if summarization fails; summarize=false explicitly skips it', async () => {
+  it('resets with a persisted fallback if summarization makes no progress', async () => {
     const f = await fixture()
     try {
       await f.add('current', 1000)
       vi.spyOn(f.summary, 'refresh').mockImplementation(() => f.db.chat.getConversation(U, f.conv.id))
-      expect((await f.app.inject({ method: 'POST', url: REST.conversationThreadReset(f.conv.id) })).statusCode).toBe(503)
-      expect((await f.db.chat.getConversation(U, f.conv.id))?.claudeSessionId).toBe('codex:current')
+      const response = await f.app.inject({ method: 'POST', url: REST.conversationThreadReset(f.conv.id) })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toMatchObject({ ok: true, summary: { source: 'fallback', text: expect.stringContaining('answer') } })
+      expect((await f.db.chat.getConversation(U, f.conv.id))?.claudeSessionId).toBeNull()
       expect((await f.app.inject({ method: 'POST', url: REST.conversationThreadReset(f.conv.id), payload: { summarize: 'no' } })).statusCode).toBe(400)
-      expect((await f.app.inject({ method: 'POST', url: REST.conversationThreadReset(f.conv.id), payload: { summarize: false } })).json()).toEqual({ ok: true, summary: null })
+      expect((await f.app.inject({ method: 'POST', url: REST.conversationThreadReset(f.conv.id), payload: { summarize: false } })).json()).toMatchObject({ ok: true, summary: { source: 'fallback' } })
     } finally { await f.close() }
   })
-  it('preserves extracted queued work when automatic summary refresh fails', async () => {
+  it('continues extracted queued work with fallback when automatic summary refresh fails', async () => {
     const f = await fixture('claude')
     try {
       await f.add('current', 1100000)
@@ -158,10 +175,12 @@ describe('conversation threads', () => {
       vi.spyOn(f.summary, 'refresh').mockImplementation(() => f.db.chat.getConversation(U, f.conv.id))
       await f.turns.start({ userId: U, conversationId: f.conv.id, messageId: message.id,
         fromQueue: true, segments: [{ speakerId: 1, text: message.text }] })
-      expect(f.requests).toHaveLength(0)
-      expect((await f.db.chat.getConversation(U, f.conv.id))?.claudeSessionId).toBe('claude:current')
-      expect(await f.db.chat.isTurnQueuePaused(U, f.conv.id)).toBe(true)
-      expect(await f.db.chat.listQueuedTurns(U, f.conv.id)).toEqual([expect.objectContaining({ messageId: message.id })])
+      expect(f.requests).toHaveLength(1)
+      expect(f.requests[0]?.sessionId).toBeNull()
+      expect(f.requests[0]?.prompt).toContain('RECENT MESSAGES')
+      expect(await f.db.chat.isTurnQueuePaused(U, f.conv.id)).toBe(false)
+      await f.handlers()!.onDone('Continued')
+      await f.turns.idle()
     } finally { await f.close() }
   })
   it('does not treat a reply without input usage as a zero-cost measured turn', async () => {

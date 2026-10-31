@@ -1,11 +1,10 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-27
-checked: c29bd3e2
+updated: 2026-10-31
+checked: 242d084b
 areas:
-  - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
-  - packages/shared/src/playwrightReader.ts
+  - packages/shared/src/androidRelease.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/threadCost.ts
   - packages/shared/src/chatContract.ts
@@ -19,13 +18,36 @@ areas:
   - packages/shared/src/devStand.ts
   - packages/shared/src/devProcess.ts
   - packages/shared/src/llm.ts
-  - packages/shared/src/imageStudioInternal.ts
   - apps/server/src/ws.ts
   - apps/server/src/routes
-  - packages/ui/src/remote
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Application frontend gateway
+
+`GET /applications/:id/manifest.json` uses a configured source only when the
+frontend or its catalog owner is enabled and local, and the source policy allows
+it. With `NODE_ENV=production`, pinned owner archives take priority unless
+`VC_APPLICATION_FRONTENDS_OVERRIDE=1`; development and frontends without a
+pinned owner package retain configured sources. The same selection applies to
+assets. A broken pinned installation returns 503 rather than falling back to an
+override. Frontend IDs such as `make-ui` are distinct from deployment IDs such
+as `make`; registration validates every source ID before filtering. Without a
+selected source, the existing installed-artifact fallback applies. The manifest response keeps
+`Cache-Control: no-store`; asset paths, manifest identity and source URL checks
+remain in `routes/applicationFrontends.ts`. See
+[product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
+
+## Android download contract
+
+`REST.androidApp` and `REST.androidApk` name public GET endpoints
+`/api/app/android` and `/api/app/android/apk`. The manifest substitutes the Core
+APK URL for the upstream location. The binary handler verifies pinned size and
+SHA-256 before responding, including before a 304; unavailable pins return 404,
+invalid/unavailable artifacts return 503. See [client distribution](clients.md#android-apk-distribution).
+Agent registration accepts the additive `supervisor: 'android'` value without
+replacing the owner's remaining wire contract.
 
 ## Thread cost client contract
 
@@ -755,6 +777,16 @@ Relay хранит у pending-запроса `userId`, `conversationId` и `requ
 может только панель текущего Reader-маршрута, чей id записан активным для вкладки в
 `localStorage` (фокус вкладки обновляет claim). Ответ несёт conversation/registration
 контекст, поэтому одинаково подключённые вкладки не подменяют активный Web Reader.
+
+The same wire messages also carry actions for Make conversations:
+Core issues the preview MCP token for that Make conversation and labels the
+LLM request `previewSurface: 'make-preview'`. `server.ts` forwards the optional
+`conversationId` from session results into `PreviewActionRelay.resolve`, so
+a supplied mismatching conversation cannot settle the request. The Reader Core
+bridge maps disconnected or timed-out Make relay requests to
+`make_preview_closed`. The Reader-specific active-panel rules above describe
+Reader UI; Make panel handler registration belongs to the independent Make/Core
+UI owners. See [Make routing](features/make-browser.md#scoped-make-execution).
 
 Самодиагностика из `packages/ui/src/webReaderDiagnostics.ts` выполняет один
 последовательный сценарий на same-origin `/api/preview/diagnostics`. Страница

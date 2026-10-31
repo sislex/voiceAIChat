@@ -91,6 +91,23 @@ async function networkFixture() {
   return { ...f, app, metadata, url, tokenFile, issued, contract, config, consumer, calls: () => calls }
 }
 describe('dependency transport and real provider routes', () => {
+  it('reports expiry warnings, retains known expiry on failure and clears it for an unknown replacement', async () => {
+    const f = await networkFixture()
+    let time = Date.now()
+    const consumer = new ComponentRuntime(f.contract, f.config, { ...f.metadata, applicationId: 'make' }, undefined, fetch, () => time)
+    const status = await consumer.readiness()
+    expect(status).toMatchObject({ ok: true, nearestExpiresAt: f.issued.principal.expiresAt,
+      dependencies: [{ expiresAt: f.issued.principal.expiresAt, warning: 'component_token_expiring' }] })
+    time += 7200000
+    expect(await consumer.readiness()).toMatchObject({ ok: false, nearestExpiresAt: f.issued.principal.expiresAt })
+    const later = new ComponentRuntime(f.contract, f.config, { ...f.metadata, applicationId: 'make' }, undefined, fetch, () => Date.now() + 7200000)
+    expect(await later.readiness()).toMatchObject({ ok: false, nearestExpiresAt: null })
+    writeFileSync(f.tokenFile, f.registry.issue('make', ['identity.verify', 'make.core'], 60).token)
+    expect((await f.consumer.readiness()).nearestExpiresAt).not.toBe(status.nearestExpiresAt)
+    writeFileSync(f.tokenFile, 'invalid')
+    expect(await f.consumer.readiness()).toMatchObject({ ok: false, nearestExpiresAt: null })
+  })
+
   it('verifies versions and grants before RPC, rotates files, and observes immediate revocation', async () => {
     const f = await networkFixture(), transport = f.consumer.dependency('core').fetchImpl
     expect((await f.consumer.readiness()).ok).toBe(true)
@@ -119,7 +136,7 @@ describe('dependency transport and real provider routes', () => {
     if (kind === 'scopes') writeFileSync(f.tokenFile, f.registry.issue('make', ['identity.verify'], 60).token)
     await expect(f.consumer.dependency('core').fetchImpl(f.url + '/rpc')).rejects.toThrow('dependency unavailable')
     expect(f.calls()).toBe(0)
-    expect(await f.consumer.readiness()).toEqual({ ok: false, dependencies: [{ applicationId: 'core', ok: false }] })
+    expect(await f.consumer.readiness()).toMatchObject({ ok: false, dependencies: [{ applicationId: 'core', ok: false }] })
   })
   it('public proxies preserve user credentials and return redirects without sending a service credential', async () => {
     const f = await networkFixture(), transport = f.consumer.dependency('core').publicFetchImpl

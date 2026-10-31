@@ -118,7 +118,7 @@ export interface TurnManagerDeps {
   resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Короткоживущий контекст вложений для бинарного remote:image. */
   remoteFileTool?: {
-    register(token: string, attachments: Array<{ path: string; name: string; dataBase64: string }>): void
+    register(token: string, attachments: Array<{ path: string; name: string; uploadId?: string; dataBase64: string }>): void
     unregister(token: string): void
   }
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
@@ -658,11 +658,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Локальный `cwd` для CLI теперь не валидируем на сервере: исполнитель сам
     // решает, существует ли каталог и можно ли в него перейти.
     const desiredCwd = settings.workdir ?? undefined
-    const attachments = req.attachments?.length
-      ? (await Promise.all(
-          req.attachments.map((id) => loadAttachment(deps.resolveUpload?.(id)))
-        )).filter((att): att is LlmAttachment => Boolean(att))
-      : []
+    const loadedAttachments = await Promise.all((req.attachments ?? []).map(async (uploadId) => ({
+      uploadId, attachment: await loadAttachment(deps.resolveUpload?.(uploadId))
+    })))
+    const attachments = loadedAttachments.flatMap(({ attachment }) => attachment ? [attachment] : [])
+    const makeAttachmentLabels = loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
+      ? [JSON.stringify({ uploadId, name: attachment.runnerName })] : [])
     const attachmentPaths = attachments.map((att) => att.serverPath)
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
@@ -671,8 +672,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // ```image — созданная картинка показывается прямо в сообщении.
     let kbContext: TurnRequestInfo['kbContext']
     let basePrompt = sessionId
-      ? buildPrompt(req.segments, attachmentPaths)
-      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), attachmentPaths, conv?.summary?.text)
+      ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -811,23 +812,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptQ
-    /**
-     * Make-чат к машине не ходит вообще. Его инструменты `make_*` пишут только в
-     * мастерскую (`<dataDir>/make/<conversationId>`), а любой доступ к машине —
-     * это доступ к общей копии проекта, которая принадлежит git-потоку (задачи,
-     * CI, релизы): файл, положенный туда мимо коммита, оставлял копию dirty и
-     * ломал системную синхронизацию с origin. Поэтому назначенная чату машина для
-     * Make игнорируется целиком: ни remote-bash, ни блокировок по её статусу.
-     * Единственное, что Make делает с репозиторием, — разовое обновление копии до
-     * origin/<base> при создании чата (`refreshProjectMain` в `server.ts`).
-     */
+    // Make uses only an explicitly configured machine; project/default machines are not inherited.
+    // The remote endpoint confines its operations to workdir; project writes use the Make API.
     const makeChat = conv?.assistantKind === 'make'
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     // The server's tool-free policy needs neither a machine nor Git preflight,
     // regardless of saved or request-level machine preferences.
-    const machine = makeChat || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
-      ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
+    const machine = (makeChat && (!conv?.execTarget || conv.execTarget === 'none')) || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
+      ...(!makeChat && req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
     const executionDisabled = deps.chatTextOnly === true || machine?.source === 'disabled'
@@ -983,9 +976,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // выполняет браузер пользователя, машина-агент для них не нужна. Токен подписан
     // секретом MCP и снимать его не нужно (см. `reader/turnToken.ts`).
     let previewMcpUrl: string | undefined
-    let previewSurface: 'panel' | 'chromium' | undefined
-    // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
-    // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
+    let previewSurface: 'panel' | 'chromium' | 'make-preview' | undefined
     // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
     const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
     const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
@@ -993,7 +984,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
-    // The Make turn acts on the bound reader conversation, never on the Make chat itself.
+    if (!req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
+      previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
+      previewSurface = 'make-preview'
+      prompt += '\n\n' + [
+        '## Превью Make (make-preview)',
+        'Инструменты mcp__browser__* выполняют действия в открытом превью пользователя в панели Make. Пользователь видит каждое действие.',
+        'Сначала вызови browser_capabilities и используй только поддерживаемые действия. Для визуальной проверки используй screenshot, если он поддерживается, иначе read.',
+        'Ошибка make_preview_closed означает, что нужно попросить пользователя открыть превью Make.',
+        'Файлы проекта меняй только инструментами make_*.'
+      ].join('\n')
+    }
+    // A bound Make browser keeps priority and uses the reader conversation.
     const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
     if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
       previewMcpUrl = externalMakeBrowser
@@ -1031,7 +1033,20 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
-    if (target && deps.agents && deps.mcpBaseUrl) {
+    if (makeChat && deps.remoteFileTool && deps.mcpBaseUrl) {
+      remoteFileToken = randomUUID()
+      deps.remoteFileTool.register(remoteFileToken, loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
+        ? [{ uploadId, path: attachment.serverPath, name: attachment.runnerName, dataBase64: attachment.dataBase64 }] : []))
+      remote = {
+        mcpUrl: deps.mcpBaseUrl + '&make=1&conv=' + encodeURIComponent(conversationId) +
+          '&turn=' + encodeURIComponent(turnId) + '&files=' + encodeURIComponent(remoteFileToken) +
+          (target ? '&agent=' + encodeURIComponent(target) : '') +
+          (target && conv?.workdir ? '&cwd=' + encodeURIComponent(conv.workdir) : ''),
+        agentName: target ? deps.agents?.nameOf(target) ?? target : 'Вложения Make'
+      }
+      prompt += '\n\nВложения: remote.image {path: uploadId}. Перенос файлов (если Make raw API доступен): attachment_to_make, machine_to_make, make_to_machine. Байты переносит сервер. Файлы проекта изменяй только инструментами Make. Машина ограничена папкой чата; bash поддерживает только pwd и ls, grep — буквальный поиск в одном файле.'
+    }
+    if (!makeChat && target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
         starting.delete(conversationId)
         broadcast({ t: 'claude.error', conversationId, message: `Выбранная машина «${deps.agents.nameOf(target) ?? target}» offline` }, userId)
@@ -1174,9 +1189,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
         ...(deps.chatTextOnly ? { textOnly: true } : {}),
+        ...(makeChat ? { toolOnly: true } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
-        ...(attachments.length ? { attachments } : {}),
+        ...(!makeChat && attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(historyMcpUrl ? { historyMcpUrl } : {}),

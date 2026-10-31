@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-10-05
-checked: 8e052b52
+updated: 2026-10-30
+checked: 49ed3138
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -10,7 +10,8 @@ areas:
   - AGENTS.md
   - .claude/commands/kb-update.md
   - apps/server/src/kb/codeUpdate.ts
-  - apps/server/src/ci/modelHooks.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - apps/server/src/kb/modelDocs.ts
   - packages/shared/src/kbGaps.ts
 ---
@@ -57,9 +58,16 @@ areas:                        # пути/каталоги, за которыми
 ---
 ```
 
-`node scripts/kb.mjs check` смотрит `git log <checked>..HEAD -- <areas>`: если после
-сверки в этих путях были коммиты — тема помечена как устаревшая, с номером и темой
-первого такого коммита. Оба поля ставит `kb.mjs touch`, руками их писать не нужно.
+`node scripts/kb.mjs check` строит список коммитов из
+`git log <checked>..HEAD -- <areas>`, а затем исключает из него по полному SHA
+коммиты, которые одновременно изменили файл именно проверяемой темы. Поэтому
+`touch` можно выполнить до общего коммита кода и темы: хотя `checked` указывает
+на его родителя, такой коммит не делает тему устаревшей. Последующий коммит в
+`areas` без изменения этой темы по-прежнему помечает её устаревшей; изменение
+другой темы исключения не даёт. Коммит только с результатом `touch` тоже
+безопасен. Реализация находится в `packages/kb-tools/kb.mjs`, сценарии закреплены
+в `packages/kb-tools/cli.test.mjs`. Оба поля метаданных ставит `kb.mjs touch`;
+фолбэк по датам для отсутствующего или невалидного SHA не изменился.
 
 **Почему sha, а не только дата.** Дата ловит только правки прошлых дней. В этом
 репозитории несколько агентов коммитят в один день, и сверка по датам молча
@@ -175,6 +183,30 @@ npm run kb:log -- <slug>   # новая запись журнала (дата+м
 node scripts/kb.mjs touch protocol   # поставить сегодняшнюю дату в updated
 ```
 
+## Reconciliation after repository extraction
+
+The CLI implementation is `packages/kb-tools/kb.mjs`; `scripts/kb.mjs` is a
+compatibility entry point. Strict mode fails for stale topics, missing package
+`AGENTS.md` files and broken relative Markdown links. Freshness uses commits
+in `checked..HEAD` touching `areas`, excluding commits that also modify the
+same topic file. When `checked` is unavailable, it falls back to commit dates.
+`touch` records the current HEAD, so it can run before a combined code/topic
+commit without making that commit invalidate its own topic.
+
+Compare each topic with its tracked implementation before touching it. For moved
+code, verify the current consumer port and replace deleted area paths with the
+actual Core contract/adapter. Preserve owner implementation notes until the owner
+KB covers them, but identify historical paths explicitly. Avoid self-referential
+`docs/kb` areas: track runtime configuration such as `docs/kb/modules.md` and the
+indexing implementation instead. Keep a per-topic evidence map in the session log,
+regenerate the index and rerun strict mode after commits, because documentation
+under another topic's area can invalidate that topic too.
+
+Kanban owns `MergeRunManager` and its model hooks. The Core copies of
+`apps/server/src/ci/modelHooks.ts` and `merge/` no longer exist; Core retains
+`kb/codeUpdate.ts`, `kb/modelDocs.ts` and its RPC boundary. Manager references in
+the merge-workflow section above refer to the extracted Kanban owner.
+
 ## Почему нет merge-конфликтов
 
 - Журнал: имя файла — `<дата>-<машина>-<slug>.md`, машина берётся из `hostname`.
@@ -207,19 +239,23 @@ node scripts/kb.mjs touch protocol   # поставить сегодняшнюю
 
 The release owner builds the dependency-free CLI in Core with
 `npm run pack:kb-tools -- artifacts/kb-tools`. This produces
-`sislexa-kb-tools-0.1.0.tgz` and `integrity.json` (commit, SHA-256 and npm
+`sislexa-kb-tools-0.1.1.tgz` and `integrity.json` (commit, SHA-256 and npm
 integrity). Publishing the archive is a separate operator action. The package
 is independently packed, outside Core's application workspaces.
 
+Version 0.1.1 (2026-10-30) treats a topic updated in the same commit as the
+code it describes as fresh, so `check --strict` no longer fails right after
+such a commit. Module repositories pin 0.1.1.
+
 1. Copy the reviewed release archive to the module's
-   `vendor/sislexa-kb-tools-0.1.0.tgz`, verify its SHA-256 against the release
+   `vendor/sislexa-kb-tools-0.1.1.tgz`, verify its SHA-256 against the release
    integrity manifest, and commit the archive with the dependency pin.
 2. Add this dev dependency and these scripts to the module's `package.json`:
 
    ```json
    {
      "devDependencies": {
-       "@sislexa/kb-tools": "file:vendor/sislexa-kb-tools-0.1.0.tgz"
+       "@sislexa/kb-tools": "file:vendor/sislexa-kb-tools-0.1.1.tgz"
      },
      "scripts": {
        "kb": "sislexa-kb",

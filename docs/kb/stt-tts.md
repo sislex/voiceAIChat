@@ -1,12 +1,12 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
-updated: 2026-10-07
+updated: 2026-10-29
+checked: 4aa06d23
 areas:
   - apps/server/src/stt
-  - packages/shared/src/stt.ts
+  - apps/server/src/stt/client.ts
   - apps/server/src/tts
   - apps/server/src/system
-  - packages/ui/src/audio
   - scripts/dev-web.sh
 ---
 
@@ -16,7 +16,7 @@ Module details: `voice:README.md`
 
 ## Путь звука
 
-Браузер по-прежнему отдаёт Int16 PCM бинарными кадрами публичного `/ws`; его контракт не менялся. `apps/server/src/stt/sttSession.ts` через `RemoteSttClient` открывает защищённый внутренний WS `STT Runner /v1/transcribe`, передаёт управляющий JSON и исходные PCM-чанки. Разрыв браузерной сессии вызывает cancel связанного remote run. Формы внутреннего schemaVersion=1 и runtime-проверка лежат в `packages/shared/src/stt.ts`; наружу сервер сохраняет `stt.partial` / `stt.final`.
+Браузер по-прежнему отдаёт Int16 PCM бинарными кадрами публичного `/ws`; его контракт не менялся. `apps/server/src/stt/sttSession.ts` через `RemoteSttClient` открывает защищённый внутренний WS `STT Runner /v1/transcribe`, передаёт управляющий JSON и исходные PCM-чанки. Разрыв браузерной сессии вызывает cancel связанного remote run. The internal schemaVersion=1 wire contract belongs to `@voicechat/voice-contracts/stt`; Core preserves the public `stt.partial` / `stt.final` frames.
 
 Озвучка также вынесена из сервера: `apps/server/src/tts/ttsSession.ts` создаёт ресурсный запуск через `TtsClient`, получает готовый WAV отдельным запросом и сохраняет публичный WS-кадр `tts.audio`. Текст чистится через `packages/shared/src/textPrep.ts`, режется на фразы `sentences.ts`.
 

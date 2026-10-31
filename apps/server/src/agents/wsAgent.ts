@@ -3,7 +3,8 @@
 // сообщения exec.* уходят в реестр. Ping каждые 30с поддерживает last_seen.
 
 import type { WebSocket } from 'ws'
-import { compareVersions, type AgentToServer, type ServerToAgent } from '@sislexa/agent-contracts'
+import { compareVersions, type ServerToAgent } from '@sislexa/agent-contracts'
+import type { AgentToServer } from '@voicechat/shared'
 import { servedAgent } from './agentScript.js'
 import { hashAgentToken, type VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from './registry.js'
@@ -67,10 +68,10 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
           /* закрывается */
         }
       }, PING_INTERVAL_MS)
-      // Self-update (stand-https-v1 C01): only a supervised agent (systemd/launchd restarts it) older
+      // Self-update (stand-https-v1 C01): only a supervised agent (systemd/launchd/Android restarts it) older
       // than the served bundle gets agent.update, once per connection. Unsupervised and legacy agents
       // keep the agent.updateAvailable hint sent by the registry version checks.
-      if ((msg.supervisor === 'systemd' || msg.supervisor === 'launchd') && !updateOffered) {
+      if ((msg.supervisor === 'systemd' || msg.supervisor === 'launchd' || msg.supervisor === 'android') && !updateOffered) {
         let served: ReturnType<typeof servedAgent> | null = null
         try { served = servedAgent() } catch { /* bundle unreadable: no update offer */ }
         if (served && compareVersions(served.version, msg.version ?? '0.1.0') > 0) {
@@ -81,6 +82,9 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
       }
       return
     }
+
+    // Registration is handled only once per connection.
+    if (msg.t === 'agent.register') return
 
     // Смена политики с машины: сохраняем у владельца и раздаём (эхо агенту).
     if (msg.t === 'agent.setPolicy') {

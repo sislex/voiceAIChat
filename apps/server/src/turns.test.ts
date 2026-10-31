@@ -732,14 +732,13 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
-  it('Make с назначенной машиной всё равно не получает remote-мост и встроенные инструменты', async () => {
+  it('Make does not inherit the project default machine', async () => {
     const db = await freshDb() // владелец — admin: раньше именно у него Make получал Bash и файлы
     const project = await db.projects.createProject(U, { name: 'Проект' })
     const agent = await db.machines.createAgent(U, 'Ноутбук')
     await db.machines.linkMachine(U, project.id, agent.id)
     await db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
-    // Машина проекта по умолчанию — то есть чат её наследует (прямую привязку
-    // Make-чату БД теперь не даёт записать, см. database.test.ts).
+    // A project default does not grant Make access to its working copy.
     await db.machines.setUserProjectDefaultMachine(U, project.id, agent.id)
     const conv = (await db.chat.createConversation(U, 'Витрина', 'make', project.id))!
     await db.chat.addMessage(U, conv.id, 'u0', 'поправь кнопку', '10:00')
@@ -757,6 +756,31 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
     await turns.idle()
     db.close()
+  })
+
+  it.each(['claude', 'codex'] as const)('Make exposes attachments and the explicit machine to %s', async provider => {
+    const db = await freshDb()
+    const agent = await db.machines.createAgent(U, 'Laptop')
+    const conv = await db.chat.createConversation(U, 'Make', 'make')
+    await db.chat.setConversationExecTarget(U, conv.id, agent.id, '/assets', undefined, provider, null, 'plan')
+    const rec = recorder()
+    const broker = { register: vi.fn(), unregister: vi.fn() }
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://localhost/mcp/remote-bash?k=secret', remoteFileTool: broker,
+      resolveUpload: () => ({ serverPath: '/runner/private.png', runnerName: 'photo.png', dataBase64: 'aGVsbG8=' }) })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'inspect' }], attachments: ['upload-1'] })
+    await turns.idle()
+    expect(rec.last()?.toolOnly).toBe(true)
+    expect(rec.last()?.remote?.mcpUrl).toContain('&make=1')
+    expect(rec.last()?.remote?.mcpUrl).toContain('&agent=' + agent.id)
+    expect(rec.last()?.remote?.mcpUrl).toContain('&cwd=%2Fassets')
+    expect(new URL(rec.last()!.remote!.mcpUrl).searchParams.getAll('ro')).toEqual(['1'])
+    expect(rec.last()?.prompt).toContain('"uploadId":"upload-1"')
+    expect(rec.last()?.prompt).toContain('photo.png')
+    expect(rec.last()?.prompt).not.toContain('/runner/private.png')
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), [expect.objectContaining({ uploadId: 'upload-1' })])
+    expect(broker.unregister).toHaveBeenCalled()
+    await db.close()
   })
 
   // @testCase TC-SRV-02
@@ -1680,12 +1704,18 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
-  it('без Make-сессии браузер в ход Make не подключается', async () => {
+  it('Make without a bound browser gets tools for its own visible preview', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make'); const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tokens() })
     await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
-    expect(rec.last()?.previewMcpUrl).toBeUndefined()
-    expect(rec.last()?.prompt).not.toContain('## Браузер Make')
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${make.id}`)}`)
+    expect(rec.last()?.previewSurface).toBe('make-preview')
+    expect(rec.last()?.prompt).toContain('## Превью Make (make-preview)')
+    expect(rec.last()?.prompt).toContain('Пользователь видит каждое действие')
+    expect(rec.last()?.prompt).toContain('browser_capabilities')
+    expect(rec.last()?.prompt).toContain('make_preview_closed')
+    expect(rec.last()?.prompt).toContain('screenshot')
+    expect(rec.last()?.prompt).toContain('иначе read')
     await turns.idle()
     db.close()
   })

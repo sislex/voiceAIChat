@@ -24,7 +24,7 @@ import type { MachinesService } from './service.js'
 export interface MachinesDeps {
   app: FastifyInstance
   db: VoiceChatDb
-  config: Pick<ServerConfig, 'agentOfflineGraceMs' | 'agentOfflineAlertMs' | 'longCommandMs' | 'dataDir' | 'agentAppPath' | 'desktopAppPath' | 'loginApplicationPath'>
+  config: Pick<ServerConfig, 'agentOfflineGraceMs' | 'agentOfflineAlertMs' | 'longCommandMs' | 'dataDir' | 'agentAppPath' | 'desktopAppPath' | 'loginApplicationPath' | 'androidManifestPath' | 'githubToken'>
   /** Кадры владельцу машины (журнал команд, тревоги watchdog) — шина кадров ядра. */
   publish: (message: ServerMessage, userId: string) => void
   /** Готовый реестр (тесты) вместо нового. */
@@ -62,6 +62,8 @@ export async function createMachinesModule(deps: MachinesDeps): Promise<Machines
   await registerAgentRoutes(app, db, registry, {
     agentApp: config.agentAppPath,
     desktopApp: config.desktopAppPath,
+    androidManifest: config.androidManifestPath,
+    githubToken: config.githubToken,
     loginApplication: config.loginApplicationPath
   }, commandGate)
   const storageMigrations = new StorageMigrationManager(join(config.dataDir, 'storage-migrations.json'), {

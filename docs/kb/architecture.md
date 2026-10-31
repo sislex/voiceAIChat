@@ -1,12 +1,14 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-10-31
+checked: 98722e6a
 areas:
   - apps/server/src/playwrightReaderBridge
-  - packages/shared/src/playwrightReader.ts
   - apps/server/src/server.ts
-  - apps/llm-runner/src/server.ts
+  - apps/server/src/llm
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
+  - package.json
   - apps/server/src/session.ts
   - apps/server/src/turns.ts
 ---
@@ -32,7 +34,16 @@ Their delegation and one-use ticket endpoints remain available.
 
 `GET /api/system/applications` exposes the deployment manifest to authenticated
 clients. Disabled application routes and external application UI prefixes return
-`404 { error: 'application_disabled' }`, including `/applications/:id/*` assets.
+`404 { error: 'application_disabled' }`. For `/applications/:id/*`, that request
+guard compares the requested ID only with deployment application IDs; it neither
+infers an owner for a frontend ID such as `make-ui` nor blocks an ID absent from
+the deployment manifest.
+
+Frontend source overrides use a separate owner-aware registration filter:
+`server.ts` passes the deployment to `registerApplicationFrontends`, which
+validates all configured IDs, then retains sources whose ID or catalog runtime
+dependency is enabled and local. Filtering removes only the remote source choice;
+the gateway can still serve the frontend's installed owner artifact fallback. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 Core authentication intersects tenant capabilities with enabled applications;
 queued turns apply the same intersection when refreshing tenant entitlements.
 Voice STT/TTS capabilities belong to Chat. External applications retain tenant
@@ -44,16 +55,16 @@ remains Core infrastructure even in a chat-only deployment.
 
 ## Direct external libraries
 
-UI Kit (`@voicechat/ui-kit` 0.1.2) and UI Foundation
-(`@voicechat/ui-foundation` 0.1.4) are maintained in
+UI Kit (`@voicechat/ui-kit`) and UI Foundation
+(`@voicechat/ui-foundation`) are maintained in
 [`sislex/sielexa-ui`](https://github.com/sislex/sielexa-ui). Core installs their
-immutable v1.0.1 release archives; `vendor/ui-libraries.json` records owner commit,
+immutable release archives; `vendor/ui-libraries.json` records owner commit,
 SHA-256 and npm SHA-512 integrity. Their old `packages/ui-kit` and
 `packages/ui-foundation` workspaces are removed. UI Foundation public runtime ports
 still let the host supply one command registry to independent panels.
 
 Core and the transitional Billing consumer import `@sislexa/sdk` directly from
-its pinned 1.1.0 archive. `packages/platform-sdk` no longer exists. The application
+its pinned archive (`package.json` records the current version). `packages/platform-sdk` no longer exists. The application
 catalog retains external owner/package metadata for all three libraries, with no
 local paths, workspaces or build/test tasks. An explicit Core gate request for an
 external library explains which owner repository runs its gate.
@@ -85,12 +96,16 @@ shared, while immutable user identity and production usage accounting remain pen
 It also proposes personal module-level consumption and
 active-time analytics, with explicit attribution and overlap rules.
 
+Historical `packages/ui`, `apps/web`, `apps/desktop` and `apps/agent` paths in
+layout examples below identify their extracted owners, not local workspaces.
+The current Core workspace list is in root `package.json`.
+
 ## Границы Reader-модулей
 
-Серверная часть Playwright Reader живёт в `apps/playwright-reader`: самостоятельный
-Fastify-процесс или модуль ядра. REST `/api/browser/*` и исполнение команд модели
-принадлежат приложению, Chromium с профилями — `apps/browser-runner`, данные и
-авторизация — ядру через `PlaywrightReaderCore`. MCP Web Reader использует
+Playwright Reader's API and Chromium worker belong to `sislex/playwrightreader`.
+Core imports the published module or connects remotely through
+`apps/server/src/playwrightReaderBridge`; data and authorization are supplied
+through `PlaywrightReaderCore`. MCP Web Reader использует
 `PlaywrightReaderService`; встроенный и отдельный режимы обоих ридеров сочетаются
 независимо. Подробнее — [Playwright Reader](features/playwright-reader.md).
 
@@ -115,9 +130,8 @@ apps/server (Fastify)
    ├── /v1/messages     входящий Anthropic-совместимый gateway
    ├── SQLite           better-sqlite3, WAL
    ├── SttClient ──────► STT Runner (WS /v1/transcribe, whisper-cli, модели)
-   ├── piper / say      озвучка (spawn)
-   └── LLM client       Claude/Codex: локальный spawn (код — apps/llm-runner)
-      │                  ИЛИ HTTP → /v1/run
+   ├── RemoteTtsClient → Voice TTS Runner (HTTP resources + WAV)
+   └── RemoteLlmClient → independent LLM Runner HTTP /v1/run
       ├──────────────► контейнер-исполнитель LLM (claude/codex CLI, NDJSON)
       │
       ▲  WebSocket, авторизация токеном машины
@@ -127,17 +141,15 @@ apps/agent на машине пользователя: exec, файловые о
 
 ## Ключевое разделение ответственности
 
-**Весь UI — в `packages/ui`, он не знает транспорта.** Компоненты и стор общаются
-только через мосты `window.*`, формы которых описаны в `packages/shared/src/ipc.ts`.
-Поэтому одна и та же фича автоматически работает и в web (REST+WS), и в desktop
-(Electron IPC). `apps/web` — это ~3 файла: конфиг адреса сервера, установка мостов,
-монтирование `<App/>`.
+**The renderer belongs to `sislexa-core-ui`.** Its components use host bridges;
+Core defines its REST/WS and renderer-facing contracts in Shared and serves the
+verified published assets. Web and Desktop use the owner's HTTP/WebSocket
+integration; Electron-specific host behavior belongs to `sislex/desktop`.
 
-**Сервер — полноценный бэкенд, клиенты тонкие.** Распознавание, озвучка,
-хранение и orchestration хода — на сервере. Сам CLI модели теперь может жить
-либо рядом с ним (`ClaudeCli`/`CodexCli` через `spawn`), либо за HTTP как
-удалённый исполнитель (`RemoteLlmClient` → `POST /v1/run`). Браузер отдаёт
-только PCM с микрофона и играет WAV.
+**Core is the backend; clients are thin.** Core coordinates speech, storage and
+model turns. The independent LLM Runner executes the model CLI through
+`RemoteLlmClient` → `POST /v1/run`; Core has no local CLI fallback.
+The browser sends microphone PCM and plays WAV audio.
 
 **Ход модели живёт в разговоре, а не в соединении.** `apps/server/src/turns.ts` —
 процесс-глобальный `TurnManager`: обновление страницы или обрыв сети не отменяют
@@ -146,12 +158,9 @@ apps/agent на машине пользователя: exec, файловые о
 частичным текстом). Per-connection состояние (микрофон, озвучка, подписки на
 tail/PTY) — в `apps/server/src/session.ts`.
 
-**Спавн CLI выделен в отдельный воркспейс.** Код запуска `claude`/`codex`
-(`claudeCli.ts`, `codexCli.ts`, `childKill.ts`, профили CLI) живёт в
-`apps/llm-runner` — исполнителе с собственным HTTP (`/v1/run`). Сервер может
-либо импортировать эти классы напрямую (`@voicechat/llm-runner/cli`) и спавнить
-CLI локально, либо переключиться на `RemoteLlmClient` и ходить в удалённый
-исполнитель по HTTP; детали — [features/llm-runners.md](features/llm-runners.md).
+**CLI execution is owned by `sislex/llm-runner`.** Core retains HTTP execution
+and filesystem-history clients; profile management and process lifecycle run in
+the owner service. See [LLM runners](features/llm-runners.md).
 
 **Сборка сервера — `buildServer()` отдельно от `listen()`** (`server.ts` vs
 `index.ts`), и все внешние зависимости инъектируются через `BuildOptions`
@@ -159,10 +168,10 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 `sessionSecret`). Отсюда тесты через `fastify.inject()` и ws-клиент с моками
 вместо реальных Whisper/CLI.
 
-`buildServer()` выбирает транспорт LLM по конфигу: есть `VC_LLM_RUNNER_URL`
-(или адреса по провайдерам) — собирается `RemoteLlmClient`; нет — остаётся
-локальный `spawn`. При этом `turns.ts`, prompt-suggester, KB-reranker и CI-раннер
-работают с одним интерфейсом `LlmClient` и не знают, где реально запущен CLI.
+`buildServer()` creates `RemoteLlmClient` when `VC_LLM_RUNNER_URL` or a
+provider-specific endpoint is configured. Otherwise `unconfiguredLlmClient()`
+reports unavailable execution. Turn, prompt-suggester and KB-reranker consumers
+use the same `LlmClient` interface.
 
 ## Один backend, два клиентских хоста
 
@@ -261,7 +270,7 @@ synthesis engines. `apps/login-application` is machine enrollment for the compan
 agent, not user registration; it remains with machine/client infrastructure.
 The LLM Runner implementation and its internal tests belong to `sislex/llm-runner`;
 Core uses authenticated HTTP clients and no longer has an embedded CLI fallback.
-Chat, machine authorization/registry, projects, operations and release orchestration remain Core responsibilities. The companion runtime is owned by `sislex/agent`, and the Electron host by `sislex/desktop`. Shared UI primitives belong to `sislex/sielexa-ui`.
+Core retains chat, machine authorization/registry, SQL repositories and host integration. Kanban owns project workflow, CI/QA, merge, previews and release orchestration; Core connects through `kanbanBridge` with remote/off modes only. The companion runtime is owned by `sislex/agent`, and the Electron host by `sislex/desktop`. Shared UI primitives belong to `sislex/sielexa-ui`.
 
 ### Final removal of transitional workspaces
 
@@ -337,7 +346,7 @@ integration gate.
 Core consumes `@sislexa/agent` and `@sislexa/agent-contracts` from the Agent owner.
 The public download route serves the released bundle byte-for-byte. Desktop owns
 Electron main/preload and consumes versioned Agent and Core chat-client artifacts;
-Core publishes the shared chat renderer through `scripts/chat-client-release.mjs`.
+Core UI publishes the renderer independently; Core verifies its pinned artifact.
 Runtime requirements and source commits are recorded in each archive. Core retains
 only compatibility reexports of machine contracts required by already released
 consumers, plus server/host integration coverage. See [clients.md](clients.md)
