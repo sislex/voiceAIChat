@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts

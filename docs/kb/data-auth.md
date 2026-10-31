@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - apps/server/src/billing
   - apps/billing

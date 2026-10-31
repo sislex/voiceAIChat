@@ -1955,7 +1955,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment)
+  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment, opts.config.applicationFrontendsOverride)
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
   if (opts.config.readerMode === 'embedded') {

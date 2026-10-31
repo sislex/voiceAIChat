@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-30
-checked: 78f28530
+updated: 2026-10-31
+checked: 242d084b
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -26,11 +26,15 @@ areas:
 
 ## Application frontend gateway
 
-`GET /applications/:id/manifest.json` returns the configured source manifest
-when the frontend or its catalog owner is enabled and local. Frontend IDs such
-as `make-ui` are distinct from deployment IDs such as `make`; registration
-validates every source ID before filtering. Without a selected source, the
-existing installed-artifact fallback applies. The manifest response keeps
+`GET /applications/:id/manifest.json` uses a configured source only when the
+frontend or its catalog owner is enabled and local, and the source policy allows
+it. With `NODE_ENV=production`, pinned owner archives take priority unless
+`VC_APPLICATION_FRONTENDS_OVERRIDE=1`; development and frontends without a
+pinned owner package retain configured sources. The same selection applies to
+assets. A broken pinned installation returns 503 rather than falling back to an
+override. Frontend IDs such as `make-ui` are distinct from deployment IDs such
+as `make`; registration validates every source ID before filtering. Without a
+selected source, the existing installed-artifact fallback applies. The manifest response keeps
 `Cache-Control: no-store`; asset paths, manifest identity and source URL checks
 remain in `routes/applicationFrontends.ts`. See
 [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
