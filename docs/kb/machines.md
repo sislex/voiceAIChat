@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: c17fb5ae
+updated: 2026-11-01
+checked: bc7b06d9
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -50,6 +50,13 @@ Module details: `agent:README.md`
 Module details: `core-ui:README.md`
 
 ## Выбор backend для файлов чата
+
+Storage-backed attachment reads use `sendStorageFile` after user authorization:
+conditional requests can return 304 without node access, and single byte ranges
+stream as 206. Ordinary reads retain JSON/base64. The machine-backed branch of
+`REST.serverFile` still uses Runner FS or authorized Core filesystem roots.
+These HTTP changes do not alter machine selection or workspace bindings.
+
 
 `Settings.chatFilesBackend` по умолчанию равен `machine`. При значении `storage`
 и включённом Core file storage загрузки идут в `chat`-пространство разговора и

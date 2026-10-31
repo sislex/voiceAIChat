@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-31
-checked: dab1b380
+updated: 2026-11-01
+checked: bc7b06d9
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -40,6 +40,14 @@ this API change does not update the pinned UI artifact. See
 [the admin contract](protocol.md#admin-storage-quota-contract).
 
 ## Core chat file backend contract
+
+Storage-backed `REST.serverFile` reads return private revalidation headers.
+Matching validators produce 304; a satisfiable single Range produces raw bytes
+with 206 and Content-Range. Ordinary reads preserve the JSON/base64 envelope.
+Upload responses expose `thumbnailAvailable` for supported storage image MIME
+types; this flag does not imply the thumbnail has already been generated.
+See [storage HTTP contract](protocol.md#file-storage-contract).
+
 
 Core принимает настройку `chatFilesBackend: machine | storage` (по умолчанию
 `machine`) и возвращает `UploadInfo.storage` при загрузке через включённый сервис.

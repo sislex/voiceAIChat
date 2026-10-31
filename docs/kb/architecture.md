@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: bc7b06d9
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -58,6 +58,20 @@ remains Core infrastructure even in a chat-only deployment.
 
 
 ## File storage service
+
+Downloads use coordinator `prepareFileRead` to authorize and snapshot entry
+metadata before node access. Core evaluates validators and byte ranges first;
+304 and 416 require no node I/O. The HTTP client exposes `getStream` alongside
+buffered `get`, and the node streams from a file descriptor opened under its
+mutation queue. See [HTTP semantics](protocol.md#file-storage-contract).
+
+The coordinator also owns resumable upload reservations and completion.
+Node upload manifests/parts survive restart; composition publishes through a
+temporary file and rename. Batch execution stays in Core's `fileStorage/batch.ts`;
+the coordinator supplies quota preflight and node-side copy. Small-content
+listing and batch reads retain buffered reads. Thumbnail generation uses the
+host's injected generator and stores derived blobs separately from owner usage.
+
 
 `packages/file-storage` (`@sislexa/file-storage`) owns the Fastify blob node,
 HTTP node client and coordinator library. It imports no `apps/server` code.

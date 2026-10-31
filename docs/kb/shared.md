@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: bc7b06d9
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -26,6 +26,21 @@ with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
 See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
+
+`storageFileEtag`, `storageNotModified`, `storageByteRange` and
+`STORAGE_CACHE_CONTROL` define download validators and single-range parsing.
+The ETag is `"<spaceId>:<revision>"`; If-None-Match takes precedence over
+If-Modified-Since. Ranges support bounded, suffix and open-ended forms;
+unsatisfiable ranges have a distinct result, while malformed/multiple ranges
+are ignored. See [HTTP behavior](protocol.md#file-storage-contract).
+
+The additive storage contract also includes resumable upload sessions/status
+and their REST paths, batch operations/payloads/results, optional inline content
+for small text, node-side copy and thumbnail sizes 128/256/512.
+`MessageAttachment`, `UploadInfo` and `StorageFileRef` expose optional
+`thumbnailAvailable`. Batch input supports up to 500 operations and 64 MiB;
+inline text is bounded to 256 KiB. Thumbnail input has a separate 32 MiB limit.
+
 
 `MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
 `POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and
