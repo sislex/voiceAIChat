@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: dab1b380
+checked: 54645e1b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -56,8 +56,21 @@ and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
 `PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
 space. The coordinator checks ownership inside the metadata transaction; write
 collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
-Make uses this endpoint to synchronize its conversation title without asking the
-Core chat UI to resolve a Make conversation.
+This is the Core endpoint for Make project-title synchronization: send
+`{ "title": "Project title" }` using the space owner's authenticated identity.
+The route forwards only `title`; extra `ownerId`, `kind` or `ref` fields cannot
+change space identity. Whitespace is trimmed and `updatedAt` advances. Blank or
+non-string titles return 400 (`invalid_path`); a non-owner with a valid title
+receives 403. The response is the updated `StorageSpace`, including access and
+file usage. See `packages/shared/src/fileStorage.ts`,
+`packages/file-storage/src/service.ts` and the rename regression in
+`apps/server/src/fileStorage/routes.test.ts`.
+
+Make owns obtaining the project title and deciding when to synchronize it; Core
+does not resolve a Make conversation through its chat UI. Consumer title hooks
+and local-project import belong to the Make owner (`make:README.md`), while
+Core owns this authenticated space mutation. See the owner implementation for
+import availability and synchronization triggers.
 
 `runtime.ts` loads node tokens from configured files and polls health at startup
 and every 15 seconds, without overlapping polls. Two consecutive failures mark a
