@@ -119,9 +119,25 @@ export interface CreateStorageSpaceRequest {
   ref?: string | null
 }
 
-/** PATCH STORAGE_REST.space; only the owner may rename a space. */
+/** PATCH STORAGE_REST.space returns StorageSpace; owner only, trimmed title of 1..200 characters. */
 export interface UpdateStorageSpaceRequest {
   title: string
+}
+
+/** POST STORAGE_REST.mergeDuplicates; owner only. Preview before applying its token. */
+export interface MergeStorageSpacesRequest {
+  dryRun?: boolean
+  previewToken?: string
+}
+export interface MergeStorageSpacesResult {
+  dryRun: boolean
+  keepSpaceId: string
+  deleteSpaceIds: string[]
+  moves: Array<{ fromSpaceId: string; path: string }>
+  conflicts: Array<{ fromSpaceId: string; path: string }>
+  /** Deleted spaces' shares are revoked, never widened to the survivor. */
+  revokedShareIds: string[]
+  previewToken: string
 }
 
 export interface ListStorageEntriesResponse {
@@ -154,6 +170,7 @@ export const STORAGE_REST = {
   cluster: '/api/storage/cluster',
   spaces: '/api/storage/spaces',
   space: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}`,
+  mergeDuplicates: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/merge-duplicates`,
   files: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/files`,
   file: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file`,
   move: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/move`,

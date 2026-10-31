@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 30744ae9
+checked: 086efe80
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -78,15 +78,30 @@ through `listSpaces`, with their own files and shares. The identity foreign key
 cascades when its space is deleted; a later create can adopt a remaining legacy
 space.
 
-One-off cleanup: back up metadata and node blobs, inventory duplicates by owner,
+Owner cleanup is exposed by `POST /api/storage/spaces/:id/merge-duplicates`.
+The default dry-run reports the group with the most-files survivor (ties use
+oldest creation time, then ID), unique-path moves, conflicts and revoked shares.
+Apply requires `dryRun:false` and the preview token; the coordinator checks
+the current group and token inside the same metadata transaction. Changed
+spaces, entries or shares invalidate the preview. Different blob references
+at the same path block apply with 409; resolve these explicitly first.
+Unique entries move without copying or deleting blobs, retaining revisions.
+Duplicate entries referencing the same blob/path are collapsed without deleting
+that blob. Duplicate spaces and their shares/acceptances are removed, the
+survivor's identity is rebound, and owner usage reflects the resulting entries.
+The action is owner-only; admin status alone does not grant access. Saved
+attachment references to removed IDs are not rewritten and must be reviewed
+before apply. Tests run this merge contract against memory and Core SQL stores.
+
+For manual cleanup: back up metadata and node blobs, inventory duplicates by owner,
 kind and ref, and choose the canonical space returned by `createSpace`. Review
 each duplicate's files, shares and saved attachment references before removing
 anything. Resolve path collisions and copy required files through the storage
 API, update references and recreate required shares, then delete redundant spaces
 through the service so blob cleanup runs. Do not bulk-delete duplicate rows:
 space deletion cascades metadata and old attachments use the original space ID.
-Verify file reads and owner usage afterward. This task provides no automatic
-merge or production data cleanup.
+Verify file reads and owner usage afterward. No startup or production data
+cleanup runs automatically.
 
 ### Make service storage authorization
 

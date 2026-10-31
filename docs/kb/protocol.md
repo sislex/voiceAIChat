@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: dab1b380
+checked: 086efe80
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -55,6 +55,19 @@ not from headers supplied in the forwarded request body. Core's browser Make
 proxy issues that delegation after session authentication and replaces incoming
 authorization, cookies and delegation headers. See
 [Make authorization](data-auth.md#make-service-storage-authorization).
+
+Storage space title sync uses `PATCH STORAGE_REST.space(id)` with
+`UpdateStorageSpaceRequest {title}`. Only the owner can rename; the trimmed
+title must contain 1..200 characters. The response is `StorageSpace`.
+Readers, writers and unrelated users receive 403.
+
+Owner-only `POST STORAGE_REST.mergeDuplicates(id)` merges the matching
+`(ownerId, kind, ref)` group for chat/make-project spaces. Send `{}` first:
+the dry-run response identifies the survivor, deleted IDs, moves, conflicts,
+revoked share IDs and a preview token. Apply with
+`{dryRun:false, previewToken}`. A changed group or conflicting path returns
+409 without mutation. Personal spaces and malformed requests return 400.
+See [duplicate cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 
 ## Operator handoff
 

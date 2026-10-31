@@ -64,6 +64,12 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   })
   route('GET', path(STORAGE_REST.space), (s, r) => s.getSpace(uid(r), r.params.id))
   route('PATCH', path(STORAGE_REST.space), (s, r) => s.updateSpace(uid(r), r.params.id, { title: string(body(r).title) }))
+  route('POST', path(STORAGE_REST.mergeDuplicates), (s, r) => {
+    const b = body(r)
+    if (b.dryRun !== undefined && typeof b.dryRun !== 'boolean') throw new StorageServiceError('invalid_path')
+    if (b.previewToken !== undefined) string(b.previewToken)
+    return s.mergeDuplicates(uid(r), r.params.id, { dryRun: b.dryRun as boolean | undefined, previewToken: b.previewToken as string | undefined })
+  })
   route('DELETE', path(STORAGE_REST.space), async (s, r, reply) => { await s.deleteSpace(uid(r), r.params.id); return reply.code(204).send() })
   route('GET', path(STORAGE_REST.files), (s, r) => s.listEntries(uid(r), r.params.id, r.query.prefix))
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
