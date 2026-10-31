@@ -16,10 +16,10 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-31 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: c64c2a4d feat(file-storage): add storage nodes and coordinator (FS-1) |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-31 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-29 | ✓ |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-29 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: c64c2a4d feat(file-storage): add storage nodes and coordinator (FS-1) |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-10-31 | ✓ |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-10-31 | ✓ |
@@ -34,7 +34,7 @@
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-31 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-29 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-31 | ✓ |
-| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ✓ |
+| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: c64c2a4d feat(file-storage): add storage nodes and coordinator (FS-1) |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-30 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
@@ -44,7 +44,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-30 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-31 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-10-31 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-30 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-30 | ⚠ 2 коммит(ов) в areas после сверки: c64c2a4d feat(file-storage): add storage nodes and coordinator (FS-1) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-31 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1371. Последние:
+Всего записей: 1372. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md) — fs1-gate-env-isolation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md) — fs-1-file-storage
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md) — release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md) — release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md) — release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-owner-npm-pins-train-e0dce216.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-owner-npm-pins-train-e0dce216.md) — owner-npm-pins-train-e0dce216
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-file-storage-contract.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-file-storage-contract.md) — file-storage-contract
 
 ## Исторические планы
 

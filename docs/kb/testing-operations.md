@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: 98722e6a
+checked: c64c2a4d
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1345,12 +1345,13 @@ owner-maintained system acceptance. `gate:release` selects these stages from the
 release diff as described below. Known budget/measurement edits still select their real browser
 measurements directly. The full gate's test stage runs tooling and each workspace
 test script as separate processes, with at most three active by default; set
-`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. The current
-`full-gate.test.mjs` default-value assertion calls `testConcurrency(undefined)`
-without isolating that environment variable: a non-default inherited override
-therefore fails the tooling assertion (`1 !== 3` for value `1`). Keep it unset
-when running the complete suite with this version of that test. Their output
-is buffered and printed in manifest order, all failing workspaces are reported,
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound.
+`testConcurrency(undefined)` reads that environment variable; it does not bypass
+the environment to request the built-in default. The default-value regression
+test in `full-gate.test.mjs` saves, clears and restores the variable, then checks
+environment overrides and explicit-argument precedence separately. Inherited
+runner overrides therefore do not invalidate the default-value assertion.
+Workspace output is buffered and printed in manifest order, all failing workspaces are reported,
 and `[gate:timing] tests/<workspace>` records individual durations.
 Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
 file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling
