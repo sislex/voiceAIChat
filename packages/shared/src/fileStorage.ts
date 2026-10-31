@@ -7,6 +7,36 @@
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
 /** Largest single file accepted through the Core REST surface. */
 export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Stored file responses are compressed only when strictly larger than this. */
+export const STORAGE_COMPRESSION_MIN_BYTES = 1024
+export type StorageContentEncoding = 'br' | 'gzip'
+
+/** MIME policy shared by Core and clients; media and archive formats are intentionally excluded. */
+export function isStorageCompressible(mimeType: string): boolean {
+  const mime = mimeType.split(';')[0].trim().toLowerCase()
+  return mime.startsWith('text/') || mime === 'application/json' || mime === 'application/javascript' ||
+    mime === 'application/x-javascript' || mime === 'application/xml' || mime === 'image/svg+xml' ||
+    mime === 'application/wasm' || mime.endsWith('+json') || mime.endsWith('+xml')
+}
+
+/** Selects the preferred supported coding, respecting q=0 and wildcard preferences. */
+export function storageContentEncoding(acceptEncoding: string | undefined): StorageContentEncoding | undefined {
+  if (!acceptEncoding) return undefined
+  const quality = new Map<string, number>()
+  for (const item of acceptEncoding.toLowerCase().split(',')) {
+    const [name, ...parameters] = item.trim().split(';')
+    let q = 1
+    for (const parameter of parameters) {
+      const match = /^\s*q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*$/.exec(parameter)
+      if (match) q = Number(match[1])
+    }
+    if (name) quality.set(name, q)
+  }
+  const score = (name: StorageContentEncoding) => quality.get(name) ?? quality.get('*') ?? 0
+  const br = score('br'), gzip = score('gzip')
+  if (br <= 0 && gzip <= 0) return undefined
+  return br >= gzip ? 'br' : 'gzip'
+}
 /** Thumbnail generation refuses larger source images even when ordinary storage accepts them. */
 export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
 export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
@@ -188,7 +218,12 @@ export interface StorageBatchOperation {
 }
 /** NDJSON starts with {operations}, followed by these payload records. */
 export interface StorageBatchPayload { bodyRef: string; base64: string; mimeType: string }
-export interface StorageInlineContent { encoding: 'base64'; data: string }
+export interface StorageInlineContent {
+  encoding: 'base64'
+  data: string
+  /** Compression applied before base64 encoding; absent means identity. */
+  contentEncoding?: StorageContentEncoding
+}
 export interface StorageBatchResult {
   status: number
   entry?: StorageEntry
@@ -198,10 +233,7 @@ export interface StorageBatchResult {
   bodyRef?: string
 }
 export function isStorageSmallText(entry: Pick<StorageEntry, 'size' | 'mimeType'>): boolean {
-  const mime = entry.mimeType.split(';')[0].trim().toLowerCase()
-  return entry.size <= MAX_STORAGE_INLINE_BYTES &&
-    (mime.startsWith('text/') || ['application/json', 'application/javascript', 'application/xml'].includes(mime) ||
-      mime.endsWith('+json') || mime.endsWith('+xml'))
+  return entry.size <= MAX_STORAGE_INLINE_BYTES && isStorageCompressible(entry.mimeType)
 }
 
 export interface ListStorageEntriesResponse {

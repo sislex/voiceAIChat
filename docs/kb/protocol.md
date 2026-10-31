@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 91891a520
+checked: 0d27f052d
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -46,6 +46,11 @@ storage node. A single byte range returns 206 with `Content-Range`; suffix and
 open-ended ranges are supported, while malformed, multiple or unsatisfiable
 ranges return 416 (`Content-Range: bytes */<size>` for known unsatisfiable size).
 Stored chat attachment references use this same file route and semantics.
+Full responses strictly above 1 KiB negotiate Brotli or gzip through
+`Accept-Encoding` for text, JSON, JavaScript, SVG, XML and Wasm. They always
+send `Vary: Accept-Encoding`; media, archives and byte ranges stay identity.
+Raw file and upload-part PUTs may use `Content-Encoding: gzip|br`; Core applies
+the 64 MiB limit to decompressed bytes.
 
 POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
 encoded request maximum). The first line is `{"operations":[...]}`, with 1..500
@@ -59,8 +64,10 @@ mutation. Each operation commits independently; there is no batch rollback.
 The response is streamed `multipart/mixed`. Each operation has an
 `application/json` part with `Content-ID: result-N` (zero-based), carrying
 `{status,entry?,error?,content?,bodyRef?}`. Small text reads (at most 256 KiB)
-use `content:{encoding:"base64",data}`; other reads have `bodyRef:"read-N"`
-and a following octet-stream part with that Content-ID and Content-Length.
+use `content:{encoding:"base64",data,contentEncoding?}`; other reads have
+`bodyRef:"read-N"` and a following typed part with that Content-ID,
+Content-Length and optional Content-Encoding. Compression follows the same
+MIME, size and `Accept-Encoding` policy as ordinary file reads.
 Clients must parse multipart boundaries, not split arbitrary binary on lines.
 A disconnected response can leave completed mutations committed.
 GET files with `?withContent=small` adds the same content object to eligible

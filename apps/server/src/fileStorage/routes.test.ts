@@ -8,6 +8,7 @@ import { VoiceChatDb } from '../db/database.js'
 import sharp from 'sharp'
 import { createThumbnailGenerator } from './thumbnail.js'
 import { Readable } from 'node:stream'
+import { brotliDecompressSync, gzipSync } from 'node:zlib'
 
 let db: VoiceChatDb
 let app: import('fastify').FastifyInstance
@@ -82,6 +83,43 @@ it('revalidates revisions without reading the node and streams single byte range
   expect(changed.headers.etag).toBe(`"${id}:2"`)
 })
 
+it('compresses eligible full file responses and leaves binary and ranges untouched', async () => {
+  quota = 100_000
+  const id = await space(), base = `/api/storage/spaces/${id}/file?path=`
+  const text = 'compressible text '.repeat(300)
+  await call('PUT', base + 'notes.txt', 'owner', text, {'content-type': 'text/plain'})
+  const compressed = await call('GET', base + 'notes.txt', 'owner', undefined, {'accept-encoding': 'gzip;q=.5, br'})
+  expect(compressed.headers).toMatchObject({'content-encoding': 'br', vary: 'Accept-Encoding'})
+  expect(compressed.headers['content-length']).toBeUndefined()
+  expect(brotliDecompressSync(compressed.rawPayload).toString()).toBe(text)
+
+  const range = await call('GET', base + 'notes.txt', 'owner', undefined, {range: 'bytes=0-15', 'accept-encoding': 'br'})
+  expect(range.headers['content-encoding']).toBeUndefined()
+  expect(range.headers.vary).toBe('Accept-Encoding')
+  expect(range.body).toBe(text.slice(0, 16))
+
+  const binary = Buffer.alloc(4096, 7)
+  await call('PUT', base + 'photo.png', 'owner', binary as unknown as object, {'content-type': 'image/png'})
+  const untouched = await call('GET', base + 'photo.png', 'owner', undefined, {'accept-encoding': 'br'})
+  expect(untouched.headers['content-encoding']).toBeUndefined()
+  expect(untouched.rawPayload).toEqual(binary)
+})
+
+it('accepts compressed uploads and limits their decompressed size', async () => {
+  quota = 100_000
+  const id = await space(), url = `/api/storage/spaces/${id}/file?path=compressed.txt`
+  const text = 'uploaded text '.repeat(300)
+  const accepted = await app.inject({method: 'PUT', url, headers: {authorization: 'owner',
+    'content-type': 'text/plain', 'content-encoding': 'gzip'}, payload: gzipSync(text)})
+  expect(accepted.statusCode, accepted.body).toBe(200)
+  expect((await call('GET', url)).body).toBe(text)
+
+  const oversized = await app.inject({method: 'PUT', url, headers: {authorization: 'owner',
+    'content-type': 'text/plain', 'content-encoding': 'gzip'}, payload: gzipSync(Buffer.alloc(64 * 1024 * 1024 + 1))})
+  expect(oversized.statusCode).toBe(413)
+  expect(oversized.json().error).toBe('file_too_large')
+})
+
 const batch = (base: string, operations: unknown[], payloads: unknown[] = [], user = 'owner') =>
   call('POST', base + '/batch', user, [{ operations }, ...payloads].map(p => JSON.stringify(p)).join('\n'), { 'content-type': 'application/x-ndjson' })
 const results = (body: string) => body.split('\r\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line))
@@ -106,6 +144,20 @@ it('executes mixed batches in order, reports independent failures and inlines sm
     expect.objectContaining({ path: 'c', content: { encoding: 'base64', data: 'aGk=' } }),
   ])
   expect((await call('GET', base + '/files')).json().entries[0].content).toBeUndefined()
+})
+
+it('compresses eligible inline batch reads and declares the representation', async () => {
+  quota = 100_000
+  const base = '/api/storage/spaces/' + await space()
+  const text = 'batch text '.repeat(300)
+  await call('PUT', base + '/file?path=large.txt', 'owner', text, {'content-type': 'text/plain'})
+  const payload = JSON.stringify({operations: [{op: 'read', path: 'large.txt'}]})
+  const response = await call('POST', base + '/batch', 'owner', payload,
+    {'content-type': 'application/x-ndjson', 'accept-encoding': 'br'})
+  expect(response.headers.vary).toBe('Accept-Encoding')
+  const content = results(response.body)[0].content
+  expect(content.contentEncoding).toBe('br')
+  expect(brotliDecompressSync(Buffer.from(content.data, 'base64')).toString()).toBe(text)
 })
 
 it('prechecks quota before mutation and rejects malformed/oversized operation lists', async () => {

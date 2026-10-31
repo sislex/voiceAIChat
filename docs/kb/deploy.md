@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 15683f3af
+checked: 0d27f052d
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -57,6 +57,9 @@ for parts plus atomic assembly; after completion only the final blob remains
 charged. Core quota reserves the declared size once. Node health includes
 active capacity reservations, so free space can be lower than published data
 usage. Multipart endpoints use the same node bearer scope as blob operations.
+Storage transfer compression introduces no environment variable. Proxies must
+preserve `Accept-Encoding`, `Content-Encoding` and `Vary` and must not
+recompress Range responses.
 
 
 The Docker target `file-storage-node` starts

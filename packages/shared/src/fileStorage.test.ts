@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_STORAGE_BATCH_OPERATIONS, MAX_STORAGE_INLINE_BYTES, isStorageSmallText, FILE_STORAGE_NODE_PATHS,
+  STORAGE_COMPRESSION_MIN_BYTES, isStorageCompressible, storageContentEncoding,
   DEFAULT_STORAGE_QUOTA_BYTES,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
@@ -27,6 +28,19 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
   usedBytes: usedGb * 1e9,
   online,
   lastSeenAt: 1,
+})
+
+it('defines storage transfer compression policy and negotiates encodings', () => {
+  expect(STORAGE_COMPRESSION_MIN_BYTES).toBe(1024)
+  for (const mime of ['text/plain; charset=utf-8', 'application/json', 'application/javascript',
+    'image/svg+xml', 'application/xml', 'application/manifest+json', 'application/wasm'])
+    expect(isStorageCompressible(mime)).toBe(true)
+  for (const mime of ['image/png', 'video/mp4', 'audio/mpeg', 'application/zip', 'application/octet-stream'])
+    expect(isStorageCompressible(mime)).toBe(false)
+  expect(storageContentEncoding('gzip;q=1, br;q=0.5')).toBe('gzip')
+  expect(storageContentEncoding('gzip, br')).toBe('br')
+  expect(storageContentEncoding('br;q=0, *;q=.4')).toBe('gzip')
+  expect(storageContentEncoding('br;q=0, gzip;q=0')).toBeUndefined()
 })
 
 it('defines batch paths and the exact small-text content boundary', () => {

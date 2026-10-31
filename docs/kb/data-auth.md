@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 91891a520
+checked: 0d27f052d
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -59,6 +59,8 @@ transaction checks revision conditions and publishes the final entry.
 Parts never appear in file listings. Abort removes node parts and any unpublished
 composed blob before releasing the quota reservation. Expiry cleanup retries
 offline nodes without releasing their reservations prematurely.
+Compressed single-PUT and part bodies are charged by decompressed size;
+streaming decompression aborts above 64 MiB before metadata or node mutation.
 
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`

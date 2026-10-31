@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 91891a520
+checked: 0d27f052d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -57,6 +57,10 @@ file. The node parses one RFC-style byte range and streams it with a bounded
 filesystem read stream. Internal consumers and batch/small-content reads still
 use the buffered client method. Small-content
 listing reads under the metadata transaction to keep content and revision paired.
+Core streams eligible full downloads through Brotli/gzip above 1 KiB and
+compresses eligible batch bodies before base64 or multipart emission. Range,
+media and archive responses remain identity. Raw PUT parsers optionally stream
+gzip/Brotli decompression and stop once decompressed bytes exceed 64 MiB.
 Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
 bearer scope, validates both IDs, serializes capacity checks and copies through
 a temporary file plus rename. No file bytes pass through Core for copy.
@@ -102,7 +106,8 @@ Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 `VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
 `routes.ts` registers all `STORAGE_REST` operations after Core session auth,
 rejects anonymous link access and restricts cluster information to admins.
-PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
+PUT file bodies bypass JSON parsing, accept up to 64 MiB after optional gzip/br
+decompression, and enforce revision
 and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
 The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
 `thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first

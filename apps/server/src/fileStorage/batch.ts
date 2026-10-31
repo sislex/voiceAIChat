@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
-import { MAX_STORAGE_BATCH_OPERATIONS, isStorageSmallText, type StorageBatchOperation, type StorageBatchResult } from '@voicechat/shared/fileStorage'
+import { MAX_STORAGE_BATCH_OPERATIONS, STORAGE_COMPRESSION_MIN_BYTES, isStorageCompressible, isStorageSmallText,
+  storageContentEncoding, type StorageBatchOperation, type StorageBatchResult, type StorageContentEncoding } from '@voicechat/shared/fileStorage'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
+import { brotliCompress, gzip } from 'node:zlib'
+import { promisify } from 'node:util'
+
+const compress = {
+  br: promisify(brotliCompress),
+  gzip: promisify(gzip),
+} satisfies Record<StorageContentEncoding, (bytes: Uint8Array) => Promise<Buffer>>
 
 export function parseStorageBatch(body: Buffer) {
   const invalid = (): never => { throw new StorageServiceError('invalid_path') }
@@ -24,13 +32,14 @@ export function parseStorageBatch(body: Buffer) {
   return { operations, payloads }
 }
 
-export async function storageBatchResponse(service: FileStorageService, userId: string, spaceId: string, body: Buffer) {
+export async function storageBatchResponse(service: FileStorageService, userId: string, spaceId: string, body: Buffer, acceptEncoding?: string) {
   const { operations, payloads } = parseStorageBatch(body)
   await service.checkBatch(userId, spaceId, operations, payloads)
   const boundary = 'storage-' + randomUUID()
   async function* parts() {
     for (const [index, op] of operations.entries()) {
-      let result: StorageBatchResult, bytes: Uint8Array | undefined
+      let result: StorageBatchResult, bytes: Uint8Array | undefined, contentEncoding: StorageContentEncoding | undefined,
+        bodyMimeType: string | undefined
       try {
         if (!op || typeof op.path !== 'string' ||
           (op.ifMatch !== undefined && (!Number.isSafeInteger(op.ifMatch) || op.ifMatch < 1)) ||
@@ -39,8 +48,13 @@ export async function storageBatchResponse(service: FileStorageService, userId: 
           case 'read': {
             const file = await service.readFile(userId, spaceId, op.path)
             result = { status: 200, entry: file.entry }
-            if (isStorageSmallText(file.entry)) result.content = { encoding: 'base64', data: Buffer.from(file.bytes).toString('base64') }
-            else { result.bodyRef = `read-${index}`; bytes = file.bytes }
+            contentEncoding = file.entry.size > STORAGE_COMPRESSION_MIN_BYTES && isStorageCompressible(file.entry.mimeType)
+              ? storageContentEncoding(acceptEncoding) : undefined
+            bytes = contentEncoding ? await compress[contentEncoding](file.bytes) : file.bytes
+            if (isStorageSmallText(file.entry)) {
+              result.content = { encoding: 'base64', data: Buffer.from(bytes).toString('base64'), ...(contentEncoding ? {contentEncoding} : {}) }
+              bytes = undefined
+            } else { result.bodyRef = `read-${index}`; bodyMimeType = file.entry.mimeType }
             break
           }
           case 'write': {
@@ -65,7 +79,7 @@ export async function storageBatchResponse(service: FileStorageService, userId: 
       }
       yield `--${boundary}\r\nContent-Type: application/json\r\nContent-ID: result-${index}\r\n\r\n${JSON.stringify(result)}\r\n`
       if (bytes) {
-        yield `--${boundary}\r\nContent-Type: application/octet-stream\r\nContent-ID: read-${index}\r\nContent-Length: ${bytes.byteLength}\r\n\r\n`
+        yield `--${boundary}\r\nContent-Type: ${bodyMimeType}\r\nContent-ID: read-${index}\r\nContent-Length: ${bytes.byteLength}\r\n${contentEncoding ? `Content-Encoding: ${contentEncoding}\r\n` : ''}\r\n`
         yield Buffer.from(bytes)
         yield '\r\n'
       }
