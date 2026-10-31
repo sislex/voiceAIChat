@@ -1,7 +1,7 @@
 ---
-title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: e0e4cb52
+checked: 8bb433d2
+title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
 ---
@@ -15,6 +15,28 @@ areas:
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## fileStorage contract
+
+`src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
+entries, revisions, shares, owner usage, node health, error codes and both
+`STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
+the maximum file size is 64 MiB. Pure helpers normalize paths, resolve the
+strongest access, check replacement-aware quotas, sum online node capacity
+and select the online node with the most free space that can fit a file.
+
+`MessageAttachment` and `UploadInfo` have an optional `storage: StorageFileRef`
+(`spaceId`, `path`). For such an attachment the machine `path` is display-only
+and `agentId` is absent. Core installs the authenticated `STORAGE_REST` routes
+through `apps/server/src/fileStorage/routes.ts`; the service is enabled with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`). `Settings.chatFilesBackend`
+accepts `machine | storage`, defaults to `machine`, and is validated by
+`sanitizeSettingsPatch`, REST and settings persistence. See
+[server internals](server-internals.md) for the runtime and chat integration.
+The node/client/coordinator implementation is in `packages/file-storage`;
+see [architecture](architecture.md). The application catalog registers it as
+`file-storage`, with Shared and component-runtime build dependencies, node
+entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
 
 ## Current additive contracts
 

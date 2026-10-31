@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 50fcc411
+checked: 713d61e0
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -9,6 +9,19 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Operator handoff integration (SK-115)
+
+`kanbanBridge/proxy.ts` includes `/api/kanban/handoff` in the existing proxy
+prefixes. Export/import and continuation execute in Kanban. Core's
+`routes/agents.ts` validates and authorizes the machine switch, then waits for
+AgentRegistry's correlated result; see [protocol](protocol.md#operator-handoff).
+This adds no Core deployment or database migration.
+
+Review since `7ad8ad53` also confirms `local-stand` in EnvironmentMode and
+`readyStandEnvironment`: the base must be ready and its first machine must match.
+The existing Make stand section below documents the live working-copy flow;
+these changes do not alter KB host ports.
 
 Module details: `voice:README.md`
 
@@ -22,6 +35,30 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Core file storage
+
+`apps/server/src/fileStorage/` embeds the FS-1 coordinator when
+`VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
+`routes.ts` registers all `STORAGE_REST` operations after Core session auth,
+rejects anonymous link access and restricts cluster information to admins.
+PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
+and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
+
+`runtime.ts` loads node tokens from configured files and polls health at startup
+and every 15 seconds, without overlapping polls. Two consecutive failures mark a
+node offline; a successful poll restores it. Shutdown clears and drains polling.
+`BuildOptions.storageNodes` supplies fake clients for host integration tests.
+Make consumers use these same authenticated REST paths with the user's context.
+
+When the account setting `chatFilesBackend` is `storage` and the service is
+enabled, uploads require a conversation owned by the caller. Core atomically
+finds or creates its owner's `chat` space with `ref=conversationId`, writes the
+file, and returns `UploadInfo.storage`. The default backend remains `machine`.
+Upload resolution, retouch sources and attachment reads use coordinator access
+checks. History JSON preserves `MessageAttachment.storage`; persistent reads
+do not depend on the transient UploadStore map. Display paths use
+`storage:<spaceId>/<path>`; file bytes remain on the configured nodes.
 
 ## Make file transport admission
 

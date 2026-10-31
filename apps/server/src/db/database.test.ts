@@ -770,6 +770,7 @@ describe('VoiceChatDb — настройки', () => {
       defaultAgentId: null
     })
     expect(await db.settings.getSettings(U)).toEqual({
+      chatFilesBackend: 'machine',
       model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,

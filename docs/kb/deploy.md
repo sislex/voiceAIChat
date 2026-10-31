@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: e0e4cb52
+checked: 713d61e0
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -46,6 +46,33 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## File storage node example
+
+The Docker target `file-storage-node` starts
+`packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
+its default blob directory. `deploy/compose.file-storage.example.yml` defines
+two nodes with decimal capacities of 10 GB and 60 GB, separate `/data` volumes,
+and separate token files under `deploy/secrets/`. Host ports 8795 and 8796 bind
+to loopback. Create the private token files before starting this example.
+
+Configure each node with `VC_FILE_STORAGE_NODE_ID`, `VC_FILE_STORAGE_DIR`,
+`VC_FILE_STORAGE_CAPACITY_BYTES` and `VC_FILE_STORAGE_TOKEN_FILE`. Managed mode
+uses `SISLEXA_COMPONENT_CONFIG` and component-runtime instead of the static token.
+The example does not add nodes to production. Enable the Core coordinator with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`) and configure
+`VC_FILE_STORAGE_NODES='[{"id":"node-a","url":"http://node-a:8795","tokenFile":"/run/secrets/storage-a"}]'`.
+IDs must be unique; HTTP(S) URLs cannot contain credentials, query or fragment.
+Mount the token files into Core as well as the corresponding nodes. Core loads
+tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
+integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
+per-user quota when available. Node health is polled every 15 seconds; two
+failed polls remove a node's capacity from the online pool.
+
+Core metadata lives in its existing SQLite/Postgres database and migrates
+additively on startup. Back up both metadata and node volumes. Selecting
+`chatFilesBackend=storage` in account settings opts chat uploads into the
+service; machine storage remains the default.
 
 ## Public chat deployment isolation
 
@@ -3469,3 +3496,6 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:0a23378c-2a9c-479f-bf55-87b7f59f3d2f -->
 - sislex/sislexa-kanban: 0.2.57
+
+<!-- release-train:d6553d43-8e3a-4ece-886b-49ada2097bcc -->
+- sislex/sislexa-kanban: 0.2.58

@@ -42,7 +42,19 @@ export type { CiStageExecutionContext } from './repos/ci.js'
 export type { AutomatedQaExecutionContext } from './repos/qa.js'
 export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repos/base.js'
 
+import { createSqlMetadataStore } from '../fileStorage/metadata.js'
+import type { StorageMetadataStore } from '../../../../packages/file-storage/src/metadata.js'
+
 export class VoiceChatDb {
+  /** Enter the reentrant domain lane before SQL, so Identity quota reads cannot deadlock behind it. */
+  storageMetadata(): StorageMetadataStore {
+    const store = createSqlMetadataStore(this.sql)
+    return { transaction: async <T>(fn: Parameters<typeof store.transaction<T>>[0]): Promise<T> => {
+      await this.ready
+      if (this.lane) return this.lane.run(async () => await store.transaction(fn))
+      return store.transaction(fn)
+    } }
+  }
   /** Адаптер базы; репозитории пишут SQL в диалекте SQLite, различия движков закрывает адаптер. */
   private readonly sql: Sql
   readonly engine: 'sqlite' | 'postgres'

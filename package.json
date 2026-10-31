@@ -8,6 +8,7 @@
     "packages/shared",
     "packages/knowledge",
     "packages/component-runtime",
+    "packages/file-storage",
     "apps/automation-runner",
     "apps/server"
   ],

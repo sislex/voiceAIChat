@@ -59,6 +59,7 @@ export async function resolveManagedChatStorage(userId: string, conversationId: 
 export const MACHINE_UPLOAD_DIR = '.voicechat_uploads'
 
 export interface StoredUpload {
+  storage?: import('@voicechat/shared').StorageFileRef
   id: string
   name: string
   path: string
@@ -118,6 +119,14 @@ export class UploadStore {
     return rec
   }
 
+  saveStorage(name: string, storage: import('@voicechat/shared').StorageFileRef, size: number, mimeType: string, ownerId: string, conversationId: string): StoredUpload {
+    const rec: StoredUpload = { id: randomUUID(), name: basename(name) || 'file',
+      path: 'storage:' + encodeURIComponent(storage.spaceId) + '/' + storage.path,
+      storage, size, mimeType, ownerId, conversationId }
+    this.byId.set(rec.id, rec)
+    return rec
+  }
+
   get(id: string): StoredUpload | undefined {
     return this.byId.get(id)
   }
@@ -131,7 +140,7 @@ export class UploadStore {
   remove(id: string): void {
     const rec = this.byId.get(id)
     if (!rec) return
-    if (!rec.agentId) rmSync(rec.path, { force: true })
+    if (!rec.agentId && !rec.storage) rmSync(rec.path, { force: true })
     this.byId.delete(id)
   }
 }

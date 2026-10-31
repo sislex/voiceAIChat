@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-10-31
+checked: 713d61e0
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
@@ -14,6 +14,26 @@ areas:
 ---
 
 # Feature-preview окружения задач
+
+## Current Core ownership (SK-115 review)
+
+The local preview manager, feature-preview routes and Shared preview.ts listed
+in this historical article are absent from this checkout after Kanban extraction.
+The lifecycle, UI and manager paths below describe the former monorepo and must
+not be treated as current Core implementations. Core retains the machine registry,
+Kanban proxy and `compose.preview.yml`; orchestration must be verified in Kanban.
+
+The retained Compose fixture builds `server-runtime` and `storybook-runtime`,
+binds their ports to loopback, uses a separate preview-data volume and applies
+CPU/memory limits and health checks. Core's Dockerfile now verifies published
+Core UI assets and copies Storybook from `@sislexa/core-ui/storybook`; it does
+not build UI sources with `build:storybook`.
+
+SK-115 changes the shared registry only to dispatch/correlate operator switches.
+It adds no preview start, stop, migration or recovery operation. See
+[operator handoff](../protocol.md#operator-handoff). The older checked SHA is
+unavailable in this history; this review uses the current registry/Compose/Docker
+sources and verifies the removed local paths explicitly.
 
 ## Current Core boundary
 
@@ -81,6 +101,10 @@ Feature-preview — отдельное управляемое окружение
 ## Docker, Storybook и изоляция
 
 `compose.preview.yml` содержит app и статический Storybook, публикует оба сервиса только на loopback и использует отдельный named volume для preview-данных. Сервисы имеют CPU/memory limits, собственные healthchecks, не получают production data, LLM CLI-профили или credentials. Порты берутся из диапазона 18000–19999: allocator проверяет bind на машине и исключает порты сохранённых окружений.
+
+The `storybook-build` stage runs `npm run verify:core-ui`; `storybook-runtime`
+copies the pinned Core UI Storybook artifact into nginx. Its owner SHA may differ
+from Core's SHA; the artifact is not rebuilt from this workspace's UI sources.
 
 `Dockerfile` verifies the pinned Core UI artifact with `npm run verify:core-ui`.
 The `storybook-runtime` target copies `node_modules/@sislexa/core-ui/storybook`

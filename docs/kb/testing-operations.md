@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: 98722e6a
+checked: 775977da
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -35,7 +35,17 @@ journal's release branch result. Owner docs-only release reuse is proven by
 300 files, and include only `docs/kb/` paths (including previous rename paths).
 A saturated or unverified comparison requires a new release version.
 
-## Task gate for the dev lane
+<a id="task-gate-for-the-dev-lane"></a>
+
+## Task gate
+
+`scripts/affected-check.mjs` resolves the base in `parseOptions` from explicit
+`--base`, otherwise `HEAD` for `--worktree`, otherwise `origin/${BASE_BRANCH}`
+with `main` as the fallback for an unset or empty environment variable.
+`--base` and `--worktree` are mutually exclusive. Its parser test saves and
+restores `BASE_BRANCH`, checks unset/empty defaults and `dev`, and verifies
+that explicit CLI options override the environment. This isolates the default
+assertion from delivery workflows that export `BASE_BRANCH=dev`.
 
 `npm run gate:task -- --base <sha>` compares the merge base with the current
 worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
@@ -64,6 +74,14 @@ after its run finishes; on timeout, unfinished file names identify the work for
 promotion even when no result report was written. Node reports are persisted
 after each result. Temporary reports live under `artifacts/gate-task` and are
 removed after reading. Missing successful-run reports fail the gate.
+
+Node reports preserve each assertion's status and failure messages, matching
+the fields consumed from Vitest reports. After the complete `GATE-TASK-CASE`
+inventory, the gate repeats failed assertions as `GATE-TASK-FAILED: <file>: <name>`
+with their error messages immediately before the final count/time summary.
+This keeps the original failure in workflow log tails even when later tests
+pass. `GATE-TASK-CASE` lists all reported cases and is not a failure marker.
+The reporter change does not alter test selection, budgets or runner exit codes.
 
 `scripts/task-gate.mjs` writes each Vitest `assertion.fullName` to
 `GATE-TASK-CASE` without escaping. Parameterized values therefore become part
@@ -1345,12 +1363,13 @@ owner-maintained system acceptance. `gate:release` selects these stages from the
 release diff as described below. Known budget/measurement edits still select their real browser
 measurements directly. The full gate's test stage runs tooling and each workspace
 test script as separate processes, with at most three active by default; set
-`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. The current
-`full-gate.test.mjs` default-value assertion calls `testConcurrency(undefined)`
-without isolating that environment variable: a non-default inherited override
-therefore fails the tooling assertion (`1 !== 3` for value `1`). Keep it unset
-when running the complete suite with this version of that test. Their output
-is buffered and printed in manifest order, all failing workspaces are reported,
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound.
+`testConcurrency(undefined)` reads that environment variable; it does not bypass
+the environment to request the built-in default. The default-value regression
+test in `full-gate.test.mjs` saves, clears and restores the variable, then checks
+environment overrides and explicit-argument precedence separately. Inherited
+runner overrides therefore do not invalidate the default-value assertion.
+Workspace output is buffered and printed in manifest order, all failing workspaces are reported,
 and `[gate:timing] tests/<workspace>` records individual durations.
 Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
 file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling

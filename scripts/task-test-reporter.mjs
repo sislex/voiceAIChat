@@ -5,13 +5,15 @@ import { writeFileSync } from 'node:fs'
 export default async function* reporter(source) {
   const destination = process.env.GATE_TASK_REPORT
   if (!destination) throw Error('Missing GATE_TASK_REPORT')
-  /** @type {{numTotalTests: number, testResults: {name: string, assertionResults: {fullName: string, duration: number}[]}[]}} */
+  /** @type {{numTotalTests: number, testResults: {name: string, assertionResults: {fullName: string, duration: number, status: string, failureMessages: string[]}[]}[]}} */
   const report = { numTotalTests: 0, testResults: [] }
   for await (const { type, data } of source) {
     if ((type === 'test:pass' || type === 'test:fail') && data.details?.type !== 'suite') {
       report.numTotalTests++
       report.testResults.push({ name: data.file ?? 'node:test', assertionResults: [
-        { fullName: data.name, duration: data.details?.duration_ms ?? 0 }
+        { fullName: data.name, duration: data.details?.duration_ms ?? 0,
+          status: type === 'test:fail' ? 'failed' : 'passed',
+          failureMessages: type === 'test:fail' ? [String(data.details?.error?.stack ?? data.details?.error ?? 'Test failed')] : [] }
       ] })
       writeFileSync(destination, JSON.stringify(report))
       yield `${type}: ${data.name}\n`

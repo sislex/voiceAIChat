@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-10-31
+checked: 713d61e0
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban

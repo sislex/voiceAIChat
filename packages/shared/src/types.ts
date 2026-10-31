@@ -1592,6 +1592,7 @@ export function onboardingTransition(state: OnboardingState, step: OnboardingSte
 }
 
 export interface Settings {
+  chatFilesBackend?: 'machine' | 'storage'
   onboarding?: OnboardingState | null
   model: ClaudeModel
   whisperModel: WhisperModel
@@ -1998,6 +1999,7 @@ export const CODEX_MODELS: CodexModelInfo[] = [
 export const DEFAULT_CODEX_MODEL = CODEX_MODELS[0].id
 
 export const DEFAULT_SETTINGS: Settings = {
+  chatFilesBackend: 'machine',
   model: 'default',
   whisperModel: 'large-v3-turbo',
   diarization: true,
@@ -2058,6 +2060,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
     if (onboarding) patch.onboarding = onboarding
   }
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
+  oneOf('chatFilesBackend', ['machine', 'storage'] as const)
   oneOf('whisperModel', WHISPER_MODELS)
   oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
   oneOf('machineCommandNotices', ['all', 'failures', 'off'] as const)

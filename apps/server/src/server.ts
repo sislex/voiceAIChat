@@ -200,7 +200,12 @@ const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
 
+import { createStorageRuntime } from './fileStorage/runtime.js'
+import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
+import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
+
 export interface BuildOptions {
+  storageNodes?: StorageNodeClient[]
   /** Trusted existing-run authority and commissioned journal source; absent means fail closed. */
   historicalEvidence?: HistoricalEvidencePort
   applicationTickets?: ApplicationTicketOptions
@@ -737,7 +742,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return operation
   }
   let conversationSummary: ConversationSummaryService | undefined
+  const storageRuntime = opts.config.fileStorage?.mode === 'embedded'
+    ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes) : undefined
+  const fileStorage = storageRuntime?.service
+  if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
+  registerFileStorageRoutes(app, fileStorage)
   await registerRest(app, db, opts.config.dataDir, {
+    fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
     runnerFs: runnerFs ?? undefined,
@@ -1260,6 +1271,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
+      if (fileStorage && (await db.settings.getSettings(userId)).chatFilesBackend === 'storage') {
+        if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
+        try {
+          const space = await db.storageMetadata().transaction(async tx => {
+            const existing = (await tx.listSpaces()).find(s => s.ownerId === userId && s.kind === 'chat' && s.ref === conversationId)
+            if (existing) return existing
+            const created = { id: randomBytes(16).toString('hex'), ownerId: userId, kind: 'chat' as const,
+              title: 'Chat files', ref: conversationId, createdAt: Date.now(), updatedAt: Date.now() }
+            await tx.putSpace(created)
+            return created
+          })
+          const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
+          const entry = await fileStorage.writeFile(userId, space.id, path, bytes, { mimeType: safeMime, createOnly: true })
+          const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path}, entry.size, entry.mimeType, userId, conversationId)
+          rec.tenantId = req.user?.account?.tenantId
+          return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage }
+        } catch (error) { return storageError(reply, error) as never }
+      }
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
       if (conversationId) {
         try {
@@ -1313,13 +1342,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
       const historyFiles = (await db.chat.historyFiles(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
       const allowed = (file: MessageAttachment): boolean => {
-        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
+        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId && known.storage?.spaceId === file.storage?.spaceId && known.storage?.path === file.storage?.path)) return true
         const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
-        return Boolean(upload && upload.path === file.path && upload.agentId === file.agentId)
+        return Boolean(upload && upload.ownerId === userId && upload.conversationId === body.conversationId && upload.path === file.path && upload.agentId === file.agentId && upload.storage?.spaceId === file.storage?.spaceId && upload.storage?.path === file.storage?.path)
       }
       if (!allowed(body.source) || (body.references ?? []).some((file) => !allowed(file))) return reply.code(403).send({ error: 'Изображение не принадлежит этому разговору' }) as never
 
       const readAttachment = async (file: MessageAttachment): Promise<Buffer> => {
+        if (file.storage) {
+          if (!fileStorage) throw new Error('File storage is disabled')
+          return Buffer.from((await fileStorage.readFile(userId, file.storage.spaceId, file.storage.path)).bytes)
+        }
         if (file.agentId) {
           if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
           const result = await agentRegistry.fsRead(file.agentId, file.path)
@@ -1510,9 +1543,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
     historyTool: historyTurnBroker,
-    resolveUpload: async (id) => {
+    resolveUpload: async (id, userId) => {
       const upload = uploads.get(id)
-      if (!upload) return null
+      if (!upload || upload.ownerId && upload.ownerId !== userId) return null
+      if (upload.storage && fileStorage && upload.ownerId) {
+        const file = await fileStorage.readFile(upload.ownerId, upload.storage.spaceId, upload.storage.path)
+        return { serverPath: upload.path, runnerName: upload.name, dataBase64: Buffer.from(file.bytes).toString('base64'), preserveServerPath: true }
+      }
       if (!upload.agentId) return upload.path
       try {
         const file = await agentRegistry.fsRead(upload.agentId, upload.path)
@@ -1537,6 +1574,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     studioContext: (conversationId) => imageStudio.service.promptContext(conversationId),
     captureStudioImages: (userId, conversationId, finalText) => imageStudio.service.captureImages(userId, conversationId, finalText),
     readServerFile: async (userId, path) => {
+      if (path.startsWith('storage:')) {
+        const match = /^storage:([^/]+)\/(.+)$/.exec(path)
+        if (!match || !fileStorage) return null
+        const file = await fileStorage.readFile(userId, decodeURIComponent(match[1]), match[2])
+        return {path, name: match[2].split('/').pop() ?? 'file', mimeType: file.entry.mimeType, size: file.entry.size, dataBase64: Buffer.from(file.bytes).toString('base64')}
+      }
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
         if (remote) return remote

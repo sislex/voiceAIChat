@@ -23,6 +23,16 @@ function makeRegistry(): AgentRegistry {
 }
 
 describe('AgentRegistry', () => {
+  it('correlates operator switch results with the selected agent',async()=>{
+    const registry=makeRegistry(),socket=fakeSocket()
+    registry.register('m1','M1',socket)
+    const result=registry.switchOperator('m1',{serverUrl:'wss://target/agent',token:'new-token',timeoutMs:1000})
+    expect(socket.sent[0]).toMatchObject({t:'agent.switchOperator',requestId:'exec-1'})
+    await registry.handleMessage('other',{t:'agent.switchOperatorResult',requestId:'exec-1',status:'failed'})
+    await registry.handleMessage('m1',{t:'agent.switchOperatorResult',requestId:'exec-1',status:'switched'})
+    await expect(result).resolves.toBe('switched')
+  })
+
   it('exec: шлёт exec.start, копит chunks и резолвится по done', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()

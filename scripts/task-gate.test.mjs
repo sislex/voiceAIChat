@@ -131,11 +131,72 @@ test('Node report counts leaf cases without counting describe suites twice', asy
   }
 })
 
+test('failed Node assertions survive report serialization and remain in the workflow tail', async t => {
+  const directory = resolve('artifacts/gate-task-fixtures')
+  mkdirSync(directory, { recursive: true })
+  const fixture = mkdtempSync(resolve(directory, 'failure-'))
+  t.after(() => rmSync(fixture, { recursive: true, force: true }))
+  const previous = process.env.GATE_TASK_REPORT
+  t.after(() => {
+    if (previous === undefined) delete process.env.GATE_TASK_REPORT
+    else process.env.GATE_TASK_REPORT = previous
+  })
+  const report = resolve(fixture, 'node.json')
+  process.env.GATE_TASK_REPORT = report
+  const events = [
+    { type: 'test:fail', data: { name: 'original failure', file: 'scripts/first.test.mjs',
+      details: { type: 'test', error: new Error('original assertion evidence') } } },
+    ...Array.from({ length: 100 }, (_, i) => ({ type: 'test:pass', data: {
+      name: 'later success ' + i, file: 'scripts/last.test.mjs', details: { type: 'test' }
+    } }))
+  ]
+  for await (const _line of reporter(events)) { /* Persist the complete report. */ }
+  const { readFileSync } = await import('node:fs')
+  const serialized = readFileSync(report, 'utf8')
+  const data = JSON.parse(serialized)
+  assert.equal(data.testResults[0].assertionResults[0].status, 'failed')
+  assert.match(data.testResults[0].assertionResults[0].failureMessages[0], /original assertion evidence/)
+  const output = []
+  assert.throws(() => executeTask([{ path: '.', runner: 'node', files: ['scripts/first.test.mjs'] }], {
+    log: line => output.push(line), now: () => 0,
+    spawn(_command, _args, { env }) {
+      writeFileSync(env.GATE_TASK_REPORT, serialized)
+      return { status: 1 }
+    }
+  }), /Check exited 1/)
+  assert.match(output.slice(-3).join('\n'), /GATE-TASK-FAILED: scripts\/first.test.mjs: original failure/)
+  assert.match(output.slice(-3).join('\n'), /original assertion evidence/)
+  assert.equal(output.at(-1), 'GATE-TASK: tests=101 seconds=0.000')
+})
+
 test('diff includes tracked and untracked files and never hides git errors', () => {
   const results = ['abc\n', 'a.ts\0b.ts\0', 'b.ts\0c.ts\0']
   assert.deepEqual(changedFiles('base', '.', () => ({ status: 0, stdout: results.shift() })), ['a.ts', 'b.ts', 'c.ts'])
   assert.throws(() => changedFiles('base', '.', () => ({ status: 1, stderr: 'git denied' })), /git denied/)
   for (const args of [[], ['--base'], ['core'], ['--base', '--dry-run']]) assert.throws(() => main(args), /--base/)
+})
+
+test('real failed Node and Vitest adapters retain the original assertion in the final summary', t => {
+  const directory = resolve('artifacts/gate-task-fixtures')
+  mkdirSync(directory, { recursive: true })
+  const fixture = mkdtempSync(resolve(directory, 'failed-adapter-'))
+  t.after(() => rmSync(fixture, { recursive: true, force: true }))
+  writeFileSync(resolve(fixture, 'node.test.mjs'),
+    "import test from 'node:test'; test('node failure', () => { throw Error('node failure evidence') });\n")
+  writeFileSync(resolve(fixture, 'vitest.test.mjs'),
+    "import { test } from 'vitest'; test('vitest failure', () => { throw Error('vitest failure evidence') });\n")
+  writeFileSync(resolve(fixture, 'vitest.config.mjs'),
+    'export default { test: { include: ["vitest.test.mjs"], pool: "threads", poolOptions: { threads: { singleThread: true } } } };\n')
+  for (const runner of ['node', 'vitest']) {
+    const output = []
+    assert.throws(() => executeTask([{
+      path: fixture, runner, files: [resolve(fixture, runner + '.test.mjs')]
+    }], { log: line => output.push(line) }), /Check exited 1/)
+    const tail = output.slice(-3).join('\n')
+    assert.match(tail, /GATE-TASK-FAILED:/)
+    assert.ok(tail.includes(runner + ' failure evidence'), tail)
+    assert.match(output.at(-1), /^GATE-TASK: tests=1 seconds=/)
+  }
 })
 
 test('real Node and Vitest adapters produce counted reports', () => {
