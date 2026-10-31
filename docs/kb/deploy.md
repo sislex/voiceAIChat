@@ -1,8 +1,11 @@
 ---
 updated: 2026-10-31
-checked: 242d084b
+checked: cdb6ad95
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
+  - scripts/dev-stand-local.mjs
+  - scripts/dev-stand-local.test.mjs
+  - scripts/application-frontend-server.mjs
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
   - scripts/prod/test_compose_env.py
@@ -521,6 +524,38 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
 
+### Make frontend artifacts: preview-build and deploy-configuration
+
+In `scripts/dev-stand-local.mjs`, shared mode with a prepared Make source starts
+`make-ui-build` (`npm run dev` in `packages/make-app`) and `make-ui` (the Make
+checkout's `scripts/application-frontend-server.mjs`) as separate child processes.
+Core routes `make-ui` to that server through `VC_APPLICATION_FRONTENDS`.
+Setting an environment variable inside the watcher cannot configure its sibling
+server: `sharedServices` explicitly sets `VC_APPLICATION_DEV=1` on `make-ui`.
+This change applies to the shared stand with a prepared Make checkout.
+
+On a new build-process launch, `startService` removes the previous
+`packages/make-app/dist/manifest.json` and waits for its replacement before
+starting the frontend server. It initially derives metadata from repository HEAD,
+but for the frontend server it replaces `VC_APPLICATION_COMMIT`,
+`VC_APPLICATION_VERSION`, `VC_APPLICATION_API_VERSION` and release metadata with
+values from that manifest. The three manifest fields must be nonempty strings;
+the generated metadata overrides inherited environment values. The process fixture
+in `scripts/dev-stand-local.test.mjs` verifies manifest metadata and the dev flag
+received by the server; it substitutes the Make implementation and does not test
+Git-triggered rebuilds or mismatch handling.
+
+The Make watcher and its server implementation belong to the Make repository
+([ownership map](modules.md), `make:README.md`). This Core checkout has neither
+`application-frontend-dev.mjs` nor the owner topics `preview-build` and
+`deploy-configuration`. Git HEAD/ref/packed-refs watching, worktree path resolution,
+builder commit overrides and Make's dev-mode health/mismatch semantics therefore
+require verification in that owner checkout; this Core merge does not establish
+them. Core's own `scripts/application-frontend-server.mjs` is a different server:
+it has no `VC_APPLICATION_DEV` exception, rejects any version/commit/apiVersion
+mismatch and returns startup runtime metadata from `/v1/health`. Do not infer Make
+behavior from this same-named Core file.
+
 ### Isolated local stand without Docker (`npm run dev:stand`)
 
 `npm run dev:stand` (`scripts/dev-stand-local.mjs`) starts a complete Sislexa copy on
@@ -536,9 +571,8 @@ the service process group. Detaching Make also stops its frontend and watcher,
 and changing frontend routing restarts Core. Ports held by other processes are refused.
 Frontend servers take version, commit and apiVersion from the freshly built
 `dist/manifest.json`, rather than the launcher's static API defaults.
-The shared stand's Make frontend server also receives `VC_APPLICATION_DEV=1`.
-Make uses that explicit flag to tolerate a commit mismatch during watch rebuilds
-and reports the manifest commit; production remains strict without the flag.
+The shared stand's Make frontend server also receives `VC_APPLICATION_DEV=1`;
+see the frontend configuration and build boundary below.
 Readiness failures include the last 4 KiB / 20 lines of the failing service log.
 In supervised `run` mode this diagnostic is written to stderr before rollback stops
 the service groups, so an operation runner can retain the bounded cause instead of
