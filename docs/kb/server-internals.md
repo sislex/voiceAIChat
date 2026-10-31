@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 713d61e0
+checked: e502298d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1328,6 +1328,15 @@ MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
 
 ## Automatic agent bundle offers
+
+`agents/wsAgent.ts` catches message and pong dependency failures, logs them and
+closes the affected socket with retryable code 1013. This includes a failed
+Identity `agent_update_sent` audit after the update offer was sent. Close cleanup
+runs before the asynchronous last-seen write; its rejection is logged. Queued
+messages and in-flight registration cannot revive a closed connection.
+`agents/wsAgent.test.ts` verifies Identity RPC failure and recovery in a separate
+Node process with `--unhandled-rejections=strict`. Registry change notifications
+also catch rejected async subscriber promises (`agents/registry.test.ts`).
 
 After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
 `systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned

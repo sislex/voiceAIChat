@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
 updated: 2026-10-31
-checked: 713d61e0
+checked: e502298d
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
@@ -36,6 +36,12 @@ unavailable in this history; this review uses the current registry/Compose/Docke
 sources and verifies the removed local paths explicitly.
 
 ## Current Core boundary
+
+The retained `AgentRegistry.onChange` boundary catches and logs rejected async
+subscriber promises as well as synchronous exceptions. One failed machine-list
+subscriber does not prevent the other subscribers from being called. This does
+not change tunnel dispatch or preview lifecycle operations; see
+[agent lifecycle](../machines.md#подключение-и-жизненный-цикл).
 
 Core receives `PreviewEnvironment` from `@voicechat/browser-contracts/preview`
 and lists previews through `KanbanService.previews`. `kanbanBridge/remote.ts`
