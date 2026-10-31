@@ -1,6 +1,7 @@
 import { nodeUploads } from "./uploads.js"
 import Fastify from 'fastify'
 import { copyFile, mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
@@ -121,11 +122,27 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     })
     routes.get<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)
-      const bytes = await exclusive(async () => {
-        if (await size(file) === null) throw new StorageServiceError('not_found')
-        return readFile(file)
-      })
-      return reply.type('application/octet-stream').send(bytes)
+      const length = await exclusive(async () => size(file))
+      if (length === null) throw new StorageServiceError('not_found')
+      reply.header('accept-ranges', 'bytes').type('application/octet-stream')
+      const range = req.headers.range
+      if (!range) return reply.header('content-length', length).send(createReadStream(file))
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+      if (!match) throw new StorageServiceError('range_not_satisfiable')
+      let start: number, end: number
+      if (match[1] === '') {
+        const suffix = Number(match[2])
+        if (!Number.isSafeInteger(suffix) || suffix <= 0) throw new StorageServiceError('range_not_satisfiable')
+        start = Math.max(0, length - suffix); end = length - 1
+      } else {
+        start = Number(match[1]); end = match[2] === '' ? length - 1 : Number(match[2])
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) throw new StorageServiceError('range_not_satisfiable')
+        if (start >= length) return reply.code(416).header('content-range', `bytes */${length}`).send()
+        if (start > end) throw new StorageServiceError('range_not_satisfiable')
+        end = Math.min(end, length - 1)
+      }
+      return reply.code(206).header('content-range', `bytes ${start}-${end}/${length}`)
+        .header('content-length', end - start + 1).send(createReadStream(file, { start, end }))
     })
     routes.delete<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)

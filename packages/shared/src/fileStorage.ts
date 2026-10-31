@@ -31,6 +31,7 @@ export type StorageErrorCode =
   | 'revision_conflict'
   | 'node_unavailable'
   | 'unsupported_media_type'
+  | 'range_not_satisfiable'
 
 export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   storage_disabled: 503,
@@ -43,6 +44,12 @@ export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   revision_conflict: 409,
   node_unavailable: 503,
   unsupported_media_type: 415,
+  range_not_satisfiable: 416,
+}
+
+/** HTTP validator used by Core for a stored file revision. */
+export function storageFileEtag(spaceId: string, revision: number): string {
+  return `"${spaceId}:${revision}"`
 }
 
 export interface StorageError {

@@ -1,6 +1,13 @@
 import { FILE_STORAGE_NODE_PATHS, STORAGE_ERROR_STATUS, isStorageBlobId,
   type StorageErrorCode, type StorageNodeHealth } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from './errors.js'
+import { Readable } from 'node:stream'
+
+export interface StorageNodeRead {
+  stream: Readable
+  contentLength: number
+  contentRange?: string
+}
 
 export interface StorageNodeClient {
   copy?(sourceId: string, targetId: string): Promise<void>
@@ -13,6 +20,7 @@ export interface StorageNodeClient {
   health(): Promise<StorageNodeHealth>
   put(blobId: string, bytes: Uint8Array): Promise<void>
   get(blobId: string): Promise<Uint8Array>
+  open?(blobId: string, range?: string): Promise<StorageNodeRead>
   delete(blobId: string): Promise<void>
 }
 export function createStorageNodeClient(options: {
@@ -22,10 +30,10 @@ export function createStorageNodeClient(options: {
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash)
     throw new Error('Invalid storage node URL')
   const transport = options.fetchImpl ?? fetch
-  async function request(path: string, method = 'GET', bytes?: Uint8Array) {
+  async function request(path: string, method = 'GET', bytes?: Uint8Array, headers?: Record<string, string>) {
     try {
       const response = await transport(new URL(path, base), {
-        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream' },
+        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream', ...headers },
         ...(bytes === undefined ? {} : { body: Buffer.from(bytes) }),
         redirect: 'error', signal: AbortSignal.timeout(60_000),
       })
@@ -36,6 +44,7 @@ export function createStorageNodeClient(options: {
           ? code as StorageErrorCode
           : response.status === 401 || response.status === 403 ? 'forbidden'
           : response.status === 404 ? 'not_found'
+          : response.status === 416 ? 'range_not_satisfiable'
           : response.status === 507 ? 'storage_full'
           : response.status === 413 ? 'file_too_large' : 'node_unavailable'
         throw new StorageServiceError(mapped)
@@ -79,6 +88,14 @@ export function createStorageNodeClient(options: {
       const response = await request(blobPath(id))
       try { return new Uint8Array(await response.arrayBuffer()) }
       catch { throw new StorageServiceError('node_unavailable') }
+    },
+    async open(id, range) {
+      const response = await request(blobPath(id), 'GET', undefined, range ? { range } : undefined)
+      if (!response.body) throw new StorageServiceError('node_unavailable')
+      const contentLength = Number(response.headers.get('content-length'))
+      if (!Number.isSafeInteger(contentLength) || contentLength < 0) throw new StorageServiceError('node_unavailable')
+      return { stream: Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), contentLength,
+        ...(response.headers.get('content-range') ? { contentRange: response.headers.get('content-range')! } : {}) }
     },
     async delete(id) { await request(blobPath(id), 'DELETE') },
   }

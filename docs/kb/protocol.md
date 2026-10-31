@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a520
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -37,6 +37,15 @@ updates return 400; missing users return 404; an Identity without
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
+
+GET `STORAGE_REST.file(spaceId)` returns `ETag: "<spaceId>:<revision>"`,
+`Last-Modified`, `Cache-Control: private, no-cache` and `Accept-Ranges: bytes`.
+Matching `If-None-Match` (including weak/list validators) or, when no ETag
+condition is present, `If-Modified-Since`, returns 304 before Core contacts the
+storage node. A single byte range returns 206 with `Content-Range`; suffix and
+open-ended ranges are supported, while malformed, multiple or unsatisfiable
+ranges return 416 (`Content-Range: bytes */<size>` for known unsatisfiable size).
+Stored chat attachment references use this same file route and semantics.
 
 POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
 encoded request maximum). The first line is `{"operations":[...]}`, with 1..500

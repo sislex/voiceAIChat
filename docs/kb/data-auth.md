@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a520
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,13 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+File cache validation performs the same read-grant check as a download, but a
+304 stops after metadata and does not contact the storage node. A subsequent
+stream open rechecks the read grant and entry, so share revocation cannot be
+bypassed between validation and transfer. Range bounds are checked against the
+authorized entry size before node access; unauthorized and missing entries keep
+their existing error behavior.
 
 Batch preflight checks the owner's current usage plus upload reservations and
 the conservative sum of all write/copy sizes before any mutation. It does not

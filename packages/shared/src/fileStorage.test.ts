@@ -15,6 +15,7 @@ import {
   pickStorageNode,
   storageAllows,
   storageQuotaBytes,
+  storageFileEtag,
   strongestStorageAccess,
   summarizeStorageCluster,
   type StorageNodeInfo,
@@ -37,6 +38,11 @@ it('defines batch paths and the exact small-text content boundary', () => {
   expect(isStorageSmallText({ size: 262145, mimeType: 'text/plain' })).toBe(false)
   expect(isStorageSmallText({ size: 1, mimeType: 'application/octet-stream' })).toBe(false)
   expect(isStorageSmallText({ size: 1, mimeType: 'application/manifest+json' })).toBe(true)
+})
+
+it('defines revision validators and range error status', () => {
+  expect(storageFileEtag('space/id', 7)).toBe('"space/id:7"')
+  expect(STORAGE_ERROR_STATUS.range_not_satisfiable).toBe(416)
 })
 
 it('defines resumable upload URLs and limits without changing file URLs', () => {

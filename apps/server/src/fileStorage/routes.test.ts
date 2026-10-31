@@ -7,15 +7,17 @@ import { registerFileStorageRoutes } from './routes.js'
 import { VoiceChatDb } from '../db/database.js'
 import sharp from 'sharp'
 import { createThumbnailGenerator } from './thumbnail.js'
+import { Readable } from 'node:stream'
 
 let db: VoiceChatDb
 let app: import('fastify').FastifyInstance
 let capacity = 60e9
 let quota = 100
+let nodeOpens = 0
 const blobs = new Map<string, Uint8Array>()
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:'); await db.ready
-  capacity = 60e9; quota = 100; blobs.clear()
+  capacity = 60e9; quota = 100; nodeOpens = 0; blobs.clear()
   const service = createFileStorageService({metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
     quota: async () => quota,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
@@ -23,6 +25,19 @@ beforeEach(async () => {
       copy: async (source, target) => { const bytes = blobs.get(source); if (!bytes) throw new StorageServiceError('not_found'); blobs.set(target, bytes.slice()) },
       put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
       get: async id => { const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
+      open: async (id, range) => {
+        nodeOpens++
+        const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found')
+        let start = 0, end = value.length - 1
+        if (range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(range)!
+          if (match[1] === '') start = Math.max(0, value.length - Number(match[2]))
+          else { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])) }
+        }
+        const bytes = value.slice(start, end + 1)
+        return {stream: Readable.from(bytes), contentLength: bytes.length,
+          ...(range ? {contentRange: `bytes ${start}-${end}/${value.length}`} : {})}
+      },
       delete: async id => {blobs.delete(id)} })),
     thumbnail: createThumbnailGenerator(),
   })
@@ -38,6 +53,34 @@ afterEach(async () => {await app.close(); await db.close()})
 const call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, user = 'owner', payload?: object|string, headers = {}) =>
   app.inject({method, url, payload, headers: {...(user ? {authorization: user} : {}), ...headers}})
 const space = async () => (await call('POST', '/api/storage/spaces', 'owner', {kind: 'personal', title: 'Files'})).json().id as string
+
+it('revalidates revisions without reading the node and streams single byte ranges', async () => {
+  const id = await space(), base = `/api/storage/spaces/${id}/file?path=video.mp4`
+  await call('PUT', base, 'owner', '0123456789', {'content-type': 'video/mp4'})
+  const first = await call('GET', base)
+  expect(first.statusCode).toBe(200)
+  expect(first.headers).toMatchObject({etag: `"${id}:1"`, 'accept-ranges': 'bytes',
+    'cache-control': 'private, no-cache', 'content-type': 'video/mp4', 'content-length': '10'})
+  expect(first.headers['last-modified']).toBeTruthy()
+  const opens = nodeOpens
+  const cached = await call('GET', base, 'owner', undefined, {'if-none-match': first.headers.etag})
+  expect(cached.statusCode).toBe(304)
+  expect(cached.rawPayload).toHaveLength(0)
+  expect(nodeOpens).toBe(opens)
+  const dated = await call('GET', base, 'owner', undefined, {'if-modified-since': first.headers['last-modified']})
+  expect(dated.statusCode).toBe(304)
+  const range = await call('GET', base, 'owner', undefined, {range: 'bytes=3-6'})
+  expect(range.statusCode).toBe(206)
+  expect(range.body).toBe('3456')
+  expect(range.headers).toMatchObject({'content-range': 'bytes 3-6/10', 'content-length': '4', 'accept-ranges': 'bytes'})
+  const unsatisfied = await call('GET', base, 'owner', undefined, {range: 'bytes=10-'})
+  expect(unsatisfied.statusCode).toBe(416)
+  expect(unsatisfied.headers['content-range']).toBe('bytes */10')
+  await call('PUT', base, 'owner', 'next', {'content-type': 'video/mp4'})
+  const changed = await call('GET', base, 'owner', undefined, {'if-none-match': first.headers.etag})
+  expect(changed.statusCode).toBe(200)
+  expect(changed.headers.etag).toBe(`"${id}:2"`)
+})
 
 const batch = (base: string, operations: unknown[], payloads: unknown[] = [], user = 'owner') =>
   call('POST', base + '/batch', user, [{ operations }, ...payloads].map(p => JSON.stringify(p)).join('\n'), { 'content-type': 'application/x-ndjson' })
@@ -215,7 +258,7 @@ it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaus
   const file = base + '/file?path=a'
   expect((await call('PUT', file, 'owner', '{"a":1}', {'content-type':'application/json','if-none-match':'*'})).json().revision).toBe(1)
   expect((await call('GET', file)).body).toBe('{"a":1}')
-  expect((await call('GET', file, 'owner', undefined, {'if-none-match':'"1"'})).statusCode).toBe(304)
+  expect((await call('GET', file, 'owner', undefined, {'if-none-match':`"${base.split('/').at(-1)}:1"`})).statusCode).toBe(304)
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-none-match':'*'})).json().error).toBe('revision_conflict')
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-match':'"2"'})).json().error).toBe('revision_conflict')
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-match':'"1"'})).json().revision).toBe(2)

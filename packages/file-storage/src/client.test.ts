@@ -18,6 +18,11 @@ it('round-trips binary data through a real HTTP node and maps its errors', async
   const client = createStorageNodeClient({ id: 'a', url, token: 'secret' })
   await client.put('abcdefgh', new Uint8Array([0, 255, 42]))
   expect(await client.get('abcdefgh')).toEqual(new Uint8Array([0, 255, 42]))
+  const opened = await client.open!('abcdefgh', 'bytes=1-2')
+  const chunks: Buffer[] = []
+  for await (const chunk of opened.stream) chunks.push(Buffer.from(chunk))
+  expect(Buffer.concat(chunks)).toEqual(Buffer.from([255, 42]))
+  expect(opened).toMatchObject({contentLength: 2, contentRange: 'bytes 1-2/3'})
   expect(await client.health()).toMatchObject({ nodeId: 'a', usedBytes: 3 })
   await expect(client.put('other_id', new Uint8Array(3))).rejects.toMatchObject({ code: 'storage_full' })
   await client.delete('abcdefgh')

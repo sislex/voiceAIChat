@@ -9,6 +9,7 @@ import {
   type StorageSpace, type StorageUsage, type StorageLinkInfo, type StorageThumbnailSize,
 } from '@voicechat/shared/fileStorage'
 import type { StorageNodeClient } from './client.js'
+import { Readable } from 'node:stream'
 import type { StorageMetadataStore, StorageMetadataTransaction, StoredEntry, StoredSpace, StoredUpload } from './metadata.js'
 import { StorageServiceError } from './errors.js'
 
@@ -323,6 +324,22 @@ export function createFileStorageService(ports: FileStoragePorts) {
         const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
         const bytes = await nodeCall(() => client(entry.nodeId).get(entry.blobId))
         return { entry: entryView(entry), bytes }
+      })
+    },
+    async statFile(userId: string, spaceId: string, input: string) {
+      return ports.metadata.transaction(async tx => {
+        await requireSpace(tx, userId, spaceId, 'read')
+        return entryView(await tx.getEntry(spaceId, path(input)) ?? fail('not_found'))
+      })
+    },
+    async openFile(userId: string, spaceId: string, input: string, range?: string) {
+      return ports.metadata.transaction(async tx => {
+        await requireSpace(tx, userId, spaceId, 'read')
+        const stored = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
+        const node = client(stored.nodeId)
+        if (node.open) return { entry: entryView(stored), ...await nodeCall(() => node.open!(stored.blobId, range)) }
+        const bytes = await nodeCall(() => node.get(stored.blobId))
+        return { entry: entryView(stored), stream: Readable.from(bytes), contentLength: bytes.byteLength }
       })
     },
     async readThumbnail(userId: string, spaceId: string, input: string, size: StorageThumbnailSize) {

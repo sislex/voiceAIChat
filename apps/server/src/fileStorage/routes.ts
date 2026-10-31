@@ -1,7 +1,7 @@
 import { storageBatchResponse } from './batch.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
+import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, storageFileEtag, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 
@@ -97,12 +97,33 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     return reply.type(response.contentType).send(response.stream)
   }, true)
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
-    const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
-    const etag = '"' + file.entry.revision + '"'
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
-    reply.header('etag', etag).header('x-content-type-options', 'nosniff')
-    reply.header('content-disposition', 'attachment')
-    return reply.type(file.entry.mimeType).send(Buffer.from(file.bytes))
+    const filePath = string(r.query.path)
+    const entry = await s.statFile(uid(r), r.params.id, filePath)
+    const etag = storageFileEtag(r.params.id, entry.revision)
+    const lastModified = new Date(entry.updatedAt).toUTCString()
+    reply.header('etag', etag).header('last-modified', lastModified)
+      .header('cache-control', 'private, no-cache').header('accept-ranges', 'bytes')
+    const noneMatch = r.headers['if-none-match']
+    const etagMatches = noneMatch?.split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')
+    const modifiedSince = r.headers['if-modified-since']
+    const notModifiedSince = noneMatch === undefined && modifiedSince !== undefined &&
+      Number.isFinite(Date.parse(modifiedSince)) && Math.floor(entry.updatedAt / 1000) <= Math.floor(Date.parse(modifiedSince) / 1000)
+    if (etagMatches || notModifiedSince) return reply.code(304).send()
+    if (r.headers.range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(r.headers.range)
+      const start = match?.[1] ? Number(match[1]) : undefined
+      const suffix = match?.[1] === '' ? Number(match[2]) : undefined
+      const end = match?.[2] ? Number(match[2]) : undefined
+      if (!match || (start === undefined && (!Number.isSafeInteger(suffix) || suffix! <= 0)) ||
+        (start !== undefined && (!Number.isSafeInteger(start) || start >= entry.size ||
+          (end !== undefined && (!Number.isSafeInteger(end) || start > end)))))
+        return reply.code(416).header('content-range', `bytes */${entry.size}`).send()
+    }
+    const opened = await s.openFile(uid(r), r.params.id, filePath, r.headers.range)
+    reply.header('x-content-type-options', 'nosniff').header('content-disposition', 'attachment')
+      .header('content-length', opened.contentLength)
+    if (opened.contentRange) reply.code(206).header('content-range', opened.contentRange)
+    return reply.type(entry.mimeType).send(opened.stream)
   })
   route('GET', path(STORAGE_REST.thumbnail), async (s, r, reply) => {
     const size = Number(r.query.size)

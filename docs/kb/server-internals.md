@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a520
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -50,7 +50,12 @@ See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
 provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
 multipart output executes and emits one operation at a time under backpressure.
-The existing node read client still buffers one file at a time. Small-content
+Ordinary file downloads use a metadata-only authorization/stat lookup before
+opening the node response stream. This lets Core answer cache validators without
+node I/O and lets byte ranges stream node → Core → browser without buffering the
+file. The node parses one RFC-style byte range and streams it with a bounded
+filesystem read stream. Internal consumers and batch/small-content reads still
+use the buffered client method. Small-content
 listing reads under the metadata transaction to keep content and revision paired.
 Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
 bearer scope, validates both IDs, serializes capacity checks and copies through
