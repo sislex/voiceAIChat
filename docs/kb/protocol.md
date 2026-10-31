@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 7b8467a3
+checked: ba69cb2c
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -50,7 +50,9 @@ name outside the body to upload a raw JSON file. Legacy JSON without a name
 still defaults to `file`. All forms retain the decoded 32 MiB limit and return
 the unchanged `UploadInfo`; the legacy JSON envelope is limited to 64 MiB.
 Cookie mutations still require CSRF, and CORS permits the four metadata headers.
-The contract lives in `packages/shared/src/fileStorage.ts`; see
+Bearer authentication, conversation ownership/tenant validation and upload rate
+limits are shared by all three forms; the storage backend additionally requires
+`conversationId`. The contract lives in `packages/shared/src/fileStorage.ts`; see
 [Core parsing and streaming](server-internals.md#core-file-storage).
 GET `STORAGE_REST.file(spaceId)` returns `ETag: "<spaceId>:<revision>"`,
 `Last-Modified`, `Cache-Control: private, no-cache` and `Accept-Ranges: bytes`.

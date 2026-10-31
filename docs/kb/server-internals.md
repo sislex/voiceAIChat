@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 7b8467a3
+checked: ba69cb2c
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -54,8 +54,10 @@ The coordinator uses the HTTP node client's optional `putStream` method, which
 sends the iterable with fetch `duplex: 'half'`. Custom node clients without this
 method reject streamed writes with `node_unavailable`; byte-array writes remain
 compatible. The existing node handler's buffering is not changed by this Core
-upload path. Machine storage buffers at most 32 MiB and encodes base64 at the
-`AgentRegistry.fsWrite` call. Legacy JSON parsing remains buffered.
+upload path. Machine storage and the Core-local fallback consume the bounded iterable into a
+buffer; only the machine leg encodes it as base64 at `AgentRegistry.fsWrite`.
+Legacy JSON parsing remains buffered. This route adds no environment variable or
+schema migration and continues to use the configured storage node URL/token.
 Multipart parsing must finish before metadata commits, so truncated or extra
 parts cannot produce a successful file record. `fileStorage/chat.test.ts` covers
 both backends, metadata, byte preservation, limits, authentication and CSRF.

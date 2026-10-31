@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 7b8467a3
+checked: ba69cb2c
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -39,9 +39,11 @@ Streaming `writeFile` calls in `packages/file-storage/src/service.ts` retain the
 metadata transaction across upload completion. Each chunk updates the byte count
 and checks the storage size limit and replacement-aware owner quota. Source
 errors are preserved through node transport error mapping. Metadata is written
-only after the stream finishes; failure attempts cleanup of the new blob and
-preserves the previous entry. Post-commit cleanup removes the old blob as before.
-Chat admission separately caps decoded file bytes at 32 MiB in `uploadBody.ts`.
+only after the stream finishes; the multipart source also verifies truncation and
+absence of a second part before it can end successfully. A failure rolls back the
+transaction, attempts cleanup of the new blob and preserves the previous entry;
+post-commit cleanup removes the old blob as before. Chat admission separately caps
+decoded file bytes at 32 MiB in `uploadBody.ts`.
 The existing user/tenant conversation checks, machine access checks, cookie CSRF
 and upload rate limits still apply to all three request forms.
 Direct URL issuance checks the live space ACL. HMAC capabilities bind blob ID,

@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1410. Последние:
+Всего записей: 1411. Последние:
 
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
@@ -75,8 +75,8 @@
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md) — sisl-813-direct-storage
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-upload-kb-reconciliation.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-upload-kb-reconciliation.md) — sisl-812-upload-kb-reconciliation
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-merge-sha-verification.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-merge-sha-verification.md) — sisl-812-merge-sha-verification
+- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-streaming-reconciliation.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-streaming-reconciliation.md) — chat-upload-streaming-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md) — sisl-808-storage-idempotency
 
 ## Исторические планы
 
