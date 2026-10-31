@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_STORAGE_BATCH_OPERATIONS, MAX_STORAGE_INLINE_BYTES, isStorageSmallText, FILE_STORAGE_NODE_PATHS,
-  DEFAULT_STORAGE_QUOTA_BYTES,
+  DEFAULT_STORAGE_QUOTA_BYTES, isStorageCompressible, STORAGE_COMPRESSION_MIN_BYTES,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
   DEFAULT_STORAGE_PART_SIZE,
@@ -19,6 +19,14 @@ import {
   summarizeStorageCluster,
   type StorageNodeInfo,
 } from './fileStorage'
+
+it('defines storage compression types and threshold', () => {
+  expect(STORAGE_COMPRESSION_MIN_BYTES).toBe(1024)
+  for (const type of ['text/plain', 'application/json', 'application/javascript', 'image/svg+xml', 'application/xml', 'application/wasm', 'application/manifest+json'])
+    expect(isStorageCompressible(type + '; charset=utf-8')).toBe(true)
+  for (const type of ['image/png', 'video/mp4', 'audio/mpeg', 'application/zip', 'application/gzip', 'application/octet-stream', 'text/event-stream'])
+    expect(isStorageCompressible(type)).toBe(false)
+})
 
 const node = (id: string, capacityGb: number, usedGb: number, online = true): StorageNodeInfo => ({
   id,

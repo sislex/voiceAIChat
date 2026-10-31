@@ -1,4 +1,5 @@
 import { storageBatchResponse } from './batch.js'
+import { registerStorageCompression, registerStorageDecompression, storageEncoding } from './compression.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
@@ -12,6 +13,7 @@ export function storageError(reply: FastifyReply, error: unknown) {
 type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string; withContent?: string}; Body: unknown }>
 export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService): void {
   root.register(async app => {
+  registerStorageCompression(app)
   app.setErrorHandler((error, _req, reply) => {
     const code = (error as {code?: string}).code
     if (code === 'FST_ERR_CTP_BODY_TOO_LARGE') return storageError(reply, new StorageServiceError('file_too_large'))
@@ -22,6 +24,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   const path = (fn: (id: string) => string) => fn('PARAM').replace('PARAM', ':id')
   const route = (method: HTTPMethods, url: string, handler: (s: FileStorageService, req: Request, reply: FastifyReply) => Promise<unknown>, raw = false) => {
     const register = (scope: FastifyInstance) => scope.route({
+      compress: false,
       method, url, bodyLimit: raw ? MAX_STORAGE_FILE_BYTES : 64 * 1024,
       preHandler: async (req, reply) => {
         if (!req.user) return reply.code(401).send({error: 'forbidden', message: 'Sign in required'})
@@ -33,10 +36,12 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
       },
     })
     if (raw) app.register(async scope => {
+      registerStorageDecompression(scope)
       scope.removeAllContentTypeParsers()
       scope.addContentTypeParser('*', {parseAs: 'buffer'}, (_req, body, done) => done(null, body))
       scope.setErrorHandler((error, _req, reply) => {
-        if ((error as {code?: string}).code === 'FST_ERR_CTP_BODY_TOO_LARGE') return storageError(reply, new StorageServiceError('file_too_large'))
+        const code = (error as {code?: string}).code
+        if (code === 'FST_ERR_CTP_BODY_TOO_LARGE') return storageError(reply, new StorageServiceError('file_too_large'))
         return storageError(reply, error)
       })
       register(scope)
@@ -93,13 +98,13 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   route('POST', path(STORAGE_REST.batch), async (s, r, reply) => {
     if (r.headers['content-type']?.split(';')[0].trim() !== 'application/x-ndjson') throw new StorageServiceError('unsupported_media_type')
     if (!Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    const response = await storageBatchResponse(s, uid(r), r.params.id, r.body)
+    const response = await storageBatchResponse(s, uid(r), r.params.id, r.body, r.headers.range ? undefined : storageEncoding(r.headers['accept-encoding']))
     return reply.type(response.contentType).send(response.stream)
   }, true)
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
     const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
     const etag = '"' + file.entry.revision + '"'
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
+    if (r.headers['if-none-match']?.split(',').some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag)) return reply.code(304).header('etag', etag).send()
     reply.header('etag', etag).header('x-content-type-options', 'nosniff')
     reply.header('content-disposition', 'attachment')
     return reply.type(file.entry.mimeType).send(Buffer.from(file.bytes))
@@ -109,7 +114,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (!STORAGE_THUMBNAIL_SIZES.includes(size as StorageThumbnailSize)) throw new StorageServiceError('invalid_path')
     const thumbnail = await s.readThumbnail(uid(r), r.params.id, string(r.query.path), size as StorageThumbnailSize)
     const etag = `"${thumbnail.entry.revision}-${size}"`
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
+    if (r.headers['if-none-match']?.split(',').some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag)) return reply.code(304).header('etag', etag).send()
     return reply.header('etag', etag).header('x-content-type-options', 'nosniff')
       .header('content-disposition', 'inline').type(thumbnail.mimeType).send(Buffer.from(thumbnail.bytes))
   })

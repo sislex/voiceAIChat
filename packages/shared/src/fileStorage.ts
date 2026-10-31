@@ -7,6 +7,16 @@
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
 /** Largest single file accepted through the Core REST surface. */
 export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Responses and multipart parts compress only when strictly larger than this. */
+export const STORAGE_COMPRESSION_MIN_BYTES = 1024
+export type StorageContentEncoding = 'br' | 'gzip'
+/** Media and archives stay identity; SVG is the explicit image exception. */
+export function isStorageCompressible(mimeType: string): boolean {
+  const mime = mimeType.split(';')[0].trim().toLowerCase()
+  return mime !== 'text/event-stream' && (mime.startsWith('text/') ||
+    mime === 'image/svg+xml' ||
+    /^application\/(?:json|javascript|x-javascript|ecmascript|xml|wasm|[\w.-]+\+json|[\w.-]+\+xml)$/.test(mime))
+}
 /** Thumbnail generation refuses larger source images even when ordinary storage accepts them. */
 export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
 export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
@@ -221,6 +231,11 @@ export interface StorageLinkInfo {
 /**
  * Core REST surface. File bodies are raw bytes (`Content-Type` = file mime type);
  * `PUT .../file` accepts `If-Match: <revision>` and `If-None-Match: *` (create only).
+ * File and inline responses negotiate br/gzip via Accept-Encoding above 1024 bytes.
+ * Batch negotiates each multipart part separately: decode its Content-Encoding before
+ * parsing JSON or consuming bytes; Content-Length is the encoded part length.
+ * Binary media/archives and Range requests remain identity. Responses vary by Accept-Encoding.
+ * Raw uploads accept Content-Encoding: br/gzip; the 64 MiB limit applies after decoding.
  */
 export const STORAGE_REST = {
   batch: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/batch`,

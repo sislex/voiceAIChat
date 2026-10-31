@@ -1,4 +1,6 @@
 import Fastify from 'fastify'
+import { gzipSync, brotliCompressSync, gunzipSync, brotliDecompressSync } from 'node:zlib'
+import { registerHttpCompression } from '../httpCompression.js'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { createFileStorageService } from '../../../../packages/file-storage/src/service.js'
@@ -27,6 +29,7 @@ beforeEach(async () => {
     thumbnail: createThumbnailGenerator(),
   })
   app = Fastify()
+  await registerHttpCompression(app)
   app.addHook('onRequest', async req => {
     const name = req.headers.authorization
     if (name) req.user = {name, role: name === 'owner' ? 'admin' : 'developer'}
@@ -38,6 +41,109 @@ afterEach(async () => {await app.close(); await db.close()})
 const call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, user = 'owner', payload?: object|string, headers = {}) =>
   app.inject({method, url, payload, headers: {...(user ? {authorization: user} : {}), ...headers}})
 const space = async () => (await call('POST', '/api/storage/spaces', 'owner', {kind: 'personal', title: 'Files'})).json().id as string
+
+it('round-trips negotiated storage responses, inline lists and encoded uploads', async () => {
+  quota = 100_000_000
+  const base = '/api/storage/spaces/' + await space()
+  const source = Buffer.from('hello storage '.repeat(300))
+  for (const encoding of ['br', 'gzip'] as const) {
+    const encode = encoding === 'br' ? brotliCompressSync : gzipSync
+    const decode = encoding === 'br' ? brotliDecompressSync : gunzipSync
+    const upload = await call('PUT', base + '/file?path=a', 'owner', encode(source), {
+      'content-type': 'application/javascript', 'content-encoding': encoding,
+    })
+    expect(upload.statusCode, upload.body).toBe(200)
+    expect(upload.json().size).toBe(source.length)
+    for (const endpoint of ['/file?path=a', '/files?withContent=small']) {
+      const response = await call('GET', base + endpoint, 'owner', undefined, {'accept-encoding': encoding})
+      expect(response.headers['content-encoding']).toBe(encoding)
+      expect(response.headers.vary).toContain('Accept-Encoding')
+      expect(Number(response.headers['content-length'])).toBe(response.rawPayload.length)
+      if (endpoint.startsWith('/file?')) {
+        expect((await call('GET', base + endpoint, 'owner', undefined, {'if-none-match': response.headers.etag})).statusCode).toBe(304)
+      }
+      const decoded = decode(response.rawPayload)
+      if (endpoint.startsWith('/file?')) expect(decoded).toEqual(source)
+      else expect(Buffer.from(JSON.parse(decoded.toString()).entries[0].content.data, 'base64')).toEqual(source)
+    }
+  }
+  for (const header of ['br;q=0, gzip;q=0', 'identity;q=1, br;q=0.5']) {
+    const response = await call('GET', base + '/file?path=a', 'owner', undefined, {'accept-encoding': header})
+    expect(response.headers['content-encoding']).toBeUndefined()
+    expect(response.rawPayload).toEqual(source)
+  }
+  const ranged = await call('GET', base + '/file?path=a', 'owner', undefined, {'accept-encoding': 'br', range: 'bytes=0-99'})
+  expect(ranged.headers['content-encoding']).toBeUndefined()
+})
+
+it('leaves binary types and bodies up to 1 KiB unchanged, compressing all supported types', async () => {
+  quota = 100_000
+  const url = '/api/storage/spaces/' + await space() + '/file?path=a'
+  for (const mime of ['text/plain', 'application/json', 'application/javascript', 'image/svg+xml', 'application/xml', 'application/wasm',
+    'image/png', 'audio/mpeg', 'video/mp4', 'application/zip', 'application/octet-stream']) {
+    for (const size of [1024, 1025]) {
+      const source = 'a'.repeat(size)
+      await call('PUT', url, 'owner', source, {'content-type': mime})
+      const response = await call('GET', url, 'owner', undefined, {'accept-encoding': 'br;q=0.2, gzip;q=1'})
+      const compressed = size > 1024 && ['text/plain', 'application/json', 'application/javascript', 'image/svg+xml', 'application/xml', 'application/wasm'].includes(mime)
+      expect(response.headers['content-encoding']).toBe(compressed ? 'gzip' : undefined)
+      expect((compressed ? gunzipSync(response.rawPayload) : response.rawPayload).toString()).toBe(source)
+    }
+  }
+})
+
+it('rejects malformed and unsupported upload encodings', async () => {
+  const url = '/api/storage/spaces/' + await space() + '/file?path=bad'
+  for (const encoding of ['br', 'gzip', 'deflate']) {
+    const response = await call('PUT', url, 'owner', 'not encoded', {'content-type': 'text/plain', 'content-encoding': encoding})
+    expect(response.statusCode, response.body).toBe(encoding === 'deflate' ? 415 : 400)
+  }
+})
+
+it('rejects uploads exceeding the decoded 64 MiB limit without storing a file', async () => {
+  quota = 200_000_000
+  const base = '/api/storage/spaces/' + await space()
+  const bomb = gzipSync(Buffer.alloc(64 * 1024 * 1024 + 1))
+  const response = await call('PUT', base + '/file?path=bomb', 'owner', bomb, {
+    'content-type': 'text/plain', 'content-encoding': 'gzip',
+  })
+  expect(response.statusCode, response.body).toBe(413)
+  expect(response.json().error).toBe('file_too_large')
+  expect((await call('GET', base + '/files')).json().entries).toEqual([])
+})
+
+it('compresses batch parts individually and leaves binary payloads intact', async () => {
+  quota = 2_000_000
+  const base = '/api/storage/spaces/' + await space()
+  const sources = ['a'.repeat(2000), 'b'.repeat(270000), 'c'.repeat(2000)]
+  for (let i = 0; i < sources.length; i++)
+    await call('PUT', base + '/file?path=' + i, 'owner', sources[i], {'content-type': i === 2 ? 'image/png' : 'text/plain'})
+  for (const encoding of ['gzip', 'br']) {
+    const response = await call('POST', base + '/batch', 'owner',
+      JSON.stringify({operations: sources.map((_, i) => ({op: 'read', path: String(i)}))}),
+      {'content-type': 'application/x-ndjson', 'accept-encoding': encoding})
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-encoding']).toBeUndefined()
+    expect(response.headers.vary).toContain('Accept-Encoding')
+    const boundary = '--' + String(response.headers['content-type']).split('boundary=')[1]
+    let rest = response.rawPayload
+    const parts = new Map<string, {body: Buffer; encoded: boolean}>()
+    while (!rest.subarray(0, boundary.length + 2).toString().endsWith('--')) {
+      const end = rest.indexOf('\r\n\r\n')
+      const headers = rest.subarray(0, end).toString()
+      const length = Number(headers.match(/Content-Length: (\d+)/)![1])
+      const bytes = rest.subarray(end + 4, end + 4 + length)
+      const encoded = headers.includes('Content-Encoding:')
+      parts.set(headers.match(/Content-ID: ([^\r]+)/)![1], {body: encoded ? (encoding === 'br' ? brotliDecompressSync(bytes) : gunzipSync(bytes)) : bytes, encoded})
+      rest = rest.subarray(end + 4 + length + 2)
+    }
+    expect(Buffer.from(JSON.parse(parts.get('result-0')!.body.toString()).content.data, 'base64').toString()).toBe(sources[0])
+    expect(parts.get('result-0')!.encoded).toBe(true)
+    expect(parts.get('read-1')!.body.toString()).toBe(sources[1])
+    expect(parts.get('read-1')!.encoded).toBe(true)
+    expect(parts.get('read-2')).toEqual({body: Buffer.from(sources[2]), encoded: false})
+  }
+})
 
 const batch = (base: string, operations: unknown[], payloads: unknown[] = [], user = 'owner') =>
   call('POST', base + '/batch', user, [{ operations }, ...payloads].map(p => JSON.stringify(p)).join('\n'), { 'content-type': 'application/x-ndjson' })

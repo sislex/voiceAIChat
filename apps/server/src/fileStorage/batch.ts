@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { compressStorage } from './compression.js'
+import type { StorageContentEncoding } from '@voicechat/shared/fileStorage'
 import { Readable } from 'node:stream'
 import { MAX_STORAGE_BATCH_OPERATIONS, isStorageSmallText, type StorageBatchOperation, type StorageBatchResult } from '@voicechat/shared/fileStorage'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
@@ -24,10 +26,17 @@ export function parseStorageBatch(body: Buffer) {
   return { operations, payloads }
 }
 
-export async function storageBatchResponse(service: FileStorageService, userId: string, spaceId: string, body: Buffer) {
+export async function storageBatchResponse(service: FileStorageService, userId: string, spaceId: string, body: Buffer, encoding?: StorageContentEncoding) {
   const { operations, payloads } = parseStorageBatch(body)
   await service.checkBatch(userId, spaceId, operations, payloads)
   const boundary = 'storage-' + randomUUID()
+  async function* part(id: string, bytes: Buffer, mime: string, wireMime = mime) {
+    const result = await compressStorage(bytes, mime, encoding)
+    const encoded = result.encoding ? `Content-Encoding: ${result.encoding}\r\n` : ''
+    yield `--${boundary}\r\nContent-Type: ${wireMime}\r\nContent-ID: ${id}\r\n${encoded}Content-Length: ${result.body.length}\r\n\r\n`
+    yield result.body
+    yield '\r\n'
+  }
   async function* parts() {
     for (const [index, op] of operations.entries()) {
       let result: StorageBatchResult, bytes: Uint8Array | undefined
@@ -63,12 +72,8 @@ export async function storageBatchResponse(service: FileStorageService, userId: 
         const e = error instanceof StorageServiceError ? error : new StorageServiceError('node_unavailable')
         result = { status: e.statusCode, error: { error: e.code, message: e.message } }
       }
-      yield `--${boundary}\r\nContent-Type: application/json\r\nContent-ID: result-${index}\r\n\r\n${JSON.stringify(result)}\r\n`
-      if (bytes) {
-        yield `--${boundary}\r\nContent-Type: application/octet-stream\r\nContent-ID: read-${index}\r\nContent-Length: ${bytes.byteLength}\r\n\r\n`
-        yield Buffer.from(bytes)
-        yield '\r\n'
-      }
+      yield* part(`result-${index}`, Buffer.from(JSON.stringify(result)), 'application/json')
+      if (bytes) yield* part(`read-${index}`, Buffer.from(bytes), result.entry!.mimeType, 'application/octet-stream')
     }
     yield `--${boundary}--\r\n`
   }
