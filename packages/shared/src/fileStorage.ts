@@ -168,9 +168,38 @@ export interface MergeStorageSpacesResult {
   previewToken: string
 }
 
+export const MAX_STORAGE_BATCH_OPERATIONS = 500
+export const MAX_STORAGE_INLINE_BYTES = 256 * 1024
+export const MAX_STORAGE_BATCH_BYTES = MAX_STORAGE_FILE_BYTES
+export interface StorageBatchOperation {
+  op: 'read' | 'write' | 'delete' | 'move' | 'copy'
+  path: string
+  to?: string
+  ifMatch?: number
+  createOnly?: boolean
+  bodyRef?: string
+}
+/** NDJSON starts with {operations}, followed by these payload records. */
+export interface StorageBatchPayload { bodyRef: string; base64: string; mimeType: string }
+export interface StorageInlineContent { encoding: 'base64'; data: string }
+export interface StorageBatchResult {
+  status: number
+  entry?: StorageEntry
+  error?: StorageError
+  content?: StorageInlineContent
+  /** Content-ID of the following multipart payload. */
+  bodyRef?: string
+}
+export function isStorageSmallText(entry: Pick<StorageEntry, 'size' | 'mimeType'>): boolean {
+  const mime = entry.mimeType.split(';')[0].trim().toLowerCase()
+  return entry.size <= MAX_STORAGE_INLINE_BYTES &&
+    (mime.startsWith('text/') || ['application/json', 'application/javascript', 'application/xml'].includes(mime) ||
+      mime.endsWith('+json') || mime.endsWith('+xml'))
+}
+
 export interface ListStorageEntriesResponse {
   space: StorageSpace
-  entries: StorageEntry[]
+  entries: Array<StorageEntry & { content?: StorageInlineContent }>
 }
 
 export interface MoveStorageEntryRequest {
@@ -194,6 +223,7 @@ export interface StorageLinkInfo {
  * `PUT .../file` accepts `If-Match: <revision>` and `If-None-Match: *` (create only).
  */
 export const STORAGE_REST = {
+  batch: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/batch`,
   uploads: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads`,
   upload: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}`,
   uploadPart: (spaceId: string, uploadId: string, n: number) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}/parts/${n}`,
@@ -216,6 +246,7 @@ export const STORAGE_REST = {
 
 /** Storage node API. Every call carries a component bearer token issued for Core. */
 export const FILE_STORAGE_NODE_PATHS = {
+  copy: (blobId: string) => `/v1/blobs/${encodeURIComponent(blobId)}/copy`,
   health: '/v1/health',
   blob: (blobId: string) => `/v1/blobs/${encodeURIComponent(blobId)}`,
 } as const

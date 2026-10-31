@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_STORAGE_BATCH_OPERATIONS, MAX_STORAGE_INLINE_BYTES, isStorageSmallText, FILE_STORAGE_NODE_PATHS,
   DEFAULT_STORAGE_QUOTA_BYTES,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
@@ -25,6 +26,17 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
   usedBytes: usedGb * 1e9,
   online,
   lastSeenAt: 1,
+})
+
+it('defines batch paths and the exact small-text content boundary', () => {
+  expect(STORAGE_REST.batch('a/b')).toBe('/api/storage/spaces/a%2Fb/batch')
+  expect(FILE_STORAGE_NODE_PATHS.copy('a/b')).toBe('/v1/blobs/a%2Fb/copy')
+  expect(MAX_STORAGE_BATCH_OPERATIONS).toBe(500)
+  expect(MAX_STORAGE_INLINE_BYTES).toBe(262144)
+  expect(isStorageSmallText({ size: 262144, mimeType: 'text/plain; charset=utf-8' })).toBe(true)
+  expect(isStorageSmallText({ size: 262145, mimeType: 'text/plain' })).toBe(false)
+  expect(isStorageSmallText({ size: 1, mimeType: 'application/octet-stream' })).toBe(false)
+  expect(isStorageSmallText({ size: 1, mimeType: 'application/manifest+json' })).toBe(true)
 })
 
 it('defines resumable upload URLs and limits without changing file URLs', () => {

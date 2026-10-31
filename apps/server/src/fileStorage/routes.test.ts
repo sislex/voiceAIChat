@@ -20,6 +20,7 @@ beforeEach(async () => {
     quota: async () => quota,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
     nodes: () => [0, 1].map(i => ({id: String(i), health: async () => { throw Error('unused') },
+      copy: async (source, target) => { const bytes = blobs.get(source); if (!bytes) throw new StorageServiceError('not_found'); blobs.set(target, bytes.slice()) },
       put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
       get: async id => { const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
       delete: async id => {blobs.delete(id)} })),
@@ -37,6 +38,58 @@ afterEach(async () => {await app.close(); await db.close()})
 const call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, user = 'owner', payload?: object|string, headers = {}) =>
   app.inject({method, url, payload, headers: {...(user ? {authorization: user} : {}), ...headers}})
 const space = async () => (await call('POST', '/api/storage/spaces', 'owner', {kind: 'personal', title: 'Files'})).json().id as string
+
+const batch = (base: string, operations: unknown[], payloads: unknown[] = [], user = 'owner') =>
+  call('POST', base + '/batch', user, [{ operations }, ...payloads].map(p => JSON.stringify(p)).join('\n'), { 'content-type': 'application/x-ndjson' })
+const results = (body: string) => body.split('\r\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line))
+it('executes mixed batches in order, reports independent failures and inlines small text', async () => {
+  const base = '/api/storage/spaces/' + await space()
+  const response = await batch(base, [
+    { op: 'write', path: 'a', bodyRef: 'a', createOnly: true },
+    { op: 'copy', path: 'a', to: 'b', createOnly: true },
+    { op: 'write', path: 'a', bodyRef: 'a', ifMatch: 9 },
+    { op: 'read', path: 'missing' },
+    { op: 'move', path: 'b', to: 'c' },
+    { op: 'read', path: 'c' },
+    { op: 'delete', path: 'a', ifMatch: 9 },
+    { op: 'delete', path: 'a', ifMatch: 1 },
+  ], [{ bodyRef: 'a', base64: 'aGk=', mimeType: 'text/plain' }])
+  expect(response.statusCode).toBe(200)
+  expect(response.headers['content-type']).toContain('multipart/mixed')
+  const rows = results(response.body)
+  expect(rows.map(r => r.status)).toEqual([200, 200, 409, 404, 200, 200, 409, 204])
+  expect(rows[5].content).toEqual({ encoding: 'base64', data: 'aGk=' })
+  expect((await call('GET', base + '/files?withContent=small')).json().entries).toEqual([
+    expect.objectContaining({ path: 'c', content: { encoding: 'base64', data: 'aGk=' } }),
+  ])
+  expect((await call('GET', base + '/files')).json().entries[0].content).toBeUndefined()
+})
+
+it('prechecks quota before mutation and rejects malformed/oversized operation lists', async () => {
+  const base = '/api/storage/spaces/' + await space()
+  quota = 3
+  expect((await batch(base, [{ op: 'write', path: 'a', bodyRef: 'a' }, { op: 'copy', path: 'a', to: 'b' }],
+    [{ bodyRef: 'a', base64: 'aGk=', mimeType: 'text/plain' }])).statusCode).toBe(413)
+  expect((await call('GET', base + '/files')).json().entries).toEqual([])
+  for (const operations of [[], Array.from({ length: 501 }, () => ({ op: 'read', path: 'a' }))])
+    expect((await batch(base, operations)).statusCode).toBe(400)
+  expect((await batch(base, [{ op: 'read', path: 'a' }], [{ bodyRef: 'x', base64: '!', mimeType: 'text/plain' }])).statusCode).toBe(400)
+  expect((await batch(base, Array.from({ length: 500 }, () => ({ op: 'read', path: 'a' })))) .statusCode).toBe(200)
+})
+
+it('streams binary reads and enforces per-operation grants', async () => {
+  const base = '/api/storage/spaces/' + await space()
+  await call('PUT', base + '/file?path=bin', 'owner', 'binary', { 'content-type': 'application/octet-stream' })
+  await call('POST', base + '/shares', 'owner', { userId: 'reader', permission: 'read' })
+  const response = await batch(base, [{ op: 'read', path: 'bin' }, { op: 'delete', path: 'bin' }], [], 'reader')
+  expect(results(response.body)).toEqual([
+    expect.objectContaining({ status: 200, bodyRef: 'read-0' }),
+    expect.objectContaining({ status: 403 }),
+  ])
+  expect(response.body).toContain('Content-Length: 6\r\n\r\nbinary\r\n')
+  expect((await call('GET', base + '/files?withContent=small')).json().entries[0].content).toBeUndefined()
+  expect((await batch(base, [{ op: 'read', path: 'bin' }], [], 'stranger')).statusCode).toBe(403)
+})
 
 it('registers every contract path with authentication, disabled errors and admin-only cluster', async () => {
   expect((await call('GET', '/api/storage/cluster')).json().capacityBytes).toBe(70e9)

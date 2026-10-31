@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { CreateStorageUploadRequest, StorageUploadSession, MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
+  MAX_STORAGE_BATCH_OPERATIONS, isStorageSmallText, type StorageBatchOperation, type ListStorageEntriesResponse,
   DEFAULT_STORAGE_PART_SIZE, MAX_STORAGE_UPLOAD_PARTS, STORAGE_UPLOAD_TTL_MS, MAX_STORAGE_FILE_BYTES, MAX_STORAGE_THUMBNAIL_INPUT_BYTES, STORAGE_THUMBNAIL_SIZES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
   pickStorageNode, storageAllows, strongestStorageAccess, summarizeStorageCluster,
   type CreateStorageSpaceRequest, type UpdateStorageSpaceRequest, type CreateStorageShareRequest, type StorageAccess,
@@ -302,12 +303,18 @@ export function createFileStorageService(ports: FileStoragePorts) {
       })
       await cleanup(entries)
     },
-    async listEntries(userId: string, spaceId: string, prefix?: string) {
+    async listEntries(userId: string, spaceId: string, prefix?: string, withContent = false): Promise<ListStorageEntriesResponse> {
       return ports.metadata.transaction(async tx => {
         const space = await requireSpace(tx, userId, spaceId, 'read')
         const normalized = normalizeStoragePrefix(prefix) ?? fail('invalid_path')
-        return { space: await view(tx, userId, space),
-          entries: (await tx.listEntries(spaceId)).filter(e => e.path.startsWith(normalized)).map(entryView).sort((a, b) => a.path.localeCompare(b.path)) }
+        const entries: ListStorageEntriesResponse['entries'] = []
+        for (const entry of (await tx.listEntries(spaceId)).filter(e => e.path.startsWith(normalized))) {
+          const item: ListStorageEntriesResponse['entries'][number] = entryView(entry)
+          if (withContent && isStorageSmallText(entry)) item.content = { encoding: 'base64',
+            data: Buffer.from(await nodeCall(() => client(entry.nodeId).get(entry.blobId))).toString('base64') }
+          entries.push(item)
+        }
+        return { space: await view(tx, userId, space), entries: entries.sort((a, b) => a.path.localeCompare(b.path)) }
       })
     },
     async readFile(userId: string, spaceId: string, input: string) {
@@ -378,21 +385,80 @@ export function createFileStorageService(ports: FileStoragePorts) {
       if (previous) await cleanup([previous])
       return result
     },
-    async deleteFile(userId: string, spaceId: string, input: string) {
+    /** Conservative preflight: do not credit deletes or replacements that may fail. */
+    async checkBatch(userId: string, spaceId: string, operations: StorageBatchOperation[], payloads: Map<string, { bytes: Uint8Array }>) {
+      if (!Array.isArray(operations) || operations.length < 1 || operations.length > MAX_STORAGE_BATCH_OPERATIONS) fail('invalid_path')
+      await ports.metadata.transaction(async tx => {
+        const space = await requireSpace(tx, userId, spaceId, 'read')
+        const sizes = new Map((await tx.listEntries(spaceId)).map(e => [e.path, e.size]))
+        let growth = 0
+        for (const op of operations) {
+          if (!op || !['read', 'write', 'delete', 'move', 'copy'].includes(op.op)) continue
+          const source = normalizeStoragePath(op.path)
+          if (!source) continue
+          if (op.op === 'write') {
+            const size = payloads.get(op.bodyRef ?? '')?.bytes.byteLength
+            if (size !== undefined) { growth += size; sizes.set(source, Math.max(sizes.get(source) ?? 0, size)) }
+          } else if ((op.op === 'copy' || op.op === 'move') && op.to) {
+            const target = normalizeStoragePath(op.to)
+            if (target) {
+              const size = sizes.get(source) ?? 0
+              if (op.op === 'copy') growth += size
+              sizes.set(target, Math.max(sizes.get(target) ?? 0, size))
+            }
+          }
+        }
+        const usage = await tx.ownerUsage(space.ownerId), quotaBytes = await ports.quota(space.ownerId)
+        if (growth && (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
+          !fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes }, growth))) fail('quota_exceeded')
+      })
+    },
+    async copy(userId: string, spaceId: string, from: string, to: string, options: WriteStorageFileOptions = {}) {
+      let created: StoredEntry | undefined, previous: StoredEntry | null = null
+      try {
+        const result = await ports.metadata.transaction(async tx => {
+          const space = await requireSpace(tx, userId, spaceId, 'write')
+          const source = await tx.getEntry(spaceId, path(from)) ?? fail('not_found')
+          const target = path(to)
+          previous = await tx.getEntry(spaceId, target)
+          if ((options.createOnly && previous) || (options.ifMatch !== undefined && options.ifMatch !== previous?.revision)) fail('revision_conflict')
+          const usage = await tx.ownerUsage(space.ownerId), quotaBytes = await ports.quota(space.ownerId)
+          if (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
+            !fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes }, source.size, previous?.size ?? 0)) fail('quota_exceeded')
+          const node = client(source.nodeId)
+          if (!node.copy) fail('node_unavailable')
+          const entry = { ...source, path: target, blobId: ports.newId(), revision: (previous?.revision ?? 0) + 1,
+            updatedBy: userId, updatedAt: ports.now() }
+          await nodeCall(() => node.copy!(source.blobId, entry.blobId))
+          created = entry
+          await tx.putEntry(entry)
+          await touch(tx, space)
+          return entryView(entry)
+        })
+        if (previous) await cleanup([previous])
+        return result
+      } catch (error) {
+        if (created) await cleanup([created])
+        throw error
+      }
+    },
+    async deleteFile(userId: string, spaceId: string, input: string, options: WriteStorageFileOptions = {}) {
       const entry = await ports.metadata.transaction(async tx => {
         const space = await requireSpace(tx, userId, spaceId, 'write')
         const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
+        if (options.ifMatch !== undefined && options.ifMatch !== entry.revision) fail('revision_conflict')
         await tx.deleteEntry(spaceId, entry.path)
         await touch(tx, space)
         return entry
       })
       await cleanup([entry])
     },
-    async move(userId: string, spaceId: string, from: string, to: string) {
+    async move(userId: string, spaceId: string, from: string, to: string, options: WriteStorageFileOptions = {}) {
       return ports.metadata.transaction(async tx => {
         const space = await requireSpace(tx, userId, spaceId, 'write')
         const source = path(from), target = path(to)
         const entry = await tx.getEntry(spaceId, source) ?? fail('not_found')
+        if (options.ifMatch !== undefined && options.ifMatch !== entry.revision) fail('revision_conflict')
         if (source === target) return entryView(entry)
         if (await tx.getEntry(spaceId, target)) fail('revision_conflict')
         const moved = { ...entry, path: target, updatedAt: ports.now(), updatedBy: userId }

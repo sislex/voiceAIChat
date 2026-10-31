@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 15683f3af
+checked: 15f87e361
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -37,6 +37,29 @@ updates return 400; missing users return 404; an Identity without
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
+
+POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
+encoded request maximum). The first line is `{"operations":[...]}`, with 1..500
+ordered operations `{op,path,to?,ifMatch?,createOnly?,bodyRef?}`; subsequent lines
+are `{bodyRef,base64,mimeType}` payload records. References must be unique and
+base64 canonical. Operations are read/write/delete/move/copy; writes reference
+a payload record. Missing payloads, paths and revision conflicts are reported
+per operation. Malformed envelopes/payload records reject the request before
+mutation. Each operation commits independently; there is no batch rollback.
+
+The response is streamed `multipart/mixed`. Each operation has an
+`application/json` part with `Content-ID: result-N` (zero-based), carrying
+`{status,entry?,error?,content?,bodyRef?}`. Small text reads (at most 256 KiB)
+use `content:{encoding:"base64",data}`; other reads have `bodyRef:"read-N"`
+and a following octet-stream part with that Content-ID and Content-Length.
+Clients must parse multipart boundaries, not split arbitrary binary on lines.
+A disconnected response can leave completed mutations committed.
+GET files with `?withContent=small` adds the same content object to eligible
+entries; ordinary listing is unchanged. Text MIME types include text/*,
+JSON, JavaScript, XML and +json/+xml suffixes.
+Copy replaces the destination unless createOnly is set; its ifMatch checks the
+destination revision. Move refuses occupied destinations and checks the source
+revision; delete also checks the source. Write keeps existing revision semantics.
 
 Resumable uploads use POST `STORAGE_REST.uploads(spaceId)` with
 `{path,size,mimeType,ifMatch?,createOnly?}`, returning

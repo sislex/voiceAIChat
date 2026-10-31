@@ -49,3 +49,15 @@ it('does not follow redirects with node credentials and sends a bounded request'
     redirect: 'error', signal: expect.any(AbortSignal), headers: expect.objectContaining({ authorization: 'Bearer secret' }),
   }))
 })
+
+it('requests node-side copy with only source and destination identifiers', async () => {
+  const transport = vi.fn(async () => new Response(null, { status: 204 }))
+  const client = createStorageNodeClient({ id: 'a', url: 'http://node', token: 'secret', fetchImpl: transport })
+  await client.copy!('source00', 'target00')
+  expect(transport).toHaveBeenCalledOnce()
+  expect(transport).toHaveBeenCalledWith(new URL('http://node/v1/blobs/source00/copy'), expect.objectContaining({
+    method: 'POST', body: Buffer.from(JSON.stringify({ targetId: 'target00' })),
+  }))
+  await expect(client.copy!('source00', '../escape')).rejects.toMatchObject({ code: 'invalid_path' })
+  expect(transport).toHaveBeenCalledOnce()
+})

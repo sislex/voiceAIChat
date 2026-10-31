@@ -1,6 +1,6 @@
 import { nodeUploads } from "./uploads.js"
 import Fastify from 'fastify'
-import { mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
@@ -81,6 +81,27 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
         throw error
       }
     }
+    routes.post<{ Params: { blobId: string }; Body: Buffer }>('/v1/blobs/:blobId/copy', async (req, reply) => {
+      let targetId: unknown
+      try { targetId = JSON.parse(req.body.toString()).targetId } catch { throw new StorageServiceError('invalid_path') }
+      if (typeof targetId !== 'string') throw new StorageServiceError('invalid_path')
+      const source = path(req.params.blobId), target = path(targetId)
+      await exclusive(async () => {
+        const bytes = await size(source)
+        if (bytes === null) throw new StorageServiceError('not_found')
+        if (await size(target) !== null) throw new StorageServiceError('revision_conflict')
+        if (usedBytes + bytes > options.capacityBytes) throw new StorageServiceError('storage_full')
+        const temporary = join(options.directory, '.tmp-' + randomUUID())
+        try {
+          await copyFile(source, temporary)
+          await rename(temporary, target)
+          usedBytes += bytes
+        } finally {
+          await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error })
+        }
+      })
+      return reply.code(204).send()
+    })
     routes.put<{ Params: { blobId: string }; Body: Buffer }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)
       const bytes = req.body ?? Buffer.alloc(0)

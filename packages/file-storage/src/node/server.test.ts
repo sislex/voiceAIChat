@@ -31,6 +31,23 @@ async function fixture(capacityBytes = 10) {
   return { app, root, options, headers, put, get, health }
 }
 describe('storage node', () => {
+  it('copies locally into a new blob, accounts capacity and preserves the source', async () => {
+    const f = await fixture(6)
+    await f.put('source00', 'abc')
+    const copy = (targetId: string) => f.app.inject({ method: 'POST', url: '/v1/blobs/source00/copy', headers: f.headers, payload: JSON.stringify({ targetId }) })
+    expect((await copy('target00')).statusCode).toBe(204)
+    expect((await f.get('target00')).body).toBe('abc')
+    expect((await f.health()).usedBytes).toBe(6)
+    expect((await copy('target00')).statusCode).toBe(409)
+    expect((await copy('target01')).statusCode).toBe(507)
+    expect((await copy('../escape')).statusCode).toBe(400)
+    await f.app.inject({ method: 'DELETE', url: '/v1/blobs/target00', headers: f.headers })
+    fault.rename = true
+    expect((await copy('target02')).statusCode).toBe(507)
+    expect((await f.health()).usedBytes).toBe(3)
+    expect((await f.get('source00')).body).toBe('abc')
+    expect((await readdir(f.options.directory)).sort()).toEqual(['source00'])
+  })
   it('authenticates health and every blob operation, including token rotation', async () => {
     const f = await fixture()
     for (const method of ['GET', 'PUT', 'DELETE'] as const)

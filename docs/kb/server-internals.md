@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 15683f3af
+checked: 15f87e361
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,17 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
+provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
+multipart output executes and emits one operation at a time under backpressure.
+The existing node read client still buffers one file at a time. Small-content
+listing reads under the metadata transaction to keep content and revision paired.
+Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
+bearer scope, validates both IDs, serializes capacity checks and copies through
+a temporary file plus rename. No file bytes pass through Core for copy.
+A missing node copy capability fails explicitly; there is no transfer fallback.
+No new environment variables or schema migrations are required.
 
 Core exposes resumable upload routes through the storage coordinator.
 Part transfers release the metadata transaction after authorization, allowing

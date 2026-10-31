@@ -3,6 +3,7 @@ import { FILE_STORAGE_NODE_PATHS, STORAGE_ERROR_STATUS, isStorageBlobId,
 import { StorageServiceError } from './errors.js'
 
 export interface StorageNodeClient {
+  copy?(sourceId: string, targetId: string): Promise<void>
   readonly id: string
   createUpload?(id: string, options: { size: number; partSize: number; expiresAt: number; blobId: string }): Promise<void>
   putPart?(id: string, n: number, bytes: Uint8Array): Promise<void>
@@ -68,6 +69,10 @@ export function createStorageNodeClient(options: {
         if (error instanceof StorageServiceError) throw error
         throw new StorageServiceError('node_unavailable')
       }
+    },
+    async copy(sourceId, targetId) {
+      blobPath(sourceId); blobPath(targetId)
+      await request(FILE_STORAGE_NODE_PATHS.copy(sourceId), 'POST', Buffer.from(JSON.stringify({ targetId })))
     },
     async put(id, bytes) { await request(blobPath(id), 'PUT', bytes) },
     async get(id) {

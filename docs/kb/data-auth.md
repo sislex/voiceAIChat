@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 15683f3af
+checked: 15f87e361
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,17 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Batch preflight checks the owner's current usage plus upload reservations and
+the conservative sum of all write/copy sizes before any mutation. It does not
+credit deletions or replacements because those operations may fail independently.
+It follows possible write/copy/move sizes in request order, so copying a file
+created earlier in the batch is charged too. This can reject a batch whose final
+net size would fit; split such requests when necessary. Each operation rechecks
+ACL, revision and quota in its own serialized metadata transaction, including
+concurrent changes after preflight. Copy creates a new blob and publishes its
+entry only after node success; rollback cleans the new blob and replacement
+cleanup happens after commit.
 
 Upload sessions are persisted in `storage_uploads` through both metadata
 adapters. Creation reserves the full declared size against the space owner's

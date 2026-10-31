@@ -1,3 +1,4 @@
+import { storageBatchResponse } from './batch.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
@@ -8,7 +9,7 @@ export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
   throw error
 }
-type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string}; Body: unknown }>
+type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string; withContent?: string}; Body: unknown }>
 export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService): void {
   root.register(async app => {
   app.setErrorHandler((error, _req, reply) => {
@@ -85,7 +86,16 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     return s.mergeDuplicates(uid(r), r.params.id, { dryRun: b.dryRun as boolean | undefined, previewToken: b.previewToken as string | undefined })
   })
   route('DELETE', path(STORAGE_REST.space), async (s, r, reply) => { await s.deleteSpace(uid(r), r.params.id); return reply.code(204).send() })
-  route('GET', path(STORAGE_REST.files), (s, r) => s.listEntries(uid(r), r.params.id, r.query.prefix))
+  route('GET', path(STORAGE_REST.files), (s, r) => {
+    if (r.query.withContent !== undefined && r.query.withContent !== 'small') throw new StorageServiceError('invalid_path')
+    return s.listEntries(uid(r), r.params.id, r.query.prefix, r.query.withContent === 'small')
+  })
+  route('POST', path(STORAGE_REST.batch), async (s, r, reply) => {
+    if (r.headers['content-type']?.split(';')[0].trim() !== 'application/x-ndjson') throw new StorageServiceError('unsupported_media_type')
+    if (!Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
+    const response = await storageBatchResponse(s, uid(r), r.params.id, r.body)
+    return reply.type(response.contentType).send(response.stream)
+  }, true)
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
     const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
     const etag = '"' + file.entry.revision + '"'
