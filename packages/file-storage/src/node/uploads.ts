@@ -1,3 +1,4 @@
+import type { DirectClaims } from '../direct.js'
 import type { FastifyInstance } from 'fastify'
 import { mkdir, readdir, readFile, writeFile, rename, rm, open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -41,7 +42,7 @@ export async function nodeUploads(directory: string, capacity: number, accountin
     for (const [id, m] of sessions) if (m.expiresAt <= Date.now()) await remove(id)
   }
   await expire()
-  return (app: FastifyInstance) => {
+  const register = (app: FastifyInstance) => {
     const timer = setInterval(() => { void accounting.exclusive(expire).catch(() => {}) }, 60_000)
     timer.unref()
     app.addHook('onClose', async () => { clearInterval(timer); await accounting.exclusive(async () => {}) })
@@ -125,4 +126,21 @@ export async function nodeUploads(directory: string, capacity: number, accountin
       return reply.code(204).send()
     })
   }
+  return Object.assign(register, {
+    async directPut(claims: DirectClaims, bytes: Buffer) {
+      await accounting.exclusive(async () => {
+        const id = claims.uploadId!
+        const m = sessions.get(id)
+        if (!m || m.expiresAt <= Date.now()) return fail('not_found')
+        if (m.blobId !== claims.blobId || m.size !== claims.size || m.expiresAt !== claims.expiresAt ||
+          bytes.length !== m.size || composed.has(id)) fail('revision_conflict')
+        if (m.size === 0) return
+        const temp = join(folder(id), '.tmp-' + randomUUID())
+        try {
+          await writeFile(temp, bytes, {flag: 'wx', mode: 0o600})
+          await rename(temp, join(folder(id), '0'))
+        } finally { await rm(temp, {force: true}) }
+      })
+    },
+  })
 }

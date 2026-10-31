@@ -2,7 +2,7 @@ import { storageBatchResponse } from './batch.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_COMPRESSION_MIN_BYTES, STORAGE_THUMBNAIL_SIZES,
-  isStorageCompressible, storageContentEncoding, storageFileEtag, type CreateStorageUploadRequest,
+  isStorageCompressible, storageContentEncoding, storageFileEtag, type CreateStorageUploadRequest, type StorageFileUrlRequest,
   type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
@@ -72,6 +72,11 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw new StorageServiceError('invalid_path')
     return req.body as Record<string, unknown>
   }
+  route('POST', path(STORAGE_REST.fileUrl), (s, r, reply) => {
+    reply.header('cache-control', 'private, no-store')
+    return s.fileUrl(uid(r), r.params.id, body(r) as unknown as StorageFileUrlRequest)
+  })
+  route('POST', path(STORAGE_REST.fileCommit), (s, r) => s.completeUpload(uid(r), r.params.id, string(body(r).uploadId)))
   const uploads = path(STORAGE_REST.uploads)
   const upload = uploads + '/:uploadId'
   route('POST', uploads, (s, r) => s.createUpload(uid(r), r.params.id, body(r) as unknown as CreateStorageUploadRequest))

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { createComponentRuntime } from '@sislexa/component-runtime'
 import { createStorageNodeServer } from './server.js'
@@ -11,6 +12,8 @@ const runtime = env.SISLEXA_COMPONENT_CONFIG ? await createComponentRuntime({
 }) : undefined
 try {
   const app = await createStorageNodeServer({
+    directSecret: env.VC_FILE_STORAGE_DIRECT_SECRET_FILE ? (await readFile(env.VC_FILE_STORAGE_DIRECT_SECRET_FILE, 'utf8')).trim() : undefined,
+    allowedOrigins: JSON.parse(env.VC_FILE_STORAGE_UI_ORIGINS ?? '[]'),
     nodeId: env.VC_FILE_STORAGE_NODE_ID ?? '',
     directory: env.VC_FILE_STORAGE_DIR ?? '',
     capacityBytes: env.VC_FILE_STORAGE_CAPACITY_BYTES ? Number(env.VC_FILE_STORAGE_CAPACITY_BYTES) : NaN,

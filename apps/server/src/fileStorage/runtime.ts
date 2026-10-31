@@ -8,6 +8,11 @@ import type { FileStorageConfig } from './config.js'
 import { createThumbnailGenerator } from './thumbnail.js'
 
 export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageConfig, injected?: StorageNodeClient[]) {
+  const directNodes = new Map(await Promise.all(config.nodes.filter(n => n.publicUrl).map(async n => {
+    const secret = (await readFile(n.directSecretFile!, 'utf8')).trim()
+    if (secret.length < 32) throw new Error('Storage direct secret must contain at least 32 characters')
+    return [n.id, {publicUrl: n.publicUrl!, secret}] as const
+  })))
   const clients = injected ?? await Promise.all(config.nodes.map(async node => createStorageNodeClient({
     id: node.id, url: node.url, token: (await readFile(node.tokenFile, 'utf8')).trim(),
   })))
@@ -30,6 +35,7 @@ export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageC
   timer.unref()
   const identity = db.identity as typeof db.identity & { getUserStorageQuota?: (userId: string) => Promise<number | null> }
   const service = createFileStorageService({
+    directNode: id => directNodes.get(id),
     partSize: config.partSize, metadata: db.storageMetadata(), nodes: () => clients, nodeInfo: () => structuredClone(info),
     quota: async userId => storageQuotaBytes(await identity.getUserStorageQuota?.(userId), config.defaultQuotaBytes),
     now: Date.now, newId: randomUUID, thumbnail: createThumbnailGenerator(),

@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 0d27f052d
+checked: df60202a1
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,20 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Direct URL issuance checks the live space ACL. HMAC capabilities bind blob ID,
+method, byte count, MIME and expiry, and for writes the upload reservation ID.
+They expire within five minutes. Issued read capabilities remain usable until
+expiry even after share revocation; new issuance and write commit check live ACLs.
+Keep URLs out of logs and treat them as credentials. Direct responses use
+`Cache-Control: private, no-store`.
+
+Direct writes reuse durable `storage_uploads` reservations and reserve the full
+declared size against owner quota, conservatively including replacements and
+other pending uploads. The pending write binds the current revision (or absence);
+commit refuses intervening replacement. Parts stay invisible until node assembly
+and SQL metadata commit succeed. Expiry and deleted-space cleanup use the existing
+startup/minute sweeps; offline-node reservations remain charged until cleanup.
 
 File cache validation performs the same read-grant check as a download, but a
 304 stops after metadata and does not contact the storage node. A subsequent
@@ -834,7 +848,7 @@ Postgres идёт для всей базы сразу, одним кодом р�
 `LOGIN_LOCK_*`, `DbDeps`…) по-прежнему импортируются из `db/database.js` через
 реэкспорт. Зачем так и что дальше — `docs/plans/db-repositories.md`.
 
-Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = \`…\``), поэтому в
+Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = `…``), поэтому в
 SQL-комментариях внутри него **нельзя обратных кавычек**: они закрывают литерал, и
 файл перестаёт разбираться (typecheck падает не в комментарии, а где-то ниже — искать
 приходится глазами). Имена таблиц и колонок в комментариях пишутся без кавычек.

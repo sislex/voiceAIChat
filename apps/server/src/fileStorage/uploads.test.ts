@@ -1,3 +1,5 @@
+import { signDirect, verifyDirect } from '../../../../packages/file-storage/src/direct.js'
+import { STORAGE_REST } from '@voicechat/shared/fileStorage'
 import Fastify from 'fastify'
 import { afterEach, expect, it } from 'vitest'
 import { mkdtemp, writeFile, rm, readdir } from 'node:fs/promises'
@@ -12,11 +14,12 @@ import { registerFileStorageRoutes } from './routes.js'
 
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn() })
-async function fixture(quota = 100) {
+async function fixture(quota = 100, direct = false) {
   const root = await mkdtemp(join(tmpdir(), 'storage-upload-'))
   cleanups.push(() => rm(root, { recursive: true, force: true }))
   const tokenFile = join(root, 'token'); await writeFile(tokenFile, 'test')
-  const options = {nodeId: 'node', directory: join(root, 'blobs'), tokenFile, capacityBytes: 1000}
+  const secret = 'test-direct-secret-32-characters-long'
+  const options = {directSecret: secret, allowedOrigins: ['https://ui.example'], nodeId: 'node', directory: join(root, 'blobs'), tokenFile, capacityBytes: 1000}
   let node = await createStorageNodeServer(options)
   cleanups.push(() => node.close())
   const client = createStorageNodeClient({id: 'node', url: 'http://localhost', token: 'test',
@@ -29,7 +32,7 @@ async function fixture(quota = 100) {
   const db = new VoiceChatDb(':memory:'); await db.ready
   cleanups.push(() => db.close())
   let now = Date.now()
-  const ports = {metadata: db.storageMetadata(), nodes: () => [client],
+  const ports = {directNode: () => direct ? {publicUrl: 'https://node.example', secret} : undefined, metadata: db.storageMetadata(), nodes: () => [client],
     nodeInfo: () => [{id: 'node', online: true, capacityBytes: 1000, usedBytes: 0, lastSeenAt: now}],
     quota: async () => quota, now: () => now, newId: randomUUID, partSize: 3}
   let service = createFileStorageService(ports)
@@ -46,7 +49,19 @@ async function fixture(quota = 100) {
     expect(r.statusCode).toBe(200)
     return r.json().uploadId as string
   }
-  return {root, db, call, create, client, space, get service() { return service }, advance() { now += 86_400_001 },
+  const fileUrl = (operation: 'read' | 'write', extra = {}, user = 'owner') => app.inject({
+    method: 'POST', url: STORAGE_REST.fileUrl(space.id), headers: {authorization: user},
+    payload: {operation, path: 'file', ...(operation === 'write' ? {size: 3, mimeType: 'text/plain'} : {}), ...extra},
+  })
+  const commit = (uploadId: string, user = 'owner') => app.inject({
+    method: 'POST', url: STORAGE_REST.fileCommit(space.id), headers: {authorization: user}, payload: {uploadId},
+  })
+  const transfer = (url: string, method: 'GET' | 'PUT' | 'OPTIONS', payload?: string, headers = {}) => {
+    const parsed = new URL(url)
+    return node.inject({method, url: parsed.pathname + parsed.search, payload,
+      headers: {'content-type': 'text/plain', origin: 'https://ui.example', ...headers}})
+  }
+  return {root, db, call, create, client, space, fileUrl, commit, transfer, secret, get service() { return service }, advance() { now += 86_400_001 },
     async restart() { await node.close(); node = await createStorageNodeServer(options); service = createFileStorageService(ports) }}
 }
 
@@ -106,4 +121,77 @@ it('rejects foreign sessions, bad part lengths and stale revisions; expires sess
   await empty.call('PUT', `/${replacement}/parts/0`, 'abc')
   await empty.service.writeFile('owner', empty.space.id, 'file', Buffer.from('new'))
   expect((await empty.call('POST', `/${replacement}/complete`)).statusCode).toBe(409)
+})
+
+it('direct PUT survives restart, stays invisible until commit, then reads ranges without Core bytes', async () => {
+  const f = await fixture(100, true)
+  const response = await f.fileUrl('write')
+  expect(response.statusCode).toBe(200)
+  const link = response.json()
+  expect(link).toMatchObject({method: 'PUT', headers: {'content-type': 'text/plain'}})
+  expect(link.expiresAt - Date.now()).toBeLessThanOrEqual(300_000)
+  expect((await f.commit(link.uploadId)).statusCode).toBe(409)
+  expect((await f.transfer(link.url, 'OPTIONS')).headers['access-control-allow-origin']).toBe('https://ui.example')
+  expect((await f.transfer(link.url, 'PUT', 'abc')).statusCode).toBe(204)
+  expect((await f.service.listEntries('owner', f.space.id)).entries).toEqual([])
+  await f.restart()
+  expect((await f.commit(link.uploadId, 'other')).statusCode).toBe(403)
+  expect((await f.commit(link.uploadId)).json()).toMatchObject({path: 'file', size: 3, revision: 1})
+  expect((await f.transfer(link.url, 'PUT', 'bad')).statusCode).toBe(404)
+  const read = (await f.fileUrl('read')).json()
+  const range = await f.transfer(read.url, 'GET', undefined, {range: 'bytes=1-2'})
+  expect(range.statusCode).toBe(206)
+  expect(range.body).toBe('bc')
+  expect(range.headers['content-range']).toBe('bytes 1-2/3')
+  expect(range.headers['content-type']).toContain('text/plain')
+  expect((await f.client.health()).usedBytes).toBe(3)
+})
+
+it('direct URLs reject tampering, expiry, wrong method, MIME, origin and size', async () => {
+  const f = await fixture(100, true)
+  const link = (await f.fileUrl('write')).json()
+  const parsed = new URL(link.url)
+  const claims = verifyDirect(parsed.searchParams.get('sig')!, f.secret)
+  const invalid = new URL(link.url)
+  invalid.searchParams.set('sig', 'x' + parsed.searchParams.get('sig'))
+  expect((await f.transfer(invalid.href, 'PUT', 'abc')).statusCode).toBe(403)
+  invalid.searchParams.set('sig', signDirect({...claims, expiresAt: Date.now() - 1}, f.secret))
+  expect((await f.transfer(invalid.href, 'PUT', 'abc')).statusCode).toBe(403)
+  expect((await f.transfer(link.url.replace(claims.blobId, 'differentblob'), 'PUT', 'abc')).statusCode).toBe(403)
+  expect((await f.transfer(link.url, 'GET')).statusCode).toBe(403)
+  expect((await f.transfer(link.url, 'PUT', 'abc', {'content-type': 'image/png'})).statusCode).toBe(403)
+  expect((await f.transfer(link.url, 'PUT', 'abc', {origin: 'https://evil.example'})).statusCode).toBe(403)
+  expect((await f.transfer(link.url, 'PUT', 'ab')).statusCode).toBe(403)
+  expect((await f.transfer(link.url, 'PUT', 'abcd')).statusCode).toBe(403)
+  expect((await f.commit(link.uploadId)).statusCode).toBe(409)
+})
+
+it('direct reservations enforce quota and revision, expire and release capacity', async () => {
+  const f = await fixture(3, true)
+  const link = (await f.fileUrl('write')).json()
+  expect((await f.fileUrl('write', {path: 'other', size: 1})).statusCode).toBe(413)
+  await expect(f.service.writeFile('owner', f.space.id, 'other', Buffer.from('a'))).rejects.toMatchObject({code: 'quota_exceeded'})
+  await f.transfer(link.url, 'PUT', 'abc')
+  f.advance()
+  await f.service.expireUploads()
+  expect((await f.commit(link.uploadId)).statusCode).toBe(404)
+  expect((await f.client.health()).usedBytes).toBe(0)
+  const g = await fixture(100, true)
+  const pending = (await g.fileUrl('write')).json()
+  await g.transfer(pending.url, 'PUT', 'abc')
+  await g.service.writeFile('owner', g.space.id, 'file', Buffer.from('new'))
+  expect((await g.commit(pending.uploadId)).statusCode).toBe(409)
+})
+
+it('falls back to authenticated Core paths with write conditions and no reservation', async () => {
+  const f = await fixture()
+  const link = (await f.fileUrl('write', {createOnly: true})).json()
+  expect(link).toMatchObject({url: STORAGE_REST.file(f.space.id) + '?path=file', method: 'PUT',
+    headers: {'content-type': 'text/plain', 'if-none-match': '*'}})
+  expect(link.uploadId).toBeUndefined()
+  expect(await f.db.storageMetadata().transaction(tx => tx.listUploads())).toEqual([])
+  expect((await f.fileUrl('write', {}, 'other')).statusCode).toBe(403)
+  await f.service.writeFile('owner', f.space.id, 'file', Buffer.from('abc'))
+  expect((await f.fileUrl('read')).json()).toMatchObject({url: link.url, method: 'GET'})
+  expect((await f.fileUrl('write', {ifMatch: 7})).statusCode).toBe(409)
 })

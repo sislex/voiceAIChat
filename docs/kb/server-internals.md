@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 0d27f052d
+checked: df60202a1
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,18 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Direct transfer uses `packages/file-storage/src/direct.ts` for HMAC-SHA256
+capabilities and `/v1/direct/:blobId?sig=...` on the node. Core loads per-node
+signing configuration at startup. A direct PUT writes one atomic staged part;
+Core's authenticated file/commit assembles it on the node and publishes metadata.
+The existing SQL and memory upload adapters persist the pending revision and
+five-minute deadline without a schema change. Node manifests survive restart.
+Completed/aborted sessions reject further signed PUTs, so URL replay cannot
+alter published bytes. Direct writes share the multipart capacity reservation
+of twice the declared size (staging plus assembly); quota reserves it once.
+Core carries only metadata for these transfers. The node still buffers each PUT
+up to 64 MiB and streams GET/Range from disk. Client switching is separate work.
 
 Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
 provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;

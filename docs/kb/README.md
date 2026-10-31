@@ -44,7 +44,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3af card-SISL-818 B01 |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-01 | ✓ |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-31 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 0d27f052d card-SISL-816 B01 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-31 | ⚠ 5 коммит(ов) в areas после проверенного SHA: df60202a1 card-SISL-817 B01 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-31 | ⚠ код изменён 2026-11-01, сверка 2026-10-31 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1407. Последние:
+Всего записей: 1408. Последние:
 
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md) — sisl-816-storage-http-cache-range
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md) — sisl-815-storage-batch
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md) — sisl-814-multipart-uploads
+- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md) — sisl-813-direct-storage
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md) — sisl-808-storage-idempotency
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md) — sisl-808-storage-idempotency-gaps
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md) — sisl-804-freshness-reconciliation
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 
 ## Исторические планы
 

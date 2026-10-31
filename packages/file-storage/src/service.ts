@@ -1,3 +1,5 @@
+import { directUrl, type DirectNodeConfig } from './direct.js'
+import { STORAGE_REST, STORAGE_DIRECT_TTL_MS, type StorageFileUrlRequest, type StorageDirectUrl } from '@voicechat/shared/fileStorage'
 import { createHash } from 'node:crypto'
 import type { CreateStorageUploadRequest, StorageUploadSession, MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
@@ -14,6 +16,7 @@ import type { StorageMetadataStore, StorageMetadataTransaction, StoredEntry, Sto
 import { StorageServiceError } from './errors.js'
 
 export interface FileStoragePorts {
+  directNode?(nodeId: string): DirectNodeConfig | undefined
   partSize?: number
   metadata: StorageMetadataStore
   nodes(): StorageNodeClient[]
@@ -111,37 +114,70 @@ export function createFileStorageService(ports: FileStoragePorts) {
   async function reservations(tx: StorageMetadataTransaction, ownerId: string) {
     return (await tx.listUploads()).filter(u => u.ownerId === ownerId).reduce((n, u) => n + u.size, 0)
   }
+  async function reserveUpload(userId: string, spaceId: string, request: CreateStorageUploadRequest, direct = false) {
+    let allocated: StoredUpload | undefined
+    try {
+      return await ports.metadata.transaction(async tx => {
+        const space = await requireSpace(tx, userId, spaceId, 'write')
+        const normalized = path(request.path)
+        if (direct && request.size > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
+        if (!Number.isSafeInteger(request.size) || request.size < 0 ||
+          Math.ceil(request.size / (direct ? MAX_STORAGE_FILE_BYTES : partSize)) > MAX_STORAGE_UPLOAD_PARTS ||
+          typeof request.mimeType !== 'string' || !request.mimeType.trim() || request.mimeType.length > 255 ||
+          /[\r\n]/.test(request.mimeType) ||
+          (request.createOnly !== undefined && typeof request.createOnly !== 'boolean') ||
+          (request.ifMatch !== undefined && (!Number.isSafeInteger(request.ifMatch) || request.ifMatch < 1))) fail('invalid_path')
+        const previous = await tx.getEntry(spaceId, normalized)
+        if ((request.createOnly && previous) || (request.ifMatch !== undefined && request.ifMatch !== previous?.revision)) fail('revision_conflict')
+        const usage = await tx.ownerUsage(space.ownerId)
+        const quotaBytes = await ports.quota(space.ownerId)
+        if (!Number.isFinite(quotaBytes) || quotaBytes < 0 || !fitsStorageQuota({...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes}, request.size)) fail('quota_exceeded')
+        const node = pickStorageNode(ports.nodeInfo(), request.size * 2) ?? fail('storage_full')
+        const u: StoredUpload = { ...request, ...(direct ? (previous ? {ifMatch: previous.revision} : {createOnly: true}) : {}), path: normalized, uploadId: ports.newId(), blobId: ports.newId(),
+          partSize: direct ? MAX_STORAGE_FILE_BYTES : partSize, expiresAt: ports.now() + (direct ? STORAGE_DIRECT_TTL_MS : STORAGE_UPLOAD_TTL_MS), userId, ownerId: space.ownerId, spaceId, nodeId: node.id }
+        if (direct && !ports.directNode?.(node.id)) return u
+        const n = uploadNode(u)
+        allocated = u
+        await nodeCall(() => n.createUpload(u.uploadId, u))
+        await tx.putUpload(u)
+        return u
+      })
+    } catch (error) {
+      if (allocated) { try { await uploadNode(allocated).abortUpload(allocated.uploadId) } catch { /* Node expiry releases abandoned reservations. */ } }
+      throw error
+    }
+  }
   return {
     async createUpload(userId: string, spaceId: string, request: CreateStorageUploadRequest) {
-      let allocated: StoredUpload | undefined
-      try {
-        return await ports.metadata.transaction(async tx => {
-          const space = await requireSpace(tx, userId, spaceId, 'write')
-          const normalized = path(request.path)
-          if (!Number.isSafeInteger(request.size) || request.size < 0 ||
-            Math.ceil(request.size / partSize) > MAX_STORAGE_UPLOAD_PARTS ||
-            typeof request.mimeType !== 'string' || !request.mimeType.trim() || request.mimeType.length > 255 ||
-            /[\r\n]/.test(request.mimeType) ||
-            (request.createOnly !== undefined && typeof request.createOnly !== 'boolean') ||
-            (request.ifMatch !== undefined && (!Number.isSafeInteger(request.ifMatch) || request.ifMatch < 1))) fail('invalid_path')
-          const previous = await tx.getEntry(spaceId, normalized)
-          if ((request.createOnly && previous) || (request.ifMatch !== undefined && request.ifMatch !== previous?.revision)) fail('revision_conflict')
-          const usage = await tx.ownerUsage(space.ownerId)
-          const quotaBytes = await ports.quota(space.ownerId)
-          if (!Number.isFinite(quotaBytes) || quotaBytes < 0 || !fitsStorageQuota({...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes}, request.size)) fail('quota_exceeded')
-          const node = pickStorageNode(ports.nodeInfo(), request.size * 2) ?? fail('storage_full')
-          const u: StoredUpload = { ...request, path: normalized, uploadId: ports.newId(), blobId: ports.newId(),
-            partSize, expiresAt: ports.now() + STORAGE_UPLOAD_TTL_MS, userId, ownerId: space.ownerId, spaceId, nodeId: node.id }
-          const n = uploadNode(u)
-          allocated = u
-          await nodeCall(() => n.createUpload(u.uploadId, u))
-          await tx.putUpload(u)
-          return uploadView(u)
-        })
-      } catch (error) {
-        if (allocated) { try { await uploadNode(allocated).abortUpload(allocated.uploadId) } catch { /* Node expiry releases abandoned reservations. */ } }
-        throw error
+      return uploadView(await reserveUpload(userId, spaceId, request))
+    },
+    async fileUrl(userId: string, spaceId: string, request: StorageFileUrlRequest): Promise<StorageDirectUrl> {
+      if (!request || !['read', 'write'].includes(request.operation)) fail('invalid_path')
+      const fallback = (method: 'GET' | 'PUT', headers?: Record<string, string>): StorageDirectUrl => ({
+        url: STORAGE_REST.file(spaceId) + '?path=' + encodeURIComponent(path(request.path)),
+        method, headers, expiresAt: ports.now() + STORAGE_DIRECT_TTL_MS,
+      })
+      if (request.operation === 'read') return ports.metadata.transaction(async tx => {
+        await requireSpace(tx, userId, spaceId, 'read')
+        const entry = await tx.getEntry(spaceId, path(request.path)) ?? fail('not_found')
+        const config = ports.directNode?.(entry.nodeId)
+        if (!config) return fallback('GET')
+        client(entry.nodeId)
+        const expiresAt = ports.now() + STORAGE_DIRECT_TTL_MS
+        return {url: directUrl(config, {blobId: entry.blobId, size: entry.size,
+          mimeType: entry.mimeType, method: 'GET', expiresAt}), method: 'GET', expiresAt}
+      })
+      const u = await reserveUpload(userId, spaceId, request, true)
+      const config = ports.directNode?.(u.nodeId)
+      const headers: Record<string, string> = {'content-type': request.mimeType}
+      if (!config) {
+        if (request.ifMatch !== undefined) headers['if-match'] = String(request.ifMatch)
+        if (request.createOnly) headers['if-none-match'] = '*'
+        return fallback('PUT', headers)
       }
+      return {url: directUrl(config, {blobId: u.blobId, method: 'PUT', size: u.size,
+        mimeType: u.mimeType, expiresAt: u.expiresAt, uploadId: u.uploadId}),
+        method: 'PUT', headers, expiresAt: u.expiresAt, uploadId: u.uploadId}
     },
     async getUpload(userId: string, spaceId: string, id: string) {
       return ports.metadata.transaction(async tx => {

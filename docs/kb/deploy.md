@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 0d27f052d
+checked: df60202a1
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -48,6 +48,22 @@ areas:
 ---
 
 ## File storage node example
+
+To enable direct transfer, add optional `publicUrl` and `directSecretFile` to
+each applicable `VC_FILE_STORAGE_NODES` entry. Nodes without publicUrl retain
+Core proxy transfer. The public URL must be reachable by browsers through a TLS
+proxy, routing `/v1/direct/*` to that node. On the node set
+`VC_FILE_STORAGE_DIRECT_SECRET_FILE` to the same per-node HMAC secret file
+(minimum 32 characters; use an independently generated random secret), and
+`VC_FILE_STORAGE_UI_ORIGINS` to a JSON array of exact Core UI origins, for example
+`["https://core.example"]`. Wildcards and credentialed CORS are not supported.
+Preflight permits GET/PUT with Content-Type and Range, exposing range/length
+response headers. Signing secrets are loaded at process startup; coordinate
+Core/node restarts on rotation, which invalidates outstanding URLs.
+Bearer authorization remains required for ordinary node APIs.
+Configure TLS, public reachability and origin/secret files during operator
+commissioning; this code change does not provision them. Allow up to five
+minutes for issued read URLs to expire after revoking a share.
 
 Core accepts `VC_FILE_STORAGE_PART_SIZE_BYTES` (default 8 MiB; integer
 1..64 MiB). Existing sessions keep their original part size.

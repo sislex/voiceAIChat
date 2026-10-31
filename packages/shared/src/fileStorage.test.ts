@@ -130,3 +130,8 @@ describe('file storage contract', () => {
     expect(STORAGE_ERROR_STATUS.unsupported_media_type).toBe(415)
   })
 })
+
+it('exposes encoded direct URL and commit routes', () => {
+  expect(STORAGE_REST.fileUrl('a/b')).toBe('/api/storage/spaces/a%2Fb/file/url')
+  expect(STORAGE_REST.fileCommit('a/b')).toBe('/api/storage/spaces/a%2Fb/file/commit')
+})

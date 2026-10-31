@@ -168,6 +168,17 @@ export interface CreateStorageUploadRequest {
   ifMatch?: number
   createOnly?: boolean
 }
+/** POST fileUrl; direct writes require an authenticated fileCommit with uploadId. */
+export type StorageFileUrlRequest = { operation: 'read'; path: string } |
+  ({ operation: 'write' } & CreateStorageUploadRequest)
+export interface StorageDirectUrl {
+  url: string
+  method: 'GET' | 'PUT'
+  headers?: Record<string, string>
+  expiresAt: number
+  uploadId?: string
+}
+export const STORAGE_DIRECT_TTL_MS = 5 * 60 * 1000
 export interface StorageUploadSession {
   uploadId: string
   partSize: number
@@ -262,6 +273,8 @@ export interface StorageLinkInfo {
  * `PUT .../file` accepts `If-Match: <revision>` and `If-None-Match: *` (create only).
  */
 export const STORAGE_REST = {
+  fileUrl: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/url`,
+  fileCommit: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/commit`,
   batch: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/batch`,
   uploads: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads`,
   upload: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}`,
