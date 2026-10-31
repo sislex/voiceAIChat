@@ -1,5 +1,4 @@
 ---
-title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
 checked: c79bac7b
 areas:
@@ -35,6 +34,16 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Admin storage integration
+
+`buildServer` passes the storage service into `registerAdminRoutes`.
+`buildAdminServer` creates its own storage runtime in embedded storage mode,
+passes the service to the same routes and closes it on Fastify shutdown.
+User responses call `usage(name)` when the service exists. Quota mutation is
+an admin-only Identity operation, including null reset; missing FS-3 setters
+return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
+See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
 
@@ -1339,6 +1348,15 @@ MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
 
 ## Automatic agent bundle offers
+
+`agents/wsAgent.ts` catches message and pong dependency failures, logs them and
+closes the affected socket with retryable code 1013. This includes a failed
+Identity `agent_update_sent` audit after the update offer was sent. Close cleanup
+runs before the asynchronous last-seen write; its rejection is logged. Queued
+messages and in-flight registration cannot revive a closed connection.
+`agents/wsAgent.test.ts` verifies Identity RPC failure and recovery in a separate
+Node process with `--unhandled-rejections=strict`. Registry change notifications
+also catch rejected async subscriber promises (`agents/registry.test.ts`).
 
 After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
 `systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned

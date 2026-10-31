@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-10-31
-checked: 98722e6a
+checked: 12a12e07
 areas:
   - package.json
   - packages/shared/tsconfig.json
@@ -157,6 +157,26 @@ force the full application gate. Other unknown/config changes retain fallback.
 замок на выборе рана из очереди (`takeNextWaiter`), `TurnManager.idle()` для хвостов хода.
 В тестах: `expect(() => f()).toThrow` → `await expect(async () => f()).rejects.toThrow`,
 после события дожидайся хвоста (`await turns.idle()`), не закрывай БД раньше.
+
+Agent WebSocket listeners in `apps/server/src/agents/wsAgent.ts` own their
+promise rejections: messages are serialized, failures are logged and close only
+that connection with code 1013 (retry later). This includes Identity audit RPC
+failures during registration, denial and update offers. Pong failures use the
+same boundary; close clears the ping timer and unregisters before awaiting the
+last-seen write, whose failure is logged. Registration cannot resume after close.
+`wsAgent.test.ts` runs real WebSocket connections in child Node processes with
+`--unhandled-rejections=strict`, injects `DependencyUnavailable('identity')`
+through the Identity RPC transport, and verifies that another connection can
+register after recovery. It also covers pong/close persistence failures and an
+audit failure after an update offer.
+
+The event-handler audit found the other message boundary in `ws.ts` already
+catches its queue and close-handler rejections. In `server.ts`, Identity session
+verification and delegation checks catch their dependency failures, and the
+account sweep has a try/catch. The machine WebSocket bus/proxy listeners perform
+synchronous parsing or forwarding rather than Identity RPC calls. AgentRegistry's
+change notifications accept async subscribers and log their rejected promises;
+a synchronous try/catch alone does not protect the async agents-feed subscriber.
 
 
 ## Поток вывода команд пишется в базу через сток с обратным давлением (2026-09-08)

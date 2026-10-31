@@ -80,6 +80,11 @@ The shared protocol sends optional `expiresAt` on confirmation requests and
 
 ## Current Core boundary
 
+Core's shared `AgentRegistry.onChange` boundary logs both synchronous subscriber
+exceptions and rejected promises. A failing async machine-list subscriber no
+longer escapes as an unhandled rejection. This change does not modify CI stage
+selection or Kanban orchestration; see [agent lifecycle](../machines.md#подключение-и-жизненный-цикл).
+
 Core retains `packages/shared/src/ci.ts`, SQL state in `db/repos/ci.ts`,
 Automation Runner and the machine/MCP/KB ports. `getCiRunLog` defaults to 5000
 lines and caps explicit requests at 20000. Execution hooks and cleanup managers

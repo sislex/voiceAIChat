@@ -24,6 +24,9 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
   - packages/shared/src/admin.ts
+  - packages/shared/src/deploymentProfiles.ts
+  - packages/component-runtime/src/sharedServices.ts
+  - packages/component-runtime/src/sharedServices.test.ts
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
@@ -125,6 +128,40 @@ proves the Core-side authorization contract and transport behavior, not inclusio
 of `fix/storage-cookie-session`, the updated Make service-backend wiring, or
 successful two-instance stand acceptance. Those require the matching Make owner
 revision and its evidence.
+
+Core admin quota management is exposed by `PATCH /api/admin/users/:name`
+with `{ storageQuotaBytes: number | null }`. Values must be non-negative safe
+integers; zero disallows additional bytes, and null restores the deployment
+default. Quota changes are separate from role/LLM-limit changes (mixed bodies
+return 400). The route uses the existing admin guard, checks that the user exists,
+and calls Identity's `setUserStorageQuota`. The pinned Identity 1.5.2 archive
+does not provide FS-3 methods: the setter returns 503 when absent instead of
+reporting a successful no-op. Deployments need an FS-3-capable Identity to persist
+quota overrides.
+
+`AdminUserInfo.storageQuotaBytes` is the nullable override from Identity's user
+row, so listing users does not call a new RPC method on older Identity releases.
+When file storage is enabled, `storageUsage` contains the storage service's
+`StorageUsage`, including current owner bytes/file count and effective
+`quotaBytes` after the deployment fallback. Disabled storage omits usage rather
+than reporting zero. Both embedded and standalone admin servers pass the storage
+service to the admin routes. Shared IPC declares `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result; Core UI wiring
+is a separate consumer change after contract publication.
+Route tests in `rest.auth.test.ts` exercise the Identity port, persisted storage
+metadata usage, validation, null reset, authorization, missing users and the
+pre-FS-3 compatibility response.
+
+## Shared-service ticket redemption diagnostics
+
+`TrustedCoreRegistry.redeem` maps a successful HTTP response that fails
+`isEnterTicketRedeemResponse` validation to `ticket_invalid`. Besides requiring a
+live session and a valid `sxd_` delegation token, the validator requires the
+delegation expiry to be no later than the enclosing session expiry. A fixture
+that calculates these two expiries with separate `Date.now()` calls can therefore
+fail intermittently when the second clock read advances. Redeem fixtures should
+derive both fields from one timestamp, as in
+`packages/component-runtime/src/sharedServices.test.ts`.
 
 ## Project integration tokens
 
