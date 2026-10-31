@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: f1d5fd04c
+checked: ffdb7f99
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -322,6 +322,15 @@ The heap cap leaves space for native allocations but does not guarantee that
 a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
+
+The npm subprocess helper in `scripts/contracts-release.mjs` sets the global
+`--loglevel=error` option before the subcommand and captures stdout and stderr.
+An inherited `npm_config_loglevel=silent` would otherwise suppress npm's peer
+conflict diagnostics even though stderr is piped. Consumer failure reports retain
+both streams. The regression in `contracts-release.test.mjs` deliberately enables
+`silent`, builds the conflicting peer from local tarballs with a `file:` peer
+reference, and uses an isolated cache in offline mode. It checks the ERESOLVE
+chain and successful installation in the subsequent consumer.
 
 `node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
 --commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local

@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: f1d5fd04c
+checked: 12a12e07
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -88,6 +88,15 @@ folders are never an installer discovery dependency.
 терминал и телеметрию.
 
 ## Подключение и жизненный цикл
+
+Agent messages are serialized in `agents/wsAgent.ts`. An Identity audit RPC
+failure during registration, rejection or an update offer is logged and closes
+only that connection with WebSocket code 1013 (retry later), without a permanent
+`agent.denied` response. Pong persistence failures use the same boundary. Close
+clears the ping timer and unregisters before awaiting the last-seen write; a
+failed write is logged. In-flight registration cannot resume after close.
+`AgentRegistry.onChange` contains both synchronous exceptions and rejected
+subscriber promises, so an async machine-list refresh cannot crash Core.
 
 Агент коннектится по WS на `/agent` и шлёт `agent.register{token, version}`.
 Сервер (`apps/server/src/agents/wsAgent.ts` + `registry.ts`) сверяет хеш токена с

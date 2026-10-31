@@ -193,7 +193,7 @@ export class AgentRegistry {
   private readonly coreTunnels = new Map<string, { agentId: string; stream: CoreTunnel }>()
   private readonly tunnels = new Map<string, TunnelSession>()
   private readonly newId: () => string
-  private readonly changeListeners = new Set<() => void>()
+  private readonly changeListeners = new Set<() => unknown>()
   /** Подписчики изменений PTY-сессий (старт, выход, контекст) — зеркало отдельного процесса ядра. */
   private readonly ptyListeners = new Set<() => void>()
 
@@ -382,7 +382,7 @@ export class AgentRegistry {
   }
 
   /** Подписка на изменения онлайн-состава (register/unregister). */
-  onChange(cb: () => void): () => void {
+  onChange(cb: () => unknown): () => void {
     this.changeListeners.add(cb)
     return () => this.changeListeners.delete(cb)
   }
@@ -390,9 +390,9 @@ export class AgentRegistry {
   private emitChange(): void {
     for (const cb of this.changeListeners) {
       try {
-        cb()
-      } catch {
-        /* слушатель не должен ронять реестр */
+        void Promise.resolve(cb()).catch(error => console.error('[agents] change listener failed:', error))
+      } catch (error) {
+        console.error('[agents] change listener failed:', error)
       }
     }
   }

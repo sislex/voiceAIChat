@@ -1,7 +1,7 @@
 ---
-title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: f1d5fd04c
+checked: ffdb7f99
+title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
 ---
@@ -46,6 +46,20 @@ The node/client/coordinator implementation is in `packages/file-storage`;
 see [architecture](architecture.md). The application catalog registers it as
 `file-storage`, with Shared and component-runtime build dependencies, node
 entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
+The contract does not declare lifecycle event names or payloads:
+`storage.file.created` and `storage.file.deleted` are neither protocol constants
+nor emitted strings in the current repository. Consumers use the documented REST
+surface rather than assume those event topics exist.
+
+## Contract release diagnostics
+
+`scripts/contracts-release.mjs` overrides an inherited
+`npm_config_loglevel=silent` with npm's global `--loglevel=error`; piping stderr
+alone cannot recover diagnostics npm has suppressed. Failed consumer reports
+include captured stdout and stderr. Its regression builds both sides of a peer
+conflict from local `file:` tarballs with an isolated empty cache in offline mode,
+asserts the ERESOLVE chain, and proves processing continues by installing the
+next consumer. Operational usage is in [Deploy](deploy.md#contract-pin-release).
 
 ## Current additive contracts
 

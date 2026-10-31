@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-10-31
-checked: f1d5fd04c
+checked: 12a12e07
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -79,6 +79,11 @@ The shared protocol sends optional `expiresAt` on confirmation requests and
 `widget.action.expired` on timeout; a timeout is not user rejection.
 
 ## Current Core boundary
+
+Core's shared `AgentRegistry.onChange` boundary logs both synchronous subscriber
+exceptions and rejected promises. A failing async machine-list subscriber no
+longer escapes as an unhandled rejection. This change does not modify CI stage
+selection or Kanban orchestration; see [agent lifecycle](../machines.md#подключение-и-жизненный-цикл).
 
 Core retains `packages/shared/src/ci.ts`, SQL state in `db/repos/ci.ts`,
 Automation Runner and the machine/MCP/KB ports. `getCiRunLog` defaults to 5000
