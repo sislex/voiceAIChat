@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-31
+checked: c2aed75b
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -27,6 +27,24 @@ areas:
 ---
 
 # Машины: компаньон-агент, политика, PTY, проводник
+
+## Operator handoff (SK-115)
+
+Core exposes the administrator-and-machine-owner route described in
+[the handoff contract](protocol.md#operator-handoff). AgentRegistry keeps pending
+switches in memory, correlates replies by request ID and agent ID, and resolves
+an unanswered request as failed after the requested timeout plus five seconds.
+An offline agent rejects dispatch. The target token is sent to the agent but is
+omitted from the response and the route's audit fields.
+
+Review since `592879f34` also covers shared MCP areas: explicit absolute owner
+roots extend file read/grep/edit only on the URL-selected machine; relative paths
+remain cwd-relative and traversal/root-directory grants are rejected.
+`HistoricalEvidence` verifies an authorized immutable journal through injected
+ports, with an 8 MiB cap and authorization checks before and after streaming;
+results disclose hashes and sizes, not journal bytes. Widget confirmations now
+expire with an explicit event and reject late replies. Model-price seed additions
+do not change machine credential storage or access checks.
 
 Module details: `agent:README.md`
 Module details: `core-ui:README.md`

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-30
-checked: a3af4a30
+updated: 2026-10-31
+checked: c2aed75b
 areas:
   - apps/playwright-reader
   - apps/server/src/playwrightReaderBridge
@@ -36,6 +36,11 @@ without claiming a successful switch. The response and audit log omit tokens.
 The caller obtains the target token from the existing target-machine token
 rotation route; handoff does not provision target projects or grant access.
 Runtime installation and production deployment are not part of this protocol.
+The route accepts WS(S) URLs without embedded credentials, query or fragment;
+tokens must be nonempty strings of at most 4096 characters. The integer timeout
+is 1000–120000 ms, default 30000 ms. Registry waiting adds a five-second result
+delivery allowance. The regression test ignores a reply from a different agent
+before accepting the selected agent's reply.
 
 ## Voice module configuration
 

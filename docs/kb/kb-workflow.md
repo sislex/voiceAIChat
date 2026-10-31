@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-10-05
-checked: 8e052b52
+updated: 2026-10-31
+checked: c2aed75b
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -16,6 +16,24 @@ areas:
 ---
 
 # Как устроена и ведётся база знаний
+
+## Scoped owner-gate diagnostics (SK-115)
+
+The stale-topic rows now use `после проверенного SHA:` before commit details.
+The footer retains `после сверки:`. Owner/merge workflows split the stale section
+at that footer text; using it inside each row previously truncated discovery at
+the first commit-based stale topic. The unchanged workflow parser is exercised
+against real strict CLI output with three stale topics, including a nested path,
+in `packages/kb-tools/cli.test.mjs`. Strict mode still exits 1 for stale topics,
+missing package instructions or broken links.
+
+Core uses `packages/kb-tools/cli.mjs`; the scripts under `scripts/kb*` are
+compatibility adapters. The repository-independent configuration defaults and
+package glob checks are implemented by `packages/kb-tools/config.mjs`.
+Current root instructions require reviewing source before touching topics.
+The two missing entry files for Automation Runner and Knowledge are now present;
+coverage checks remain enabled. External orchestration belongs to Kanban, so the
+historical local merge-runner paths below are not evidence of a Core implementation.
 
 ## Зачем
 

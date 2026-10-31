@@ -2,10 +2,12 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-10-31
+checked: c2aed75b
 areas:
-  - docs/kb
+  - packages/knowledge/src
+  - packages/kb-tools
+  - docs/kb/modules.md
   - scripts/kb-search.mjs
   - apps/server/src/kb
   - packages/shared/src/kb.ts
@@ -50,6 +52,23 @@ related:
 ---
 
 # База знаний проекта
+
+## Source ownership and freshness
+
+The indexing/search implementation lives in `packages/knowledge/src`; Core's
+`apps/server/src/kb` supplies filesystem, Git, persistence and authorization
+adapters. The local maintenance/search CLI lives in `packages/kb-tools`.
+This topic tracks those implementations and the module-source configuration map.
+The Markdown corpus is input data, not the implementation area: including all
+of `docs/kb` also included this topic's own checked marker, so each verification
+commit immediately made it stale again.
+
+Review since `592879f34` found one runtime change in the KB area:
+`registerKbResearchRoutes` accepts an absent research manager. POST then returns
+503 `auxiliary_model_disabled`; authorized GET returns null. When research is
+available, project-membership checks and the existing start flow remain in force.
+Operator handoff only adds knowledge documents; it does not change KB search,
+module fetch or visibility behavior.
 
 ## Repository modules
 

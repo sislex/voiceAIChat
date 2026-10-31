@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-10-24
-checked: 8c8ce466
+updated: 2026-10-31
+checked: c2aed75b
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -83,6 +83,18 @@ packages:
 ---
 
 # CI-раннер канбана
+
+## Operator handoff boundary (SK-115)
+
+Core's AgentRegistry dispatches and correlates operator switches; task export,
+import, pausing and continuation belong to the Kanban owner. The Core switch
+route does not create a new model run. See [the wire boundary](../protocol.md#operator-handoff).
+
+Area review since `8c8ce466` found three earlier net changes: model-price seed
+rows, the pinned Kanban Compose image, and the additive widget-confirmation
+expiry message/type registry. These do not change Core CI stage selection.
+The shared protocol sends optional `expiresAt` on confirmation requests and
+`widget.action.expired` on timeout; a timeout is not user rejection.
 
 ## Development preview (CHAT-447)
 
