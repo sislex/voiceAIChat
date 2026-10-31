@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-31
-checked: c79bac7b
+checked: 0623c83e
 areas:
   - packages/file-storage
   - packages/shared/src/applicationCatalog.ts
@@ -62,7 +62,7 @@ remains Core infrastructure even in a chat-only deployment.
 `packages/file-storage` (`@sislexa/file-storage`) owns the Fastify blob node,
 HTTP node client and coordinator library. It imports no `apps/server` code.
 Its workspace is registered in the application catalog and affected-package graph.
-Its unchanged public contract is `packages/shared/src/fileStorage.ts`.
+Its public contract is `packages/shared/src/fileStorage.ts`.
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
@@ -90,6 +90,17 @@ back failures and never retry callbacks containing node I/O.
 `createMemoryMetadataStore` implements these semantics for tests.
 Quota usage includes every file in the owner's spaces, even collaborator writes.
 Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
+
+The coordinator's `updateSpace(userId, spaceId, { title })` checks ownership
+inside the metadata transaction, rejects blank titles, trims the title and
+updates `updatedAt`. It preserves the space ID, owner, kind, ref, files and
+shares; write collaborators cannot rename spaces. Core exposes it through
+`PATCH /api/storage/spaces/:id`, using Shared's `UpdateStorageSpaceRequest`.
+Make uses this operation to synchronize its project title.
+
+Core passes the same file storage service to embedded admin routes so account
+administration can report storage usage. Remote admin mode retains its service
+proxy; this wiring does not move storage coordination into the admin module.
 
 Owners manage shares and spaces; read/write collaborators receive the matching
 file operations. Link description and acceptance both require an authenticated

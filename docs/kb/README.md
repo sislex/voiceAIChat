@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-31 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 47d05b56 Restore SISL-804, SISL-806 and SISL-807 lost by a forced dev update … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 47d05b56 Restore SISL-804, SISL-806 and SISL-807 lost by a forced dev update … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-31 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 47d05b56 Restore SISL-804, SISL-806 and SISL-807 lost by a forced dev update … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-31 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1392. Последние:
+Всего записей: 1393. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md) — sisl-804-freshness-reconciliation

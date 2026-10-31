@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: c17fb5ae
+checked: 0623c83e
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -33,6 +33,14 @@ entries, revisions, shares, owner usage, node health, error codes and both
 the maximum file size is 64 MiB. Pure helpers normalize paths, resolve the
 strongest access, check replacement-aware quotas, sum online node capacity
 and select the online node with the most free space that can fit a file.
+
+`UpdateStorageSpaceRequest` contains `title: string` for
+`PATCH STORAGE_REST.space(spaceId)`. Core returns the updated `StorageSpace`.
+The coordinator validates a nonblank title and checks ownership in the metadata
+transaction; read/write grants do not authorize renaming. The request cannot
+change the owner, kind or conversation ref. Files and shares remain attached
+to the same space. See [Core storage routes](server-internals.md#core-file-storage)
+and [the coordinator](architecture.md#file-storage-service).
 
 `MessageAttachment` and `UploadInfo` have an optional `storage: StorageFileRef`
 (`spaceId`, `path`). For such an attachment the machine `path` is display-only
