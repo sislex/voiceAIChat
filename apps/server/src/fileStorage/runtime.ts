@@ -30,9 +30,14 @@ export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageC
   timer.unref()
   const identity = db.identity as typeof db.identity & { getUserStorageQuota?: (userId: string) => Promise<number | null> }
   const service = createFileStorageService({
-    metadata: db.storageMetadata(), nodes: () => clients, nodeInfo: () => structuredClone(info),
+    partSize: config.partSize, metadata: db.storageMetadata(), nodes: () => clients, nodeInfo: () => structuredClone(info),
     quota: async userId => storageQuotaBytes(await identity.getUserStorageQuota?.(userId), config.defaultQuotaBytes),
     now: Date.now, newId: randomUUID, thumbnail: createThumbnailGenerator(),
   })
-  return { service, poll, async close() { clearInterval(timer); await pending } }
+  let cleanup: Promise<void> | undefined
+  const sweep = () => cleanup ??= service.expireUploads().finally(() => { cleanup = undefined })
+  await sweep()
+  const expiryTimer = setInterval(() => { void sweep().catch(() => {}) }, 60_000)
+  expiryTimer.unref()
+  return { service, poll, async close() { clearInterval(timer); clearInterval(expiryTimer); await pending; await cleanup } }
 }

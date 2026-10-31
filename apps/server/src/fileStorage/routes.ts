@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
+import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 
@@ -8,7 +8,7 @@ export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
   throw error
 }
-type Request = FastifyRequest<{ Params: {id: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string}; Body: unknown }>
+type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string}; Body: unknown }>
 export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService): void {
   root.register(async app => {
   app.setErrorHandler((error, _req, reply) => {
@@ -50,6 +50,20 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) throw new StorageServiceError('invalid_path')
     return req.body as Record<string, unknown>
   }
+  const uploads = path(STORAGE_REST.uploads)
+  const upload = uploads + '/:uploadId'
+  route('POST', uploads, (s, r) => s.createUpload(uid(r), r.params.id, body(r) as unknown as CreateStorageUploadRequest))
+  route('GET', upload, (s, r) => s.getUpload(uid(r), r.params.id, r.params.uploadId))
+  route('PUT', upload + '/parts/:n', async (s, r, reply) => {
+    if (!/^(0|[1-9]\d*)$/.test(r.params.n) || !Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
+    await s.putUploadPart(uid(r), r.params.id, r.params.uploadId, Number(r.params.n), r.body)
+    return reply.code(204).send()
+  }, true)
+  route('POST', upload + '/complete', (s, r) => s.completeUpload(uid(r), r.params.id, r.params.uploadId))
+  route('DELETE', upload, async (s, r, reply) => {
+    await s.abortUpload(uid(r), r.params.id, r.params.uploadId)
+    return reply.code(204).send()
+  })
   route('GET', STORAGE_REST.usage, (s, r) => s.usage(uid(r)))
   route('GET', STORAGE_REST.cluster, async (s, r) => {
     if (r.user?.role !== 'admin') throw new StorageServiceError('forbidden')

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3af
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,19 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Core exposes resumable upload routes through the storage coordinator.
+Part transfers release the metadata transaction after authorization, allowing
+concurrent node writes. The node persists a private manifest and temporary parts,
+atomically replaces individual parts, and assembles one part at a time into a
+new blob before atomic rename. Core then commits the visible entry, preserving
+the old file until commit. Completion retries after a metadata rollback reuse
+the composed blob. Core and node run expiry sweeps at startup and every minute;
+Core also cleans sessions whose space was deleted. Node expiry removes temporary
+parts, retaining composed blobs because only Core knows whether they committed.
+As with ordinary writes, a crash after metadata commit can leave an orphan blob
+requiring host reconciliation. No fsync durability guarantee is introduced.
+
 
 Legacy duplicate spaces remain visible, but metadata adapters list the registered
 `storage_space_refs` canonical identity first for each owner/kind/ref. Without a

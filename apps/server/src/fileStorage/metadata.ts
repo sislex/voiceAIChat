@@ -1,9 +1,10 @@
 import type { Sql } from '@sislexa/identity/storage-sql/types'
-import type { StorageMetadataStore, StorageMetadataTransaction, StoredSpace, StoredEntry, StorageLinkAcceptance } from '../../../../packages/file-storage/src/metadata.js'
+import type { StorageMetadataStore, StorageMetadataTransaction, StoredUpload, StoredSpace, StoredEntry, StorageLinkAcceptance } from '../../../../packages/file-storage/src/metadata.js'
 import type { StorageShare } from '@voicechat/shared/fileStorage'
 
 /** Shared lock serializes quota checks across processes without replaying node I/O. */
 export const STORAGE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS storage_uploads (id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS storage_lock (id INTEGER PRIMARY KEY, version INTEGER NOT NULL);
 INSERT INTO storage_lock (id, version) VALUES (1, 0) ON CONFLICT(id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS storage_spaces (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, data TEXT NOT NULL);
@@ -36,6 +37,9 @@ export function createSqlMetadataStore(sql: Sql): StorageMetadataStore {
   const many = async <T>(query: string, params: unknown[] = []): Promise<T[]> =>
     (await sql.all<{data: string}>(query, params)).map(row => JSON.parse(row.data) as T)
   const tx: StorageMetadataTransaction = {
+    listUploads: () => many<StoredUpload>('SELECT data FROM storage_uploads'),
+    async putUpload(u) { await sql.run('INSERT INTO storage_uploads (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', [u.uploadId, JSON.stringify(u)]) },
+    async deleteUpload(id) { await sql.run('DELETE FROM storage_uploads WHERE id = ?', [id]) },
     getSpace: id => one<StoredSpace>('SELECT data FROM storage_spaces WHERE id = ?', [id]),
     async listSpaces() {
       const canonical = new Set((await sql.all<{space_id: string}>('SELECT space_id FROM storage_space_refs')).map(r => r.space_id))

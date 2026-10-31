@@ -4,6 +4,11 @@ import { StorageServiceError } from './errors.js'
 
 export interface StorageNodeClient {
   readonly id: string
+  createUpload?(id: string, options: { size: number; partSize: number; expiresAt: number; blobId: string }): Promise<void>
+  putPart?(id: string, n: number, bytes: Uint8Array): Promise<void>
+  listParts?(id: string): Promise<number[]>
+  completeUpload?(id: string): Promise<void>
+  abortUpload?(id: string): Promise<void>
   health(): Promise<StorageNodeHealth>
   put(blobId: string, bytes: Uint8Array): Promise<void>
   get(blobId: string): Promise<Uint8Array>
@@ -46,6 +51,11 @@ export function createStorageNodeClient(options: {
   }
   return {
     id: options.id,
+    async createUpload(id, options) { await request(`/v1/uploads/${encodeURIComponent(id)}`, 'POST', Buffer.from(JSON.stringify(options))) },
+    async putPart(id, n, bytes) { await request(`/v1/uploads/${encodeURIComponent(id)}/parts/${n}`, 'PUT', bytes) },
+    async listParts(id) { return await (await request(`/v1/uploads/${encodeURIComponent(id)}`)).json() as number[] },
+    async completeUpload(id) { await request(`/v1/uploads/${encodeURIComponent(id)}/complete`, 'POST') },
+    async abortUpload(id) { await request(`/v1/uploads/${encodeURIComponent(id)}`, 'DELETE') },
     async health() {
       try {
         const value = await (await request(FILE_STORAGE_NODE_PATHS.health)).json() as StorageNodeHealth

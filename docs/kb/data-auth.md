@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3af
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,16 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Upload sessions are persisted in `storage_uploads` through both metadata
+adapters. Creation reserves the full declared size against the space owner's
+quota, including other sessions and ordinary writes; replacements conservatively
+reserve their entire size until completion. The same serialized metadata
+transaction checks revision conditions and publishes the final entry.
+Parts never appear in file listings. Abort removes node parts and any unpublished
+composed blob before releasing the quota reservation. Expiry cleanup retries
+offline nodes without releasing their reservations prematurely.
+
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,

@@ -11,6 +11,30 @@ export const metadataService = (metadata: StorageMetadataStore) => createFileSto
 /** Shared contract for memory and persistent host adapters. */
 export function metadataContract(factory: () => Promise<{store: StorageMetadataStore; close(): Promise<void>}>) {
   describe('StorageMetadataStore contract', () => {
+    it('persists upload reservations and rolls back their removal with file publication', async () => {
+      const f = await factory()
+      try {
+        const upload = {uploadId: 'upload', partSize: 3, expiresAt: 100, path: 'a', size: 6,
+          mimeType: 'text/plain', spaceId: 's', ownerId: 'o', userId: 'o', nodeId: 'n', blobId: 'blob'}
+        await f.store.transaction(async tx => {
+          await tx.putSpace({id: 's', ownerId: 'o', kind: 'personal', title: 'Files', ref: null, createdAt: 1, updatedAt: 1})
+          await tx.putUpload(upload)
+        })
+        await expect(f.store.transaction(async tx => {
+          await tx.deleteUpload(upload.uploadId)
+          await tx.putEntry({spaceId: 's', path: 'a', size: 6, mimeType: 'text/plain', revision: 1,
+            updatedAt: 2, updatedBy: 'o', nodeId: 'n', blobId: 'blob'})
+          throw new Error('rollback')
+        })).rejects.toThrow('rollback')
+        expect(await f.store.transaction(tx => tx.listUploads())).toEqual([upload])
+        expect(await f.store.transaction(tx => tx.listEntries('s'))).toEqual([])
+        // Keep orphan reservations after a space deletion so cleanup can find their node parts.
+        await f.store.transaction(tx => tx.deleteSpace('s'))
+        expect(await f.store.transaction(tx => tx.listUploads())).toEqual([upload])
+        await f.store.transaction(tx => tx.deleteUpload(upload.uploadId))
+        expect(await f.store.transaction(tx => tx.listUploads())).toEqual([])
+      } finally { await f.close() }
+    })
     it.each(['chat', 'make-project'] as const)('creates one %s space across concurrent coordinators', async kind => {
       const f = await factory()
       try {
@@ -225,4 +249,3 @@ export function metadataContract(factory: () => Promise<{store: StorageMetadataS
     })
   })
 }
-

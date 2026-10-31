@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3af
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -37,6 +37,19 @@ updates return 400; missing users return 404; an Identity without
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
+
+Resumable uploads use POST `STORAGE_REST.uploads(spaceId)` with
+`{path,size,mimeType,ifMatch?,createOnly?}`, returning
+`{uploadId,partSize,expiresAt}`. PUT `uploads/:uploadId/parts/:n` accepts
+raw bytes, with zero-based part numbers and an exact final-part length.
+GET `uploads/:uploadId` adds sorted `receivedParts` for resume;
+POST `uploads/:uploadId/complete` publishes a StorageEntry, and DELETE
+aborts. Missing parts or stale revision conditions return 409.
+Sessions expire after 24 hours, allow up to 10,000 parts and survive Core/node
+restart. The default part size is 8 MiB; the legacy single PUT remains capped
+at 64 MiB. Each operation checks the current space write grant and the
+session's authenticated creator. Concurrent part PUTs and part retries are supported.
+
 
 Duplicate cleanup uses `POST /api/storage/spaces/:id/merge-duplicates`:
 send `{}` to preview, then `{"previewToken":"<returned token>"}` to apply.

@@ -121,6 +121,24 @@ export interface StorageFileRef {
   thumbnailAvailable?: boolean
 }
 
+export const DEFAULT_STORAGE_PART_SIZE = 8 * 1024 * 1024
+export const MAX_STORAGE_UPLOAD_PARTS = 10_000
+export const STORAGE_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
+export interface CreateStorageUploadRequest {
+  path: string
+  size: number
+  mimeType: string
+  ifMatch?: number
+  createOnly?: boolean
+}
+export interface StorageUploadSession {
+  uploadId: string
+  partSize: number
+  expiresAt: number
+}
+/** Parts are numbered from zero; PUT replaces a part for safe retries. */
+export interface StorageUploadStatus extends StorageUploadSession { receivedParts: number[] }
+
 export interface CreateStorageSpaceRequest {
   kind: StorageSpaceKind
   title: string
@@ -176,6 +194,10 @@ export interface StorageLinkInfo {
  * `PUT .../file` accepts `If-Match: <revision>` and `If-None-Match: *` (create only).
  */
 export const STORAGE_REST = {
+  uploads: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads`,
+  upload: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}`,
+  uploadPart: (spaceId: string, uploadId: string, n: number) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}/parts/${n}`,
+  uploadComplete: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}/complete`,
   usage: '/api/storage/usage',
   cluster: '/api/storage/cluster',
   spaces: '/api/storage/spaces',

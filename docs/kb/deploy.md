@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3af
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -48,6 +48,16 @@ areas:
 ---
 
 ## File storage node example
+
+Core accepts `VC_FILE_STORAGE_PART_SIZE_BYTES` (default 8 MiB; integer
+1..64 MiB). Existing sessions keep their original part size.
+Allow a 24-hour upload window and retain the node's `.uploads/` directory
+across restarts. Placement reserves twice the declared size on a single node
+for parts plus atomic assembly; after completion only the final blob remains
+charged. Core quota reserves the declared size once. Node health includes
+active capacity reservations, so free space can be lower than published data
+usage. Multipart endpoints use the same node bearer scope as blob operations.
+
 
 The Docker target `file-storage-node` starts
 `packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as

@@ -3,6 +3,9 @@ import {
   DEFAULT_STORAGE_QUOTA_BYTES,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
+  DEFAULT_STORAGE_PART_SIZE,
+  MAX_STORAGE_UPLOAD_PARTS,
+  STORAGE_UPLOAD_TTL_MS,
   STORAGE_THUMBNAIL_SIZES,
   fitsStorageQuota,
   isStorageBlobId,
@@ -22,6 +25,17 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
   usedBytes: usedGb * 1e9,
   online,
   lastSeenAt: 1,
+})
+
+it('defines resumable upload URLs and limits without changing file URLs', () => {
+  expect(DEFAULT_STORAGE_PART_SIZE).toBe(8 * 1024 * 1024)
+  expect(MAX_STORAGE_UPLOAD_PARTS).toBe(10_000)
+  expect(STORAGE_UPLOAD_TTL_MS).toBe(86_400_000)
+  const base = '/api/storage/spaces/s%2F1/uploads'
+  expect(STORAGE_REST.uploads('s/1')).toBe(base)
+  expect(STORAGE_REST.upload('s/1', 'u/2')).toBe(base + '/u%2F2')
+  expect(STORAGE_REST.uploadPart('s/1', 'u/2', 0)).toBe(base + '/u%2F2/parts/0')
+  expect(STORAGE_REST.uploadComplete('s/1', 'u/2')).toBe(base + '/u%2F2/complete')
 })
 
 describe('file storage contract', () => {

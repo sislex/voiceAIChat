@@ -1,3 +1,4 @@
+import { nodeUploads } from "./uploads.js"
 import Fastify from 'fastify'
 import { mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -32,6 +33,7 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     queue = result.catch(() => {})
     return result
   }
+  const registerUploads = await nodeUploads(options.directory, options.capacityBytes, { used: () => usedBytes, add: n => { usedBytes += n }, exclusive })
   const app = Fastify({ bodyLimit: MAX_STORAGE_FILE_BYTES, routerOptions: { maxParamLength: 1024 } })
   options.runtime?.register(app)
   app.setErrorHandler((error, _req, reply) => {
@@ -60,6 +62,7 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     })
     routes.removeAllContentTypeParsers()
     routes.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
+    registerUploads(routes)
     routes.get(FILE_STORAGE_NODE_PATHS.health, async (): Promise<StorageNodeHealth> => ({
       nodeId: options.nodeId, capacityBytes: options.capacityBytes, usedBytes,
       freeBytes: Math.max(0, options.capacityBytes - usedBytes),
