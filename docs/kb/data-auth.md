@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 193ed998
+checked: c17fb5ae
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -17,6 +17,9 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
   - packages/shared/src/admin.ts
+  - packages/shared/src/deploymentProfiles.ts
+  - packages/component-runtime/src/sharedServices.ts
+  - packages/component-runtime/src/sharedServices.test.ts
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
@@ -65,6 +68,17 @@ is a separate consumer change after contract publication.
 Route tests in `rest.auth.test.ts` exercise the Identity port, persisted storage
 metadata usage, validation, null reset, authorization, missing users and the
 pre-FS-3 compatibility response.
+
+## Shared-service ticket redemption diagnostics
+
+`TrustedCoreRegistry.redeem` maps a successful HTTP response that fails
+`isEnterTicketRedeemResponse` validation to `ticket_invalid`. Besides requiring a
+live session and a valid `sxd_` delegation token, the validator requires the
+delegation expiry to be no later than the enclosing session expiry. A fixture
+that calculates these two expiries with separate `Date.now()` calls can therefore
+fail intermittently when the second clock read advances. Redeem fixtures should
+derive both fields from one timestamp, as in
+`packages/component-runtime/src/sharedServices.test.ts`.
 
 ## Project integration tokens
 

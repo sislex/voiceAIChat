@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1384. Последние:
+Всего записей: 1389. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md) — sisl-804-freshness-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
@@ -76,7 +77,6 @@
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md) — fs2-kb-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md) — fs2-core-file-storage
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md) — fs1-task-failure-evidence
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md) — fs1-merge-kb-addresses
 
 ## Исторические планы
 
