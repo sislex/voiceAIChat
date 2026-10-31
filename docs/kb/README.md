@@ -34,7 +34,7 @@
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-31 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-29 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-31 | ✓ |
-| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ⚠ 1 коммит(ов) в areas после сверки: c64c2a4d feat(file-storage): add storage nodes and coordinator (FS-1) |
+| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ⚠ 2 коммит(ов) в areas после сверки: e7e66696 fix(gate): preserve failed assertions in task workflow summaries … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-30 | ✓ |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-31 | ⚠ 1 коммит(ов) в areas после сверки: 2f1ff1a3 feat(shared): file storage service contract and plan |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1373. Последние:
+Всего записей: 1374. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
@@ -73,10 +73,10 @@
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md) — fs1-task-failure-evidence
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md) — fs1-gate-env-isolation
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md) — fs1-base-branch-test
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md) — fs-1-file-storage
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md) — release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7
 - [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md) — release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md) — release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f
 
 ## Исторические планы
 

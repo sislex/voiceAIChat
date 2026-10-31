@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: 021917ef
+checked: e7e66696
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -36,6 +36,14 @@ journal's release branch result. Owner docs-only release reuse is proven by
 A saturated or unverified comparison requires a new release version.
 
 ## Task gate for the dev lane
+
+`scripts/affected-check.mjs` resolves the base in `parseOptions` from explicit
+`--base`, otherwise `HEAD` for `--worktree`, otherwise `origin/${BASE_BRANCH}`
+with `main` as the fallback for an unset or empty environment variable.
+`--base` and `--worktree` are mutually exclusive. Its parser test saves and
+restores `BASE_BRANCH`, checks unset/empty defaults and `dev`, and verifies
+that explicit CLI options override the environment. This isolates the default
+assertion from delivery workflows that export `BASE_BRANCH=dev`.
 
 `npm run gate:task -- --base <sha>` compares the merge base with the current
 worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
