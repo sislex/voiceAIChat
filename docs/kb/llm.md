@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-31
-checked: 50fcc411
+checked: e0e4cb52
 areas:
   - apps/server/src/claude
   - apps/server/src/codex

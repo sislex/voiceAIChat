@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
 updated: 2026-10-31
-checked: 242d084b
+checked: e0e4cb52
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts

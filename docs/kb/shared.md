@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-30
-checked: 78f28530
+updated: 2026-10-31
+checked: e0e4cb52
 areas:
   - packages/shared/src
 ---
@@ -17,6 +17,16 @@ areas:
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
 ## Current additive contracts
+
+`fileStorage.ts` exports storage spaces, shares, node and REST path contracts,
+quota/access/path helpers and online-node selection through the Shared barrel.
+`MessageAttachment.storage` and `UploadInfo.storage` optionally carry a
+`StorageFileRef` (`spaceId`, `path`). For storage-backed attachments the contract
+marks the outer `path` as display-only and omits `agentId`. These are additive
+contract fields: the Core server has no `fileStorage` / `STORAGE_REST` integration
+in this revision, so the declaration does not establish deployed storage routes,
+UI support or a change to existing machine-backed uploads. See the
+[file storage contract](protocol.md#file-storage-contract) for the public surface.
 
 `LlmRequest.previewSurface` accepts `panel | chromium | make-preview`.
 The additive `make-preview` value identifies the user's open Make iframe;
