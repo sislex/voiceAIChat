@@ -1,7 +1,7 @@
 ---
 title: Словарь терминов: роли, сервисы, стенды, выпуск, техника
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-10-31
+checked: 76b6a6fb
 areas:
   - AGENTS.md
   - docs/plans/dev-lane-v1.md
@@ -166,6 +166,16 @@ areas:
   которая недоступна по ssh (M1).
 - **Настройка задачи (configure)** — базовый SHA, разрешённые пути, команды подготовки
   (`npm ci`) и гейта, ресурсы.
+
+## File storage and task-gate evidence
+
+- **File storage** — the `@sislexa/file-storage` workspace: blob node, HTTP
+  client and coordinator. `file-storage` is its service catalog ID;
+  `file-storage-node` is the Docker target. See [architecture](architecture.md).
+- **GATE-TASK-CASE** — every reported test case, including successful cases.
+  **GATE-TASK-FAILED** repeats the failed case and its error at the end of
+  the gate report, before the total test count and time. See
+  [testing operations](testing-operations.md#task-gate-for-the-dev-lane).
 
 ## База знаний
 

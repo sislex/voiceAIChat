@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: d3e29d32
+checked: 76b6a6fb
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -46,6 +46,20 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## File storage node example
+
+The Docker target `file-storage-node` starts
+`packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
+its default blob directory. `deploy/compose.file-storage.example.yml` defines
+two nodes with decimal capacities of 10 GB and 60 GB, separate `/data` volumes,
+and separate token files under `deploy/secrets/`. Host ports 8795 and 8796 bind
+to loopback. Create the private token files before starting this example.
+
+Configure each node with `VC_FILE_STORAGE_NODE_ID`, `VC_FILE_STORAGE_DIR`,
+`VC_FILE_STORAGE_CAPACITY_BYTES` and `VC_FILE_STORAGE_TOKEN_FILE`. Managed mode
+uses `SISLEXA_COMPONENT_CONFIG` and component-runtime instead of the static token.
+The example does not add nodes to production or install Core storage routes.
 
 ## Public chat deployment isolation
 
