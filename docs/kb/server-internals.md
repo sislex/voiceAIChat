@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 713d61e0
+checked: c79bac7b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -50,6 +50,17 @@ and every 15 seconds, without overlapping polls. Two consecutive failures mark a
 node offline; a successful poll restores it. Shutdown clears and drains polling.
 `BuildOptions.storageNodes` supplies fake clients for host integration tests.
 Make consumers use these same authenticated REST paths with the user's context.
+
+`server.ts` enables ticket delegation for enabled local Make when paired
+application credentials are configured. `registerMakeProxy.prepareHeaders`
+replaces browser credentials and identity headers after Core authentication,
+sets the Core-to-Make bearer and Core ID, and issues a five-minute user grant.
+`authenticateRaw` accepts Make ticket grants for storage and Make/preview paths;
+`registerChatDelegation` admits storage only for Make ticket references. Storage
+routes retain their per-user space ACLs. Shared `/internal/whoami` uses the outer
+application delegation and rejects callers without a delegated user; forwarded
+body headers cannot replace that identity. See
+[Make authorization](data-auth.md#make-service-storage-authorization).
 
 When the account setting `chatFilesBackend` is `storage` and the service is
 enabled, uploads require a conversation owned by the caller. Core atomically

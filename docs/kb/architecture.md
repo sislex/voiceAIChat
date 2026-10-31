@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-31
-checked: 713d61e0
+checked: c79bac7b
 areas:
   - packages/file-storage
   - packages/shared/src/applicationCatalog.ts
@@ -66,6 +66,13 @@ Its unchanged public contract is `packages/shared/src/fileStorage.ts`.
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+
+For shared Make, Core's authenticated browser proxy replaces browser credentials
+with a Core-issued user delegation and the paired Core-to-Make service token.
+Make calls Core storage with its own service credential and that delegation;
+Core resolves the live user and enforces the space ACL on each operation. This
+also applies to enabled local Make deployments with paired service credentials.
+See [Make authorization](data-auth.md#make-service-storage-authorization).
 
 The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
 `VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and

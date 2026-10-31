@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 713d61e0
+checked: c79bac7b
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -73,6 +73,14 @@ Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting
 `chatFilesBackend=storage` in account settings opts chat uploads into the
 service; machine storage remains the default.
+
+Shared Make with `VC_MAKE_FILE_STORAGE=service` also needs the paired service
+credentials used by Core's application ticket configuration. Core enables
+Make delegation for a local deployment when both directions are configured,
+and converts authenticated browser proxy requests to short-lived user grants.
+Deploy compatible Core and Make versions together: service credentials identify
+the application, while the delegation supplies the user for Core storage ACLs.
+See [Make authorization](data-auth.md#make-service-storage-authorization).
 
 ## Public chat deployment isolation
 

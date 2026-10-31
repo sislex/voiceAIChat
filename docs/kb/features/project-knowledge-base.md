@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-31
-checked: c2aed75b
+checked: c79bac7b
 areas:
   - packages/knowledge/src
   - packages/kb-tools
@@ -177,6 +177,12 @@ which is parsed as runtime registration input. It does not track all of `docs/kb
 a content edit or freshness/log commit is not a change to the KB implementation,
 and that self-reference would make this topic stale immediately after its own
 reconciliation commit. The index is already excluded by the checker itself.
+
+The 0.1.1 maintenance CLI excludes area commits that also update the same topic.
+A later code-only commit still makes it stale, even if another topic was updated
+in that commit. `touch` records the current HEAD; this permits a combined
+code/topic commit without immediately invalidating that topic. See
+[maintenance workflow](../kb-workflow.md#reconciliation-after-repository-extraction).
 
 Module registration does not prove content availability. If an owner document is
 missing from search, inspect `/api/kb/modules` for its indexed SHA/status before

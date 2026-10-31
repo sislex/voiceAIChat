@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-10-31
-checked: c2aed75b
+checked: c79bac7b
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs

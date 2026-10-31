@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 713d61e0
+checked: c79bac7b
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -34,6 +34,15 @@ areas:
 возвращает `UploadInfo.storage`. `REST.serverFile` распознаёт синтетический путь
 `storage:<spaceId>/<path>` и читает файл с правами текущего пользователя.
 Подробности: [server-internals](server-internals.md).
+
+Shared Make may call `/api/storage/*` with its service bearer and a Core-issued
+Make user delegation. Core checks the live user, tenant and storage ACLs; the
+service bearer alone does not grant user access. For shared-service callers,
+`POST /internal/whoami` resolves identity from the authenticated outer delegation,
+not from headers supplied in the forwarded request body. Core's browser Make
+proxy issues that delegation after session authentication and replaces incoming
+authorization, cookies and delegation headers. See
+[Make authorization](data-auth.md#make-service-storage-authorization).
 
 ## Operator handoff
 
