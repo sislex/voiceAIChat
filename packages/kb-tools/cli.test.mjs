@@ -90,7 +90,7 @@ for (const kb of ['docs/kb', 'knowledge/nested topics']) {
         write(root, `${kb}/other.md`, '---\ntitle: Other\nupdated: 2000-01-01\n---\n# Other\n')
         commit('later source change')
         const output = run(root, process.execPath, [cli, 'check', '--strict'], 1)
-        assert.match(output, /1 коммит\(ов\) в areas после сверки:/)
+        assert.match(output, /1 коммит\(ов\) в areas после проверенного SHA:/)
         assert.match(output, /later source change/)
       } else {
         kbRun('check', '--strict')
@@ -118,6 +118,34 @@ test('package globs, empty list, validation and nested invocation', t => {
   write(root, 'kb.config.json', '{"kbDir":"../outside"}')
   run(root, process.execPath, [cli, 'check'], 1)
 })
+
+test('strict stale-topic list preserves the workflow parser footer delimiter', t => {
+  const root = temp(t)
+  write(root, 'kb.config.json', JSON.stringify({ packageGlobs: [] }))
+  for (const name of ['alpha', 'nested/beta', 'zeta'])
+    write(root, 'docs/kb/' + name + '.md', topic)
+  write(root, 'source.txt', 'before')
+  run(root, 'git', ['init', '-q'])
+  run(root, 'git', ['add', '.'])
+  run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'baseline'])
+  for (const name of ['alpha', 'nested/beta', 'zeta'])
+    run(root, process.execPath, [cli, 'touch', name])
+  // Commit the reconciliation separately: a topic touched in the same commit as the code is fresh.
+  run(root, 'git', ['add', '.'])
+  run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'reconcile'])
+  write(root, 'source.txt', 'after')
+  run(root, 'git', ['add', '.'])
+  run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'source change'])
+  const output = run(root, process.execPath, [cli, 'check', '--strict'], 1)
+  // Keep the parser used by owner/merge workflows unchanged in this regression.
+  const plain = output.replace(/\x1b\[[0-9;]*m/g, '')
+  const section = plain.split(/требуют сверки с кодом \(\d+\):/)[1] ?? ''
+  const topics = [...new Set(section.split(/после сверки:/)[0].split(/\r?\n/).flatMap(line =>
+    line.match(/^\s+(\S.*?\.md) — /)?.[1] ?? []))]
+  assert.deepEqual(topics, ['alpha.md', 'nested/beta.md', 'zeta.md'])
+  assert.match(plain, /source change/)
+})
+
 test('owner archive runs outside Core with no runtime dependencies', t => {
   const output = temp(t)
   run(core, process.execPath, ['scripts/kb-tools-release.mjs', output])

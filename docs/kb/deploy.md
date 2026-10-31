@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 772893eb
+checked: 70a9b70a
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -3487,3 +3487,6 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:0a23378c-2a9c-479f-bf55-87b7f59f3d2f -->
 - sislex/sislexa-kanban: 0.2.57
+
+<!-- release-train:d6553d43-8e3a-4ece-886b-49ada2097bcc -->
+- sislex/sislexa-kanban: 0.2.58

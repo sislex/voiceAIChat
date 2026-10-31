@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 8bb433d2
+checked: c2aed75b
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -34,6 +34,24 @@ areas:
 возвращает `UploadInfo.storage`. `REST.serverFile` распознаёт синтетический путь
 `storage:<spaceId>/<path>` и читает файл с правами текущего пользователя.
 Подробности: [server-internals](server-internals.md).
+
+## Operator handoff
+
+Core proxies `/api/kanban/handoff/*` to Kanban. The Kanban owner implements
+signed export/import, journals, task continuation and the transfer coordinator.
+`POST /api/agents/:id/switch-operator` requires an administrator who owns the
+machine and accepts serverUrl, a target-issued machine token and timeoutMs.
+It sends `agent.switchOperator`; AgentRegistry correlates the result by both
+request ID and agent ID, returning switched/failed. Missing support times out
+without claiming a successful switch. The response and audit log omit tokens.
+The caller obtains the target token from the existing target-machine token
+rotation route; handoff does not provision target projects or grant access.
+Runtime installation and production deployment are not part of this protocol.
+The route accepts WS(S) URLs without embedded credentials, query or fragment;
+tokens must be nonempty strings of at most 4096 characters. The integer timeout
+is 1000–120000 ms, default 30000 ms. Registry waiting adds a five-second result
+delivery allowance. The regression test ignores a reply from a different agent
+before accepting the selected agent's reply.
 
 ## Application frontend gateway
 
