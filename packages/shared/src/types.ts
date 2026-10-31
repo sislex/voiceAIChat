@@ -52,6 +52,8 @@ export interface MessageAttachment {
   size: number
   /** Машина-источник; отсутствие означает сервер. */
   agentId?: string
+  /** File in the storage service; when set, `path` is display-only and `agentId` is absent. */
+  storage?: import('./fileStorage').StorageFileRef
   caption?: string
   /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
   retouch?: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRecord

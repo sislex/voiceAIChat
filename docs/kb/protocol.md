@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 242d084b
+checked: 9b7a52ece
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1235,3 +1235,16 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 `packages/ui/src/remote/index.ts` переподключается после обрыва, передаёт
 последний sequence и не доставляет повторные или не-image кадры. Разовый
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
+
+## File storage contract
+
+`packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
+nodes (cluster capacity is the sum of online node capacities), per-user quotas from
+Identity (`storageQuotaBytes`, default `DEFAULT_STORAGE_QUOTA_BYTES` = 100 MB, charged
+to the space owner), spaces (`personal`, `chat`, `make-project`) and shares with
+`read` or `write` permission for a user or for anyone signed in with a link.
+`STORAGE_REST` is the Core REST surface (raw file bodies, `If-Match` revisions);
+`FILE_STORAGE_NODE_PATHS` is the node API with scope `STORAGE_NODE_SCOPE`. Chat
+history references stored files through `MessageAttachment.storage` /
+`UploadInfo.storage`. The rollout plan and task split are in
+[file-storage-service](../plans/file-storage-service.md).
