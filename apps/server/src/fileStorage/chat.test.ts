@@ -36,6 +36,14 @@ it('round trips both chat backends and preserves storage history through a Core 
     expect(stored.storage).toMatchObject({spaceId: expect.any(String), path: expect.any(String)})
     const fileUrl = '/api/storage/spaces/' + stored.storage.spaceId + '/file?path=' + encodeURIComponent(stored.storage.path)
     expect((await call('GET', fileUrl)).body).toBe('hello')
+    const attachmentUrl = '/api/files/read?path=' + encodeURIComponent(stored.path)
+    const attachment = await call('GET', attachmentUrl)
+    expect(attachment.json().dataBase64).toBe(Buffer.from('hello').toString('base64'))
+    expect(attachment.headers).toMatchObject({'cache-control':'private, no-cache','accept-ranges':'bytes'})
+    expect((await app.inject({url:attachmentUrl,headers:{...headers,'if-none-match':attachment.headers.etag}})).statusCode).toBe(304)
+    const slice = await app.inject({url:attachmentUrl,headers:{...headers,range:'bytes=1-3'}})
+    expect(slice.statusCode).toBe(206); expect(slice.body).toBe('ell')
+    expect(slice.headers['content-range']).toBe('bytes 1-3/5')
     const message = await call('POST', '/api/conversations/' + c.id + '/messages', {
       role:'user', text:'Attached', time:'12:00', attachments:[{...stored, uploadId:stored.id}],
     })

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a52
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -47,10 +47,22 @@ See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
 
+`sendStorageFile` in `fileStorage/routes.ts` handles both binary file GETs
+and storage-backed chat attachment reads. Coordinator `prepareFileRead`
+authorizes and snapshots metadata before any node access; 304 and 416 never
+open the blob. Its open callback binds to that immutable blob ID.
+HTTP node clients expose optional `getStream` in addition to buffered `get`;
+production downloads stream through Core under backpressure, forwarding a
+normalized byte range to the node. Legacy injected clients without getStream
+retain buffered compatibility. The node opens a file descriptor under its
+mutation queue and streams from that descriptor, preserving the selected inode
+across replacement/deletion. No new environment variables are required.
+
+
 Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
 provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
 multipart output executes and emits one operation at a time under backpressure.
-The existing node read client still buffers one file at a time. Small-content
+Batch reads still use the buffered node client API. Small-content
 listing reads under the metadata transaction to keep content and revision paired.
 Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
 bearer scope, validates both IDs, serializes capacity checks and copies through

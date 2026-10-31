@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a52
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,12 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Conditional storage downloads check current space ACLs and entry existence
+before evaluating HTTP validators. A matching ETag cannot bypass revoked access.
+`prepareFileRead` returns metadata plus a reader bound to its blob ID;
+cache hits and unsatisfiable ranges require no node lookup or health check.
+
 
 Batch preflight checks the owner's current usage plus upload reservations and
 the conservative sum of all write/copy sizes before any mutation. It does not

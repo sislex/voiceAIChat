@@ -13,6 +13,31 @@ export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
 export type StorageThumbnailSize = typeof STORAGE_THUMBNAIL_SIZES[number]
 export const MAX_STORAGE_PATH_LENGTH = 1024
 
+/** HTTP download validators and single byte ranges; malformed/multiple ranges are ignored. */
+export const STORAGE_CACHE_CONTROL = 'private, no-cache'
+export const storageFileEtag = (spaceId: string, revision: number): string => `"${spaceId}:${revision}"`
+export interface StorageByteRange { start: number; end: number }
+export function storageByteRange(header: string | undefined, size: number): StorageByteRange | 'unsatisfiable' | undefined {
+  if (!header) return undefined
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match || (!match[1] && !match[2])) return undefined
+  const first = match[1] ? Number(match[1]) : undefined
+  const last = match[2] ? Number(match[2]) : undefined
+  if ((first !== undefined && !Number.isSafeInteger(first)) || (last !== undefined && !Number.isSafeInteger(last))) return 'unsatisfiable'
+  if (!size || (first === undefined && last === 0)) return 'unsatisfiable'
+  const start = first ?? Math.max(0, size - last!)
+  const end = first === undefined || last === undefined ? size - 1 : Math.min(last, size - 1)
+  return start >= size || start > end ? 'unsatisfiable' : { start, end }
+}
+export function storageNotModified(etag: string, updatedAt: number, ifNoneMatch?: string, ifModifiedSince?: string): boolean {
+  if (ifNoneMatch !== undefined) return ifNoneMatch.split(',').some(value => {
+    const tag = value.trim().replace(/^W\//, '')
+    return tag === '*' || tag === etag
+  })
+  const since = Date.parse(ifModifiedSince ?? '')
+  return Number.isFinite(since) && Math.floor(updatedAt / 1000) * 1000 <= since
+}
+
 export type StorageSpaceKind = 'personal' | 'chat' | 'make-project'
 
 /** `read` lists and downloads; `write` also adds, changes, moves and deletes files. */

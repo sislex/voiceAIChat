@@ -317,6 +317,22 @@ export function createFileStorageService(ports: FileStoragePorts) {
         return { space: await view(tx, userId, space), entries: entries.sort((a, b) => a.path.localeCompare(b.path)) }
       })
     },
+    async prepareFileRead(userId: string, spaceId: string, input: string) {
+      return ports.metadata.transaction(async tx => {
+        await requireSpace(tx, userId, spaceId, 'read')
+        const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
+        return {
+          entry: entryView(entry),
+          // Bind the bytes to the immutable blob selected with the authorized metadata.
+          open: (range?: import('@voicechat/shared/fileStorage').StorageByteRange) => nodeCall(async () => {
+            const node = client(entry.nodeId)
+            if (node.getStream) return node.getStream(entry.blobId, range)
+            const bytes = await node.get(entry.blobId)
+            return Buffer.from(range ? bytes.subarray(range.start, range.end + 1) : bytes)
+          }),
+        }
+      })
+    },
     async readFile(userId: string, spaceId: string, input: string) {
       return ports.metadata.transaction(async tx => {
         await requireSpace(tx, userId, spaceId, 'read')

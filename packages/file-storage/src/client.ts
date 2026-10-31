@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream'
+import type { StorageByteRange } from '@voicechat/shared/fileStorage'
 import { FILE_STORAGE_NODE_PATHS, STORAGE_ERROR_STATUS, isStorageBlobId,
   type StorageErrorCode, type StorageNodeHealth } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from './errors.js'
@@ -13,6 +15,7 @@ export interface StorageNodeClient {
   health(): Promise<StorageNodeHealth>
   put(blobId: string, bytes: Uint8Array): Promise<void>
   get(blobId: string): Promise<Uint8Array>
+  getStream?(blobId: string, range?: StorageByteRange): Promise<Readable>
   delete(blobId: string): Promise<void>
 }
 export function createStorageNodeClient(options: {
@@ -22,10 +25,10 @@ export function createStorageNodeClient(options: {
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash)
     throw new Error('Invalid storage node URL')
   const transport = options.fetchImpl ?? fetch
-  async function request(path: string, method = 'GET', bytes?: Uint8Array) {
+  async function request(path: string, method = 'GET', bytes?: Uint8Array, range?: StorageByteRange) {
     try {
       const response = await transport(new URL(path, base), {
-        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream' },
+        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream', ...(range ? {range: `bytes=${range.start}-${range.end}`} : {}) },
         ...(bytes === undefined ? {} : { body: Buffer.from(bytes) }),
         redirect: 'error', signal: AbortSignal.timeout(60_000),
       })
@@ -75,6 +78,15 @@ export function createStorageNodeClient(options: {
       await request(FILE_STORAGE_NODE_PATHS.copy(sourceId), 'POST', Buffer.from(JSON.stringify({ targetId })))
     },
     async put(id, bytes) { await request(blobPath(id), 'PUT', bytes) },
+    async getStream(id, range) {
+      const response = await request(blobPath(id), 'GET', undefined, range)
+      if (!response.body || (range && (response.status !== 206 ||
+          !response.headers.get('content-range')?.startsWith(`bytes ${range.start}-${range.end}/`)))) {
+        await response.body?.cancel()
+        throw new StorageServiceError('node_unavailable')
+      }
+      return Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>)
+    },
     async get(id) {
       const response = await request(blobPath(id))
       try { return new Uint8Array(await response.arrayBuffer()) }

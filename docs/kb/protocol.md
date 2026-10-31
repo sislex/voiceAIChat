@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 15f87e361
+checked: 91891a52
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1350,6 +1350,19 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
 
 ## File storage contract
+
+Storage file GETs emit `ETag: "<spaceId>:<revision>"`, `Last-Modified`,
+`Cache-Control: private, no-cache` and `Accept-Ranges: bytes`.
+After session and space authorization, matching If-None-Match (including weak
+tags, lists and *) or, when absent, If-Modified-Since returns 304 without node I/O.
+A single bytes range returns 206 with Content-Range and Content-Length;
+unsatisfiable ranges return 416 with `bytes */<size>` without node I/O.
+Suffix and open-ended ranges are supported; malformed or multiple ranges are
+ignored. If-Range mismatch returns the complete representation.
+Storage-backed `REST.serverFile` reads use the same validators and ranges:
+ordinary reads retain their JSON/base64 envelope, while Range returns raw bytes.
+The pure validator/range helpers live in `packages/shared/src/fileStorage.ts`.
+
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

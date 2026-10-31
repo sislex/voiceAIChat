@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream'
 import Fastify from 'fastify'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -12,17 +13,24 @@ let db: VoiceChatDb
 let app: import('fastify').FastifyInstance
 let capacity = 60e9
 let quota = 100
+let nodeReads = 0
+let streamedRanges: unknown[] = []
 const blobs = new Map<string, Uint8Array>()
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:'); await db.ready
-  capacity = 60e9; quota = 100; blobs.clear()
+  capacity = 60e9; quota = 100; blobs.clear(); nodeReads = 0; streamedRanges = []
   const service = createFileStorageService({metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
     quota: async () => quota,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
     nodes: () => [0, 1].map(i => ({id: String(i), health: async () => { throw Error('unused') },
       copy: async (source, target) => { const bytes = blobs.get(source); if (!bytes) throw new StorageServiceError('not_found'); blobs.set(target, bytes.slice()) },
       put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
-      get: async id => { const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
+      getStream: async (id, range) => {
+        nodeReads++; streamedRanges.push(range)
+        const bytes = blobs.get(id); if (!bytes) throw new StorageServiceError('not_found')
+        return Readable.from([Buffer.from(range ? bytes.subarray(range.start, range.end + 1) : bytes)])
+      },
+      get: async id => { nodeReads++; const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
       delete: async id => {blobs.delete(id)} })),
     thumbnail: createThumbnailGenerator(),
   })
@@ -215,7 +223,7 @@ it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaus
   const file = base + '/file?path=a'
   expect((await call('PUT', file, 'owner', '{"a":1}', {'content-type':'application/json','if-none-match':'*'})).json().revision).toBe(1)
   expect((await call('GET', file)).body).toBe('{"a":1}')
-  expect((await call('GET', file, 'owner', undefined, {'if-none-match':'"1"'})).statusCode).toBe(304)
+  expect((await call('GET', file, 'owner', undefined, {'if-none-match':(await call('GET', file)).headers.etag})).statusCode).toBe(304)
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-none-match':'*'})).json().error).toBe('revision_conflict')
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-match':'"2"'})).json().error).toBe('revision_conflict')
   expect((await call('PUT', file, 'owner', 'x', {'content-type':'text/plain','if-match':'"1"'})).json().revision).toBe(2)
@@ -224,6 +232,46 @@ it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaus
   quota = 100; capacity = 1
   expect((await call('PUT', file + 'b', 'owner', 'xx', {'content-type':'text/plain'})).json().error).toBe('storage_full')
   expect((await call('GET', '/api/storage/usage')).json().usedBytes).toBe(1)
+})
+
+it('revalidates from authorized metadata and streams seek ranges', async () => {
+  const id = await space(), url = '/api/storage/spaces/' + id + '/file?path=video'
+  await call('PUT', url, 'owner', '0123456789', {'content-type':'video/mp4'})
+  const first = await call('GET', url)
+  expect(first.headers).toMatchObject({etag: `"${id}:1"`, 'cache-control':'private, no-cache', 'accept-ranges':'bytes'})
+  expect(first.headers['last-modified']).toBeTruthy()
+  nodeReads = 0
+  for (const headers of [
+    {'if-none-match':first.headers.etag}, {'if-none-match':`"other", W/${first.headers.etag}`},
+    {'if-modified-since':first.headers['last-modified']},
+  ]) {
+    const cached = await call('GET', url, 'owner', undefined, headers)
+    expect(cached.statusCode).toBe(304); expect(cached.body).toBe('')
+    expect(cached.headers.etag).toBe(first.headers.etag)
+  }
+  expect(nodeReads).toBe(0)
+  expect((await call('GET', url, 'none', undefined, {'if-none-match':'*'})).statusCode).toBe(403)
+  expect((await call('GET', url + 'missing', 'owner', undefined, {'if-none-match':'*'})).statusCode).toBe(404)
+  for (const range of ['bytes=10-', 'bytes=8-3', 'bytes=-0']) {
+    const bad = await call('GET', url, 'owner', undefined, {range})
+    expect(bad.statusCode).toBe(416); expect(bad.headers['content-range']).toBe('bytes */10')
+  }
+  expect(nodeReads).toBe(0)
+  for (const [range, body, contentRange] of [
+    ['bytes=2-5','2345','bytes 2-5/10'], ['bytes=7-','789','bytes 7-9/10'],
+    ['bytes=-3','789','bytes 7-9/10'], ['bytes=8-99','89','bytes 8-9/10'],
+  ]) {
+    const sliced = await call('GET', url, 'owner', undefined, {range})
+    expect(sliced.statusCode).toBe(206); expect(sliced.body).toBe(body)
+    expect(sliced.headers['content-range']).toBe(contentRange)
+    expect(sliced.headers['content-length']).toBe(String(body.length))
+  }
+  expect(streamedRanges).toContainEqual({start:2,end:5})
+  expect((await call('GET', url, 'owner', undefined, {range:'bytes=2-5','if-range':'"old"'})).statusCode).toBe(200)
+  await call('PUT', url, 'owner', 'new', {'content-type':'video/mp4'})
+  const changed = await call('GET', url, 'owner', undefined, {'if-none-match':first.headers.etag,'if-modified-since':new Date(Date.now() + 10000).toUTCString()})
+  expect(changed.statusCode).toBe(200); expect(changed.body).toBe('new')
+  expect(changed.headers.etag).toBe(`"${id}:2"`)
 })
 
 it('generates sized image thumbnails, caches them by revision and excludes them from quota', async () => {

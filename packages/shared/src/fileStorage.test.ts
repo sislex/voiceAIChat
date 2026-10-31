@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   MAX_STORAGE_BATCH_OPERATIONS, MAX_STORAGE_INLINE_BYTES, isStorageSmallText, FILE_STORAGE_NODE_PATHS,
+  storageByteRange, storageFileEtag, storageNotModified, STORAGE_CACHE_CONTROL,
   DEFAULT_STORAGE_QUOTA_BYTES,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
@@ -19,6 +20,25 @@ import {
   summarizeStorageCluster,
   type StorageNodeInfo,
 } from './fileStorage'
+
+it('defines cache validators and single byte ranges', () => {
+  const etag = storageFileEtag('space', 2)
+  expect(etag).toBe('"space:2"')
+  expect(STORAGE_CACHE_CONTROL).toBe('private, no-cache')
+  expect(storageNotModified(etag, 1500, '"old", W/"space:2"')).toBe(true)
+  expect(storageNotModified(etag, 1500, '*')).toBe(true)
+  expect(storageNotModified(etag, 1500, undefined, new Date(1000).toUTCString())).toBe(true)
+  expect(storageNotModified(etag, 1500, '"space:1"', new Date(5000).toUTCString())).toBe(false)
+  expect(storageNotModified(etag, 1500, undefined, 'invalid')).toBe(false)
+  for (const [header, expected] of [
+    ['bytes=2-5', {start:2, end:5}], ['bytes=6-', {start:6, end:9}],
+    ['bytes=-3', {start:7, end:9}], ['bytes=8-99', {start:8, end:9}],
+    ['bytes=-99', {start:0, end:9}], ['bytes=10-', 'unsatisfiable'],
+    ['bytes=4-2', 'unsatisfiable'], ['bytes=-0', 'unsatisfiable'],
+    ['bytes=0-1,3-4', undefined], ['items=0-1', undefined], ['bytes=-', undefined],
+  ] as const) expect(storageByteRange(header, 10)).toEqual(expected)
+  expect(storageByteRange('bytes=0-', 0)).toBe('unsatisfiable')
+})
 
 const node = (id: string, capacityGb: number, usedGb: number, online = true): StorageNodeInfo => ({
   id,

@@ -1,11 +1,11 @@
 import { nodeUploads } from "./uploads.js"
 import Fastify from 'fastify'
-import { copyFile, mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { open, copyFile, mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
 import { FILE_STORAGE_NODE_PATHS, MAX_STORAGE_FILE_BYTES, STORAGE_NODE_SCOPE,
-  isStorageBlobId, type StorageNodeHealth } from '@voicechat/shared/fileStorage'
+  storageByteRange, isStorageBlobId, type StorageNodeHealth } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../errors.js'
 
 export interface StorageNodeOptions {
@@ -121,11 +121,25 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     })
     routes.get<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)
-      const bytes = await exclusive(async () => {
+      const handle = await exclusive(async () => {
         if (await size(file) === null) throw new StorageServiceError('not_found')
-        return readFile(file)
+        return open(file, 'r')
       })
-      return reply.type('application/octet-stream').send(bytes)
+      try {
+        const total = (await handle.stat()).size
+        const range = storageByteRange(req.headers.range, total)
+        reply.header('accept-ranges', 'bytes')
+        if (range === 'unsatisfiable') {
+          await handle.close()
+          return reply.code(416).header('content-range', `bytes */${total}`).send()
+        }
+        if (range) reply.code(206).header('content-range', `bytes ${range.start}-${range.end}/${total}`)
+        reply.header('content-length', range ? range.end - range.start + 1 : total)
+        return reply.type('application/octet-stream').send(handle.createReadStream(range ?? {}))
+      } catch (error) {
+        await handle.close()
+        throw error
+      }
     })
     routes.delete<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)

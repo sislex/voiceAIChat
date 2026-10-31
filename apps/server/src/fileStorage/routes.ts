@@ -1,9 +1,41 @@
 import { storageBatchResponse } from './batch.js'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
+import { storageFileEtag, storageNotModified, storageByteRange, STORAGE_CACHE_CONTROL, STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageUploadRequest, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
+
+/** Share download validation across storage and storage-backed chat reads. */
+export async function sendStorageFile(service: FileStorageService, userId: string, spaceId: string,
+  path: string, req: FastifyRequest, reply: FastifyReply, jsonPath?: string) {
+  const file = await service.prepareFileRead(userId, spaceId, path)
+  const { entry } = file
+  const etag = storageFileEtag(spaceId, entry.revision)
+  reply.header('etag', etag).header('last-modified', new Date(entry.updatedAt).toUTCString())
+    .header('cache-control', STORAGE_CACHE_CONTROL).header('accept-ranges', 'bytes')
+    .header('x-content-type-options', 'nosniff')
+  const none = req.headers['if-none-match']
+  if (storageNotModified(etag, entry.updatedAt, none,
+      req.headers['if-modified-since'])) return reply.code(304).send()
+  const ifRange = req.headers['if-range']?.toString()
+  const rangeAllowed = !ifRange || ifRange === etag ||
+    (!ifRange.startsWith('"') && !ifRange.startsWith('W/') &&
+      Number.isFinite(Date.parse(ifRange)) && Math.floor(entry.updatedAt / 1000) * 1000 <= Date.parse(ifRange))
+  const range = storageByteRange(rangeAllowed ? req.headers.range : undefined, entry.size)
+  if (range === 'unsatisfiable') return reply.code(416).header('content-range', `bytes */${entry.size}`).send()
+  const stream = await file.open(range)
+  // Preserve the existing JSON/base64 chat API for ordinary reads.
+  if (jsonPath && !range) {
+    const chunks: Buffer[] = []
+    if (Buffer.isBuffer(stream)) chunks.push(stream)
+    else for await (const chunk of stream) chunks.push(Buffer.from(chunk))
+    return reply.send({path: jsonPath, name: path.split('/').pop(), mimeType: entry.mimeType,
+      size: entry.size, dataBase64: Buffer.concat(chunks).toString('base64')})
+  }
+  if (range) reply.code(206).header('content-range', `bytes ${range.start}-${range.end}/${entry.size}`)
+  return reply.header('content-length', range ? range.end - range.start + 1 : entry.size)
+    .header('content-disposition', 'attachment').type(entry.mimeType).send(stream)
+}
 
 export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
@@ -97,12 +129,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     return reply.type(response.contentType).send(response.stream)
   }, true)
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
-    const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
-    const etag = '"' + file.entry.revision + '"'
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
-    reply.header('etag', etag).header('x-content-type-options', 'nosniff')
-    reply.header('content-disposition', 'attachment')
-    return reply.type(file.entry.mimeType).send(Buffer.from(file.bytes))
+    return sendStorageFile(s, uid(r), r.params.id, string(r.query.path), r, reply)
   })
   route('GET', path(STORAGE_REST.thumbnail), async (s, r, reply) => {
     const size = Number(r.query.size)

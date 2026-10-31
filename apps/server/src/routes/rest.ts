@@ -1,5 +1,5 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
-import { storageError } from '../fileStorage/routes.js'
+import { sendStorageFile, storageError } from '../fileStorage/routes.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
@@ -830,8 +830,7 @@ export async function registerRest(
       const match = /^storage:([^/]+)\/(.+)$/.exec(req.query.path)
       if (!match || !opts.fileStorage) return reply.code(404).send({error: 'not_found'})
       try {
-        const file = await opts.fileStorage.readFile(userId, decodeURIComponent(match[1]), match[2])
-        return { path: req.query.path, name: match[2].split('/').pop(), mimeType: file.entry.mimeType, size: file.entry.size, dataBase64: Buffer.from(file.bytes).toString('base64') }
+        return await sendStorageFile(opts.fileStorage, userId, decodeURIComponent(match[1]), match[2], req, reply, req.query.path)
       } catch (error) { return storageError(reply, error) }
     }
     if (runnerFs && !opts.chatTextOnly) {
