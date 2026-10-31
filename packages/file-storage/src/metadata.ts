@@ -13,6 +13,8 @@ export interface OwnerStorageUsage { usedBytes: number; fileCount: number }
 export interface StorageMetadataTransaction {
   getSpace(id: string): Promise<StoredSpace | null>
   listSpaces(): Promise<StoredSpace[]>
+  /** Create or return the canonical owner/kind/ref space; personal spaces are always new. */
+  createSpace(space: StoredSpace): Promise<StoredSpace>
   putSpace(space: StoredSpace): Promise<void>
   deleteSpace(id: string): Promise<void>
   getEntry(spaceId: string, path: string): Promise<StoredEntry | null>
@@ -54,6 +56,14 @@ export function createMemoryMetadataStore(): StorageMetadataStore {
         const tx: StorageMetadataTransaction = {
           async getSpace(id) { return structuredClone(draft.spaces.get(id) ?? null) },
           async listSpaces() { return structuredClone([...draft.spaces.values()]) },
+          async createSpace(space) {
+            const existing = space.kind === 'personal' ? undefined : [...draft.spaces.values()]
+              .filter(s => s.ownerId === space.ownerId && s.kind === space.kind && s.ref === space.ref)
+              .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0]
+            if (existing) return structuredClone(existing)
+            draft.spaces.set(space.id, structuredClone(space))
+            return structuredClone(space)
+          },
           async putSpace(space) { draft.spaces.set(space.id, structuredClone(space)) },
           async deleteSpace(id) {
             draft.spaces.delete(id)

@@ -1291,13 +1291,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (fileStorage && (await db.settings.getSettings(userId)).chatFilesBackend === 'storage') {
         if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
         try {
-          const space = await db.storageMetadata().transaction(async tx => {
-            const existing = (await tx.listSpaces()).find(s => s.ownerId === userId && s.kind === 'chat' && s.ref === conversationId)
-            if (existing) return existing
-            const created = { id: randomBytes(16).toString('hex'), ownerId: userId, kind: 'chat' as const,
-              title: 'Chat files', ref: conversationId, createdAt: Date.now(), updatedAt: Date.now() }
-            await tx.putSpace(created)
-            return created
+          const space = await fileStorage.createSpace(userId, {
+            kind: 'chat', title: 'Chat files', ref: conversationId,
           })
           const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
           const entry = await fileStorage.writeFile(userId, space.id, path, bytes, { mimeType: safeMime, createOnly: true })

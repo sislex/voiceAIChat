@@ -1,7 +1,7 @@
 ---
-title: Архитектура: кто с кем разговаривает
 updated: 2026-10-31
-checked: 0623c83e
+checked: 30744ae9
+title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
   - packages/shared/src/applicationCatalog.ts
@@ -88,6 +88,13 @@ quota, clock and unique ID ports. `StorageMetadataStore.transaction` must
 serialize quota/revision decisions across coordinators, commit atomically, roll
 back failures and never retry callbacks containing node I/O.
 `createMemoryMetadataStore` implements these semantics for tests.
+The coordinator's `createSpace` is the application creation boundary. For `chat`
+and `make-project` it returns one canonical space for `(ownerId, kind, ref)`;
+concurrent callers and chat uploads use that same idempotent path. The memory
+adapter resolves the identity inside its serialized transaction. Core's SQLite
+and Postgres adapter uses the uniquely indexed `storage_space_refs` mapping,
+then reads the winner after an insert conflict. `listSpaces` still returns legacy
+duplicates; see the [compatibility and cleanup procedure](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 Quota usage includes every file in the owner's spaces, even collaborator writes.
 Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
 

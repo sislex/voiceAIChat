@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: c79bac7b
+checked: 30744ae9
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -185,6 +185,14 @@ SISL-767 acceptance also asserts that the saved answer remains visible without
 TTS. Server model notice coverage remains in
 `apps/server/src/turns.modelNotices.test.ts`: deployment-projected inherited models
 produce no warning, while explicit overrides and transport errors retain notices.
+
+### Contract consumer diagnostics
+
+`contracts-release.test.mjs` runs a real peer conflict with local tarballs and an
+isolated offline cache under `npm_config_loglevel=silent`. The subprocess helper
+forces `npm --loglevel=error` and captures both output streams, so the report
+retains ERESOLVE details and the next consumer still runs. See
+[contract pin release](deploy.md#contract-pin-release).
 
 ### Shared chat exact-artifact acceptance (U10)
 

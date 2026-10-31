@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 768067e2
+checked: dab1b380
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -77,9 +77,14 @@ body headers cannot replace that identity. See
 [Make authorization](data-auth.md#make-service-storage-authorization).
 
 When the account setting `chatFilesBackend` is `storage` and the service is
-enabled, uploads require a conversation owned by the caller. Core atomically
-finds or creates its owner's `chat` space with `ref=conversationId`, writes the
-file, and returns `UploadInfo.storage`. The default backend remains `machine`.
+enabled, uploads require a conversation owned by the caller. Core calls
+`fileStorage.createSpace` for its owner's `chat` space with `ref=conversationId`,
+then writes the file and returns `UploadInfo.storage`. Space creation is
+idempotent across coordinators; the subsequent file write has its own metadata
+transaction. Chat and Make project identities use the same uniquely indexed
+SQL mapping, while legacy duplicate spaces remain listable. See
+[idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+The default backend remains `machine`.
 Upload resolution, retouch sources and attachment reads use coordinator access
 checks. History JSON preserves `MessageAttachment.storage`; persistent reads
 do not depend on the transient UploadStore map. Display paths use

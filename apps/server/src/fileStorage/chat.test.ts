@@ -27,7 +27,10 @@ it('round trips both chat backends and preserves storage history through a Core 
     expect((await call('GET', '/api/files/read?path=' + encodeURIComponent(machine.path))).statusCode).toBe(200)
     const setting = await call('PUT', '/api/settings', {chatFilesBackend:'storage'})
     expect(setting.json().chatFilesBackend).toBe('storage')
-    const response = await call('POST', '/api/uploads', upload)
+    const responses = await Promise.all(Array.from({length: 3}, () => call('POST', '/api/uploads', upload)))
+    for (const result of responses) expect(result.statusCode, result.body).toBe(200)
+    expect(new Set(responses.map(result => result.json().storage.spaceId)).size).toBe(1)
+    const response = responses[0]
     expect(response.statusCode, response.body).toBe(200)
     const stored = response.json()
     expect(stored.storage).toMatchObject({spaceId: expect.any(String), path: expect.any(String)})

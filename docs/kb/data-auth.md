@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 49b74141
+checked: 30744ae9
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -35,7 +35,7 @@ areas:
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,
-`storage_entries`, `storage_shares`, `storage_acceptances` and a singleton
+`storage_space_refs`, `storage_entries`, `storage_shares`, `storage_acceptances` and a singleton
 `storage_lock` row on both SQLite and Postgres. Entry/share/acceptance foreign
 keys cascade on deletion. The storage domain owns these tables.
 
@@ -52,6 +52,41 @@ Identity method exists, then normalizes through `storageQuotaBytes()` with
 `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
 charge the space owner. Direct shares and accepted links are checked on every
 operation; revoking a link deletes its acceptances immediately.
+
+### Idempotent chat and Make spaces (SISL-808)
+
+The file-storage coordinator's public `createSpace` delegates to
+`StorageMetadataTransaction.createSpace`; application code must not implement a
+separate find-then-`putSpace` sequence. For `chat` and `make-project`, the
+identity is `(ownerId, kind, ref)` and a repeated or parallel call returns the
+existing canonical space. Omitted and null refs are equivalent, while an empty
+string is distinct; kind and owner remain separate scopes. Personal spaces are
+always new. Existing titles, IDs, timestamps, entries and shares are preserved.
+The chat upload path calls this same coordinator method to ensure its chat space.
+
+SQL stores canonical identities in `storage_space_refs`, with the unique
+`storage_space_refs_unique` index on `(owner_id, kind, ref_key)` on SQLite and
+Postgres. JSON encoding of ref avoids NULL uniqueness differences. An insert
+uses `ON CONFLICT DO NOTHING`, then reads the winning space and removes its
+unused candidate if another identity won. The shared transaction lock still
+serializes coordinators. Low-level `putSpace` is for metadata updates/imports;
+application creation must use `createSpace`.
+
+No duplicate merge runs at startup. On first create, an existing group is
+adopted by oldest creation time, then ID. All legacy spaces remain available
+through `listSpaces`, with their own files and shares. The identity foreign key
+cascades when its space is deleted; a later create can adopt a remaining legacy
+space.
+
+One-off cleanup: back up metadata and node blobs, inventory duplicates by owner,
+kind and ref, and choose the canonical space returned by `createSpace`. Review
+each duplicate's files, shares and saved attachment references before removing
+anything. Resolve path collisions and copy required files through the storage
+API, update references and recreate required shares, then delete redundant spaces
+through the service so blob cleanup runs. Do not bulk-delete duplicate rows:
+space deletion cascades metadata and old attachments use the original space ID.
+Verify file reads and owner usage afterward. This task provides no automatic
+merge or production data cleanup.
 
 ### Make service storage authorization
 
