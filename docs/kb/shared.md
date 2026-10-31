@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a1a8f8a6
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -42,7 +42,16 @@ belong to the coordinator and metadata adapters; see
 `src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
 entries, revisions, shares, owner usage, node health, error codes and both
 `STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
-the maximum file size is 64 MiB. Pure helpers normalize paths, resolve the
+single-PUT/direct-upload limit is 64 MiB. Resumable uploads use separately
+bounded parts (8 MiB default, at most 10,000 parts, 24-hour session lifetime).
+The additive contract also publishes direct URL/commit operations (five-minute
+capabilities), batch NDJSON operations, optional inline small-file content,
+compression negotiation and file ETags.
+Thumbnail sizes are 128/256/512. `storageThumbnailAvailable` normalizes MIME
+case and parameters and checks PNG/JPEG/WebP/GIF plus the 32 MiB input limit.
+Optional `thumbnailAvailable` fields exist on `StorageFileRef`,
+`MessageAttachment` and `UploadInfo`; actual decoding is validated by Core.
+Pure helpers normalize paths, resolve the
 strongest access, check replacement-aware quotas, sum online node capacity
 and select the online node with the most free space that can fit a file.
 

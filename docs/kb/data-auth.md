@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: df60202a1
+checked: a1a8f8a6
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -101,8 +101,12 @@ Thumbnail blobs are derived from `(source blobId, size, format)` and have no
 `storage_entries` row, so they do not affect owner usage or file count. Replacing
 a file changes its blob ID and therefore invalidates the cache key; replacement,
 file deletion and space deletion remove the source plus all supported derived
-variants. Thumbnail generation accepts at most 32 MiB of source bytes even
-though ordinary files may be larger.
+variants. Cleanup is post-commit and best-effort: failures are reported through
+`onCleanupError` and can leave orphan blobs, without rolling back the committed
+operation. Derived blobs consume node capacity even though they do not consume
+owner quota. Thumbnail generation accepts at most 32 MiB of source bytes even
+though ordinary files may be larger. Each preview request, including conditional
+requests, checks live read access before reading or generating the derived blob.
 
 ### Idempotent chat and Make spaces (SISL-808)
 

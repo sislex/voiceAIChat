@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a1a8f8a6
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -77,11 +77,21 @@ See [Make authorization](data-auth.md#make-service-storage-authorization).
 The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
 `VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and
 `VC_FILE_STORAGE_TOKEN_FILE`; `SISLEXA_COMPONENT_CONFIG` selects managed
-component-runtime authorization for `file-storage.blobs`. All blob/health calls
-require bearer authentication. One process exclusively owns each directory.
+component-runtime authorization for `file-storage.blobs`. Ordinary blob/health
+calls require bearer authentication. Optional `/v1/direct/:blobId` transfers use
+short-lived HMAC capabilities instead, with exact UI-origin CORS checks; Core
+issues them after live ACL checks and commits writes through upload reservations.
+See [direct transfer configuration](deploy.md#file-storage-node-example).
+One process exclusively owns each directory.
 Validated blobs publish through temporary-file rename, capacity mutations
-serialize, and startup recomputes published-blob usage. Temporary files do not
-count toward logical capacity; disk exhaustion still returns `storage_full`.
+serialize, and startup recomputes published-blob usage. Transient blob-write temporary files do not
+count toward logical capacity. Multipart sessions explicitly reserve capacity
+for parts plus assembly and restore those reservations from `.uploads/` on
+restart; disk exhaustion still returns `storage_full`.
+The coordinator supports node-side copies, streamed reads, durable multipart
+sessions and an injected thumbnail generator. Core supplies Sharp; derived
+previews use the source node and do not create quota-bearing metadata entries.
+Batch transport, compression and HTTP cache validation remain Core concerns.
 
 `createFileStorageService` takes metadata, node clients, cached node info, owner
 quota, clock and unique ID ports. `StorageMetadataStore.transaction` must

@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-10-31
-checked: 98722e6a
+updated: 2026-11-01
+checked: a1a8f8a6
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -34,6 +34,9 @@ Core retains release contracts, application build/deploy/gate scripts and
 artifact pins. The Release Center manager runs in Kanban; release updates arrive
 through `KanbanService.board.subscribeReleases`. See
 [release gate selection](release-gate-plan.md) for the current Core planner.
+The catalog also registers `file-storage` as a service with Shared and
+component-runtime build dependencies and the `file-storage-node` Docker target.
+Its catalog enables isolated tests; isolated build/deploy flags remain false.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

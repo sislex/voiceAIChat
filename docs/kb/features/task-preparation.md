@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-10-31
-checked: dab1b380
+updated: 2026-11-01
+checked: a1a8f8a6
 
 areas:
   - packages/shared/src/qa.ts

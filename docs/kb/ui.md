@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-31
-checked: dab1b380
+updated: 2026-11-01
+checked: a1a8f8a6
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -43,6 +43,9 @@ this API change does not update the pinned UI artifact. See
 
 Core принимает настройку `chatFilesBackend: machine | storage` (по умолчанию
 `machine`) и возвращает `UploadInfo.storage` при загрузке через включённый сервис.
+Storage-backed image uploads also expose optional `thumbnailAvailable` on
+the upload and storage reference. Consumers can request the Shared thumbnail
+route with size 128, 256 or 512; the flag indicates MIME/size eligibility.
 Это серверный контракт; элементы выбора backend и отображение вложений принадлежат
 UI owner. Изменение FS-2 не обновляет закреплённый UI-артефакт.
 

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: df60202a1
+checked: a1a8f8a6
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -98,9 +98,11 @@ integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
 per-user quota when available. Node health is polled every 15 seconds; two
 failed polls remove a node's capacity from the online pool.
 Thumbnail generation needs no new environment variable or volume. Core uses its
-existing Sharp dependency with a fixed concurrency bound; derived preview bytes
-consume node capacity but are excluded from user quota accounting and are
-removed with their source file.
+existing Sharp dependency with two concurrent jobs, a 32 MiB source-byte limit
+and a 64 × 1024 × 1024 pixel decode limit. Derived preview bytes consume node
+capacity but are excluded from user quota accounting; post-commit cleanup removes
+them with their source file and reports node cleanup failures. Proxies must
+preserve the thumbnail endpoint's private revalidation headers.
 
 Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting

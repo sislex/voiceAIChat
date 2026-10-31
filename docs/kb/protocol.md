@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: df60202a1
+checked: a1a8f8a6
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -101,9 +101,16 @@ Space lists retain duplicates with the canonical owner/kind/ref space first.
 
 Image previews use `GET STORAGE_REST.thumbnail(spaceId)?path=&size=128|256|512`.
 PNG, JPEG, WebP and the first GIF frame are resized without enlargement and
-returned as WebP (JPEG fallback). The response has a revision-and-size ETag and
-supports 304; unsupported media returns 415. Storage-backed chat image metadata
-sets `thumbnailAvailable` on both the storage reference and upload response.
+returned as WebP (JPEG fallback). ETags include the encoded space ID, normalized
+path, revision and size. Responses use `Cache-Control: private, no-cache` and
+`Last-Modified`. Weak/list `If-None-Match` validators and `*` support 304;
+`If-Modified-Since` is considered only without `If-None-Match`. Thumbnail
+validation happens after the authorized derived-blob read/generation, unlike
+the metadata-only 304 path for ordinary file reads.
+Unsupported, corrupt or disguised unsupported image contents return 415.
+Storage-backed chat uploads expose `thumbnailAvailable` on both the storage
+reference and upload response. This is metadata eligibility (supported MIME
+and at most 32 MiB), not proof that decoding will succeed.
 
 `STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
 маршруты требуют сессию, cluster доступен только администраторам. Сервис
