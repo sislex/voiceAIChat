@@ -7,11 +7,13 @@ import {
   type StorageEntry, type StorageNodeInfo, type StoragePermission, type StorageShare,
   type StorageSpace, type StorageUsage, type StorageLinkInfo,
 } from '@voicechat/shared/fileStorage'
-import type { StorageNodeClient } from './client.js'
+import { signDirectUrl, type StorageNodeClient } from './client.js'
+import { STORAGE_REST, STORAGE_DIRECT_TTL_MS, type StorageFileUrlRequest, type StorageDirectUrl } from '@voicechat/shared/fileStorage'
 import type { StorageMetadataStore, StorageMetadataTransaction, StoredEntry, StoredSpace } from './metadata.js'
 import { StorageServiceError } from './errors.js'
 
 export interface FileStoragePorts {
+  directNode?(nodeId: string): { publicUrl: string; secret: string } | undefined
   metadata: StorageMetadataStore
   nodes(): StorageNodeClient[]
   /** Host-owned health cache. Coordinator never mutates these objects. */
@@ -82,7 +84,102 @@ export function createFileStorageService(ports: FileStoragePorts) {
     const space = await tx.getSpace(share.spaceId) ?? fail('not_found')
     return { share, space }
   }
+  async function prepareWrite(tx: StorageMetadataTransaction, userId: string, spaceId: string, input: string, size: number, options: WriteStorageFileOptions) {
+    const space = await requireSpace(tx, userId, spaceId, 'write')
+    const normalized = path(input)
+    if (!Number.isSafeInteger(size) || size < 0) fail('invalid_path')
+    if (size > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
+    if (options.ifMatch !== undefined && (!Number.isSafeInteger(options.ifMatch) || options.ifMatch < 1)) fail('revision_conflict')
+    if (options.createOnly !== undefined && typeof options.createOnly !== 'boolean') fail('invalid_path')
+    const mimeType = options.mimeType ?? 'application/octet-stream'
+    if (typeof mimeType !== 'string' || !mimeType || mimeType.length > 256 || /[\r\n]/.test(mimeType)) fail('invalid_path')
+    const previous = await tx.getEntry(spaceId, normalized)
+    if ((options.createOnly && previous) || (options.ifMatch !== undefined && previous?.revision !== options.ifMatch)) fail('revision_conflict')
+    const pending = (await tx.listReservations()).filter(r => r.expiresAt > ports.now())
+    if (pending.some(r => r.entry.spaceId === spaceId && r.entry.path === normalized)) fail('revision_conflict')
+    const usage = await tx.ownerUsage(space.ownerId)
+    usage.usedBytes += pending.filter(r => r.ownerId === space.ownerId).reduce((n, r) => n + r.chargedBytes, 0)
+    const quotaBytes = await ports.quota(space.ownerId)
+    if (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
+        !fitsStorageQuota({ ...usage, quotaBytes }, size, previous?.size ?? 0)) fail('quota_exceeded')
+    const nodes = ports.nodeInfo().map(n => ({ ...n,
+      usedBytes: n.usedBytes + pending.filter(r => r.entry.nodeId === n.id).reduce((sum, r) => sum + r.entry.size, 0) }))
+    if (!ports.nodes().length) fail('storage_disabled')
+    if (!nodes.some(n => n.online)) fail('node_unavailable')
+    const node = pickStorageNode(nodes, size) ?? fail('storage_full')
+    const entry: StoredEntry = { spaceId, path: normalized, size, mimeType,
+      revision: (previous?.revision ?? 0) + 1, updatedAt: ports.now(), updatedBy: userId, blobId: ports.newId(), nodeId: node.id }
+    return { space, previous, entry }
+  }
   return {
+    async fileUrl(userId: string, spaceId: string, request: StorageFileUrlRequest): Promise<StorageDirectUrl> {
+      return ports.metadata.transaction(async tx => {
+        if (!request || !['read', 'write'].includes(request.operation)) fail('invalid_path')
+        const expiresAt = ports.now() + STORAGE_DIRECT_TTL_MS
+        if (request.operation === 'read') {
+          await requireSpace(tx, userId, spaceId, 'read')
+          const entry = await tx.getEntry(spaceId, path(request.path)) ?? fail('not_found')
+          client(entry.nodeId)
+          const direct = ports.directNode?.(entry.nodeId)
+          return { method: 'GET', expiresAt, url: direct
+            ? signDirectUrl(direct.publicUrl, direct.secret, { blobId: entry.blobId, size: entry.size, mimeType: entry.mimeType, method: 'GET', expiresAt })
+            : STORAGE_REST.file(spaceId) + '?path=' + encodeURIComponent(entry.path) }
+        }
+        if (typeof request.mimeType !== 'string') fail('invalid_path')
+        const { space, previous, entry } = await prepareWrite(tx, userId, spaceId, request.path, request.size, request)
+        const direct = ports.directNode?.(entry.nodeId)
+        const headers: Record<string, string> = { 'content-type': entry.mimeType }
+        if (!direct) {
+          if (request.ifMatch !== undefined) headers['if-match'] = String(request.ifMatch)
+          if (request.createOnly) headers['if-none-match'] = '*'
+          return { url: STORAGE_REST.file(spaceId) + '?path=' + encodeURIComponent(entry.path), method: 'PUT', headers, expiresAt }
+        }
+        if (!client(entry.nodeId).stat) fail('node_unavailable')
+        await tx.putReservation({ id: entry.blobId, entry, ownerId: space.ownerId,
+          previousBlobId: previous?.blobId ?? null, chargedBytes: Math.max(0, entry.size - (previous?.size ?? 0)), expiresAt })
+        return { url: signDirectUrl(direct.publicUrl, direct.secret, { blobId: entry.blobId, size: entry.size,
+          mimeType: entry.mimeType, method: 'PUT', expiresAt }), method: 'PUT', headers, expiresAt, reservationId: entry.blobId }
+      })
+    },
+    async commitFile(userId: string, spaceId: string, reservationId: string) {
+      let previous: StoredEntry | null = null
+      const result = await ports.metadata.transaction(async tx => {
+        const space = await requireSpace(tx, userId, spaceId, 'write')
+        const r = (await tx.listReservations()).find(r => r.id === reservationId && r.entry.spaceId === spaceId) ?? fail('not_found')
+        if (r.entry.updatedBy !== userId) fail('forbidden')
+        if (r.expiresAt <= ports.now()) fail('revision_conflict')
+        previous = await tx.getEntry(spaceId, r.entry.path)
+        if ((previous?.blobId ?? null) !== r.previousBlobId) fail('revision_conflict')
+        const usage = await tx.ownerUsage(space.ownerId)
+        usage.usedBytes += (await tx.listReservations()).filter(p => p.id !== r.id && p.ownerId === space.ownerId && p.expiresAt > ports.now())
+          .reduce((n, p) => n + p.chargedBytes, 0)
+        const quotaBytes = await ports.quota(space.ownerId)
+        if (!Number.isFinite(quotaBytes) || quotaBytes < 0 || !fitsStorageQuota({ ...usage, quotaBytes }, r.entry.size, previous?.size ?? 0)) fail('quota_exceeded')
+        const node = client(r.entry.nodeId)
+        if (!node.stat) fail('node_unavailable')
+        const stat = await nodeCall(() => node.stat!(r.entry.blobId))
+        if (stat.size !== r.entry.size) fail('revision_conflict')
+        if (r.expiresAt <= ports.now()) fail('revision_conflict')
+        await tx.putEntry(r.entry)
+        await tx.deleteReservation(r.id)
+        await touch(tx, space)
+        return entryView(r.entry)
+      })
+      if (previous) await cleanup([previous])
+      return result
+    },
+    async cleanupReservations() {
+      // Keep failed cleanup jobs durable and retry them on the next poll/restart.
+      await ports.metadata.transaction(async tx => {
+        for (const r of await tx.listReservations()) {
+          if (r.expiresAt > ports.now()) continue
+          try {
+            await nodeCall(() => client(r.entry.nodeId).delete(r.entry.blobId))
+            await tx.deleteReservation(r.id)
+          } catch (error) { try { ports.onCleanupError?.(r.entry, error) } catch { /* Retry later. */ } }
+        }
+      })
+    },
     async createSpace(userId: string, request: CreateStorageSpaceRequest) {
       signedIn(userId)
       if (!storageAllows('owner', 'write')) fail('forbidden')
@@ -209,25 +306,11 @@ export function createFileStorageService(ports: FileStoragePorts) {
       let result: StorageEntry
       try {
         result = await ports.metadata.transaction(async tx => {
-          const space = await requireSpace(tx, userId, spaceId, 'write')
-          const normalized = path(input)
-          if (bytes.byteLength > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
-          previous = await tx.getEntry(spaceId, normalized)
-          if ((options.createOnly && previous) || (options.ifMatch !== undefined && previous?.revision !== options.ifMatch))
-            fail('revision_conflict')
-          const usage = await tx.ownerUsage(space.ownerId)
-          const quotaBytes = await ports.quota(space.ownerId)
-          if (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
-            !fitsStorageQuota({ ...usage, quotaBytes }, bytes.byteLength, previous?.size ?? 0)) fail('quota_exceeded')
-          const nodes = ports.nodeInfo()
-          if (!ports.nodes().length) fail('storage_disabled')
-          if (!nodes.some(n => n.online)) fail('node_unavailable')
-          const node = pickStorageNode(nodes, bytes.byteLength) ?? fail('storage_full')
-          const entry: StoredEntry = { spaceId, path: normalized, size: bytes.byteLength,
-            mimeType: options.mimeType ?? 'application/octet-stream', revision: (previous?.revision ?? 0) + 1,
-            updatedAt: ports.now(), updatedBy: userId, blobId: ports.newId(), nodeId: node.id }
+          const prepared = await prepareWrite(tx, userId, spaceId, input, bytes.byteLength, options)
+          const { space, entry } = prepared
+          previous = prepared.previous
           // Do not destroy the old blob before both storage and metadata commit.
-          await nodeCall(() => client(node.id).put(entry.blobId, bytes))
+          await nodeCall(() => client(entry.nodeId).put(entry.blobId, bytes))
           uploaded = entry
           await tx.putEntry(entry)
           await touch(tx, space)

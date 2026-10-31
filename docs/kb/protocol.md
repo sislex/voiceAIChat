@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: 202e29b9
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1308,6 +1308,20 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
 
 ## File storage contract
+
+`POST STORAGE_REST.fileUrl(spaceId)` accepts `StorageFileUrlRequest`:
+`{operation:'read', path}` or `{operation:'write', path, size, mimeType, ifMatch?, createOnly?}`.
+It returns `StorageDirectUrl` with URL, GET/PUT method, optional headers and
+`expiresAt` (Unix milliseconds). Direct writes additionally return
+`reservationId`: upload raw bytes with the returned headers, then POST
+`{reservationId}` to `STORAGE_REST.fileCommit(spaceId)`. Only commit publishes
+the entry. The Core UI switch is separate; existing file routes remain supported.
+Without a selected node's public URL, the response uses the authenticated Core
+file path; that PUT commits normally and needs no separate commit call.
+Direct capabilities last at most five minutes and bind blob ID, method, byte
+size and content type with HMAC-SHA256. They are bearer capabilities until expiry;
+Core rechecks current ACLs when issuing URLs and committing writes. The node
+supports single byte ranges on direct GET and immutable, create-only direct PUT.
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

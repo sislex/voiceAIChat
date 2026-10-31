@@ -37,6 +37,24 @@ uses distinct volumes and token files, with 10,000,000,000 and 60,000,000,000 by
 of capacity. Create its private token files first. Ports bind only to localhost;
 use a private network or TLS proxy between machines.
 
+## Direct browser transfers
+
+Core can configure a public node URL and a separate per-node signing secret.
+The node reads `VC_FILE_STORAGE_DIRECT_SECRET_FILE` (at least 32 bytes) and
+`VC_FILE_STORAGE_CORS_ORIGINS` (comma-separated exact UI origins).
+`/v1/direct/:blobId?sig=...` verifies HMAC-SHA256 capabilities bound to
+method, blob ID, size, MIME type and an expiry of at most five minutes.
+PUT creates an immutable blob; GET streams it with single-range support.
+Internal authenticated HEAD returns the stored size without transferring bytes.
+
+The coordinator's `fileUrl` reserves a write in metadata; `commitFile` verifies
+the stored size before publishing the pending revision. Positive pending growth
+counts against owner quota, and pending blobs reserve placement capacity.
+`cleanupReservations` deletes expired blobs and records, retaining failed
+cleanup for retry. Hosts must call it periodically and on startup.
+Without a public node URL, issuance returns the existing Core file path.
+See [Core protocol](../../docs/kb/protocol.md#file-storage-contract).
+
 ## Client and coordinator
 
 `createStorageNodeClient({ id, url, token, fetchImpl? })` exposes

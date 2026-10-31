@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, writeFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { signDirectUrl } from '../client.js'
 import { createStorageNodeServer } from './server.js'
 import { createComponentRuntime } from '@sislexa/component-runtime'
 import { STORAGE_NODE_SCOPE } from '@voicechat/shared/fileStorage'
@@ -31,6 +32,50 @@ async function fixture(capacityBytes = 10) {
   return { app, root, options, headers, put, get, health }
 }
 describe('storage node', () => {
+  it('verifies direct capabilities, sizes, immutable publication, CORS and byte ranges', async () => {
+    const f = await fixture()
+    await f.app.close()
+    const secret = 'test-direct-secret-with-at-least-32-bytes'
+    const app = await createStorageNodeServer({ ...f.options, directSecret: secret, corsOrigins: ['https://core.test'] })
+    cleanup.push(() => app.close())
+    const claims = { blobId: 'direct01', method: 'PUT' as const, size: 5, mimeType: 'text/plain', expiresAt: Date.now() + 60_000 }
+    const signed = (c = claims) => { const u = new URL(signDirectUrl('https://node.test', secret, c)); return u.pathname + u.search }
+    const url = signed()
+    const headers = { origin: 'https://core.test', 'content-type': 'text/plain' }
+    const put = (target: string, payload = 'hello', h = headers) => app.inject({ method: 'PUT', url: target, headers: h, payload })
+    expect((await put(url + 'x')).statusCode).toBe(403)
+    expect((await put(url + '.')).statusCode).toBe(403)
+    expect((await put(url.replace('direct01', 'direct02'))).statusCode).toBe(403)
+    expect((await app.inject(url)).statusCode).toBe(403)
+    expect((await put(signed({ ...claims, expiresAt: Date.now() - 1 }))).statusCode).toBe(403)
+    expect((await put(signed({ ...claims, expiresAt: Date.now() + 3600_000 }))).statusCode).toBe(403)
+    expect((await put(url, 'oops')).statusCode).toBe(400)
+    expect((await put(url, 'hello', { ...headers, 'content-type': 'image/png' })).statusCode).toBe(400)
+    expect((await put(url, 'hello', { ...headers, origin: 'https://evil.test' })).statusCode).toBe(403)
+    expect((await app.inject({ url: '/v1/health', headers: f.headers })).json().usedBytes).toBe(0)
+    const preflight = await app.inject({ method: 'OPTIONS', url, headers: { origin: headers.origin, 'access-control-request-method': 'PUT' } })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers['access-control-allow-origin']).toBe(headers.origin)
+    expect((await put(url)).statusCode).toBe(204)
+    expect((await put(url, 'other')).statusCode).toBe(409)
+    const readUrl = new URL(signDirectUrl('https://node.test', secret, { ...claims, method: 'GET' }))
+    const target = readUrl.pathname + readUrl.search
+    const read = await app.inject({ url: target, headers: { origin: headers.origin } })
+    expect(read.body).toBe('hello')
+    expect(read.headers['content-type']).toContain('text/plain')
+    expect(read.headers['access-control-allow-origin']).toBe(headers.origin)
+    for (const [range, expected] of [['bytes=1-3', 'ell'], ['bytes=-2', 'lo'], ['bytes=3-', 'lo']]) {
+      const part = await app.inject({ url: target, headers: { range } })
+      expect(part.statusCode).toBe(206)
+      expect(part.body).toBe(expected)
+    }
+    expect((await app.inject({ url: target, headers: { range: 'bytes=99-' } })).statusCode).toBe(416)
+    const stat = await app.inject({ method: 'HEAD', url: '/v1/blobs/direct01', headers: f.headers })
+    expect(stat.statusCode).toBe(200)
+    expect(stat.headers['content-length']).toBe('5')
+    expect(stat.body).toBe('')
+  })
+
   it('authenticates health and every blob operation, including token rotation', async () => {
     const f = await fixture()
     for (const method of ['GET', 'PUT', 'DELETE'] as const)

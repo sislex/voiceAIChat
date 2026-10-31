@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: 202e29b9
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,15 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Direct URL issuance and commit are authenticated POST routes in `routes.ts`.
+The coordinator signs URLs using per-node secrets loaded by `runtime.ts`;
+direct file bytes bypass Core. Commit uses node HEAD, not a download.
+Runtime sweeps expired reservations at startup and after each 15-second health
+poll, with no overlapping sweeps; shutdown drains active work. Node-unavailable
+cleanup remains persisted for later retry. The node rechecks expiry before
+publishing uploads, preventing a late PUT from recreating an expired blob after
+cleanup. Direct GET streams files and supports a single Range.
 
 Legacy duplicate spaces remain visible, but metadata adapters list the registered
 `storage_space_refs` canonical identity first for each owner/kind/ref. Without a

@@ -70,6 +70,8 @@ describe('file storage contract', () => {
   })
 
   it('encodes REST paths and validates blob ids', () => {
+    expect(STORAGE_REST.fileUrl('s/1')).toBe('/api/storage/spaces/s%2F1/file/url')
+    expect(STORAGE_REST.fileCommit('s/1')).toBe('/api/storage/spaces/s%2F1/file/commit')
     expect(STORAGE_REST.file('s 1')).toBe('/api/storage/spaces/s%201/file')
     expect(STORAGE_REST.link('t/x')).toBe('/api/storage/links/t%2Fx')
     expect(isStorageBlobId('abcDEF12_-')).toBe(true)

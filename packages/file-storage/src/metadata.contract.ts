@@ -11,6 +11,25 @@ export const metadataService = (metadata: StorageMetadataStore) => createFileSto
 /** Shared contract for memory and persistent host adapters. */
 export function metadataContract(factory: () => Promise<{store: StorageMetadataStore; close(): Promise<void>}>) {
   describe('StorageMetadataStore contract', () => {
+    it('persists reservations atomically, hides them from entries and retains cleanup after space deletion', async () => {
+      const f = await factory()
+      try {
+        const space = await metadataService(f.store).createSpace('owner', { kind: 'personal', title: 'Files' })
+        const reservation = { id: 'pending1', ownerId: 'owner', previousBlobId: null, chargedBytes: 4, expiresAt: 300000,
+          entry: { spaceId: space.id, path: 'a', size: 4, mimeType: 'text/plain', revision: 1, updatedAt: 1,
+            updatedBy: 'owner', nodeId: 'node-a', blobId: 'pending1' } }
+        await expect(f.store.transaction(async tx => { await tx.putReservation(reservation); throw Error('rollback') })).rejects.toThrow('rollback')
+        expect(await f.store.transaction(tx => tx.listReservations())).toEqual([])
+        await f.store.transaction(tx => tx.putReservation(reservation))
+        expect(await f.store.transaction(tx => tx.listReservations())).toEqual([reservation])
+        expect(await f.store.transaction(tx => tx.listEntries(space.id))).toEqual([])
+        await f.store.transaction(tx => tx.deleteSpace(space.id))
+        expect(await f.store.transaction(tx => tx.listReservations())).toEqual([reservation])
+        await f.store.transaction(tx => tx.deleteReservation(reservation.id))
+        expect(await f.store.transaction(tx => tx.listReservations())).toEqual([])
+      } finally { await f.close() }
+    })
+
     it.each(['chat', 'make-project'] as const)('creates one %s space across concurrent coordinators', async kind => {
       const f = await factory()
       try {

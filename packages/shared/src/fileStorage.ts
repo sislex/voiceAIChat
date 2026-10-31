@@ -107,6 +107,23 @@ export interface StorageShare {
   createdBy: string
 }
 
+/** POST fileUrl; write reservations remain invisible until POST fileCommit. */
+export type StorageFileUrlRequest =
+  | { operation: 'read'; path: string }
+  | { operation: 'write'; path: string; size: number; mimeType: string; ifMatch?: number; createOnly?: boolean }
+
+export interface StorageDirectUrl {
+  url: string
+  method: 'GET' | 'PUT'
+  headers?: Record<string, string>
+  /** Unix milliseconds; direct capabilities last at most five minutes. */
+  expiresAt: number
+  /** Present for direct writes. Submit after PUT succeeds; fallback PUT commits itself. */
+  reservationId?: string
+}
+export interface StorageFileCommitRequest { reservationId: string }
+export const STORAGE_DIRECT_TTL_MS = 5 * 60 * 1000
+
 /** Reference stored in chat history and Make metadata instead of a machine path. */
 export interface StorageFileRef {
   spaceId: string
@@ -175,6 +192,8 @@ export const STORAGE_REST = {
   mergeDuplicates: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/merge-duplicates`,
   files: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/files`,
   file: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file`,
+  fileUrl: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/url`,
+  fileCommit: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/commit`,
   move: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/move`,
   shares: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/shares`,
   share: (spaceId: string, shareId: string) =>
@@ -183,8 +202,9 @@ export const STORAGE_REST = {
   link: (token: string) => `/api/storage/links/${encodeURIComponent(token)}`,
 } as const
 
-/** Storage node API. Every call carries a component bearer token issued for Core. */
+/** Storage node API. Health/blobs require Core bearer auth; direct uses a scoped HMAC capability. */
 export const FILE_STORAGE_NODE_PATHS = {
+  direct: (blobId: string) => `/v1/direct/${encodeURIComponent(blobId)}`,
   health: '/v1/health',
   blob: (blobId: string) => `/v1/blobs/${encodeURIComponent(blobId)}`,
 } as const

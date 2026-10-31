@@ -14,6 +14,7 @@ function fixture(quota = 100, capacities = [10e9, 60e9]) {
   const blobs = info.map(() => new Map<string, Uint8Array>())
   const clients: StorageNodeClient[] = info.map((node, i) => ({
     id: node.id,
+    stat: vi.fn(async id => { const bytes = blobs[i].get(id); if (!bytes) throw new StorageServiceError('not_found'); return { size: bytes.length } }),
     health: vi.fn(async () => ({ nodeId: node.id, capacityBytes: node.capacityBytes,
       usedBytes: node.usedBytes, freeBytes: node.capacityBytes - node.usedBytes })),
     put: vi.fn(async (id, bytes) => {
@@ -43,6 +44,89 @@ function fixture(quota = 100, capacities = [10e9, 60e9]) {
     space: (owner = 'owner') => service.createSpace(owner, { kind: 'personal', title: 'Files' }) }
 }
 describe('file storage coordinator', () => {
+  it('reserves owner quota across coordinators, keeps writes hidden and commits only stored bytes', async () => {
+    const f = fixture(6), s = await f.space()
+    f.ports.directNode = () => ({ publicUrl: 'https://node.test', secret: 's'.repeat(32) })
+    const second = createFileStorageService(f.ports)
+    const request = { operation: 'write' as const, path: 'a', size: 5, mimeType: 'text/plain', createOnly: true }
+    const url = await f.service.fileUrl('owner', s.id, request)
+    expect(url).toMatchObject({ method: 'PUT', headers: { 'content-type': 'text/plain' }, expiresAt: 300100 })
+    expect(url.reservationId).toBeTruthy()
+    expect((await second.listEntries('owner', s.id)).entries).toEqual([])
+    await expect(second.readFile('owner', s.id, 'a')).rejects.toMatchObject({ code: 'not_found' })
+    await expect(second.fileUrl('owner', s.id, { ...request, path: 'b', size: 2 })).rejects.toMatchObject({ code: 'quota_exceeded' })
+    await expect(second.writeFile('owner', s.id, 'b', data('xx'))).rejects.toMatchObject({ code: 'quota_exceeded' })
+    await expect(second.writeFile('owner', s.id, 'a', data('x'))).rejects.toMatchObject({ code: 'revision_conflict' })
+    await expect(second.commitFile('owner', s.id, url.reservationId!)).rejects.toMatchObject({ code: 'not_found' })
+    await f.clients[1].put(url.reservationId!, data('bad'))
+    await expect(second.commitFile('owner', s.id, url.reservationId!)).rejects.toMatchObject({ code: 'revision_conflict' })
+    await f.clients[1].put(url.reservationId!, data('hello'))
+    expect(await second.commitFile('owner', s.id, url.reservationId!)).toMatchObject({ path: 'a', size: 5, revision: 1 })
+    expect((await f.service.readFile('owner', s.id, 'a')).bytes).toEqual(data('hello'))
+    expect((await f.service.fileUrl('owner', s.id, { operation: 'read', path: 'a' })).url).toContain('/v1/direct/')
+    expect(await f.metadata.transaction(tx => tx.listReservations())).toEqual([])
+    expect(f.clients[1].get).toHaveBeenCalledTimes(1)
+  })
+  it('rechecks ACLs at commit and retries durable expired cleanup after restart', async () => {
+    const f = fixture(6), s = await f.space()
+    f.ports.directNode = () => ({ publicUrl: 'https://node.test', secret: 's'.repeat(32) })
+    const share = await f.service.createShare('owner', s.id, { userId: 'writer', permission: 'write' })
+    const u = await f.service.fileUrl('writer', s.id, { operation: 'write', path: 'a', size: 6, mimeType: 'text/plain' })
+    await f.clients[1].put(u.reservationId!, data('123456'))
+    await f.service.revokeShare('owner', s.id, share.id)
+    await expect(f.service.commitFile('writer', s.id, u.reservationId!)).rejects.toMatchObject({ code: 'forbidden' })
+    f.ports.now = () => u.expiresAt
+    await expect(f.service.commitFile('owner', s.id, u.reservationId!)).rejects.toMatchObject({ code: 'forbidden' })
+    f.info[1].online = false
+    const restarted = createFileStorageService(f.ports)
+    await restarted.cleanupReservations()
+    expect(await f.metadata.transaction(tx => tx.listReservations())).toHaveLength(1)
+    f.info[1].online = true
+    await restarted.cleanupReservations()
+    expect(f.blobs[1].size).toBe(0)
+    expect(await f.metadata.transaction(tx => tx.listReservations())).toEqual([])
+    await expect(restarted.fileUrl('owner', s.id, { operation: 'write', path: 'b', size: 6, mimeType: 'text/plain' })).resolves.toHaveProperty('reservationId')
+  })
+  it('reserves only replacement growth, preserves old revisions and rejects stale or expired commits', async () => {
+    const f = fixture(6), s = await f.space()
+    await f.service.writeFile('owner', s.id, 'a', data('123456'))
+    f.ports.directNode = () => ({ publicUrl: 'https://node.test', secret: 's'.repeat(32) })
+    const u = await f.service.fileUrl('owner', s.id, { operation: 'write', path: 'a', size: 3, mimeType: 'text/plain', ifMatch: 1 })
+    expect((await f.service.readFile('owner', s.id, 'a')).bytes).toEqual(data('123456'))
+    await expect(f.service.writeFile('owner', s.id, 'b', data('x'))).rejects.toMatchObject({ code: 'quota_exceeded' })
+    await f.clients[1].put(u.reservationId!, data('new'))
+    expect(await f.service.commitFile('owner', s.id, u.reservationId!)).toMatchObject({ revision: 2 })
+    expect(f.blobs[1].size).toBe(1)
+    const next = await f.service.fileUrl('owner', s.id, { operation: 'write', path: 'a', size: 4, mimeType: 'text/plain', ifMatch: 2 })
+    await f.service.move('owner', s.id, 'a', 'other')
+    await f.clients[1].put(next.reservationId!, data('xxxx'))
+    await expect(f.service.commitFile('owner', s.id, next.reservationId!)).rejects.toMatchObject({ code: 'revision_conflict' })
+    f.ports.now = () => next.expiresAt
+    await expect(f.service.commitFile('owner', s.id, next.reservationId!)).rejects.toMatchObject({ code: 'revision_conflict' })
+    await f.service.cleanupReservations()
+    expect(f.blobs[1].size).toBe(1)
+  })
+  it('serializes competing direct reservations across coordinators and owned spaces', async () => {
+    const f = fixture(6), a = await f.space(), b = await f.space()
+    f.ports.directNode = () => ({ publicUrl: 'https://node.test', secret: 's'.repeat(32) })
+    const other = createFileStorageService(f.ports)
+    const result = await Promise.allSettled([f.service.fileUrl('owner', a.id, { operation: 'write', path: 'a', size: 4, mimeType: 'text/plain' }),
+      other.fileUrl('owner', b.id, { operation: 'write', path: 'b', size: 4, mimeType: 'text/plain' })])
+    expect(result.filter(r => r.status === 'fulfilled')).toHaveLength(1)
+    expect(result.find(r => r.status === 'rejected')).toMatchObject({ reason: { code: 'quota_exceeded' } })
+  })
+  it('keeps fallback paths and preconditions compatible without a public node URL', async () => {
+    const f = fixture(), s = await f.space()
+    const u = await f.service.fileUrl('owner', s.id, { operation: 'write', path: 'dir/a', size: 2, mimeType: 'text/plain', createOnly: true })
+    expect(u.url).toBe('/api/storage/spaces/' + s.id + '/file?path=dir%2Fa')
+    expect(u.headers).toEqual({ 'content-type': 'text/plain', 'if-none-match': '*' })
+    expect(u.reservationId).toBeUndefined()
+    expect(await f.metadata.transaction(tx => tx.listReservations())).toEqual([])
+    await f.service.writeFile('owner', s.id, 'dir/a', data('hi'))
+    expect(await f.service.fileUrl('owner', s.id, { operation: 'read', path: 'dir/a' })).toMatchObject({ url: u.url, method: 'GET' })
+    await expect(f.service.fileUrl('owner', s.id, { operation: 'write', path: 'dir/a', size: 2, mimeType: 'text/plain', ifMatch: 2 })).rejects.toMatchObject({ code: 'revision_conflict' })
+  })
+
   it('pools 10 + 60 GB, places on the freest node, removes offline capacity and rejects offline reads', async () => {
     const f = fixture()
     expect(await f.service.cluster('owner')).toMatchObject({ capacityBytes: 70e9 })

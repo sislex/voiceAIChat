@@ -1,5 +1,5 @@
 import type { Sql } from '@sislexa/identity/storage-sql/types'
-import type { StorageMetadataStore, StorageMetadataTransaction, StoredSpace, StoredEntry, StorageLinkAcceptance } from '../../../../packages/file-storage/src/metadata.js'
+import type { StorageMetadataStore, StorageMetadataTransaction, StoredSpace, StoredEntry, StorageLinkAcceptance, StorageReservation } from '../../../../packages/file-storage/src/metadata.js'
 import type { StorageShare } from '@voicechat/shared/fileStorage'
 
 /** Shared lock serializes quota checks across processes without replaying node I/O. */
@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS storage_entries (
   space_id TEXT NOT NULL REFERENCES storage_spaces(id) ON DELETE CASCADE,
   path TEXT NOT NULL, size INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(space_id, path)
 );
+CREATE TABLE IF NOT EXISTS storage_reservations (id TEXT PRIMARY KEY, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS storage_shares (
   id TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES storage_spaces(id) ON DELETE CASCADE,
   token TEXT UNIQUE, data TEXT NOT NULL
@@ -36,6 +37,9 @@ export function createSqlMetadataStore(sql: Sql): StorageMetadataStore {
   const many = async <T>(query: string, params: unknown[] = []): Promise<T[]> =>
     (await sql.all<{data: string}>(query, params)).map(row => JSON.parse(row.data) as T)
   const tx: StorageMetadataTransaction = {
+    listReservations: () => many<StorageReservation>('SELECT data FROM storage_reservations'),
+    async putReservation(r) { await sql.run('INSERT INTO storage_reservations (id, data) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', [r.id, JSON.stringify(r)]) },
+    async deleteReservation(id) { await sql.run('DELETE FROM storage_reservations WHERE id = ?', [id]) },
     getSpace: id => one<StoredSpace>('SELECT data FROM storage_spaces WHERE id = ?', [id]),
     async listSpaces() {
       const canonical = new Set((await sql.all<{space_id: string}>('SELECT space_id FROM storage_space_refs')).map(r => r.space_id))

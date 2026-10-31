@@ -6,11 +6,23 @@ export interface StoredEntry extends StorageEntry {
   blobId: string
   nodeId: string
 }
+export interface StorageReservation {
+  id: string
+  ownerId: string
+  entry: StoredEntry
+  previousBlobId: string | null
+  /** Positive growth only: pending shrink must not free quota before commit. */
+  chargedBytes: number
+  expiresAt: number
+}
 export interface StorageLinkAcceptance { shareId: string; userId: string; acceptedAt: number }
 export interface OwnerStorageUsage { usedBytes: number; fileCount: number }
 
 /** All calls use the transaction's consistent view. Never expose mutable references. */
 export interface StorageMetadataTransaction {
+  listReservations(): Promise<StorageReservation[]>
+  putReservation(value: StorageReservation): Promise<void>
+  deleteReservation(id: string): Promise<void>
   getSpace(id: string): Promise<StoredSpace | null>
   /** Canonical identity first within each owner/kind/ref group, including legacy fallback. */
   listSpaces(): Promise<StoredSpace[]>
@@ -45,6 +57,7 @@ export function createMemoryMetadataStore(): StorageMetadataStore {
   let state = {
     spaces: new Map<string, StoredSpace>(),
     refs: new Map<string, string>(),
+    reservations: new Map<string, StorageReservation>(),
     entries: new Map<string, StoredEntry>(),
     shares: new Map<string, StorageShare>(),
     acceptances: new Map<string, StorageLinkAcceptance>(),
@@ -56,6 +69,9 @@ export function createMemoryMetadataStore(): StorageMetadataStore {
       const result = queue.then(async () => {
         const draft = structuredClone(state)
         const tx: StorageMetadataTransaction = {
+          async listReservations() { return structuredClone([...draft.reservations.values()]) },
+          async putReservation(r) { draft.reservations.set(r.id, structuredClone(r)) },
+          async deleteReservation(id) { draft.reservations.delete(id) },
           async getSpace(id) { return structuredClone(draft.spaces.get(id) ?? null) },
           async listSpaces() {
             const canonical = new Set(draft.refs.values())

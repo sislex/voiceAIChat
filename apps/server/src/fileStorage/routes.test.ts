@@ -10,15 +10,18 @@ let db: VoiceChatDb
 let app: import('fastify').FastifyInstance
 let capacity = 60e9
 let quota = 100
+let direct = false
 const blobs = new Map<string, Uint8Array>()
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:'); await db.ready
-  capacity = 60e9; quota = 100; blobs.clear()
+  capacity = 60e9; quota = 100; direct = false; blobs.clear()
   const service = createFileStorageService({metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
     quota: async () => quota,
+    directNode: () => direct ? { publicUrl: 'https://node.test', secret: 's'.repeat(32) } : undefined,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
     nodes: () => [0, 1].map(i => ({id: String(i), health: async () => { throw Error('unused') },
       put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
+      stat: async id => { const b = blobs.get(id); if (!b) throw new StorageServiceError('not_found'); return { size: b.length } },
       get: async id => blobs.get(id)!, delete: async id => {blobs.delete(id)} })),
   })
   app = Fastify()
@@ -34,6 +37,38 @@ const call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, user = '
   app.inject({method, url, payload, headers: {...(user ? {authorization: user} : {}), ...headers}})
 const space = async () => (await call('POST', '/api/storage/spaces', 'owner', {kind: 'personal', title: 'Files'})).json().id as string
 
+it('persists direct reservations in SQL and exposes bytes only after authenticated commit', async () => {
+  direct = true
+  quota = 5
+  const id = await space(), base = '/api/storage/spaces/' + id
+  const request = { operation: 'write', path: 'a', size: 5, mimeType: 'text/plain', createOnly: true }
+  expect((await call('POST', base + '/file/url', 'none', request)).statusCode).toBe(403)
+  const response = await call('POST', base + '/file/url', 'owner', request)
+  expect(response.statusCode).toBe(200)
+  expect(response.headers['cache-control']).toBe('no-store')
+  const { reservationId } = response.json()
+  expect(await db.storageMetadata().transaction(tx => tx.listReservations())).toHaveLength(1)
+  expect((await call('GET', base + '/files')).json().entries).toEqual([])
+  expect((await call('POST', base + '/file/url', 'owner', { ...request, path: 'b' })).statusCode).toBe(413)
+  expect((await call('POST', base + '/file/commit', 'owner', { reservationId })).statusCode).toBe(404)
+  blobs.set(reservationId, Buffer.from('hello'))
+  expect((await call('POST', base + '/file/commit', 'none', { reservationId })).statusCode).toBe(403)
+  const committed = await call('POST', base + '/file/commit', 'owner', { reservationId })
+  expect(committed.statusCode).toBe(200)
+  expect(committed.json()).toMatchObject({ path: 'a', revision: 1, size: 5 })
+  expect((await call('GET', base + '/file?path=a')).body).toBe('hello')
+  expect(await db.storageMetadata().transaction(tx => tx.listReservations())).toEqual([])
+})
+it('returns an authenticated Core fallback URL which commits via the existing PUT', async () => {
+  const id = await space(), base = '/api/storage/spaces/' + id
+  const response = await call('POST', base + '/file/url', 'owner', { operation: 'write', path: 'a', size: 5, mimeType: 'text/plain', createOnly: true })
+  const u = response.json()
+  expect(u).toMatchObject({ url: base + '/file?path=a', method: 'PUT', headers: { 'if-none-match': '*' } })
+  expect(u.reservationId).toBeUndefined()
+  expect((await call('PUT', u.url, 'owner', 'hello', u.headers)).statusCode).toBe(200)
+  expect((await call('PUT', u.url, 'owner', 'hello', u.headers)).statusCode).toBe(409)
+  expect((await call('POST', base + '/file/url', 'owner', { operation: 'read', path: 'a' })).json()).toMatchObject({ url: u.url, method: 'GET' })
+})
 it('registers every contract path with authentication, disabled errors and admin-only cluster', async () => {
   expect((await call('GET', '/api/storage/cluster')).json().capacityBytes).toBe(70e9)
   expect((await call('GET', '/api/storage/cluster', 'reader')).statusCode).toBe(403)
@@ -42,7 +77,7 @@ it('registers every contract path with authentication, disabled errors and admin
     ['GET','spaces/s'], ['PATCH','spaces/s'], ['DELETE','spaces/s'], ['GET','spaces/s/files'], ['GET','spaces/s/file'],
     ['PUT','spaces/s/file'], ['DELETE','spaces/s/file'], ['POST','spaces/s/move'],
     ['GET','spaces/s/shares'], ['POST','spaces/s/shares'], ['DELETE','spaces/s/shares/a'],
-    ['POST','spaces/s/merge-duplicates'],
+    ['POST','spaces/s/merge-duplicates'], ['POST','spaces/s/file/url'], ['POST','spaces/s/file/commit'],
     ['GET','links/token'], ['POST','links/token'],
   ] as const) expect((await call(method, '/api/storage/' + url, '')).statusCode).toBe(401)
   const disabled = Fastify()

@@ -10,6 +10,13 @@ export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageC
   const clients = injected ?? await Promise.all(config.nodes.map(async node => createStorageNodeClient({
     id: node.id, url: node.url, token: (await readFile(node.tokenFile, 'utf8')).trim(),
   })))
+  const directNodes = new Map<string, { publicUrl: string; secret: string }>()
+  for (const node of config.nodes) if (node.publicUrl) {
+    if (!node.directSecretFile) throw new Error('Missing storage direct secret file')
+    const secret = (await readFile(node.directSecretFile, 'utf8')).trim()
+    if (Buffer.byteLength(secret) < 32) throw new Error('Storage direct secret must contain at least 32 bytes')
+    directNodes.set(node.id, { publicUrl: node.publicUrl, secret })
+  }
   const info: StorageNodeInfo[] = clients.map(node => ({ id: node.id, capacityBytes: 0, usedBytes: 0, online: false, lastSeenAt: null }))
   const failures = new Map<string, number>()
   let pending: Promise<void> | undefined
@@ -25,14 +32,17 @@ export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageC
     }
   })).then(() => {}).finally(() => { pending = undefined })
   await poll()
-  const timer = setInterval(() => { void poll() }, 15_000)
-  timer.unref()
+  let cleanup: Promise<void> | undefined
   const identity = db.identity as typeof db.identity & { getUserStorageQuota?: (userId: string) => Promise<number | null> }
   const service = createFileStorageService({
     metadata: db.storageMetadata(), nodes: () => clients, nodeInfo: () => structuredClone(info),
     quota: async userId => storageQuotaBytes(await identity.getUserStorageQuota?.(userId), config.defaultQuotaBytes),
-    now: Date.now, newId: randomUUID,
+    now: Date.now, newId: randomUUID, directNode: id => directNodes.get(id),
   })
-  return { service, poll, async close() { clearInterval(timer); await pending } }
+  const sweep = () => cleanup ??= service.cleanupReservations().catch(() => {}).finally(() => { cleanup = undefined })
+  await sweep()
+  const timer = setInterval(() => { void poll().then(sweep) }, 15_000)
+  timer.unref()
+  return { service, poll, async close() { clearInterval(timer); await pending; await cleanup } }
 }
 

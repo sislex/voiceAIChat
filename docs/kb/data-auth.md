@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: 202e29b9
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,18 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+`storage_reservations` durably stores pending direct writes separately from
+published entries, under the same transaction lock. Reservation checks reuse
+normal-write ACLs, owner quota, revision/create-only and placement checks.
+Active reservations charge positive growth against owner quota and their full
+blob size against placement capacity; pending shrink does not free quota.
+Commit is restricted to the reserving user with current write access, verifies
+the previous blob identity and current quota, then checks the uploaded size via
+authenticated node HEAD before publishing metadata. Direct PUT cannot overwrite
+a blob, including after commit. Expired reservations no longer reserve quota;
+cleanup deletes their blobs and metadata, retaining failed jobs for retry.
+Reservation records survive space deletion so abandoned blobs remain cleanable.
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,

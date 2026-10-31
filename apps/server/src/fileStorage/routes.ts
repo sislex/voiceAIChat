@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, type CreateStorageSpaceRequest, type CreateStorageShareRequest } from '@voicechat/shared/fileStorage'
+import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageFileUrlRequest } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 
@@ -72,6 +72,11 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   })
   route('DELETE', path(STORAGE_REST.space), async (s, r, reply) => { await s.deleteSpace(uid(r), r.params.id); return reply.code(204).send() })
   route('GET', path(STORAGE_REST.files), (s, r) => s.listEntries(uid(r), r.params.id, r.query.prefix))
+  route('POST', path(STORAGE_REST.fileUrl), (s, r, reply) => {
+    reply.header('cache-control', 'no-store')
+    return s.fileUrl(uid(r), r.params.id, body(r) as unknown as StorageFileUrlRequest)
+  })
+  route('POST', path(STORAGE_REST.fileCommit), (s, r) => s.commitFile(uid(r), r.params.id, string(body(r).reservationId)))
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
     const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
     const etag = '"' + file.entry.revision + '"'

@@ -1,7 +1,7 @@
 import { DEFAULT_STORAGE_QUOTA_BYTES } from '@voicechat/shared/fileStorage'
 export interface FileStorageConfig {
   mode: 'off' | 'embedded'
-  nodes: Array<{id: string; url: string; tokenFile: string}>
+  nodes: Array<{id: string; url: string; tokenFile: string; publicUrl?: string; directSecretFile?: string}>
   defaultQuotaBytes: number
 }
 export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
@@ -17,6 +17,13 @@ export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
     const url = new URL(node.url)
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
       throw new Error('Invalid storage node URL')
+    if (node.publicUrl !== undefined) {
+      if (typeof node.publicUrl !== 'string' || typeof node.directSecretFile !== 'string' || !node.directSecretFile.trim())
+        throw new Error('Public storage nodes require directSecretFile')
+      const publicUrl = new URL(node.publicUrl)
+      if (!['http:', 'https:'].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash)
+        throw new Error('Invalid public storage node URL')
+    }
     ids.add(node.id)
   }
   const defaultQuotaBytes = Number(env.VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES ?? DEFAULT_STORAGE_QUOTA_BYTES)

@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 30744ae9
+updated: 2026-11-01
+checked: 202e29b9
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -48,6 +48,17 @@ areas:
 ---
 
 ## File storage node example
+
+To opt a node into browser transfers, add `publicUrl` and `directSecretFile`
+to its `VC_FILE_STORAGE_NODES` entry. Public URLs must be HTTP(S) without
+credentials, query or fragment and reachable by browsers (use HTTPS with an
+HTTPS UI). Core loads a separate per-node HMAC secret of at least 32 bytes.
+Mount that same secret on the node and set
+`VC_FILE_STORAGE_DIRECT_SECRET_FILE`; set `VC_FILE_STORAGE_CORS_ORIGINS`
+to comma-separated exact Core UI origins. Missing public URLs preserve the
+authenticated Core proxy path. Node-to-Core callbacks are not needed: clients
+POST the reservation ID to Core's commit route after a successful direct PUT.
+Configure secret rotation on both sides together; restart to load changed files.
 
 The Docker target `file-storage-node` starts
 `packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
