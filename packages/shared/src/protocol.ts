@@ -337,6 +337,7 @@ export const REST = {
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   messageServiceData: (conversationId: string, messageId: string) =>
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/service-data`,
+  /** JSON base64, raw bytes or one multipart file; see ChatUploadMetadata in fileStorage.ts. Returns UploadInfo; auth/CSRF required. */
   uploads: '/api/uploads',
   /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
   imageRetouch: '/api/images/retouch',

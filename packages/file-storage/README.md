@@ -61,7 +61,14 @@ See [the implementation](src/service.ts) for inferred signatures.
 `writeFile(userId, spaceId, path, bytes, { mimeType?, ifMatch?, createOnly? })`
 checks the owner's quota, places on the online node with most free space, and
 increments the revision. The host parses HTTP If-Match/If-None-Match into these
-options. `readFile` returns `{ entry, bytes }`; `listEntries` returns
+options. The bytes argument also accepts an async iterable. Streaming writes use
+the node client's optional `putStream` extension (the HTTP client implements it
+with a streaming request body); byte-array callers and clients remain supported.
+The coordinator counts bytes and checks size/owner quota while consuming the
+stream, commits only after its successful end, and cleans failed uploads. Custom
+node clients must implement `putStream` to receive streamed chat uploads; otherwise
+the write fails with `node_unavailable` without buffering a fallback.
+`readFile` returns `{ entry, bytes }`; `listEntries` returns
 `{ space, entries }`. Move is within one space and refuses an occupied target.
 Owners manage spaces/shares; write collaborators manage files. Links require a
 signed-in user even to describe them; acceptance makes the space visible.

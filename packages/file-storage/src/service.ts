@@ -203,7 +203,7 @@ export function createFileStorageService(ports: FileStoragePorts) {
         return { entry: entryView(entry), bytes }
       })
     },
-    async writeFile(userId: string, spaceId: string, input: string, bytes: Uint8Array, options: WriteStorageFileOptions = {}) {
+    async writeFile(userId: string, spaceId: string, input: string, bytes: Uint8Array | AsyncIterable<Uint8Array>, options: WriteStorageFileOptions = {}) {
       let uploaded: StoredEntry | undefined
       let previous: StoredEntry | null = null
       let result: StorageEntry
@@ -211,24 +211,51 @@ export function createFileStorageService(ports: FileStoragePorts) {
         result = await ports.metadata.transaction(async tx => {
           const space = await requireSpace(tx, userId, spaceId, 'write')
           const normalized = path(input)
-          if (bytes.byteLength > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
+          const knownSize = bytes instanceof Uint8Array ? bytes.byteLength : 0
+          if (knownSize > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
           previous = await tx.getEntry(spaceId, normalized)
           if ((options.createOnly && previous) || (options.ifMatch !== undefined && previous?.revision !== options.ifMatch))
             fail('revision_conflict')
           const usage = await tx.ownerUsage(space.ownerId)
           const quotaBytes = await ports.quota(space.ownerId)
           if (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
-            !fitsStorageQuota({ ...usage, quotaBytes }, bytes.byteLength, previous?.size ?? 0)) fail('quota_exceeded')
+            !fitsStorageQuota({ ...usage, quotaBytes }, knownSize, previous?.size ?? 0)) fail('quota_exceeded')
           const nodes = ports.nodeInfo()
           if (!ports.nodes().length) fail('storage_disabled')
           if (!nodes.some(n => n.online)) fail('node_unavailable')
-          const node = pickStorageNode(nodes, bytes.byteLength) ?? fail('storage_full')
-          const entry: StoredEntry = { spaceId, path: normalized, size: bytes.byteLength,
+          const node = pickStorageNode(nodes, knownSize) ?? fail('storage_full')
+          const entry: StoredEntry = { spaceId, path: normalized, size: knownSize,
             mimeType: options.mimeType ?? 'application/octet-stream', revision: (previous?.revision ?? 0) + 1,
             updatedAt: ports.now(), updatedBy: userId, blobId: ports.newId(), nodeId: node.id }
           // Do not destroy the old blob before both storage and metadata commit.
-          await nodeCall(() => client(node.id).put(entry.blobId, bytes))
-          uploaded = entry
+          if (bytes instanceof Uint8Array) {
+            await nodeCall(() => client(node.id).put(entry.blobId, bytes))
+            uploaded = entry
+          } else {
+            const target = client(node.id)
+            if (!target.putStream) fail('node_unavailable')
+            let sourceError: unknown
+            let completed = false
+            const counted = (async function* () {
+              try {
+                for await (const chunk of bytes) {
+                  entry.size += chunk.byteLength
+                  if (entry.size > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
+                  if (!fitsStorageQuota({ ...usage, quotaBytes }, entry.size, previous?.size ?? 0)) fail('quota_exceeded')
+                  yield chunk
+                }
+                completed = true
+              } catch (error) { sourceError = error; throw error }
+            })()
+            // Also clean up when the node accepted bytes but its response was lost.
+            uploaded = entry
+            try {
+              await nodeCall(() => target.putStream!(entry.blobId, counted))
+              if (sourceError) throw sourceError
+              if (!completed) fail('node_unavailable')
+            } catch (error) { throw sourceError ?? error }
+            finally { await counted.return(undefined) }
+          }
           await tx.putEntry(entry)
           await touch(tx, space)
           return entryView(entry)

@@ -6,6 +6,8 @@ export interface StorageNodeClient {
   readonly id: string
   health(): Promise<StorageNodeHealth>
   put(blobId: string, bytes: Uint8Array): Promise<void>
+  /** Optional streaming extension; existing byte-array clients remain compatible. */
+  putStream?(blobId: string, bytes: AsyncIterable<Uint8Array>): Promise<void>
   get(blobId: string): Promise<Uint8Array>
   delete(blobId: string): Promise<void>
 }
@@ -16,11 +18,12 @@ export function createStorageNodeClient(options: {
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash)
     throw new Error('Invalid storage node URL')
   const transport = options.fetchImpl ?? fetch
-  async function request(path: string, method = 'GET', bytes?: Uint8Array) {
+  async function request(path: string, method = 'GET', bytes?: Uint8Array | AsyncIterable<Uint8Array>) {
     try {
       const response = await transport(new URL(path, base), {
         method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream' },
-        ...(bytes === undefined ? {} : { body: Buffer.from(bytes) }),
+        ...(bytes === undefined ? {} : bytes instanceof Uint8Array ? { body: Buffer.from(bytes) }
+          : { body: bytes as unknown as NonNullable<Parameters<typeof fetch>[1]>['body'], duplex: 'half' }),
         redirect: 'error', signal: AbortSignal.timeout(60_000),
       })
       if (!response.ok) {
@@ -60,6 +63,7 @@ export function createStorageNodeClient(options: {
       }
     },
     async put(id, bytes) { await request(blobPath(id), 'PUT', bytes) },
+    async putStream(id, bytes) { await request(blobPath(id), 'PUT', bytes) },
     async get(id) {
       const response = await request(blobPath(id))
       try { return new Uint8Array(await response.arrayBuffer()) }

@@ -113,7 +113,7 @@ describe('REST: аутентификация', () => {
       expect(response.headers['access-control-allow-origin']).toBe(origin)
       expect(response.headers['access-control-allow-credentials']).toBe('true')
       expect(response.headers['access-control-allow-methods']).toContain('POST')
-      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id')
+      expect(response.headers['access-control-allow-headers']).toBe('Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype')
       const login = await app.inject({
         method: 'POST',
         url: '/api/session/login',

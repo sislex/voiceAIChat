@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_STORAGE_QUOTA_BYTES,
+  MAX_CHAT_UPLOAD_BYTES,
+  CHAT_UPLOAD_METADATA_HEADERS,
   STORAGE_REST,
   fitsStorageQuota,
   isStorageBlobId,
@@ -23,6 +25,12 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
 })
 
 describe('file storage contract', () => {
+  it('keeps the chat limit and metadata names stable for raw and multipart clients', () => {
+    expect(MAX_CHAT_UPLOAD_BYTES).toBe(32 * 1024 * 1024)
+    expect(CHAT_UPLOAD_METADATA_HEADERS).toEqual({
+      name: 'name', conversationId: 'conversationid', agentId: 'agentid', mimeType: 'mimetype',
+    })
+  })
   it('normalizes space-relative paths and rejects traversal', () => {
     expect(normalizeStoragePath('/a//b\\c.txt')).toBe('a/b/c.txt')
     expect(normalizeStoragePath('docs/../secret')).toBeNull()

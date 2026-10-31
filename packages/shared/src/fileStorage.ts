@@ -9,6 +9,33 @@ export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
 export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
 export const MAX_STORAGE_PATH_LENGTH = 1024
 
+/** Chat attachments retain their existing decoded 32 MiB limit in every encoding. */
+export const MAX_CHAT_UPLOAD_BYTES = 32 * 1024 * 1024
+/** Query keys also accepted as case-insensitive HTTP headers; query wins. */
+export const CHAT_UPLOAD_METADATA_HEADERS = {
+  name: 'name', conversationId: 'conversationid', agentId: 'agentid', mimeType: 'mimetype',
+} as const
+/**
+ * POST REST.uploads additionally accepts:
+ * - raw bytes with a nonempty name in query/headers; Content-Type is the file MIME;
+ * - multipart/form-data with exactly one file; filename supplies the default name.
+ * Metadata uses ChatUploadMetadata query keys or CHAT_UPLOAD_METADATA_HEADERS.
+ * Multipart text fields are not metadata. mimeType overrides the inferred MIME.
+ * application/json without query/header name is the legacy JSON form; supply name
+ * outside the body to upload a raw JSON file. All forms retain auth/CSRF and return
+ * the unchanged UploadInfo. Storage uploads require conversationId.
+ */
+export interface ChatUploadMetadata {
+  name?: string
+  conversationId?: string
+  agentId?: string
+  mimeType?: string
+}
+/** Legacy JSON POST REST.uploads; omitted name still defaults to "file". */
+export interface ChatUploadJsonRequest extends ChatUploadMetadata {
+  dataBase64?: string
+}
+
 export type StorageSpaceKind = 'personal' | 'chat' | 'make-project'
 
 /** `read` lists and downloads; `write` also adds, changes, moves and deletes files. */

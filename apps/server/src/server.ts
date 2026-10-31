@@ -201,6 +201,7 @@ const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
 
 import { createStorageRuntime } from './fileStorage/runtime.js'
+import { registerUploadParsers, readUpload, bufferUpload } from './uploadBody.js'
 import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
 import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
 
@@ -398,7 +399,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerIntegrationTokenGuard(app)
   const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id'
+  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -1260,7 +1261,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Process-wide admission also bounds the number of user keys admitted per window.
   const uploadTotal = new SlidingWindowLimiter(300, 60_000, () => Date.now())
   const uploadByUser = new SlidingWindowLimiter(20, 60_000, () => Date.now())
-  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
+  app.register(async uploadScope => {
+  await registerUploadParsers(uploadScope)
+  uploadScope.post(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
       // The auth guard runs first; sessions and IP changes share the same user budget.
@@ -1270,7 +1273,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
     } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
+      const upload = await readUpload(req)
+      const { name, agentId: requestedAgentId, conversationId, mimeType } = upload.metadata
       const userId = uid(req)
       if (browserSessions.requests.has(req) && !conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
       if (conversationId) {
@@ -1283,9 +1287,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         ? await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
         : null
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
-      if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
-      const bytes = Buffer.from(dataBase64, 'base64')
-      if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
       if (fileStorage && (await db.settings.getSettings(userId)).chatFilesBackend === 'storage') {
@@ -1295,12 +1296,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             kind: 'chat', title: 'Chat files', ref: conversationId,
           })
           const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
-          const entry = await fileStorage.writeFile(userId, space.id, path, bytes, { mimeType: safeMime, createOnly: true })
+          const entry = await fileStorage.writeFile(userId, space.id, path, upload.bytes, { mimeType: safeMime, createOnly: true })
           const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path}, entry.size, entry.mimeType, userId, conversationId)
           rec.tenantId = req.user?.account?.tenantId
           return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage }
         } catch (error) { return storageError(reply, error) as never }
       }
+      const bytes = await bufferUpload(upload.bytes)
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
       if (conversationId) {
         try {
@@ -1324,7 +1326,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             ? machineManagedFilePath(directory, randomBytes(16).toString('hex'), uploadName)
             : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
           await agentRegistry.fsMkdir(writeAgentId, directory)
-          await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
+          await agentRegistry.fsWrite(writeAgentId, target, bytes.toString('base64'))
           const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
           rec.tenantId = req.user?.account?.tenantId
           rec.conversationId = conversationId
@@ -1339,6 +1341,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
+  })
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,

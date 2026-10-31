@@ -43,6 +43,27 @@ function fixture(quota = 100, capacities = [10e9, 60e9]) {
     space: (owner = 'owner') => service.createSpace(owner, { kind: 'personal', title: 'Files' }) }
 }
 describe('file storage coordinator', () => {
+  it('streams with quota checks and rolls back source failures without replacing the old file', async () => {
+    const f = fixture(5)
+    const s = await f.space()
+    const target = f.clients[1]
+    target.putStream = async (id, source) => {
+      const chunks: Uint8Array[] = []
+      for await (const chunk of source) chunks.push(chunk)
+      await target.put(id, new Uint8Array(Buffer.concat(chunks)))
+    }
+    const stream = async function* (...values: string[]) { for (const value of values) yield data(value) }
+    await f.service.writeFile('owner', s.id, 'a', stream('12', '34'))
+    expect((await f.service.readFile('owner', s.id, 'a')).bytes).toEqual(data('1234'))
+    await expect(f.service.writeFile('owner', s.id, 'b', stream('12'))).rejects.toMatchObject({ code: 'quota_exceeded' })
+    const failure = Object.assign(new Error('bad multipart'), { statusCode: 400 })
+    await expect(f.service.writeFile('owner', s.id, 'a', (async function* () {
+      yield data('x'); throw failure
+    })())).rejects.toBe(failure)
+    expect((await f.service.readFile('owner', s.id, 'a')).bytes).toEqual(data('1234'))
+    expect(f.blobs[1].size).toBe(1)
+    expect((await f.service.usage('owner')).usedBytes).toBe(4)
+  })
   it('pools 10 + 60 GB, places on the freest node, removes offline capacity and rejects offline reads', async () => {
     const f = fixture()
     expect(await f.service.cluster('owner')).toMatchObject({ capacityBytes: 70e9 })
