@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 8bb433d2
+checked: ffdb7f99
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -37,18 +37,22 @@ The node/client/coordinator implementation is in `packages/file-storage`;
 see [architecture](architecture.md). The application catalog registers it as
 `file-storage`, with Shared and component-runtime build dependencies, node
 entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
+The contract does not declare lifecycle event names or payloads:
+`storage.file.created` and `storage.file.deleted` are neither protocol constants
+nor emitted strings in the current repository. Consumers use the documented REST
+surface rather than assume those event topics exist.
+
+## Contract release diagnostics
+
+`scripts/contracts-release.mjs` overrides an inherited
+`npm_config_loglevel=silent` with npm's global `--loglevel=error`; piping stderr
+alone cannot recover diagnostics npm has suppressed. Failed consumer reports
+include captured stdout and stderr. Its regression builds both sides of a peer
+conflict from local `file:` tarballs with an isolated empty cache in offline mode,
+asserts the ERESOLVE chain, and proves processing continues by installing the
+next consumer. Operational usage is in [Deploy](deploy.md#contract-pin-release).
 
 ## Current additive contracts
-
-`fileStorage.ts` exports storage spaces, shares, node and REST path contracts,
-quota/access/path helpers and online-node selection through the Shared barrel.
-`MessageAttachment.storage` and `UploadInfo.storage` optionally carry a
-`StorageFileRef` (`spaceId`, `path`). For storage-backed attachments the contract
-marks the outer `path` as display-only and omits `agentId`. These are additive
-contract fields: the Core server has no `fileStorage` / `STORAGE_REST` integration
-in this revision, so the declaration does not establish deployed storage routes,
-UI support or a change to existing machine-backed uploads. See the
-[file storage contract](protocol.md#file-storage-contract) for the public surface.
 
 `LlmRequest.previewSurface` accepts `panel | chromium | make-preview`.
 The additive `make-preview` value identifies the user's open Make iframe;

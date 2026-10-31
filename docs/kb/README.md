@@ -18,8 +18,8 @@
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-31 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-31 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-31 | ✓ |
-| [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-29 | ✓ |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-29 | ✓ |
+| [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-29 | ⚠ 1 коммит(ов) в areas после проверенного SHA: bbfe7c7e feat: authorize operator switches and proxy handoff requests |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-31 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-10-31 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-10-31 | ✓ |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-10-31 | ✓ |
@@ -27,16 +27,16 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-10-31 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-10-31 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-31 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-30 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-31 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 28615ba2 test(kb-tools): align SK-115 stale-list tests with same-commit freshness … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-10-31 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-31 | ✓ |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-29 | ✓ |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-31 | ✓ |
-| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-29 | ✓ |
+| [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-31 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-31 | ✓ |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-30 | ✓ |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 28615ba2 test(kb-tools): align SK-115 stale-list tests with same-commit freshness |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-10-31 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-10-31 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-10-07 | ✓ |
@@ -58,24 +58,25 @@
 - [apps/automation-runner](../../apps/automation-runner/AGENTS.md)
 - [apps/server](../../apps/server/AGENTS.md)
 - [packages/component-runtime](../../packages/component-runtime/AGENTS.md)
+- [packages/file-storage](../../packages/file-storage/AGENTS.md)
 - [packages/kb-tools](../../packages/kb-tools/AGENTS.md)
 - [packages/knowledge](../../packages/knowledge/AGENTS.md)
 - [packages/shared](../../packages/shared/AGENTS.md)
 
 ## Журнал сессий
 
-Всего записей: 1371. Последние:
+Всего записей: 1384. Последние:
 
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md) — sisl-804-freshness-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7.md) — release-train-e0dce216-35c4-4bbc-a8ff-5eb263aae7a7
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654.md) — release-train-6a4f9587-adf7-4c41-bcbe-977f1b58a654
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f.md) — release-train-0a23378c-2a9c-479f-bf55-87b7f59f3d2f
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-owner-npm-pins-train-e0dce216.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-owner-npm-pins-train-e0dce216.md) — owner-npm-pins-train-e0dce216
-- [2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-file-storage-contract.md](log/2026-10-31-alexeys-macbook-air-tailae39a6-ts-net-file-storage-contract.md) — file-storage-contract
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-merge-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-merge-kb-reconciliation.md) — fs2-merge-kb-reconciliation
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md) — fs2-kb-reconciliation
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md) — fs2-core-file-storage
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md) — fs1-task-failure-evidence
 
 ## Исторические планы
 
