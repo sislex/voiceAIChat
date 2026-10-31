@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: e7e66696
+checked: 775977da
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -35,7 +35,9 @@ journal's release branch result. Owner docs-only release reuse is proven by
 300 files, and include only `docs/kb/` paths (including previous rename paths).
 A saturated or unverified comparison requires a new release version.
 
-## Task gate for the dev lane
+<a id="task-gate-for-the-dev-lane"></a>
+
+## Task gate
 
 `scripts/affected-check.mjs` resolves the base in `parseOptions` from explicit
 `--base`, otherwise `HEAD` for `--worktree`, otherwise `origin/${BASE_BRANCH}`

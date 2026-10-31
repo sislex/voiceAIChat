@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 775977da
 areas:
   - packages/shared/src
 ---
@@ -16,7 +16,7 @@ areas:
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
 
-## File storage contract
+## fileStorage contract
 
 `src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
 entries, revisions, shares, owner usage, node health, error codes and both
