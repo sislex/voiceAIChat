@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 98722e6a
+checked: 50fcc411
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -33,6 +33,24 @@ routes. Embedded availability requires both GET and PUT registrations; remote
 availability probes an existing file through the authenticated Core proxy.
 Older owner packages without these routes do not advertise transfers.
 
+## Kanban access to machine files and uploads
+
+`KanbanCore` gives the trusted Kanban service a narrow machine facade that
+includes `fsRead`, `fsWrite`, `fsMkdir`, rename and delete operations
+(`apps/server/src/kanban/core.ts`). The internal RPC dispatcher forwards those
+calls to that facade, and the in-process adapter supplies the existing
+`MachinesService` directly. These are transport primitives: Core does not use
+them to select, sanitize, register or bind an operator-owned input bundle to a
+task or run.
+
+The upload port is similarly limited to metadata and bytes for an upload that
+Core already knows. `kanbanBridge/localCore.ts` reads a local Core upload and
+returns `null` when it is missing or stored on a user machine. It is not an
+operator-state importer. Task preparation, orchestration and input
+materialization belong to the external Kanban owner; the exclusion is enforced
+by `apps/server/src/kanban/boundary.test.ts`, which asserts that preparation and
+cluster implementations are absent from Core.
+
 Android release endpoints are registered by the Machines module; the Machines
 proxy allows only exact GET/HEAD public download paths before forwarded auth.
 See [Android distribution](clients.md#android-apk-distribution).
@@ -45,6 +63,25 @@ filtering sources, then accepts an enabled local frontend ID or an enabled local
 owner from its catalog runtime dependencies. The gateway still validates paths,
 manifest IDs and source URLs, and uses the installed owner artifact when there
 is no selected override. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
+
+## Standalone browser chat integration
+
+The canonical integration note is `docs/browser-chat-integration.md`. Core
+allows exact external origins through `VC_CORS_ORIGINS` and exchanges an
+existing Identity authority at `POST /api/chat/session` for a short-lived,
+in-memory browser-chat handle. The handle is restricted to chat REST/uploads
+and the `/ws` session flow; Core rechecks the original authority and tenant or
+delegated resource binding. Origin admission is not authorization, and the
+text-only standalone socket does not expose the Sislexa shell or voice.
+
+Delegated public clients additionally require
+`VC_DELEGATED_CHAT_ENABLED=true` and managed Identity introspection. The flow
+stays scoped to the selected conversation and paid text execution still
+requires Billing admission. `scripts/external-chat-sample.mjs` is the pinned
+external-host fixture; its browser and server tests verify integration code,
+while deployed HTTPS/cookie behavior, Billing/runner execution and reconnect
+after rollout remain operator acceptance rather than facts established by the
+fixture.
 
 ## Запуск и dependency injection
 

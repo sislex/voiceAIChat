@@ -64,8 +64,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1367. Последние:
+Всего записей: 1368. Последние:
 
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
@@ -75,7 +76,6 @@
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-stable-cookie-keys.md) — stand-proxy-stable-cookie-keys
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts.md) — stand-proxy-public-artifacts
 - [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-public-artifacts-kb.md) — stand-proxy-public-artifacts-kb
-- [2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md](log/2026-10-30-pc-radvilovich-tailae39a6-ts-net-stand-proxy-hostname.md) — stand-proxy-hostname
 
 ## Исторические планы
 
