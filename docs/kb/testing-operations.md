@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-10-31
-checked: c64c2a4d
+checked: 021917ef
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -64,6 +64,14 @@ after its run finishes; on timeout, unfinished file names identify the work for
 promotion even when no result report was written. Node reports are persisted
 after each result. Temporary reports live under `artifacts/gate-task` and are
 removed after reading. Missing successful-run reports fail the gate.
+
+Node reports preserve each assertion's status and failure messages, matching
+the fields consumed from Vitest reports. After the complete `GATE-TASK-CASE`
+inventory, the gate repeats failed assertions as `GATE-TASK-FAILED: <file>: <name>`
+with their error messages immediately before the final count/time summary.
+This keeps the original failure in workflow log tails even when later tests
+pass. `GATE-TASK-CASE` lists all reported cases and is not a failure marker.
+The reporter change does not alter test selection, budgets or runner exit codes.
 
 `scripts/task-gate.mjs` writes each Vitest `assertion.fullName` to
 `GATE-TASK-CASE` without escaping. Parameterized values therefore become part
