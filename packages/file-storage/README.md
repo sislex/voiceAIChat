@@ -53,7 +53,7 @@ throws `StorageServiceError` with a contract `code`.
 
 Every method takes the authenticated user ID first. The host must derive it from
 its verified session, never from request input. Methods are `createSpace`,
-`listSpaces`, `getSpace`, `deleteSpace`, `listEntries`, `readFile`,
+`listSpaces`, `getSpace`, `updateSpace`, `deleteSpace`, `listEntries`, `readFile`,
 `writeFile`, `deleteFile`, `move`, `usage`, `cluster`, `listShares`,
 `createShare`, `revokeShare`, `describeLink` and `acceptLink`.
 See [the implementation](src/service.ts) for inferred signatures.

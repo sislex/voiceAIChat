@@ -1,7 +1,7 @@
 import {
   MAX_STORAGE_FILE_BYTES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
   pickStorageNode, storageAllows, strongestStorageAccess, summarizeStorageCluster,
-  type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageAccess,
+  type CreateStorageSpaceRequest, type UpdateStorageSpaceRequest, type CreateStorageShareRequest, type StorageAccess,
   type StorageEntry, type StorageNodeInfo, type StoragePermission, type StorageShare,
   type StorageSpace, type StorageUsage, type StorageLinkInfo,
 } from '@voicechat/shared/fileStorage'
@@ -104,6 +104,15 @@ export function createFileStorageService(ports: FileStoragePorts) {
     },
     async getSpace(userId: string, spaceId: string) {
       return ports.metadata.transaction(async tx => view(tx, userId, await requireSpace(tx, userId, spaceId, 'read')))
+    },
+    async updateSpace(userId: string, spaceId: string, request: UpdateStorageSpaceRequest) {
+      return ports.metadata.transaction(async tx => {
+        const space = await requireSpace(tx, userId, spaceId, 'write', true)
+        if (typeof request.title !== 'string' || !request.title.trim()) fail('invalid_path')
+        const updated = { ...space, title: request.title.trim(), updatedAt: ports.now() }
+        await tx.putSpace(updated)
+        return view(tx, userId, updated)
+      })
     },
     async deleteSpace(userId: string, spaceId: string) {
       const entries = await ports.metadata.transaction(async tx => {

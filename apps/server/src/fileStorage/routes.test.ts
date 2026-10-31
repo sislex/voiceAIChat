@@ -30,7 +30,7 @@ beforeEach(async () => {
   await app.ready()
 })
 afterEach(async () => {await app.close(); await db.close()})
-const call = (method: 'GET'|'POST'|'PUT'|'DELETE', url: string, user = 'owner', payload?: object|string, headers = {}) =>
+const call = (method: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE', url: string, user = 'owner', payload?: object|string, headers = {}) =>
   app.inject({method, url, payload, headers: {...(user ? {authorization: user} : {}), ...headers}})
 const space = async () => (await call('POST', '/api/storage/spaces', 'owner', {kind: 'personal', title: 'Files'})).json().id as string
 
@@ -39,7 +39,7 @@ it('registers every contract path with authentication, disabled errors and admin
   expect((await call('GET', '/api/storage/cluster', 'reader')).statusCode).toBe(403)
   for (const [method, url] of [
     ['GET','usage'], ['GET','cluster'], ['GET','spaces'], ['POST','spaces'],
-    ['GET','spaces/s'], ['DELETE','spaces/s'], ['GET','spaces/s/files'], ['GET','spaces/s/file'],
+    ['GET','spaces/s'], ['PATCH','spaces/s'], ['DELETE','spaces/s'], ['GET','spaces/s/files'], ['GET','spaces/s/file'],
     ['PUT','spaces/s/file'], ['DELETE','spaces/s/file'], ['POST','spaces/s/move'],
     ['GET','spaces/s/shares'], ['POST','spaces/s/shares'], ['DELETE','spaces/s/shares/a'],
     ['GET','links/token'], ['POST','links/token'],
@@ -73,6 +73,22 @@ it('enforces owner/write/read/none on reads, mutations and share administration'
   }
   expect((await call('DELETE', base)).statusCode).toBe(204)
   expect((await call('GET', base)).statusCode).toBe(404)
+})
+
+it('renames only as owner, preserving files, identity, ref and shares', async () => {
+  const original = (await call('POST', '/api/storage/spaces', 'owner', { kind: 'make-project', ref: 'conversation', title: 'Before' })).json()
+  const base = '/api/storage/spaces/' + original.id
+  await call('PUT', base + '/file?path=index.html', 'owner', 'hello', { 'content-type': 'text/plain' })
+  await call('POST', base + '/shares', 'owner', { userId: 'writer', permission: 'write' })
+  expect((await call('PATCH', base, 'writer', { title: 'Forbidden' })).statusCode).toBe(403)
+  expect((await call('PATCH', base, 'other', { title: 'Forbidden' })).statusCode).toBe(403)
+  expect((await call('PATCH', base, 'owner', { title: ' ' })).statusCode).toBe(400)
+  expect((await call('PATCH', base, 'owner', { title: 1 })).statusCode).toBe(400)
+  const updated = await call('PATCH', base, 'owner', { title: ' Renamed ', ref: 'forged', ownerId: 'other' })
+  expect(updated.statusCode).toBe(200)
+  expect(updated.json()).toMatchObject({ id: original.id, ownerId: 'owner', ref: 'conversation', title: 'Renamed', fileCount: 1 })
+  expect((await call('GET', base + '/file?path=index.html', 'writer')).body).toBe('hello')
+  expect((await call('GET', '/api/storage/spaces')).json()[0].title).toBe('Renamed')
 })
 
 it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaustion', async () => {

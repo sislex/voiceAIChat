@@ -63,6 +63,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     return s.createSpace(uid(r), b as unknown as CreateStorageSpaceRequest)
   })
   route('GET', path(STORAGE_REST.space), (s, r) => s.getSpace(uid(r), r.params.id))
+  route('PATCH', path(STORAGE_REST.space), (s, r) => s.updateSpace(uid(r), r.params.id, { title: string(body(r).title) }))
   route('DELETE', path(STORAGE_REST.space), async (s, r, reply) => { await s.deleteSpace(uid(r), r.params.id); return reply.code(204).send() })
   route('GET', path(STORAGE_REST.files), (s, r) => s.listEntries(uid(r), r.params.id, r.query.prefix))
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {

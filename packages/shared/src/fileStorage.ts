@@ -119,6 +119,11 @@ export interface CreateStorageSpaceRequest {
   ref?: string | null
 }
 
+/** PATCH STORAGE_REST.space; only the owner may rename a space. */
+export interface UpdateStorageSpaceRequest {
+  title: string
+}
+
 export interface ListStorageEntriesResponse {
   space: StorageSpace
   entries: StorageEntry[]

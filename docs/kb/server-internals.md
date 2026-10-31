@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: c79bac7b
+checked: 768067e2
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -53,6 +53,11 @@ See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 rejects anonymous link access and restricts cluster information to admins.
 PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
 and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
+`PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
+space. The coordinator checks ownership inside the metadata transaction; write
+collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
+Make uses this endpoint to synchronize its conversation title without asking the
+Core chat UI to resolve a Make conversation.
 
 `runtime.ts` loads node tokens from configured files and polls health at startup
 and every 15 seconds, without overlapping polls. Two consecutive failures mark a
