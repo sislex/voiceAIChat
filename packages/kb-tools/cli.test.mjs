@@ -90,7 +90,7 @@ for (const kb of ['docs/kb', 'knowledge/nested topics']) {
         write(root, `${kb}/other.md`, '---\ntitle: Other\nupdated: 2000-01-01\n---\n# Other\n')
         commit('later source change')
         const output = run(root, process.execPath, [cli, 'check', '--strict'], 1)
-        assert.match(output, /1 коммит\(ов\) в areas после сверки:/)
+        assert.match(output, /1 коммит\(ов\) в areas после проверенного SHA:/)
         assert.match(output, /later source change/)
       } else {
         kbRun('check', '--strict')
@@ -130,6 +130,9 @@ test('strict stale-topic list preserves the workflow parser footer delimiter', t
   run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'baseline'])
   for (const name of ['alpha', 'nested/beta', 'zeta'])
     run(root, process.execPath, [cli, 'touch', name])
+  // Commit the reconciliation separately: a topic touched in the same commit as the code is fresh.
+  run(root, 'git', ['add', '.'])
+  run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'reconcile'])
   write(root, 'source.txt', 'after')
   run(root, 'git', ['add', '.'])
   run(root, 'git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'source change'])
