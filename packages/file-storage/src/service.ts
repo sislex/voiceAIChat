@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
-  MAX_STORAGE_FILE_BYTES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
+  MAX_STORAGE_FILE_BYTES, MAX_STORAGE_THUMBNAIL_INPUT_BYTES, STORAGE_THUMBNAIL_SIZES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
   pickStorageNode, storageAllows, strongestStorageAccess, summarizeStorageCluster,
   type CreateStorageSpaceRequest, type UpdateStorageSpaceRequest, type CreateStorageShareRequest, type StorageAccess,
   type StorageEntry, type StorageNodeInfo, type StoragePermission, type StorageShare,
-  type StorageSpace, type StorageUsage, type StorageLinkInfo,
+  type StorageSpace, type StorageUsage, type StorageLinkInfo, type StorageThumbnailSize,
 } from '@voicechat/shared/fileStorage'
 import { signDirectUrl, type StorageNodeClient } from './client.js'
 import { STORAGE_REST, STORAGE_DIRECT_TTL_MS, type StorageFileUrlRequest, type StorageDirectUrl } from '@voicechat/shared/fileStorage'
@@ -24,6 +24,7 @@ export interface FileStoragePorts {
   newId(): string
   /** Failed post-commit cleanup leaves an unreferenced blob; host can enqueue GC. */
   onCleanupError?(entry: StoredEntry, error: unknown): void
+  thumbnail?(bytes: Uint8Array, size: StorageThumbnailSize): Promise<{ bytes: Uint8Array; mimeType: 'image/webp' | 'image/jpeg' }>
 }
 export interface WriteStorageFileOptions {
   mimeType?: string
@@ -35,6 +36,9 @@ export function createFileStorageService(ports: FileStoragePorts) {
   function signedIn(userId: string) { if (typeof userId !== 'string' || !userId.trim()) fail('forbidden') }
   function path(input: string) { return normalizeStoragePath(input) ?? fail('invalid_path') }
   const entryView = ({ spaceId: _space, blobId: _blob, nodeId: _node, ...entry }: StoredEntry): StorageEntry => entry
+  const imageMime = (mime: string) => ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mime.toLowerCase())
+  const derivedId = (blobId: string, size: StorageThumbnailSize, format: 'webp' | 'jpeg') =>
+    createHash('sha256').update(`thumbnail:${blobId}:${size}:${format}`).digest('base64url')
   async function access(tx: StorageMetadataTransaction, userId: string, space: StoredSpace): Promise<StorageAccess | null> {
     const accepted = new Set((await tx.listAcceptances(userId)).map(a => a.shareId))
     const shares = await tx.listShares(space.id)
@@ -67,7 +71,12 @@ export function createFileStorageService(ports: FileStoragePorts) {
   }
   async function cleanup(entries: StoredEntry[]) {
     for (const entry of entries) {
-      try { await nodeCall(() => client(entry.nodeId).delete(entry.blobId)) }
+      try {
+        const node = client(entry.nodeId)
+        await nodeCall(() => node.delete(entry.blobId))
+        for (const size of STORAGE_THUMBNAIL_SIZES) for (const format of ['webp', 'jpeg'] as const)
+          await nodeCall(() => node.delete(derivedId(entry.blobId, size, format)))
+      }
       catch (error) {
         // A cleanup failure must not turn a committed write into a reported failure.
         try { ports.onCleanupError?.(entry, error) } catch { /* Host diagnostics cannot undo a commit. */ }
@@ -298,6 +307,29 @@ export function createFileStorageService(ports: FileStoragePorts) {
         const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
         const bytes = await nodeCall(() => client(entry.nodeId).get(entry.blobId))
         return { entry: entryView(entry), bytes }
+      })
+    },
+    async readThumbnail(userId: string, spaceId: string, input: string, size: StorageThumbnailSize) {
+      return ports.metadata.transaction(async tx => {
+        await requireSpace(tx, userId, spaceId, 'read')
+        if (!STORAGE_THUMBNAIL_SIZES.includes(size)) fail('invalid_path')
+        const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
+        if (!imageMime(entry.mimeType) || entry.size > MAX_STORAGE_THUMBNAIL_INPUT_BYTES)
+          fail('unsupported_media_type')
+        const generate = ports.thumbnail ?? fail('unsupported_media_type')
+        const node = client(entry.nodeId)
+        for (const format of ['webp', 'jpeg'] as const) {
+          try {
+            const bytes = await nodeCall(() => node.get(derivedId(entry.blobId, size, format)))
+            return { entry: entryView(entry), bytes, mimeType: `image/${format}` as 'image/webp' | 'image/jpeg' }
+          } catch (error) {
+            if (!(error instanceof StorageServiceError) || error.code !== 'not_found') throw error
+          }
+        }
+        const generated = await generate(await nodeCall(() => node.get(entry.blobId)), size)
+        const format = generated.mimeType === 'image/webp' ? 'webp' : 'jpeg'
+        await nodeCall(() => node.put(derivedId(entry.blobId, size, format), generated.bytes))
+        return { entry: entryView(entry), ...generated }
       })
     },
     async writeFile(userId: string, spaceId: string, input: string, bytes: Uint8Array, options: WriteStorageFileOptions = {}) {

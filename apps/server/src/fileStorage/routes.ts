@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageFileUrlRequest } from '@voicechat/shared/fileStorage'
+import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageFileUrlRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 
@@ -8,7 +8,7 @@ export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
   throw error
 }
-type Request = FastifyRequest<{ Params: {id: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string}; Body: unknown }>
+type Request = FastifyRequest<{ Params: {id: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string}; Body: unknown }>
 export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService): void {
   root.register(async app => {
   app.setErrorHandler((error, _req, reply) => {
@@ -85,6 +85,15 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     reply.header('content-disposition', 'attachment')
     return reply.type(file.entry.mimeType).send(Buffer.from(file.bytes))
   })
+  route('GET', path(STORAGE_REST.thumbnail), async (s, r, reply) => {
+    const size = Number(r.query.size)
+    if (!STORAGE_THUMBNAIL_SIZES.includes(size as StorageThumbnailSize)) throw new StorageServiceError('invalid_path')
+    const thumbnail = await s.readThumbnail(uid(r), r.params.id, string(r.query.path), size as StorageThumbnailSize)
+    const etag = `"${thumbnail.entry.revision}-${size}"`
+    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
+    return reply.header('etag', etag).header('x-content-type-options', 'nosniff')
+      .header('content-disposition', 'inline').type(thumbnail.mimeType).send(Buffer.from(thumbnail.bytes))
+  })
   route('PUT', path(STORAGE_REST.file), (s, r) => {
     const match = r.headers['if-match']
     const none = r.headers['if-none-match']
@@ -111,4 +120,3 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   route('POST', link, (s, r) => s.acceptLink(uid(r), r.params.token))
   })
 }
-

@@ -5,6 +5,8 @@ import { createFileStorageService } from '../../../../packages/file-storage/src/
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import { registerFileStorageRoutes } from './routes.js'
 import { VoiceChatDb } from '../db/database.js'
+import sharp from 'sharp'
+import { createThumbnailGenerator } from './thumbnail.js'
 
 let db: VoiceChatDb
 let app: import('fastify').FastifyInstance
@@ -22,7 +24,9 @@ beforeEach(async () => {
     nodes: () => [0, 1].map(i => ({id: String(i), health: async () => { throw Error('unused') },
       put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
       stat: async id => { const b = blobs.get(id); if (!b) throw new StorageServiceError('not_found'); return { size: b.length } },
-      get: async id => blobs.get(id)!, delete: async id => {blobs.delete(id)} })),
+      get: async id => { const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
+      delete: async id => {blobs.delete(id)} })),
+    thumbnail: createThumbnailGenerator(),
   })
   app = Fastify()
   app.addHook('onRequest', async req => {
@@ -204,6 +208,38 @@ it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaus
   expect((await call('GET', '/api/storage/usage')).json().usedBytes).toBe(1)
 })
 
+it('generates sized image thumbnails, caches them by revision and excludes them from quota', async () => {
+  quota = 1_000_000
+  const id = await space()
+  const base = '/api/storage/spaces/' + id
+  const file = base + '/file?path=photo.png'
+  const source = await sharp({create:{width:800,height:400,channels:4,background:'#ff0000'}}).png().toBuffer()
+  expect((await call('PUT', file, 'owner', source as unknown as object, {'content-type':'image/png'})).statusCode).toBe(200)
+  const usage = (await call('GET', '/api/storage/usage')).json().usedBytes
+  const url = base + '/thumbnail?path=photo.png&size=128'
+  const first = await call('GET', url)
+  expect(first.statusCode).toBe(200)
+  expect(first.headers['content-type']).toContain('image/webp')
+  expect(await sharp(first.rawPayload).metadata()).toMatchObject({width:128,height:64})
+  const count = blobs.size
+  expect((await call('GET', url)).rawPayload).toEqual(first.rawPayload)
+  expect(blobs.size).toBe(count)
+  expect((await call('GET', url, 'owner', undefined, {'if-none-match':first.headers.etag})).statusCode).toBe(304)
+  expect((await call('GET', '/api/storage/usage')).json().usedBytes).toBe(usage)
+  const replacement = await sharp({create:{width:200,height:800,channels:4,background:'#00ff00'}}).png().toBuffer()
+  await call('PUT', file, 'owner', replacement as unknown as object, {'content-type':'image/png'})
+  const changed = await call('GET', url)
+  expect(changed.headers.etag).not.toBe(first.headers.etag)
+  expect(await sharp(changed.rawPayload).metadata()).toMatchObject({width:32,height:128})
+  expect((await call('GET', base + '/thumbnail?path=photo.png&size=42')).statusCode).toBe(400)
+})
+
+it('rejects thumbnails for non-images', async () => {
+  const base = '/api/storage/spaces/' + await space()
+  await call('PUT', base + '/file?path=notes.txt', 'owner', 'hello', {'content-type':'text/plain'})
+  expect((await call('GET', base + '/thumbnail?path=notes.txt&size=128')).statusCode).toBe(415)
+})
+
 it('rejects oversized raw bodies with the contract error', async () => {
   const id = await space()
   const response = await app.inject({method:'PUT', url:'/api/storage/spaces/' + id + '/file?path=large',
@@ -225,4 +261,3 @@ it('accepts links only for signed-in users and revokes access immediately', asyn
   expect((await call('GET', base, 'reader')).statusCode).toBe(403)
   expect((await call('POST', link, 'reader')).statusCode).toBe(404)
 })
-

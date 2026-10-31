@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 202e29b9
+checked: 2d729ef8
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -84,6 +84,10 @@ Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 rejects anonymous link access and restricts cluster information to admins.
 PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
 and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
+The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
+`thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
+animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
+the source node and are probed before the source bytes are read.
 `PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
 space. The coordinator checks ownership inside the metadata transaction; write
 collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
@@ -129,6 +133,9 @@ transaction. Chat and Make project identities use the same uniquely indexed
 SQL mapping, while legacy duplicate spaces remain listable. See
 [idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 The default backend remains `machine`.
+Image uploads additionally expose `thumbnailAvailable`; consumers construct the
+preview URL from the storage reference rather than routing preview bytes through
+the transient upload map.
 Upload resolution, retouch sources and attachment reads use coordinator access
 checks. History JSON preserves `MessageAttachment.storage`; persistent reads
 do not depend on the transient UploadStore map. Display paths use

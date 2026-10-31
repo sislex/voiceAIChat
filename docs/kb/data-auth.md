@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 202e29b9
+checked: 2d729ef8
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -64,6 +64,13 @@ Identity method exists, then normalizes through `storageQuotaBytes()` with
 `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
 charge the space owner. Direct shares and accepted links are checked on every
 operation; revoking a link deletes its acceptances immediately.
+
+Thumbnail blobs are derived from `(source blobId, size, format)` and have no
+`storage_entries` row, so they do not affect owner usage or file count. Replacing
+a file changes its blob ID and therefore invalidates the cache key; replacement,
+file deletion and space deletion remove the source plus all supported derived
+variants. Thumbnail generation accepts at most 32 MiB of source bytes even
+though ordinary files may be larger.
 
 ### Idempotent chat and Make spaces (SISL-808)
 

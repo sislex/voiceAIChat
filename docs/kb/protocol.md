@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 202e29b9
+checked: 2d729ef8
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -46,6 +46,12 @@ Conflicting older versions are archived, not rejected: preview items include
 optional `toPath` under `.duplicates/<spaceId>/`. See the deterministic ordering
 and archive collision rules in [Core storage](server-internals.md#core-file-storage).
 Space lists retain duplicates with the canonical owner/kind/ref space first.
+
+Image previews use `GET STORAGE_REST.thumbnail(spaceId)?path=&size=128|256|512`.
+PNG, JPEG, WebP and the first GIF frame are resized without enlargement and
+returned as WebP (JPEG fallback). The response has a revision-and-size ETag and
+supports 304; unsupported media returns 415. Storage-backed chat image metadata
+sets `thumbnailAvailable` on both the storage reference and upload response.
 
 `STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
 маршруты требуют сессию, cluster доступен только администраторам. Сервис

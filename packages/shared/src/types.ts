@@ -54,6 +54,8 @@ export interface MessageAttachment {
   agentId?: string
   /** File in the storage service; when set, `path` is display-only and `agentId` is absent. */
   storage?: import('./fileStorage').StorageFileRef
+  /** True when the storage-backed image can be read through STORAGE_REST.thumbnail. */
+  thumbnailAvailable?: boolean
   caption?: string
   /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
   retouch?: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRecord
