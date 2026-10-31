@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 768067e2
+checked: 30744ae9
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -55,11 +55,14 @@ operation; revoking a link deletes its acceptances immediately.
 
 ### Idempotent chat and Make spaces (SISL-808)
 
-The coordinator's `createSpace` delegates to the metadata transaction's
-`createSpace`. For `chat` and `make-project`, the identity is
-`(ownerId, kind, ref)`; omitted and null refs are equivalent, while an empty
-string is distinct. Personal spaces remain independent. Existing titles, IDs,
-timestamps, entries and shares are preserved. Chat uploads call the same service.
+The file-storage coordinator's public `createSpace` delegates to
+`StorageMetadataTransaction.createSpace`; application code must not implement a
+separate find-then-`putSpace` sequence. For `chat` and `make-project`, the
+identity is `(ownerId, kind, ref)` and a repeated or parallel call returns the
+existing canonical space. Omitted and null refs are equivalent, while an empty
+string is distinct; kind and owner remain separate scopes. Personal spaces are
+always new. Existing titles, IDs, timestamps, entries and shares are preserved.
+The chat upload path calls this same coordinator method to ensure its chat space.
 
 SQL stores canonical identities in `storage_space_refs`, with the unique
 `storage_space_refs_unique` index on `(owner_id, kind, ref_key)` on SQLite and
