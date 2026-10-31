@@ -3,7 +3,7 @@ id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
 updated: 2026-11-01
-checked: a0f36043
+checked: 7b8467a3
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
