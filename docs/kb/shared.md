@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: d9f60ed9c
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -26,6 +26,25 @@ with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
 See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
+
+`StorageFileUrlRequest` and `StorageDirectUrl` define the additive direct
+transfer handshake at `STORAGE_REST.fileUrl(spaceId)`: read returns GET;
+write supplies path, size, MIME type and optional revision/create-only
+preconditions and returns PUT. The response includes URL, optional headers,
+`expiresAt` in Unix milliseconds and, for direct writes, `reservationId`.
+`StorageFileCommitRequest` submits that ID to `STORAGE_REST.fileCommit`.
+`STORAGE_DIRECT_TTL_MS` bounds direct capabilities to five minutes;
+`FILE_STORAGE_NODE_PATHS.direct` names the signed node route. Without a public
+node URL the response uses the existing authenticated Core path and its PUT
+commits normally. See [the protocol](protocol.md#file-storage-contract).
+
+`STORAGE_REST.thumbnail` and `StorageThumbnailSize` expose previews at
+128, 256 or 512 pixels, with a 32 MiB source limit. Unsupported media maps to
+`unsupported_media_type` (HTTP 415). `StorageFileRef`, `UploadInfo` and
+`MessageAttachment` carry optional `thumbnailAvailable`; consumers must
+accept older values without it. Core's storage-backed chat upload response
+sets the flag for PNG, JPEG, WebP and GIF MIME types. Generation and caching
+belong to Core and the coordinator, not Shared.
 
 `MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
 `POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and

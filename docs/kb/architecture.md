@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: d9f60ed9c
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -77,8 +77,9 @@ See [Make authorization](data-auth.md#make-service-storage-authorization).
 The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
 `VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and
 `VC_FILE_STORAGE_TOKEN_FILE`; `SISLEXA_COMPONENT_CONFIG` selects managed
-component-runtime authorization for `file-storage.blobs`. All blob/health calls
-require bearer authentication. One process exclusively owns each directory.
+component-runtime authorization for `file-storage.blobs`. Internal blob/health
+calls require bearer authentication; `/v1/direct/:blobId` GET/PUT instead verify
+a short-lived HMAC capability. One process exclusively owns each directory.
 Validated blobs publish through temporary-file rename, capacity mutations
 serialize, and startup recomputes published-blob usage. Temporary files do not
 count toward logical capacity; disk exhaustion still returns `storage_full`.
@@ -100,6 +101,34 @@ The memory adapter retains its canonical mapping across transactions as well.
 See the [compatibility and cleanup procedure](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 Quota usage includes every file in the owner's spaces, even collaborator writes.
 Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
+
+Direct browser transfers use the coordinator's `fileUrl` and `commitFile`.
+Issuance reuses normal-write authorization, quota, revision and placement checks,
+then persists an invisible pending revision in `storage_reservations`.
+Active reservations charge positive replacement growth against owner quota and
+full blob size against placement capacity. Commit rechecks access, prior blob
+identity and quota and verifies the uploaded size through authenticated node
+HEAD before publishing metadata. Expired reservations are cleaned on startup
+and after health polling; failed node deletions retain durable jobs for retry.
+Without a public node URL, issuance falls back to the existing Core file path.
+See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+
+The node verifies HMAC-SHA256 capabilities bound to blob ID, HTTP method, size,
+MIME type and an expiry of at most five minutes. Direct PUT creates immutable
+blobs and checks expiry again before publication; direct GET streams bytes and
+supports a single Range. CORS admits configured exact UI origins. Issued URLs
+remain bearer capabilities until expiry; ACL changes are checked at issuance
+and commit, not on each direct GET. Per-node secrets and public URLs are
+configured as described in [deployment](deploy.md#file-storage-node-example).
+
+Thumbnail generation is a host port: Core injects
+`apps/server/src/fileStorage/thumbnail.ts` using Sharp with bounded concurrency,
+while `readThumbnail` in the coordinator checks read access and source limits,
+then loads or stores derived blobs on the original node. Derived IDs depend on
+the source blob, requested size and format. Generation prefers WebP with JPEG
+fallback, and ordinary blob cleanup also removes derived variants. These
+previews use the authenticated Core thumbnail route; they are separate from
+direct URLs for original files.
 
 The coordinator's `updateSpace(userId, spaceId, { title })` checks ownership
 inside the metadata transaction, rejects blank titles, trims the title and
