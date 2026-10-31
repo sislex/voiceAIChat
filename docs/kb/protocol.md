@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 9b7a52ece
+checked: 8bb433d2
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -23,6 +23,17 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Core file storage and chat settings
+
+`STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
+маршруты требуют сессию, cluster доступен только администраторам. Сервис
+включается через `VC_FILE_STORAGE_MODE=embedded`. `chatFilesBackend` в настройках
+принимает только `machine | storage`; неверное значение REST отклоняет с 400.
+При включённом storage-backend загрузка в чат требует `conversationId` и
+возвращает `UploadInfo.storage`. `REST.serverFile` распознаёт синтетический путь
+`storage:<spaceId>/<path>` и читает файл с правами текущего пользователя.
+Подробности: [server-internals](server-internals.md).
 
 ## Application frontend gateway
 

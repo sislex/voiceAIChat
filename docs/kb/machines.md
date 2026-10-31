@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 8bb433d2
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -30,6 +30,14 @@ areas:
 
 Module details: `agent:README.md`
 Module details: `core-ui:README.md`
+
+## Выбор backend для файлов чата
+
+`Settings.chatFilesBackend` по умолчанию равен `machine`. При значении `storage`
+и включённом Core file storage загрузки идут в `chat`-пространство разговора и
+возвращают storage-ссылку без `agentId`. Чтение выполняет Core через сервис с
+правами пользователя; существующие machine/workspace bindings этим не меняются.
+См. [server-internals](server-internals.md) и [shared](shared.md#filestorage-contract).
 
 ## Agent artifact ownership
 

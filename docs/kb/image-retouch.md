@@ -1,7 +1,7 @@
 ---
 title: Локальная AI-ретушь изображений
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 8bb433d2
 areas:
   - packages/shared/src/types.ts
   - packages/shared/src/ipc.ts
@@ -26,12 +26,17 @@ Module details: `image-studio:README.md`
 ## Доверенная граница и обработка
 
 `POST /api/images/retouch` принимает только источник и референсы, уже
-принадлежащие текущему разговору либо зарегистрированные в `UploadStore`.
-Редактор загружает новые референсы через `uploads:add` с `conversationId`: если
-явный `agentId` не передан, сервер разрешает машину разговора и сохраняет файл в
-её `.voicechat_uploads`, поэтому оригинал и все референсы читаются с корректной
-машины-источника. Вложения без `agentId` читаются из runner/server storage с
-ограниченными корнями, а удалённые — через файловый API указанной доступной машины.
+принадлежащие текущему разговору либо зарегистрированные в `UploadStore`
+для того же пользователя и разговора. Проверка сравнивает `path`, `agentId`
+и оба поля storage-ссылки: `spaceId` и `path`.
+Редактор загружает новые референсы через `uploads:add` с `conversationId`.
+При включённом сервисе и `chatFilesBackend=storage` сервер сохраняет файл в
+`chat`-пространстве разговора; ретушь читает `file.storage` через
+`fileStorage.readFile(userId, spaceId, path)` с проверкой доступа.
+В режиме `machine` без явного `agentId` сервер разрешает машину разговора и
+сохраняет файл в её `.voicechat_uploads`. Вложения без storage-ссылки и `agentId`
+читаются из runner/server storage с ограниченными корнями, а удалённые — через
+файловый API указанной доступной машины.
 
 Image processing and the LLM retouch generator are public exports of the
 Image Studio owner package; the former Core implementation files are removed.

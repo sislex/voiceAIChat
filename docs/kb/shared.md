@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: 775977da
+checked: 8bb433d2
 areas:
   - packages/shared/src
 ---
@@ -27,7 +27,12 @@ and select the online node with the most free space that can fit a file.
 
 `MessageAttachment` and `UploadInfo` have an optional `storage: StorageFileRef`
 (`spaceId`, `path`). For such an attachment the machine `path` is display-only
-and `agentId` is absent. These additive types do not install Core storage routes.
+and `agentId` is absent. Core installs the authenticated `STORAGE_REST` routes
+through `apps/server/src/fileStorage/routes.ts`; the service is enabled with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`). `Settings.chatFilesBackend`
+accepts `machine | storage`, defaults to `machine`, and is validated by
+`sanitizeSettingsPatch`, REST and settings persistence. See
+[server internals](server-internals.md) for the runtime and chat integration.
 The node/client/coordinator implementation is in `packages/file-storage`;
 see [architecture](architecture.md). The application catalog registers it as
 `file-storage`, with Shared and component-runtime build dependencies, node

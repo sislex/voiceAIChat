@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 8bb433d2
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -33,6 +33,15 @@ areas:
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
+
+## Storage-backed chat attachments
+
+`turns.ts` передаёт `userId` в `resolveUpload`. Core отклоняет upload другого
+владельца; для storage-upload читает байты через сервис с правами владельца и
+возвращает `LlmAttachment` с `serverPath`, `runnerName`, `dataBase64` и
+`preserveServerPath: true`. Синтетический путь `storage:<spaceId>/<path>` также
+распознаётся в `readServerFile` с проверкой прав текущего пользователя.
+Транспорт раннера не меняется; см. [server-internals](server-internals.md).
 
 Module details: `llm-runner:README.md`
 

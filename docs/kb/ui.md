@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 8bb433d2
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -30,6 +30,13 @@ Module details: `make:README.md`
 Module details: `ui:README.md`
 Module details: `kanban:README.md`
 Module details: `image-studio:README.md`
+
+## Core chat file backend contract
+
+Core принимает настройку `chatFilesBackend: machine | storage` (по умолчанию
+`machine`) и возвращает `UploadInfo.storage` при загрузке через включённый сервис.
+Это серверный контракт; элементы выбора backend и отображение вложений принадлежат
+UI owner. Изменение FS-2 не обновляет закреплённый UI-артефакт.
 
 ## Core UI owner and consumer boundary
 

@@ -1,7 +1,7 @@
 ---
 title: Группы и архив бесед
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 8bb433d2
 areas:
   - packages/shared/src/types.ts
   - packages/shared/src/protocol.ts

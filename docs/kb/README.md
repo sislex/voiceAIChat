@@ -32,7 +32,7 @@
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-10-31 | ✓ |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-29 | ✓ |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-10-31 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-31 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-10-31 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1377. Последние:
+Всего записей: 1378. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md) — fs2-kb-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md) — fs2-core-file-storage
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md) — fs1-task-failure-evidence
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md) — fs1-merge-kb-addresses
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-kb-reconciliation.md) — fs1-kb-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md) — fs1-gate-env-isolation
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md) — fs1-base-branch-test
 
 ## Исторические планы
 
