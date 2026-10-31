@@ -54,6 +54,63 @@ export function metadataContract(factory: () => Promise<{store: StorageMetadataS
         expect(await service.listSpaces('owner')).toHaveLength(2)
       } finally { await f.close() }
     })
+    it.each(['chat', 'make-project'] as const)('previews and atomically merges legacy %s duplicates', async kind => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const original = await service.createSpace('owner', {kind, ref: 'ref', title: 'Old'})
+        const winner = {...original, id: 'winner', createdAt: original.createdAt + 1}
+        const entry = {path: 'a', size: 7, mimeType: 'text/plain', revision: 2, updatedAt: 1, updatedBy: 'owner', nodeId: 'node', blobId: 'blob'}
+        await f.store.transaction(async tx => {
+          await tx.putSpace(winner)
+          await tx.putSpace({...winner, id: 'empty'})
+          await tx.putSpace({...winner, id: 'other-owner', ownerId: 'other'})
+          await tx.putSpace({...winner, id: 'other-ref', ref: 'other'})
+          await tx.putEntry({...entry, spaceId: original.id})
+          await tx.putEntry({...entry, spaceId: winner.id, path: 'b'})
+          await tx.putEntry({...entry, spaceId: winner.id, path: 'c'})
+        })
+        const share = await service.createShare('owner', original.id, {permission: 'write'})
+        await service.acceptLink('reader', share.audience.kind === 'link' ? share.audience.token : '')
+        for (const user of ['reader', 'none']) {
+          await expect(service.mergeDuplicates(user, original.id)).rejects.toMatchObject({code: 'forbidden'})
+        }
+        const preview = await service.mergeDuplicates('owner', original.id)
+        expect(preview).toMatchObject({dryRun: true, keepSpaceId: winner.id,
+          moves: [{fromSpaceId: original.id, path: 'a'}], conflicts: [], revokedShareIds: [share.id]})
+        expect(preview.deleteSpaceIds).toEqual(expect.arrayContaining([original.id, 'empty']))
+        expect(await service.getSpace('owner', original.id)).toBeTruthy()
+        await expect(service.mergeDuplicates('owner', original.id, {dryRun: false})).rejects.toMatchObject({code: 'revision_conflict'})
+        await service.updateSpace('owner', winner.id, {title: 'Changed'})
+        await expect(service.mergeDuplicates('owner', original.id, {dryRun: false, previewToken: preview.previewToken})).rejects.toMatchObject({code: 'revision_conflict'})
+        const fresh = await service.mergeDuplicates('owner', original.id)
+        await service.mergeDuplicates('owner', original.id, {dryRun: false, previewToken: fresh.previewToken})
+        expect((await service.listEntries('owner', winner.id)).entries.map(e => e.path)).toEqual(['a', 'b', 'c'])
+        expect(await service.usage('owner')).toMatchObject({usedBytes: 21, fileCount: 3})
+        expect(await f.store.transaction(tx => tx.getSpace(original.id))).toBeNull()
+        expect(await f.store.transaction(tx => tx.listAcceptances('reader'))).toEqual([])
+        expect((await service.createSpace('owner', {kind, ref: 'ref', title: 'Again'})).id).toBe(winner.id)
+        expect((await service.listSpaces('owner')).map(s => s.id).sort()).toEqual(['other-ref', 'winner'])
+        expect(await service.mergeDuplicates('owner', winner.id)).toMatchObject({deleteSpaceIds: [], moves: []})
+      } finally { await f.close() }
+    })
+    it('reports conflicting paths and refuses to delete their contents', async () => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const space = await service.createSpace('owner', {kind: 'chat', ref: 'r', title: 'Chat'})
+        await f.store.transaction(async tx => {
+          await tx.putSpace({...space, id: 'duplicate'})
+          for (const id of [space.id, 'duplicate']) await tx.putEntry({spaceId: id, path: 'a', size: 1,
+            mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner', nodeId: 'node', blobId: id})
+        })
+        const preview = await service.mergeDuplicates('owner', space.id)
+        expect(preview.conflicts).toHaveLength(1)
+        await expect(service.mergeDuplicates('owner', space.id, {dryRun: false, previewToken: preview.previewToken})).rejects.toMatchObject({code: 'revision_conflict'})
+        expect(await service.listSpaces('owner')).toHaveLength(2)
+        expect(await service.usage('owner')).toMatchObject({fileCount: 2})
+      } finally { await f.close() }
+    })
     it('commits, isolates values and rolls back without retrying callbacks', async () => {
       const f = await factory()
       const space: StoredSpace = {id: 's', ownerId: 'o', kind: 'chat', title: 'Files', ref: 'c', createdAt: 1, updatedAt: 1}

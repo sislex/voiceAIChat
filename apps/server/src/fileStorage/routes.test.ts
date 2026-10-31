@@ -42,6 +42,7 @@ it('registers every contract path with authentication, disabled errors and admin
     ['GET','spaces/s'], ['PATCH','spaces/s'], ['DELETE','spaces/s'], ['GET','spaces/s/files'], ['GET','spaces/s/file'],
     ['PUT','spaces/s/file'], ['DELETE','spaces/s/file'], ['POST','spaces/s/move'],
     ['GET','spaces/s/shares'], ['POST','spaces/s/shares'], ['DELETE','spaces/s/shares/a'],
+    ['POST','spaces/s/merge-duplicates'],
     ['GET','links/token'], ['POST','links/token'],
   ] as const) expect((await call(method, '/api/storage/' + url, '')).statusCode).toBe(401)
   const disabled = Fastify()
@@ -80,6 +81,11 @@ it('renames only as owner, preserving files, identity, ref and shares', async ()
   const base = '/api/storage/spaces/' + original.id
   await call('PUT', base + '/file?path=index.html', 'owner', 'hello', { 'content-type': 'text/plain' })
   await call('POST', base + '/shares', 'owner', { userId: 'writer', permission: 'write' })
+  await call('POST', base + '/shares', 'owner', { userId: 'reader', permission: 'read' })
+  expect((await call('PATCH', base, 'reader', { title: 'Forbidden' })).statusCode).toBe(403)
+  expect((await call('PATCH', base, 'owner', { title: 'x'.repeat(201) })).statusCode).toBe(400)
+  expect((await call('PATCH', base, 'owner', { title: ' ' + 'x'.repeat(200) + ' ' })).statusCode).toBe(200)
+  expect((await call('PATCH', base, 'owner', { title: 'x' })).statusCode).toBe(200)
   expect((await call('PATCH', base, 'writer', { title: 'Forbidden' })).statusCode).toBe(403)
   expect((await call('PATCH', base, 'other', { title: 'Forbidden' })).statusCode).toBe(403)
   expect((await call('PATCH', base, 'owner', { title: ' ' })).statusCode).toBe(400)
@@ -89,6 +95,23 @@ it('renames only as owner, preserving files, identity, ref and shares', async ()
   expect(updated.json()).toMatchObject({ id: original.id, ownerId: 'owner', ref: 'conversation', title: 'Renamed', fileCount: 1 })
   expect((await call('GET', base + '/file?path=index.html', 'writer')).body).toBe('hello')
   expect((await call('GET', '/api/storage/spaces')).json()[0].title).toBe('Renamed')
+})
+
+it('exposes owner-only duplicate previews and validates apply requests', async () => {
+  const original = (await call('POST', '/api/storage/spaces', 'owner', {kind: 'chat', ref: 'r', title: 'Chat'})).json()
+  const base = '/api/storage/spaces/' + original.id
+  for (const permission of ['read', 'write']) {
+    await call('POST', base + '/shares', 'owner', {permission, userId: permission})
+  }
+  for (const user of ['read', 'write', 'none'])
+    expect((await call('POST', base + '/merge-duplicates', user, {})).statusCode).toBe(403)
+  const preview = await call('POST', base + '/merge-duplicates', 'owner', {})
+  expect(preview.statusCode).toBe(200)
+  expect(preview.json()).toMatchObject({dryRun: true, keepSpaceId: original.id})
+  expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: 'false'})).statusCode).toBe(400)
+  expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: false})).statusCode).toBe(409)
+  expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: false, previewToken: preview.json().previewToken})).statusCode).toBe(200)
+  expect((await call('POST', '/api/storage/spaces/' + await space() + '/merge-duplicates', 'owner', {})).statusCode).toBe(400)
 })
 
 it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaustion', async () => {

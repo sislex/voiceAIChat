@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import type { MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
   MAX_STORAGE_FILE_BYTES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
   pickStorageNode, storageAllows, strongestStorageAccess, summarizeStorageCluster,
@@ -107,10 +109,53 @@ export function createFileStorageService(ports: FileStoragePorts) {
     async updateSpace(userId: string, spaceId: string, request: UpdateStorageSpaceRequest) {
       return ports.metadata.transaction(async tx => {
         const space = await requireSpace(tx, userId, spaceId, 'write', true)
-        if (typeof request.title !== 'string' || !request.title.trim()) fail('invalid_path')
+        if (typeof request.title !== 'string' || !request.title.trim() || request.title.trim().length > 200) fail('invalid_path')
         const updated = { ...space, title: request.title.trim(), updatedAt: ports.now() }
         await tx.putSpace(updated)
         return view(tx, userId, updated)
+      })
+    },
+    async mergeDuplicates(userId: string, spaceId: string, request: MergeStorageSpacesRequest = {}): Promise<MergeStorageSpacesResult> {
+      return ports.metadata.transaction(async tx => {
+        const source = await requireSpace(tx, userId, spaceId, 'write', true)
+        if (source.kind === 'personal') fail('invalid_path')
+        if (request.dryRun !== undefined && typeof request.dryRun !== 'boolean') fail('invalid_path')
+        const group = []
+        for (const space of await tx.listSpaces()) {
+          if (space.ownerId === source.ownerId && space.kind === source.kind && space.ref === source.ref)
+            group.push({ space, entries: (await tx.listEntries(space.id)).sort((a, b) => a.path.localeCompare(b.path)),
+              shares: (await tx.listShares(space.id)).sort((a, b) => a.id.localeCompare(b.id)) })
+        }
+        group.sort((a, b) => b.entries.length - a.entries.length ||
+          a.space.createdAt - b.space.createdAt || a.space.id.localeCompare(b.space.id))
+        const [keep, ...duplicates] = group
+        const entries = new Map(keep.entries.map(e => [e.path, e]))
+        const moves: StoredEntry[] = []
+        const result: MergeStorageSpacesResult = {
+          dryRun: request.dryRun !== false, keepSpaceId: keep.space.id,
+          deleteSpaceIds: duplicates.map(d => d.space.id), moves: [], conflicts: [],
+          revokedShareIds: duplicates.flatMap(d => d.shares.map(s => s.id)),
+          previewToken: createHash('sha256').update(JSON.stringify(group)).digest('hex'),
+        }
+        for (const duplicate of duplicates) for (const entry of duplicate.entries) {
+          const existing = entries.get(entry.path)
+          if (!existing) {
+            entries.set(entry.path, entry)
+            moves.push(entry)
+            result.moves.push({ fromSpaceId: duplicate.space.id, path: entry.path })
+          } else if (existing.nodeId !== entry.nodeId || existing.blobId !== entry.blobId) {
+            // Never discard different content at an occupied path.
+            result.conflicts.push({ fromSpaceId: duplicate.space.id, path: entry.path })
+          }
+        }
+        if (result.dryRun) return result
+        if (request.previewToken !== result.previewToken || result.conflicts.length) fail('revision_conflict')
+        for (const entry of moves) await tx.putEntry({ ...entry, spaceId: keep.space.id })
+        for (const duplicate of duplicates) await tx.deleteSpace(duplicate.space.id)
+        if (duplicates.length) await touch(tx, keep.space)
+        // Deleting the old canonical identity cascades its reference. Rebind it now.
+        await tx.createSpace(keep.space)
+        return result
       })
     },
     async deleteSpace(userId: string, spaceId: string) {
