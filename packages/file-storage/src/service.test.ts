@@ -64,6 +64,23 @@ describe('file storage coordinator', () => {
     expect(f.blobs[1].size).toBe(1)
     expect((await f.service.usage('owner')).usedBytes).toBe(4)
   })
+  it('copies through the node without transferring bytes and keeps blobs independent', async () => {
+    const f = fixture(), space = await f.space()
+    await f.service.writeFile('owner', space.id, 'a', data('hello'))
+    f.clients[1].copy = vi.fn(async (source, target) => {
+      f.blobs[1].set(target, f.blobs[1].get(source)!.slice())
+    })
+    vi.mocked(f.clients[1].put).mockClear()
+    await f.service.copy('owner', space.id, 'a', 'b', { createOnly: true })
+    expect(f.clients[1].copy).toHaveBeenCalledOnce()
+    expect(f.clients[1].put).not.toHaveBeenCalled()
+    expect(f.clients[1].get).not.toHaveBeenCalled()
+    await expect(f.service.copy('owner', space.id, 'a', 'b', { createOnly: true })).rejects.toMatchObject({ code: 'revision_conflict' })
+    await expect(f.service.copy('owner', space.id, 'a', 'b', { ifMatch: 9 })).rejects.toMatchObject({ code: 'revision_conflict' })
+    await f.service.deleteFile('owner', space.id, 'a')
+    expect((await f.service.readFile('owner', space.id, 'b')).bytes).toEqual(data('hello'))
+    expect(await f.service.usage('owner')).toMatchObject({ usedBytes: 5 })
+  })
   it('pools 10 + 60 GB, places on the freest node, removes offline capacity and rejects offline reads', async () => {
     const f = fixture()
     expect(await f.service.cluster('owner')).toMatchObject({ capacityBytes: 70e9 })

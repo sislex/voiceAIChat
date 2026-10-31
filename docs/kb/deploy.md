@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: a0f36043
+checked: df60202a1
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -49,6 +49,35 @@ areas:
 
 ## File storage node example
 
+To enable direct transfer, add optional `publicUrl` and `directSecretFile` to
+each applicable `VC_FILE_STORAGE_NODES` entry. Nodes without publicUrl retain
+Core proxy transfer. The public URL must be reachable by browsers through a TLS
+proxy, routing `/v1/direct/*` to that node. On the node set
+`VC_FILE_STORAGE_DIRECT_SECRET_FILE` to the same per-node HMAC secret file
+(minimum 32 characters; use an independently generated random secret), and
+`VC_FILE_STORAGE_UI_ORIGINS` to a JSON array of exact Core UI origins, for example
+`["https://core.example"]`. Wildcards and credentialed CORS are not supported.
+Preflight permits GET/PUT with Content-Type and Range, exposing range/length
+response headers. Signing secrets are loaded at process startup; coordinate
+Core/node restarts on rotation, which invalidates outstanding URLs.
+Bearer authorization remains required for ordinary node APIs.
+Configure TLS, public reachability and origin/secret files during operator
+commissioning; this code change does not provision them. Allow up to five
+minutes for issued read URLs to expire after revoking a share.
+
+Core accepts `VC_FILE_STORAGE_PART_SIZE_BYTES` (default 8 MiB; integer
+1..64 MiB). Existing sessions keep their original part size.
+Allow a 24-hour upload window and retain the node's `.uploads/` directory
+across restarts. Placement reserves twice the declared size on a single node
+for parts plus atomic assembly; after completion only the final blob remains
+charged. Core quota reserves the declared size once. Node health includes
+active capacity reservations, so free space can be lower than published data
+usage. Multipart endpoints use the same node bearer scope as blob operations.
+Storage transfer compression introduces no environment variable. Proxies must
+preserve `Accept-Encoding`, `Content-Encoding` and `Vary` and must not
+recompress Range responses.
+
+
 The Docker target `file-storage-node` starts
 `packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
 its default blob directory. `deploy/compose.file-storage.example.yml` defines
@@ -68,6 +97,10 @@ tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
 integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
 per-user quota when available. Node health is polled every 15 seconds; two
 failed polls remove a node's capacity from the online pool.
+Thumbnail generation needs no new environment variable or volume. Core uses its
+existing Sharp dependency with a fixed concurrency bound; derived preview bytes
+consume node capacity but are excluded from user quota accounting and are
+removed with their source file.
 
 Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting

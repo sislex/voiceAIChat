@@ -1,3 +1,4 @@
+import type { CreateStorageUploadRequest, StorageUploadSession } from '@voicechat/shared/fileStorage'
 import type { StorageSpace, StorageEntry, StorageShare } from '@voicechat/shared/fileStorage'
 
 export type StoredSpace = Omit<StorageSpace, 'access' | 'usedBytes' | 'fileCount'>
@@ -6,11 +7,21 @@ export interface StoredEntry extends StorageEntry {
   blobId: string
   nodeId: string
 }
+export interface StoredUpload extends CreateStorageUploadRequest, StorageUploadSession {
+  spaceId: string
+  ownerId: string
+  userId: string
+  nodeId: string
+  blobId: string
+}
 export interface StorageLinkAcceptance { shareId: string; userId: string; acceptedAt: number }
 export interface OwnerStorageUsage { usedBytes: number; fileCount: number }
 
 /** All calls use the transaction's consistent view. Never expose mutable references. */
 export interface StorageMetadataTransaction {
+  listUploads(): Promise<StoredUpload[]>
+  putUpload(upload: StoredUpload): Promise<void>
+  deleteUpload(id: string): Promise<void>
   getSpace(id: string): Promise<StoredSpace | null>
   /** Canonical identity first within each owner/kind/ref group, including legacy fallback. */
   listSpaces(): Promise<StoredSpace[]>
@@ -43,6 +54,7 @@ export interface StorageMetadataStore {
 
 export function createMemoryMetadataStore(): StorageMetadataStore {
   let state = {
+    uploads: new Map<string, StoredUpload>(),
     spaces: new Map<string, StoredSpace>(),
     refs: new Map<string, string>(),
     entries: new Map<string, StoredEntry>(),
@@ -56,6 +68,9 @@ export function createMemoryMetadataStore(): StorageMetadataStore {
       const result = queue.then(async () => {
         const draft = structuredClone(state)
         const tx: StorageMetadataTransaction = {
+          async listUploads() { return structuredClone([...draft.uploads.values()]) },
+          async putUpload(u) { draft.uploads.set(u.uploadId, structuredClone(u)) },
+          async deleteUpload(id) { draft.uploads.delete(id) },
           async getSpace(id) { return structuredClone(draft.spaces.get(id) ?? null) },
           async listSpaces() {
             const canonical = new Set(draft.refs.values())

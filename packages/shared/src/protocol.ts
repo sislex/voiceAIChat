@@ -744,6 +744,8 @@ export interface UploadInfo {
   agentId?: string
   /** Set when the file was stored in the storage service instead of a machine. */
   storage?: import('./fileStorage').StorageFileRef
+  /** Storage-backed image has a generated-on-demand preview endpoint. */
+  thumbnailAvailable?: boolean
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */

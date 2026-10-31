@@ -31,6 +31,23 @@ async function fixture(capacityBytes = 10) {
   return { app, root, options, headers, put, get, health }
 }
 describe('storage node', () => {
+  it('copies locally into a new blob, accounts capacity and preserves the source', async () => {
+    const f = await fixture(6)
+    await f.put('source00', 'abc')
+    const copy = (targetId: string) => f.app.inject({ method: 'POST', url: '/v1/blobs/source00/copy', headers: f.headers, payload: JSON.stringify({ targetId }) })
+    expect((await copy('target00')).statusCode).toBe(204)
+    expect((await f.get('target00')).body).toBe('abc')
+    expect((await f.health()).usedBytes).toBe(6)
+    expect((await copy('target00')).statusCode).toBe(409)
+    expect((await copy('target01')).statusCode).toBe(507)
+    expect((await copy('../escape')).statusCode).toBe(400)
+    await f.app.inject({ method: 'DELETE', url: '/v1/blobs/target00', headers: f.headers })
+    fault.rename = true
+    expect((await copy('target02')).statusCode).toBe(507)
+    expect((await f.health()).usedBytes).toBe(3)
+    expect((await f.get('source00')).body).toBe('abc')
+    expect((await readdir(f.options.directory)).sort()).toEqual(['source00'])
+  })
   it('authenticates health and every blob operation, including token rotation', async () => {
     const f = await fixture()
     for (const method of ['GET', 'PUT', 'DELETE'] as const)
@@ -92,6 +109,20 @@ describe('storage node', () => {
     for (let i = 0; i < 2; i++)
       expect((await restarted.inject({ method: 'DELETE', url: '/v1/blobs/abcdefgh', headers: f.headers })).statusCode).toBe(204)
     expect((await restarted.inject({ url: '/v1/health', headers: f.headers })).json().usedBytes).toBe(0)
+  })
+  it('streams single byte ranges and rejects unsatisfiable or multiple ranges', async () => {
+    const f = await fixture()
+    await f.put('abcdefgh', '0123456789')
+    const range = (value: string) => f.app.inject({url: '/v1/blobs/abcdefgh', headers: {...f.headers, range: value}})
+    const middle = await range('bytes=3-6')
+    expect(middle.statusCode).toBe(206)
+    expect(middle.body).toBe('3456')
+    expect(middle.headers).toMatchObject({'accept-ranges': 'bytes', 'content-range': 'bytes 3-6/10', 'content-length': '4'})
+    expect((await range('bytes=-3')).body).toBe('789')
+    const pastEnd = await range('bytes=10-')
+    expect(pastEnd.statusCode).toBe(416)
+    expect(pastEnd.headers['content-range']).toBe('bytes */10')
+    expect((await range('bytes=0-1,3-4')).statusCode).toBe(416)
   })
   it('reserves capacity under concurrent PUTs and retains old data on rejected replacement', async () => {
     const f = await fixture()

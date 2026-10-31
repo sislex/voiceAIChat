@@ -1,5 +1,9 @@
+import { verifyDirect } from '../direct.js'
+import type { FastifyRequest, FastifyReply } from 'fastify'
+import { nodeUploads } from "./uploads.js"
 import Fastify from 'fastify'
-import { mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
@@ -8,6 +12,8 @@ import { FILE_STORAGE_NODE_PATHS, MAX_STORAGE_FILE_BYTES, STORAGE_NODE_SCOPE,
 import { StorageServiceError } from '../errors.js'
 
 export interface StorageNodeOptions {
+  directSecret?: string
+  allowedOrigins?: string[]
   nodeId: string
   directory: string
   capacityBytes: number
@@ -15,6 +21,11 @@ export interface StorageNodeOptions {
   runtime?: Pick<ComponentRuntime, 'authorize' | 'register'>
 }
 export async function createStorageNodeServer(options: StorageNodeOptions) {
+  if (options.directSecret !== undefined && options.directSecret.length < 32)
+    throw new Error('Storage direct secret must contain at least 32 characters')
+  if (options.allowedOrigins !== undefined && (!Array.isArray(options.allowedOrigins) || options.allowedOrigins.some(origin => {
+    try { return typeof origin !== 'string' || new URL(origin).origin !== origin || !/^https?:/.test(origin) } catch { return true }
+  }))) throw new Error('Invalid storage UI origins')
   if (!options.nodeId || !options.directory || !Number.isSafeInteger(options.capacityBytes) || options.capacityBytes < 0)
     throw new Error('Invalid storage node configuration')
   await mkdir(options.directory, { recursive: true, mode: 0o700 })
@@ -32,6 +43,7 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     queue = result.catch(() => {})
     return result
   }
+  const registerUploads = await nodeUploads(options.directory, options.capacityBytes, { used: () => usedBytes, add: n => { usedBytes += n }, exclusive })
   const app = Fastify({ bodyLimit: MAX_STORAGE_FILE_BYTES, routerOptions: { maxParamLength: 1024 } })
   options.runtime?.register(app)
   app.setErrorHandler((error, _req, reply) => {
@@ -46,6 +58,24 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
   })
   await app.register(async routes => {
     routes.addHook('onRequest', async (req, reply) => {
+      if (req.routeOptions.url === '/v1/direct/:blobId') {
+        const origin = req.headers.origin
+        if (origin) {
+          if (!options.allowedOrigins?.includes(origin)) throw new StorageServiceError('forbidden')
+          reply.header('access-control-allow-origin', origin).header('vary', 'Origin')
+            .header('access-control-allow-methods', 'GET, PUT, OPTIONS')
+            .header('access-control-allow-headers', 'Content-Type, Range')
+            .header('access-control-expose-headers', 'Content-Length, Content-Range, Accept-Ranges')
+        }
+        reply.header('cache-control', 'private, no-store')
+        if (req.method === 'OPTIONS') return reply.code(204).send()
+        const claims = verifyDirect(String((req.query as {sig?: string}).sig ?? ''), options.directSecret ?? '')
+        if (claims.blobId !== (req.params as {blobId: string}).blobId || claims.method !== req.method ||
+          (req.method === 'PUT' && (req.headers['content-type'] !== claims.mimeType ||
+            (req.headers['content-length'] !== undefined && Number(req.headers['content-length']) !== claims.size))))
+          throw new StorageServiceError('forbidden')
+        return
+      }
       if (options.runtime) {
         const result = options.runtime.authorize(req.headers.authorization, STORAGE_NODE_SCOPE)
         if (!result.ok) return reply.code(result.status).send({ error: 'forbidden', message: 'Authentication required' })
@@ -60,6 +90,7 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     })
     routes.removeAllContentTypeParsers()
     routes.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
+    registerUploads(routes)
     routes.get(FILE_STORAGE_NODE_PATHS.health, async (): Promise<StorageNodeHealth> => ({
       nodeId: options.nodeId, capacityBytes: options.capacityBytes, usedBytes,
       freeBytes: Math.max(0, options.capacityBytes - usedBytes),
@@ -78,6 +109,27 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
         throw error
       }
     }
+    routes.post<{ Params: { blobId: string }; Body: Buffer }>('/v1/blobs/:blobId/copy', async (req, reply) => {
+      let targetId: unknown
+      try { targetId = JSON.parse(req.body.toString()).targetId } catch { throw new StorageServiceError('invalid_path') }
+      if (typeof targetId !== 'string') throw new StorageServiceError('invalid_path')
+      const source = path(req.params.blobId), target = path(targetId)
+      await exclusive(async () => {
+        const bytes = await size(source)
+        if (bytes === null) throw new StorageServiceError('not_found')
+        if (await size(target) !== null) throw new StorageServiceError('revision_conflict')
+        if (usedBytes + bytes > options.capacityBytes) throw new StorageServiceError('storage_full')
+        const temporary = join(options.directory, '.tmp-' + randomUUID())
+        try {
+          await copyFile(source, temporary)
+          await rename(temporary, target)
+          usedBytes += bytes
+        } finally {
+          await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error })
+        }
+      })
+      return reply.code(204).send()
+    })
     routes.put<{ Params: { blobId: string }; Body: Buffer }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)
       const bytes = req.body ?? Buffer.alloc(0)
@@ -95,13 +147,41 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
       })
       return reply.code(204).send()
     })
-    routes.get<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
+    const readBlob = async (req: FastifyRequest<{Params: {blobId: string}}>, reply: FastifyReply) => {
       const file = path(req.params.blobId)
-      const bytes = await exclusive(async () => {
-        if (await size(file) === null) throw new StorageServiceError('not_found')
-        return readFile(file)
-      })
-      return reply.type('application/octet-stream').send(bytes)
+      const length = await exclusive(async () => size(file))
+      if (length === null) throw new StorageServiceError('not_found')
+      const claims = req.routeOptions.url === '/v1/direct/:blobId'
+        ? verifyDirect(String((req.query as {sig?: string}).sig ?? ''), options.directSecret ?? '') : undefined
+      if (claims && claims.size !== length) throw new StorageServiceError('revision_conflict')
+      reply.header('accept-ranges', 'bytes').type(claims?.mimeType ?? 'application/octet-stream')
+      const range = req.headers.range
+      if (!range) return reply.header('content-length', length).send(createReadStream(file))
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+      if (!match) throw new StorageServiceError('range_not_satisfiable')
+      let start: number, end: number
+      if (match[1] === '') {
+        const suffix = Number(match[2])
+        if (!Number.isSafeInteger(suffix) || suffix <= 0) throw new StorageServiceError('range_not_satisfiable')
+        start = Math.max(0, length - suffix); end = length - 1
+      } else {
+        start = Number(match[1]); end = match[2] === '' ? length - 1 : Number(match[2])
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) throw new StorageServiceError('range_not_satisfiable')
+        if (start >= length) return reply.code(416).header('content-range', `bytes */${length}`).send()
+        if (start > end) throw new StorageServiceError('range_not_satisfiable')
+        end = Math.min(end, length - 1)
+      }
+      return reply.code(206).header('content-range', `bytes ${start}-${end}/${length}`)
+        .header('content-length', end - start + 1).send(createReadStream(file, { start, end }))
+    }
+    routes.get('/v1/blobs/:blobId', readBlob)
+    routes.get('/v1/direct/:blobId', readBlob)
+    routes.options('/v1/direct/:blobId', async (_req, reply) => reply.code(204).send())
+    routes.put<{Body: Buffer}>('/v1/direct/:blobId', async (req, reply) => {
+      const claims = verifyDirect(String((req.query as {sig?: string}).sig ?? ''), options.directSecret ?? '')
+      if ((req.body?.length ?? 0) !== claims.size) throw new StorageServiceError('invalid_path')
+      await registerUploads.directPut(claims, req.body ?? Buffer.alloc(0))
+      return reply.code(204).send()
     })
     routes.delete<{ Params: { blobId: string } }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)

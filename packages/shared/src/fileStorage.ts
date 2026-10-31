@@ -7,6 +7,40 @@
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
 /** Largest single file accepted through the Core REST surface. */
 export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Stored file responses are compressed only when strictly larger than this. */
+export const STORAGE_COMPRESSION_MIN_BYTES = 1024
+export type StorageContentEncoding = 'br' | 'gzip'
+
+/** MIME policy shared by Core and clients; media and archive formats are intentionally excluded. */
+export function isStorageCompressible(mimeType: string): boolean {
+  const mime = mimeType.split(';')[0].trim().toLowerCase()
+  return mime.startsWith('text/') || mime === 'application/json' || mime === 'application/javascript' ||
+    mime === 'application/x-javascript' || mime === 'application/xml' || mime === 'image/svg+xml' ||
+    mime === 'application/wasm' || mime.endsWith('+json') || mime.endsWith('+xml')
+}
+
+/** Selects the preferred supported coding, respecting q=0 and wildcard preferences. */
+export function storageContentEncoding(acceptEncoding: string | undefined): StorageContentEncoding | undefined {
+  if (!acceptEncoding) return undefined
+  const quality = new Map<string, number>()
+  for (const item of acceptEncoding.toLowerCase().split(',')) {
+    const [name, ...parameters] = item.trim().split(';')
+    let q = 1
+    for (const parameter of parameters) {
+      const match = /^\s*q\s*=\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*$/.exec(parameter)
+      if (match) q = Number(match[1])
+    }
+    if (name) quality.set(name, q)
+  }
+  const score = (name: StorageContentEncoding) => quality.get(name) ?? quality.get('*') ?? 0
+  const br = score('br'), gzip = score('gzip')
+  if (br <= 0 && gzip <= 0) return undefined
+  return br >= gzip ? 'br' : 'gzip'
+}
+/** Thumbnail generation refuses larger source images even when ordinary storage accepts them. */
+export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
+export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
+export type StorageThumbnailSize = typeof STORAGE_THUMBNAIL_SIZES[number]
 export const MAX_STORAGE_PATH_LENGTH = 1024
 
 /** Chat attachments retain their existing decoded 32 MiB limit in every encoding. */
@@ -53,6 +87,8 @@ export type StorageErrorCode =
   | 'file_too_large'
   | 'revision_conflict'
   | 'node_unavailable'
+  | 'unsupported_media_type'
+  | 'range_not_satisfiable'
 
 export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   storage_disabled: 503,
@@ -64,6 +100,13 @@ export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   file_too_large: 413,
   revision_conflict: 409,
   node_unavailable: 503,
+  unsupported_media_type: 415,
+  range_not_satisfiable: 416,
+}
+
+/** HTTP validator used by Core for a stored file revision. */
+export function storageFileEtag(spaceId: string, revision: number): string {
+  return `"${spaceId}:${revision}"`
 }
 
 export interface StorageError {
@@ -138,7 +181,38 @@ export interface StorageShare {
 export interface StorageFileRef {
   spaceId: string
   path: string
+  /** The referenced file is an image for which the thumbnail endpoint is available. */
+  thumbnailAvailable?: boolean
 }
+
+export const DEFAULT_STORAGE_PART_SIZE = 8 * 1024 * 1024
+export const MAX_STORAGE_UPLOAD_PARTS = 10_000
+export const STORAGE_UPLOAD_TTL_MS = 24 * 60 * 60 * 1000
+export interface CreateStorageUploadRequest {
+  path: string
+  size: number
+  mimeType: string
+  ifMatch?: number
+  createOnly?: boolean
+}
+/** POST fileUrl; direct writes require an authenticated fileCommit with uploadId. */
+export type StorageFileUrlRequest = { operation: 'read'; path: string } |
+  ({ operation: 'write' } & CreateStorageUploadRequest)
+export interface StorageDirectUrl {
+  url: string
+  method: 'GET' | 'PUT'
+  headers?: Record<string, string>
+  expiresAt: number
+  uploadId?: string
+}
+export const STORAGE_DIRECT_TTL_MS = 5 * 60 * 1000
+export interface StorageUploadSession {
+  uploadId: string
+  partSize: number
+  expiresAt: number
+}
+/** Parts are numbered from zero; PUT replaces a part for safe retries. */
+export interface StorageUploadStatus extends StorageUploadSession { receivedParts: number[] }
 
 export interface CreateStorageSpaceRequest {
   kind: StorageSpaceKind
@@ -169,9 +243,40 @@ export interface MergeStorageSpacesResult {
   previewToken: string
 }
 
+export const MAX_STORAGE_BATCH_OPERATIONS = 500
+export const MAX_STORAGE_INLINE_BYTES = 256 * 1024
+export const MAX_STORAGE_BATCH_BYTES = MAX_STORAGE_FILE_BYTES
+export interface StorageBatchOperation {
+  op: 'read' | 'write' | 'delete' | 'move' | 'copy'
+  path: string
+  to?: string
+  ifMatch?: number
+  createOnly?: boolean
+  bodyRef?: string
+}
+/** NDJSON starts with {operations}, followed by these payload records. */
+export interface StorageBatchPayload { bodyRef: string; base64: string; mimeType: string }
+export interface StorageInlineContent {
+  encoding: 'base64'
+  data: string
+  /** Compression applied before base64 encoding; absent means identity. */
+  contentEncoding?: StorageContentEncoding
+}
+export interface StorageBatchResult {
+  status: number
+  entry?: StorageEntry
+  error?: StorageError
+  content?: StorageInlineContent
+  /** Content-ID of the following multipart payload. */
+  bodyRef?: string
+}
+export function isStorageSmallText(entry: Pick<StorageEntry, 'size' | 'mimeType'>): boolean {
+  return entry.size <= MAX_STORAGE_INLINE_BYTES && isStorageCompressible(entry.mimeType)
+}
+
 export interface ListStorageEntriesResponse {
   space: StorageSpace
-  entries: StorageEntry[]
+  entries: Array<StorageEntry & { content?: StorageInlineContent }>
 }
 
 export interface MoveStorageEntryRequest {
@@ -195,6 +300,13 @@ export interface StorageLinkInfo {
  * `PUT .../file` accepts `If-Match: <revision>` and `If-None-Match: *` (create only).
  */
 export const STORAGE_REST = {
+  fileUrl: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/url`,
+  fileCommit: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file/commit`,
+  batch: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/batch`,
+  uploads: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads`,
+  upload: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}`,
+  uploadPart: (spaceId: string, uploadId: string, n: number) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}/parts/${n}`,
+  uploadComplete: (spaceId: string, uploadId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/uploads/${encodeURIComponent(uploadId)}/complete`,
   usage: '/api/storage/usage',
   cluster: '/api/storage/cluster',
   spaces: '/api/storage/spaces',
@@ -202,6 +314,7 @@ export const STORAGE_REST = {
   mergeDuplicates: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/merge-duplicates`,
   files: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/files`,
   file: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file`,
+  thumbnail: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/thumbnail`,
   move: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/move`,
   shares: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/shares`,
   share: (spaceId: string, shareId: string) =>
@@ -212,6 +325,7 @@ export const STORAGE_REST = {
 
 /** Storage node API. Every call carries a component bearer token issued for Core. */
 export const FILE_STORAGE_NODE_PATHS = {
+  copy: (blobId: string) => `/v1/blobs/${encodeURIComponent(blobId)}/copy`,
   health: '/v1/health',
   blob: (blobId: string) => `/v1/blobs/${encodeURIComponent(blobId)}`,
 } as const

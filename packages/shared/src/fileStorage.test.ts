@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_STORAGE_BATCH_OPERATIONS, MAX_STORAGE_INLINE_BYTES, isStorageSmallText, FILE_STORAGE_NODE_PATHS,
+  STORAGE_COMPRESSION_MIN_BYTES, isStorageCompressible, storageContentEncoding,
   DEFAULT_STORAGE_QUOTA_BYTES,
   MAX_CHAT_UPLOAD_BYTES,
   CHAT_UPLOAD_METADATA_HEADERS,
+  STORAGE_ERROR_STATUS,
   STORAGE_REST,
+  DEFAULT_STORAGE_PART_SIZE,
+  MAX_STORAGE_UPLOAD_PARTS,
+  STORAGE_UPLOAD_TTL_MS,
+  STORAGE_THUMBNAIL_SIZES,
   fitsStorageQuota,
   isStorageBlobId,
   normalizeStoragePath,
@@ -11,6 +18,7 @@ import {
   pickStorageNode,
   storageAllows,
   storageQuotaBytes,
+  storageFileEtag,
   strongestStorageAccess,
   summarizeStorageCluster,
   type StorageNodeInfo,
@@ -22,6 +30,46 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
   usedBytes: usedGb * 1e9,
   online,
   lastSeenAt: 1,
+})
+
+it('defines storage transfer compression policy and negotiates encodings', () => {
+  expect(STORAGE_COMPRESSION_MIN_BYTES).toBe(1024)
+  for (const mime of ['text/plain; charset=utf-8', 'application/json', 'application/javascript',
+    'image/svg+xml', 'application/xml', 'application/manifest+json', 'application/wasm'])
+    expect(isStorageCompressible(mime)).toBe(true)
+  for (const mime of ['image/png', 'video/mp4', 'audio/mpeg', 'application/zip', 'application/octet-stream'])
+    expect(isStorageCompressible(mime)).toBe(false)
+  expect(storageContentEncoding('gzip;q=1, br;q=0.5')).toBe('gzip')
+  expect(storageContentEncoding('gzip, br')).toBe('br')
+  expect(storageContentEncoding('br;q=0, *;q=.4')).toBe('gzip')
+  expect(storageContentEncoding('br;q=0, gzip;q=0')).toBeUndefined()
+})
+
+it('defines batch paths and the exact small-text content boundary', () => {
+  expect(STORAGE_REST.batch('a/b')).toBe('/api/storage/spaces/a%2Fb/batch')
+  expect(FILE_STORAGE_NODE_PATHS.copy('a/b')).toBe('/v1/blobs/a%2Fb/copy')
+  expect(MAX_STORAGE_BATCH_OPERATIONS).toBe(500)
+  expect(MAX_STORAGE_INLINE_BYTES).toBe(262144)
+  expect(isStorageSmallText({ size: 262144, mimeType: 'text/plain; charset=utf-8' })).toBe(true)
+  expect(isStorageSmallText({ size: 262145, mimeType: 'text/plain' })).toBe(false)
+  expect(isStorageSmallText({ size: 1, mimeType: 'application/octet-stream' })).toBe(false)
+  expect(isStorageSmallText({ size: 1, mimeType: 'application/manifest+json' })).toBe(true)
+})
+
+it('defines revision validators and range error status', () => {
+  expect(storageFileEtag('space/id', 7)).toBe('"space/id:7"')
+  expect(STORAGE_ERROR_STATUS.range_not_satisfiable).toBe(416)
+})
+
+it('defines resumable upload URLs and limits without changing file URLs', () => {
+  expect(DEFAULT_STORAGE_PART_SIZE).toBe(8 * 1024 * 1024)
+  expect(MAX_STORAGE_UPLOAD_PARTS).toBe(10_000)
+  expect(STORAGE_UPLOAD_TTL_MS).toBe(86_400_000)
+  const base = '/api/storage/spaces/s%2F1/uploads'
+  expect(STORAGE_REST.uploads('s/1')).toBe(base)
+  expect(STORAGE_REST.upload('s/1', 'u/2')).toBe(base + '/u%2F2')
+  expect(STORAGE_REST.uploadPart('s/1', 'u/2', 0)).toBe(base + '/u%2F2/parts/0')
+  expect(STORAGE_REST.uploadComplete('s/1', 'u/2')).toBe(base + '/u%2F2/complete')
 })
 
 describe('file storage contract', () => {
@@ -83,4 +131,15 @@ describe('file storage contract', () => {
     expect(isStorageBlobId('abcDEF12_-')).toBe(true)
     expect(isStorageBlobId('../../etc')).toBe(false)
   })
+
+  it('publishes the thumbnail route, supported sizes and HTTP media error', () => {
+    expect(STORAGE_REST.thumbnail('space / one')).toBe('/api/storage/spaces/space%20%2F%20one/thumbnail')
+    expect(STORAGE_THUMBNAIL_SIZES).toEqual([128, 256, 512])
+    expect(STORAGE_ERROR_STATUS.unsupported_media_type).toBe(415)
+  })
+})
+
+it('exposes encoded direct URL and commit routes', () => {
+  expect(STORAGE_REST.fileUrl('a/b')).toBe('/api/storage/spaces/a%2Fb/file/url')
+  expect(STORAGE_REST.fileCommit('a/b')).toBe('/api/storage/spaces/a%2Fb/file/commit')
 })

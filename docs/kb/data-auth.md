@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: a0f36043
+checked: df60202a1
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -44,6 +44,49 @@ preserves the previous entry. Post-commit cleanup removes the old blob as before
 Chat admission separately caps decoded file bytes at 32 MiB in `uploadBody.ts`.
 The existing user/tenant conversation checks, machine access checks, cookie CSRF
 and upload rate limits still apply to all three request forms.
+Direct URL issuance checks the live space ACL. HMAC capabilities bind blob ID,
+method, byte count, MIME and expiry, and for writes the upload reservation ID.
+They expire within five minutes. Issued read capabilities remain usable until
+expiry even after share revocation; new issuance and write commit check live ACLs.
+Keep URLs out of logs and treat them as credentials. Direct responses use
+`Cache-Control: private, no-store`.
+
+Direct writes reuse durable `storage_uploads` reservations and reserve the full
+declared size against owner quota, conservatively including replacements and
+other pending uploads. The pending write binds the current revision (or absence);
+commit refuses intervening replacement. Parts stay invisible until node assembly
+and SQL metadata commit succeed. Expiry and deleted-space cleanup use the existing
+startup/minute sweeps; offline-node reservations remain charged until cleanup.
+
+File cache validation performs the same read-grant check as a download, but a
+304 stops after metadata and does not contact the storage node. A subsequent
+stream open rechecks the read grant and entry, so share revocation cannot be
+bypassed between validation and transfer. Range bounds are checked against the
+authorized entry size before node access; unauthorized and missing entries keep
+their existing error behavior.
+
+Batch preflight checks the owner's current usage plus upload reservations and
+the conservative sum of all write/copy sizes before any mutation. It does not
+credit deletions or replacements because those operations may fail independently.
+It follows possible write/copy/move sizes in request order, so copying a file
+created earlier in the batch is charged too. This can reject a batch whose final
+net size would fit; split such requests when necessary. Each operation rechecks
+ACL, revision and quota in its own serialized metadata transaction, including
+concurrent changes after preflight. Copy creates a new blob and publishes its
+entry only after node success; rollback cleans the new blob and replacement
+cleanup happens after commit.
+
+Upload sessions are persisted in `storage_uploads` through both metadata
+adapters. Creation reserves the full declared size against the space owner's
+quota, including other sessions and ordinary writes; replacements conservatively
+reserve their entire size until completion. The same serialized metadata
+transaction checks revision conditions and publishes the final entry.
+Parts never appear in file listings. Abort removes node parts and any unpublished
+composed blob before releasing the quota reservation. Expiry cleanup retries
+offline nodes without releasing their reservations prematurely.
+Compressed single-PUT and part bodies are charged by decompressed size;
+streaming decompression aborts above 64 MiB before metadata or node mutation.
+
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,
@@ -64,6 +107,13 @@ Identity method exists, then normalizes through `storageQuotaBytes()` with
 `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
 charge the space owner. Direct shares and accepted links are checked on every
 operation; revoking a link deletes its acceptances immediately.
+
+Thumbnail blobs are derived from `(source blobId, size, format)` and have no
+`storage_entries` row, so they do not affect owner usage or file count. Replacing
+a file changes its blob ID and therefore invalidates the cache key; replacement,
+file deletion and space deletion remove the source plus all supported derived
+variants. Thumbnail generation accepts at most 32 MiB of source bytes even
+though ordinary files may be larger.
 
 ### Idempotent chat and Make spaces (SISL-808)
 
@@ -809,7 +859,7 @@ Postgres идёт для всей базы сразу, одним кодом р�
 `LOGIN_LOCK_*`, `DbDeps`…) по-прежнему импортируются из `db/database.js` через
 реэкспорт. Зачем так и что дальше — `docs/plans/db-repositories.md`.
 
-Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = \`…\``), поэтому в
+Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = `…``), поэтому в
 SQL-комментариях внутри него **нельзя обратных кавычек**: они закрывают литерал, и
 файл перестаёт разбираться (typecheck падает не в комментарии, а где-то ниже — искать
 приходится глазами). Имена таблиц и колонок в комментариях пишутся без кавычек.

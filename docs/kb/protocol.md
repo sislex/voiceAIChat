@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: a0f36043
+checked: df60202a1
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -52,6 +52,57 @@ the unchanged `UploadInfo`; the legacy JSON envelope is limited to 64 MiB.
 Cookie mutations still require CSRF, and CORS permits the four metadata headers.
 The contract lives in `packages/shared/src/fileStorage.ts`; see
 [Core parsing and streaming](server-internals.md#core-file-storage).
+GET `STORAGE_REST.file(spaceId)` returns `ETag: "<spaceId>:<revision>"`,
+`Last-Modified`, `Cache-Control: private, no-cache` and `Accept-Ranges: bytes`.
+Matching `If-None-Match` (including weak/list validators) or, when no ETag
+condition is present, `If-Modified-Since`, returns 304 before Core contacts the
+storage node. A single byte range returns 206 with `Content-Range`; suffix and
+open-ended ranges are supported, while malformed, multiple or unsatisfiable
+ranges return 416 (`Content-Range: bytes */<size>` for known unsatisfiable size).
+Stored chat attachment references use this same file route and semantics.
+Full responses strictly above 1 KiB negotiate Brotli or gzip through
+`Accept-Encoding` for text, JSON, JavaScript, SVG, XML and Wasm. They always
+send `Vary: Accept-Encoding`; media, archives and byte ranges stay identity.
+Raw file and upload-part PUTs may use `Content-Encoding: gzip|br`; Core applies
+the 64 MiB limit to decompressed bytes.
+
+POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
+encoded request maximum). The first line is `{"operations":[...]}`, with 1..500
+ordered operations `{op,path,to?,ifMatch?,createOnly?,bodyRef?}`; subsequent lines
+are `{bodyRef,base64,mimeType}` payload records. References must be unique and
+base64 canonical. Operations are read/write/delete/move/copy; writes reference
+a payload record. Missing payloads, paths and revision conflicts are reported
+per operation. Malformed envelopes/payload records reject the request before
+mutation. Each operation commits independently; there is no batch rollback.
+
+The response is streamed `multipart/mixed`. Each operation has an
+`application/json` part with `Content-ID: result-N` (zero-based), carrying
+`{status,entry?,error?,content?,bodyRef?}`. Small text reads (at most 256 KiB)
+use `content:{encoding:"base64",data,contentEncoding?}`; other reads have
+`bodyRef:"read-N"` and a following typed part with that Content-ID,
+Content-Length and optional Content-Encoding. Compression follows the same
+MIME, size and `Accept-Encoding` policy as ordinary file reads.
+Clients must parse multipart boundaries, not split arbitrary binary on lines.
+A disconnected response can leave completed mutations committed.
+GET files with `?withContent=small` adds the same content object to eligible
+entries; ordinary listing is unchanged. Text MIME types include text/*,
+JSON, JavaScript, XML and +json/+xml suffixes.
+Copy replaces the destination unless createOnly is set; its ifMatch checks the
+destination revision. Move refuses occupied destinations and checks the source
+revision; delete also checks the source. Write keeps existing revision semantics.
+
+Resumable uploads use POST `STORAGE_REST.uploads(spaceId)` with
+`{path,size,mimeType,ifMatch?,createOnly?}`, returning
+`{uploadId,partSize,expiresAt}`. PUT `uploads/:uploadId/parts/:n` accepts
+raw bytes, with zero-based part numbers and an exact final-part length.
+GET `uploads/:uploadId` adds sorted `receivedParts` for resume;
+POST `uploads/:uploadId/complete` publishes a StorageEntry, and DELETE
+aborts. Missing parts or stale revision conditions return 409.
+Sessions expire after 24 hours, allow up to 10,000 parts and survive Core/node
+restart. The default part size is 8 MiB; the legacy single PUT remains capped
+at 64 MiB. Each operation checks the current space write grant and the
+session's authenticated creator. Concurrent part PUTs and part retries are supported.
+
 
 Duplicate cleanup uses `POST /api/storage/spaces/:id/merge-duplicates`:
 send `{}` to preview, then `{"previewToken":"<returned token>"}` to apply.
@@ -61,6 +112,12 @@ Conflicting older versions are archived, not rejected: preview items include
 optional `toPath` under `.duplicates/<spaceId>/`. See the deterministic ordering
 and archive collision rules in [Core storage](server-internals.md#core-file-storage).
 Space lists retain duplicates with the canonical owner/kind/ref space first.
+
+Image previews use `GET STORAGE_REST.thumbnail(spaceId)?path=&size=128|256|512`.
+PNG, JPEG, WebP and the first GIF frame are resized without enlargement and
+returned as WebP (JPEG fallback). The response has a revision-and-size ETag and
+supports 304; unsupported media returns 415. Storage-backed chat image metadata
+sets `thumbnailAvailable` on both the storage reference and upload response.
 
 `STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
 маршруты требуют сессию, cluster доступен только администраторам. Сервис
@@ -1323,6 +1380,17 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
 
 ## File storage contract
+
+POST `STORAGE_REST.fileUrl(spaceId)` accepts `{operation: 'read', path}` or
+`{operation: 'write', path, size, mimeType, ifMatch?, createOnly?}` and returns
+`StorageDirectUrl`: `{url, method, headers?, expiresAt, uploadId?}`.
+Send raw bytes with the returned headers for PUT, then POST
+`STORAGE_REST.fileCommit(spaceId)` with `{uploadId}`; the response is the
+published `StorageEntry`. Direct writes are limited to 64 MiB. Direct GET
+supports one byte range. A node without `publicUrl` returns the ordinary Core
+file URL and revision headers, without uploadId: use normal Core authentication
+and do not call commit. Core still checks write permission, quota and placement
+before returning that fallback; the actual PUT repeats these checks.
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: a0f36043
+checked: df60202a1
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -60,6 +60,50 @@ Multipart parsing must finish before metadata commits, so truncated or extra
 parts cannot produce a successful file record. `fileStorage/chat.test.ts` covers
 both backends, metadata, byte preservation, limits, authentication and CSRF.
 See [request forms](protocol.md#core-file-storage-and-chat-settings).
+Direct transfer uses `packages/file-storage/src/direct.ts` for HMAC-SHA256
+capabilities and `/v1/direct/:blobId?sig=...` on the node. Core loads per-node
+signing configuration at startup. A direct PUT writes one atomic staged part;
+Core's authenticated file/commit assembles it on the node and publishes metadata.
+The existing SQL and memory upload adapters persist the pending revision and
+five-minute deadline without a schema change. Node manifests survive restart.
+Completed/aborted sessions reject further signed PUTs, so URL replay cannot
+alter published bytes. Direct writes share the multipart capacity reservation
+of twice the declared size (staging plus assembly); quota reserves it once.
+Core carries only metadata for these transfers. The node still buffers each PUT
+up to 64 MiB and streams GET/Range from disk. Client switching is separate work.
+
+Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
+provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
+multipart output executes and emits one operation at a time under backpressure.
+Ordinary file downloads use a metadata-only authorization/stat lookup before
+opening the node response stream. This lets Core answer cache validators without
+node I/O and lets byte ranges stream node → Core → browser without buffering the
+file. The node parses one RFC-style byte range and streams it with a bounded
+filesystem read stream. Internal consumers and batch/small-content reads still
+use the buffered client method. Small-content
+listing reads under the metadata transaction to keep content and revision paired.
+Core streams eligible full downloads through Brotli/gzip above 1 KiB and
+compresses eligible batch bodies before base64 or multipart emission. Range,
+media and archive responses remain identity. Raw PUT parsers optionally stream
+gzip/Brotli decompression and stop once decompressed bytes exceed 64 MiB.
+Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
+bearer scope, validates both IDs, serializes capacity checks and copies through
+a temporary file plus rename. No file bytes pass through Core for copy.
+A missing node copy capability fails explicitly; there is no transfer fallback.
+No new environment variables or schema migrations are required.
+
+Core exposes resumable upload routes through the storage coordinator.
+Part transfers release the metadata transaction after authorization, allowing
+concurrent node writes. The node persists a private manifest and temporary parts,
+atomically replaces individual parts, and assembles one part at a time into a
+new blob before atomic rename. Core then commits the visible entry, preserving
+the old file until commit. Completion retries after a metadata rollback reuse
+the composed blob. Core and node run expiry sweeps at startup and every minute;
+Core also cleans sessions whose space was deleted. Node expiry removes temporary
+parts, retaining composed blobs because only Core knows whether they committed.
+As with ordinary writes, a crash after metadata commit can leave an orphan blob
+requiring host reconciliation. No fsync durability guarantee is introduced.
+
 
 Legacy duplicate spaces remain visible, but metadata adapters list the registered
 `storage_space_refs` canonical identity first for each owner/kind/ref. Without a
@@ -87,8 +131,13 @@ Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 `VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
 `routes.ts` registers all `STORAGE_REST` operations after Core session auth,
 rejects anonymous link access and restricts cluster information to admins.
-PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
+PUT file bodies bypass JSON parsing, accept up to 64 MiB after optional gzip/br
+decompression, and enforce revision
 and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
+The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
+`thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
+animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
+the source node and are probed before the source bytes are read.
 `PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
 space. The coordinator checks ownership inside the metadata transaction; write
 collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
@@ -134,6 +183,9 @@ transaction. Chat and Make project identities use the same uniquely indexed
 SQL mapping, while legacy duplicate spaces remain listable. See
 [idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 The default backend remains `machine`.
+Image uploads additionally expose `thumbnailAvailable`; consumers construct the
+preview URL from the storage reference rather than routing preview bytes through
+the transient upload map.
 Upload resolution, retouch sources and attachment reads use coordinator access
 checks. History JSON preserves `MessageAttachment.storage`; persistent reads
 do not depend on the transient UploadStore map. Display paths use
