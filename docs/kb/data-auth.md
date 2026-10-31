@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3a
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -32,6 +32,14 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Streaming writes keep the metadata transaction open across upload: ACL, revision,
+owner quota and placement decisions remain serialized. Known lengths are checked
+before sending bytes; unknown lengths are counted against the file limit, owner
+quota (subtracting the replaced file) and selected node capacity. Metadata stores
+the measured size only after a complete upload. Errors roll back metadata and
+clean the new blob; the previous blob remains until successful commit. Nodes
+stream into exclusive temporary files and unlink incomplete uploads.
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,

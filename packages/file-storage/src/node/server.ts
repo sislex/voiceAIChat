@@ -1,5 +1,8 @@
 import Fastify from 'fastify'
-import { mkdir, readdir, lstat, readFile, writeFile, rename, unlink } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import { mkdir, readdir, lstat, readFile, rename, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { ComponentRuntime } from '@sislexa/component-runtime'
@@ -11,6 +14,7 @@ export interface StorageNodeOptions {
   nodeId: string
   directory: string
   capacityBytes: number
+  maxFileBytes?: number
   tokenFile?: string
   runtime?: Pick<ComponentRuntime, 'authorize' | 'register'>
 }
@@ -32,7 +36,9 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
     queue = result.catch(() => {})
     return result
   }
-  const app = Fastify({ bodyLimit: MAX_STORAGE_FILE_BYTES, routerOptions: { maxParamLength: 1024 } })
+  const maxFileBytes = options.maxFileBytes ?? MAX_STORAGE_FILE_BYTES
+  if (!Number.isSafeInteger(maxFileBytes) || maxFileBytes < 1) throw new Error('Invalid storage file limit')
+  const app = Fastify({ bodyLimit: maxFileBytes, routerOptions: { maxParamLength: 1024 } })
   options.runtime?.register(app)
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof StorageServiceError)
@@ -59,7 +65,7 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
         return reply.code(401).send({ error: 'forbidden', message: 'Authentication required' })
     })
     routes.removeAllContentTypeParsers()
-    routes.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body))
+    routes.addContentTypeParser('*', (_req, body, done) => done(null, body))
     routes.get(FILE_STORAGE_NODE_PATHS.health, async (): Promise<StorageNodeHealth> => ({
       nodeId: options.nodeId, capacityBytes: options.capacityBytes, usedBytes,
       freeBytes: Math.max(0, options.capacityBytes - usedBytes),
@@ -78,17 +84,32 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
         throw error
       }
     }
-    routes.put<{ Params: { blobId: string }; Body: Buffer }>('/v1/blobs/:blobId', async (req, reply) => {
+    routes.put<{ Params: { blobId: string }; Body: Readable }>('/v1/blobs/:blobId', async (req, reply) => {
       const file = path(req.params.blobId)
-      const bytes = req.body ?? Buffer.alloc(0)
+      const body = req.body ?? Readable.from([])
+      const declared = req.headers['content-length'] === undefined ? undefined : Number(req.headers['content-length'])
+      if (declared !== undefined && declared > maxFileBytes) throw new StorageServiceError('file_too_large')
       await exclusive(async () => {
         const previous = await size(file) ?? 0
-        if (usedBytes - previous + bytes.length > options.capacityBytes) throw new StorageServiceError('storage_full')
+        if (declared !== undefined && usedBytes - previous + declared > options.capacityBytes) throw new StorageServiceError('storage_full')
+        let received = 0
         const temporary = join(options.directory, '.tmp-' + randomUUID())
         try {
-          await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 })
+          // Keep the request socket alive long enough to return a structured limit error.
+          await pipeline(Readable.from((async function* () {
+            const iterator = body.iterator({ destroyOnReturn: false })
+            try {
+              for await (const chunk of iterator) {
+                received += Buffer.byteLength(chunk)
+                if (received > maxFileBytes) throw new StorageServiceError('file_too_large')
+                if (usedBytes - previous + received > options.capacityBytes) throw new StorageServiceError('storage_full')
+                yield chunk
+              }
+              if (declared !== undefined && received !== declared) throw new StorageServiceError('invalid_path')
+            } finally { if (!body.readableEnded) body.resume() }
+          })()), createWriteStream(temporary, { flags: 'wx', mode: 0o600 }))
           await rename(temporary, file)
-          usedBytes += bytes.length - previous
+          usedBytes += received - previous
         } finally {
           await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error })
         }
@@ -99,7 +120,9 @@ export async function createStorageNodeServer(options: StorageNodeOptions) {
       const file = path(req.params.blobId)
       const bytes = await exclusive(async () => {
         if (await size(file) === null) throw new StorageServiceError('not_found')
-        return readFile(file)
+        const stream = createReadStream(file)
+        await new Promise<void>((resolve, reject) => { stream.once('open', () => resolve()); stream.once('error', reject) })
+        return stream
       })
       return reply.type('application/octet-stream').send(bytes)
     })

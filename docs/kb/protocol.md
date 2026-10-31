@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3a
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1314,6 +1314,12 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
 
 ## File storage contract
+
+Raw PUT/GET file bodies stream through Core to the node. Optional Content-Length
+allows early size/quota/placement checks; unknown lengths are counted while
+streaming. Exceeding the configured file limit returns `file_too_large` (413).
+`MAX_STORAGE_FILE_BYTES` is the 1 GiB default; `storageMaxFileBytes` validates host
+configuration as a positive safe integer. The default owner quota remains 100 MiB.
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 202e29b9a
+checked: 15683f3a
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -73,12 +73,15 @@ Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 `VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
 `routes.ts` registers all `STORAGE_REST` operations after Core session auth,
 rejects anonymous link access and restricts cluster information to admins.
-PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
-and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
 The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
 `thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
 animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
 the source node and are probed before the source bytes are read.
+PUT file bodies bypass all content parsers as raw streams; GET uses
+`readFileStream` and Fastify `reply.send(stream)`. Both directions apply backpressure
+through the HTTP node client. Revision and create-only preconditions remain
+transactional. The configurable file limit defaults to 1 GiB. Legacy `readFile`
+collects bytes only for existing chat consumers; chat JSON/base64 upload is unchanged. Errors use `STORAGE_ERROR_STATUS`.
 `PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
 space. The coordinator checks ownership inside the metadata transaction; write
 collaborators cannot rename spaces. IDs, refs, files and shares are preserved.

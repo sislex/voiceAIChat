@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_STORAGE_QUOTA_BYTES,
+  DEFAULT_STORAGE_QUOTA_BYTES, MAX_STORAGE_FILE_BYTES, storageMaxFileBytes,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
   STORAGE_THUMBNAIL_SIZES,
@@ -25,6 +25,13 @@ const node = (id: string, capacityGb: number, usedGb: number, online = true): St
 })
 
 describe('file storage contract', () => {
+  it('defaults streaming files to 1 GiB and validates configured limits', () => {
+    expect(MAX_STORAGE_FILE_BYTES).toBe(1024 ** 3)
+    expect(storageMaxFileBytes()).toBe(MAX_STORAGE_FILE_BYTES)
+    expect(storageMaxFileBytes('209715200')).toBe(209715200)
+    for (const value of ['', '0', '-1', '1.5', 'Infinity', 'NaN', '9007199254740992'])
+      expect(() => storageMaxFileBytes(value)).toThrow('VC_FILE_STORAGE_MAX_FILE_BYTES')
+  })
   it('normalizes space-relative paths and rejects traversal', () => {
     expect(normalizeStoragePath('/a//b\\c.txt')).toBe('a/b/c.txt')
     expect(normalizeStoragePath('docs/../secret')).toBeNull()

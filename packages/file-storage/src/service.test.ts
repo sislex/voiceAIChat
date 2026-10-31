@@ -4,7 +4,7 @@ import type { StorageNodeInfo } from '@voicechat/shared/fileStorage'
 import { createFileStorageService, type FileStoragePorts } from './service.js'
 import { createMemoryMetadataStore, type StorageMetadataStore } from './metadata.js'
 import { StorageServiceError } from './errors.js'
-import type { StorageNodeClient } from './client.js'
+import { storageBytes, type StorageNodeClient } from './client.js'
 
 const data = (value: string) => new TextEncoder().encode(value)
 function fixture(quota = 100, capacities = [10e9, 60e9]) {
@@ -16,7 +16,8 @@ function fixture(quota = 100, capacities = [10e9, 60e9]) {
     id: node.id,
     health: vi.fn(async () => ({ nodeId: node.id, capacityBytes: node.capacityBytes,
       usedBytes: node.usedBytes, freeBytes: node.capacityBytes - node.usedBytes })),
-    put: vi.fn(async (id, bytes) => {
+    put: vi.fn(async (id, body) => {
+      const bytes = await storageBytes(body)
       if (!node.online) throw new Error('offline')
       if (node.usedBytes - (blobs[i].get(id)?.length ?? 0) + bytes.length > node.capacityBytes)
         throw new StorageServiceError('storage_full')
@@ -148,7 +149,8 @@ describe('file storage coordinator', () => {
     await expect(f.service.writeFile('owner', s.id, 'a', data('new'))).rejects.toMatchObject({ code: 'node_unavailable' })
     expect((await f.service.readFile('owner', s.id, 'a')).bytes).toEqual(data('old'))
     const put = f.clients[1].put
-    vi.mocked(put).mockImplementationOnce(async (id, bytes) => {
+    vi.mocked(put).mockImplementationOnce(async (id, body) => {
+      const bytes = await storageBytes(body)
       expect(f.blobs[1].has(old)).toBe(true)
       f.blobs[1].set(id, bytes)
       f.info[1].usedBytes += bytes.length
@@ -189,7 +191,7 @@ describe('file storage coordinator', () => {
     const f = fixture(), s = await f.space()
     for (const op of [() => f.service.cluster(''), () => f.service.usage(''), () => f.service.listSpaces(''), () => f.space('')])
       await expect(op()).rejects.toMatchObject({ code: 'forbidden' })
-    await expect(f.service.writeFile('owner', s.id, 'a', new Uint8Array(64 * 1024 * 1024 + 1))).rejects.toMatchObject({ code: 'file_too_large' })
+    await expect(createFileStorageService({ ...f.ports, maxFileBytes: 4 }).writeFile('owner', s.id, 'a', new Uint8Array(5))).rejects.toMatchObject({ code: 'file_too_large' })
     const disabled = createFileStorageService({ ...f.ports, nodes: () => [] })
     await expect(disabled.writeFile('owner', s.id, 'a', data('a'))).rejects.toMatchObject({ code: 'storage_disabled' })
     f.info.forEach(n => { n.online = false })

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStorageNodeClient } from './client.js'
+import { createStorageNodeClient, storageBytes } from './client.js'
 import { createStorageNodeServer } from './node/server.js'
 
 const cleanup: Array<() => Promise<unknown>> = []
@@ -17,7 +17,7 @@ it('round-trips binary data through a real HTTP node and maps its errors', async
   const url = await app.listen({ host: '127.0.0.1', port: 0 })
   const client = createStorageNodeClient({ id: 'a', url, token: 'secret' })
   await client.put('abcdefgh', new Uint8Array([0, 255, 42]))
-  expect(await client.get('abcdefgh')).toEqual(new Uint8Array([0, 255, 42]))
+  expect(await storageBytes(await client.get('abcdefgh'))).toEqual(new Uint8Array([0, 255, 42]))
   expect(await client.health()).toMatchObject({ nodeId: 'a', usedBytes: 3 })
   await expect(client.put('other_id', new Uint8Array(3))).rejects.toMatchObject({ code: 'storage_full' })
   await client.delete('abcdefgh')
@@ -39,7 +39,7 @@ it('rejects invalid IDs locally and maps malformed health and interrupted respon
   expect(transport).not.toHaveBeenCalled()
   await expect(client.health()).rejects.toMatchObject({ code: 'node_unavailable' })
   transport.mockImplementationOnce(async () => new Response(new ReadableStream({ start(c) { c.error(new Error('disconnected')) } })))
-  await expect(client.get('abcdefgh')).rejects.toMatchObject({ code: 'node_unavailable' })
+  await expect(client.get('abcdefgh').then(storageBytes)).rejects.toMatchObject({ code: 'node_unavailable' })
 })
 it('does not follow redirects with node credentials and sends a bounded request', async () => {
   const transport = vi.fn(async () => new Response(null, { status: 204 }))

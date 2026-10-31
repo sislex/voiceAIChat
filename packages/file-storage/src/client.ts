@@ -1,3 +1,15 @@
+import { Readable } from 'node:stream'
+import { Agent, fetch as pooledFetch } from 'undici'
+const dispatcher = new Agent({ keepAliveTimeout: 30_000, keepAliveMaxTimeout: 60_000, allowH2: true })
+export type StorageBody = Uint8Array | Readable
+export async function storageBytes(body: StorageBody): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return body
+  const chunks: Buffer[] = []
+  for await (const chunk of body) chunks.push(Buffer.from(chunk))
+  const bytes = Buffer.concat(chunks)
+  return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+}
+
 import { FILE_STORAGE_NODE_PATHS, STORAGE_ERROR_STATUS, isStorageBlobId,
   type StorageErrorCode, type StorageNodeHealth } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from './errors.js'
@@ -5,8 +17,9 @@ import { StorageServiceError } from './errors.js'
 export interface StorageNodeClient {
   readonly id: string
   health(): Promise<StorageNodeHealth>
-  put(blobId: string, bytes: Uint8Array): Promise<void>
-  get(blobId: string): Promise<Uint8Array>
+  put(blobId: string, bytes: StorageBody, size?: number): Promise<void>
+  /** Byte results remain supported for injected legacy clients. HTTP clients stream. */
+  get(blobId: string): Promise<StorageBody>
   delete(blobId: string): Promise<void>
 }
 export function createStorageNodeClient(options: {
@@ -15,12 +28,14 @@ export function createStorageNodeClient(options: {
   const base = new URL(options.url)
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash)
     throw new Error('Invalid storage node URL')
-  const transport = options.fetchImpl ?? fetch
-  async function request(path: string, method = 'GET', bytes?: Uint8Array) {
+  const transport = (options.fetchImpl ?? pooledFetch) as typeof pooledFetch
+  async function request(path: string, method = 'GET', bytes?: StorageBody, size?: number) {
     try {
       const response = await transport(new URL(path, base), {
-        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream' },
-        ...(bytes === undefined ? {} : { body: Buffer.from(bytes) }),
+        method, headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/octet-stream',
+          ...(size === undefined ? {} : { 'content-length': String(size) }) },
+        ...(bytes === undefined ? {} : { body: bytes, duplex: 'half' }),
+        ...{ dispatcher },
         redirect: 'error', signal: AbortSignal.timeout(60_000),
       })
       if (!response.ok) {
@@ -59,12 +74,23 @@ export function createStorageNodeClient(options: {
         throw new StorageServiceError('node_unavailable')
       }
     },
-    async put(id, bytes) { await request(blobPath(id), 'PUT', bytes) },
+    async put(id, bytes, size) {
+      const response = await request(blobPath(id), 'PUT', bytes, size ?? (bytes instanceof Uint8Array ? bytes.byteLength : undefined))
+      await response.body?.cancel()
+    },
     async get(id) {
       const response = await request(blobPath(id))
-      try { return new Uint8Array(await response.arrayBuffer()) }
-      catch { throw new StorageServiceError('node_unavailable') }
+      const source = response.body ? Readable.fromWeb(response.body as import('node:stream/web').ReadableStream) : Readable.from([])
+      // Attach immediately, including when a conditional GET discards the unread body.
+      source.on('error', () => {})
+      const stream = Readable.from((async function* () {
+        try { yield* source }
+        catch { throw new StorageServiceError('node_unavailable') }
+        finally { source.destroy() }
+      })())
+      stream.once('close', () => source.destroy())
+      return stream
     },
-    async delete(id) { await request(blobPath(id), 'DELETE') },
+    async delete(id) { await (await request(blobPath(id), 'DELETE')).body?.cancel() },
   }
 }

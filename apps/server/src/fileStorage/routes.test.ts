@@ -1,3 +1,4 @@
+import { storageBytes } from '../../../../packages/file-storage/src/client.js'
 import Fastify from 'fastify'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -16,11 +17,11 @@ const blobs = new Map<string, Uint8Array>()
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:'); await db.ready
   capacity = 60e9; quota = 100; blobs.clear()
-  const service = createFileStorageService({metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
+  const service = createFileStorageService({maxFileBytes: 64 * 1024, metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
     quota: async () => quota,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
     nodes: () => [0, 1].map(i => ({id: String(i), health: async () => { throw Error('unused') },
-      put: async (id, bytes) => { if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
+      put: async (id, body) => { const bytes = await storageBytes(body); if (bytes.length > capacity) throw new StorageServiceError('storage_full'); blobs.set(id, bytes) },
       get: async id => { const value = blobs.get(id); if (!value) throw new StorageServiceError('not_found'); return value },
       delete: async id => {blobs.delete(id)} })),
     thumbnail: createThumbnailGenerator(),
@@ -208,7 +209,7 @@ it('rejects thumbnails for non-images', async () => {
 it('rejects oversized raw bodies with the contract error', async () => {
   const id = await space()
   const response = await app.inject({method:'PUT', url:'/api/storage/spaces/' + id + '/file?path=large',
-    headers:{authorization:'owner', 'content-type':'application/octet-stream'}, payload:Buffer.alloc(64 * 1024 * 1024 + 1)})
+    headers:{authorization:'owner', 'content-type':'application/octet-stream'}, payload:Buffer.alloc(64 * 1024 + 1)})
   expect(response.statusCode).toBe(413)
   expect(response.json().error).toBe('file_too_large')
 })

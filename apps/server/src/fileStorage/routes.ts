@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_THUMBNAIL_SIZES, type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
@@ -33,7 +34,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     })
     if (raw) app.register(async scope => {
       scope.removeAllContentTypeParsers()
-      scope.addContentTypeParser('*', {parseAs: 'buffer'}, (_req, body, done) => done(null, body))
+      scope.addContentTypeParser('*', (_req, body, done) => done(null, body))
       scope.setErrorHandler((error, _req, reply) => {
         if ((error as {code?: string}).code === 'FST_ERR_CTP_BODY_TOO_LARGE') return storageError(reply, new StorageServiceError('file_too_large'))
         return storageError(reply, error)
@@ -73,12 +74,16 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   route('DELETE', path(STORAGE_REST.space), async (s, r, reply) => { await s.deleteSpace(uid(r), r.params.id); return reply.code(204).send() })
   route('GET', path(STORAGE_REST.files), (s, r) => s.listEntries(uid(r), r.params.id, r.query.prefix))
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
-    const file = await s.readFile(uid(r), r.params.id, string(r.query.path))
+    const file = await s.readFileStream(uid(r), r.params.id, string(r.query.path))
     const etag = '"' + file.entry.revision + '"'
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
+    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') {
+      if (file.bytes instanceof Readable) file.bytes.destroy()
+      return reply.code(304).header('etag', etag).send()
+    }
     reply.header('etag', etag).header('x-content-type-options', 'nosniff')
     reply.header('content-disposition', 'attachment')
-    return reply.type(file.entry.mimeType).send(Buffer.from(file.bytes))
+    return reply.header('content-length', file.entry.size).type(file.entry.mimeType)
+      .send(file.bytes instanceof Readable ? file.bytes : Buffer.from(file.bytes))
   })
   route('GET', path(STORAGE_REST.thumbnail), async (s, r, reply) => {
     const size = Number(r.query.size)
@@ -95,8 +100,8 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (none !== undefined && none !== '*') throw new StorageServiceError('revision_conflict')
     const revision = match === undefined ? undefined : Number(String(match).replace(/^"|"$/g, ''))
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1)) throw new StorageServiceError('revision_conflict')
-    if (r.body !== undefined && !Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Buffer ?? Buffer.alloc(0), {
+    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Readable ?? Readable.from([]), {
+      size: r.headers['content-length'] === undefined ? undefined : Number(r.headers['content-length']),
       ifMatch: revision, createOnly: none === '*', mimeType: r.headers['content-type'] ?? 'application/octet-stream',
     })
   }, true)

@@ -1,7 +1,8 @@
-import { DEFAULT_STORAGE_QUOTA_BYTES } from '@voicechat/shared/fileStorage'
+import { DEFAULT_STORAGE_QUOTA_BYTES, storageMaxFileBytes } from '@voicechat/shared/fileStorage'
 export interface FileStorageConfig {
   mode: 'off' | 'embedded'
   nodes: Array<{id: string; url: string; tokenFile: string}>
+  maxFileBytes?: number
   defaultQuotaBytes: number
 }
 export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
@@ -21,5 +22,5 @@ export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
   }
   const defaultQuotaBytes = Number(env.VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES ?? DEFAULT_STORAGE_QUOTA_BYTES)
   if (!Number.isSafeInteger(defaultQuotaBytes) || defaultQuotaBytes < 0) throw new Error('Invalid VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES')
-  return { mode, nodes, defaultQuotaBytes }
+  return { mode, nodes, defaultQuotaBytes, maxFileBytes: storageMaxFileBytes(env.VC_FILE_STORAGE_MAX_FILE_BYTES) }
 }
