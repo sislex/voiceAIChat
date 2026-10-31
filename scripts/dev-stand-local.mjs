@@ -150,7 +150,7 @@ function sharedServices(shared) {
     ...(preparedSource('make') ? [
       { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json', env: {} },
       { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(802),
-        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_DATA_DIR: null } }
+        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_APPLICATION_DEV: '1', VC_DATA_DIR: null } }
     ] : []),
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },

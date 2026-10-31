@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-31
-checked: fe8ff7af
+checked: af65e6ba
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -531,6 +531,9 @@ the service process group. Detaching Make also stops its frontend and watcher,
 and changing frontend routing restarts Core. Ports held by other processes are refused.
 Frontend servers take version, commit and apiVersion from the freshly built
 `dist/manifest.json`, rather than the launcher's static API defaults.
+The shared stand's Make frontend server also receives `VC_APPLICATION_DEV=1`.
+Make uses that explicit flag to tolerate a commit mismatch during watch rebuilds
+and reports the manifest commit; production remains strict without the flag.
 Readiness failures include the last 4 KiB / 20 lines of the failing service log.
 In supervised `run` mode this diagnostic is written to stderr before rollback stops
 the service groups, so an operation runner can retain the bounded cause instead of
