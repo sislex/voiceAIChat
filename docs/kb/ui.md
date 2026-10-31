@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-10-31
+checked: af65e6ba
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -123,6 +123,21 @@ listed in that frontend's `runtimeDependencies` is enabled and local in the
 deployment. Thus `make-ui` follows `make`, `web-reader-ui` follows `web-reader`,
 `playwright-reader-ui` follows `playwright-reader`, and `image-studio-ui` follows
 `image-studio`. Disabled or external owners do not activate these source overrides.
+
+Production additionally prefers pinned owner archives (frontend catalog entries
+with `external.package`) over `VC_APPLICATION_FRONTENDS`. Only
+`VC_APPLICATION_FRONTENDS_OVERRIDE=1` explicitly enables their overrides when
+`NODE_ENV=production`; other values do not. Development keeps local working-copy
+overrides. Frontends without a pinned owner package still accept configured
+sources. A missing or broken installed pinned artifact returns an error rather
+than silently switching to a container.
+This prevents the SISL-10804 regression reported on 2026-10-31: retaining local
+owner overrides also allowed old production Reader containers to supersede the
+release's pinned archives. The policy applies equally to manifests and assets.
+At startup the gateway logs each frontend's selected `pinned` or `override`
+source and the validated manifest's version/commit; unavailable or invalid
+manifests log null metadata and `manifest_unavailable` without preventing boot.
+Manifest UI versions can differ from the npm owner package version.
 The registration and manifest proxy behavior is covered by
 `apps/server/src/deploymentApplications.server.test.ts`. Пустая карта сохраняет
 локальный fallback общего Docker-образа; неизвестное приложение/путь не получает SPA.
