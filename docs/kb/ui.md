@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-10-31
-checked: 8bb433d2
+checked: f1d5fd04c
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -30,6 +30,14 @@ Module details: `make:README.md`
 Module details: `ui:README.md`
 Module details: `kanban:README.md`
 Module details: `image-studio:README.md`
+
+## Admin storage quota consumer boundary
+
+Core exposes the quota override and storage usage through `AdminUserInfo` and
+registers `admin:setUserStorageQuota` in Shared IPC. The Core UI field and
+renderer bridge wiring are a separate owner change after contract publication;
+this API change does not update the pinned UI artifact. See
+[the admin contract](protocol.md#admin-storage-quota-contract).
 
 ## Core chat file backend contract
 

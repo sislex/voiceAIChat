@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 713d61e0
+checked: f1d5fd04c
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -73,6 +73,12 @@ Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting
 `chatFilesBackend=storage` in account settings opts chat uploads into the
 service; machine storage remains the default.
+
+Admin quota writes require an FS-3-capable Identity exposing
+`setUserStorageQuota`; the pinned Identity 1.5.2 lacks that method and Core
+returns 503 instead of claiming success. The standalone admin process creates
+its storage runtime when configured with embedded file storage and closes it
+on shutdown. See [quota management](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Public chat deployment isolation
 

@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: 8bb433d2
+checked: f1d5fd04c
 areas:
   - packages/shared/src
 ---
@@ -15,6 +15,15 @@ areas:
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## Admin storage quota fields
+
+`AdminUserInfo` adds optional `storageQuotaBytes: number | null` and
+`storageUsage: StorageUsage`. The former is the Identity override; the latter
+contains current usage and effective quota when storage is enabled.
+`IpcInvokeMap` and `IPC_CHANNELS` both declare `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
+See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
 

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 713d61e0
+checked: f1d5fd04c
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -23,6 +23,18 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Admin storage quota contract
+
+`PATCH /api/admin/users/:name` accepts a separate `{ storageQuotaBytes }`
+update: a non-negative safe integer or `null` to restore the deployment default.
+The admin guard applies to reads and writes. Invalid or mixed role/LLM-limit
+updates return 400; missing users return 404; an Identity without
+`setUserStorageQuota` returns 503. The handler calls that Identity setter.
+`AdminUserInfo` exposes the nullable override and optional `storageUsage`
+(owner bytes, file count and effective quota). Shared IPC registers
+`admin:setUserStorageQuota` with `{ name, storageQuotaBytes }` and an
+`AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
 

@@ -2,8 +2,8 @@
 id: development-preview
 title: Development CI: isolated Docker preview and browser evidence
 kind: feature
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-10-31
+checked: f1d5fd04c
 areas:
   - packages/shared/src/developmentPreview.ts
   - packages/shared/src/ci.ts

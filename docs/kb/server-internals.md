@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 713d61e0
+checked: f1d5fd04c
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -35,6 +35,16 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Admin storage integration
+
+`buildServer` passes the storage service into `registerAdminRoutes`.
+`buildAdminServer` creates its own storage runtime in embedded storage mode,
+passes the service to the same routes and closes it on Fastify shutdown.
+User responses call `usage(name)` when the service exists. Quota mutation is
+an admin-only Identity operation, including null reset; missing FS-3 setters
+return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
+See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
 

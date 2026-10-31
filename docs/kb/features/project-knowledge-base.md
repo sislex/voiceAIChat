@@ -3,7 +3,7 @@ id: project-knowledge-base
 title: База знаний проекта
 kind: feature
 updated: 2026-10-31
-checked: c2aed75b
+checked: f1d5fd04c
 areas:
   - packages/knowledge/src
   - packages/kb-tools
@@ -68,6 +68,13 @@ Review since `592879f34` found one runtime change in the KB area:
 available, project-membership checks and the existing start flow remain in force.
 Operator handoff only adds knowledge documents; it does not change KB search,
 module fetch or visibility behavior.
+
+The maintenance CLI's same-commit freshness rule excludes area commits that
+also modify the topic being checked. `touch` records HEAD; later source-only
+commits still invalidate the topic. `packages/kb-tools/cli.test.mjs` commits
+reconciliation separately before its stale-source fixture and checks the
+`после проверенного SHA:` row delimiter. See
+[the maintenance workflow](../kb-workflow.md#scoped-owner-gate-diagnostics-sk-115).
 
 ## Repository modules
 
