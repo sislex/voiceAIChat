@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: 5730832e
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -26,6 +26,27 @@ with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
 See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
+
+`STORAGE_COMPRESSION_MIN_BYTES` is 1024 and `StorageContentEncoding` is
+`br | gzip`. `isStorageCompressible` accepts text except SSE, JSON/XML
+(including application suffix types), JavaScript, SVG and wasm. File and inline
+responses negotiate compression above that byte threshold using Accept-Encoding;
+Range requests and binary media/archive bodies remain identity. Batch compression
+is per multipart part: clients decode its Content-Encoding before parsing JSON
+or consuming bytes, and Content-Length describes the encoded part. Raw uploads
+accept gzip/br with the 64 MiB limit applied after decoding. See
+[Core storage](server-internals.md#core-file-storage) for hooks and errors.
+
+Batch contracts define up to 500 operations, a 64 MiB input bound, NDJSON
+payload records and multipart results. `StorageInlineContent` uses base64;
+`isStorageSmallText` permits eligible text up to 256 KiB in listings and read
+results. `FILE_STORAGE_NODE_PATHS.copy` declares the node-side copy endpoint.
+Resumable uploads declare creation, status, zero-based replaceable parts,
+completion and abort paths, with an 8 MiB default part size, 10,000-part maximum
+and 24-hour session TTL.
+Thumbnail contracts expose sizes 128/256/512 and a 32 MiB source-image bound,
+plus `unsupported_media_type` (415). `StorageFileRef`, `MessageAttachment`
+and `UploadInfo` carry optional `thumbnailAvailable` flags.
 
 `MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
 `POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and

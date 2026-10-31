@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 15f87e361
+checked: 5730832e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,33 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Storage routes opt out of the general API compression hook with `compress: false`
+and register `fileStorage/compression.ts` in their own scope. Buffered file and
+inline JSON responses strictly above 1024 bytes negotiate br/gzip with quality
+weights from Accept-Encoding (br wins ties). Shared's `isStorageCompressible`
+selects text except SSE, JSON/XML including application suffix types, JavaScript,
+SVG and wasm. Other image, audio, video and archive bodies remain identity.
+HEAD, Range requests, non-200, partial, already encoded and stream responses
+are excluded from this buffered hook. Vary includes Accept-Encoding even for
+identity responses. Compressed responses carry their encoded Content-Length,
+omit Accept-Ranges and weaken strong ETags; file conditional reads accept weak
+If-None-Match validators.
+
+Batch output remains a streaming multipart envelope. `batch.ts` compresses each
+eligible JSON/result or file part independently, including inline content,
+using the same threshold and encoding negotiation. Each part's Content-Encoding
+must be decoded by its consumer; Content-Length is the encoded length. Binary
+payload parts stay identity and a Range request disables part compression.
+
+Raw storage inputs (file PUT, upload parts and batch NDJSON) accept gzip/br through
+a preParsing stream pipeline. A counting Transform rejects decoded bodies above
+64 MiB with 413 `file_too_large` before the raw parser can accumulate beyond the
+limit. Malformed compressed inputs return 400 `invalid_path`; unsupported
+encodings return 415 `unsupported_media_type`. Encoded-byte accounting preserves
+Fastify's request Content-Length validation. No new environment variables are
+required. `routes.test.ts` covers round-trips, MIME/threshold exclusions, Range,
+inline/batch decoding, malformed inputs, conditional reads and the decoded limit.
 
 Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
 provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
@@ -281,7 +308,8 @@ See [repository module configuration](features/project-knowledge-base.md#reposit
 `Accept-Encoding` for buffered JSON (including `application/*+json`) and text
 responses under `/api` and `/internal`, strictly above 1024 bytes. Existing
 route hooks still run; `compress: false` remains an explicit route opt-out.
-Request decompression is disabled.
+Request decompression is disabled in this general hook. Storage raw routes
+install their own bounded decoder; see [Core file storage](#core-file-storage).
 
 Static responses use a separate `staticCompression.ts` hook for JS, CSS, HTML,
 JSON, SVG and source maps under `/assets/`, `/applications/:id/` and
