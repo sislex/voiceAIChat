@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 50fcc411
+checked: c2aed75b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -9,6 +9,19 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Operator handoff integration (SK-115)
+
+`kanbanBridge/proxy.ts` includes `/api/kanban/handoff` in the existing proxy
+prefixes. Export/import and continuation execute in Kanban. Core's
+`routes/agents.ts` validates and authorizes the machine switch, then waits for
+AgentRegistry's correlated result; see [protocol](protocol.md#operator-handoff).
+This adds no Core deployment or database migration.
+
+Review since `7ad8ad53` also confirms `local-stand` in EnvironmentMode and
+`readyStandEnvironment`: the base must be ready and its first machine must match.
+The existing Make stand section below documents the live working-copy flow;
+these changes do not alter KB host ports.
 
 Module details: `voice:README.md`
 

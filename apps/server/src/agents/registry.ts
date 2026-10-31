@@ -166,6 +166,18 @@ export interface AgentUpdateStatus {
 export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
 
 export class AgentRegistry {
+  private readonly handoffs = new Map<string,{agentId:string;resolve:(status:'switched'|'failed')=>void}>()
+  switchOperator(agentId:string, request:{serverUrl:string;token:string;timeoutMs:number}): Promise<'switched'|'failed'> {
+    const agent=this.online.get(agentId)
+    if(!agent) return Promise.reject(new Error('Agent is offline'))
+    const requestId=this.newId()
+    return new Promise(resolve=>{
+      const timer=setTimeout(()=>{this.handoffs.delete(requestId);resolve('failed')},request.timeoutMs+5000)
+      this.handoffs.set(requestId,{agentId,resolve:status=>{clearTimeout(timer);this.handoffs.delete(requestId);resolve(status)}})
+      agent.socket.send(JSON.stringify({t:'agent.switchOperator',requestId,...request}))
+    })
+  }
+
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
@@ -1000,7 +1012,12 @@ export class AgentRegistry {
   }
 
   /** Обрабатывает сообщение от агента (exec.* и fs.result/fs.error). */
-  async handleMessage(agentId: string, msg: AgentToServer): Promise<void> {
+  async handleMessage(agentId: string, msg: AgentToServer | {t:'agent.switchOperatorResult';requestId:string;status:'switched'|'failed'}): Promise<void> {
+    if(msg.t==='agent.switchOperatorResult'){
+      const pending=this.handoffs.get(msg.requestId)
+      if(pending?.agentId===agentId && ['switched','failed'].includes(msg.status)) pending.resolve(msg.status)
+      return
+    }
     if (msg.t === 'agent.register') return // повторная регистрация — игнор
     if (msg.t === 'agent.setPolicy') return // обрабатывается в wsAgent (нужен owner/БД)
     if (msg.t === 'agent.telemetry') {
