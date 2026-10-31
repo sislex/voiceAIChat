@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a0f36043
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,20 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
+`POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to
+`writeFile`; Core does not assemble the whole file for the storage backend.
+The coordinator uses the HTTP node client's optional `putStream` method, which
+sends the iterable with fetch `duplex: 'half'`. Custom node clients without this
+method reject streamed writes with `node_unavailable`; byte-array writes remain
+compatible. The existing node handler's buffering is not changed by this Core
+upload path. Machine storage buffers at most 32 MiB and encodes base64 at the
+`AgentRegistry.fsWrite` call. Legacy JSON parsing remains buffered.
+Multipart parsing must finish before metadata commits, so truncated or extra
+parts cannot produce a successful file record. `fileStorage/chat.test.ts` covers
+both backends, metadata, byte preservation, limits, authentication and CSRF.
+See [request forms](protocol.md#core-file-storage-and-chat-settings).
 
 Legacy duplicate spaces remain visible, but metadata adapters list the registered
 `storage_space_refs` canonical identity first for each owner/kind/ref. Without a

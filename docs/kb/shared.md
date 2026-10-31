@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a0f36043
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -26,6 +26,14 @@ with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
 See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
+
+`ChatUploadMetadata`, `ChatUploadJsonRequest`, `CHAT_UPLOAD_METADATA_HEADERS`
+and `MAX_CHAT_UPLOAD_BYTES` extend `src/fileStorage.ts` for chat upload request
+forms. Chat attachments retain a 32 MiB decoded limit, distinct from the general
+storage service's 64 MiB file limit. `REST.uploads` documents JSON/base64, raw
+bytes and one multipart file; `UploadInfo` is unchanged. Query/header precedence,
+MIME inference and raw JSON disambiguation are described in
+[the upload protocol](protocol.md#core-file-storage-and-chat-settings).
 
 `MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
 `POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-10-31
-checked: dab1b380
+updated: 2026-11-01
+checked: a0f36043
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -40,6 +40,11 @@ this API change does not update the pinned UI artifact. See
 [the admin contract](protocol.md#admin-storage-quota-contract).
 
 ## Core chat file backend contract
+
+The Core endpoint supports raw/multipart uploads in addition to legacy
+JSON/base64; [the protocol](protocol.md#core-file-storage-and-chat-settings)
+defines metadata and limits. The switch in Core UI remains owner work: this
+server change modifies no UI artifact, renderer bridge or attachment response.
 
 Core принимает настройку `chatFilesBackend: machine | storage` (по умолчанию
 `machine`) и возвращает `UploadInfo.storage` при загрузке через включённый сервис.

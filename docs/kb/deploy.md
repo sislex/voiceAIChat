@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 30744ae9
+updated: 2026-11-01
+checked: a0f36043
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -73,6 +73,10 @@ Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting
 `chatFilesBackend=storage` in account settings opts chat uploads into the
 service; machine storage remains the default.
+Raw/multipart chat uploads require no new environment variables or schema
+migration. Core adds `@fastify/multipart` for its scoped upload parser and uses
+the existing storage node URL/token configuration for streaming HTTP writes.
+The legacy JSON form remains available to already deployed clients.
 
 Shared Make with `VC_MAKE_FILE_STORAGE=service` also needs the paired service
 credentials used by Core's application ticket configuration. Core enables

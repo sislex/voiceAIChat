@@ -1,11 +1,12 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a0f36043
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
   - packages/shared/src/protocol.ts
+  - packages/shared/src/fileStorage.ts
   - packages/shared/src/threadCost.ts
   - packages/shared/src/chatContract.ts
   - packages/shared/src/index.ts
@@ -37,6 +38,20 @@ updates return 400; missing users return 404; an Identity without
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
+
+`POST REST.uploads` accepts legacy JSON/base64, raw bytes and a streamed
+`multipart/form-data` body containing exactly one file and no text fields.
+For raw/multipart, metadata uses `name`, `conversationId`, `agentId` and
+`mimeType` query keys or same-name case-insensitive headers; query values win.
+Raw uploads require a nonblank name; multipart defaults to the file's filename.
+An explicit `mimeType` overrides the raw Content-Type or multipart file MIME.
+`application/json` without a query/header name selects legacy JSON; supply the
+name outside the body to upload a raw JSON file. Legacy JSON without a name
+still defaults to `file`. All forms retain the decoded 32 MiB limit and return
+the unchanged `UploadInfo`; the legacy JSON envelope is limited to 64 MiB.
+Cookie mutations still require CSRF, and CORS permits the four metadata headers.
+The contract lives in `packages/shared/src/fileStorage.ts`; see
+[Core parsing and streaming](server-internals.md#core-file-storage).
 
 Duplicate cleanup uses `POST /api/storage/spaces/:id/merge-duplicates`:
 send `{}` to preview, then `{"previewToken":"<returned token>"}` to apply.

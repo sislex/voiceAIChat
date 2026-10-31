@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a0f36043
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -63,6 +63,10 @@ remains Core infrastructure even in a chat-only deployment.
 HTTP node client and coordinator library. It imports no `apps/server` code.
 Its workspace is registered in the application catalog and affected-package graph.
 Its public contract is `packages/shared/src/fileStorage.ts`.
+`writeFile` accepts either a byte array or an async iterable. Core chat uploads
+use the iterable path for raw/multipart bodies; the HTTP node client implements
+`putStream` without assembling the request in Core. The node's existing buffered
+handler is unchanged. See [streaming and quotas](data-auth.md#file-storage-metadata-and-quotas).
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).

@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a0f36043
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -19,6 +19,8 @@ areas:
   - packages/identity-client
   - packages/identity-contracts
   - apps/server/src/uploads.ts
+  - apps/server/src/uploadBody.ts
+  - packages/file-storage/src/service.ts
   - apps/server/src/server.ts
   - apps/server/src/routes/rest.abuse.test.ts
   - apps/server/src/routes/admin.ts
@@ -32,6 +34,16 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+Streaming `writeFile` calls in `packages/file-storage/src/service.ts` retain the
+metadata transaction across upload completion. Each chunk updates the byte count
+and checks the storage size limit and replacement-aware owner quota. Source
+errors are preserved through node transport error mapping. Metadata is written
+only after the stream finishes; failure attempts cleanup of the new blob and
+preserves the previous entry. Post-commit cleanup removes the old blob as before.
+Chat admission separately caps decoded file bytes at 32 MiB in `uploadBody.ts`.
+The existing user/tenant conversation checks, machine access checks, cookie CSRF
+and upload rate limits still apply to all three request forms.
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,

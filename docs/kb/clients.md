@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-10-31
-checked: dab1b380
+updated: 2026-11-01
+checked: a0f36043
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -44,6 +44,11 @@ memory. Compose forwards this token to both Core and the standalone Machines ser
 Tests inject the pin path and fetch dependency.
 
 ## Core UI distribution
+
+Core's upload endpoint also accepts raw bytes and one multipart file; see
+[the upload contract](protocol.md#core-file-storage-and-chat-settings).
+This server change does not replace the pinned UI/renderer or switch its upload
+transport. Legacy JSON/base64 requests and `UploadInfo` remain compatible.
 
 Web and Desktop renderer sources belong to `sislex/sislexa-core-ui`. Core serves the pinned `@sislexa/core-ui/web` assets and verifies the owner manifest before building its image. `npm run dev:web` starts Core with that static directory and proxies the familiar port 5273 to Core; UI editing and HMR use `npm run dev` in the UI owner repository. Configure `VITE_SERVER_URL` or `VC_API_PORT` there. Existing Desktop releases remain pinned to their released renderer until an explicit Desktop dependency upgrade.
 
