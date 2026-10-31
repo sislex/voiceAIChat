@@ -1,8 +1,11 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: d5140cd7
+checked: 49b74141
 areas:
+  - packages/component-runtime/src/index.ts
+  - packages/component-runtime/src/runtime.test.ts
+  - packages/component-runtime/src/sharedServices.ts
   - apps/server/src/auth/delegation.ts
   - apps/server/src/makeBridge/proxy.ts
   - apps/server/src/routes/internal.ts
@@ -66,6 +69,62 @@ mixed in, and the live account/tenant must match. Storage resolves space ACLs fo
 that user on every request, including reads, writes and shares. Tests in
 `routes/applicationTickets.delegation.test.ts` cover the cookie proxy, delegated
 whoami, file creation/readback, wrong credentials and revocation.
+
+#### data-storage lookup and repository ownership
+
+This Core checkout has no `docs/kb/data-storage.md`. The service-backend
+authorization entry is this section; Make API/UI and project storage belong to
+the `make` module listed in [the ownership map](modules.md). Consult
+`make:README.md` for owner documentation rather than assuming a Core-local
+data-storage topic exists.
+
+#### Browser cookie, shared registry and managed transport
+
+The browser cookie is verified by Core before proxying. The proxy in
+`apps/server/src/server.ts` supplies `x-sislexa-core-id`,
+`x-sislexa-delegation` and the Core-to-Make bearer. The delegation lasts five
+minutes and is issued with `sid: null`; do not describe it as bound to the
+browser session's SID. The return call uses the distinct Make-to-Core credential
+with the delegation. `TrustedCoreRegistry` in
+`packages/component-runtime/src/sharedServices.ts` resolves the Core URL and
+credential from the selected `coreId`, validates the target origin and refuses
+unknown cores. Its `CoreDelegationClient` attaches the session's delegation and,
+when present, tenant. Core's shared `/internal/whoami` authenticates the outer
+headers, so identity headers embedded in the forwarded body cannot override the
+delegated user.
+
+Removing an explicit internal bearer from a cookie-based storage client is
+insufficient if its underlying managed transport is still `fetchImpl`.
+`ComponentRuntime.dependency()` in
+`packages/component-runtime/src/index.ts` overwrites Authorization with the
+component grant on that transport. Its `publicFetchImpl` performs the same
+dependency verification but preserves supplied user credentials without adding
+the component bearer. User-authenticated Storage API calls need that preserving
+transport; shared ticket calls must preserve the intended Make credential and
+delegation together. This is not permission to mix a cookie into a ticket call:
+Core explicitly rejects that combination. Core's Make browser proxy already
+uses `managedMake.publicFetchImpl`. Credential preservation and redirect behavior
+are covered by `packages/component-runtime/src/runtime.test.ts`.
+
+#### Verification boundary
+
+The Core integration test
+`apps/server/src/routes/applicationTickets.delegation.test.ts` intercepts the
+outbound Make request and then exercises delegated whoami and Storage API calls
+directly. With two fake storage nodes it creates a `make-project` space, writes
+and reads a file, lists that space through the browser cookie, and rejects
+another user's access, a wrong application credential, mixed cookie/delegation,
+missing or invalid grants and revoked delegations. It does not run two Make
+servers or open the Core storage UI.
+
+At merge SHA `49b74141`, the installed `@sislexa/make` source still has the
+shared guard rejecting requests without a shared session, MCP context or
+single-Core fallback in `apps/make/src/standalone/sharedServer.ts`; its
+`standalone/server.ts` constructs the local Make module. This checkout therefore
+proves the Core-side authorization contract and transport behavior, not inclusion
+of `fix/storage-cookie-session`, the updated Make service-backend wiring, or
+successful two-instance stand acceptance. Those require the matching Make owner
+revision and its evidence.
 
 ## Project integration tokens
 
