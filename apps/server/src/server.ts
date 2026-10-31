@@ -1137,7 +1137,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const adminRemote = opts.config.adminMode === 'remote'
   if (adminRemote && !(opts.config.adminUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_ADMIN_MODE=remote требует VC_ADMIN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
   if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
-  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
+  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому

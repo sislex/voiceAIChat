@@ -82,6 +82,12 @@ Deploy compatible Core and Make versions together: service credentials identify
 the application, while the delegation supplies the user for Core storage ACLs.
 See [Make authorization](data-auth.md#make-service-storage-authorization).
 
+Admin quota writes require an FS-3-capable Identity exposing
+`setUserStorageQuota`; the pinned Identity 1.5.2 lacks that method and Core
+returns 503 instead of claiming success. The standalone admin process creates
+its storage runtime when configured with embedded file storage and closes it
+on shutdown. See [quota management](data-auth.md#file-storage-metadata-and-quotas).
+
 ## Public chat deployment isolation
 
 The limited `sislexa.by` installation is a separate deployment of **sislexa**.
@@ -324,6 +330,15 @@ The heap cap leaves space for native allocations but does not guarantee that
 a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
+
+The npm subprocess helper in `scripts/contracts-release.mjs` sets the global
+`--loglevel=error` option before the subcommand and captures stdout and stderr.
+An inherited `npm_config_loglevel=silent` would otherwise suppress npm's peer
+conflict diagnostics even though stderr is piped. Consumer failure reports retain
+both streams. The regression in `contracts-release.test.mjs` deliberately enables
+`silent`, builds the conflicting peer from local tarballs with a `file:` peer
+reference, and uses an isolated cache in offline mode. It checks the ERESOLVE
+chain and successful installation in the subsequent consumer.
 
 `node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
 --commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local

@@ -1,7 +1,7 @@
 ---
-title: Общий пакет: типы, контракты и чистая логика
 updated: 2026-10-31
-checked: 8bb433d2
+checked: c17fb5ae
+title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
 ---
@@ -15,6 +15,15 @@ areas:
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## Admin storage quota fields
+
+`AdminUserInfo` adds optional `storageQuotaBytes: number | null` and
+`storageUsage: StorageUsage`. The former is the Identity override; the latter
+contains current usage and effective quota when storage is enabled.
+`IpcInvokeMap` and `IPC_CHANNELS` both declare `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
+See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
 
@@ -37,6 +46,20 @@ The node/client/coordinator implementation is in `packages/file-storage`;
 see [architecture](architecture.md). The application catalog registers it as
 `file-storage`, with Shared and component-runtime build dependencies, node
 entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
+The contract does not declare lifecycle event names or payloads:
+`storage.file.created` and `storage.file.deleted` are neither protocol constants
+nor emitted strings in the current repository. Consumers use the documented REST
+surface rather than assume those event topics exist.
+
+## Contract release diagnostics
+
+`scripts/contracts-release.mjs` overrides an inherited
+`npm_config_loglevel=silent` with npm's global `--loglevel=error`; piping stderr
+alone cannot recover diagnostics npm has suppressed. Failed consumer reports
+include captured stdout and stderr. Its regression builds both sides of a peer
+conflict from local `file:` tarballs with an isolated empty cache in offline mode,
+asserts the ERESOLVE chain, and proves processing continues by installing the
+next consumer. Operational usage is in [Deploy](deploy.md#contract-pin-release).
 
 ## Current additive contracts
 

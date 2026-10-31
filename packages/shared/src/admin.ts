@@ -45,6 +45,10 @@ export interface UserProfileInfo {
 
 /** Пользователь в списке администрирования: профиль + состояние замков. */
 export interface AdminUserInfo extends UserProfileInfo {
+  /** Identity override in bytes; null uses the deployment default. */
+  storageQuotaBytes?: number | null
+  /** Current owner usage and effective quota; absent when storage is disabled. */
+  storageUsage?: import('./fileStorage').StorageUsage
   /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
   failedLogins?: number
   lockedUntil?: number | null

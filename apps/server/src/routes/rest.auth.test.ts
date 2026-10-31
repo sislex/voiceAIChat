@@ -1,7 +1,8 @@
 import { PRODUCT_CAPABILITIES } from '@sislexa/identity/contracts/accountAccess'
 // Core integration: CORS, admin orchestration, resource permissions and legacy migration.
 // Identity's internal authentication/device cases run in the Identity repository.
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { REST } from '@voicechat/shared'
 import { VoiceChatDb } from '../db/database.js'
 import { SCHEMA_SQL } from '../db/schema.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
@@ -14,11 +15,85 @@ const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
 // поля уже пересозданы под текущий тест.
-const harness = setupRestHarness()
+const harness = setupRestHarness({ env: { VC_FILE_STORAGE_MODE: 'embedded', VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES: '4096' } })
 const { inj, sentMails, SECRET } = harness
 let app: FastifyInstance
 let db: VoiceChatDb
 beforeEach(() => { ({ app, db } = harness) })
+
+describe('Core admin storage quota contract', () => {
+  const quotas = new Map<string, number | null>()
+  const getQuota = vi.fn(async (name: string) => quotas.get(name) ?? null)
+  const setQuota = vi.fn(async (name: string, bytes: number | null) => { quotas.set(name, bytes) })
+  beforeEach(async () => {
+    quotas.clear()
+    getQuota.mockClear()
+    setQuota.mockClear()
+    const getUser = db.identity.getUser
+    const listUsers = db.identity.listUsers
+    Object.assign(db.identity, {
+      getUserStorageQuota: getQuota, setUserStorageQuota: setQuota,
+      getUser: async (name: string) => {
+        const user = await getUser(name)
+        return user ? { ...user, storageQuotaBytes: quotas.get(name) ?? null } : null
+      },
+      listUsers: async () => (await listUsers()).map(user => ({ ...user, storageQuotaBytes: quotas.get(user.name) ?? null })),
+    })
+    await db.identity.createUser('owner', '', 'developer')
+  })
+
+  it('sets zero and positive quotas, lists actual owner usage and resets to the deployment default', async () => {
+    await db.storageMetadata().transaction(async tx => {
+      await tx.putSpace({ id: 'space', ownerId: 'owner', kind: 'personal', title: 'Files', ref: null, createdAt: 1, updatedAt: 1 })
+      await tx.putEntry({ spaceId: 'space', path: 'a.txt', blobId: 'blob', nodeId: 'offline', size: 12, mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner' })
+    })
+    for (const quota of [1024, 0, null]) {
+      const response = await inj({ method: 'PATCH', url: REST.adminUser('owner'), payload: { storageQuotaBytes: quota } })
+      expect(response.statusCode).toBe(200)
+      expect(setQuota).toHaveBeenLastCalledWith('owner', quota)
+      expect(response.json()).toMatchObject({
+        name: 'owner', role: 'developer', storageQuotaBytes: quota,
+        storageUsage: { userId: 'owner', usedBytes: 12, fileCount: 1, quotaBytes: quota ?? 4096 },
+      })
+      const users = await inj({ method: 'GET', url: REST.adminUsers })
+      expect(users.statusCode).toBe(200)
+      expect(users.json().find((u: { name: string }) => u.name === 'owner')).toMatchObject({
+        storageQuotaBytes: quota, storageUsage: { usedBytes: 12, quotaBytes: quota ?? 4096 },
+      })
+    }
+  })
+
+  it.each([-1, 1.5, '1024', true, {}, [], Number.MAX_SAFE_INTEGER + 1])('rejects invalid quota %j without changing Identity', async quota => {
+    const response = await inj({ method: 'PATCH', url: REST.adminUser('owner'), payload: { storageQuotaBytes: quota } })
+    expect(response.statusCode).toBe(400)
+    expect(setQuota).not.toHaveBeenCalled()
+  })
+
+  it('rejects mixed updates without changing role or limits', async () => {
+    for (const extra of [{ role: 'admin' }, { llmLimitUsd: 5 }]) {
+      expect((await inj({ method: 'PATCH', url: REST.adminUser('owner'), payload: { storageQuotaBytes: 100, ...extra } })).statusCode).toBe(400)
+    }
+    expect(setQuota).not.toHaveBeenCalled()
+    expect((await db.identity.getUser('owner'))?.role).toBe('developer')
+  })
+
+  it('rejects non-admin and anonymous mutations and reads', async () => {
+    const headers = { authorization: `Bearer ${signToken({ name: 'owner', role: 'developer' }, SECRET)}` }
+    for (const auth of [headers, {}]) {
+      const expected = 'authorization' in auth ? 403 : 401
+      expect((await app.inject({ method: 'PATCH', url: REST.adminUser('owner'), headers: auth, payload: { storageQuotaBytes: 0 } })).statusCode).toBe(expected)
+      expect((await app.inject({ method: 'GET', url: REST.adminUsers, headers: auth })).statusCode).toBe(expected)
+    }
+    expect(setQuota).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for missing users and 503 for pre-FS-3 Identity', async () => {
+    expect((await inj({ method: 'PATCH', url: REST.adminUser('missing'), payload: { storageQuotaBytes: 10 } })).statusCode).toBe(404)
+    expect(setQuota).not.toHaveBeenCalled()
+    Object.assign(db.identity, { setUserStorageQuota: undefined })
+    expect((await inj({ method: 'PATCH', url: REST.adminUser('owner'), payload: { storageQuotaBytes: 10 } })).statusCode).toBe(503)
+  })
+})
 
 describe('REST: аутентификация', () => {
   // @testCase TC-01

@@ -69,6 +69,13 @@ available, project-membership checks and the existing start flow remain in force
 Operator handoff only adds knowledge documents; it does not change KB search,
 module fetch or visibility behavior.
 
+The maintenance CLI's same-commit freshness rule excludes area commits that
+also modify the topic being checked. `touch` records HEAD; later source-only
+commits still invalidate the topic. `packages/kb-tools/cli.test.mjs` commits
+reconciliation separately before its stale-source fixture and checks the
+`после проверенного SHA:` row delimiter. See
+[the maintenance workflow](../kb-workflow.md#scoped-owner-gate-diagnostics-sk-115).
+
 ## Repository modules
 
 `ModuleKnowledgeBaseService` indexes Core's `VC_KB_ROOT` (default `docs/kb`)
