@@ -41,6 +41,11 @@ export function storageContentEncoding(acceptEncoding: string | undefined): Stor
 export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
 export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
 export type StorageThumbnailSize = typeof STORAGE_THUMBNAIL_SIZES[number]
+/** Metadata eligibility; decoding still validates the actual image contents. */
+export function storageThumbnailAvailable(entry: { mimeType: string; size: number }): boolean {
+  return entry.size <= MAX_STORAGE_THUMBNAIL_INPUT_BYTES &&
+    ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.split(';')[0].trim().toLowerCase())
+}
 export const MAX_STORAGE_PATH_LENGTH = 1024
 
 export type StorageSpaceKind = 'personal' | 'chat' | 'make-project'

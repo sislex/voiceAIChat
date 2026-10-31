@@ -1,5 +1,5 @@
 import Fastify from 'fastify'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { createFileStorageService } from '../../../../packages/file-storage/src/service.js'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
@@ -15,10 +15,11 @@ let app: import('fastify').FastifyInstance
 let capacity = 60e9
 let quota = 100
 let nodeOpens = 0
+const generateThumbnail = vi.fn(createThumbnailGenerator())
 const blobs = new Map<string, Uint8Array>()
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:'); await db.ready
-  capacity = 60e9; quota = 100; nodeOpens = 0; blobs.clear()
+  capacity = 60e9; quota = 100; nodeOpens = 0; blobs.clear(); generateThumbnail.mockClear()
   const service = createFileStorageService({metadata: db.storageMetadata(), now: Date.now, newId: randomUUID,
     quota: async () => quota,
     nodeInfo: () => [10e9, capacity].map((capacityBytes, i) => ({id: String(i), capacityBytes, usedBytes: 0, online: true, lastSeenAt: 1})),
@@ -40,7 +41,7 @@ beforeEach(async () => {
           ...(range ? {contentRange: `bytes ${start}-${end}/${value.length}`} : {})}
       },
       delete: async id => {blobs.delete(id)} })),
-    thumbnail: createThumbnailGenerator(),
+    thumbnail: generateThumbnail,
   })
   app = Fastify()
   app.addHook('onRequest', async req => {
@@ -337,20 +338,82 @@ it('generates sized image thumbnails, caches them by revision and excludes them 
   const count = blobs.size
   expect((await call('GET', url)).rawPayload).toEqual(first.rawPayload)
   expect(blobs.size).toBe(count)
-  expect((await call('GET', url, 'owner', undefined, {'if-none-match':first.headers.etag})).statusCode).toBe(304)
+  expect(generateThumbnail).toHaveBeenCalledTimes(1)
+  expect(first.headers['cache-control']).toBe('private, no-cache')
+  for (const validator of [first.headers.etag, '*', `"other", W/${first.headers.etag}`]) {
+    const cached = await call('GET', url, 'owner', undefined, {'if-none-match': validator})
+    expect(cached.statusCode).toBe(304)
+    expect(cached.headers.etag).toBe(first.headers.etag)
+  }
+  expect((await call('GET', url, 'owner', undefined, {'if-modified-since': first.headers['last-modified']})).statusCode).toBe(304)
+  expect((await call('GET', url, 'owner', undefined, {'if-none-match': '"other"', 'if-modified-since': first.headers['last-modified']})).statusCode).toBe(200)
+  expect((await call('GET', url, 'stranger', undefined, {'if-none-match': '*'})).statusCode).toBe(403)
+  for (const size of [256, 512]) {
+    const preview = await call('GET', base + '/thumbnail?path=photo.png&size=' + size)
+    expect(preview.statusCode).toBe(200)
+    expect(await sharp(preview.rawPayload).metadata()).toMatchObject({width: size, height: size / 2})
+    expect(preview.headers.etag).not.toBe(first.headers.etag)
+  }
+  expect(generateThumbnail).toHaveBeenCalledTimes(3)
+  const oldBlobIds = [...blobs.keys()]
   expect((await call('GET', '/api/storage/usage')).json().usedBytes).toBe(usage)
   const replacement = await sharp({create:{width:200,height:800,channels:4,background:'#00ff00'}}).png().toBuffer()
   await call('PUT', file, 'owner', replacement as unknown as object, {'content-type':'image/png'})
+  expect(oldBlobIds.every(id => !blobs.has(id))).toBe(true)
   const changed = await call('GET', url)
+  expect(generateThumbnail).toHaveBeenCalledTimes(4)
   expect(changed.headers.etag).not.toBe(first.headers.etag)
   expect(await sharp(changed.rawPayload).metadata()).toMatchObject({width:32,height:128})
   expect((await call('GET', base + '/thumbnail?path=photo.png&size=42')).statusCode).toBe(400)
+  expect((await call('DELETE', file)).statusCode).toBe(204)
+  expect(blobs.size).toBe(0)
 })
 
 it('rejects thumbnails for non-images', async () => {
   const base = '/api/storage/spaces/' + await space()
   await call('PUT', base + '/file?path=notes.txt', 'owner', 'hello', {'content-type':'text/plain'})
   expect((await call('GET', base + '/thumbnail?path=notes.txt&size=128')).statusCode).toBe(415)
+})
+
+it('caches JPEG fallback when the WebP encoder fails', async () => {
+  quota = 1_000_000
+  const base = '/api/storage/spaces/' + await space()
+  const bytes = await sharp({create: {width: 300, height: 150, channels: 3, background: 'red'}}).png().toBuffer()
+  await call('PUT', base + '/file?path=image', 'owner', bytes as unknown as object, {'content-type': 'image/png'})
+  const encoder = vi.spyOn(sharp.prototype, 'webp').mockImplementationOnce(() => { throw new Error('WebP unavailable') })
+  try {
+    const url = base + '/thumbnail?path=image&size=128'
+    const response = await call('GET', url)
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('image/jpeg')
+    expect(await sharp(response.rawPayload).metadata()).toMatchObject({format: 'jpeg', width: 128, height: 64})
+    expect((await call('GET', url)).rawPayload).toEqual(response.rawPayload)
+    expect(generateThumbnail).toHaveBeenCalledTimes(1)
+    await call('DELETE', base + '/file?path=image')
+    expect(blobs.size).toBe(0)
+  } finally { encoder.mockRestore() }
+})
+
+it('rejects corrupt and disguised unsupported images with 415', async () => {
+  quota = 1_000_000
+  const base = '/api/storage/spaces/' + await space()
+  for (const bytes of [Buffer.from('not an image'), await sharp({create: {width: 10, height: 10, channels: 3, background: 'red'}}).tiff().toBuffer()]) {
+    await call('PUT', base + '/file?path=fake.png', 'owner', bytes as unknown as object, {'content-type': 'image/png'})
+    expect((await call('GET', base + '/thumbnail?path=fake.png&size=128')).statusCode).toBe(415)
+    expect(blobs.size).toBe(1)
+  }
+})
+
+it('accepts JPEG, WebP and GIF sources', async () => {
+  quota = 1_000_000
+  const base = '/api/storage/spaces/' + await space()
+  for (const format of ['jpeg', 'webp', 'gif'] as const) {
+    const bytes = await sharp({create: {width: 300, height: 600, channels: 3, background: 'blue'}}).toFormat(format).toBuffer()
+    await call('PUT', base + '/file?path=image', 'owner', bytes as unknown as object, {'content-type': 'image/' + format})
+    const response = await call('GET', base + '/thumbnail?path=image&size=256')
+    expect(response.statusCode).toBe(200)
+    expect(await sharp(response.rawPayload).metadata()).toMatchObject({width: 128, height: 256})
+  }
 })
 
 it('rejects oversized raw bodies with the contract error', async () => {

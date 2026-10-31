@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import type { CreateStorageUploadRequest, StorageUploadSession, MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
   MAX_STORAGE_BATCH_OPERATIONS, isStorageSmallText, type StorageBatchOperation, type ListStorageEntriesResponse,
-  DEFAULT_STORAGE_PART_SIZE, MAX_STORAGE_UPLOAD_PARTS, STORAGE_UPLOAD_TTL_MS, MAX_STORAGE_FILE_BYTES, MAX_STORAGE_THUMBNAIL_INPUT_BYTES, STORAGE_THUMBNAIL_SIZES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
+  DEFAULT_STORAGE_PART_SIZE, MAX_STORAGE_UPLOAD_PARTS, STORAGE_UPLOAD_TTL_MS, MAX_STORAGE_FILE_BYTES, storageThumbnailAvailable, STORAGE_THUMBNAIL_SIZES, fitsStorageQuota, normalizeStoragePath, normalizeStoragePrefix,
   pickStorageNode, storageAllows, strongestStorageAccess, summarizeStorageCluster,
   type CreateStorageSpaceRequest, type UpdateStorageSpaceRequest, type CreateStorageShareRequest, type StorageAccess,
   type StorageEntry, type StorageNodeInfo, type StoragePermission, type StorageShare,
@@ -40,7 +40,6 @@ export function createFileStorageService(ports: FileStoragePorts) {
   function signedIn(userId: string) { if (typeof userId !== 'string' || !userId.trim()) fail('forbidden') }
   function path(input: string) { return normalizeStoragePath(input) ?? fail('invalid_path') }
   const entryView = ({ spaceId: _space, blobId: _blob, nodeId: _node, ...entry }: StoredEntry): StorageEntry => entry
-  const imageMime = (mime: string) => ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(mime.toLowerCase())
   const derivedId = (blobId: string, size: StorageThumbnailSize, format: 'webp' | 'jpeg') =>
     createHash('sha256').update(`thumbnail:${blobId}:${size}:${format}`).digest('base64url')
   async function access(tx: StorageMetadataTransaction, userId: string, space: StoredSpace): Promise<StorageAccess | null> {
@@ -383,7 +382,7 @@ export function createFileStorageService(ports: FileStoragePorts) {
         await requireSpace(tx, userId, spaceId, 'read')
         if (!STORAGE_THUMBNAIL_SIZES.includes(size)) fail('invalid_path')
         const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
-        if (!imageMime(entry.mimeType) || entry.size > MAX_STORAGE_THUMBNAIL_INPUT_BYTES)
+        if (!storageThumbnailAvailable(entry))
           fail('unsupported_media_type')
         const generate = ports.thumbnail ?? fail('unsupported_media_type')
         const node = client(entry.nodeId)

@@ -1,3 +1,4 @@
+import { storageThumbnailAvailable } from '@voicechat/shared/fileStorage'
 import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
 import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
 import { standProxyKanban } from './standProxyKanban.js'
@@ -1296,7 +1297,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           })
           const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
           const entry = await fileStorage.writeFile(userId, space.id, path, bytes, { mimeType: safeMime, createOnly: true })
-          const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
+          const thumbnailAvailable = storageThumbnailAvailable(entry)
           const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)
           rec.tenantId = req.user?.account?.tenantId
           return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }

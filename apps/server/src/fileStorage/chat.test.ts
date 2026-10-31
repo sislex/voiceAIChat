@@ -1,4 +1,6 @@
 import { expect, it } from 'vitest'
+import sharp from 'sharp'
+import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +13,7 @@ it('round trips both chat backends and preserves storage history through a Core 
   const dir = mkdtempSync(join(tmpdir(), 'storage-chat-'))
   const blobs = new Map<string, Uint8Array>()
   const nodes = [{id:'node', health: async () => ({nodeId:'node', capacityBytes:60e9, usedBytes:0, freeBytes:60e9}),
-    put: async (id: string, bytes: Uint8Array) => {blobs.set(id, bytes)}, get: async (id: string) => blobs.get(id)!,
+    put: async (id: string, bytes: Uint8Array) => {blobs.set(id, bytes)}, get: async (id: string) => { const bytes = blobs.get(id); if (!bytes) throw new StorageServiceError('not_found'); return bytes },
     delete: async (id: string) => {blobs.delete(id)} }]
   const config = loadConfig({VC_DATA_DIR:dir, VC_FILE_STORAGE_MODE:'embedded', PORT:'0'})
   let db = new VoiceChatDb(join(dir, 'core.sqlite'))
@@ -36,8 +38,17 @@ it('round trips both chat backends and preserves storage history through a Core 
     expect(stored.storage).toMatchObject({spaceId: expect.any(String), path: expect.any(String)})
     const fileUrl = '/api/storage/spaces/' + stored.storage.spaceId + '/file?path=' + encodeURIComponent(stored.storage.path)
     expect((await call('GET', fileUrl)).body).toBe('hello')
+    const image = await sharp({create: {width: 400, height: 200, channels: 3, background: 'red'}}).png().toBuffer()
+    const imageUpload = (await call('POST', '/api/uploads', {...upload, name: 'photo.png', mimeType: 'image/png', dataBase64: image.toString('base64')})).json()
+    expect(imageUpload.thumbnailAvailable).toBe(true)
+    expect(imageUpload.storage.thumbnailAvailable).toBe(true)
+    expect(stored.storage.thumbnailAvailable).toBe(false)
+    const thumbnailUrl = '/api/storage/spaces/' + imageUpload.storage.spaceId + '/thumbnail?path=' + encodeURIComponent(imageUpload.storage.path) + '&size=128'
+    const preview = await call('GET', thumbnailUrl)
+    expect(preview.statusCode).toBe(200)
+    expect(await sharp(preview.rawPayload).metadata()).toMatchObject({width: 128, height: 64})
     const message = await call('POST', '/api/conversations/' + c.id + '/messages', {
-      role:'user', text:'Attached', time:'12:00', attachments:[{...stored, uploadId:stored.id}],
+      role:'user', text:'Attached', time:'12:00', attachments:[{...stored, uploadId:stored.id}, {...imageUpload, uploadId:imageUpload.id}],
     })
     expect(message.statusCode, message.body).toBe(200)
     await app.close(); await db.close()
@@ -46,6 +57,8 @@ it('round trips both chat backends and preserves storage history through a Core 
     expect((await call('GET', fileUrl)).body).toBe('hello')
     const messages = await db.chat.listMessages('admin', c.id)
     expect(messages.some(m => m.attachments?.some(a => a.storage?.spaceId === stored.storage.spaceId))).toBe(true)
+    expect(messages.some(m => m.attachments?.some(a => a.storage?.thumbnailAvailable === true))).toBe(true)
+    expect((await call('GET', thumbnailUrl)).rawPayload).toEqual(preview.rawPayload)
     const spaces = (await call('GET', '/api/storage/spaces')).json()
     expect(spaces.filter((s: {kind:string; ref:string}) => s.kind === 'chat' && s.ref === c.id)).toHaveLength(1)
   } finally {await app.close(); await db.close(); rmSync(dir, {recursive:true, force:true})}

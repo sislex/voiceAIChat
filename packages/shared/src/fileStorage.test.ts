@@ -8,7 +8,7 @@ import {
   DEFAULT_STORAGE_PART_SIZE,
   MAX_STORAGE_UPLOAD_PARTS,
   STORAGE_UPLOAD_TTL_MS,
-  STORAGE_THUMBNAIL_SIZES,
+  STORAGE_THUMBNAIL_SIZES, storageThumbnailAvailable, MAX_STORAGE_THUMBNAIL_INPUT_BYTES,
   fitsStorageQuota,
   isStorageBlobId,
   normalizeStoragePath,
@@ -122,6 +122,15 @@ describe('file storage contract', () => {
     expect(STORAGE_REST.link('t/x')).toBe('/api/storage/links/t%2Fx')
     expect(isStorageBlobId('abcDEF12_-')).toBe(true)
     expect(isStorageBlobId('../../etc')).toBe(false)
+  })
+
+  it('limits thumbnail metadata eligibility to supported image MIME types and input size', () => {
+    for (const mimeType of ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'IMAGE/PNG; charset=binary']) {
+      expect(storageThumbnailAvailable({mimeType, size: MAX_STORAGE_THUMBNAIL_INPUT_BYTES})).toBe(true)
+      expect(storageThumbnailAvailable({mimeType, size: MAX_STORAGE_THUMBNAIL_INPUT_BYTES + 1})).toBe(false)
+    }
+    expect(storageThumbnailAvailable({mimeType: 'image/svg+xml', size: 10})).toBe(false)
+    expect(storageThumbnailAvailable({mimeType: 'text/plain', size: 10})).toBe(false)
   })
 
   it('publishes the thumbnail route, supported sizes and HTTP media error', () => {

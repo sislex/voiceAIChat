@@ -158,9 +158,16 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     const size = Number(r.query.size)
     if (!STORAGE_THUMBNAIL_SIZES.includes(size as StorageThumbnailSize)) throw new StorageServiceError('invalid_path')
     const thumbnail = await s.readThumbnail(uid(r), r.params.id, string(r.query.path), size as StorageThumbnailSize)
-    const etag = `"${thumbnail.entry.revision}-${size}"`
-    if (r.headers['if-none-match'] === etag || r.headers['if-none-match'] === '*') return reply.code(304).header('etag', etag).send()
-    return reply.header('etag', etag).header('x-content-type-options', 'nosniff')
+    const etag = `"${encodeURIComponent(r.params.id)}:${encodeURIComponent(thumbnail.entry.path)}:${thumbnail.entry.revision}:${size}"`
+    reply.header('etag', etag).header('cache-control', 'private, no-cache')
+      .header('last-modified', new Date(thumbnail.entry.updatedAt).toUTCString())
+    const noneMatch = r.headers['if-none-match']
+    const etagMatches = noneMatch?.split(',').some(value => value.trim().replace(/^W\//, '') === etag || value.trim() === '*')
+    const modifiedSince = r.headers['if-modified-since']
+    const notModifiedSince = noneMatch === undefined && modifiedSince !== undefined &&
+      Number.isFinite(Date.parse(modifiedSince)) && Math.floor(thumbnail.entry.updatedAt / 1000) <= Math.floor(Date.parse(modifiedSince) / 1000)
+    if (etagMatches || notModifiedSince) return reply.code(304).send()
+    return reply.header('x-content-type-options', 'nosniff')
       .header('content-disposition', 'inline').type(thumbnail.mimeType).send(Buffer.from(thumbnail.bytes))
   })
   route('PUT', path(STORAGE_REST.file), (s, r) => {
