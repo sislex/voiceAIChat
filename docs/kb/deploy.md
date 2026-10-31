@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-10-31
-checked: fe8ff7af
+checked: 242d084b
 areas:
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
@@ -116,8 +116,13 @@ No selector preserves legacy Core modes.
 `VC_APPLICATION_FRONTENDS` uses frontend catalog IDs (for example `make-ui`),
 while `VC_APPLICATIONS` uses owner IDs (`make`). Core validates the frontend map
 before retaining overrides for enabled local owners through catalog runtime
-dependencies. Disabled and external owners do not activate those overrides;
-unselected sources retain the installed artifact fallback. See
+dependencies. Disabled and external owners do not activate those overrides.
+With `NODE_ENV=production`, pinned owner frontend archives take priority even
+for local owners. Set `VC_APPLICATION_FRONTENDS_OVERRIDE=1` to opt in to their
+configured sources; development and frontends without a pinned owner package
+retain overrides. Missing or invalid pinned artifacts do not silently fall back
+to containers. Startup logs report the selected source and manifest version/commit.
+Unselected sources retain the installed artifact fallback. See
 [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 `VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
