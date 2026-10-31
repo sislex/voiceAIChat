@@ -171,8 +171,15 @@ test('e2e, frontend-quality и настройки агентов не включ
   }
 })
 
-test('parseOptions разбирает базу диффа, режим и jobs', () => {
+test('parseOptions разбирает базу диффа, режим и jobs', (t) => {
+  // Kanban task runs export BASE_BRANCH=dev; the default must be checked without it.
+  const saved = process.env.BASE_BRANCH
+  delete process.env.BASE_BRANCH
+  t.after(() => { if (saved === undefined) delete process.env.BASE_BRANCH; else process.env.BASE_BRANCH = saved })
   assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  process.env.BASE_BRANCH = 'dev'
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/dev', fast: false })
+  delete process.env.BASE_BRANCH
   assert.deepEqual(parseOptions(['--fast', '--worktree']), { jobs: 2, base: 'HEAD', fast: true })
   assert.deepEqual(parseOptions(['--base', 'origin/release/1.2.0', '--jobs', '4']), { jobs: 4, base: 'origin/release/1.2.0', fast: false })
   assert.throws(() => parseOptions(['--base']), /--base требует git-ref/)
