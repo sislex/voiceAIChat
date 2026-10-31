@@ -119,8 +119,19 @@ test('consumer pins exact peers and performs a clean real npm ci', t => {
 
 test('reports the peer conflict chain and continues with subsequent consumers', t => {
   const f = fixture(t)
+  const previousLoglevel = process.env.npm_config_loglevel
+  process.env.npm_config_loglevel = 'silent'
+  t.after(() => {
+    if (previousLoglevel === undefined) delete process.env.npm_config_loglevel
+    else process.env.npm_config_loglevel = previousLoglevel
+  })
+  // Resolve both sides from local tarballs, even with an empty offline cache.
+  const old = join(f.root, 'old-contract')
+  put(old, 'package.json', { name, version: '1.0.0' })
+  execFileSync('npm', ['pack', '--ignore-scripts'], { cwd: old, stdio: 'pipe' })
+  const oldArchive = `file:${join(old, 'voicechat-make-contracts-1.0.0.tgz')}`
   const blocker = join(f.root, 'blocker')
-  put(blocker, 'package.json', { name: 'old-consumer', version: '1.0.0', peerDependencies: { [name]: '1.0.0' } })
+  put(blocker, 'package.json', { name: 'old-consumer', version: '1.0.0', peerDependencies: { [name]: oldArchive } })
   execFileSync('npm', ['pack', '--ignore-scripts'], { cwd: blocker, stdio: 'pipe' })
   const bad = f.repo('bad', { 'package.json': { name: 'bad', version: '1.0.0', dependencies: { [name]: '1.0.0', 'old-consumer': `file:${join(blocker, 'old-consumer-1.0.0.tgz')}` } } })
   const good = f.repo('good', { 'package.json': { name: 'good', version: '1.0.0', dependencies: { [name]: '1.0.0' } } })
@@ -129,7 +140,10 @@ test('reports the peer conflict chain and continues with subsequent consumers', 
   assert.equal(result.ok, false)
   assert.deepEqual(logs.map(row => row.status), ['pass', 'fail', 'pass'])
   assert.match(logs[1].error, /ERESOLVE/)
-  assert.match(logs[1].error, /peer @voicechat\/make-contracts@"1.0.0"/)
+  assert.match(logs[1].error, /Found: @voicechat\/make-contracts@2\.0\.0/)
+  assert.ok(logs[1].error.includes(`peer ${name}@"${oldArchive}" from old-consumer@1.0.0`), logs[1].error)
+  assert.doesNotMatch(logs[1].error, /ENOTCACHED|ENOTFOUND|ECONNREFUSED/)
+  assert.equal(read(join(good, 'node_modules', name, 'package.json')).version, '2.0.0')
   assert.match(logs[1].error, /old-consumer/)
 })
 
