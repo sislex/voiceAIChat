@@ -89,8 +89,7 @@ export function createFileStorageService(ports: FileStoragePorts) {
         const now = ports.now()
         const space: StoredSpace = { id: ports.newId(), ownerId: userId, kind: request.kind,
           title: request.title, ref: request.ref ?? null, createdAt: now, updatedAt: now }
-        await tx.putSpace(space)
-        return view(tx, userId, space)
+        return view(tx, userId, await tx.createSpace(space))
       })
     },
     async listSpaces(userId: string) {

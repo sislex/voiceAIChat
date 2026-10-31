@@ -7,6 +7,13 @@ export const STORAGE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS storage_lock (id INTEGER PRIMARY KEY, version INTEGER NOT NULL);
 INSERT INTO storage_lock (id, version) VALUES (1, 0) ON CONFLICT(id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS storage_spaces (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, data TEXT NOT NULL);
+-- Canonical identities are separate so legacy duplicate spaces remain readable.
+-- ref_key is JSON encoded to distinguish null from an empty string on both engines.
+CREATE TABLE IF NOT EXISTS storage_space_refs (
+  owner_id TEXT NOT NULL, kind TEXT NOT NULL, ref_key TEXT NOT NULL,
+  space_id TEXT NOT NULL REFERENCES storage_spaces(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS storage_space_refs_unique ON storage_space_refs(owner_id, kind, ref_key);
 CREATE TABLE IF NOT EXISTS storage_entries (
   space_id TEXT NOT NULL REFERENCES storage_spaces(id) ON DELETE CASCADE,
   path TEXT NOT NULL, size INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(space_id, path)
@@ -31,6 +38,26 @@ export function createSqlMetadataStore(sql: Sql): StorageMetadataStore {
   const tx: StorageMetadataTransaction = {
     getSpace: id => one<StoredSpace>('SELECT data FROM storage_spaces WHERE id = ?', [id]),
     listSpaces: () => many<StoredSpace>('SELECT data FROM storage_spaces'),
+    async createSpace(s) {
+      if (s.kind === 'personal') { await tx.putSpace(s); return s }
+      const key = [s.ownerId, s.kind, JSON.stringify(s.ref)]
+      const lookup = () => one<StoredSpace>(
+        'SELECT s.data FROM storage_space_refs r JOIN storage_spaces s ON s.id = r.space_id WHERE r.owner_id = ? AND r.kind = ? AND r.ref_key = ?', key)
+      const canonical = await lookup()
+      if (canonical) return canonical
+      // Adopt one old space without merging or hiding any legacy duplicates.
+      const existing = (await many<StoredSpace>('SELECT data FROM storage_spaces WHERE owner_id = ?', [s.ownerId]))
+        .filter(space => space.kind === s.kind && space.ref === s.ref)
+        .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0]
+      const candidate = existing ?? s
+      if (!existing) await tx.putSpace(candidate)
+      // DO NOTHING keeps a PostgreSQL transaction usable after a competing insert.
+      await sql.run('INSERT INTO storage_space_refs (owner_id, kind, ref_key, space_id) VALUES (?, ?, ?, ?) ON CONFLICT(owner_id, kind, ref_key) DO NOTHING', [...key, candidate.id])
+      const winner = await lookup()
+      if (!winner) throw new Error('Storage space identity missing after insert')
+      if (!existing && winner.id !== candidate.id) await tx.deleteSpace(candidate.id)
+      return winner
+    },
     async putSpace(s) { await sql.run('INSERT INTO storage_spaces (id, owner_id, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET owner_id = excluded.owner_id, data = excluded.data', [s.id, s.ownerId, JSON.stringify(s)]) },
     async deleteSpace(id) { await sql.run('DELETE FROM storage_spaces WHERE id = ?', [id]) },
     getEntry: (id, path) => one<StoredEntry>('SELECT data FROM storage_entries WHERE space_id = ? AND path = ?', [id, path]),

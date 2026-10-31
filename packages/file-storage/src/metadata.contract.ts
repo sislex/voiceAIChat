@@ -1,9 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import type { StorageMetadataStore, StoredSpace } from './metadata.js'
+import { createFileStorageService } from './service.js'
+import { randomUUID } from 'node:crypto'
+
+export const metadataService = (metadata: StorageMetadataStore) => createFileStorageService({
+  metadata, nodes: () => [], nodeInfo: () => [], quota: async () => 100,
+  now: Date.now, newId: randomUUID,
+})
 
 /** Shared contract for memory and persistent host adapters. */
 export function metadataContract(factory: () => Promise<{store: StorageMetadataStore; close(): Promise<void>}>) {
   describe('StorageMetadataStore contract', () => {
+    it.each(['chat', 'make-project'] as const)('creates one %s space across concurrent coordinators', async kind => {
+      const f = await factory()
+      try {
+        const services = [metadataService(f.store), metadataService(f.store)]
+        const spaces = await Promise.all(Array.from({length: 12}, (_, i) =>
+          services[i % 2].createSpace('owner', {kind, ref: 'ref', title: 'Files'})))
+        expect(new Set(spaces.map(s => s.id)).size).toBe(1)
+        expect(await services[0].listSpaces('owner')).toHaveLength(1)
+        expect(await services[1].createSpace('owner', {kind, ref: 'ref', title: 'Changed'})).toEqual(spaces[0])
+        expect((await services[0].createSpace('other', {kind, ref: 'ref', title: 'Files'})).id).not.toBe(spaces[0].id)
+        expect((await services[0].createSpace('owner', {kind, ref: 'other', title: 'Files'})).id).not.toBe(spaces[0].id)
+        const absent = await services[0].createSpace('owner', {kind, title: 'No ref'})
+        expect((await services[1].createSpace('owner', {kind, ref: null, title: 'No ref'})).id).toBe(absent.id)
+        expect((await services[0].createSpace('owner', {kind, ref: '', title: 'Empty ref'})).id).not.toBe(absent.id)
+        await services[0].deleteSpace('owner', spaces[0].id)
+        expect((await services[1].createSpace('owner', {kind, ref: 'ref', title: 'Recreated'})).id).not.toBe(spaces[0].id)
+      } finally { await f.close() }
+    })
+    it('keeps kinds separate and personal spaces independent', async () => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const spaces = await Promise.all((['chat', 'make-project', 'personal', 'personal'] as const)
+          .map(kind => service.createSpace('owner', {kind, ref: 'ref', title: 'Files'})))
+        expect(new Set(spaces.map(s => s.id)).size).toBe(4)
+      } finally { await f.close() }
+    })
+    it('lists legacy duplicates and adopts the oldest without changing its data', async () => {
+      const f = await factory()
+      try {
+        const old: StoredSpace = {id: 'old', ownerId: 'owner', kind: 'make-project', ref: 'project', title: 'Original', createdAt: 1, updatedAt: 1}
+        await f.store.transaction(async tx => {
+          await tx.putSpace({...old, id: 'duplicate', createdAt: 2})
+          await tx.putSpace(old)
+          await tx.putEntry({spaceId: old.id, path: 'file', size: 7, mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner', nodeId: 'node', blobId: 'blob'})
+        })
+        const service = metadataService(f.store)
+        expect(await service.listSpaces('owner')).toHaveLength(2)
+        expect(await service.createSpace('owner', {kind: old.kind, ref: old.ref, title: 'New'}))
+          .toMatchObject({...old, usedBytes: 7, fileCount: 1})
+        expect(await service.listSpaces('owner')).toHaveLength(2)
+      } finally { await f.close() }
+    })
     it('commits, isolates values and rolls back without retrying callbacks', async () => {
       const f = await factory()
       const space: StoredSpace = {id: 's', ownerId: 'o', kind: 'chat', title: 'Files', ref: 'c', createdAt: 1, updatedAt: 1}
