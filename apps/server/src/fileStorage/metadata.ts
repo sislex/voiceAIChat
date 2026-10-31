@@ -37,7 +37,12 @@ export function createSqlMetadataStore(sql: Sql): StorageMetadataStore {
     (await sql.all<{data: string}>(query, params)).map(row => JSON.parse(row.data) as T)
   const tx: StorageMetadataTransaction = {
     getSpace: id => one<StoredSpace>('SELECT data FROM storage_spaces WHERE id = ?', [id]),
-    listSpaces: () => many<StoredSpace>('SELECT data FROM storage_spaces'),
+    async listSpaces() {
+      const canonical = new Set((await sql.all<{space_id: string}>('SELECT space_id FROM storage_space_refs')).map(r => r.space_id))
+      return (await many<StoredSpace>('SELECT data FROM storage_spaces')).sort((a, b) =>
+        Number(canonical.has(b.id)) - Number(canonical.has(a.id)) ||
+        a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    },
     async createSpace(s) {
       if (s.kind === 'personal') { await tx.putSpace(s); return s }
       const key = [s.ownerId, s.kind, JSON.stringify(s.ref)]

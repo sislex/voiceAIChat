@@ -110,8 +110,47 @@ it('exposes owner-only duplicate previews and validates apply requests', async (
   expect(preview.json()).toMatchObject({dryRun: true, keepSpaceId: original.id})
   expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: 'false'})).statusCode).toBe(400)
   expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: false})).statusCode).toBe(409)
-  expect((await call('POST', base + '/merge-duplicates', 'owner', {dryRun: false, previewToken: preview.json().previewToken})).statusCode).toBe(200)
+  expect((await call('POST', base + '/merge-duplicates', 'owner', {previewToken: preview.json().previewToken})).json()).toMatchObject({dryRun: false})
   expect((await call('POST', '/api/storage/spaces/' + await space() + '/merge-duplicates', 'owner', {})).statusCode).toBe(400)
+})
+
+it('merges three conflicting project spaces through HTTP and preserves every version', async () => {
+  const original = (await call('POST', '/api/storage/spaces', 'owner', {kind: 'make-project', ref: 'cf2fda81', title: 'Проект 2'})).json()
+  await db.storageMetadata().transaction(async tx => {
+    for (const id of ['second', 'third']) await tx.putSpace({...original, id, createdAt: 0})
+  })
+  expect((await call('GET', '/api/storage/spaces')).json()[0].id).toBe(original.id)
+  const put = async (id: string, path: string, bytes: string) => {
+    expect((await call('PUT', '/api/storage/spaces/' + id + '/file?path=' + encodeURIComponent(path),
+      'owner', bytes, {'content-type': 'text/plain'})).statusCode).toBe(200)
+  }
+  await put(original.id, 'app.js', 'app')
+  await put(original.id, 'index.html', 'old')
+  await put('second', 'index.html', 'new')
+  await put('third', 'index.html', 'middle')
+  await put('third', 'styles.css', 'styles')
+  await db.storageMetadata().transaction(async tx => {
+    for (const [id, updatedAt] of [[original.id, 1], ['second', 3], ['third', 2]] as const) {
+      const entry = (await tx.getEntry(id, 'index.html'))!
+      await tx.putEntry({...entry, updatedAt})
+    }
+  })
+  const url = '/api/storage/spaces/' + original.id + '/merge-duplicates'
+  const preview = (await call('POST', url, 'owner', {})).json()
+  const applied = await call('POST', url, 'owner', {previewToken: preview.previewToken})
+  expect(applied.statusCode, applied.body).toBe(200)
+  expect(applied.json().dryRun).toBe(false)
+  const spaces = (await call('GET', '/api/storage/spaces')).json()
+  expect(spaces).toHaveLength(1)
+  expect(spaces[0]).toMatchObject({id: preview.keepSpaceId, title: 'Проект 2', fileCount: 5})
+  const base = '/api/storage/spaces/' + preview.keepSpaceId
+  const entries = (await call('GET', base + '/files')).json().entries as {path: string}[]
+  expect(entries.filter(e => !e.path.startsWith('.')).map(e => e.path)).toEqual(['app.js', 'index.html', 'styles.css'])
+  expect((await call('GET', base + '/file?path=index.html')).body).toBe('new')
+  const archived = await Promise.all(entries.filter(e => e.path.startsWith('.duplicates/'))
+    .map(async e => (await call('GET', base + '/file?path=' + encodeURIComponent(e.path))).body))
+  expect(archived.sort()).toEqual(['middle', 'old'])
+  expect((await call('POST', '/api/storage/spaces', 'owner', {kind: 'make-project', ref: 'cf2fda81', title: 'Ignored'})).json().id).toBe(preview.keepSpaceId)
 })
 
 it('supports raw JSON bytes, conditional writes/downloads, quota and node exhaustion', async () => {

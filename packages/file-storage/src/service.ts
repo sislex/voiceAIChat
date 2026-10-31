@@ -129,27 +129,47 @@ export function createFileStorageService(ports: FileStoragePorts) {
         group.sort((a, b) => b.entries.length - a.entries.length ||
           a.space.createdAt - b.space.createdAt || a.space.id.localeCompare(b.space.id))
         const [keep, ...duplicates] = group
-        const entries = new Map(keep.entries.map(e => [e.path, e]))
+        const entries = new Map<string, StoredEntry[]>()
+        for (const member of group) for (const entry of member.entries) {
+          const versions = entries.get(entry.path) ?? []
+          versions.push(entry)
+          entries.set(entry.path, versions)
+        }
+        const occupied = new Set(entries.keys())
         const moves: StoredEntry[] = []
         const result: MergeStorageSpacesResult = {
-          dryRun: request.dryRun !== false, keepSpaceId: keep.space.id,
+          dryRun: request.dryRun ?? (request.previewToken === undefined), keepSpaceId: keep.space.id,
           deleteSpaceIds: duplicates.map(d => d.space.id), moves: [], conflicts: [],
           revokedShareIds: duplicates.flatMap(d => d.shares.map(s => s.id)),
           previewToken: createHash('sha256').update(JSON.stringify(group)).digest('hex'),
         }
-        for (const duplicate of duplicates) for (const entry of duplicate.entries) {
-          const existing = entries.get(entry.path)
-          if (!existing) {
-            entries.set(entry.path, entry)
-            moves.push(entry)
-            result.moves.push({ fromSpaceId: duplicate.space.id, path: entry.path })
-          } else if (existing.nodeId !== entry.nodeId || existing.blobId !== entry.blobId) {
-            // Never discard different content at an occupied path.
-            result.conflicts.push({ fromSpaceId: duplicate.space.id, path: entry.path })
+        for (const versions of entries.values()) {
+          // Revisions are local to each space; timestamps order versions across spaces.
+          versions.sort((a, b) => b.updatedAt - a.updatedAt || b.revision - a.revision ||
+            Number(b.spaceId === keep.space.id) - Number(a.spaceId === keep.space.id) ||
+            a.spaceId.localeCompare(b.spaceId))
+          const [latest, ...older] = versions
+          for (const entry of older) {
+            const prefix = `.duplicates/${entry.spaceId}`
+            // Keep even maximum-length source paths addressable through the API.
+            const archiveName = normalizeStoragePath(`${prefix}/999999999/${entry.path}`)
+              ? entry.path : createHash('sha256').update(entry.path).digest('hex')
+            let target = `${prefix}/${archiveName}`
+            let suffix = 1
+            while (occupied.has(target)) target = `${prefix}/${suffix++}/${archiveName}`
+            path(target)
+            occupied.add(target)
+            moves.push({ ...entry, path: target })
+            result.conflicts.push({ fromSpaceId: entry.spaceId, path: entry.path, toPath: target })
+            result.moves.push({ fromSpaceId: entry.spaceId, path: entry.path, toPath: target })
+          }
+          if (latest.spaceId !== keep.space.id) {
+            moves.push(latest)
+            result.moves.push({ fromSpaceId: latest.spaceId, path: latest.path })
           }
         }
         if (result.dryRun) return result
-        if (request.previewToken !== result.previewToken || result.conflicts.length) fail('revision_conflict')
+        if (request.previewToken !== result.previewToken) fail('revision_conflict')
         for (const entry of moves) await tx.putEntry({ ...entry, spaceId: keep.space.id })
         for (const duplicate of duplicates) await tx.deleteSpace(duplicate.space.id)
         if (duplicates.length) await touch(tx, keep.space)

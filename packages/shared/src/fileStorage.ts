@@ -126,6 +126,7 @@ export interface UpdateStorageSpaceRequest {
 
 /** POST STORAGE_REST.mergeDuplicates; owner only. Preview before applying its token. */
 export interface MergeStorageSpacesRequest {
+  /** Defaults to preview without a token, apply with a token; true always previews. */
   dryRun?: boolean
   previewToken?: string
 }
@@ -133,8 +134,9 @@ export interface MergeStorageSpacesResult {
   dryRun: boolean
   keepSpaceId: string
   deleteSpaceIds: string[]
-  moves: Array<{ fromSpaceId: string; path: string }>
-  conflicts: Array<{ fromSpaceId: string; path: string }>
+  moves: Array<{ fromSpaceId: string; path: string; toPath?: string }>
+  /** Older conflicting entries are preserved at toPath in the kept space. */
+  conflicts: Array<{ fromSpaceId: string; path: string; toPath?: string }>
   /** Deleted spaces' shares are revoked, never widened to the survivor. */
   revokedShareIds: string[]
   previewToken: string

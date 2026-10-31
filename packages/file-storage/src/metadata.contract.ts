@@ -48,7 +48,7 @@ export function metadataContract(factory: () => Promise<{store: StorageMetadataS
           await tx.putEntry({spaceId: old.id, path: 'file', size: 7, mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner', nodeId: 'node', blobId: 'blob'})
         })
         const service = metadataService(f.store)
-        expect(await service.listSpaces('owner')).toHaveLength(2)
+        expect((await service.listSpaces('owner'))[0].id).toBe(old.id)
         expect(await service.createSpace('owner', {kind: old.kind, ref: old.ref, title: 'New'}))
           .toMatchObject({...old, usedBytes: 7, fileCount: 1})
         expect(await service.listSpaces('owner')).toHaveLength(2)
@@ -94,7 +94,7 @@ export function metadataContract(factory: () => Promise<{store: StorageMetadataS
         expect(await service.mergeDuplicates('owner', winner.id)).toMatchObject({deleteSpaceIds: [], moves: []})
       } finally { await f.close() }
     })
-    it('reports conflicting paths and refuses to delete their contents', async () => {
+    it('preserves conflicting versions and applies a token without a dryRun flag', async () => {
       const f = await factory()
       try {
         const service = metadataService(f.store)
@@ -106,9 +106,71 @@ export function metadataContract(factory: () => Promise<{store: StorageMetadataS
         })
         const preview = await service.mergeDuplicates('owner', space.id)
         expect(preview.conflicts).toHaveLength(1)
-        await expect(service.mergeDuplicates('owner', space.id, {dryRun: false, previewToken: preview.previewToken})).rejects.toMatchObject({code: 'revision_conflict'})
+        expect(await service.mergeDuplicates('owner', space.id, {dryRun: true, previewToken: preview.previewToken})).toMatchObject({dryRun: true})
         expect(await service.listSpaces('owner')).toHaveLength(2)
+        expect(await service.mergeDuplicates('owner', space.id, {previewToken: preview.previewToken})).toMatchObject({dryRun: false})
+        expect(await service.listSpaces('owner')).toHaveLength(1)
+        const entries = await f.store.transaction(tx => tx.listEntries(preview.keepSpaceId))
+        expect(entries.map(e => e.blobId).sort()).toEqual(['duplicate', space.id].sort())
+        expect(entries.filter(e => e.path.startsWith('.duplicates/'))).toHaveLength(1)
         expect(await service.usage('owner')).toMatchObject({fileCount: 2})
+      } finally { await f.close() }
+    })
+    it('keeps maximum-length conflicting paths addressable', async () => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const space = await service.createSpace('owner', {kind: 'chat', ref: 'long', title: 'Files'})
+        const path = 'a'.repeat(1024)
+        await f.store.transaction(async tx => {
+          await tx.putSpace({...space, id: 'duplicate'})
+          for (const id of [space.id, 'duplicate']) await tx.putEntry({spaceId: id, path, size: 1,
+            mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner', nodeId: 'node', blobId: id})
+        })
+        const preview = await service.mergeDuplicates('owner', space.id)
+        expect(preview.conflicts[0].toPath!.length).toBeLessThanOrEqual(1024)
+        await service.mergeDuplicates('owner', space.id, {previewToken: preview.previewToken})
+        expect((await service.listEntries('owner', preview.keepSpaceId)).entries).toHaveLength(2)
+      } finally { await f.close() }
+    })
+    it('lists the registered canonical space before older legacy duplicates', async () => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const canonical = await service.createSpace('owner', {kind: 'make-project', ref: 'p', title: 'Project'})
+        await f.store.transaction(tx => tx.putSpace({...canonical, id: 'legacy', createdAt: 0}))
+        expect((await service.listSpaces('owner'))[0].id).toBe(canonical.id)
+        expect((await service.createSpace('owner', {kind: 'make-project', ref: 'p', title: 'Again'})).id).toBe(canonical.id)
+      } finally { await f.close() }
+    })
+    it('keeps newest bytes at original paths and avoids archive collisions across three spaces', async () => {
+      const f = await factory()
+      try {
+        const service = metadataService(f.store)
+        const space = await service.createSpace('owner', {kind: 'make-project', ref: 'p', title: 'Проект 2'})
+        const entry = {size: 1, mimeType: 'text/plain', revision: 1, updatedAt: 1, updatedBy: 'owner', nodeId: 'node'}
+        await f.store.transaction(async tx => {
+          for (const id of ['second', 'third']) await tx.putSpace({...space, id})
+          await tx.putEntry({...entry, spaceId: space.id, path: 'index.html', blobId: 'old', revision: 9})
+          await tx.putEntry({...entry, spaceId: space.id, path: 'app.js', blobId: 'app'})
+          await tx.putEntry({...entry, spaceId: space.id, path: `.duplicates/${space.id}/index.html`, blobId: 'archive'})
+          await tx.putEntry({...entry, spaceId: 'second', path: 'index.html', blobId: 'new', updatedAt: 3})
+          await tx.putEntry({...entry, spaceId: 'third', path: 'index.html', blobId: 'middle', updatedAt: 2})
+          await tx.putEntry({...entry, spaceId: 'third', path: 'styles.css', blobId: 'styles'})
+        })
+        const preview = await service.mergeDuplicates('owner', space.id)
+        expect(preview.keepSpaceId).toBe(space.id)
+        expect(preview.conflicts).toEqual(expect.arrayContaining([
+          {fromSpaceId: space.id, path: 'index.html', toPath: `.duplicates/${space.id}/1/index.html`},
+          {fromSpaceId: 'third', path: 'index.html', toPath: '.duplicates/third/index.html'},
+        ]))
+        expect(await service.mergeDuplicates('owner', space.id)).toEqual(preview)
+        await service.mergeDuplicates('owner', space.id, {previewToken: preview.previewToken})
+        const entries = await f.store.transaction(tx => tx.listEntries(space.id))
+        expect(entries.find(e => e.path === 'index.html')).toMatchObject({blobId: 'new', revision: 1})
+        expect(entries.map(e => e.blobId).sort()).toEqual(['app', 'archive', 'middle', 'new', 'old', 'styles'])
+        expect(entries.filter(e => !e.path.startsWith('.')).map(e => e.path).sort()).toEqual(['app.js', 'index.html', 'styles.css'])
+        expect(await service.listSpaces('owner')).toHaveLength(1)
       } finally { await f.close() }
     })
     it('commits, isolates values and rolls back without retrying callbacks', async () => {

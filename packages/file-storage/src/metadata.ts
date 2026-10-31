@@ -12,6 +12,7 @@ export interface OwnerStorageUsage { usedBytes: number; fileCount: number }
 /** All calls use the transaction's consistent view. Never expose mutable references. */
 export interface StorageMetadataTransaction {
   getSpace(id: string): Promise<StoredSpace | null>
+  /** Canonical identity first within each owner/kind/ref group, including legacy fallback. */
   listSpaces(): Promise<StoredSpace[]>
   /** Create or return the canonical owner/kind/ref space; personal spaces are always new. */
   createSpace(space: StoredSpace): Promise<StoredSpace>
@@ -43,6 +44,7 @@ export interface StorageMetadataStore {
 export function createMemoryMetadataStore(): StorageMetadataStore {
   let state = {
     spaces: new Map<string, StoredSpace>(),
+    refs: new Map<string, string>(),
     entries: new Map<string, StoredEntry>(),
     shares: new Map<string, StorageShare>(),
     acceptances: new Map<string, StorageLinkAcceptance>(),
@@ -55,18 +57,27 @@ export function createMemoryMetadataStore(): StorageMetadataStore {
         const draft = structuredClone(state)
         const tx: StorageMetadataTransaction = {
           async getSpace(id) { return structuredClone(draft.spaces.get(id) ?? null) },
-          async listSpaces() { return structuredClone([...draft.spaces.values()]) },
+          async listSpaces() {
+            const canonical = new Set(draft.refs.values())
+            return structuredClone([...draft.spaces.values()].sort((a, b) =>
+              Number(canonical.has(b.id)) - Number(canonical.has(a.id)) ||
+              a.createdAt - b.createdAt || a.id.localeCompare(b.id)))
+          },
           async createSpace(space) {
-            const existing = space.kind === 'personal' ? undefined : [...draft.spaces.values()]
+            const identity = JSON.stringify([space.ownerId, space.kind, space.ref])
+            const canonical = draft.spaces.get(draft.refs.get(identity) ?? '')
+            const existing = space.kind === 'personal' ? undefined : canonical ?? [...draft.spaces.values()]
               .filter(s => s.ownerId === space.ownerId && s.kind === space.kind && s.ref === space.ref)
               .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0]
-            if (existing) return structuredClone(existing)
-            draft.spaces.set(space.id, structuredClone(space))
-            return structuredClone(space)
+            const winner = existing ?? space
+            if (space.kind !== 'personal') draft.refs.set(identity, winner.id)
+            if (!existing) draft.spaces.set(space.id, structuredClone(space))
+            return structuredClone(winner)
           },
           async putSpace(space) { draft.spaces.set(space.id, structuredClone(space)) },
           async deleteSpace(id) {
             draft.spaces.delete(id)
+            for (const [identity, spaceId] of draft.refs) if (spaceId === id) draft.refs.delete(identity)
             for (const [k, entry] of draft.entries) if (entry.spaceId === id) draft.entries.delete(k)
             for (const share of [...draft.shares.values()]) if (share.spaceId === id) await tx.deleteShare(share.id)
           },

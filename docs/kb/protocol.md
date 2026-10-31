@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-10-31
-checked: 086efe80
+checked: 225be89b
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -37,6 +37,15 @@ updates return 400; missing users return 404; an Identity without
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage and chat settings
+
+Duplicate cleanup uses `POST /api/storage/spaces/:id/merge-duplicates`:
+send `{}` to preview, then `{"previewToken":"<returned token>"}` to apply.
+`{"dryRun":true,"previewToken":"…"}` previews explicitly; `dryRun:false`
+without a matching token returns 409. A changed snapshot also returns 409.
+Conflicting older versions are archived, not rejected: preview items include
+optional `toPath` under `.duplicates/<spaceId>/`. See the deterministic ordering
+and archive collision rules in [Core storage](server-internals.md#core-file-storage).
+Space lists retain duplicates with the canonical owner/kind/ref space first.
 
 `STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
 маршруты требуют сессию, cluster доступен только администраторам. Сервис

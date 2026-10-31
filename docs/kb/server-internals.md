@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 54645e1b
+checked: 225be89b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,28 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Legacy duplicate spaces remain visible, but metadata adapters list the registered
+`storage_space_refs` canonical identity first for each owner/kind/ref. Without a
+registered identity, the oldest creation time then space ID determines the
+fallback, matching create-space adoption. The memory adapter retains identities
+too, so later legacy inserts cannot change a registered choice.
+
+`POST /api/storage/spaces/:id/merge-duplicates` previews with `{}` or
+`{"dryRun":true}`; apply the returned snapshot with `{"previewToken":"…"}`.
+Explicit `dryRun:true` always previews, and `dryRun:false` still requires the
+matching token. Stale tokens fail atomically with 409. The survivor is chosen by
+file count descending, creation time ascending, then ID. For each shared path,
+newest `updatedAt` wins, then highest revision, then survivor preference and
+space ID. Revisions are local to a space, so timestamps take precedence.
+Older entries move to `.duplicates/<sourceSpaceId>/<path>`; occupied archive
+paths receive a numeric directory below the source ID. Paths too long for the
+archive prefix use a SHA-256 filename, retaining the original path in the preview.
+Preview `moves` and
+`conflicts` expose `toPath` for archives. Even equal-content entries are preserved.
+Applying moves metadata and retains blob IDs, byte counts and entry revisions,
+revokes deleted spaces' shares, and rebinds the canonical identity atomically.
+Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 
 `apps/server/src/fileStorage/` embeds the FS-1 coordinator when
 `VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
