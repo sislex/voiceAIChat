@@ -7,6 +7,10 @@
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
 /** Largest single file accepted through the Core REST surface. */
 export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Thumbnail generation refuses larger source images even when ordinary storage accepts them. */
+export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
+export const STORAGE_THUMBNAIL_SIZES = [128, 256, 512] as const
+export type StorageThumbnailSize = typeof STORAGE_THUMBNAIL_SIZES[number]
 export const MAX_STORAGE_PATH_LENGTH = 1024
 
 export type StorageSpaceKind = 'personal' | 'chat' | 'make-project'
@@ -26,6 +30,7 @@ export type StorageErrorCode =
   | 'file_too_large'
   | 'revision_conflict'
   | 'node_unavailable'
+  | 'unsupported_media_type'
 
 export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   storage_disabled: 503,
@@ -37,6 +42,7 @@ export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   file_too_large: 413,
   revision_conflict: 409,
   node_unavailable: 503,
+  unsupported_media_type: 415,
 }
 
 export interface StorageError {
@@ -111,6 +117,8 @@ export interface StorageShare {
 export interface StorageFileRef {
   spaceId: string
   path: string
+  /** The referenced file is an image for which the thumbnail endpoint is available. */
+  thumbnailAvailable?: boolean
 }
 
 export interface CreateStorageSpaceRequest {
@@ -175,6 +183,7 @@ export const STORAGE_REST = {
   mergeDuplicates: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/merge-duplicates`,
   files: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/files`,
   file: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/file`,
+  thumbnail: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/thumbnail`,
   move: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/move`,
   shares: (spaceId: string) => `/api/storage/spaces/${encodeURIComponent(spaceId)}/shares`,
   share: (spaceId: string, shareId: string) =>

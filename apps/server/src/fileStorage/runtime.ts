@@ -5,6 +5,7 @@ import { createFileStorageService } from '../../../../packages/file-storage/src/
 import { createStorageNodeClient, type StorageNodeClient } from '../../../../packages/file-storage/src/client.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { FileStorageConfig } from './config.js'
+import { createThumbnailGenerator } from './thumbnail.js'
 
 export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageConfig, injected?: StorageNodeClient[]) {
   const clients = injected ?? await Promise.all(config.nodes.map(async node => createStorageNodeClient({
@@ -31,8 +32,7 @@ export async function createStorageRuntime(db: VoiceChatDb, config: FileStorageC
   const service = createFileStorageService({
     metadata: db.storageMetadata(), nodes: () => clients, nodeInfo: () => structuredClone(info),
     quota: async userId => storageQuotaBytes(await identity.getUserStorageQuota?.(userId), config.defaultQuotaBytes),
-    now: Date.now, newId: randomUUID,
+    now: Date.now, newId: randomUUID, thumbnail: createThumbnailGenerator(),
   })
   return { service, poll, async close() { clearInterval(timer); await pending } }
 }
-

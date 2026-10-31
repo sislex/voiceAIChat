@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_STORAGE_QUOTA_BYTES,
+  STORAGE_ERROR_STATUS,
   STORAGE_REST,
+  STORAGE_THUMBNAIL_SIZES,
   fitsStorageQuota,
   isStorageBlobId,
   normalizeStoragePath,
@@ -74,5 +76,11 @@ describe('file storage contract', () => {
     expect(STORAGE_REST.link('t/x')).toBe('/api/storage/links/t%2Fx')
     expect(isStorageBlobId('abcDEF12_-')).toBe(true)
     expect(isStorageBlobId('../../etc')).toBe(false)
+  })
+
+  it('publishes the thumbnail route, supported sizes and HTTP media error', () => {
+    expect(STORAGE_REST.thumbnail('space / one')).toBe('/api/storage/spaces/space%20%2F%20one/thumbnail')
+    expect(STORAGE_THUMBNAIL_SIZES).toEqual([128, 256, 512])
+    expect(STORAGE_ERROR_STATUS.unsupported_media_type).toBe(415)
   })
 })

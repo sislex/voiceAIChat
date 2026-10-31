@@ -1296,9 +1296,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           })
           const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
           const entry = await fileStorage.writeFile(userId, space.id, path, bytes, { mimeType: safeMime, createOnly: true })
-          const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path}, entry.size, entry.mimeType, userId, conversationId)
+          const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
+          const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)
           rec.tenantId = req.user?.account?.tenantId
-          return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage }
+          return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }
         } catch (error) { return storageError(reply, error) as never }
       }
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null

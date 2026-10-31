@@ -15,8 +15,8 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-31 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-31 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-10-31 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-10-31 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-01 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-01 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-10-31 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-31 | ✓ |
@@ -42,8 +42,8 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-31 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-31 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-31 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-10-31 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-01 | ✓ |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-31 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-31 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1402. Последние:
+Всего записей: 1403. Последние:
 
+- [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md) — sisl-808-storage-idempotency
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md) — sisl-808-storage-idempotency-gaps
@@ -76,7 +77,6 @@
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-merge-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-merge-kb-reconciliation.md) — fs2-merge-kb-reconciliation
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-kb-reconciliation.md) — fs2-kb-reconciliation
 
 ## Исторические планы
 

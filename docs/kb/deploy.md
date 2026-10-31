@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 30744ae9
+updated: 2026-11-01
+checked: 202e29b9a
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -68,6 +68,10 @@ tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
 integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
 per-user quota when available. Node health is polled every 15 seconds; two
 failed polls remove a node's capacity from the online pool.
+Thumbnail generation needs no new environment variable or volume. Core uses its
+existing Sharp dependency with a fixed concurrency bound; derived preview bytes
+consume node capacity but are excluded from user quota accounting and are
+removed with their source file.
 
 Core metadata lives in its existing SQLite/Postgres database and migrates
 additively on startup. Back up both metadata and node volumes. Selecting
