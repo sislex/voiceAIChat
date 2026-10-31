@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 0623c83e
+checked: 0c05e703
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -26,6 +26,18 @@ with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
 See [the admin API](protocol.md#admin-storage-quota-contract).
 
 ## fileStorage contract
+
+`MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
+`POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and
+`{"previewToken":"<returned token>"}` to apply; explicit `dryRun:true` always
+previews. Applying without a matching token returns 409.
+`MergeStorageSpacesResult` exposes `keepSpaceId`, `deleteSpaceIds`, `moves`,
+`conflicts`, `revokedShareIds`, `dryRun` and `previewToken`. Move/conflict items
+identify the source space and path; optional `toPath` identifies the archive
+destination of an older conflicting version in the survivor. Deleted spaces'
+shares are revoked, not transferred. Resolution and canonical lookup behavior
+belong to the coordinator and metadata adapters; see
+[Core storage](server-internals.md#core-file-storage).
 
 `src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
 entries, revisions, shares, owner usage, node health, error codes and both

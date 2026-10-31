@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-31 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: a2a76b9d feat(storage): owner space title update and duplicate cleanup (SISL-809) |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-31 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-31 | ✓ |
@@ -44,7 +44,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-31 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-10-31 | ✓ |
 | [server-internals.md](server-internals.md) | server-internals | 2026-10-31 | ✓ |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: a2a76b9d feat(storage): owner space title update and duplicate cleanup (SISL-809) |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-10-31 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-10-31 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1399. Последние:
+Всего записей: 1400. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency.md) — sisl-808-storage-idempotency

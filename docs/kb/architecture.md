@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 54645e1b
+checked: 0c05e703
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -93,8 +93,11 @@ and `make-project` it returns one canonical space for `(ownerId, kind, ref)`;
 concurrent callers and chat uploads use that same idempotent path. The memory
 adapter resolves the identity inside its serialized transaction. Core's SQLite
 and Postgres adapter uses the uniquely indexed `storage_space_refs` mapping,
-then reads the winner after an insert conflict. `listSpaces` still returns legacy
-duplicates; see the [compatibility and cleanup procedure](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+then reads the winner after an insert conflict. `listSpaces` retains legacy
+duplicates but returns the registered canonical identity first for each
+owner/kind/ref; without a registered identity it orders by creation time then ID.
+The memory adapter retains its canonical mapping across transactions as well.
+See the [compatibility and cleanup procedure](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 Quota usage includes every file in the owner's spaces, even collaborator writes.
 Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
 
@@ -104,6 +107,18 @@ updates `updatedAt`. It preserves the space ID, owner, kind, ref, files and
 shares; write collaborators cannot rename spaces. Core exposes it through
 `PATCH /api/storage/spaces/:id`, using Shared's `UpdateStorageSpaceRequest`.
 Make uses this operation to synchronize its project title.
+
+The owner-only `mergeDuplicates` operation consolidates matching chat or
+make-project spaces in one metadata transaction. The survivor is selected by
+file count descending, creation time ascending, then ID. Each original path
+retains the entry with the newest update timestamp, then revision, with
+survivor preference and space ID breaking ties. Older versions are archived
+under `.duplicates/<sourceSpaceId>/` without copying or deleting blobs.
+The preview exposes archive destinations and shares revoked by deleting the
+duplicate spaces. Apply requires the matching snapshot token; the canonical
+identity is rebound in the same transaction. See the exact request bodies,
+collision handling and long-path rules in
+[Core storage](server-internals.md#core-file-storage).
 
 Core passes the same file storage service to embedded admin routes so account
 administration can report storage usage. Remote admin mode retains its service
