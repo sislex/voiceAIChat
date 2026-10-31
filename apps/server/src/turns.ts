@@ -115,7 +115,7 @@ export interface TurnManagerDeps {
   /** Подписанные токены ходов для инструментов превью (`reader/turnToken.ts`): проверяет их любой процесс. */
   previewTurns?: { issue(entry: { userId: string; conversationId: string }): string }
   /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
-  resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
+  resolveUpload?: (id: string, userId: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
   /** Короткоживущий контекст вложений для бинарного remote:image. */
   remoteFileTool?: {
     register(token: string, attachments: Array<{ path: string; name: string; uploadId?: string; dataBase64: string }>): void
@@ -659,7 +659,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // решает, существует ли каталог и можно ли в него перейти.
     const desiredCwd = settings.workdir ?? undefined
     const loadedAttachments = await Promise.all((req.attachments ?? []).map(async (uploadId) => ({
-      uploadId, attachment: await loadAttachment(deps.resolveUpload?.(uploadId))
+      uploadId, attachment: await loadAttachment(deps.resolveUpload?.(uploadId, userId))
     })))
     const attachments = loadedAttachments.flatMap(({ attachment }) => attachment ? [attachment] : [])
     const makeAttachmentLabels = loadedAttachments.flatMap(({ uploadId, attachment }) => attachment

@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 76b6a6fb
+checked: 772893eb
 areas:
   - apps/server/src/billing
   - apps/billing
@@ -20,6 +20,28 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## File storage metadata and quotas
+
+`fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
+over Core's public SQL adapter. The additive schema creates `storage_spaces`,
+`storage_entries`, `storage_shares`, `storage_acceptances` and a singleton
+`storage_lock` row on both SQLite and Postgres. Entry/share/acceptance foreign
+keys cascade on deletion. The storage domain owns these tables.
+
+Every metadata transaction first updates the lock row, before reading any
+permissions, revision or owner usage. This serializes coordinators across SQL
+connections, rolls back failed callbacks and never retries node I/O.
+`VoiceChatDb.storageMetadata()` waits for migrations and enters the reentrant
+domain lane before SQL. Nested Identity quota reads reuse that lane, avoiding
+a deadlock with unrelated repositories waiting for the storage transaction. The common metadata contract runs against memory and SQL;
+`VC_TEST_DB_URL` selects an isolated Postgres schema for the SQL tests.
+
+Quota lookup calls `db.identity.getUserStorageQuota(userId)` when that optional
+Identity method exists, then normalizes through `storageQuotaBytes()` with
+`VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
+charge the space owner. Direct shares and accepted links are checked on every
+operation; revoking a link deletes its acceptances immediately.
 
 ## Project integration tokens
 

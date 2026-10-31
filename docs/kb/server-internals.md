@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-10-31
-checked: 50fcc411
+checked: 772893eb
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -22,6 +22,30 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Core file storage
+
+`apps/server/src/fileStorage/` embeds the FS-1 coordinator when
+`VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
+`routes.ts` registers all `STORAGE_REST` operations after Core session auth,
+rejects anonymous link access and restricts cluster information to admins.
+PUT file bodies bypass JSON parsing, accept up to 64 MiB and enforce revision
+and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
+
+`runtime.ts` loads node tokens from configured files and polls health at startup
+and every 15 seconds, without overlapping polls. Two consecutive failures mark a
+node offline; a successful poll restores it. Shutdown clears and drains polling.
+`BuildOptions.storageNodes` supplies fake clients for host integration tests.
+Make consumers use these same authenticated REST paths with the user's context.
+
+When the account setting `chatFilesBackend` is `storage` and the service is
+enabled, uploads require a conversation owned by the caller. Core atomically
+finds or creates its owner's `chat` space with `ref=conversationId`, writes the
+file, and returns `UploadInfo.storage`. The default backend remains `machine`.
+Upload resolution, retouch sources and attachment reads use coordinator access
+checks. History JSON preserves `MessageAttachment.storage`; persistent reads
+do not depend on the transient UploadStore map. Display paths use
+`storage:<spaceId>/<path>`; file bytes remain on the configured nodes.
 
 ## Make file transport admission
 

@@ -1,6 +1,6 @@
 ---
 updated: 2026-10-31
-checked: 775977da
+checked: 772893eb
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -59,7 +59,20 @@ to loopback. Create the private token files before starting this example.
 Configure each node with `VC_FILE_STORAGE_NODE_ID`, `VC_FILE_STORAGE_DIR`,
 `VC_FILE_STORAGE_CAPACITY_BYTES` and `VC_FILE_STORAGE_TOKEN_FILE`. Managed mode
 uses `SISLEXA_COMPONENT_CONFIG` and component-runtime instead of the static token.
-The example does not add nodes to production or install Core storage routes.
+The example does not add nodes to production. Enable the Core coordinator with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`) and configure
+`VC_FILE_STORAGE_NODES='[{"id":"node-a","url":"http://node-a:8795","tokenFile":"/run/secrets/storage-a"}]'`.
+IDs must be unique; HTTP(S) URLs cannot contain credentials, query or fragment.
+Mount the token files into Core as well as the corresponding nodes. Core loads
+tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
+integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
+per-user quota when available. Node health is polled every 15 seconds; two
+failed polls remove a node's capacity from the online pool.
+
+Core metadata lives in its existing SQLite/Postgres database and migrates
+additively on startup. Back up both metadata and node volumes. Selecting
+`chatFilesBackend=storage` in account settings opts chat uploads into the
+service; machine storage remains the default.
 
 ## Public chat deployment isolation
 

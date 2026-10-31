@@ -1,7 +1,9 @@
+import { STORAGE_SCHEMA } from '../fileStorage/metadata.js'
 import {IDENTITY_SCHEMA} from '@sislexa/identity/server/store/schema'
 /** DDL схемы БД. Идемпотентно: безопасно выполнять при каждом старте. */
 export const SCHEMA_SQL = `
 ${IDENTITY_SCHEMA}
+${STORAGE_SCHEMA}
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 

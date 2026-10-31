@@ -7,7 +7,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { fileStorageConfig, type FileStorageConfig } from './fileStorage/config.js'
+
 export interface ServerConfig {
+  fileStorage?: FileStorageConfig
   chatModels?: ChatModelPolicy
   chatTextOnly?: boolean
   chatRequireBilling?: boolean
@@ -262,6 +265,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   return {
     deployment,
+    fileStorage: fileStorageConfig(env),
     delegatedChatEnabled: env.VC_DELEGATED_CHAT_ENABLED === 'true',
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',

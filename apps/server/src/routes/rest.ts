@@ -1,4 +1,5 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
+import { storageError } from '../fileStorage/routes.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
@@ -801,6 +802,7 @@ export async function registerRest(
     delegatedAssistantKind?: (grant: string) => string | undefined
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
+    fileStorage?: import('../../../../packages/file-storage/src/service.js').FileStorageService
     conversationSummary?: () => ConversationSummaryService | undefined
     resetThread?: import('../turns.js').TurnManager['resetThread']
   } = {}
@@ -824,6 +826,14 @@ export async function registerRest(
   // неотличимо от «нет такого файла». Проверка пути — `serverFiles.ts`.
   app.get<{ Querystring: { path?: string } }>(REST.serverFile, async (req, reply) => {
     const userId = uid(req)
+    if (req.query.path?.startsWith('storage:')) {
+      const match = /^storage:([^/]+)\/(.+)$/.exec(req.query.path)
+      if (!match || !opts.fileStorage) return reply.code(404).send({error: 'not_found'})
+      try {
+        const file = await opts.fileStorage.readFile(userId, decodeURIComponent(match[1]), match[2])
+        return { path: req.query.path, name: match[2].split('/').pop(), mimeType: file.entry.mimeType, size: file.entry.size, dataBase64: Buffer.from(file.bytes).toString('base64') }
+      } catch (error) { return storageError(reply, error) }
+    }
     if (runnerFs && !opts.chatTextOnly) {
       try {
         const remote = await runnerFs.readFile(userId, req.query.path ?? '')
@@ -1795,6 +1805,9 @@ export async function registerRest(
     const patch = sanitizeSettingsPatch(req.body)
     if (patch.llmEngineId && !(await db.llm.listLlmEnginesForRole(role)).some((engine) => engine.id === patch.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
+    }
+    if (patch.chatFilesBackend !== undefined && !['machine', 'storage'].includes(patch.chatFilesBackend)) {
+      return reply.code(400).send({ error: 'Invalid chatFilesBackend' })
     }
     const generatedFilesTtlDays = patch.generatedFilesTtlDays ?? (await db.settings.getSettings(uid(req))).generatedFilesTtlDays
     if (!Number.isInteger(generatedFilesTtlDays) || generatedFilesTtlDays < 1 || generatedFilesTtlDays > 3650) {

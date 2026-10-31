@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1376. Последние:
+Всего записей: 1377. Последние:
 
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-dev-commit.md) — make-frontend-dev-commit
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-make-frontend-commit-kb-verification.md) — make-frontend-commit-kb-verification
+- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs2-core-file-storage.md) — fs2-core-file-storage
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-task-failure-evidence.md) — fs1-task-failure-evidence
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-merge-kb-addresses.md) — fs1-merge-kb-addresses
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-kb-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-kb-reconciliation.md) — fs1-kb-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-gate-env-isolation.md) — fs1-gate-env-isolation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs1-base-branch-test.md) — fs1-base-branch-test
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-fs-1-file-storage.md) — fs-1-file-storage
 
 ## Исторические планы
 

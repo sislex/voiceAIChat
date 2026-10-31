@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
 updated: 2026-10-31
-checked: e5d9748f
+checked: 772893eb
 areas:
   - packages/file-storage
   - packages/shared/src/applicationCatalog.ts
@@ -63,7 +63,9 @@ remains Core infrastructure even in a chat-only deployment.
 HTTP node client and coordinator library. It imports no `apps/server` code.
 Its workspace is registered in the application catalog and affected-package graph.
 Its unchanged public contract is `packages/shared/src/fileStorage.ts`.
-Core HTTP routes, SQL persistence and health polling are separate host work.
+Core HTTP routes, SQL persistence and health polling live in
+`apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
+and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
 `VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and
