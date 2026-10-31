@@ -120,3 +120,4 @@ export * from './standDelivery'
 
 export * from './integrations'
 export * from './deploymentProfiles.js'
+export * from './fileStorage'

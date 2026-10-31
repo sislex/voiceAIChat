@@ -741,6 +741,8 @@ export interface UploadInfo {
   mimeType: string
   size: number
   agentId?: string
+  /** Set when the file was stored in the storage service instead of a machine. */
+  storage?: import('./fileStorage').StorageFileRef
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */
