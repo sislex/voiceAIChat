@@ -1,6 +1,6 @@
 ---
-updated: 2026-10-31
-checked: 47b29314
+updated: 2026-11-01
+checked: a28e5190
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -59,6 +59,34 @@ remains Core infrastructure even in a chat-only deployment.
 
 ## File storage service
 
+Resumable uploads split responsibilities between coordinator metadata and node
+storage. `StoredUpload` records the owner, initiating user, space, target blob,
+size, part size, expiry and write preconditions. The coordinator reserves owner
+quota, selects a node with room for twice the declared size, and rechecks access,
+quota and revision conditions at completion. Part transfer releases the metadata
+transaction after authorization. The node persists manifests and replaceable
+parts under `.uploads`, reserves space for both parts and the assembled blob,
+and assembles one part at a time before atomic rename. Startup restores those
+reservations; expiry and abort remove session files and release reservations.
+Completion publishes the entry through the coordinator before post-commit cleanup.
+See [Core storage](server-internals.md#core-file-storage) for its REST integration.
+
+The coordinator also owns batch quota preflight, optional small-content listing
+and copy authorization. Inline listing reads bytes inside the metadata transaction
+to keep content paired with its revision. Copy uses the source node's copy
+capability and a new blob ID; the node validates IDs and capacity, copies to a
+temporary file and renames it atomically. File bytes do not pass through Core
+for copy, and a missing copy capability fails explicitly. Core owns the NDJSON
+input and streaming multipart output, including per-part compression.
+
+Thumbnail lookup enforces the source entry's read ACL and input limits in the
+coordinator. An optional host thumbnail generator supplies derived bytes, cached
+on the source node under IDs derived from source blob, size and format. The cache
+does not add user entries or owner quota usage, but consumes node capacity.
+Core's chat upload response marks supported storage-backed images with
+`thumbnailAvailable`. Core owns HTTP compression and bounded upload decoding;
+these additions do not move transport hooks or image processing into the node.
+
 `packages/file-storage` (`@sislexa/file-storage`) owns the Fastify blob node,
 HTTP node client and coordinator library. It imports no `apps/server` code.
 Its workspace is registered in the application catalog and affected-package graph.
@@ -80,8 +108,9 @@ The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
 component-runtime authorization for `file-storage.blobs`. All blob/health calls
 require bearer authentication. One process exclusively owns each directory.
 Validated blobs publish through temporary-file rename, capacity mutations
-serialize, and startup recomputes published-blob usage. Temporary files do not
-count toward logical capacity; disk exhaustion still returns `storage_full`.
+serialize, and startup recomputes published-blob usage. Ordinary temporary blob files do not count toward logical capacity;
+resumable upload sessions reserve capacity separately as described below.
+Disk exhaustion still returns `storage_full`.
 
 `createFileStorageService` takes metadata, node clients, cached node info, owner
 quota, clock and unique ID ports. `StorageMetadataStore.transaction` must

@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-10-31 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 91891a52 card-SISL-815 B01 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-01 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
@@ -65,10 +65,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1406. Последние:
+Всего записей: 1407. Последние:
 
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-compression-freshness.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-compression-freshness.md) — storage-compression-freshness
+- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-architecture-freshness.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-architecture-freshness.md) — storage-architecture-freshness
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md) — sisl-815-storage-batch
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md) — sisl-814-multipart-uploads
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
@@ -76,7 +77,6 @@
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-808-storage-idempotency-gaps.md) — sisl-808-storage-idempotency-gaps
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-804-freshness-reconciliation.md) — sisl-804-freshness-reconciliation
 - [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sisl-785-mailpit-boundaries.md) — sisl-785-mailpit-boundaries
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-production-frontend-pins.md) — production-frontend-pins
 
 ## Исторические планы
 
