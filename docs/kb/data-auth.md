@@ -1,8 +1,12 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-10-31
-checked: 713d61e0
+checked: d5140cd7
 areas:
+  - apps/server/src/auth/delegation.ts
+  - apps/server/src/makeBridge/proxy.ts
+  - apps/server/src/routes/internal.ts
+  - apps/server/src/routes/applicationTickets.delegation.test.ts
   - apps/server/src/billing
   - apps/billing
   - packages/shared/src/llmAccounting.ts
@@ -42,6 +46,26 @@ Identity method exists, then normalizes through `storageQuotaBytes()` with
 `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
 charge the space owner. Direct shares and accepted links are checked on every
 operation; revoking a link deletes its acceptances immediately.
+
+### Make service storage authorization
+
+An enabled local Make with both `VC_APPLICATION_MAKE_TOKEN` and
+`VC_APPLICATION_MAKE_SERVICE_TOKEN` participates in ticket delegation, as does
+external Make. The Make proxy replaces browser credentials with the trusted
+Core ID, Core-to-Make token and a five-minute delegation of `req.user`.
+Client-supplied Core IDs, MCP tokens, cookies and delegation headers are removed.
+
+Shared Make calls `/internal/whoami` with its Make-to-Core credential and the
+delegation. Core ignores forwarded identity headers on this path and resolves
+the current user through the outer authenticated delegation. Missing or revoked
+delegations cannot authorize a user.
+
+Make ticket delegations may access `/api/storage/*`; ordinary Identity chat
+delegations still cannot. The credential must belong to Make, no cookie may be
+mixed in, and the live account/tenant must match. Storage resolves space ACLs for
+that user on every request, including reads, writes and shares. Tests in
+`routes/applicationTickets.delegation.test.ts` cover the cookie proxy, delegated
+whoami, file creation/readback, wrong credentials and revocation.
 
 ## Project integration tokens
 
