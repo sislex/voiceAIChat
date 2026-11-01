@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { storageMaxFileBytes } from '@voicechat/shared/fileStorage'
 import { fileURLToPath } from 'node:url'
 import { createComponentRuntime } from '@sislexa/component-runtime'
 import { createStorageNodeServer } from './server.js'
@@ -18,6 +19,7 @@ try {
     directory: env.VC_FILE_STORAGE_DIR ?? '',
     capacityBytes: env.VC_FILE_STORAGE_CAPACITY_BYTES ? Number(env.VC_FILE_STORAGE_CAPACITY_BYTES) : NaN,
     tokenFile: env.VC_FILE_STORAGE_TOKEN_FILE, runtime,
+    maxFileBytes: storageMaxFileBytes(env.VC_FILE_STORAGE_MAX_FILE_BYTES),
   })
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { void app.close() })
   await app.listen({ host: env.HOST ?? '0.0.0.0', port: Number(env.PORT ?? 8795) })

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: ba69cb2c
+checked: 62e7641be
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -66,7 +66,7 @@ Full responses strictly above 1 KiB negotiate Brotli or gzip through
 `Accept-Encoding` for text, JSON, JavaScript, SVG, XML and Wasm. They always
 send `Vary: Accept-Encoding`; media, archives and byte ranges stay identity.
 Raw file and upload-part PUTs may use `Content-Encoding: gzip|br`; Core applies
-the 64 MiB limit to decompressed bytes.
+the configured file limit to decompressed file bytes; part bodies retain a 64 MiB limit.
 
 POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
 encoded request maximum). The first line is `{"operations":[...]}`, with 1..500
@@ -1393,6 +1393,11 @@ supports one byte range. A node without `publicUrl` returns the ordinary Core
 file URL and revision headers, without uploadId: use normal Core authentication
 and do not call commit. Core still checks write permission, quota and placement
 before returning that fallback; the actual PUT repeats these checks.
+Raw PUT/GET file bodies stream through Core to the node. Optional Content-Length
+allows early size/quota/placement checks; unknown lengths are counted while
+streaming. Exceeding the configured file limit returns `file_too_large` (413).
+`MAX_STORAGE_FILE_BYTES` is the 1 GiB default; `storageMaxFileBytes` validates host
+configuration as a positive safe integer. The default owner quota remains 100 MiB.
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

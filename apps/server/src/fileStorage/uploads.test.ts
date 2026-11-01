@@ -26,7 +26,9 @@ async function fixture(quota = 100, direct = false) {
     fetchImpl: async (url, init) => {
       const response = await node.inject({method: init!.method as 'GET' | 'POST' | 'PUT' | 'DELETE',
         url: new URL(String(url)).pathname, headers: init!.headers as Record<string, string>, payload: init!.body as Buffer})
-      return new Response(response.statusCode === 204 ? null : response.rawPayload, {status: response.statusCode})
+      return new Response(response.statusCode === 204 ? null : response.rawPayload, {
+        status: response.statusCode, headers: response.headers as Record<string, string>,
+      })
     },
   })
   const db = new VoiceChatDb(':memory:'); await db.ready

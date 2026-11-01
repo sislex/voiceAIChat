@@ -1,3 +1,4 @@
+import { storageBytes } from '../../../../packages/file-storage/src/client.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -71,7 +72,7 @@ describe('Core-issued ticket delegation', () => {
         db, sessionSecret: SECRET, claude: { send }, codex: { send },
         storageNodes: [0, 1].map(i => ({ id: 'node-' + i,
           health: async () => ({ nodeId: 'node-' + i, capacityBytes: 1e9, usedBytes: 0, freeBytes: 1e9 }),
-          put: async (id, bytes) => { blobs.set(id, bytes) }, get: async id => blobs.get(id)!,
+          put: async (id, bytes) => { blobs.set(id, await storageBytes(bytes)) }, get: async id => blobs.get(id)!,
           delete: async id => { blobs.delete(id) },
         })),
         applicationTickets: { tickets, manifest: { coreId: 'core-a', applications: parseApplications(APPLICATIONS) },

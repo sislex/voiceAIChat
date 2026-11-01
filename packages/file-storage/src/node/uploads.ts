@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { mkdir, readdir, readFile, writeFile, rename, rm, open, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { isStorageBlobId, MAX_STORAGE_FILE_BYTES, MAX_STORAGE_UPLOAD_PARTS, STORAGE_UPLOAD_TTL_MS } from '@voicechat/shared/fileStorage'
+import { isStorageBlobId, MAX_STORAGE_PART_BYTES, MAX_STORAGE_UPLOAD_PARTS, STORAGE_UPLOAD_TTL_MS } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../errors.js'
 
 interface Manifest { size: number; partSize: number; expiresAt: number; blobId: string }
@@ -60,7 +60,7 @@ export async function nodeUploads(directory: string, capacity: number, accountin
         let m: Manifest
         try { m = JSON.parse(req.body.toString()) } catch { return fail('invalid_path') }
         if (!m || !Number.isSafeInteger(m.size) || m.size < 0 || !Number.isSafeInteger(m.partSize) || m.partSize < 1 ||
-          m.partSize > MAX_STORAGE_FILE_BYTES || Math.ceil(m.size / m.partSize) > MAX_STORAGE_UPLOAD_PARTS ||
+          m.partSize > MAX_STORAGE_PART_BYTES || Math.ceil(m.size / m.partSize) > MAX_STORAGE_UPLOAD_PARTS ||
           !Number.isSafeInteger(m.expiresAt) || m.expiresAt <= Date.now() || m.expiresAt > Date.now() + STORAGE_UPLOAD_TTL_MS ||
           !isStorageBlobId(m.blobId)) fail('invalid_path')
         if (sessions.has(id)) fail('revision_conflict')

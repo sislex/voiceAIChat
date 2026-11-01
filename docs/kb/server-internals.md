@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: ba69cb2c
+checked: 62e7641be
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -51,10 +51,8 @@ Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
 `POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to
 `writeFile`; Core does not assemble the whole file for the storage backend.
 The coordinator uses the HTTP node client's optional `putStream` method, which
-sends the iterable with fetch `duplex: 'half'`. Custom node clients without this
-method reject streamed writes with `node_unavailable`; byte-array writes remain
-compatible. The existing node handler's buffering is not changed by this Core
-upload path. Machine storage and the Core-local fallback consume the bounded iterable into a
+sends the iterable with fetch `duplex: 'half'`. Clients may alternatively accept streams through `put`; byte-array writes remain
+compatible. The node writes blob PUT streams through an atomic temporary file. Machine storage and the Core-local fallback consume the bounded iterable into a
 buffer; only the machine leg encodes it as base64 at `AgentRegistry.fsWrite`.
 Legacy JSON parsing remains buffered. This route adds no environment variable or
 schema migration and continues to use the configured storage node URL/token.
@@ -71,7 +69,7 @@ five-minute deadline without a schema change. Node manifests survive restart.
 Completed/aborted sessions reject further signed PUTs, so URL replay cannot
 alter published bytes. Direct writes share the multipart capacity reservation
 of twice the declared size (staging plus assembly); quota reserves it once.
-Core carries only metadata for these transfers. The node still buffers each PUT
+Core carries only metadata for these transfers. The node still buffers each direct PUT
 up to 64 MiB and streams GET/Range from disk. Client switching is separate work.
 
 Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
@@ -82,12 +80,13 @@ opening the node response stream. This lets Core answer cache validators without
 node I/O and lets byte ranges stream node → Core → browser without buffering the
 file. The node parses one RFC-style byte range and streams it with a bounded
 filesystem read stream. Internal consumers and batch/small-content reads still
-use the buffered client method. Small-content
+explicitly collect the streamed client body with `storageBytes`. Small-content
 listing reads under the metadata transaction to keep content and revision paired.
 Core streams eligible full downloads through Brotli/gzip above 1 KiB and
 compresses eligible batch bodies before base64 or multipart emission. Range,
 media and archive responses remain identity. Raw PUT parsers optionally stream
-gzip/Brotli decompression and stop once decompressed bytes exceed 64 MiB.
+gzip/Brotli decompression. File PUTs enforce the configured file limit on decoded
+bytes; parts and batch requests retain their 64 MiB bound.
 Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
 bearer scope, validates both IDs, serializes capacity checks and copies through
 a temporary file plus rename. No file bytes pass through Core for copy.
@@ -133,13 +132,15 @@ Memory and SQL adapter contract tests cover conflicts and canonical ordering.
 `VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
 `routes.ts` registers all `STORAGE_REST` operations after Core session auth,
 rejects anonymous link access and restricts cluster information to admins.
-PUT file bodies bypass JSON parsing, accept up to 64 MiB after optional gzip/br
-decompression, and enforce revision
-and create-only preconditions. Errors use `STORAGE_ERROR_STATUS`.
 The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
 `thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
 animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
 the source node and are probed before the source bytes are read.
+PUT file bodies bypass all content parsers as raw streams; GET uses
+`openFile` and Fastify `reply.send(stream)`. Both directions apply backpressure
+through the HTTP node client. Revision and create-only preconditions remain
+transactional. The configurable file limit defaults to 1 GiB. Legacy `readFile`
+collects bytes only for existing chat consumers; chat JSON/base64 upload is unchanged. Errors use `STORAGE_ERROR_STATUS`.
 `PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
 space. The coordinator checks ownership inside the metadata transaction; write
 collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
