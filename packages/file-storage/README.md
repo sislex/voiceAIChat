@@ -29,7 +29,8 @@ counts regular blob files, ignoring temporary files. Crash remnants named
 `.tmp-*` can be removed while the node is stopped. There is no replication or
 filesystem fsync durability guarantee. Capacity accounts published blobs; a
 replacement temporarily needs extra physical disk space. ENOSPC/EDQUOT maps to
-`storage_full`. Blob requests are limited to the contract's 64 MiB maximum.
+`storage_full`. Blob requests stream through temporary files, with a 1 GiB default
+limit configurable by `VC_FILE_STORAGE_MAX_FILE_BYTES` on Core and nodes.
 
 Build Docker target `file-storage-node`. The
 [two-node compose example](../../deploy/compose.file-storage.example.yml)
@@ -41,7 +42,10 @@ use a private network or TLS proxy between machines.
 
 `createStorageNodeClient({ id, url, token, fetchImpl? })` exposes
 `health/put/get/delete`, rejects redirects, bounds requests to 60 seconds and
-throws `StorageServiceError` with a contract `code`.
+throws `StorageServiceError` with a contract `code`. `put(id, bytesOrStream, size?)`
+accepts bounded streams; HTTP `get(id)` returns a Node readable stream. Consume
+or destroy downloads. Clients share a keep-alive undici Agent with HTTPS HTTP/2
+negotiation. `storageBytes` explicitly collects a body for legacy byte consumers.
 `createFileStorageService(ports)` receives:
 
 - `metadata: StorageMetadataStore`, `nodes(): StorageNodeClient[]`,
@@ -61,14 +65,12 @@ See [the implementation](src/service.ts) for inferred signatures.
 `writeFile(userId, spaceId, path, bytes, { mimeType?, ifMatch?, createOnly? })`
 checks the owner's quota, places on the online node with most free space, and
 increments the revision. The host parses HTTP If-Match/If-None-Match into these
-options. The bytes argument also accepts an async iterable. Streaming writes use
-the node client's optional `putStream` extension (the HTTP client implements it
-with a streaming request body); byte-array callers and clients remain supported.
-The coordinator counts bytes and checks size/owner quota while consuming the
-stream, commits only after its successful end, and cleans failed uploads. Custom
-node clients must implement `putStream` to receive streamed chat uploads; otherwise
-the write fails with `node_unavailable` without buffering a fallback.
-`readFile` returns `{ entry, bytes }`; `listEntries` returns
+options. Streaming writes accept an async iterable/readable and optional `size`.
+The optional `putStream` adapter remains supported for chat clients; otherwise
+the coordinator passes a counted readable to `put`. Both paths must consume the
+complete stream before metadata commits. `readFileStream`
+returns `{ entry, bytes }` with a stream from HTTP clients; `readFile` collects
+bytes for compatibility. `readFile` returns `{ entry, bytes }`; `listEntries` returns
 `{ space, entries }`. Move is within one space and refuses an occupied target.
 Owners manage spaces/shares; write collaborators manage files. Links require a
 signed-in user even to describe them; acceptance makes the space visible.

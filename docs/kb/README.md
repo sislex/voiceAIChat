@@ -26,7 +26,7 @@
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-01 | ✓ |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-01 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-01 | ✓ |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-01 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-31 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-01 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
@@ -41,7 +41,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-11-01 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-10-31 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 15683f3a card-SISL-818 B01 |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-01 | ✓ |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-01 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1411. Последние:
+Всего записей: 1413. Последние:
 
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md) — sisl-816-storage-http-cache-range
+- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md) — storage-streaming-pool
+- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-825-streaming-merge.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-825-streaming-merge.md) — sisl-825-streaming-merge
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-815-storage-batch.md) — sisl-815-storage-batch
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-814-multipart-uploads.md) — sisl-814-multipart-uploads
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-813-direct-storage.md) — sisl-813-direct-storage
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-upload-kb-reconciliation.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-upload-kb-reconciliation.md) — sisl-812-upload-kb-reconciliation
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-merge-sha-verification.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-812-merge-sha-verification.md) — sisl-812-merge-sha-verification
-- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-streaming-reconciliation.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-streaming-reconciliation.md) — chat-upload-streaming-reconciliation
-- [2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md](log/2026-10-31-pc-radvilovich-tailae39a6-ts-net-sk-115-owner-gate-reconciliation.md) — sk-115-owner-gate-reconciliation
 
 ## Исторические планы
 

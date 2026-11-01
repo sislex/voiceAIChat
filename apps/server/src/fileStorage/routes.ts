@@ -1,4 +1,5 @@
 import { storageBatchResponse } from './batch.js'
+import { Readable, pipeline } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_COMPRESSION_MIN_BYTES, STORAGE_THUMBNAIL_SIZES,
@@ -23,7 +24,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     return storageError(reply, error)
   })
   const path = (fn: (id: string) => string) => fn('PARAM').replace('PARAM', ':id')
-  const route = (method: HTTPMethods, url: string, handler: (s: FileStorageService, req: Request, reply: FastifyReply) => Promise<unknown>, raw = false) => {
+  const route = (method: HTTPMethods, url: string, handler: (s: FileStorageService, req: Request, reply: FastifyReply) => Promise<unknown>, raw: boolean | 'stream' = false) => {
     const register = (scope: FastifyInstance) => scope.route({
       method, url, bodyLimit: raw ? MAX_STORAGE_FILE_BYTES : 64 * 1024,
       preHandler: async (req, reply) => {
@@ -45,11 +46,13 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
         let size = 0
         const decoder = encoding === 'gzip' ? createGunzip() : encoding === 'br' ? createBrotliDecompress() : undefined
         const source = decoder ? stream.pipe(decoder) : stream
+        if (decoder) stream.once('error', error => decoder.destroy(error))
+        if (raw === 'stream') return done(null, source)
         void (async () => {
           try {
             for await (const chunk of source) {
               size += chunk.length
-              if (size > MAX_STORAGE_FILE_BYTES) throw new StorageServiceError('file_too_large')
+              if (size > 64 * 1024 * 1024) throw new StorageServiceError('file_too_large')
               chunks.push(Buffer.from(chunk))
             }
             done(null, Buffer.concat(chunks, size))
@@ -152,7 +155,9 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
       ? storageContentEncoding(r.headers['accept-encoding']) : undefined
     if (!encoding) return reply.header('content-length', opened.contentLength).type(entry.mimeType).send(opened.stream)
     reply.header('content-encoding', encoding)
-    return reply.type(entry.mimeType).send(opened.stream.pipe(encoding === 'br' ? createBrotliCompress() : createGzip()))
+    const compressed = encoding === 'br' ? createBrotliCompress() : createGzip()
+    pipeline(opened.stream, compressed, () => {})
+    return reply.type(entry.mimeType).send(compressed)
   })
   route('GET', path(STORAGE_REST.thumbnail), async (s, r, reply) => {
     const size = Number(r.query.size)
@@ -169,11 +174,12 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (none !== undefined && none !== '*') throw new StorageServiceError('revision_conflict')
     const revision = match === undefined ? undefined : Number(String(match).replace(/^"|"$/g, ''))
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1)) throw new StorageServiceError('revision_conflict')
-    if (r.body !== undefined && !Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Buffer ?? Buffer.alloc(0), {
+    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Readable ?? Readable.from([]), {
+      size: r.headers['content-encoding'] && r.headers['content-encoding'] !== 'identity' || r.headers['content-length'] === undefined
+        ? undefined : Number(r.headers['content-length']),
       ifMatch: revision, createOnly: none === '*', mimeType: r.headers['content-type'] ?? 'application/octet-stream',
     })
-  }, true)
+  }, 'stream')
   route('DELETE', path(STORAGE_REST.file), async (s, r, reply) => { await s.deleteFile(uid(r), r.params.id, string(r.query.path)); return reply.code(204).send() })
   route('POST', path(STORAGE_REST.move), (s, r) => { const b = body(r); return s.move(uid(r), r.params.id, string(b.from), string(b.to)) })
   route('GET', path(STORAGE_REST.shares), (s, r) => s.listShares(uid(r), r.params.id))

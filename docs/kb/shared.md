@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 7b8467a3
+checked: 62e7641be
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -30,7 +30,7 @@ See [the admin API](protocol.md#admin-storage-quota-contract).
 `ChatUploadMetadata`, `ChatUploadJsonRequest`, `CHAT_UPLOAD_METADATA_HEADERS`
 and `MAX_CHAT_UPLOAD_BYTES` extend `src/fileStorage.ts` for chat upload request
 forms. Chat attachments retain a 32 MiB decoded limit, distinct from the general
-storage service's 64 MiB file limit. `REST.uploads` documents JSON/base64, raw
+storage service's configurable file limit (1 GiB by default). `REST.uploads` documents JSON/base64, raw
 bytes and one multipart file; `UploadInfo` is unchanged. Query/header precedence,
 MIME inference and raw JSON disambiguation are described in
 [the upload protocol](protocol.md#core-file-storage-and-chat-settings).
@@ -50,7 +50,8 @@ belong to the coordinator and metadata adapters; see
 `src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
 entries, revisions, shares, owner usage, node health, error codes and both
 `STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
-the maximum file size is 64 MiB. Pure helpers normalize paths, resolve the
+the default maximum file size is 1 GiB, configurable by hosts with
+`storageMaxFileBytes` and `VC_FILE_STORAGE_MAX_FILE_BYTES`. Pure helpers normalize paths, resolve the
 strongest access, check replacement-aware quotas, sum online node capacity
 and select the online node with the most free space that can fit a file.
 

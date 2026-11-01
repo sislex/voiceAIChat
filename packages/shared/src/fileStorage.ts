@@ -5,8 +5,8 @@
 
 /** Default per-user quota when Identity has no explicit `storageQuotaBytes`. */
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
-/** Largest single file accepted through the Core REST surface. */
-export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Bounded part, direct PUT and batch payload limit. */
+export const MAX_STORAGE_PART_BYTES = 64 * 1024 * 1024
 /** Stored file responses are compressed only when strictly larger than this. */
 export const STORAGE_COMPRESSION_MIN_BYTES = 1024
 export type StorageContentEncoding = 'br' | 'gzip'
@@ -36,6 +36,13 @@ export function storageContentEncoding(acceptEncoding: string | undefined): Stor
   const br = score('br'), gzip = score('gzip')
   if (br <= 0 && gzip <= 0) return undefined
   return br >= gzip ? 'br' : 'gzip'
+}
+/** Default single-file limit; hosts may configure VC_FILE_STORAGE_MAX_FILE_BYTES. */
+export const MAX_STORAGE_FILE_BYTES = 1024 * 1024 * 1024
+export function storageMaxFileBytes(value?: string): number {
+  const bytes = value === undefined ? MAX_STORAGE_FILE_BYTES : Number(value)
+  if (!Number.isSafeInteger(bytes) || bytes < 1) throw new Error('Invalid VC_FILE_STORAGE_MAX_FILE_BYTES')
+  return bytes
 }
 /** Thumbnail generation refuses larger source images even when ordinary storage accepts them. */
 export const MAX_STORAGE_THUMBNAIL_INPUT_BYTES = 32 * 1024 * 1024
@@ -245,7 +252,7 @@ export interface MergeStorageSpacesResult {
 
 export const MAX_STORAGE_BATCH_OPERATIONS = 500
 export const MAX_STORAGE_INLINE_BYTES = 256 * 1024
-export const MAX_STORAGE_BATCH_BYTES = MAX_STORAGE_FILE_BYTES
+export const MAX_STORAGE_BATCH_BYTES = MAX_STORAGE_PART_BYTES
 export interface StorageBatchOperation {
   op: 'read' | 'write' | 'delete' | 'move' | 'copy'
   path: string
