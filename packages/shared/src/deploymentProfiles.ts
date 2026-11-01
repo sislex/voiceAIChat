@@ -11,7 +11,9 @@ export function validateCoreId(value: string): string {
 }
 export function applicationUrl(value: string): string {
   const url = new URL(value)
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('invalid_application_url')
+  // Plain HTTP is accepted only for loopback hosts (local stands); real deployments use HTTPS.
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) throw new Error('invalid_application_url')
   return url.href.replace(/\/$/, '')
 }
 export function parseApplications(value?: string): DeploymentApplication[] {

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 9330a591a
+checked: b2c778282
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -199,7 +199,7 @@ pins and distinguish installed packages from reachable runtime services. Other e
 `storage=https://storage.example.org` and authenticates ticket redemption with the
 per-application `VC_APPLICATION_STORAGE_TOKEN`, following the same secret placement
 rules as other external applications. `VC_CORE_ID` identifies the issuing Core in application
-tickets. External URLs must be HTTPS without credentials, query or fragment.
+tickets. External URLs must be HTTPS without credentials, query or fragment; plain HTTP is accepted only for loopback hosts (`127.0.0.1`, `localhost`, `[::1]`) on local stands.
 No selector preserves legacy Core modes.
 
 `VC_APPLICATION_FRONTENDS` uses frontend catalog IDs (for example `make-ui`),

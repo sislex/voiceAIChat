@@ -11,6 +11,10 @@ describe('deployment profiles', () => {
       enabled: true, location: 'external', openUrl: '/applications/storage/open'
     })
   })
+  it('accepts plain HTTP only for loopback application URLs', () => {
+    expect(parseApplications('storage=http://127.0.0.1:28840').find(a => a.id === 'storage')).toMatchObject({ url: 'http://127.0.0.1:28840', location: 'external' })
+    expect(() => parseApplications('storage=http://storage.example.org')).toThrow()
+  })
   it.each(['make,make', 'unknown', 'chat,', 'make=http://example.org', 'make=https://user:secret@example.org', 'make='])('rejects %s', value => expect(() => parseApplications(value)).toThrow())
   it.each(['a', '../core', 'UPPER', '-core', 'a'.repeat(64)])('rejects core %s', value => expect(() => validateCoreId(value)).toThrow())
   it('accepts the exact coreId boundaries', () => { expect(validateCoreId('ab')).toBe('ab'); expect(validateCoreId('a'.repeat(63))).toHaveLength(63) })
