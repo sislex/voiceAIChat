@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 0a7a7f751
+checked: d866bc05f
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -34,6 +34,12 @@ areas:
 # Данные и доступ: SQLite, пользователи, роли
 
 ## File storage metadata and quotas
+
+In remote mode (`VC_FILE_STORAGE_MODE=remote`) Core authenticates to the storage
+service with its service token and asserts the acting user and tenant in
+`x-sislexa-user`/`x-sislexa-tenant`; the service trusts these headers only with
+that credential. Core still performs its own session, CSRF and conversation checks
+before any storage call.
 
 Streaming `writeFile` calls in `packages/file-storage/src/service.ts` retain the
 metadata transaction across upload completion. Each chunk updates the byte count

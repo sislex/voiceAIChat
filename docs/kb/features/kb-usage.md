@@ -3,7 +3,7 @@ id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
 updated: 2026-11-01
-checked: 7b8467a3
+checked: d866bc05f
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
