@@ -429,7 +429,8 @@ for (const mode of ['advance', 'rewritten', 'unrelated', 'unchanged', 'full']) {
     assert.equal(existsSync(join(cwd, 'node_modules/keep')), true)
     assert.equal(resumed.owners[0].source, fixed)
     assert.deepEqual(resumed.owners[0].sourceAdvances, [{ from: planned, to: fixed }])
-    assert.deepEqual(messages, [`owner sislex/identity: source advanced ${planned} → ${fixed}`])
+    assert.equal(messages[0], `owner sislex/identity: source advanced ${planned} → ${fixed}`)
+    assert.match(messages[1], /^Core refresh: dev [a-f0-9]{40}; pin already current; dependencies unchanged; vendor archives removed 0$/)
     assert.equal(read(join(f.directory, journal.id + '.json')).owners[0].source, fixed)
     assert.equal(f.git(cwd, 'merge-base', fixed, resumed.results['owner-0-prepare']), fixed)
     assert.ok(f.calls.some(c => c.binary === 'npm' && c.cwd === cwd && c.args.join(' ') === `run gate:quick -- --base ${resumed.owners[0].pinnedCommit}`))
@@ -605,6 +606,37 @@ test('publication failure removes Docker credentials and resumes concrete execut
   f.failPublish(false)
   await executeJournal(read(join(f.directory, journal.id + '.json')), f.directory, concreteAdapter(f))
   assert.equal(f.calls.filter(call => call.url?.endsWith('/deploy')).length, 0)
+})
+
+test('resume refreshes the Core pin onto current dev and removes unreferenced untracked vendor archives before the gate', async t => {
+  const f = fixture(t), journal = createJournal(f.plan, { apps: [], deploy: false, fromDev: true }, f.repository)
+  const logs = [], adapter = concreteAdapter({ ...f, log: message => logs.push(message) })
+  let interrupted = false
+  await assert.rejects(executeJournal(journal, f.directory, async (...args) => {
+    if (args[0] === 'coreGate' && !interrupted) { interrupted = true; throw Error('operator interruption') }
+    return adapter(...args)
+  }), /coreGate/)
+
+  const oldPin = journal.results.pin
+  f.git(f.repository, 'checkout', 'dev')
+  const pkg = read(join(f.repository, 'package.json'))
+  pkg.refreshed = true
+  put(join(f.repository, 'package.json'), pkg)
+  f.git(f.repository, 'add', 'package.json'); f.git(f.repository, 'commit', '-m', 'concurrent Core UI pin')
+  const currentDev = f.git(f.repository, 'rev-parse', 'HEAD')
+  f.git(f.repository, 'checkout', '--detach')
+
+  const core = join(f.directory, journal.id, 'core')
+  mkdirSync(join(core, 'vendor'), { recursive: true })
+  writeFileSync(join(core, 'vendor/obsolete.tgz'), 'old archive')
+  const resumed = read(join(f.directory, journal.id + '.json'))
+  await executeJournal(resumed, f.directory, adapter)
+
+  assert.notEqual(resumed.results.pin, oldPin)
+  assert.equal(f.git(core, 'merge-base', '--is-ancestor', currentDev, resumed.results.pin), '')
+  assert.equal(existsSync(join(core, 'vendor/obsolete.tgz')), false)
+  assert.ok(logs.some(message => message.includes('dependencies reinstall required') && message.includes('vendor archives removed 1')))
+  assert.ok(f.calls.some(call => call.binary === 'npm' && call.cwd === core && call.args.join(' ') === 'ci'))
 })
 
 for (const fromDev of [false, true]) test(`lost responses reconcile without duplicate side effects (fromDev=${fromDev})`, async t => {

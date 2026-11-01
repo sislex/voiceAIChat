@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 91f24bcc
+checked: 8488a9ef6
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -512,6 +512,15 @@ directories remain available for diagnosis. Failures identify the journal and fa
 step and exit nonzero. The error and journal include the failed command, exit code,
 and last 40 output lines, with environment credentials, bearer tokens and recognized
 token formats redacted. Successful resume clears the saved error.
+
+Immediately before every Core gate, including a resumed gate after the pin step was
+already journaled, the runner fetches current `origin/dev` and rebases the train's
+single pin commit onto it. A package manifest or lockfile change in the refreshed
+dev history is reported as requiring dependency reinstallation; the gate's `npm ci`
+then installs that exact tree. The refresh also removes untracked `vendor/*.tgz`
+archives only when the shared reachability analysis finds no manifest, inventory or
+script reference. Its log reports the dev SHA, old/new pin SHA, dependency decision
+and removed archive paths, so an operator can see exactly what resume refreshed.
 
 The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
 the runner stops before planning or resuming with an installation hint. GitHub API

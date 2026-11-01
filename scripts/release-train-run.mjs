@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { planReleaseTrain, nextPatch, pinnedRelease } from './release-train.mjs'
+import { vendorArchives, removeUnusedVendorArchives } from './vendor-archives.mjs'
 
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
@@ -165,6 +166,28 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
   const rc = (path, method = 'GET', body = undefined) => request(env.RELEASE_CENTER_URL,
     `/api/projects/${encodeURIComponent(env.RELEASE_CENTER_PROJECT_ID)}/releases${path}`, method, body, env.RELEASE_CENTER_TOKEN)
   const git = (cwd, ...args) => run('git', args, cwd)
+  const refreshCore = (cwd, journal) => {
+    git(cwd, 'fetch', 'origin')
+    const previousPin = journal.results.pin
+    const previousBase = git(cwd, 'rev-parse', `${previousPin}^`)
+    const dev = git(cwd, 'rev-parse', 'origin/dev')
+    let rebased = false
+    if (dev !== previousBase && dev !== previousPin) {
+      try { git(cwd, 'rebase', '--onto', 'origin/dev', previousBase, previousPin) }
+      catch (error) { git(cwd, 'rebase', '--abort'); throw error }
+      journal.results.pin = git(cwd, 'rev-parse', 'HEAD')
+      delete journal.results.coreGate
+      rebased = true
+    } else git(cwd, 'checkout', '--detach', previousPin)
+
+    const packageFilesChanged = rebased && git(cwd, 'diff', '--name-only', previousBase, dev).split('\n')
+      .some(file => /(^|\/)package(?:-lock)?\.json$/.test(file))
+    const tracked = new Set(git(cwd, 'ls-files', '--cached', '--', 'vendor').split('\n').filter(Boolean))
+    const candidates = vendorArchives(cwd).filter(file => !tracked.has(file))
+    const removed = removeUnusedVendorArchives(cwd, candidates)
+    log(`Core refresh: dev ${dev}; pin ${rebased ? `${previousPin} → ${journal.results.pin}` : 'already current'}; dependencies ${packageFilesChanged ? 'reinstall required' : 'unchanged'}; vendor archives removed ${removed.length}${removed.length ? ` (${removed.map(row => row.file).join(', ')})` : ''}`)
+    return { packageFilesChanged }
+  }
   const clone = (remote, source, cwd) => {
     if (!existsSync(join(cwd, '.git'))) {
       // An interrupted clone is disposable; only train-owned directories are passed here.
@@ -372,11 +395,13 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return git(cwd, 'rev-parse', 'HEAD')
     }
     if (action === 'coreGate') {
+      refreshCore(cwd, journal)
       run('npm', ['ci'], cwd); run('npm', journal.fromDev ? ['run', 'gate:quick', '--', '--base', 'origin/main'] : ['run', 'gate'], cwd)
       if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
     }
     if (action === 'coreMerge' || action === 'corePush') {
       const coreGate = () => {
+        refreshCore(cwd, journal)
         run('npm', ['ci'], cwd); run('npm', journal.fromDev ? ['run', 'gate:quick', '--', '--base', 'origin/main'] : ['run', 'gate'], cwd)
         if (git(cwd, 'status', '--porcelain')) throw Error('Core gate changed release inputs')
         journal.results.coreGate = null
