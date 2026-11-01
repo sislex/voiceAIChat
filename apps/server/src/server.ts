@@ -1,3 +1,4 @@
+import { registerCoreOAuth } from "./auth/oauth.js"
 import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
 import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
 import { standProxyKanban } from './standProxyKanban.js'
@@ -400,7 +401,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerIntegrationTokenGuard(app)
   const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype'
+  const corsHeaders = 'Content-Type, Authorization, x-csrf-token, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -549,6 +550,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
     component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
+  const oauth = opts.config.oauth ? await registerCoreOAuth(app, db, opts.config.oauth) : undefined
   let sessionAuthenticate: AuthenticateFn
   const makeRequests = new MakeRequestAuthority(async userId => {
     const user = await db.identity.getUser(userId)
@@ -560,7 +562,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
-      if (req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
+      if (!oauth && req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
         && req.headers.origin && req.headers.authorization === undefined) {
         // Issuance is read-only; the onRequest origin guard protects this cookie exchange.
         return sessionAuthenticate({ method: 'GET', url: req.url, headers: req.headers })
@@ -604,6 +606,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
     ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
   await app.register(async identityApp => {
+    if (oauth) { sessionAuthenticate = oauth.authenticate; return }
     const identity = managedIdentity
       ? await registerRemoteIdentity(identityApp, db, managedIdentity, sessionSecret, authOptions)
       : await registerAuth(identityApp, db, sessionSecret, authOptions)
@@ -749,7 +752,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let conversationSummary: ConversationSummaryService | undefined
   const storageRuntime = opts.config.fileStorage?.mode === 'embedded'
     ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes)
-    : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage) : undefined
+    : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage, oauth?.storageToken) : undefined
   const fileStorage = storageRuntime?.service
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
   registerFileStorageRoutes(app, fileStorage)
@@ -1139,8 +1142,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уведомления об отзыве сессий отдаёт по `/internal/admin/rpc`.
   const adminRemote = opts.config.adminMode === 'remote'
   if (adminRemote && !(opts.config.adminUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_ADMIN_MODE=remote требует VC_ADMIN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
-  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
-  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage)
+  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'],
+    ...(oauth ? { prepareHeaders: (req, headers) => {
+      if (!req.authUser) throw new Error('Identity authentication required')
+      headers.set('authorization', `Bearer ${req.authUser.accessToken}`)
+      headers.delete('cookie')
+    } } : {}) })
+  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage, opts.config.oauth ? opts.config.fileStorage?.url : undefined)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -1291,7 +1299,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
-      if (fileStorage && (await db.settings.getSettings(userId)).chatFilesBackend === 'storage') {
+      if (fileStorage && (oauth || (await db.settings.getSettings(userId)).chatFilesBackend === 'storage')) {
         if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
         try {
           const space = await fileStorage.createSpace(userId, {
@@ -1847,7 +1855,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
       if (rejectsAttribution(request.query)) { socket.close(4003, 'Untrusted attribution'); return }
       const browserSession = browserSessions.requests.get(request)
-      const token = browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
+      const token = oauth ? request.headers.authorization?.replace(/^Bearer /, '') : browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
         : wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
@@ -1857,10 +1865,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       socket.on('message', buffer)
       const verifySocket = async () => {
         if (browserSession && !browserSessions.current(browserSession)) return null
-        if (!token && request.headers[DELEGATION_HEADER] === undefined) return null
+        if (!token && !(oauth && request.headers.cookie) && request.headers[DELEGATION_HEADER] === undefined) return null
         try {
           const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), ...(oauth ? {cookie: request.headers.cookie} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }

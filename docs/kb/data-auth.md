@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-11-01
-checked: c343b6ded
+updated: 2026-11-02
+checked: 8049f1dec
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -35,7 +35,40 @@ areas:
 
 ## File storage metadata and quotas
 
-In remote mode (`VC_FILE_STORAGE_MODE=remote`) Core authenticates to the storage
+### Identity OAuth mode
+
+Set `AUTH_MODE=identity`, `AUTH_URL`, `AUTH_CLIENT_ID=core`, `PUBLIC_URL`,
+optional `AUTH_CLIENT_SECRET_FILE`, and `STORAGE_URL` to opt into the Core
+adapter for pinned `@sislexa/auth-client`. `AUTH_MODE=legacy` retains the old
+login. With no explicit mode, `AUTH_URL` selects Identity. The owner client
+implements discovery, PKCE S256 top-level `/auth/login` and `/auth/callback`,
+JWT/JWKS validation, refresh and audience-bound token exchange. `/auth/session`
+returns the CSRF token; cookie mutations require `x-csrf-token`. Tokens stay
+in the process-local server session store, so a Core restart requires login.
+HTTPS is required for the Secure HttpOnly cookie. `/auth/logout` deletes the
+local session, attempts refresh-token revocation at `/oauth/revoke`, then
+redirects to Identity logout. Core resolves the verified subject through its
+Identity account port and retains blocked-user and tenant checks.
+
+`STORAGE_URL` selects remote storage. In Identity mode, chat uploads use Storage
+regardless of the legacy chat backend setting. Attachment reads, `/api/storage`,
+and admin usage use the current user's token exchanged for `aud=storage`, with
+no service-token fallback or asserted user headers. WebSocket message callbacks
+retain their connection context and reauthenticate before commands. Separate
+admin deployments receive the verified Core access token and perform their own
+validation and exchange. `GET /api/admin/storage` returns the caller's usage and
+`storageAdminUrl`; user rows link to Storage rather than misreporting the admin's
+usage as every user's usage. Quota edits return 409 in this mode; Storage owns
+quota administration. Legacy deployments retain the existing quota API.
+
+Commissioning remains an operator step: register Core's exact callback/logout
+URLs at Identity, provide its secret file if required, configure Storage to
+accept exchanged tokens, ensure Identity subjects resolve through Core's account
+port, and update the separately owned UI to consume the login/session and admin
+link contracts before switching the deployment. Core does not provision local
+accounts from untrusted names or token role claims.
+
+In legacy remote mode (`VC_FILE_STORAGE_MODE=remote`) Core authenticates to the storage
 service with its service token and asserts the acting user and tenant in
 `x-sislexa-user`/`x-sislexa-tenant`; the service trusts these headers only with
 that credential. Core still performs its own session, CSRF and conversation checks

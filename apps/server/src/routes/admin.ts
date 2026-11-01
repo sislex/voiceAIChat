@@ -231,9 +231,13 @@ export function registerAdminRoutes(
   publicUrl?: string | null,
   /** Хаб сессий: отзыв админом должен доехать до владельца так же живо, как свой. */
   sessionHub?: Pick<SessionHub, 'emit'>,
-  fileStorage?: { usage(userId: string): Promise<import('@voicechat/shared/fileStorage').StorageUsage> }
+  fileStorage?: { usage(userId: string): Promise<import('@voicechat/shared/fileStorage').StorageUsage> },
+  storageAdminUrl?: string
 ): void {
   const guard = { preHandler: requireAdmin }
+  if (storageAdminUrl) app.get(REST.adminStorage, guard, async req => ({
+    storageAdminUrl, ...(fileStorage ? { storageUsage: await fileStorage.usage(uid(req)) } : {}),
+  }))
   // FS-3 is optional while deployments still pin pre-quota Identity releases.
   const identity = db.identity as typeof db.identity & {
     setUserStorageQuota?: (name: string, bytes: number | null) => Promise<unknown>
@@ -415,8 +419,8 @@ export function registerAdminRoutes(
     return {
       failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null,
       mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null,
-      storageQuotaBytes: lock.storageQuotaBytes ?? null,
-      ...(fileStorage ? { storageUsage: await fileStorage.usage(name) } : {}),
+      ...(storageAdminUrl ? { storageAdminUrl } : { storageQuotaBytes: lock.storageQuotaBytes ?? null }),
+      ...(fileStorage && !storageAdminUrl ? { storageUsage: await fileStorage.usage(name) } : {}),
       llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt,
       // Список людей получает только счётчики: полный набор машин там нужен
       // одной строке «0 из 2 онлайн», а стоит килобайты на каждого человека.
@@ -563,6 +567,7 @@ export function registerAdminRoutes(
     guard,
     async (req, reply) => {
       if ('storageQuotaBytes' in (req.body ?? {})) {
+        if (storageAdminUrl) return reply.code(409).send({ error: "storage_managed_externally", storageAdminUrl })
         const quota = req.body.storageQuotaBytes
         if (quota !== null && (typeof quota !== 'number' || !Number.isSafeInteger(quota) || quota < 0))
           return reply.code(400).send({ error: 'storageQuotaBytes must be a non-negative safe integer or null' })

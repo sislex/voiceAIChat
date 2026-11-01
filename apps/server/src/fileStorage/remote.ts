@@ -13,18 +13,19 @@ export function withStorageTenant<T>(tenantId: string | undefined, run: () => Pr
   return tenantContext.run(tenantId, run)
 }
 
-export async function createRemoteStorageRuntime(config: FileStorageConfig) {
-  const token = (await readFile(config.serviceTokenFile!, 'utf8')).trim()
-  if (!token) throw new Error('File storage service token is empty')
+export async function createRemoteStorageRuntime(config: FileStorageConfig, userToken?: () => Promise<string>) {
+  const token = userToken ? undefined : (await readFile(config.serviceTokenFile!, 'utf8')).trim()
+  if (!userToken && !token) throw new Error('File storage service token is empty')
   const base = config.url!
-  const headers = (userId: string, extra?: Record<string, string>) => {
+  const headers = async (userId: string, extra?: Record<string, string>) => {
+    if (userToken) return { authorization: `Bearer ${await userToken()}`, ...extra }
     const tenant = tenantContext.getStore()
     return { authorization: `Bearer ${token}`, 'x-sislexa-user': userId,
       ...(tenant ? {'x-sislexa-tenant': tenant} : {}), ...extra }
   }
   const call = async (userId: string, path: string, init: RequestInit = {}) => {
     let response: Response
-    try { response = await fetch(base + path, {...init, headers: {...headers(userId), ...init.headers}}) }
+    try { response = await fetch(base + path, {...init, redirect: "error", headers: {...await headers(userId), ...init.headers}}) }
     catch { throw new StorageServiceError('storage_unavailable') }
     if (!response.ok) {
       let error: Partial<StorageError> = {}
