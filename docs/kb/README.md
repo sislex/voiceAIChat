@@ -17,7 +17,7 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-01 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-01 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-01 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-31 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-01 | ✓ |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-01 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-01 | ✓ |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-01 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-31 | ✓ |
@@ -45,10 +45,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-01 | ✓ |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c729137 fix(storage): stream whole chunks from the routes test node fake |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-01 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-01 | ✓ |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-01 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-01 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1414. Последние:
+Всего записей: 1415. Последние:
 
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
