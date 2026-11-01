@@ -1,7 +1,7 @@
 ---
 title: Словарь терминов: роли, сервисы, стенды, выпуск, техника
-updated: 2026-10-31
-checked: 76b6a6fb
+updated: 2026-11-01
+checked: d866bc05f
 areas:
   - AGENTS.md
   - docs/plans/dev-lane-v1.md

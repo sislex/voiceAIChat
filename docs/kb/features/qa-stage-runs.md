@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
 updated: 2026-11-01
-checked: 7b8467a3
+checked: d866bc05f
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts

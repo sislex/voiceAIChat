@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 62e7641be
+checked: d866bc05f
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -70,6 +70,10 @@ on the node as well. See [streaming and quotas](data-auth.md#file-storage-metada
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+The storage is moving to the independent repository `sislex/storage`
+(plan [storage-standalone-v1](../plans/storage-standalone-v1.md)); with
+`VC_FILE_STORAGE_MODE=remote` Core becomes a client of that service and keeps
+`/api/storage/*` as a proxy for Core UI and Make.
 
 Core's file PUT/GET routes stream bodies through the coordinator and node client.
 PUT uses a raw Fastify body stream; GET sends the node response stream directly.
