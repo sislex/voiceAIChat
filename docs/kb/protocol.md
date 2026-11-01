@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-11-01
-checked: d866bc05f
+updated: 2026-11-02
+checked: 79d261e89
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -36,6 +36,11 @@ updates return 400; missing users return 404; an Identity without
 (owner bytes, file count and effective quota). Shared IPC registers
 `admin:setUserStorageQuota` with `{ name, storageQuotaBytes }` and an
 `AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
+
+In Identity mode (sso-auth-v1 A4) Storage owns quotas: `GET /api/admin/storage`
+(shared route `adminStorage`) returns `AdminStorageInfo` with `storageAdminUrl`
+and the caller's `storageUsage`; `AdminUserInfo.storageAdminUrl` links user rows
+to Storage administration, and the quota `PATCH` above returns 409.
 
 ## Core file storage and chat settings
 

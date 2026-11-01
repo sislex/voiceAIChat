@@ -1,7 +1,7 @@
 ---
 title: External agent access through API tokens
-updated: 2026-11-01
-checked: d866bc05f
+updated: 2026-11-02
+checked: 79d261e89
 areas:
   - packages/shared/src/protocol.ts
   - apps/server/src/routes/rest.apiTokens.test.ts
