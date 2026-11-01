@@ -1,4 +1,5 @@
 import { storageBatchResponse } from './batch.js'
+import { Readable } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
 import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_COMPRESSION_MIN_BYTES, STORAGE_THUMBNAIL_SIZES,
@@ -22,6 +23,16 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
       return storageError(reply, new StorageServiceError('invalid_path'))
     return storageError(reply, error)
   })
+  async function boundedBody(req: Request): Promise<Buffer> {
+    const chunks: Buffer[] = []
+    let size = 0
+    for await (const chunk of req.body as Readable ?? Readable.from([])) {
+      size += chunk.length
+      if (size > MAX_STORAGE_FILE_BYTES) throw new StorageServiceError('file_too_large')
+      chunks.push(Buffer.from(chunk))
+    }
+    return Buffer.concat(chunks, size)
+  }
   const path = (fn: (id: string) => string) => fn('PARAM').replace('PARAM', ':id')
   const route = (method: HTTPMethods, url: string, handler: (s: FileStorageService, req: Request, reply: FastifyReply) => Promise<unknown>, raw = false) => {
     const register = (scope: FastifyInstance) => scope.route({
@@ -41,20 +52,10 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
         const encoding = req.headers['content-encoding']?.toLowerCase().trim()
         if (encoding && encoding !== 'identity' && encoding !== 'gzip' && encoding !== 'br')
           return done(new StorageServiceError('unsupported_media_type'), undefined)
-        const chunks: Buffer[] = []
-        let size = 0
         const decoder = encoding === 'gzip' ? createGunzip() : encoding === 'br' ? createBrotliDecompress() : undefined
         const source = decoder ? stream.pipe(decoder) : stream
-        void (async () => {
-          try {
-            for await (const chunk of source) {
-              size += chunk.length
-              if (size > MAX_STORAGE_FILE_BYTES) throw new StorageServiceError('file_too_large')
-              chunks.push(Buffer.from(chunk))
-            }
-            done(null, Buffer.concat(chunks, size))
-          } catch (error) { done(error as Error, undefined) }
-        })()
+        stream.on('error', error => source.destroy(error))
+        done(null, source)
       })
       scope.setErrorHandler((error, _req, reply) => {
         if ((error as {code?: string}).code === 'FST_ERR_CTP_BODY_TOO_LARGE') return storageError(reply, new StorageServiceError('file_too_large'))
@@ -82,8 +83,8 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   route('POST', uploads, (s, r) => s.createUpload(uid(r), r.params.id, body(r) as unknown as CreateStorageUploadRequest))
   route('GET', upload, (s, r) => s.getUpload(uid(r), r.params.id, r.params.uploadId))
   route('PUT', upload + '/parts/:n', async (s, r, reply) => {
-    if (!/^(0|[1-9]\d*)$/.test(r.params.n) || !Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    await s.putUploadPart(uid(r), r.params.id, r.params.uploadId, Number(r.params.n), r.body)
+    if (!/^(0|[1-9]\d*)$/.test(r.params.n)) throw new StorageServiceError('invalid_path')
+    await s.putUploadPart(uid(r), r.params.id, r.params.uploadId, Number(r.params.n), await boundedBody(r))
     return reply.code(204).send()
   }, true)
   route('POST', upload + '/complete', (s, r) => s.completeUpload(uid(r), r.params.id, r.params.uploadId))
@@ -118,8 +119,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
   })
   route('POST', path(STORAGE_REST.batch), async (s, r, reply) => {
     if (r.headers['content-type']?.split(';')[0].trim() !== 'application/x-ndjson') throw new StorageServiceError('unsupported_media_type')
-    if (!Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    const response = await storageBatchResponse(s, uid(r), r.params.id, r.body, r.headers['accept-encoding'])
+    const response = await storageBatchResponse(s, uid(r), r.params.id, await boundedBody(r), r.headers['accept-encoding'])
     return reply.header('vary', 'Accept-Encoding').type(response.contentType).send(response.stream)
   }, true)
   route('GET', path(STORAGE_REST.file), async (s, r, reply) => {
@@ -169,8 +169,9 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (none !== undefined && none !== '*') throw new StorageServiceError('revision_conflict')
     const revision = match === undefined ? undefined : Number(String(match).replace(/^"|"$/g, ''))
     if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1)) throw new StorageServiceError('revision_conflict')
-    if (r.body !== undefined && !Buffer.isBuffer(r.body)) throw new StorageServiceError('invalid_path')
-    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Buffer ?? Buffer.alloc(0), {
+    return s.writeFile(uid(r), r.params.id, string(r.query.path), r.body as Readable ?? Readable.from([]), {
+      size: r.headers['content-encoding'] && r.headers['content-encoding'] !== 'identity' ? undefined
+        : r.headers['content-length'] === undefined ? undefined : Number(r.headers['content-length']),
       ifMatch: revision, createOnly: none === '*', mimeType: r.headers['content-type'] ?? 'application/octet-stream',
     })
   }, true)

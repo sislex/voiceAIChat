@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: ba69cb2c
+checked: 62e7641be
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -87,8 +87,17 @@ Parts never appear in file listings. Abort removes node parts and any unpublishe
 composed blob before releasing the quota reservation. Expiry cleanup retries
 offline nodes without releasing their reservations prematurely.
 Compressed single-PUT and part bodies are charged by decompressed size;
-streaming decompression aborts above 64 MiB before metadata or node mutation.
+ordinary file writes enforce the configured decoded-byte limit during streaming
+and roll back failed uploads. Part bodies remain bounded before node mutation.
 
+
+Streaming writes keep the metadata transaction open across upload: ACL, revision,
+owner quota and placement decisions remain serialized. Known lengths are checked
+before sending bytes; unknown lengths are counted against the file limit, owner
+quota (subtracting the replaced file) and selected node capacity. Metadata stores
+the measured size only after a complete upload. Errors roll back metadata and
+clean the new blob; the previous blob remains until successful commit. Nodes
+stream into exclusive temporary files and unlink incomplete uploads.
 
 `fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
 over Core's public SQL adapter. The additive schema creates `storage_spaces`,

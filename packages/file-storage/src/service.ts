@@ -1,5 +1,6 @@
 import { directUrl, type DirectNodeConfig } from './direct.js'
 import { STORAGE_REST, STORAGE_DIRECT_TTL_MS, type StorageFileUrlRequest, type StorageDirectUrl } from '@voicechat/shared/fileStorage'
+import { storageBytes, type StorageBody } from './client.js'
 import { createHash } from 'node:crypto'
 import type { CreateStorageUploadRequest, StorageUploadSession, MergeStorageSpacesRequest, MergeStorageSpacesResult } from '@voicechat/shared/fileStorage'
 import {
@@ -18,6 +19,7 @@ import { StorageServiceError } from './errors.js'
 export interface FileStoragePorts {
   directNode?(nodeId: string): DirectNodeConfig | undefined
   partSize?: number
+  maxFileBytes?: number
   metadata: StorageMetadataStore
   nodes(): StorageNodeClient[]
   /** Host-owned health cache. Coordinator never mutates these objects. */
@@ -31,6 +33,7 @@ export interface FileStoragePorts {
   thumbnail?(bytes: Uint8Array, size: StorageThumbnailSize): Promise<{ bytes: Uint8Array; mimeType: 'image/webp' | 'image/jpeg' }>
 }
 export interface WriteStorageFileOptions {
+  size?: number
   mimeType?: string
   ifMatch?: number
   createOnly?: boolean
@@ -146,6 +149,14 @@ export function createFileStorageService(ports: FileStoragePorts) {
       if (allocated) { try { await uploadNode(allocated).abortUpload(allocated.uploadId) } catch { /* Node expiry releases abandoned reservations. */ } }
       throw error
     }
+  }
+  async function readFileStream(userId: string, spaceId: string, input: string) {
+    return ports.metadata.transaction(async tx => {
+      await requireSpace(tx, userId, spaceId, 'read')
+      const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
+      const bytes = await nodeCall(() => client(entry.nodeId).get(entry.blobId))
+      return { entry: entryView(entry), bytes }
+    })
   }
   return {
     async createUpload(userId: string, spaceId: string, request: CreateStorageUploadRequest) {
@@ -348,19 +359,15 @@ export function createFileStorageService(ports: FileStoragePorts) {
         for (const entry of (await tx.listEntries(spaceId)).filter(e => e.path.startsWith(normalized))) {
           const item: ListStorageEntriesResponse['entries'][number] = entryView(entry)
           if (withContent && isStorageSmallText(entry)) item.content = { encoding: 'base64',
-            data: Buffer.from(await nodeCall(() => client(entry.nodeId).get(entry.blobId))).toString('base64') }
+            data: Buffer.from(await nodeCall(async () => storageBytes(await client(entry.nodeId).get(entry.blobId)))).toString('base64') }
           entries.push(item)
         }
         return { space: await view(tx, userId, space), entries: entries.sort((a, b) => a.path.localeCompare(b.path)) }
       })
     },
     async readFile(userId: string, spaceId: string, input: string) {
-      return ports.metadata.transaction(async tx => {
-        await requireSpace(tx, userId, spaceId, 'read')
-        const entry = await tx.getEntry(spaceId, path(input)) ?? fail('not_found')
-        const bytes = await nodeCall(() => client(entry.nodeId).get(entry.blobId))
-        return { entry: entryView(entry), bytes }
-      })
+      const result = await readFileStream(userId, spaceId, input)
+      return { entry: result.entry, bytes: await storageBytes(result.bytes) }
     },
     async statFile(userId: string, spaceId: string, input: string) {
       return ports.metadata.transaction(async tx => {
@@ -375,7 +382,7 @@ export function createFileStorageService(ports: FileStoragePorts) {
         const node = client(stored.nodeId)
         if (node.open) return { entry: entryView(stored), ...await nodeCall(() => node.open!(stored.blobId, range)) }
         const bytes = await nodeCall(() => node.get(stored.blobId))
-        return { entry: entryView(stored), stream: Readable.from(bytes), contentLength: bytes.byteLength }
+        return { entry: entryView(stored), stream: bytes instanceof Readable ? bytes : Readable.from([bytes]), contentLength: stored.size }
       })
     },
     async readThumbnail(userId: string, spaceId: string, input: string, size: StorageThumbnailSize) {
@@ -389,19 +396,20 @@ export function createFileStorageService(ports: FileStoragePorts) {
         const node = client(entry.nodeId)
         for (const format of ['webp', 'jpeg'] as const) {
           try {
-            const bytes = await nodeCall(() => node.get(derivedId(entry.blobId, size, format)))
+            const bytes = await nodeCall(async () => storageBytes(await node.get(derivedId(entry.blobId, size, format))))
             return { entry: entryView(entry), bytes, mimeType: `image/${format}` as 'image/webp' | 'image/jpeg' }
           } catch (error) {
             if (!(error instanceof StorageServiceError) || error.code !== 'not_found') throw error
           }
         }
-        const generated = await generate(await nodeCall(() => node.get(entry.blobId)), size)
+        const generated = await generate(await nodeCall(async () => storageBytes(await node.get(entry.blobId))), size)
         const format = generated.mimeType === 'image/webp' ? 'webp' : 'jpeg'
         await nodeCall(() => node.put(derivedId(entry.blobId, size, format), generated.bytes))
         return { entry: entryView(entry), ...generated }
       })
     },
-    async writeFile(userId: string, spaceId: string, input: string, bytes: Uint8Array | AsyncIterable<Uint8Array>, options: WriteStorageFileOptions = {}) {
+    readFileStream,
+    async writeFile(userId: string, spaceId: string, input: string, bytes: StorageBody | AsyncIterable<Uint8Array>, options: WriteStorageFileOptions = {}) {
       let uploaded: StoredEntry | undefined
       let previous: StoredEntry | null = null
       let result: StorageEntry
@@ -409,51 +417,58 @@ export function createFileStorageService(ports: FileStoragePorts) {
         result = await ports.metadata.transaction(async tx => {
           const space = await requireSpace(tx, userId, spaceId, 'write')
           const normalized = path(input)
-          const knownSize = bytes instanceof Uint8Array ? bytes.byteLength : 0
-          if (knownSize > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
+          const declared = bytes instanceof Uint8Array ? bytes.byteLength : options.size
+          if (declared !== undefined && (!Number.isSafeInteger(declared) || declared < 0)) fail('invalid_path')
+          const maxFileBytes = ports.maxFileBytes ?? MAX_STORAGE_FILE_BYTES
+          if (declared !== undefined && declared > maxFileBytes) fail('file_too_large')
+          const reserved = await reservations(tx, space.ownerId)
           previous = await tx.getEntry(spaceId, normalized)
           if ((options.createOnly && previous) || (options.ifMatch !== undefined && previous?.revision !== options.ifMatch))
             fail('revision_conflict')
           const usage = await tx.ownerUsage(space.ownerId)
           const quotaBytes = await ports.quota(space.ownerId)
           if (!Number.isFinite(quotaBytes) || quotaBytes < 0 ||
-            !fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes }, knownSize, previous?.size ?? 0)) fail('quota_exceeded')
+            !fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + reserved, quotaBytes }, declared ?? 0, previous?.size ?? 0)) fail('quota_exceeded')
           const nodes = ports.nodeInfo()
           if (!ports.nodes().length) fail('storage_disabled')
           if (!nodes.some(n => n.online)) fail('node_unavailable')
-          const node = pickStorageNode(nodes, knownSize) ?? fail('storage_full')
-          const entry: StoredEntry = { spaceId, path: normalized, size: knownSize,
+          const node = pickStorageNode(nodes, declared ?? 0) ?? fail('storage_full')
+          const entry: StoredEntry = { spaceId, path: normalized, size: declared ?? 0,
             mimeType: options.mimeType ?? 'application/octet-stream', revision: (previous?.revision ?? 0) + 1,
             updatedAt: ports.now(), updatedBy: userId, blobId: ports.newId(), nodeId: node.id }
           // Do not destroy the old blob before both storage and metadata commit.
-          if (bytes instanceof Uint8Array) {
-            await nodeCall(() => client(node.id).put(entry.blobId, bytes))
-            uploaded = entry
-          } else {
-            const target = client(node.id)
-            if (!target.putStream) fail('node_unavailable')
-            let sourceError: unknown
-            let completed = false
-            const counted = (async function* () {
-              try {
-                for await (const chunk of bytes) {
-                  entry.size += chunk.byteLength
-                  if (entry.size > MAX_STORAGE_FILE_BYTES) fail('file_too_large')
-                  if (!fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + await reservations(tx, space.ownerId), quotaBytes }, entry.size, previous?.size ?? 0)) fail('quota_exceeded')
-                  yield chunk
-                }
-                completed = true
-              } catch (error) { sourceError = error; throw error }
-            })()
-            // Also clean up when the node accepted bytes but its response was lost.
-            uploaded = entry
+          uploaded = entry
+          let received = 0
+          let streamError: unknown
+          let completed = bytes instanceof Uint8Array
+          const stream = bytes instanceof Uint8Array ? bytes : Readable.from((async function* () {
             try {
-              await nodeCall(() => target.putStream!(entry.blobId, counted))
-              if (sourceError) throw sourceError
-              if (!completed) fail('node_unavailable')
-            } catch (error) { throw sourceError ?? error }
-            finally { await counted.return(undefined) }
+              for await (const chunk of bytes instanceof Readable ? bytes.iterator({ destroyOnReturn: false }) : bytes) {
+                received += Buffer.byteLength(chunk)
+                if (received > maxFileBytes) fail('file_too_large')
+                if (!fitsStorageQuota({ ...usage, usedBytes: usage.usedBytes + reserved, quotaBytes }, received, previous?.size ?? 0)) fail('quota_exceeded')
+                if (received > node.capacityBytes - node.usedBytes) fail('storage_full')
+                yield chunk
+              }
+              if (declared !== undefined && received !== declared) fail('invalid_path')
+              completed = true
+            } catch (error) { streamError = error; throw error }
+          })())
+          try {
+            const target = client(node.id)
+            if (!(bytes instanceof Uint8Array) && !(bytes instanceof Readable)) {
+              if (!target.putStream) fail('node_unavailable')
+              await nodeCall(() => target.putStream!(entry.blobId, stream as Readable))
+            } else await nodeCall(() => target.put(entry.blobId, stream, declared))
+            if (streamError) throw streamError
+            if (!completed) fail('node_unavailable')
           }
+          catch (error) { throw streamError ?? error }
+          finally {
+            if (stream instanceof Readable) stream.destroy()
+            if (bytes instanceof Readable && !bytes.readableEnded) bytes.resume()
+          }
+          entry.size = bytes instanceof Uint8Array ? bytes.byteLength : received
           await tx.putEntry(entry)
           await touch(tx, space)
           return entryView(entry)

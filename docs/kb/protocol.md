@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-01
-checked: ba69cb2c
+checked: 62e7641be
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1388,11 +1388,17 @@ POST `STORAGE_REST.fileUrl(spaceId)` accepts `{operation: 'read', path}` or
 `StorageDirectUrl`: `{url, method, headers?, expiresAt, uploadId?}`.
 Send raw bytes with the returned headers for PUT, then POST
 `STORAGE_REST.fileCommit(spaceId)` with `{uploadId}`; the response is the
-published `StorageEntry`. Direct writes are limited to 64 MiB. Direct GET
+published `StorageEntry`. Direct writes use the shared 1 GiB default limit. Direct GET
 supports one byte range. A node without `publicUrl` returns the ordinary Core
 file URL and revision headers, without uploadId: use normal Core authentication
 and do not call commit. Core still checks write permission, quota and placement
 before returning that fallback; the actual PUT repeats these checks.
+
+Raw PUT/GET file bodies stream through Core to the node. Optional Content-Length
+allows early size/quota/placement checks; unknown lengths are counted while
+streaming. Exceeding the configured file limit returns `file_too_large` (413).
+`MAX_STORAGE_FILE_BYTES` is the 1 GiB default; `storageMaxFileBytes` validates host
+configuration as a positive safe integer. The default owner quota remains 100 MiB.
 
 `packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
 nodes (cluster capacity is the sum of online node capacities), per-user quotas from

@@ -5,8 +5,13 @@
 
 /** Default per-user quota when Identity has no explicit `storageQuotaBytes`. */
 export const DEFAULT_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024
-/** Largest single file accepted through the Core REST surface. */
-export const MAX_STORAGE_FILE_BYTES = 64 * 1024 * 1024
+/** Default single-file limit; hosts may configure VC_FILE_STORAGE_MAX_FILE_BYTES. */
+export const MAX_STORAGE_FILE_BYTES = 1024 * 1024 * 1024
+export function storageMaxFileBytes(value?: string): number {
+  const bytes = value === undefined ? MAX_STORAGE_FILE_BYTES : Number(value)
+  if (!Number.isSafeInteger(bytes) || bytes < 1) throw new Error('Invalid VC_FILE_STORAGE_MAX_FILE_BYTES')
+  return bytes
+}
 /** Stored file responses are compressed only when strictly larger than this. */
 export const STORAGE_COMPRESSION_MIN_BYTES = 1024
 export type StorageContentEncoding = 'br' | 'gzip'

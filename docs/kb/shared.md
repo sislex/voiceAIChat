@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 7b8467a3
+checked: 62e7641be
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -50,7 +50,8 @@ belong to the coordinator and metadata adapters; see
 `src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
 entries, revisions, shares, owner usage, node health, error codes and both
 `STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
-the maximum file size is 64 MiB. Pure helpers normalize paths, resolve the
+the default maximum file size is 1 GiB, configurable by hosts with
+`storageMaxFileBytes` and `VC_FILE_STORAGE_MAX_FILE_BYTES`. Pure helpers normalize paths, resolve the
 strongest access, check replacement-aware quotas, sum online node capacity
 and select the online node with the most free space that can fit a file.
 

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 7b8467a3
+checked: 62e7641be
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -77,6 +77,12 @@ Storage transfer compression introduces no environment variable. Proxies must
 preserve `Accept-Encoding`, `Content-Encoding` and `Vary` and must not
 recompress Range responses.
 
+
+`VC_FILE_STORAGE_MAX_FILE_BYTES` configures Core and blob-node single-file limits
+(default 1073741824 bytes, 1 GiB; positive safe integer). Set it consistently on
+both services. Owner quota is independent and still defaults to 100 MiB.
+The HTTP node client shares an undici Agent with keep-alive and HTTP/2 negotiation
+for HTTPS nodes (HTTP/1.1 fallback); request deadlines remain 60 seconds.
 
 The Docker target `file-storage-node` starts
 `packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as

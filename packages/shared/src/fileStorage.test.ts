@@ -5,6 +5,7 @@ import {
   DEFAULT_STORAGE_QUOTA_BYTES,
   MAX_CHAT_UPLOAD_BYTES,
   CHAT_UPLOAD_METADATA_HEADERS,
+  MAX_STORAGE_FILE_BYTES, storageMaxFileBytes,
   STORAGE_ERROR_STATUS,
   STORAGE_REST,
   DEFAULT_STORAGE_PART_SIZE,
@@ -78,6 +79,13 @@ describe('file storage contract', () => {
     expect(CHAT_UPLOAD_METADATA_HEADERS).toEqual({
       name: 'name', conversationId: 'conversationid', agentId: 'agentid', mimeType: 'mimetype',
     })
+  })
+  it('defaults streaming files to 1 GiB and validates configured limits', () => {
+    expect(MAX_STORAGE_FILE_BYTES).toBe(1024 ** 3)
+    expect(storageMaxFileBytes()).toBe(MAX_STORAGE_FILE_BYTES)
+    expect(storageMaxFileBytes('209715200')).toBe(209715200)
+    for (const value of ['', '0', '-1', '1.5', 'Infinity', 'NaN', '9007199254740992'])
+      expect(() => storageMaxFileBytes(value)).toThrow('VC_FILE_STORAGE_MAX_FILE_BYTES')
   })
   it('normalizes space-relative paths and rejects traversal', () => {
     expect(normalizeStoragePath('/a//b\\c.txt')).toBe('a/b/c.txt')
