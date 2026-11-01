@@ -1704,7 +1704,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, issuer: req => {
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, authenticate, issuer: req => {
     const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
     const sid = verifyToken(token, sessionSecret)?.sid ?? null
     const billingSession = token && req.user ? billingSessions.register(req.user, sid, token) : undefined

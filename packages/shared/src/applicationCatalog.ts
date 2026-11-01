@@ -269,6 +269,18 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "package": "@sislexa/make"
     }
   }),
+  definition("storage", "Storage", [], {
+    workspaces: [],
+    buildDependencies: [],
+    runtimeDependencies: ["core", "identity"],
+    contractChecks: [{ workspace: "@voicechat/server", files: ["src/routes/applicationTickets.test.ts"] }],
+    services: ["storage"],
+    dataPaths: ["storage"],
+    configuration: ["VC_CORE_URL", "VC_APPLICATION_STORAGE_TOKEN"],
+    isolation: { tests: false, build: false, deploy: true },
+    healthPath: "/v1/health",
+    external: { repository: "https://github.com/sislex/storage", package: "@sislexa/storage" }
+  }),
   definition("image-studio", "Студия картинок", [], {
     "workspaces": [],
     "buildDependencies": [],

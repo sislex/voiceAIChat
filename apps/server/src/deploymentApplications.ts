@@ -31,7 +31,8 @@ export function registerDeploymentApplications(app: FastifyInstance, manifest: D
   app.addHook('onRequest', async (req, reply) => {
     const path = new URL(req.url, 'http://core').pathname
     const frontend = /^\/applications\/([^/]+)(?:\/|$)/.exec(path)
-    if (frontend && manifest.applications.some(a => a.id === frontend[1]) && !localApplication(manifest, frontend[1] as ApplicationId)) {
+    const browserEntry = frontend && path === `/applications/${frontend[1]}/open`
+    if (frontend && !browserEntry && manifest.applications.some(a => a.id === frontend[1]) && !localApplication(manifest, frontend[1] as ApplicationId)) {
       return reply.code(404).send({ error: 'application_disabled' })
     }
     const route = routes.find(({ prefix }) => path === prefix || path.startsWith(prefix + '/'))

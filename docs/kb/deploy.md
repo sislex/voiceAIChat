@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 43c5cb9f
+checked: 0a7a7f751
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -195,7 +195,10 @@ personal account UI while other product applications remain disabled. Candidate 
 recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
 pins and distinguish installed packages from reachable runtime services. Other examples are
 `chat,make`, `chat,make=https://make.example.org`, and
-`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
+`chat,web-reader,projects`. Standalone Storage is selected with
+`storage=https://storage.example.org` and authenticates ticket redemption with the
+per-application `VC_APPLICATION_STORAGE_TOKEN`, following the same secret placement
+rules as other external applications. `VC_CORE_ID` identifies the issuing Core in application
 tickets. External URLs must be HTTPS without credentials, query or fragment.
 No selector preserves legacy Core modes.
 

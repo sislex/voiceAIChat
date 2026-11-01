@@ -1,8 +1,8 @@
 import type { SessionUser } from './types.js'
 
-export const APPLICATION_IDS = ['chat', 'make', 'projects', 'web-reader', 'playwright-reader', 'image-studio', 'identity'] as const
+export const APPLICATION_IDS = ['chat', 'make', 'projects', 'web-reader', 'playwright-reader', 'image-studio', 'identity', 'storage'] as const
 export type ApplicationId = typeof APPLICATION_IDS[number]
-export interface DeploymentApplication { id: ApplicationId; enabled: boolean; location: 'local' | 'external'; url?: string }
+export interface DeploymentApplication { id: ApplicationId; enabled: boolean; location: 'local' | 'external'; url?: string; openUrl?: string }
 export interface DeploymentManifest { coreId: string; applications: DeploymentApplication[] }
 export function isApplicationId(value: unknown): value is ApplicationId { return APPLICATION_IDS.includes(value as ApplicationId) }
 export function validateCoreId(value: string): string {
@@ -22,7 +22,12 @@ export function parseApplications(value?: string): DeploymentApplication[] {
     if (!isApplicationId(id) || selected.has(id)) throw new Error('invalid_applications')
     selected.set(id, separator < 0 ? undefined : applicationUrl(item.slice(separator + 1).trim()))
   }
-  return APPLICATION_IDS.map(id => ({ id, enabled: selected.has(id), location: selected.get(id) ? 'external' : 'local', ...(selected.get(id) ? { url: selected.get(id) } : {}) }))
+  return APPLICATION_IDS.map(id => ({
+    id,
+    enabled: selected.has(id),
+    location: selected.get(id) ? 'external' : 'local',
+    ...(selected.get(id) ? { url: selected.get(id), openUrl: `/applications/${id}/open` } : {})
+  }))
 }
 export function serializeApplications(applications: DeploymentApplication[]): string {
   const value = applications.filter(a => a.enabled).map(a => a.location === 'external' ? `${a.id}=${applicationUrl(a.url ?? '')}` : a.id).join(',')

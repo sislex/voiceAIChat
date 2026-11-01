@@ -39,6 +39,34 @@ describe('application tickets', () => {
       expect((await redeem('make-secret')).json()).toEqual({ error: 'ticket_used' })
     } finally { await app.close() }
   })
+  it('opens an external application through browser login and preserves only safe return paths', async () => {
+    const app = Fastify()
+    app.addHook('preHandler', async req => { if (req.headers.authorization === 'Bearer user') req.user = { name: 'alice', role: 'admin' } })
+    registerApplicationTickets(app, {
+      manifest: { coreId: 'core-a', applications: parseApplications('storage=https://storage.example.org') },
+      credentials: { storage: 'storage-secret' }
+    })
+    try {
+      const login = await app.inject('/applications/storage/open?return=%2Ffiles%2Frecent')
+      expect(login.statusCode).toBe(302)
+      expect(login.headers.location).toBe('/login/?next=%2Fapplications%2Fstorage%2Fopen%3Freturn%3D%252Ffiles%252Frecent')
+
+      const opened = await app.inject({ url: '/applications/storage/open?return=%2Ffiles%2Frecent', headers: { authorization: 'Bearer user' } })
+      expect(opened.statusCode).toBe(302)
+      const target = new URL(opened.headers.location!)
+      expect(target.origin).toBe('https://storage.example.org')
+      expect(target.pathname).toBe('/_sislexa/enter')
+      expect(target.searchParams.get('core')).toBe('core-a')
+      expect(target.searchParams.get('ticket')).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(target.searchParams.get('return')).toBe('/files/recent')
+
+      for (const unsafe of ['https://evil.example/x', '//evil.example/x', '/safe//evil', String.raw`/safe\\evil`]) {
+        const response = await app.inject({ url: `/applications/storage/open?return=${encodeURIComponent(unsafe)}`, headers: { authorization: 'Bearer user' } })
+        expect(new URL(response.headers.location!).searchParams.get('return')).toBe('/')
+      }
+      expect((await app.inject({ url: '/applications/make/open', headers: { authorization: 'Bearer user' } })).statusCode).toBe(404)
+    } finally { await app.close() }
+  })
   it('redeems through the runtime HTTP adapter against the issuing Core routes', async () => {
     const app = Fastify()
     const tickets = new ApplicationTickets()

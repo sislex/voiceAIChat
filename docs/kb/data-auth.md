@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-01
-checked: 62e7641be
+checked: 0a7a7f751
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -1323,6 +1323,17 @@ core id. Tickets expire after 60 seconds and are consumed synchronously once.
 Wrong application/core bindings do not consume them. Expiry returns `ticket_invalid`;
 a replay before expiry returns `ticket_used`. Restart invalidates outstanding tickets;
 route redemption to the issuing Core process when running multiple replicas.
+
+Browser navigation uses `GET /applications/:id/open?return=<relative-path>`. For
+an enabled external application, a request without a Core session redirects to
+`/login/` with `next` pointing back to that exact entry URL. An authenticated
+request issues the same one-use ticket and redirects to the application's
+`/_sislexa/enter` endpoint with `core`, `ticket`, and a validated `return`. Absolute
+URLs, scheme/host forms, backslashes, and paths containing `//` are replaced with
+`/`. Unknown, disabled, local, or uncredentialed applications return 404. The
+deployment manifest exposes the relative `openUrl` for enabled external
+applications; clients do not need to construct this route. Ticket-bearing redirect
+URLs and their query strings must never be logged.
 
 Each application has its own server-side `VC_APPLICATION_<ID>_TOKEN`, with uppercase
 ids and hyphens replaced by underscores (for example `VC_APPLICATION_WEB_READER_TOKEN`).

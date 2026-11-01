@@ -41,6 +41,8 @@ export interface ApplicationTicketOptions {
   tickets?: ApplicationTickets
   /** Resolves the issuing user session (sid, billing reference) for the delegation bound to the ticket. */
   issuer?: (req: FastifyRequest) => TicketIssuer
+  /** Authenticates browser routes, which intentionally live outside the guarded `/api` namespace. */
+  authenticate?: (req: FastifyRequest) => Promise<{ ok: true; user: SessionUser } | { ok: false }>
 }
 export function applicationTicketOptions(env: NodeJS.ProcessEnv, publicUrl: string | null): ApplicationTicketOptions {
   return { manifest: { coreId: validateCoreId(env.VC_CORE_ID ?? new URL(publicUrl ?? 'http://localhost').hostname), applications: parseApplications(env.VC_APPLICATIONS) },
@@ -62,6 +64,27 @@ export function registerApplicationTickets(app: FastifyInstance, options: Applic
     url.searchParams.set('ticket', tickets.issue(options.manifest.coreId, application.id, req.user, options.issuer?.(req)))
     return { url: url.href }
   })
+  app.get<{ Params: { id: string }; Querystring: { return?: string } }>('/applications/:id/open', async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const application = options.manifest.applications.find(a => a.id === req.params.id && a.enabled)
+    if (!application || application.location !== 'external' || !application.url || !options.credentials[application.id]) {
+      return reply.code(404).send({ error: 'application_disabled' })
+    }
+    if (!req.user && options.authenticate) {
+      const verdict = await options.authenticate(req)
+      if (verdict.ok) req.user = verdict.user
+    }
+    if (!req.user || req.headers['x-sislexa-delegation']) {
+      const login = new URL('/login/', 'http://core')
+      login.searchParams.set('next', req.url)
+      return reply.redirect(login.pathname + login.search)
+    }
+    const target = new URL('/_sislexa/enter', application.url)
+    target.searchParams.set('core', options.manifest.coreId)
+    target.searchParams.set('ticket', tickets.issue(options.manifest.coreId, application.id, req.user, options.issuer?.(req)))
+    target.searchParams.set('return', safeReturnPath(req.query.return))
+    return reply.redirect(target.href)
+  })
   app.post<{ Body: { ticket?: unknown; application?: unknown } }>('/internal/v1/tickets/redeem', { bodyLimit: 4096 }, async (req, reply) => {
     reply.header('cache-control', 'no-store')
     const { ticket, application } = req.body ?? {}
@@ -72,4 +95,13 @@ export function registerApplicationTickets(app: FastifyInstance, options: Applic
     try { return tickets.redeem(options.manifest.coreId, application, ticket) }
     catch (error) { return reply.code(401).send({ error: error instanceof Error && error.message === 'ticket_used' ? 'ticket_used' : 'ticket_invalid' }) }
   })
+}
+
+function safeReturnPath(value: unknown): string {
+  if (typeof value !== 'string' || !value || value.includes('\\') || value.includes('//')) return '/'
+  try {
+    const url = new URL(value, 'https://storage.invalid/')
+    if (url.origin !== 'https://storage.invalid' || !url.pathname) return '/'
+    return value
+  } catch { return '/' }
 }
