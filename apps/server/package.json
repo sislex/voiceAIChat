@@ -19,6 +19,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@sislexa/agent": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-0.25.0-a4c1407f5494.tgz",
     "@sislexa/agent-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-contracts-1.5.0-3117b819912f.tgz",
+    "@sislexa/auth-client": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-auth-client-1.0.0-244df6cf1646.tgz",
     "@sislexa/component-runtime": "*",
     "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.2-d3e0e16d58cd.tgz",
     "@sislexa/image-studio": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
@@ -28,6 +29,7 @@
     "@sislexa/web-reader": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-web-reader-1.3.6-56da8966af79.tgz",
     "@voicechat/browser-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/voicechat-browser-contracts-1.1.0-a6eaee6e0818.tgz",
     "@voicechat/image-studio-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/voicechat-image-studio-contracts-1.0.0-c7a49a428d85.tgz",
+    "@voicechat/knowledge": "*",
     "@voicechat/make-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/voicechat-make-contracts-1.8.6-730f9c24ef67.tgz",
     "@voicechat/playwright-reader-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/voicechat-playwright-reader-contracts-1.2.0-22032878622c.tgz",
     "@voicechat/shared": "*",
@@ -38,8 +40,7 @@
     "fastify": "^5.1.0",
     "pg": "^8.23.0",
     "sharp": "^0.35.5",
-    "zod": "^4.4.3",
-    "@voicechat/knowledge": "*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@sislex/llm-runner": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislex-llm-runner-0.3.8-a1063160bde1.tgz",
