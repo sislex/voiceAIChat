@@ -2,7 +2,7 @@ import { storageBatchResponse } from './batch.js'
 import { Readable, pipeline } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify'
 import { uid } from '@sislexa/identity/server/users/auth'
-import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, STORAGE_COMPRESSION_MIN_BYTES, STORAGE_THUMBNAIL_SIZES,
+import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, MAX_STORAGE_PART_BYTES, STORAGE_COMPRESSION_MIN_BYTES, STORAGE_THUMBNAIL_SIZES,
   isStorageCompressible, storageContentEncoding, storageFileEtag, type CreateStorageUploadRequest, type StorageFileUrlRequest,
   type CreateStorageSpaceRequest, type CreateStorageShareRequest, type StorageThumbnailSize } from '@voicechat/shared/fileStorage'
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
@@ -52,7 +52,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
           try {
             for await (const chunk of source) {
               size += chunk.length
-              if (size > 64 * 1024 * 1024) throw new StorageServiceError('file_too_large')
+              if (size > MAX_STORAGE_PART_BYTES) throw new StorageServiceError('file_too_large')
               chunks.push(Buffer.from(chunk))
             }
             done(null, Buffer.concat(chunks, size))

@@ -37,7 +37,7 @@ beforeEach(async () => {
           else { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])) }
         }
         const bytes = value.slice(start, end + 1)
-        return {stream: Readable.from(bytes), contentLength: bytes.length,
+        return {stream: Readable.from([bytes]), contentLength: bytes.length,
           ...(range ? {contentRange: `bytes ${start}-${end}/${value.length}`} : {})}
       },
       delete: async id => {blobs.delete(id)} })),
