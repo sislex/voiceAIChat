@@ -9,14 +9,14 @@ export interface FileStorageConfig {
   defaultQuotaBytes: number
 }
 export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
-  const mode = env.VC_FILE_STORAGE_MODE ?? 'off'
+  const mode = env.STORAGE_URL ? "remote" : env.VC_FILE_STORAGE_MODE ?? 'off'
   if (mode !== 'off' && mode !== 'embedded' && mode !== 'remote') throw new Error('Invalid VC_FILE_STORAGE_MODE')
   let url: string | undefined
   let serviceTokenFile: string | undefined
   if (mode === 'remote') {
-    if (typeof env.VC_FILE_STORAGE_URL !== 'string' || typeof env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE !== 'string' || !env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE.trim())
+    if (!env.STORAGE_URL && (typeof env.VC_FILE_STORAGE_URL !== 'string' || typeof env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE !== 'string' || !env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE.trim()))
       throw new Error('Remote file storage requires VC_FILE_STORAGE_URL and VC_FILE_STORAGE_SERVICE_TOKEN_FILE')
-    const parsed = new URL(env.VC_FILE_STORAGE_URL)
+    const parsed = new URL(env.STORAGE_URL ?? env.VC_FILE_STORAGE_URL!)
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/')
       throw new Error('Invalid VC_FILE_STORAGE_URL')
     url = parsed.origin

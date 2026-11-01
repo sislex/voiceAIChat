@@ -432,6 +432,7 @@ export const REST = {
   cxResume: '/api/cx/resume',
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
+  adminStorage: '/api/admin/storage',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
   /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
   adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,

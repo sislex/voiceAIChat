@@ -15,7 +15,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-01 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-01 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-01 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-01 | ✓ |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-02 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-01 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-01 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1422. Последние:
+Всего записей: 1423. Последние:
 
+- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md) — core-identity-storage-oauth
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md) — sisl-834-dev-stand-test-isolation
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md) — sisl-828-remote-storage-core
@@ -76,7 +77,6 @@
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-release-train-resume-core-refresh.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-release-train-resume-core-refresh.md) — release-train-resume-core-refresh
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md) — storage-streaming-pool
 - [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-remote-kb-reconcile.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-remote-kb-reconcile.md) — storage-remote-kb-reconcile
-- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-825-streaming-merge.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-sisl-825-streaming-merge.md) — sisl-825-streaming-merge
 
 ## Исторические планы
 
