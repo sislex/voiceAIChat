@@ -71,6 +71,9 @@ else http.createServer((req,res) => res.end('ok')).listen(Number(process.env.POR
   do { uiPort = await freePort() } while ([base + 787, base + 788].includes(uiPort))
   let output = ''
   const launchEnv = { ...process.env, PATH: bin + ':' + process.env.PATH,
+    // Core UI is configured through VC_WEB_PORT. An ambient PORT (for example
+    // from a parallel gate worker) would make the fake service listen elsewhere.
+    PORT: '',
     SISLEXA_STAND_REF: 'HEAD', SISLEXA_STAND_SOURCES: '', SISLEXA_STAND_NAME: 'test', SISLEXA_STAND_HOME: home, SISLEXA_STAND_SHARE: shared,
     SISLEXA_STAND_MAKE_SOURCE: external ? join(shared, 'make') : '', SISLEXA_STAND_CORE_UI_SOURCE: external ? join(shared, 'sislexa-core-ui') : '',
     SISLEXA_STAND_CORE_SOURCE: core, SISLEXA_STAND_PORT_BASE: String(base), SISLEXA_STAND_UI_PORT: String(uiPort) }

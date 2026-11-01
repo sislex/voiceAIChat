@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-01
-checked: d866bc05f
+checked: 47fffd388
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -116,6 +116,14 @@ temporary JSON report is removed in `finally`. Inspect the preceding test
 output; zero in that summary does not establish that discovery found no tests.
 
 ## Dev stand focused checks (C02)
+
+`scripts/dev-stand-local.test.mjs` starts real loopback HTTP processes. Its fake
+Core UI is configured through `VC_WEB_PORT`, while the other fake services use
+`PORT`. The fixture must explicitly clear an ambient `PORT` when it constructs
+the stand environment: otherwise a gate worker's inherited port wins over
+`VC_WEB_PORT`, the fake UI listens at the wrong address and readiness times out.
+This is environment isolation, not a longer timeout; the existing process,
+readiness and shutdown assertions stay unchanged.
 
 Run `npm run test:files -- scripts/dev-stand.test.mjs scripts/owner-pins.test.mjs
 scripts/release-composition.test.mjs scripts/shared-chat-artifacts.test.mjs
