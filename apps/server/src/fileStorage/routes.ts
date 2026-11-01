@@ -8,6 +8,7 @@ import { STORAGE_REST, STORAGE_ERROR_STATUS, MAX_STORAGE_FILE_BYTES, MAX_STORAGE
 import { StorageServiceError } from '../../../../packages/file-storage/src/errors.js'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 import { createBrotliCompress, createBrotliDecompress, createGunzip, createGzip } from 'node:zlib'
+import { withStorageTenant } from './remote.js'
 
 export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
@@ -32,7 +33,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
         if (!service) return reply.code(503).send({error: 'storage_disabled', message: 'File storage is disabled'})
       },
       handler: async (req, reply) => {
-        try { return await handler(service!, req as Request, reply) }
+        try { return await withStorageTenant(req.user?.account?.tenantId, () => handler(service!, req as Request, reply)) }
         catch (error) { return storageError(reply, error) }
       },
     })

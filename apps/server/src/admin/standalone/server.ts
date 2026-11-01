@@ -13,6 +13,7 @@ import { HttpMachines } from '../../machinesBridge/httpMachines.js'
 import type { MachinesService } from '../../machines/service.js'
 import { createRemoteMake } from '../../makeBridge/remote.js'
 import { createStorageRuntime } from '../../fileStorage/runtime.js'
+import { createRemoteStorageRuntime } from '../../fileStorage/remote.js'
 import { registerAdminRoutes } from '../../routes/admin.js'
 import { createMailer, type Mailer } from "@sislexa/identity/server/users/mailer"
 import { ADMIN_HEALTH_PATH, INTERNAL_ADMIN_RPC_PATH } from '../internal.js'
@@ -61,7 +62,8 @@ export async function buildAdminServer(opts: BuildAdminServerOptions): Promise<A
   const sessionHub = { emit: (user: string, revokedSid?: string) => { void core('sessionsChanged', user, revokedSid).catch((error) => warn({ err: error }, '[admin] ядро не уведомлено об отзыве сессии')) } }
 
   const storage = config.fileStorage?.mode === 'embedded'
-    ? await createStorageRuntime(db, config.fileStorage) : undefined
+    ? await createStorageRuntime(db, config.fileStorage)
+    : config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(config.fileStorage) : undefined
   if (storage) app.addHook('onClose', async () => storage.close())
   registerAdminRoutes(app, db, machines, deployTrigger, make.service, mailer, config.publicUrl, sessionHub, storage?.service)
   app.get(ADMIN_HEALTH_PATH, async () => ({ ok: true, service: 'admin', version: opts.version ?? null, engine: db.engine }))

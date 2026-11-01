@@ -201,6 +201,7 @@ const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
 
 import { createStorageRuntime } from './fileStorage/runtime.js'
+import { createRemoteStorageRuntime } from './fileStorage/remote.js'
 import { registerUploadParsers, readUpload, bufferUpload } from './uploadBody.js'
 import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
 import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
@@ -747,7 +748,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   let conversationSummary: ConversationSummaryService | undefined
   const storageRuntime = opts.config.fileStorage?.mode === 'embedded'
-    ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes) : undefined
+    ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes)
+    : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage) : undefined
   const fileStorage = storageRuntime?.service
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
   registerFileStorageRoutes(app, fileStorage)
