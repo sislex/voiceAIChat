@@ -11,13 +11,13 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-01 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 92b1426b chore(ui): pin Core UI 1.5.35 |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 92b1426b0 chore(ui): pin Core UI 1.5.35 |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-01 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 92b1426b chore(ui): pin Core UI 1.5.35 |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 92b1426b0 chore(ui): pin Core UI 1.5.35 |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-01 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-01 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-01 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-01 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 04a3f167c Pin release train 140173b4-5e11-4436-99b9-3f9f8cd6697d … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-31 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-01 | ✓ |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-01 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-01 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 04a3f167c Pin release train 140173b4-5e11-4436-99b9-3f9f8cd6697d … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-01 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-10-31 | ✓ |
@@ -43,12 +43,12 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-01 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c729137 fix(storage): stream whole chunks from the routes test node fake |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c7291374 fix(storage): stream whole chunks from the routes test node fake |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-01 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-01 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 04a3f167c Pin release train 140173b4-5e11-4436-99b9-3f9f8cd6697d … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 43c5cb9f Pin release train c54cf5b6-560c-431a-b53a-24ab53cda839 |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-10-31 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 04a3f167c Pin release train 140173b4-5e11-4436-99b9-3f9f8cd6697d … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-01 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 04a3f167c Pin release train 140173b4-5e11-4436-99b9-3f9f8cd6697d … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-01 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
