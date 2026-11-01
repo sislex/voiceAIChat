@@ -5,8 +5,8 @@
       "package": "@sislexa/make",
       "workspace": "apps/make",
       "repository": "https://github.com/sislex/make",
-      "version": "1.8.7",
-      "commit": "b43842d71981e6d0628e8d7d09b64f146498c569"
+      "version": "1.8.8",
+      "commit": "f1f26d0c7f8b4e4c574d49a3a2786b06f03913c0"
     },
     "playwright-reader": {
       "package": "@sislexa/playwright-reader",
@@ -75,8 +75,8 @@
       "package": "@sislexa/kanban",
       "workspace": "apps/server",
       "repository": "https://github.com/sislex/sislexa-kanban",
-      "version": "0.2.60",
-      "commit": "debb092ab8a6d24ee64984f02aa94826f1656794"
+      "version": "0.2.61",
+      "commit": "2541b6c2839bdfbe0d69ed89cb0704a11268caac"
     }
   }
 }

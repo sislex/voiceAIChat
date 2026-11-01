@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: b2c778282
+checked: 91f24bcc
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -3492,7 +3492,7 @@ production host (private link `10.77.0.2:8798`).
 
 ## Published Make 1.8.1 pin (2026-10-19)
 
-Core pins Make 1.8.1 at `b43842d71981e6d0628e8d7d09b64f146498c569` in the tools lock and
+Core pins Make 1.8.1 at `f1f26d0c7f8b4e4c574d49a3a2786b06f03913c0` in the tools lock and
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
@@ -3577,3 +3577,7 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:140173b4-5e11-4436-99b9-3f9f8cd6697d -->
 - sislex/sislexa-kanban: 0.2.60
+
+<!-- release-train:e3e06576-37db-473b-8af6-cb573bb0a4e4 -->
+- sislex/make: 1.8.8
+- sislex/sislexa-kanban: 0.2.61
