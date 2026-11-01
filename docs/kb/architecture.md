@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 62e7641be
+checked: 93f127566
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -65,8 +65,9 @@ Its workspace is registered in the application catalog and affected-package grap
 Its public contract is `packages/shared/src/fileStorage.ts`.
 `writeFile` accepts either a byte array or an async iterable. Core chat uploads
 use the iterable path for raw/multipart bodies; the HTTP node client implements
-`putStream` without assembling the request in Core. The node's existing buffered
-handler is unchanged. See [streaming and quotas](data-auth.md#file-storage-metadata-and-quotas).
+`putStream` without assembling the request in Core. Ordinary node blob PUTs
+stream into temporary files before atomic rename. See
+[streaming and quotas](data-auth.md#file-storage-metadata-and-quotas).
 Core HTTP routes, SQL persistence and health polling live in
 `apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
 and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
@@ -79,7 +80,9 @@ and HTTP/2 negotiation for HTTPS nodes. `VC_FILE_STORAGE_MAX_FILE_BYTES` configu
 Core and node limits (default 1 GiB). The coordinator checks declared lengths
 before transfer and counts streamed bytes against file, owner quota and placement
 capacity limits; failed writes roll back metadata and clean up the new blob.
-The compatibility `readFile` method still collects bytes; REST uses `readFileStream`.
+The compatibility `readFile` method still collects bytes. REST validates cache
+conditions through `statFile`, then uses `openFile` for full and Range streams.
+Eligible full responses stream through Brotli/gzip; Range responses remain identity.
 
 Thumbnail reads enforce the file's read ACL, accept PNG/JPEG/WebP/GIF sources up
 to 32 MiB, and use an injected generator. Derived WebP/JPEG blobs are cached on
