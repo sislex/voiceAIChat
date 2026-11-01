@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 62e7641be
+checked: 9330a591a
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,18 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+Core can use the standalone coordinator with `VC_FILE_STORAGE_MODE=remote`.
+`fileStorage/remote.ts` implements the same `FileStorageService` port as the
+embedded coordinator over `STORAGE_REST`, so chat attachments, `storage:` reads,
+admin usage and the existing `/api/storage/*` surface share one integration.
+Every upstream request uses the service credential loaded from
+`VC_FILE_STORAGE_SERVICE_TOKEN_FILE` and asserts `x-sislexa-user`; authenticated
+REST requests also forward the account tenant as `x-sislexa-tenant`. File PUT
+and GET bodies use Node/Web streams and the process fetch pool, preserving
+backpressure and connection reuse. Upstream contract errors retain their storage
+code; transport failures become `storage_unavailable` (503). Direct node URLs
+returned by Storage are passed through unchanged.
 
 Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
 `POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to

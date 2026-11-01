@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-01
-checked: 0a7a7f751
+checked: 9330a591a
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -1291,6 +1291,16 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
+
+Standalone file storage is enabled in Core with
+`VC_FILE_STORAGE_MODE=remote`, `VC_FILE_STORAGE_URL=https://storage.example.org`
+and `VC_FILE_STORAGE_SERVICE_TOKEN_FILE=/run/secrets/file-storage-service`.
+The URL must be an HTTP(S) origin without credentials, path, query or fragment.
+The token file must contain the Core-to-Storage service credential; its contents
+are read at startup and are never logged. `embedded` continues to use
+`VC_FILE_STORAGE_NODES`; `off` remains the default. The standalone Storage URL
+is independent of the `VC_APPLICATIONS` browser-entry URL, although deployments
+normally point both at the same service origin.
 
 **Playwright Reader отдельным сервисом (2026-09-09).** В compose приложение
 `playwright-reader` включено по умолчанию, как Make: образ `voicechat-playwright-reader`,

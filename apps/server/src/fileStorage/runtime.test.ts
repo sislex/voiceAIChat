@@ -36,6 +36,8 @@ it('validates public node configuration and loads its separate signing secret', 
 it('validates config, falls back to host quota and marks offline after two failed polls', async () => {
   expect(fileStorageConfig({})).toMatchObject({mode:'off', defaultQuotaBytes:104857600, maxFileBytes: 1024 ** 3})
   expect(fileStorageConfig({VC_FILE_STORAGE_MAX_FILE_BYTES:'1234'}).maxFileBytes).toBe(1234)
+  expect(fileStorageConfig({VC_FILE_STORAGE_MODE:'remote', VC_FILE_STORAGE_URL:'https://storage.example',
+    VC_FILE_STORAGE_SERVICE_TOKEN_FILE:'/run/secrets/storage'})).toMatchObject({mode:'remote',url:'https://storage.example'})
   for (const env of [{VC_FILE_STORAGE_MODE:'bad'}, {VC_FILE_STORAGE_NODES:'{}'}, {VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES:'-1'}, {VC_FILE_STORAGE_MAX_FILE_BYTES:'0'}])
     expect(() => fileStorageConfig(env)).toThrow()
   const db = new VoiceChatDb(':memory:')

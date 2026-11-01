@@ -86,6 +86,7 @@ export type StorageAccess = StoragePermission | 'owner'
 
 export type StorageErrorCode =
   | 'storage_disabled'
+  | 'storage_unavailable'
   | 'invalid_path'
   | 'not_found'
   | 'forbidden'
@@ -99,6 +100,7 @@ export type StorageErrorCode =
 
 export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   storage_disabled: 503,
+  storage_unavailable: 503,
   invalid_path: 400,
   not_found: 404,
   forbidden: 403,
