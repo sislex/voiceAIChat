@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1427. Последние:
+Всего записей: 1428. Последние:
 
+- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md) — release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
@@ -76,7 +77,6 @@
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md) — sisl-834-dev-stand-test-isolation
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md) — sisl-828-remote-storage-core
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-827-storage-browser-entry.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-827-storage-browser-entry.md) — sisl-827-storage-browser-entry
-- [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 
 ## Исторические планы
 

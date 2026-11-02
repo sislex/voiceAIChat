@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-02
-checked: 8049f1dec
+checked: 1bddca77
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -1418,6 +1418,19 @@ shared service do not: they keep that application's MCP tools (B21) and run with
 (`preview_text_only_unavailable`, the connection closes) and a shared service needs its tools.
 
 ### Shared-service RPC and MCP (deployment-profiles B17)
+
+**Make MCP storage (SM-47).** `/api/storage/*` also accepts an unscoped
+`x-sislexa-mcp-token` together with Make's service credential. Shared calls use
+the configured application credential, MCP secret and Core ID. Legacy/managed
+calls use the internal credential or a `make.core` component grant plus a token
+signed with `VC_MCP_SECRET`, with `coreId: legacy`; Make creates that five-minute
+authority only after checking the MCP key and conversation owner. Core verifies
+signature, expiry, application, owner and the current unblocked account/tenant.
+Cookies or ticket delegation mixed with MCP authority are rejected. Task-source
+scopes are rejected rather than promoted to user-wide Storage access. The paired
+Make change preserves this authority in `storageFetch`; browser sessions still
+omit the service bearer. Integration coverage lives in
+`apps/server/src/routes/applicationTickets.delegation.test.ts`.
 
 **Service→Core.** On its own internal RPC paths an external application may present
 `authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>` instead of `VC_INTERNAL_TOKEN` or a

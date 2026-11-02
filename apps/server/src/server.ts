@@ -19,7 +19,7 @@ import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
-import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
+import { sameAccountContext, accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
 import { registerAnalyticsProxy } from './analyticsBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
@@ -31,7 +31,7 @@ import {registerRemoteIdentity} from '@sislexa/identity/client/server'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/image-studio-contracts/imageStudioInternal'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { createComponentRuntime } from '@sislexa/component-runtime'
+import { createComponentRuntime, verifyCoreMcpTokenWithSecret } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
@@ -559,6 +559,32 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const authenticateRaw: AuthenticateFn = async req => {
     const makeRequest = await makeRequests.authenticate(req)
     if (makeRequest) return makeRequest
+    // MCP has no browser session. Storage admits its verified user with Make's service credential.
+    const storageMcp = req.headers['x-sislexa-mcp-token']
+    if (storageMcp !== undefined && req.url.split('?')[0]!.startsWith('/api/storage/')) {
+      try {
+        if (typeof storageMcp !== 'string' || req.headers.cookie || req.headers[DELEGATION_HEADER] !== undefined) throw new DelegationDenied()
+        const shared = !!ticketOptions.credentials.make && ticketApplications('make')
+          && sameSecret(req.headers.authorization, 'Bearer ' + ticketOptions.credentials.make)
+        const service = shared || (component ? component.authorize(req.headers.authorization, 'make.core').ok
+          : !!opts.config.internalToken && sameSecret(req.headers.authorization, 'Bearer ' + opts.config.internalToken))
+        if (!service) throw new DelegationDenied()
+        const claims = verifyCoreMcpTokenWithSecret((shared ? ticketOptions.mcpSecrets?.make : opts.config.mcpSecret) ?? '', storageMcp)
+        if (claims.application !== 'make' || claims.coreId !== (shared ? deployment.coreId : 'legacy')) throw new DelegationDenied()
+        const owner = await makeCore.conversationOwner(claims.conversationId)
+        if (!owner) throw new DelegationDenied()
+        // A task source capability cannot become user-wide Storage access.
+        if (claims.scope || owner !== claims.userId) throw new DelegationDenied()
+        const conversation = await db.chat.getConversation(owner, claims.conversationId)
+        const row = await db.identity.getUser(claims.userId)
+        const access = await db.identity.getAccountAccess(claims.userId, conversation?.tenantId ?? undefined)
+        if (!conversation || !row || row.blocked || row.mustChangePassword || !access
+          || (conversation.tenantId && access.tenant.id !== conversation.tenantId)) throw new DelegationDenied()
+        const tenant = req.headers['x-sislexa-tenant-id']
+        if (tenant !== undefined && tenant !== access.tenant.id) throw new DelegationDenied()
+        return { ok: true, user: { name: claims.userId, role: access.systemRole, account: accountContext(access) } }
+      } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+    }
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {

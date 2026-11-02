@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import { signCoreMcpToken } from '@sislexa/component-runtime'
 import { parseApplications } from '@voicechat/shared'
 import { signToken } from '@sislexa/identity/server/users/accounts'
 import { buildServer } from '../server.js'
@@ -76,7 +77,7 @@ describe('Core-issued ticket delegation', () => {
           delete: async id => { blobs.delete(id) },
         })),
         applicationTickets: { tickets, manifest: { coreId: 'core-a', applications: parseApplications(APPLICATIONS) },
-          credentials: { make: MAKE, 'web-reader': READER }, serviceTokens: { make: 'core-to-make' } },
+          credentials: { make: MAKE, 'web-reader': READER }, serviceTokens: { make: 'core-to-make' }, mcpSecrets: { make: 'shared-mcp' } },
       })
       const user = signToken({ name: 'admin', role: 'admin' }, SECRET)
       const browser = await app.inject({ url: '/api/make/project', headers: { cookie: 'vc_session=' + user,
@@ -111,6 +112,29 @@ describe('Core-issued ticket delegation', () => {
         { authorization: headers.authorization },
         { ...headers, 'x-sislexa-delegation': 'sxd_' + 'x'.repeat(43) },
       ]) expect((await app.inject({ url: file, headers: bad })).statusCode).toBeGreaterThanOrEqual(400)
+      const conversation = await db.chat.createConversation('admin', 'MCP storage', 'make')
+      const claims = { v: 1 as const, application: 'make' as const, coreId: 'legacy', userId: 'admin',
+        conversationId: conversation.id, expiresAt: Date.now() + 60000 }
+      for (const [credential, secret, coreId] of [['legacy', 'mcp', 'legacy'], [MAKE, 'shared-mcp', 'core-a']]) {
+        const token = signCoreMcpToken(secret, { ...claims, coreId })
+        const mcpHeaders = { authorization: 'Bearer ' + credential, 'x-sislexa-mcp-token': token }
+        const mcpRead = await app.inject({ url: file, headers: mcpHeaders })
+        expect(mcpRead.statusCode, mcpRead.body).toBe(200)
+        expect(mcpRead.body).toBe('shared file')
+        expect((await app.inject({ method: 'PUT', url: file, headers: { ...mcpHeaders, 'content-type': 'text/plain' }, payload: 'shared file' })).statusCode).toBe(200)
+        for (const bad of [
+          { ...mcpHeaders, authorization: 'Bearer wrong' },
+          { ...mcpHeaders, cookie: 'vc_session=' + user },
+          { ...mcpHeaders, 'x-sislexa-delegation': headers['x-sislexa-delegation'] },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId, userId: 'bob' }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId, expiresAt: Date.now() - 1 }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken('wrong', { ...claims, coreId }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId: 'other-core' }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId, application: 'web-reader' }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId, conversationId: 'missing' }) },
+          { ...mcpHeaders, 'x-sislexa-mcp-token': signCoreMcpToken(secret, { ...claims, coreId, scope: { taskId: 'task', projectId: 'project', mode: 'files', paths: ['index.html'] } }) },
+        ]) expect((await app.inject({ url: file, headers: bad })).statusCode).toBe(403)
+      }
       tickets.delegations.revoke({ applicationId: 'make' })
       expect((await app.inject({ url: file, headers })).statusCode).toBe(403)
     } finally { vi.unstubAllGlobals() }
