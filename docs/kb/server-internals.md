@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: d1e8b3c6f
+checked: 0234c1a95
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -58,6 +58,14 @@ and GET bodies use Node/Web streams and the process fetch pool, preserving
 backpressure and connection reuse. Upstream contract errors retain their storage
 code; transport failures become `storage_unavailable` (503). Direct node URLs
 returned by Storage are passed through unchanged.
+
+Remote `statFile` lists the parent directory and matches the exact entry path.
+For root files such as `.stand.json`, it omits `prefix`; nested files use their
+parent directory as the prefix. Storage's `normalizeStoragePrefix` appends `/`,
+so passing the full file path would exclude the file itself. An absent exact
+match still raises `not_found` (404). `fileStorage/remote.test.ts` uses the shared
+prefix normalizer and covers stat/read of root and nested files, missing files,
+and conditional GET without opening the upstream body.
 
 Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
 `POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to
