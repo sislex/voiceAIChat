@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-11-02
-checked: 79d261e89
+checked: 149d669f
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -500,6 +500,12 @@ Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта �
 после F5. Модель хода зажимается по роли пользователя (`clampModelForRole`).
 
 ## Make: инструменты `mcp__make__*`
+
+Owner MCP calls in Make service-storage mode do not need a runner browser
+session. The paired SM-47 Make/Core changes carry signed user/conversation
+authority with the service credential; Core checks it before Storage ACLs.
+Task-source scopes are not admitted as user-wide Storage authority. See
+[Make MCP admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 У разговора `assistantKind: 'make'` ход получает `makeMcpUrl` (`turns.ts`: база `MAKE_MCP_PATH`
 + `conv` + `turn`; в режиме «План» — `&ro=1`). Раннеры подключают MCP-сервер `make`

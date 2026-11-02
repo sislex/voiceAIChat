@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 79d261e89
+checked: 149d669f
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -74,6 +74,9 @@ The storage is moving to the independent repository `sislex/storage`
 (plan [storage-standalone-v1](../plans/storage-standalone-v1.md)); with
 `VC_FILE_STORAGE_MODE=remote` Core becomes a client of that service and keeps
 `/api/storage/*` as a proxy for Core UI and Make.
+For owner MCP calls, Core admits a verified Make service credential together with
+signed user/conversation authority before applying Storage ACLs; browser session
+handling remains separate. See [Make MCP admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 Core's file PUT/GET routes stream bodies through the coordinator and node client.
 PUT uses a raw Fastify body stream; GET sends the node response stream directly.

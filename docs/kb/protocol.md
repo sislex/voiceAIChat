@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-02
-checked: d1e8b3c6f
+checked: 149d669f
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -43,6 +43,11 @@ and the caller's `storageUsage`; `AdminUserInfo.storageAdminUrl` links user rows
 to Storage administration, and the quota `PATCH` above returns 409.
 
 ## Core file storage and chat settings
+
+Make owner MCP requests may send `x-sislexa-mcp-token` with the corresponding
+service bearer. This is a Storage admission path, not a replacement for browser
+cookies or user API tokens; no Storage request/response schema changes.
+See [credential and scope checks](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 `POST REST.uploads` accepts legacy JSON/base64, raw bytes and a streamed
 `multipart/form-data` body containing exactly one file and no text fields.

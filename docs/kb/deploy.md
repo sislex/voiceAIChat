@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 20a1ab8f
+checked: 149d669f
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -123,6 +123,12 @@ and converts authenticated browser proxy requests to short-lived user grants.
 Deploy compatible Core and Make versions together: service credentials identify
 the application, while the delegation supplies the user for Core storage ACLs.
 See [Make authorization](data-auth.md#make-service-storage-authorization).
+
+SM-47 also requires paired Core and Make versions for sessionless owner MCP
+calls. Make retains the service bearer and supplies short-lived signed authority;
+Core accepts legacy/managed `coreId: legacy` tokens with `VC_MCP_SECRET`, or the
+shared application's configured MCP secret and Core ID. No new environment
+variable is required. See [MCP Storage admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 Admin quota writes require an FS-3-capable Identity exposing
 `setUserStorageQuota`; the pinned Identity 1.5.2 lacks that method and Core

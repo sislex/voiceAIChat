@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 4f1671a0
+checked: 149d669f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -46,6 +46,12 @@ return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
 See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Core file storage
+
+`authenticateRaw` admits Make owner MCP authority on `/api/storage/*` before
+session authentication. It verifies the service credential, MCP signature,
+expiry, application/Core ID, current conversation owner and account/tenant.
+Mixed cookies or ticket delegation and scoped task-source tokens are rejected.
+The file routes still enforce Storage ACLs. See [the authority contract](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 Core can use the standalone coordinator with `VC_FILE_STORAGE_MODE=remote`.
 `fileStorage/remote.ts` implements the same `FileStorageService` port as the
