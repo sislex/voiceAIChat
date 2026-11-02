@@ -39,7 +39,7 @@ export function writeOauthMaterial(directory, publicUrl, authUrl) {
   }
   return { created, env: [`AUTH_URL=${issuer}`, `VC_PUBLIC_URL=${core}`,
     `AUTH_CLIENT_SECRET_FILE=${join(directory, 'core-client.secret')}`,
-    'VC_NODE_EXTRA_CA_CERTS=/caddy/caddy/pki/authorities/local/root.crt',
+    'VC_NODE_EXTRA_CA_CERTS=' + join(directory, 'caddy-root.crt'),
     'SISLEXA_IDENTITY_IMAGE=ghcr.io/sislex/identity:70e28251f3faa79eabea664924abdf5a73e5500f'] }
 }
 
