@@ -6,7 +6,7 @@ import { createRemoteStorageRuntime } from '../fileStorage/remote.js'
 import { fileStorageConfig } from '../fileStorage/config.js'
 import type { VoiceChatDb } from '../db/database.js'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 it('keeps legacy configurable and validates Identity and Storage origins', () => {
   expect(coreOAuthConfig({})).toBeUndefined()
   expect(coreOAuthConfig({ AUTH_MODE: 'legacy', AUTH_URL: 'https://identity' })).toBeUndefined()
@@ -18,10 +18,12 @@ it('keeps legacy configurable and validates Identity and Storage origins', () =>
 
 it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange and logout', async () => {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  // Reissued fixtures must keep their identity in the subject-token lookup.
+  const expiresAt = Math.floor(Date.now() / 1000) + 3600
   const jwt = (sub: string, aud = 'core') => {
     const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'test' })).toString('base64url')
     const payload = Buffer.from(JSON.stringify({ iss: 'https://identity', sub, aud, sid: sub,
-      tenant: 'tenant', exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')
+      tenant: 'tenant', exp: expiresAt })).toString('base64url')
     const data = `${header}.${payload}`
     return `${data}.${sign('sha256', Buffer.from(data), privateKey).toString('base64url')}`
   }
@@ -64,6 +66,8 @@ it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange an
     expect(authorize.searchParams.get('code_challenge_method')).toBe('S256')
     expect(authorize.searchParams.get('client_id')).toBe('core')
     const cookie = String(login.headers['set-cookie']).split(';')[0]!
+    // Cross a JWT timestamp boundary between fixture creation and code exchange.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2000)
     const callback = await app.inject({ url: `/auth/callback?code=code&state=${authorize.searchParams.get('state')}`, headers: { cookie } })
     expect(callback.statusCode).toBe(302)
     expect(forms[0]!.get('code_verifier')).toBeTruthy()
@@ -73,7 +77,9 @@ it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange an
     expect((await app.inject({ url: '/auth/callback?code=code&state=wrong', headers: { cookie } })).statusCode).toBe(400)
     const session = await app.inject({ url: '/auth/session', headers: { cookie: sessionCookie } })
     expect((await app.inject({ method: 'POST', url: '/probe', headers: { cookie: sessionCookie } })).statusCode).toBe(403)
-    expect((await app.inject({ method: 'POST', url: '/probe', headers: { cookie: sessionCookie, 'x-csrf-token': session.json().csrfToken } })).statusCode).toBe(200)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      expect((await app.inject({ method: 'POST', url: '/probe', headers: { cookie: sessionCookie, 'x-csrf-token': session.json().csrfToken } })).statusCode).toBe(200)
+    }
     const responses = await Promise.all([...tokens.keys()].map(token => app.inject({ url: '/probe', headers: { authorization: `Bearer ${token}` } })))
     expect(responses.map(response => response.json().name)).toEqual(['alice', 'bob'])
     expect(upstream.every(headers => !headers.has('x-sislexa-user') && !headers.has('x-sislexa-tenant'))).toBe(true)

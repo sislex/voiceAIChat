@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-11-02
-checked: 8049f1dec
+checked: 1bddca77e
 areas:
   - packages/component-runtime/src/index.ts
   - packages/component-runtime/src/runtime.test.ts
@@ -36,6 +36,14 @@ areas:
 ## File storage metadata and quotas
 
 ### Identity OAuth mode
+
+The OAuth exchange test (`apps/server/src/auth/oauth.test.ts`) indexes its
+subject-token fixtures by the complete signed JWT. Keep the fixture expiration
+fixed across issuance: recalculating `exp` when the code callback runs can change
+the JWT at a second boundary, miss the lookup and produce an exchanged token
+without `sub`, which the pinned client rejects and Core reports as Storage 503.
+The regression advances `Date.now` between fixture creation and the callback,
+then requires five authenticated cookie/CSRF Storage probes to return 200.
 
 Set `AUTH_MODE=identity`, `AUTH_URL`, `AUTH_CLIENT_ID=core`, `PUBLIC_URL`,
 optional `AUTH_CLIENT_SECRET_FILE`, and `STORAGE_URL` to opt into the Core
