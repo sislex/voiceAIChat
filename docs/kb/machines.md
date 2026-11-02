@@ -963,6 +963,8 @@ MachineStorage полностью отсутствует. Неожиданные
 
 Файловая директория разговора хранится отдельно от `conversations.workdir` в
 `chat_storage_bindings`: `conversationId + machineId + storageId + relativePath`.
+GET `/api/conversations/:id/storage` first checks conversation ownership. An existing owned conversation without a machine storage binding returns HTTP 200 with JSON `null`, matching the nullable `conversations:getStorage` IPC result. Missing or inaccessible conversations return 404. A bound conversation returns its existing `ChatStorageView`; the read does not create a binding.
+
 Контракт доступен через `GET/PUT /api/conversations/:id/storage`; при пустом
 `relativePath` сервер выбирает изолированный путь обычного, проектного или task-чата.
 Абсолютные пути, пустые/небезопасные сегменты и `..` в относительной части отклоняются. Поэтому перенос корня не

@@ -19,6 +19,22 @@ beforeEach(() => { ({ app, db, agentRegistry } = harness) })
 
 
 describe('REST: хранилище машины', () => {
+  it('returns null for an owned chat without storage and keeps other chats private', async () => {
+    const own = await db.chat.createConversation(U, 'No storage')
+    const response = await inj({ method: 'GET', url: `/api/conversations/${own.id}/storage` })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toBeNull()
+    expect(await db.machines.getChatStorageBinding(U, own.id)).toBeNull()
+
+    await db.identity.createUser('storage-other', '', 'developer')
+    const other = await db.chat.createConversation('storage-other', 'Private')
+    for (const id of [other.id, 'missing-conversation']) {
+      const denied = await inj({ method: 'GET', url: `/api/conversations/${id}/storage` })
+      expect(denied.statusCode).toBe(404)
+      expect(denied.json()).toEqual({ error: 'not found' })
+    }
+  })
+
   // @testCase T5
   // @testCase T6
   it('authorizes and forwards preview without a full read, and validates the path', async () => {
