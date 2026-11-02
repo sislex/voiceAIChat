@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 149d669f
+checked: 0e154f1ef
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -461,6 +461,16 @@ test these adapters without contacting real owners.
 ## Release train execution (C01)
 
 `node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
+
+Selected owner repositories release concurrently in separate checkouts; applications
+sharing a repository use one owner release. Commands run asynchronously, with isolated
+verification deadlines and Docker credentials. Desktop remains frozen and excluded.
+The journal checkpoints each owner's steps independently. On failure, no new owner
+step starts, in-flight operations finish and save their results, and Core pinning is
+blocked. Resume skips completed steps and reconciles interrupted steps, including
+checkpoints from older sequential journals. Once every owner is verified, the train
+writes all pins in one Core commit, checks Core once and promotes once (a concurrent
+Core dev push can still require a rebase and another check).
 
 `plan --from-dev [--json]` previews the fast path. `run --from-dev` bumps
 changed owners from their planned dev commit and runs `gate:quick -- --base <pinned commit>`,
