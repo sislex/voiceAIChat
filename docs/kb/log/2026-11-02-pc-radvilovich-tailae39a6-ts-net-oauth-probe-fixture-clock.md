@@ -22,6 +22,12 @@ author: voiceAIChat agent
 ## Documentation
 
 - docs/kb/data-auth.md, Identity OAuth mode.
+- docs/kb/server-internals.md, Identity OAuth session bootstrap: reviewed its
+  declared areas after the workflow strict KB check flagged commit 4536b8b9d.
+  The only intervening source diff is the OAuth test fixture/regression; runtime
+  behavior is unchanged. Added the regression reference and refreshed checked.
+- Repair validation: the focused OAuth file passes both tests and server
+  typecheck passes.
 
 ## Open questions
 

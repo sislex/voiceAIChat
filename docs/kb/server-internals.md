@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 4f1671a0
+checked: 4536b8b9d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -427,6 +427,11 @@ See [REST bootstrap responses and explicit rejections](protocol.md#rest).
 cookie, compares the user to legacy `resolveUser`, and covers missing/invalid
 sessions, CSRF, blocked users and absent account access. Legacy REST integration
 coverage remains in `routes/rest.auth.test.ts`.
+
+`auth/oauth.test.ts` also advances the clock before the code callback and
+requires five authenticated cookie/CSRF Storage probes to return 200. Its signed
+JWT fixtures retain a fixed expiration so the exchange stub's subject-token
+lookup survives second boundaries; see [OAuth fixtures](data-auth.md#identity-oauth-mode).
 
 ### Chat message service data
 
