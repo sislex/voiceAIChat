@@ -29,7 +29,7 @@
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-01 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-31 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-02 | ✓ |
-| [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-10-29 | ✓ |
+| [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-10-29 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-02 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1434. Последние:
+Всего записей: 1435. Последние:
 
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
@@ -76,7 +76,7 @@
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md) — oauth-probe-fixture-clock
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md) — release-train-parallel-owners
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md) — release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309
-- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
+- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-owner-pin-bundle-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-owner-pin-bundle-gate.md) — owner-pin-bundle-gate
 
 ## Исторические планы
 

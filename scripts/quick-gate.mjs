@@ -5,6 +5,9 @@ import { pathToFileURL } from 'node:url'
 import { main as applicationMain, OWNER_PIN_TESTS } from './application-gate.mjs'
 import { root, workspaceEntries, isTest, mapTestFiles, runTests, reportFailure } from './test-files.mjs'
 import { taskTests } from './task-tests.mjs'
+import { pinOnlyPackages } from './owner-pins.mjs'
+import { bundlePackages } from './owner-pin-check.mjs'
+import { execFileSync } from 'node:child_process'
 
 function walk(path) {
   if (!existsSync(path)) return []
@@ -87,7 +90,7 @@ export function executeQuickPlan(steps) {
     if (step.runner) runTests(step)
     else {
       console.log(`[gate:quick] ${step.command} ${step.args.join(' ')}`)
-      const result = spawnSync(step.command, step.args, { cwd: root, stdio: 'inherit' })
+      const result = spawnSync(step.command, step.args, { cwd: root, stdio: 'inherit', timeout: step.timeout })
       if (result.error || result.status !== 0)
         throw Object.assign(result.error ?? Error(`Check exited ${result.status ?? result.signal}`), { exitCode: result.status || 1 })
     }
@@ -103,6 +106,19 @@ export async function main(args = process.argv.slice(2)) {
   }
   if (!base) throw Error('Provide --base <sha>')
   const dry = args.includes('--dry-run')
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+  const baseline = git('merge-base', 'HEAD', base).trim()
+  const files = [...new Set([...git('diff', '--name-only', '--no-renames', '-z', baseline, '--').split('\0'), ...git('ls-files', '--others', '--exclude-standard', '-z').split('\0')].filter(Boolean))]
+  const names = pinOnlyPackages(files,
+    file => { try { return git('show', `${baseline}:${file}`) } catch { return null } },
+    file => existsSync(resolve(root, file)) ? readFileSync(resolve(root, file), 'utf8') : null,
+    bundlePackages)
+  if (names) {
+    const steps = [{ command: process.execPath, args: ['--import', 'tsx', 'scripts/owner-pin-check.mjs', ...names], timeout: 115_000 }]
+    console.log(JSON.stringify(steps, null, 2))
+    if (!dry) executeQuickPlan(steps)
+    return steps
+  }
   return applicationMain(args.filter(arg => arg !== '--dry-run'), {
     execute(plan, files) {
       const steps = quickPlanCommands(plan, files)

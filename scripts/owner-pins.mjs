@@ -24,6 +24,36 @@ const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependenc
 // Pinned archives are referenced as `file:vendor/X.tgz` (legacy) or by the `vendor` release URL.
 const vendorSpec = (spec) => vendorAssetFromRef(spec) !== null
 
+// Stricter than the release planner: documentation and script edits are Core changes too.
+export function pinOnlyPackages(files, readBefore, readAfter, supported) {
+  if (!files.length || files.some(file => file !== 'package-lock.json' && !isOwnerPinFile(file))) return null
+  const pins = ownerPinChanges(files, readBefore, readAfter)
+  if (pins.unproven || pins.images || pins.tools.length || pins.rootScripts.length || !pins.packages.length || pins.packages.some(name => !supported.includes(name))) return null
+  if (files.includes('package-lock.json')) {
+    const before = parse(readBefore('package-lock.json')), after = parse(readAfter('package-lock.json'))
+    if (!before?.packages || !after?.packages) return null
+    const normalize = lock => {
+      const copy = structuredClone(lock)
+      for (const [key, entry] of Object.entries(copy.packages)) {
+        if (pins.packages.some(name => key === `node_modules/${name}`)) {
+          if (!vendorSpec(entry.resolved)) return null
+          delete entry.version; delete entry.resolved; delete entry.integrity
+        }
+        for (const field of DEPENDENCY_FIELDS) for (const name of pins.packages) {
+          if (entry[field]?.[name]) {
+            if (!vendorSpec(entry[field][name])) return null
+            entry[field][name] = '<owner-pin>'
+          }
+        }
+      }
+      return copy
+    }
+    const a = normalize(before), b = normalize(after)
+    if (!a || !b || !same(a, b)) return null
+  }
+  return pins.packages
+}
+
 /**
  * @param {string[]} files changed paths
  * @param {(file: string) => string | null} readBefore baseline content, null when absent

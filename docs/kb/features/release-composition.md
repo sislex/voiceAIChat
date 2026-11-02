@@ -1,7 +1,7 @@
 ---
 title: Состав релиза из опубликованных выпусков приложений
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-11-02
+checked: f89e2e742
 areas:
   - scripts/release-composition.mjs
   - scripts/owner-release-publish.mjs
@@ -62,6 +62,23 @@ removed locally only after their last reference disappears. These operations
 are implemented in `release-composition.mjs` and `vendor-store.mjs`.
 
 ## Закрепление
+
+### Pin-only bundle gate
+
+`gate:quick -- --base <sha>` recognizes a strictly pin-only diff before the
+normal Core planner. Core UI and catalog frontend owner archives use
+`scripts/owner-pin-check.mjs`: verified archive checksums, consistent inventory
+and lock identities, clean source provenance, exact installed bytes, and the
+existing production bundle/API manifest validators. Owner-built assets are
+validated as published; Core does not compile the owner's source again.
+The check has a 115-second execution limit and fails on missing or invalid
+evidence. Archive downloads must be available or prewarmed with `vendor:fetch`.
+
+Source, documentation, root script edits and unrelated lock changes retain
+the original quick gate. Image/tool-only pins and packages without a frontend
+compatibility adapter also retain that gate; the fast path currently does not
+cover those owners. Cold-download timing and registry image acceptance remain
+unverified in the restricted delivery environment.
 
 `node --import tsx scripts/release-composition.mjs apply --dir <каталог>` — по подкаталогу на
 выпуск с манифестом и архивами. Сначала всё проверяется (байты и хэши, имя, версия и коммит внутри
