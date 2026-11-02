@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-02
-checked: 72c4cd42a
+updated: 2026-11-03
+checked: d247ecf75
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
