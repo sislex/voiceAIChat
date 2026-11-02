@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 79d261e89
+checked: d1e8b3c6f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -397,6 +397,28 @@ already executing, agent callbacks, or writes through internal module RPC.
 Operators must quiesce those writers before the final migration snapshot.
 
 ## HTTP-поверхность
+
+### Identity OAuth session bootstrap
+
+`server.ts` calls `registerCoreOAuth` before registering the global auth guard.
+In OAuth mode the encapsulated Identity registration sets `sessionAuthenticate`
+to `oauth.authenticate` and returns without calling legacy `registerAuth`.
+Therefore `auth/oauth.ts` owns the compatibility session bootstrap routes;
+registering them only through `registerAuth` would leave Core UI's
+`GET /api/session/me` unregistered and cause repeated sign-in redirects.
+
+The session routes explicitly call the OAuth adapter because `/api/session/*`
+is excluded from the global guard. The adapter verifies credentials with the
+pinned auth client, then checks the current Identity user and claimed tenant
+through `db.identity`. It preserves the account-derived role/context and the
+optional `mustChangePassword` flag. The me handler returns the current user's
+notices and the cookie session's CSRF token without exposing access tokens.
+See [REST bootstrap responses and explicit rejections](protocol.md#rest).
+
+`auth/oauth.integration.test.ts` exercises login and callback with the issued
+cookie, compares the user to legacy `resolveUser`, and covers missing/invalid
+sessions, CSRF, blocked users and absent account access. Legacy REST integration
+coverage remains in `routes/rest.auth.test.ts`.
 
 ### Chat message service data
 
