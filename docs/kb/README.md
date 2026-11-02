@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-02 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-02 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-03 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-02 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-02 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1441. Последние:
+Всего записей: 1442. Последние:
 
+- [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
@@ -76,7 +77,6 @@
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md) — oauth-probe-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md) — oauth-probe-fixture-clock
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md) — release-train-parallel-owners
-- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-e5af4e03-e80c-4734-8193-5c2a961c27fa.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-e5af4e03-e80c-4734-8193-5c2a961c27fa.md) — release-train-e5af4e03-e80c-4734-8193-5c2a961c27fa
 
 ## Исторические планы
 

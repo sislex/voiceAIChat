@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-11-02
-checked: 72c4cd42a
+updated: 2026-11-03
+checked: aab49f786
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -947,7 +947,13 @@ other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
 groups, missing expected IDs/deep links and request cancellation have distinct
 failures. Before changing the query, the helper proves that the real palette
 dialog and its combobox are visible and that the combobox is editable. It then
-waits for each requested source/title option to become visible. Search
+handles a repeated query by completing a distinct reset-query request before
+arming the requested query. Clearing and immediately refilling the input is not
+sufficient: React can batch both updates into the unchanged state, and a
+previously scheduled same-query debounce can otherwise satisfy a newly attached
+observer. The regression test records the deterministic reset-query →
+requested-query order. The helper then waits for each requested source/title
+option to become visible. Search
 observation and option waits retain bounded 10-second limits;
 there is no readiness sleep. The delayed-response fixture also uses
 `SEARCH_TIMEOUT` for its interception wait; Vitest's default one-second
@@ -957,8 +963,8 @@ loaded machine, before the observed request is sent.
 The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
 resets its query on reopening and does not retrigger its search effect for an
 unchanged mounted input. The E2E verifies this behavior in Chromium. Calling
-the helper again with the same mounted value explicitly clears the input before
-arming a fresh search. A controlled delayed-response case demonstrates why
+the helper again with the same mounted value completes the reset-query barrier
+before arming a fresh search. A controlled delayed-response case demonstrates why
 counting arbitrary options is insufficient: local command options for
 `Настройки` already exist while the search response is withheld. Another case
 keeps the expected option hidden after a successful real response and verifies
@@ -992,16 +998,16 @@ Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
 `npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
 Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
 required by the environment. Child runs disable acceptance mode to prevent
-recursion. TC-3 runs the complete `browser-gate.mjs --integration` five times
-sequentially with `VC_E2E_WORKERS=2`, stops on failure, verifies the full batch
-inventory and all universalSearch cases, and retains separate logs, exit codes,
-Vitest results and batch reports under `artifacts/universal-search-acceptance/`.
-The source revision is checked between runs. TC-4 runs the quick gate against
-the supplied base. Ordinary browser runs keep their normal case inventory. The
+recursion. TC-3 runs the complete `universalSearch.e2e.test.ts` file twenty times
+sequentially with retries disabled, stops on failure, verifies every case, and
+retains separate logs, exit codes and Vitest JSON results under
+`artifacts/universal-search-acceptance/`. The source revision is checked between
+runs. TC-4 runs the quick gate against the supplied base. Ordinary browser runs
+keep their normal case inventory. The
 parallel allowlist includes sessions, projects,
 gitPane, universalSearch, both Web Reader suites and toolIntegration; other
 integration suites remain serial. The normal `browser.json` is overwritten,
-so its single latest result is insufficient evidence of five runs.
+so its single latest result is insufficient evidence of twenty runs.
 
 #### Universal search browser-gate diagnostics
 
