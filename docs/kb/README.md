@@ -67,7 +67,7 @@
 
 Всего записей: 1426. Последние:
 
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
+- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md) — release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md) — core-identity-storage-oauth
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md) — a4-core-identity-storage
