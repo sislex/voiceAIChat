@@ -195,36 +195,6 @@ services:
     logging: *default-logging
     restart: unless-stopped
 
-  # Identity sign-in server (profile `identity`): OAuth issuer and login pages on the
-  # Caddy origin https://<host>:8443. It shares the application Postgres with Core,
-  # so existing accounts sign in unchanged. Enable only after identity-oauth-init.
-  identity:
-    profiles: ["identity"]
-    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:70e28251f3faa79eabea664924abdf5a73e5500f}
-    mem_limit: 384m
-    environment:
-      HOST: 0.0.0.0
-      PORT: "8798"
-      SISLEXA_COMPONENT_CONFIG: /data/identity/oauth/component.json
-      IDENTITY_DATA_DIR: /data/identity
-      IDENTITY_DATABASE_URL: ${VC_DB_URL:-}
-      IDENTITY_SESSION_SECRET_FILE: /data/identity/oauth/session.secret
-      IDENTITY_OAUTH_KEY_FILE: /data/identity/oauth/oauth-key.pem
-      IDENTITY_OAUTH_CLIENTS_FILE: /data/identity/oauth/oauth-clients.json
-      AUTH_URL: ${AUTH_URL:-}
-      PUBLIC_URL: ${AUTH_URL:-}
-      AUTH_CLIENT_ID: core
-      AUTH_CLIENT_SECRET_FILE: /data/identity/oauth/core-client.secret
-    volumes:
-      - vc-data:/data
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8798/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    logging: *default-logging
-    restart: unless-stopped
-
   # Postgres для базы приложения — опционально (профиль `postgres`): по умолчанию сервер
   # работает на SQLite. Включение: `docker compose --profile postgres up -d postgres`,
   # затем VC_DB_URL у voicechat (см. выше) и перенос данных copyToPostgres.cli.ts.

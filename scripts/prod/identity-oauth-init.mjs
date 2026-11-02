@@ -23,15 +23,12 @@ export function oauthMaterial(publicUrl, authUrl = publicUrl.replace(/\/$/, '') 
 
 export function writeOauthMaterial(directory, publicUrl, authUrl) {
   const { core, issuer, clients } = oauthMaterial(publicUrl, authUrl)
-  mkdirSync(join(directory, 'registry'), { recursive: true, mode: 0o700 })
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
   const secret = () => randomBytes(32).toString('base64url')
   const files = {
     'oauth-key.pem': () => generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' }),
     'oauth-clients.json': () => JSON.stringify(clients, null, 2) + '\n',
     'core-client.secret': () => secret() + '\n',
-    'session.secret': () => secret() + '\n',
-    'component.json': () => JSON.stringify({ schemaVersion: 1, environmentId: 'production',
-      registryDirectory: join(directory, 'registry'), grants: [], legacyScopes: [], dependencies: [] }, null, 2) + '\n'
   }
   const created = []
   for (const [name, content] of Object.entries(files)) {
@@ -42,7 +39,8 @@ export function writeOauthMaterial(directory, publicUrl, authUrl) {
   }
   return { created, env: [`AUTH_URL=${issuer}`, `VC_PUBLIC_URL=${core}`,
     `AUTH_CLIENT_SECRET_FILE=${join(directory, 'core-client.secret')}`,
-    'VC_NODE_EXTRA_CA_CERTS=/caddy/caddy/pki/authorities/local/root.crt', 'COMPOSE_PROFILES=<existing>,identity'] }
+    'VC_NODE_EXTRA_CA_CERTS=/caddy/caddy/pki/authorities/local/root.crt',
+    'SISLEXA_IDENTITY_IMAGE=ghcr.io/sislex/identity:70e28251f3faa79eabea664924abdf5a73e5500f'] }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

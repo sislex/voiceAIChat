@@ -58,20 +58,23 @@ local session, attempts refresh-token revocation at `/oauth/revoke`, then
 redirects to Identity logout. Core resolves the verified subject through its
 Identity account port and retains blocked-user and tenant checks.
 
-**Production rollout (A7).** `docker-compose.yml` carries an `identity` service
-(profile `identity`, image `ghcr.io/sislex/identity:<commit>`) on the shared
-Postgres (`IDENTITY_DATABASE_URL=VC_DB_URL`), so existing accounts and passwords
-sign in unchanged. Caddy serves it on its own origin `https://<host>:8443`,
-because the issuer must be an origin with path `/`. Core reaches that origin over
-the public address and trusts Caddy's local CA through `NODE_EXTRA_CA_CERTS`
-(`vc-caddy` is mounted read-only at `/caddy`). Order on the server:
+**Production rollout (A7).** OAuth runs in the existing Identity component
+service from `deploy/compose.identity.yml` (image `ghcr.io/sislex/identity` 1.6.0,
+shared Postgres, so accounts and passwords stay unchanged). Do not add a second
+`identity` service: Compose merges same-named services, and the overlay's
+component config must stay intact. Empty `AUTH_URL` keeps OAuth off. Caddy serves
+the issuer on its own origin `https://<host>:8443` (the issuer must be an origin
+with path `/`). Core reaches it over the public address and trusts Caddy's local CA
+through `NODE_EXTRA_CA_CERTS` (`vc-caddy` is mounted read-only at `/caddy`).
 `docker compose exec -u node voicechat node scripts/prod/identity-oauth-init.mjs https://<host>`
-creates `/data/identity/oauth` once (ES256 key, `core` client with the four
-scopes, client and session secrets; never overwrites) and prints the `.env`
-lines (`AUTH_URL`, `VC_PUBLIC_URL`, `AUTH_CLIENT_SECRET_FILE`,
-`VC_NODE_EXTRA_CA_CERTS`, profile `identity`). Then `docker compose up -d
-identity caddy voicechat`. Port 8443 must be open. Rollback: remove `AUTH_URL`
-from `.env` and recreate `voicechat`; the legacy login returns and the files stay.
+creates `/data/identity/oauth` once (ES256 key, `core` client with the four scopes,
+client secret; never overwrites). Identity reads it from `vc-data` mounted
+read-only at `/vc-data`. The script prints the `.env` lines: `AUTH_URL`,
+`VC_PUBLIC_URL`, `AUTH_CLIENT_SECRET_FILE`, `VC_NODE_EXTRA_CA_CERTS` and
+`SISLEXA_IDENTITY_IMAGE` (production pins the image through this variable). Load
+`/etc/voicechat/production.env` before `docker compose` so `COMPOSE_FILE` keeps the
+overlay chain, then recreate `identity caddy voicechat`. Port 8443 must be open.
+Rollback: remove `AUTH_URL` and recreate `voicechat` and `identity`.
 Core UI must include the identity-mode detection (SCU-45) before `AUTH_URL` is set.
 
 `STORAGE_URL` selects remote storage. In Identity mode, chat uploads use Storage
