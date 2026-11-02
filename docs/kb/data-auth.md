@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 6c74a78c
+checked: 2a094cbd8
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -57,6 +57,22 @@ HTTPS is required for the Secure HttpOnly cookie. `/auth/logout` deletes the
 local session, attempts refresh-token revocation at `/oauth/revoke`, then
 redirects to Identity logout. Core resolves the verified subject through its
 Identity account port and retains blocked-user and tenant checks.
+
+**Production rollout (A7).** `docker-compose.yml` carries an `identity` service
+(profile `identity`, image `ghcr.io/sislex/identity:<commit>`) on the shared
+Postgres (`IDENTITY_DATABASE_URL=VC_DB_URL`), so existing accounts and passwords
+sign in unchanged. Caddy serves it on its own origin `https://<host>:8443`,
+because the issuer must be an origin with path `/`. Core reaches that origin over
+the public address and trusts Caddy's local CA through `NODE_EXTRA_CA_CERTS`
+(`vc-caddy` is mounted read-only at `/caddy`). Order on the server:
+`docker compose exec -u node voicechat node scripts/prod/identity-oauth-init.mjs https://<host>`
+creates `/data/identity/oauth` once (ES256 key, `core` client with the four
+scopes, client and session secrets; never overwrites) and prints the `.env`
+lines (`AUTH_URL`, `VC_PUBLIC_URL`, `AUTH_CLIENT_SECRET_FILE`,
+`VC_NODE_EXTRA_CA_CERTS`, profile `identity`). Then `docker compose up -d
+identity caddy voicechat`. Port 8443 must be open. Rollback: remove `AUTH_URL`
+from `.env` and recreate `voicechat`; the legacy login returns and the files stay.
+Core UI must include the identity-mode detection (SCU-45) before `AUTH_URL` is set.
 
 `STORAGE_URL` selects remote storage. In Identity mode, chat uploads use Storage
 regardless of the legacy chat backend setting. Attachment reads, `/api/storage`,
