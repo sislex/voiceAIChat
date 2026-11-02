@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand, recordFullKnowledgeCommit } from './release-train-run.mjs'
+import { executeAsync, execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand, recordFullKnowledgeCommit } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
@@ -271,7 +271,8 @@ for (const fromDev of [false, true]) for (const conflict of ['none', 'index', 'o
   })
 }
 
-function fixture(t, realGit = true) {
+function fixture(t, realGit = true, application = 'identity') {
+  const image = `ghcr.io/sislex/${application === 'make' ? 'make-api' : application}`
   const directory = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'train-run-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   if (!realGit) return { directory, repository: directory, plan: { ready: true, core: { count: 1 }, applications: [{
@@ -290,15 +291,15 @@ function fixture(t, realGit = true) {
   git(owner, 'checkout', '-b', 'dev'); writeFileSync(join(owner, 'change'), 'owner'); git(owner, 'add', '.'); git(owner, 'commit', '-m', 'owner change')
   const source = git(owner, 'rev-parse', 'HEAD'); git(owner, 'checkout', '--detach')
   mkdirSync(join(repository, 'deploy')); mkdirSync(join(repository, 'docs/kb'), { recursive: true })
-  const pin = { repository: 'https://github.com/sislex/identity', workspace: 'apps/server', version: '1.0.0', commit: old }
-  put(join(repository, 'deploy/tools.lock.json'), { tools: { identity: pin } })
-  writeFileSync(join(repository, 'docker-compose.yml'), `image: ghcr.io/sislex/identity:${old}\n`)
+  const pin = { repository: `https://github.com/sislex/${application}`, workspace: 'apps/server', version: '1.0.0', commit: old }
+  put(join(repository, 'deploy/tools.lock.json'), { tools: { [application]: pin } })
+  writeFileSync(join(repository, 'docker-compose.yml'), `image: ${image}:${old}\n`)
   writeFileSync(join(repository, 'docs/kb/deploy.md'), `Identity ${old}\n`)
   git(repository, 'add', '.'); git(repository, 'commit', '-m', 'Core pins'); git(repository, 'branch', 'dev')
   git(repository, 'remote', 'add', 'origin', 'https://github.com/sislex/core.git')
   const core = { count: 1, dev: git(repository, 'rev-parse', 'HEAD') }
   git(repository, 'checkout', '--detach')
-  const plan = { ready: true, core, applications: [{ application: 'identity', repository: 'sislex/identity',
+  const plan = { ready: true, core, applications: [{ application, repository: `sislex/${application}`,
     proposedVersion: '1.0.1', pinnedVersion: '1.0.0', pinnedCommit: old, changes: { ahead: true, dev: source }, release: { matchesPinnedCommit: true } }] }
   const calls = [], prs = [], branches = [], releases = []
   let published, failPublish = false, failPreflight = false
@@ -307,12 +308,12 @@ function fixture(t, realGit = true) {
     calls.push({ binary, args, cwd, config: options.env?.DOCKER_CONFIG })
     if (binary === 'git') {
       if (args[0] === 'clone') {
-        const remote = args.at(-2), actual = remote.includes('identity') ? owner : repository
+        const remote = args.at(-2), actual = remote.includes(`/${application}.git`) ? owner : repository
         const result = git(cwd, ...args.slice(0, -2), actual, args.at(-1))
         git(args.at(-1), 'config', 'remote.origin.url', actual)
         return result
       }
-      if (args[0] === 'remote' && args[1] === 'get-url') return cwd.includes('owner-') || cwd.includes('publish-') ? 'https://github.com/sislex/identity.git' : 'https://github.com/sislex/core.git'
+      if (args[0] === 'remote' && args[1] === 'get-url') return cwd.includes('owner-') || cwd.includes('publish-') ? `https://github.com/sislex/${application}.git` : 'https://github.com/sislex/core.git'
       return git(cwd, ...args)
     }
     if (binary === 'npm') {
@@ -328,8 +329,8 @@ function fixture(t, realGit = true) {
       if (failPublish) throw Error(`fixture publication failed: ${env.GH_TOKEN}`)
       const sourceDir = args.at(-1)
       assert.equal(git(sourceDir, 'status', '--porcelain'), '')
-      published = { repository: 'https://github.com/sislex/identity', version: read(join(sourceDir, 'package.json')).version,
-        commit: git(sourceDir, 'rev-parse', 'HEAD'), images: [{ name: 'ghcr.io/sislex/identity' }] }
+      published = { repository: `https://github.com/sislex/${application}`, version: read(join(sourceDir, 'package.json')).version,
+        commit: git(sourceDir, 'rev-parse', 'HEAD'), images: [{ name: image }] }
       return ''
     }
     return '' // KB commands are recorded; no external package execution in fixtures.
@@ -361,11 +362,11 @@ function fixture(t, realGit = true) {
     }
     assert.equal(init.headers.Authorization, `Bearer ${env.GH_TOKEN}`)
     if (path === '/user') return reply({ login: 'fixture' })
-    if (path.endsWith('/assets/1')) return reply(published)
-    if (path.includes('/releases/tags/')) return reply({ draft: false, published_at: 'today', assets: [{ name: 'sislexa-release.json', url: 'https://api.github.com/assets/1' }] })
+    if (path.endsWith(`/assets/${application}`)) return reply(published)
+    if (path.includes('/releases/tags/')) return reply({ draft: false, published_at: 'today', assets: [{ name: 'sislexa-release.json', url: `https://api.github.com/assets/${application}` }] })
     if (path.includes('/commits/v')) return reply({ sha: published.commit })
     if (path.endsWith('/commits/main')) return reply({ sha: git(repository, 'rev-parse', 'main') })
-    const remote = path.includes('/identity/') ? owner : repository
+    const remote = path.includes(`/${application}/`) ? owner : repository
     if (path.endsWith('/pulls')) {
       if (method === 'POST') prs.push({ number: prs.length + 1, remote, head: { sha: git(remote, 'rev-parse', body.head), ref: body.head }, base: { ref: 'main' }, merged: false })
       return reply(method === 'POST' ? prs.at(-1) : prs.filter(pr => pr.remote === remote))
@@ -756,6 +757,131 @@ for (const failure of ['disabled', 'unknown', 'ignored', 'moved']) {
     assert.equal(f.calls.some(call => call.url?.includes('/pulls')), false)
   })
 }
+
+for (const fail of [false, true]) test(`parallel owner releases combine Core pins${fail ? ' after resume' : ''}`, async t => {
+  const f = fixture(t, true, 'core-ui'), other = fixture(t, true, 'make')
+  // Share credentials only inside the fixtures, just as the real adapter does.
+  other.env.GH_TOKEN = f.env.GH_TOKEN
+  const pins = read(join(f.repository, 'deploy/tools.lock.json'))
+  Object.assign(pins.tools, read(join(other.repository, 'deploy/tools.lock.json')).tools)
+  put(join(f.repository, 'deploy/tools.lock.json'), pins)
+  writeFileSync(join(f.repository, 'docker-compose.yml'), readFileSync(join(other.repository, 'docker-compose.yml')))
+  f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'Both owners')
+  f.plan.core.dev = f.git(f.repository, 'rev-parse', 'HEAD')
+  f.git(f.repository, 'branch', '-f', 'dev', f.plan.core.dev)
+  f.plan.applications.push(...other.plan.applications)
+  let journal = createJournal(f.plan, { apps: ['core-ui', 'make'], fromDev: true }, f.repository)
+  let failOnce = fail, arrivals = 0, release
+  const barrier = new Promise(resolve => { release = resolve })
+  const adapter = concreteAdapter({ ...f,
+    run: async (binary, args, cwd, options) => {
+      // Neither owner gate can finish before the other has started.
+      if (binary === 'npm' && args.join(' ') === 'run gate' && /owner-[01]$/.test(cwd)) {
+        if (++arrivals === 2) release()
+        await barrier
+      }
+      const target = /(?:owner|publish)-1$/.test(cwd) || /(?:owner|publish)-1$/.test(args.at(-1)) ? other : f
+      return target.run(binary, args, cwd, options)
+    },
+    fetcher: (url, init) => url.includes('/sislex/make/') || url.endsWith('/assets/make')
+      ? other.fetcher(url, init) : f.fetcher(url, init)
+  })
+  const calls = []
+  const checked = async (action, owner, state, context) => {
+    calls.push([action, owner?.repository, context.retry])
+    if (action === 'verify' && owner.repository === 'sislex/make' && failOnce) {
+      // Allow the other owner to finish verification before the failure.
+      while (!state.results['owner-0-verify']) await new Promise(resolve => setTimeout(resolve, 1))
+      failOnce = false
+      throw Error('make verification unavailable')
+    }
+    return adapter(action, owner, state, context)
+  }
+  if (fail) {
+    await assert.rejects(executeJournal(journal, f.directory, checked), /make verification unavailable/)
+    journal = read(join(f.directory, journal.id + '.json'))
+    assert.ok(journal.results['owner-0-verify'])
+    assert.equal(journal.ownerPending[1], 'owner-1-verify')
+    assert.equal(calls.some(([action]) => action === 'pin'), false)
+  }
+  await executeJournal(journal, f.directory, checked)
+  assert.equal(journal.status, 'completed')
+  for (const action of ['pin', 'coreGate', 'corePush', 'branch'])
+    assert.equal(calls.filter(([name]) => name === action).length, 1)
+  assert.equal(calls.filter(([action, owner]) => action === 'publish' && owner === 'sislex/core-ui').length, 1)
+  if (fail) assert.ok(calls.some(([action, owner, retry]) => action === 'verify' && owner === 'sislex/make' && retry))
+  const core = join(f.directory, journal.id, 'core')
+  const updated = read(join(core, 'deploy/tools.lock.json')).tools
+  assert.equal(updated['core-ui'].commit, journal.results['owner-0-publish'])
+  assert.equal(updated.make.commit, journal.results['owner-1-publish'])
+  assert.equal(f.git(core, 'rev-list', '--count', `${f.plan.core.dev}..HEAD`), '1')
+  assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.includes('gate:quick')).length, 1)
+})
+
+test('owner failure drains in-flight work, retains its checkpoint and resumes legacy pending', async t => {
+  const f = fixture(t, false)
+  f.plan.applications.push({ ...f.plan.applications[0], application: 'make', repository: 'sislex/make' })
+  const journal = createJournal(f.plan, { apps: [] }, f.repository)
+  journal.pending = 'owner-0-prepare' // A journal written by the sequential runner.
+  let finish, started
+  const running = new Promise(resolve => { started = resolve })
+  const blocked = new Promise(resolve => { finish = resolve })
+  const seen = []
+  const result = executeJournal(journal, f.directory, async (action, owner, state, { retry }) => {
+    seen.push([action, owner.repository, retry])
+    if (owner === state.owners[0]) {
+      await running
+      throw Error('first owner failed')
+    }
+    started()
+    await blocked
+    return 'prepared'
+  })
+  const failed = assert.rejects(result, /first owner failed/)
+  await running
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(journal.status, 'failed')
+  assert.ok(existsSync(join(f.directory, journal.id + '.json.lock')))
+  const disk = read(join(f.directory, journal.id + '.json'))
+  assert.deepEqual(disk.ownerPending, { 0: 'owner-0-prepare', 1: 'owner-1-prepare' })
+  finish()
+  await failed
+  assert.equal(seen.length, 2)
+  assert.equal(seen[0][2], true)
+  assert.equal(journal.results['owner-1-prepare'], 'prepared')
+  assert.equal(existsSync(join(f.directory, journal.id + '.json.lock')), false)
+  const resumed = read(join(f.directory, journal.id + '.json'))
+  const retries = []
+  await executeJournal(resumed, f.directory, async (action, owner, state, { retry }) => {
+    if (action === 'prepare') retries.push([owner.repository, retry])
+  })
+  assert.deepEqual(retries, [['sislex/identity', true]])
+  assert.equal(resumed.status, 'completed')
+})
+
+test('async command execution overlaps child processes and redacts failures', async t => {
+  const f = fixture(t, false)
+  const script = `const fs = require('node:fs'); fs.writeFileSync(process.argv[1], 'ready');
+    const timer = setInterval(() => { if (fs.existsSync(process.argv[2])) { clearInterval(timer); console.log('done') } }, 10)`
+  const a = join(f.directory, 'a'), b = join(f.directory, 'b')
+  assert.deepEqual(await Promise.all([
+    executeAsync(process.execPath, ['-e', script, a, b], f.directory, { timeout: 5000 }),
+    executeAsync(process.execPath, ['-e', script, b, a], f.directory, { timeout: 5000 })
+  ]), ['done', 'done'])
+  const secret = randomUUID()
+  await assert.rejects(executeAsync(process.execPath, ['-e', 'console.error(process.env.GH_TOKEN); process.exit(7)'],
+    f.directory, { env: { GH_TOKEN: secret } }), error => /exit code 7/.test(error.message) && !error.message.includes(secret))
+})
+
+test('Desktop remains excluded, including resumed journals', async t => {
+  const f = fixture(t, false)
+  f.plan.applications.push({ ...f.plan.applications[0], application: 'desktop', repository: 'sislex/desktop' })
+  assert.throws(() => createJournal(f.plan, { apps: ['desktop'] }, f.repository), /frozen/)
+  const journal = createJournal(f.plan, { apps: [] }, f.repository)
+  assert.equal(journal.owners.length, 1)
+  journal.owners[0].applications.push('desktop')
+  await assert.rejects(executeJournal(journal, f.directory, () => assert.fail('must not execute')), /frozen/)
+})
 
 test('owners with a set-version script bump their own lockstep versions', () => {
   assert.deepEqual(ownerVersionCommand({ scripts: { 'set-version': 'node scripts/set-version.mjs' } }, '1.8.1'),
