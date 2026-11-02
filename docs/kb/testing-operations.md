@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-02
-checked: 8fa1c9744
+checked: 3ec9a6988
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -945,8 +945,10 @@ and typing, captures a new main-frame POST request to the current stand's exact
 request's completed response. API fixture calls, previous in-flight requests,
 other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
 groups, missing expected IDs/deep links and request cancellation have distinct
-failures. The helper then waits for each requested source/title option to become
-visible. Search observation and option waits retain bounded 10-second limits;
+failures. Before changing the query, the helper proves that the real palette
+dialog and its combobox are visible and that the combobox is editable. It then
+waits for each requested source/title option to become visible. Search
+observation and option waits retain bounded 10-second limits;
 there is no readiness sleep. The delayed-response fixture also uses
 `SEARCH_TIMEOUT` for its interception wait; Vitest's default one-second
 `vi.waitFor` deadline can expire while the fresh page opens the palette on a
@@ -990,15 +992,16 @@ Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
 `npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
 Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
 required by the environment. Child runs disable acceptance mode to prevent
-recursion. TC-3 runs the complete `browser-gate.mjs --integration` three times
+recursion. TC-3 runs the complete `browser-gate.mjs --integration` five times
 sequentially with `VC_E2E_WORKERS=2`, stops on failure, verifies the full batch
 inventory and all universalSearch cases, and retains separate logs, exit codes,
 Vitest results and batch reports under `artifacts/universal-search-acceptance/`.
-TC-4 runs the quick gate against the supplied base. Ordinary browser runs keep
-their normal case inventory. The parallel allowlist includes sessions, projects,
+The source revision is checked between runs. TC-4 runs the quick gate against
+the supplied base. Ordinary browser runs keep their normal case inventory. The
+parallel allowlist includes sessions, projects,
 gitPane, universalSearch, both Web Reader suites and toolIntegration; other
 integration suites remain serial. The normal `browser.json` is overwritten,
-so its single latest result is insufficient evidence of three runs.
+so its single latest result is insufficient evidence of five runs.
 
 #### Universal search browser-gate diagnostics
 

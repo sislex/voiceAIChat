@@ -101,11 +101,12 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
   const stages: Record<string, number> = {}
   const mark = (stage: string) => { stages[stage] = Math.round(performance.now() - started) }
   const dialog = target.getByRole('dialog', { name: 'Командная палитра' })
+  const input = dialog.getByRole('combobox')
   try {
     // A mounted input with the same value does not retrigger the published
     // client's effect. Clear it explicitly before arming a fresh query.
-    if (await dialog.isVisible() && await dialog.getByRole('combobox').inputValue() === query) {
-      await dialog.getByRole('combobox').fill('', { timeout: SEARCH_TIMEOUT })
+    if (await dialog.isVisible() && await input.inputValue() === query) {
+      await input.fill('', { timeout: SEARCH_TIMEOUT })
     }
     const response = await observeSearch(target, query, async () => {
       if (!await dialog.isVisible()) {
@@ -113,9 +114,13 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
         await target.locator('#app-content').focus()
         await target.keyboard.press('Control+k')
       }
-      await dialog.waitFor({ timeout: SEARCH_TIMEOUT })
+      // A mounted dialog alone is not readiness: wait for the real, visible and
+      // editable palette input before changing the state that starts debounce.
+      await dialog.waitFor({ state: 'visible', timeout: SEARCH_TIMEOUT })
+      await input.waitFor({ state: 'visible', timeout: SEARCH_TIMEOUT })
+      await expect.poll(() => input.isEditable(), { timeout: SEARCH_TIMEOUT }).toBe(true)
       mark('opened')
-      await dialog.getByRole('combobox').fill(query, { timeout: SEARCH_TIMEOUT })
+      await input.fill(query, { timeout: SEARCH_TIMEOUT })
       mark('filled')
     }, mark)
     await checkSearchResponse(response, query, wanted)
@@ -154,9 +159,9 @@ if (acceptance) {
   }
 
   // @testCase TC-3
-  it('acceptance: three consecutive complete browser gates with two workers', async () => {
+  it('acceptance: five consecutive complete browser gates with two workers', async () => {
     const { integrationBrowserFiles } = await import('../scripts/browser-gate.mjs')
-    for (let index = 1; index <= 3; index++) {
+    for (let index = 1; index <= 5; index++) {
       const name = 'browser-' + index
       const report = join(evidence, name + '.tests.json')
       run(name, process.execPath, ['scripts/browser-gate.mjs', '--integration'], {
@@ -175,7 +180,7 @@ if (acceptance) {
         result.status === 'passed' && !result.retryReasons?.length)).toBe(true)
       console.log('acceptance browser run ' + index + ': exit 0; universalSearch passed with two workers')
     }
-  }, 2_700_000)
+  }, 4_500_000)
 
   // @testCase TC-4
   it('acceptance: quick gate for the actual task diff', () => {
@@ -523,4 +528,3 @@ it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the d
   console.log('[palette:navigation] ' + JSON.stringify({ source, throughReload: Math.round(performance.now() - navigationStarted) }))
   // Projects and tasks are rendered by Kanban; Core verifies their deep links.
 })
-
