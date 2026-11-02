@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-02
-checked: 2a094cbd8
+updated: 2026-11-03
+checked: ba96b8995
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -36,6 +36,14 @@ areas:
 ## File storage metadata and quotas
 
 ### Identity OAuth mode
+
+Core checks explicit Bearer credentials through the existing Identity authentication
+port before consulting auth-client browser sessions. This preserves API session
+revocation, blocked-user checks, tenant selection and read-only restrictions in
+both embedded and managed Identity deployments. Bearer requests do not require
+CSRF and a rejected bearer never falls back to a browser cookie. The Identity
+route host used for this verification never listens or exposes legacy login
+routes. OAuth cookies and their Storage token exchange remain owned by auth-client.
 
 The OAuth exchange test (`apps/server/src/auth/oauth.test.ts`) indexes its
 subject-token fixtures by the complete signed JWT. Keep the fixture expiration

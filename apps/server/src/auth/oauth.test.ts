@@ -16,7 +16,7 @@ it('keeps legacy configurable and validates Identity and Storage origins', () =>
   expect(() => fileStorageConfig({ STORAGE_URL: 'https://storage/private' })).toThrow()
 })
 
-it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange and logout', async () => {
+it('uses the pinned client for PKCE, cookie CSRF, exchange and logout', async () => {
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
   // Reissued fixtures must keep their identity in the subject-token lookup.
   const expiresAt = Math.floor(Date.now() / 1000) + 3600
@@ -52,7 +52,7 @@ it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange an
   } } as unknown as VoiceChatDb
   const app = Fastify()
   try {
-    const oauth = await registerCoreOAuth(app, db, { authUrl: 'https://identity', publicUrl: 'https://core' })
+    const oauth = await registerCoreOAuth(app, db, { authUrl: 'https://identity', publicUrl: 'https://core' }, async () => ({ ok: false, status: 401, error: 'unauthorized' }))
     const storage = await createRemoteStorageRuntime(fileStorageConfig({ STORAGE_URL: 'https://storage' }), oauth.storageToken)
     app.route({ method: ['GET', 'POST'], url: '/probe', handler: async (req, reply) => {
       const verdict = await oauth.authenticate(req)
@@ -80,12 +80,11 @@ it('uses the pinned client for PKCE, cookie CSRF, bearer validation, exchange an
     for (let attempt = 0; attempt < 5; attempt++) {
       expect((await app.inject({ method: 'POST', url: '/probe', headers: { cookie: sessionCookie, 'x-csrf-token': session.json().csrfToken } })).statusCode).toBe(200)
     }
-    const responses = await Promise.all([...tokens.keys()].map(token => app.inject({ url: '/probe', headers: { authorization: `Bearer ${token}` } })))
-    expect(responses.map(response => response.json().name)).toEqual(['alice', 'bob'])
     expect(upstream.every(headers => !headers.has('x-sislexa-user') && !headers.has('x-sislexa-tenant'))).toBe(true)
-    expect(new Set(upstream.map(headers => headers.get('authorization'))).size).toBe(2)
+    expect(new Set(upstream.map(headers => headers.get('authorization'))).size).toBe(1)
     expect(forms.some(form => form.get('grant_type') === 'urn:ietf:params:oauth:grant-type:token-exchange')).toBe(true)
     expect((await app.inject({ url: '/probe', headers: { authorization: `Bearer ${jwt('alice', 'storage')}` } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/probe', headers: { cookie: sessionCookie, authorization: 'Bearer revoked' } })).statusCode).toBe(401)
     const logout = await app.inject({ url: '/auth/logout', headers: { cookie: sessionCookie } })
     expect(logout.headers.location).toContain('/oauth/logout')
     expect(forms.some(form => form.get('token_type_hint') === 'refresh_token')).toBe(true)
