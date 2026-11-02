@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1442. Последние:
+Всего записей: 1443. Последние:
 
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
+- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
@@ -76,7 +77,6 @@
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md) — oauth-probe-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-fixture-clock.md) — oauth-probe-fixture-clock
-- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-parallel-owners.md) — release-train-parallel-owners
 
 ## Исторические планы
 
