@@ -45,7 +45,10 @@ export async function createRemoteStorageRuntime(config: FileStorageConfig, user
     return url.pathname + url.search
   }
   const statFile = async (user: string, space: string, path: string): Promise<StorageEntry> => {
-    const result = await json<{entries: StorageEntry[]}>(user, query(STORAGE_REST.files(space), {prefix:path}))
+    // Storage prefixes select directories, so look up the file in its parent.
+    const separator = path.lastIndexOf('/')
+    const prefix = separator === -1 ? undefined : path.slice(0, separator + 1)
+    const result = await json<{entries: StorageEntry[]}>(user, query(STORAGE_REST.files(space), {prefix}))
     const entry = result.entries.find(item => item.path === path)
     if (!entry) throw new StorageServiceError('not_found')
     return entry

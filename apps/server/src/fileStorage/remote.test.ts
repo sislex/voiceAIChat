@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { createRemoteStorageRuntime, withStorageTenant } from './remote.js'
 import Fastify from 'fastify'
+import { normalizeStoragePrefix } from '@voicechat/shared/fileStorage'
 import { registerFileStorageRoutes } from './routes.js'
 
 let server: Server, root: string, runtime: Awaited<ReturnType<typeof createRemoteStorageRuntime>>
@@ -19,7 +20,13 @@ beforeAll(async () => {
       tenant:req.headers['x-sislexa-tenant'] as string,range:req.headers.range,body:Buffer.concat(chunks)})
     if (req.url?.includes('missing')) { res.writeHead(404,{'content-type':'application/json'}).end(JSON.stringify({error:'not_found',message:'gone'})); return }
     if (req.method === 'PUT') { res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({path:'file',size:6,mimeType:'text/plain',revision:1,updatedAt:1,updatedBy:'alice'})); return }
-    if (req.url?.includes('/files')) { res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({entries:[{path:'file',size:6,mimeType:'text/plain',revision:1,updatedAt:1,updatedBy:'alice'}]})); return }
+    if (req.url?.includes('/files')) {
+      const prefix = normalizeStoragePrefix(new URL(req.url, 'http://storage').searchParams.get('prefix'))!
+      const entries = ['file', '.stand.json.bak', '.stand.json', 'nested/deep/file.txt.bak', 'nested/deep/file.txt']
+        .filter(path => path.startsWith(prefix))
+        .map(path => ({path,size:6,mimeType:'text/plain',revision:1,updatedAt:1,updatedBy:'alice'}))
+      res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({entries})); return
+    }
     const ranged=req.headers.range; res.writeHead(ranged?206:200,{'content-type':'text/plain','content-length':ranged?'3':'6',...(ranged?{'content-range':'bytes 1-3/6'}:{})}); res.end(ranged?'bcd':'abcdef')
   })
   await new Promise<void>((resolve,reject) => server.listen(18799,'127.0.0.1',resolve).once('error',reject))
@@ -35,6 +42,19 @@ it('asserts user and tenant and streams uploads and ranged downloads', async () 
   const chunks:Buffer[]=[]; for await (const chunk of opened.stream) chunks.push(Buffer.from(chunk))
   expect(Buffer.concat(chunks).toString()).toBe('bcd'); expect(opened).toMatchObject({contentLength:3,contentRange:'bytes 1-3/6'})
   expect(seen.at(-1)?.range).toBe('bytes=1-3')
+})
+
+it.each(['.stand.json', 'nested/deep/file.txt'])('stats and reads remote file %s', async path => {
+  const entry = await runtime.service.statFile('alice', 'space', path)
+  expect(entry).toMatchObject({path, size:6, revision:1})
+  const read = await runtime.service.readFile('alice', 'space', path)
+  expect(read.entry).toEqual(entry)
+  expect(Buffer.from(read.bytes).toString()).toBe('abcdef')
+})
+
+it.each(['absent', 'nested/deep/absent'])('returns not_found for absent remote file %s', async path => {
+  await expect(runtime.service.statFile('alice', 'space', path)).rejects.toMatchObject({code:'not_found', statusCode:404})
+  await expect(runtime.service.readFile('alice', 'space', path)).rejects.toMatchObject({code:'not_found', statusCode:404})
 })
 
 it('maps storage errors and connection failures', async () => {
