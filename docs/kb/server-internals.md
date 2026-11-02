@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 0cb88405
+checked: 5b13f13f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -51,6 +51,10 @@ See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
 session authentication. It verifies the service credential, MCP signature,
 expiry, application/Core ID, current conversation owner and account/tenant.
 Mixed cookies or ticket delegation and scoped task-source tokens are rejected.
+Missing account access, required password changes and tenant mismatches also
+fail admission with `403 delegation_denied`; successful admission reconstructs
+the current Identity account context. The legacy internal-token fallback is
+available only without a component runtime; managed calls need `make.core`.
 The file routes still enforce Storage ACLs. See [the authority contract](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 Core can use the standalone coordinator with `VC_FILE_STORAGE_MODE=remote`.

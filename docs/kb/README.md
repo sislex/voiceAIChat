@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1429. Последние:
+Всего записей: 1432. Последние:
 
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
+- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md) — oauth-probe-kb-verification
@@ -76,9 +77,6 @@
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md) — core-identity-storage-oauth
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md) — a4-core-identity-storage
-- [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
-- [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-834-dev-stand-test-isolation.md) — sisl-834-dev-stand-test-isolation
-- [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-828-remote-storage-core.md) — sisl-828-remote-storage-core
 
 ## Исторические планы
 

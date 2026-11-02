@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 0cb88405
+checked: 5b13f13f
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -245,6 +245,13 @@ mixed in, and the live account/tenant must match. Storage resolves space ACLs fo
 that user on every request, including reads, writes and shares. Tests in
 `routes/applicationTickets.delegation.test.ts` cover the cookie proxy, delegated
 whoami, file creation/readback, wrong credentials and revocation.
+
+For owner MCP calls without a browser session, Storage has a separate admission
+path: Make's service bearer accompanies `x-sislexa-mcp-token`, not a ticket
+delegation. Before SM-47, the Storage authenticator consumed ticket delegations
+but not the MCP authority accepted by shared internal RPCs. See the
+[SM-47 checks](#shared-service-rpc-and-mcp-deployment-profiles-b17) below; a task
+source token never acquires user-wide Storage access through this path.
 
 #### data-storage lookup and repository ownership
 
@@ -1439,6 +1446,20 @@ scopes are rejected rather than promoted to user-wide Storage access. The paired
 Make change preserves this authority in `storageFetch`; browser sessions still
 omit the service bearer. Integration coverage lives in
 `apps/server/src/routes/applicationTickets.delegation.test.ts`.
+
+The implementation is `authenticateRaw` in `apps/server/src/server.ts`. In
+managed mode, the non-shared branch requires a component grant for `make.core`;
+the internal-token fallback is used only without a component runtime. Core
+rejects users requiring a password change as well as blocked or missing users,
+missing conversations/account access, and mismatched conversation or explicit
+`x-sislexa-tenant-id` tenants. It rebuilds the account context from current
+Identity access rather than trusting a role in the token. Admission failures
+return `403 delegation_denied`, including invalid or expired MCP tokens; Storage
+ACL checks still follow successful authentication. The regression exercises
+legacy/shared Storage GET and PUT directly, including foreign owners, credentials,
+Core/application IDs, mixed authority and task scopes. It does not execute
+`make_read_file` or read `.stand.json` through a running Make process; that
+consumer regression belongs to the separate Make owner repository.
 
 **Service→Core.** On its own internal RPC paths an external application may present
 `authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>` instead of `VC_INTERNAL_TOKEN` or a
