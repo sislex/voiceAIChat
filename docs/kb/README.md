@@ -65,10 +65,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1444. Последние:
+Всего записей: 1445. Последние:
 
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md) — sisl-855-identity-bearer
+- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md) — release-train-d2736740-699f-436e-869f-a2b9ac2f38ed
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
@@ -76,7 +77,6 @@
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sisl-849-universal-search-readiness.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sisl-849-universal-search-readiness.md) — sisl-849-universal-search-readiness
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-oauth-probe-kb-verification.md) — oauth-probe-kb-verification
 
 ## Исторические планы
 
