@@ -349,8 +349,10 @@ export async function registerAgentRoutes(
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
     const userId = uid(req)
+    const conversation = await db.chat.getConversation(userId, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
     const binding = await db.machines.getChatStorageBinding(userId, req.params.id)
-    if (!binding) return reply.code(404).send({ error: 'not found' })
+    if (!binding) return reply.send(null)
     // Карточке чата нужны абсолютные каталоги и состояние хранилища, а не только id.
     const storage = (await db.machines.listMachineStorages(userId, binding.machineId)).find((item) => item.id === binding.storageId)
     if (!storage) return binding satisfies ChatStorageView
