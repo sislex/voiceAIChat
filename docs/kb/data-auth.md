@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-02
-checked: 5b13f13f
+checked: 6c74a78c
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -252,6 +252,21 @@ delegation. Before SM-47, the Storage authenticator consumed ticket delegations
 but not the MCP authority accepted by shared internal RPCs. See the
 [SM-47 checks](#shared-service-rpc-and-mcp-deployment-profiles-b17) below; a task
 source token never acquires user-wide Storage access through this path.
+
+For the lookup “How does MCP authorize Core Storage without a browser session?”,
+the two credentials have separate roles: the service bearer identifies Make,
+while the signed MCP token identifies the conversation owner. Core resolves the
+current Identity account and tenant before Storage applies that user's ACLs.
+An MCP key or a bare service bearer is not a substitute for this pair. Invalid
+MCP authority returns `403 delegation_denied` on Storage; do not confuse that
+response with the internal RPC verifier's `401` contract.
+
+At reviewed Core SHA `6c74a78c`, the diff against `origin/dev` contains only the
+Core admission change and its direct Storage regression outside documentation.
+The test uses embedded Core Storage and fake nodes; it does not establish
+`VC_MAKE_FILE_STORAGE=service` end-to-end behavior. Make's installation of
+request authority before reading a stand binding (`.stand.json`) must be verified
+in the Make owner source and consumer test; `apps/make` is absent here.
 
 #### data-storage lookup and repository ownership
 

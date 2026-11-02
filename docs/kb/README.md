@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1432. Последние:
+Всего записей: 1433. Последние:
 
+- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
@@ -76,7 +77,6 @@
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309.md) — release-train-707d5c7b-14f8-44d8-b6dc-dd2f25950309
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md) — core-identity-storage-oauth
-- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md) — a4-core-identity-storage
 
 ## Исторические планы
 
