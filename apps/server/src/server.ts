@@ -550,7 +550,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
     component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
-  const oauth = opts.config.oauth ? await registerCoreOAuth(app, db, opts.config.oauth) : undefined
+  let oauth: Awaited<ReturnType<typeof registerCoreOAuth>> | undefined
+  if (opts.config.oauth) {
+    // Reuse the Identity port without exposing legacy login routes in OAuth mode.
+    // This host never listens; its lifecycle follows Core.
+    const bearerHost = Fastify()
+    app.addHook('onClose', async () => { await bearerHost.close() })
+    const identity = managedIdentity
+      ? await registerRemoteIdentity(bearerHost, db, managedIdentity, sessionSecret, authOptions)
+      : await registerAuth(bearerHost, db, sessionSecret, authOptions)
+    oauth = await registerCoreOAuth(app, db, opts.config.oauth, identity.authenticate)
+  }
   let sessionAuthenticate: AuthenticateFn
   const makeRequests = new MakeRequestAuthority(async userId => {
     const user = await db.identity.getUser(userId)

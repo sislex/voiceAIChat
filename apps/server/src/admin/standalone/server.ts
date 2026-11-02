@@ -4,13 +4,13 @@
 // его RPC; деплой и уведомление об отзыве сессии — RPC к ядру. Снаружи сюда ходит только прокси ядра.
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
-import { createRpcClient } from '@voicechat/shared'
+import { createRpcClient, INTERNAL_WHOAMI_PATH } from '@voicechat/shared'
 import type { AdminDeployResponse } from '@voicechat/shared'
 import type { ServerConfig } from '../../config.js'
 import { VoiceChatDb } from '../../db/database.js'
 import { registerForwardedAuth } from '../../internal/forwardedAuth.js'
 import { registerCoreOAuth } from '../../auth/oauth.js'
-import { registerAuthGuard } from '@sislexa/identity/server/users/auth'
+import { registerAuthGuard, type AuthVerdict } from '@sislexa/identity/server/users/auth'
 import { HttpMachines } from '../../machinesBridge/httpMachines.js'
 import type { MachinesService } from '../../machines/service.js'
 import { createRemoteMake } from '../../makeBridge/remote.js'
@@ -49,7 +49,15 @@ export async function buildAdminServer(opts: BuildAdminServerOptions): Promise<A
   await db.ready
   if (ownDb) app.addHook('onClose', async () => { await db.close() })
 
-  const oauth = config.oauth ? await registerCoreOAuth(app, db, config.oauth) : undefined
+  const oauth = config.oauth ? await registerCoreOAuth(app, db, config.oauth, async request => {
+    const response = await fetchImpl(new URL(INTERNAL_WHOAMI_PATH, coreUrl), {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ method: request.method, url: request.url, headers: request.headers }),
+      redirect: 'error', signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw Object.assign(new Error('Core authentication unavailable'), { statusCode: 503 })
+    return await response.json() as AuthVerdict
+  }) : undefined
   if (oauth) registerAuthGuard(app, db, oauth.authenticate, () => null)
   else registerForwardedAuth(app, { name: 'admin', coreUrl, token, fetchImpl })
 

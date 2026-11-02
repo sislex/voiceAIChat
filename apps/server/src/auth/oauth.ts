@@ -19,7 +19,7 @@ export function coreOAuthConfig(env: NodeJS.ProcessEnv): CoreOAuthConfig | undef
   }
   return { authUrl: env.AUTH_URL, publicUrl: env.PUBLIC_URL, secretFile: env.AUTH_CLIENT_SECRET_FILE }
 }
-export async function registerCoreOAuth(app: FastifyInstance, db: VoiceChatDb, config: CoreOAuthConfig) {
+export async function registerCoreOAuth(app: FastifyInstance, db: VoiceChatDb, config: CoreOAuthConfig, authenticateBearer: AuthenticateFn) {
   const authConfig = await configFromEnv({
     AUTH_URL: config.authUrl, AUTH_CLIENT_ID: 'core', PUBLIC_URL: config.publicUrl,
     AUTH_CLIENT_SECRET_FILE: config.secretFile,
@@ -46,6 +46,16 @@ export async function registerCoreOAuth(app: FastifyInstance, db: VoiceChatDb, c
   const authenticate: AuthenticateFn = async input => {
     const request = input as FastifyRequest
     delete request.authUser
+    // Identity owns API/session revocation, tenant selection and token permissions.
+    // Never fall back to browser cookies when an explicit bearer is rejected.
+    // OAuth access tokens are three-part JWTs and stay on the auth-client path;
+    // Identity session and API tokens are two-part signed values.
+    const bearer = /^Bearer\s+(\S+)$/i.exec(input.headers.authorization ?? '')?.[1]
+    const oauthAccessToken = bearer !== undefined && bearer.split('.').length === 3
+    if (/^Bearer(?:\s|$)/i.test(input.headers.authorization ?? '') && !oauthAccessToken) {
+      return authenticateBearer({ method: input.method, url: input.url, headers: { ...input.headers,
+        authorization: input.headers.authorization!.replace(/^Bearer\s*/i, 'Bearer '), cookie: undefined } })
+    }
     let denied: AuthVerdict = { ok: false, status: 401, error: 'unauthorized' }
     // Adapt the owner's reply-based guard to Core's transport-neutral verdict port.
     const reply = {
