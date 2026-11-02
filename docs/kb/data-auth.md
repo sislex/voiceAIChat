@@ -77,6 +77,20 @@ overlay chain, then recreate `identity caddy voicechat`. Port 8443 must be open.
 Rollback: remove `AUTH_URL` and recreate `voicechat` and `identity`.
 Core UI must include the identity-mode detection (SCU-45) before `AUTH_URL` is set.
 
+First production attempt (2026-11-03) findings. Caddy's `root.crt` in `vc-caddy`
+is root-only (0600), so copy it once into the shared volume for the `node` user:
+`docker cp voiceaichat-caddy-1:/data/caddy/pki/authorities/local/root.crt` to the
+host, then into `voicechat` at `/data/identity/oauth/caddy-root.crt` (owner
+`node`, 0644), and point `VC_NODE_EXTRA_CA_CERTS` there. ufw drops container
+traffic to the host's published 8443; allow it with
+`ufw allow from 172.16.0.0/12 to any port 8443 proto tcp`. Manual `docker compose`
+must include `/etc/voicechat/environment-overrides/current.yml`, the newest
+`/etc/voicechat/release-overrides/*.yml` and an identity image override, because
+`local-owner-images.yml` pins a local Identity image. With these, sign-in through
+Identity worked end to end, but `AUTH_URL` was rolled back: browser mutations got
+403 `invalid_csrf` (Core UI sends `x-vc-csrf`, the client expects `x-csrf-token`,
+SCU-51) and Bearer API tokens got 401 (SISL-855). Enable again only after both.
+
 `STORAGE_URL` selects remote storage. In Identity mode, chat uploads use Storage
 regardless of the legacy chat backend setting. Attachment reads, `/api/storage`,
 and admin usage use the current user's token exchanged for `aud=storage`, with
