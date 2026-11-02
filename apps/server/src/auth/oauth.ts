@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { REST } from '@voicechat/shared'
 import { AuthClient, MemorySessionStore, configFromEnv } from '@sislexa/auth-client'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthenticateFn, AuthVerdict } from '@sislexa/identity/server/users/auth'
@@ -61,7 +62,33 @@ export async function registerCoreOAuth(app: FastifyInstance, db: VoiceChatDb, c
       return { ok: false, status: 403, error: 'account_access_denied' }
     const context = requests.getStore()
     if (context) context.token = accessToken
-    return { ok: true, user: { name: row.name, role: access.systemRole, account: accountContext(access) } }
+    return { ok: true, user: { name: row.name, role: access.systemRole, account: accountContext(access),
+      ...(row.mustChangePassword ? { mustChangePassword: true } : {}) } }
+  }
+  // Session paths bypass the global auth guard, so authenticate them explicitly.
+  app.get(REST.sessionMe, async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const verdict = await authenticate(req)
+    if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+    return { user: verdict.user, csrf: req.authUser?.csrfToken,
+      notices: await db.identity.unseenSecurityNotices(verdict.user.name) }
+  })
+  app.post(REST.sessionNoticesSeen, async (req, reply) => {
+    const verdict = await authenticate(req)
+    if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+    await db.identity.markNoticesSeen(verdict.user.name)
+    return { ok: true }
+  })
+  // Legacy bootstrap helpers cannot mint legacy credentials in OAuth mode.
+  for (const [method, url] of [
+    ['POST', REST.sessionPreview], ['POST', REST.sessionCookie],
+    ['GET', REST.sessionSignup], ['GET', REST.sessionAccountAccess],
+  ] as const) {
+    app.route({ method, url, handler: async (req, reply) => {
+      const verdict = await authenticate(req)
+      if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+      return reply.code(403).send({ error: 'identity_session_required' })
+    } })
   }
   return { authenticate, async storageToken() {
     const token = requests.getStore()?.token
