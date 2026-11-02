@@ -353,6 +353,100 @@ ledger or test-environment restriction is changed by this preparation. MacBook
 validation is not physical-M1 evidence. No new paid-provider requests are needed
 for these tests.
 
+## SISL-785: blocked Mailpit material handoff (2026-10-28)
+
+Acceptance remains incomplete. The task started at Core `4a7d3c72`; its branch
+is `SISL-785`. A `remote:read` request for the operator directory specified by
+SISL-766, `/Users/alexeyrozhnov/.local/state/sislexa/operator/public-chat-v1`,
+was denied because it lies outside the task checkout and task `owners` roots.
+This establishes a scope denial, not the existence or absence of the source.
+A checkout filename search excluding `.git` and `node_modules` found no Mailpit
+or SISL-766 files. The retained scenario/configuration has not been inspected.
+
+The code confirms that `remotePath` uses cwd and explicit server URL roots
+(`apps/server/src/mcp/remoteBashMcp.ts:76`, `:254`). The available
+`historical_evidence_verify` operation only returns journal hashes
+(`remoteBashMcp.ts:344`, `historicalEvidence.ts:38`); it cannot provide scripts or
+configuration. Its optional adapter is supplied by `BuildOptions.historicalEvidence`
+(`server.ts:205`, `:876`). No material-export/provisioning tool is exposed to this
+turn. No shell, symlink, alternate-machine or identity fallback was used to read
+the denied directory, and no permission expansion was made.
+
+### Platform ownership verified in the task repository
+
+The follow-up investigation found the concrete transport boundary:
+
+- `apps/server/src/kanban/core.ts:34`–`36` exposes `fsRead`, `fsWrite` and
+  `fsMkdir` to the trusted Kanban service. `kanbanBridge/internal.ts:33`–`37`
+  dispatches these operations; `kanbanBridge/localCore.ts:24` delegates them to
+  the existing machines service. These primitives do not select, sanitize or
+  bind an operator bundle to a task.
+- `KanbanUploads` (`kanban/core.ts:52`–`55`) exposes metadata and bytes of an
+  already registered upload. `kanbanBridge/localCore.ts:27`–`32` reads a local
+  upload by ID and returns null for a machine-hosted upload. This is not an
+  operator-state exporter and does not register the missing Mailpit materials.
+- Task preparation and run orchestration belong to external `sislexa-kanban`.
+  `apps/server/src/kanban/boundary.test.ts:16`–`23`, `:40`–`44` explicitly
+  assert the absence of those implementations in Core. The checkout's
+  `owner-repo` directory is empty. This investigation is scoped to the available
+  SISL-785 repository; the owning service's implementation was not inspected.
+- `scripts/kanban-stand-prepare.mjs:50` prepares an external Kanban checkout for
+  Core e2e tests. `scripts/prod/environment_stand.py:418` builds/pulls services,
+  optionally restores snapshots and starts Compose. Neither is the missing
+  task-input publisher; neither was invoked to provision this stand.
+- The task input directory `artifacts/SISL-785/inputs/` is absent. No placeholder
+  bundle has been created or represented as retained evidence.
+
+**Remaining platform operation (continue under SISL-785, no duplicate card):**
+The authorized operator must select and sanitize the retained source files and
+provide their provenance. The task-preparation owner (`sislexa-kanban`) must
+bind that approved bundle to task `b1742ac7-ca2b-4bd2-bffc-bd2d9af3b1cd` and the
+current run workspace, then materialize only those approved bytes as regular
+files under `<run cwd>/artifacts/SISL-785/inputs/` before launching the worker.
+The existing Core machine write/mkdir transport is the available integration
+point, not proof that the owner already implements a publisher. Determining or
+implementing that publisher requires follow-up in the owner component and the
+operator's actual bundle; adding a second task preparer or granting source-root
+access in Core would not complete this handoff.
+
+The owner follow-up must verify destination/task/run binding, rejection of
+traversal and symlink escapes, missing or unapproved sources and digest mismatch,
+and ensure a failed/partial transfer does not mark inputs ready. Its successful
+receipt must identify the files and digests. Then this worker must verify actual
+bridge readability. These are outstanding checks, not implemented behavior or
+passing test results. A separately prepared, identified Mailpit stand is still
+required before executing the scenario. Documentation and development gates do
+not satisfy either acceptance prerequisite.
+
+Validation of this ownership investigation: `npm run test:files --
+apps/server/src/kanban/boundary.test.ts apps/server/src/kanbanBridge/internal.test.ts`
+passed both files (11 tests). This checks the existing Core boundary and RPC
+behavior, not material publishing or Mailpit acceptance.
+
+Required platform handoff before the rerun:
+
+1. Provide the reviewed, non-secret retained scenario and launch instructions as
+   regular files in this task checkout, for example `artifacts/SISL-785/inputs/`.
+   Include provenance and SHA256 digests; identify redactions/adaptations. Do not
+   copy the whole operator root: it also holds Billing and component state
+   (`docs/kb/deploy.md:71`–`72`). Credentials must remain platform-managed.
+2. Supply sanitized Mailpit/stand configuration, assigned machine and endpoints,
+   exact Core/Identity/Runner/Billing composition, and the authorized platform
+   operation to start the stopped stand. Historical M2 ports in this document
+   do not prove availability on the task's selected M1 machine.
+3. Supply the authorized `activeRuns` observation mechanism and a task-local
+   results directory. Confirm the inputs with `remote:read`, then run registration
+   → Luna/Terra → history → reconnect → Stop, recording per-step outcomes and
+   `activeRuns` before/during execution and with bounded polling after Stop.
+   Retain sanitized results and version provenance separately from historical
+   evidence. A unit-test pass cannot substitute for this stand acceptance.
+
+Current results: materials not provisioned; scenario not executed; `activeRuns`
+not observed; no new Mailpit results. Full SISL-766 acceptance and attribution of
+historical `activeRuns=1` remain unconfirmed. This investigation does not implement
+a platform transfer facility or duplicate the prepared Runner fix. Dependency
+pinning, releases, live mail and `sislexa.by` remain outside scope.
+
 ## Work and acceptance order
 
 | Work item | Required evidence | Status at audit |

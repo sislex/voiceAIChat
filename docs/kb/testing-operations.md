@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-10-30
-checked: cbbf27a5
+updated: 2026-11-03
+checked: c8f03b95b
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -35,7 +35,17 @@ journal's release branch result. Owner docs-only release reuse is proven by
 300 files, and include only `docs/kb/` paths (including previous rename paths).
 A saturated or unverified comparison requires a new release version.
 
-## Task gate for the dev lane
+<a id="task-gate-for-the-dev-lane"></a>
+
+## Task gate
+
+`scripts/affected-check.mjs` resolves the base in `parseOptions` from explicit
+`--base`, otherwise `HEAD` for `--worktree`, otherwise `origin/${BASE_BRANCH}`
+with `main` as the fallback for an unset or empty environment variable.
+`--base` and `--worktree` are mutually exclusive. Its parser test saves and
+restores `BASE_BRANCH`, checks unset/empty defaults and `dev`, and verifies
+that explicit CLI options override the environment. This isolates the default
+assertion from delivery workflows that export `BASE_BRANCH=dev`.
 
 `npm run gate:task -- --base <sha>` compares the merge base with the current
 worktree, including untracked files. It reuses `quickPlanCommands` in task mode:
@@ -64,6 +74,14 @@ after its run finishes; on timeout, unfinished file names identify the work for
 promotion even when no result report was written. Node reports are persisted
 after each result. Temporary reports live under `artifacts/gate-task` and are
 removed after reading. Missing successful-run reports fail the gate.
+
+Node reports preserve each assertion's status and failure messages, matching
+the fields consumed from Vitest reports. After the complete `GATE-TASK-CASE`
+inventory, the gate repeats failed assertions as `GATE-TASK-FAILED: <file>: <name>`
+with their error messages immediately before the final count/time summary.
+This keeps the original failure in workflow log tails even when later tests
+pass. `GATE-TASK-CASE` lists all reported cases and is not a failure marker.
+The reporter change does not alter test selection, budgets or runner exit codes.
 
 `scripts/task-gate.mjs` writes each Vitest `assertion.fullName` to
 `GATE-TASK-CASE` without escaping. Parameterized values therefore become part
@@ -98,6 +116,14 @@ temporary JSON report is removed in `finally`. Inspect the preceding test
 output; zero in that summary does not establish that discovery found no tests.
 
 ## Dev stand focused checks (C02)
+
+`scripts/dev-stand-local.test.mjs` starts real loopback HTTP processes. Its fake
+Core UI is configured through `VC_WEB_PORT`, while the other fake services use
+`PORT`. The fixture must explicitly clear an ambient `PORT` when it constructs
+the stand environment: otherwise a gate worker's inherited port wins over
+`VC_WEB_PORT`, the fake UI listens at the wrong address and readiness times out.
+This is environment isolation, not a longer timeout; the existing process,
+readiness and shutdown assertions stay unchanged.
 
 Run `npm run test:files -- scripts/dev-stand.test.mjs scripts/owner-pins.test.mjs
 scripts/release-composition.test.mjs scripts/shared-chat-artifacts.test.mjs
@@ -167,6 +193,14 @@ SISL-767 acceptance also asserts that the saved answer remains visible without
 TTS. Server model notice coverage remains in
 `apps/server/src/turns.modelNotices.test.ts`: deployment-projected inherited models
 produce no warning, while explicit overrides and transport errors retain notices.
+
+### Contract consumer diagnostics
+
+`contracts-release.test.mjs` runs a real peer conflict with local tarballs and an
+isolated offline cache under `npm_config_loglevel=silent`. The subprocess helper
+forces `npm --loglevel=error` and captures both output streams, so the report
+retains ERESOLVE details and the next consumer still runs. See
+[contract pin release](deploy.md#contract-pin-release).
 
 ### Shared chat exact-artifact acceptance (U10)
 
@@ -911,8 +945,16 @@ and typing, captures a new main-frame POST request to the current stand's exact
 request's completed response. API fixture calls, previous in-flight requests,
 other queries, methods and origins cannot satisfy it. HTTP errors, unavailable
 groups, missing expected IDs/deep links and request cancellation have distinct
-failures. The helper then waits for each requested source/title option to become
-visible. Search observation and option waits retain bounded 10-second limits;
+failures. Before changing the query, the helper proves that the real palette
+dialog and its combobox are visible and that the combobox is editable. It then
+handles a repeated query by completing a distinct reset-query request before
+arming the requested query. Clearing and immediately refilling the input is not
+sufficient: React can batch both updates into the unchanged state, and a
+previously scheduled same-query debounce can otherwise satisfy a newly attached
+observer. The regression test records the deterministic reset-query →
+requested-query order. The helper then waits for each requested source/title
+option to become visible. Search
+observation and option waits retain bounded 10-second limits;
 there is no readiness sleep. The delayed-response fixture also uses
 `SEARCH_TIMEOUT` for its interception wait; Vitest's default one-second
 `vi.waitFor` deadline can expire while the fresh page opens the palette on a
@@ -921,8 +963,8 @@ loaded machine, before the observed request is sent.
 The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
 resets its query on reopening and does not retrigger its search effect for an
 unchanged mounted input. The E2E verifies this behavior in Chromium. Calling
-the helper again with the same mounted value explicitly clears the input before
-arming a fresh search. A controlled delayed-response case demonstrates why
+the helper again with the same mounted value completes the reset-query barrier
+before arming a fresh search. A controlled delayed-response case demonstrates why
 counting arbitrary options is insufficient: local command options for
 `Настройки` already exist while the search response is withheld. Another case
 keeps the expected option hidden after a successful real response and verifies
@@ -956,15 +998,16 @@ Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
 `npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
 Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
 required by the environment. Child runs disable acceptance mode to prevent
-recursion. TC-3 runs the complete `browser-gate.mjs --integration` three times
-sequentially with `VC_E2E_WORKERS=2`, stops on failure, verifies the full batch
-inventory and all universalSearch cases, and retains separate logs, exit codes,
-Vitest results and batch reports under `artifacts/universal-search-acceptance/`.
-TC-4 runs the quick gate against the supplied base. Ordinary browser runs keep
-their normal case inventory. The parallel allowlist includes sessions, projects,
+recursion. TC-3 runs the complete `universalSearch.e2e.test.ts` file twenty times
+sequentially with retries disabled, stops on failure, verifies every case, and
+retains separate logs, exit codes and Vitest JSON results under
+`artifacts/universal-search-acceptance/`. The source revision is checked between
+runs. TC-4 runs the quick gate against the supplied base. Ordinary browser runs
+keep their normal case inventory. The
+parallel allowlist includes sessions, projects,
 gitPane, universalSearch, both Web Reader suites and toolIntegration; other
 integration suites remain serial. The normal `browser.json` is overwritten,
-so its single latest result is insufficient evidence of three runs.
+so its single latest result is insufficient evidence of twenty runs.
 
 #### Universal search browser-gate diagnostics
 
@@ -1345,12 +1388,13 @@ owner-maintained system acceptance. `gate:release` selects these stages from the
 release diff as described below. Known budget/measurement edits still select their real browser
 measurements directly. The full gate's test stage runs tooling and each workspace
 test script as separate processes, with at most three active by default; set
-`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound. The current
-`full-gate.test.mjs` default-value assertion calls `testConcurrency(undefined)`
-without isolating that environment variable: a non-default inherited override
-therefore fails the tooling assertion (`1 !== 3` for value `1`). Keep it unset
-when running the complete suite with this version of that test. Their output
-is buffered and printed in manifest order, all failing workspaces are reported,
+`VC_GATE_TEST_CONCURRENCY` to a positive integer to tune that bound.
+`testConcurrency(undefined)` reads that environment variable; it does not bypass
+the environment to request the built-in default. The default-value regression
+test in `full-gate.test.mjs` saves, clears and restores the variable, then checks
+environment overrides and explicit-argument precedence separately. Inherited
+runner overrides therefore do not invalidate the default-value assertion.
+Workspace output is buffered and printed in manifest order, all failing workspaces are reported,
 and `[gate:timing] tests/<workspace>` records individual durations.
 Full-gate test runners write isolated `GATE_TEST_REPORT` JSON files (node:test
 file lists for tooling, Vitest JSON for workspaces and browser batches). Tooling

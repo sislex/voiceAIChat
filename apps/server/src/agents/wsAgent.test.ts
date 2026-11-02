@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { attachAgentWs } from './wsAgent'
 import { AgentRegistry } from './registry'
 import { VoiceChatDb } from '../db/database'
@@ -21,6 +23,102 @@ function fakeSocket() {
   } as unknown as WebSocket
   return { socket, sent, message: async (obj: object) => { await handlers.get('message')!(Buffer.from(JSON.stringify(obj)), false) } }
 }
+
+describe('attachAgentWs dependency failures', () => {
+  it('closes and cleans up when Identity fails after sending an update offer', async () => {
+    const db = new VoiceChatDb(':memory:')
+    await db.identity.createUser('bob', 'x', 'developer')
+    const created = await db.machines.createAgent('bob', 'Mac')
+    const registry = new AgentRegistry()
+    const unregister = vi.spyOn(registry, 'unregister')
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const audit = vi.spyOn(db.identity, 'logSecurityEvent')
+    audit.mockResolvedValueOnce(undefined).mockRejectedValueOnce(Object.assign(new Error('Identity unavailable'), { statusCode: 503 }))
+    const s = fakeSocket()
+    try {
+      attachAgentWs(s.socket, db, registry)
+      await s.message({ t: 'agent.register', token: created.token, version: '0.1.0', supervisor: 'launchd' })
+      expect(s.socket.close).toHaveBeenCalledWith(1013, expect.stringContaining('retry'))
+      expect(unregister).toHaveBeenCalledWith(created.id)
+      expect(log).toHaveBeenCalled()
+      await s.message({ t: 'agent.register', token: created.token })
+      expect(audit).toHaveBeenCalledTimes(2)
+    } finally {
+      log.mockRestore()
+      await db.close()
+    }
+  })
+
+  it.each(['connected', 'rejected', 'pong', 'close'])('survives %s failure in a strict Node process and serves the next connection', async (failure) => {
+    const script = `
+      import assert from 'node:assert/strict'
+      import { once } from 'node:events'
+      import { WebSocket, WebSocketServer } from 'ws'
+      import { attachAgentWs } from ${JSON.stringify(new URL('./wsAgent.ts', import.meta.url).href)}
+      import { createIdentityStoreClient } from '@sislexa/identity/client/rpc'
+      const failure = ${JSON.stringify(failure)}
+      const { DependencyUnavailable } = await import('@sislexa/component-runtime')
+      const unavailable = new DependencyUnavailable('identity')
+      let down = true, registered = 0, unregistered = 0, rpcCalls = 0
+      const db = {
+        identity: createIdentityStoreClient({ url: 'http://identity.invalid', token: 'test', fetchImpl: async () => {
+          rpcCalls++
+          if (down) throw unavailable
+          return new Response(JSON.stringify({ result: null }))
+        }}),
+        machines: {
+          findAgentByTokenHash: async () => ({ id: 'agent', name: 'Mac', userId: 'bob',
+            tokenExpiresAt: failure === 'rejected' && down ? 0 : null, policy: {} }),
+          touchAgent: async () => { if (down && (failure === 'pong' || failure === 'close')) throw unavailable }
+        }
+      }
+      const registry = { register: () => { registered++ }, unregister: () => { unregistered++ } }
+      const server = new WebSocketServer({ port: 0, host: '127.0.0.1' })
+      server.on('connection', socket => attachAgentWs(socket, db, registry))
+      await once(server, 'listening')
+      const url = 'ws://127.0.0.1:' + server.address().port
+      async function connect() {
+        const socket = new WebSocket(url)
+        await once(socket, 'open')
+        return socket
+      }
+      if (failure === 'pong' || failure === 'close') down = false
+      const first = await connect()
+      const closed = once(first, 'close')
+      const message = failure === 'pong' || failure === 'close' ? once(first, 'message') : null
+      first.send(JSON.stringify({ t: 'agent.register', token: 'test' }))
+      if (message) {
+        await message
+        down = true
+        if (failure === 'pong') first.pong()
+        else first.close()
+      }
+      const [code] = await closed
+      if (failure !== 'close') assert.equal(code, 1013)
+      await new Promise(resolve => setTimeout(resolve, 30))
+      assert.equal(unregistered, registered)
+      assert.ok(rpcCalls > 0)
+      down = false
+      const second = await connect()
+      const reply = once(second, 'message')
+      second.send(JSON.stringify({ t: 'agent.register', token: 'test' }))
+      assert.equal(JSON.parse(String((await reply)[0])).t, 'agent.registered')
+      const secondClosed = once(second, 'close')
+      second.close()
+      await secondClosed
+      await new Promise(resolve => setTimeout(resolve, 30))
+      assert.equal(unregistered, registered)
+      await new Promise(resolve => server.close(resolve))
+      console.log('server survived')
+    `
+    const { stdout, stderr } = await promisify(execFile)(process.execPath,
+      ['--unhandled-rejections=strict', '--import', 'tsx', '--input-type=module', '--eval', script],
+      { timeout: 15_000 })
+    expect(stdout).toContain('server survived')
+    expect(stderr).toContain('DependencyUnavailable')
+    expect(stderr).toContain('[agent-ws]')
+  }, 20_000)
+})
 
 describe('attachAgentWs — токены (п.11)', () => {
   it('успешный вход пишет IP и событие; привязка к IP и отзыв отклоняют подключение с событием', async () => {

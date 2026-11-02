@@ -30,7 +30,7 @@ async function fixture(t, external = false, command = 'run') {
   // Real processes and HTTP readiness, without installing or booting product services.
   const service = join(root, 'service.cjs')
   await write(service, `const fs = require('node:fs'); const http = require('node:http');
-fs.writeFileSync(process.cwd() + (process.env.VC_APPLICATION_ID === 'make-ui' ? '/frontend.json' : '/started.json'), JSON.stringify({ cwd: process.cwd(), pid: process.pid, api: process.env.VC_APPLICATION_API_VERSION, version: process.env.VC_APPLICATION_VERSION, commit: process.env.VC_APPLICATION_COMMIT }));
+fs.writeFileSync(process.cwd() + (process.env.VC_APPLICATION_ID === 'make-ui' ? '/frontend.json' : '/started.json'), JSON.stringify({ cwd: process.cwd(), pid: process.pid, api: process.env.VC_APPLICATION_API_VERSION, version: process.env.VC_APPLICATION_VERSION, commit: process.env.VC_APPLICATION_COMMIT, dev: process.env.VC_APPLICATION_DEV }));
 if (process.cwd().endsWith('/packages/make-app')) { fs.mkdirSync('dist', {recursive:true}); fs.writeFileSync('dist/manifest.json', JSON.stringify({ version: '9.8.7', commit: 'manifest-commit', apiVersion: '2.0.0' })); setInterval(() => {}, 1000); }
 else http.createServer((req,res) => res.end('ok')).listen(Number(process.env.PORT || process.env.VC_WEB_PORT), '127.0.0.1');
 `)
@@ -71,6 +71,9 @@ else http.createServer((req,res) => res.end('ok')).listen(Number(process.env.POR
   do { uiPort = await freePort() } while ([base + 787, base + 788].includes(uiPort))
   let output = ''
   const launchEnv = { ...process.env, PATH: bin + ':' + process.env.PATH,
+    // Core UI is configured through VC_WEB_PORT. An ambient PORT (for example
+    // from a parallel gate worker) would make the fake service listen elsewhere.
+    PORT: '',
     SISLEXA_STAND_REF: 'HEAD', SISLEXA_STAND_SOURCES: '', SISLEXA_STAND_NAME: 'test', SISLEXA_STAND_HOME: home, SISLEXA_STAND_SHARE: shared,
     SISLEXA_STAND_MAKE_SOURCE: external ? join(shared, 'make') : '', SISLEXA_STAND_CORE_UI_SOURCE: external ? join(shared, 'sislexa-core-ui') : '',
     SISLEXA_STAND_CORE_SOURCE: core, SISLEXA_STAND_PORT_BASE: String(base), SISLEXA_STAND_UI_PORT: String(uiPort) }
@@ -105,6 +108,7 @@ test('runs all three prepared conversation checkouts without creating stand work
   assert.equal(frontend.api, '2.0.0')
   assert.equal(frontend.version, '9.8.7')
   assert.equal(frontend.commit, 'manifest-commit')
+  assert.equal(frontend.dev, '1')
   assert.ok(meta.pid)
   const uiPids = await Promise.all(['make-ui', 'make-ui-build'].map(async id => Number(await readFile(join(f.home, 'run', id + '.pid'), 'utf8'))))
   f.child.kill('SIGTERM')

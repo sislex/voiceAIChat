@@ -1,8 +1,12 @@
 ---
+updated: 2026-11-02
+checked: 72c4cd42a
 title: Архитектура: кто с кем разговаривает
-updated: 2026-10-30
-checked: cbbf27a5
 areas:
+  - packages/file-storage
+  - packages/shared/src/applicationCatalog.ts
+  - scripts/affected-check.mjs
+  - deploy/compose.file-storage.example.yml
   - apps/server/src/playwrightReaderBridge
   - apps/server/src/server.ts
   - apps/server/src/llm
@@ -52,6 +56,114 @@ remains Core infrastructure even in a chat-only deployment.
 
 `sislex/sislexa-core-ui` owns the Core browser client, renderer, UI modules, stories and internal UI gates. Generic UI Kit/Foundation remain in `sislex/sielexa-ui`. Core consumes a versioned static archive with source provenance and per-file hashes; there is no local compatibility workspace. API contracts remain authored in Core and are exported from an exact committed SHA for UI consumption. Changes to an owner package reach consumers only through an explicit pinned archive upgrade and compatibility checks.
 
+
+## File storage service
+
+`packages/file-storage` (`@sislexa/file-storage`) owns the Fastify blob node,
+HTTP node client and coordinator library. It imports no `apps/server` code.
+Its workspace is registered in the application catalog and affected-package graph.
+Its public contract is `packages/shared/src/fileStorage.ts`.
+`writeFile` accepts either a byte array or an async iterable. Core chat uploads
+use the iterable path for raw/multipart bodies; the HTTP node client implements
+`putStream` without assembling the request in Core. Blob PUTs now stream to disk
+on the node as well. See [streaming and quotas](data-auth.md#file-storage-metadata-and-quotas).
+Core HTTP routes, SQL persistence and health polling live in
+`apps/server/src/fileStorage/`; see [Core integration](server-internals.md#core-file-storage)
+and [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+The storage is moving to the independent repository `sislex/storage`
+(plan [storage-standalone-v1](../plans/storage-standalone-v1.md)); with
+`VC_FILE_STORAGE_MODE=remote` Core becomes a client of that service and keeps
+`/api/storage/*` as a proxy for Core UI and Make.
+For owner MCP calls, Core admits a verified Make service credential together with
+signed user/conversation authority before applying Storage ACLs; browser session
+handling remains separate. See [Make MCP admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+Core's file PUT/GET routes stream bodies through the coordinator and node client.
+PUT uses a raw Fastify body stream; GET sends the node response stream directly.
+The node writes a temporary file through a pipeline and serves blobs with
+`createReadStream`. HTTP node clients share one undici `Agent` with keep-alive
+and HTTP/2 negotiation for HTTPS nodes. `VC_FILE_STORAGE_MAX_FILE_BYTES` configures
+Core and node limits (default 1 GiB). The coordinator checks declared lengths
+before transfer and counts streamed bytes against file, owner quota and placement
+capacity limits; failed writes roll back metadata and clean up the new blob.
+The compatibility `readFile` method still collects bytes; REST uses `openFile` for full and Range streams after metadata cache validation.
+
+Thumbnail reads enforce the file's read ACL, accept PNG/JPEG/WebP/GIF sources up
+to 32 MiB, and use an injected generator. Derived WebP/JPEG blobs are cached on
+the source node by blob ID, size (128/256/512) and format; source cleanup also
+removes these variants. Thumbnail processing explicitly collects source bytes.
+Chat upload responses advertise `thumbnailAvailable` for supported image MIME types.
+
+For shared Make, Core's authenticated browser proxy replaces browser credentials
+with a Core-issued user delegation and the paired Core-to-Make service token.
+Make calls Core storage with its own service credential and that delegation;
+Core resolves the live user and enforces the space ACL on each operation. This
+also applies to enabled local Make deployments with paired service credentials.
+See [Make authorization](data-auth.md#make-service-storage-authorization).
+
+The node's `src/node/main.ts` reads `VC_FILE_STORAGE_NODE_ID`,
+`VC_FILE_STORAGE_DIR`, `VC_FILE_STORAGE_CAPACITY_BYTES` and
+`VC_FILE_STORAGE_TOKEN_FILE`; `SISLEXA_COMPONENT_CONFIG` selects managed
+component-runtime authorization for `file-storage.blobs`. All blob/health calls
+require bearer authentication. One process exclusively owns each directory.
+Validated blobs publish through temporary-file rename, capacity mutations
+serialize, and startup recomputes published-blob usage. Temporary files do not
+count toward logical capacity; disk exhaustion still returns `storage_full`.
+
+`createFileStorageService` takes metadata, node clients, cached node info, owner
+quota, clock and unique ID ports. `StorageMetadataStore.transaction` must
+serialize quota/revision decisions across coordinators, commit atomically, roll
+back failures and never retry callbacks containing node I/O.
+`createMemoryMetadataStore` implements these semantics for tests.
+The coordinator's `createSpace` is the application creation boundary. For `chat`
+and `make-project` it returns one canonical space for `(ownerId, kind, ref)`;
+concurrent callers and chat uploads use that same idempotent path. The memory
+adapter resolves the identity inside its serialized transaction. Core's SQLite
+and Postgres adapter uses the uniquely indexed `storage_space_refs` mapping,
+then reads the winner after an insert conflict. `listSpaces` retains legacy
+duplicates but returns the registered canonical identity first for each
+owner/kind/ref; without a registered identity it orders by creation time then ID.
+The memory adapter retains its canonical mapping across transactions as well.
+See the [compatibility and cleanup procedure](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+Quota usage includes every file in the owner's spaces, even collaborator writes.
+Placement uses Shared's `pickStorageNode`; cluster capacity sums online nodes.
+
+The coordinator's `updateSpace(userId, spaceId, { title })` checks ownership
+inside the metadata transaction, rejects blank titles, trims the title and
+updates `updatedAt`. It preserves the space ID, owner, kind, ref, files and
+shares; write collaborators cannot rename spaces. Core exposes it through
+`PATCH /api/storage/spaces/:id`, using Shared's `UpdateStorageSpaceRequest`.
+Make uses this operation to synchronize its project title.
+
+The owner-only `mergeDuplicates` operation consolidates matching chat or
+make-project spaces in one metadata transaction. The survivor is selected by
+file count descending, creation time ascending, then ID. Each original path
+retains the entry with the newest update timestamp, then revision, with
+survivor preference and space ID breaking ties. Older versions are archived
+under `.duplicates/<sourceSpaceId>/` without copying or deleting blobs.
+The preview exposes archive destinations and shares revoked by deleting the
+duplicate spaces. Apply requires the matching snapshot token; the canonical
+identity is rebound in the same transaction. See the exact request bodies,
+collision handling and long-path rules in
+[Core storage](server-internals.md#core-file-storage).
+
+Core passes the same file storage service to embedded admin routes so account
+administration can report storage usage. Remote admin mode retains its service
+proxy; this wiring does not move storage coordination into the admin module.
+
+Owners manage shares and spaces; read/write collaborators receive the matching
+file operations. Link description and acceptance both require an authenticated
+user ID, and only accepted links add access/list visibility. Access is recalculated
+from current shares, so revocation is immediate. Write replacement stores a new
+blob before metadata commit and deletes the previous blob afterward. Failed
+post-commit cleanup invokes the optional `onCleanupError` host port; hosts must
+reconcile orphan blobs after crashes or offline cleanup.
+
+See [package usage and adapter requirements](../../packages/file-storage/README.md)
+and [two-node compose example](../../deploy/compose.file-storage.example.yml).
+Docker target `file-storage-node` exposes 8795; the example has independent
+10 GB and 60 GB volumes and tokens. Tests cover real HTTP transport, atomic write
+failure, capacity races, cross-coordinator quota/revision races and sharing.
 
 ## Direct external libraries
 

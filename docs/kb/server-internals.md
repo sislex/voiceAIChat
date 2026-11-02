@@ -1,7 +1,6 @@
 ---
-title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-30
-checked: ee79b61c
+updated: 2026-11-02
+checked: 5b13f13f
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -9,6 +8,19 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Operator handoff integration (SK-115)
+
+`kanbanBridge/proxy.ts` includes `/api/kanban/handoff` in the existing proxy
+prefixes. Export/import and continuation execute in Kanban. Core's
+`routes/agents.ts` validates and authorizes the machine switch, then waits for
+AgentRegistry's correlated result; see [protocol](protocol.md#operator-handoff).
+This adds no Core deployment or database migration.
+
+Review since `7ad8ad53` also confirms `local-stand` in EnvironmentMode and
+`readyStandEnvironment`: the base must be ready and its first machine must match.
+The existing Make stand section below documents the live working-copy flow;
+these changes do not alter KB host ports.
 
 Module details: `voice:README.md`
 
@@ -23,6 +35,195 @@ with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
 
+## Admin storage integration
+
+`buildServer` passes the storage service into `registerAdminRoutes`.
+`buildAdminServer` creates its own storage runtime in embedded storage mode,
+passes the service to the same routes and closes it on Fastify shutdown.
+User responses call `usage(name)` when the service exists. Quota mutation is
+an admin-only Identity operation, including null reset; missing FS-3 setters
+return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
+See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+
+## Core file storage
+
+`authenticateRaw` admits Make owner MCP authority on `/api/storage/*` before
+session authentication. It verifies the service credential, MCP signature,
+expiry, application/Core ID, current conversation owner and account/tenant.
+Mixed cookies or ticket delegation and scoped task-source tokens are rejected.
+Missing account access, required password changes and tenant mismatches also
+fail admission with `403 delegation_denied`; successful admission reconstructs
+the current Identity account context. The legacy internal-token fallback is
+available only without a component runtime; managed calls need `make.core`.
+The file routes still enforce Storage ACLs. See [the authority contract](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+Core can use the standalone coordinator with `VC_FILE_STORAGE_MODE=remote`.
+`fileStorage/remote.ts` implements the same `FileStorageService` port as the
+embedded coordinator over `STORAGE_REST`, so chat attachments, `storage:` reads,
+admin usage and the existing `/api/storage/*` surface share one integration.
+Every upstream request uses the service credential loaded from
+`VC_FILE_STORAGE_SERVICE_TOKEN_FILE` and asserts `x-sislexa-user`; authenticated
+REST requests also forward the account tenant as `x-sislexa-tenant`. File PUT
+and GET bodies use Node/Web streams and the process fetch pool, preserving
+backpressure and connection reuse. Upstream contract errors retain their storage
+code; transport failures become `storage_unavailable` (503). Direct node URLs
+returned by Storage are passed through unchanged.
+
+Remote `statFile` lists the parent directory and matches the exact entry path.
+For root files such as `.stand.json`, it omits `prefix`; nested files use their
+parent directory as the prefix. Storage's `normalizeStoragePrefix` appends `/`,
+so passing the full file path would exclude the file itself. An absent exact
+match still raises `not_found` (404). `fileStorage/remote.test.ts` uses the shared
+prefix normalizer and covers stat/read of root and nested files, missing files,
+and conditional GET without opening the upstream body.
+
+Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
+`POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to
+`writeFile`; Core does not assemble the whole file for the storage backend.
+The coordinator uses the HTTP node client's optional `putStream` method, which
+sends the iterable with fetch `duplex: 'half'`. Clients may alternatively accept streams through `put`; byte-array writes remain
+compatible. The node writes blob PUT streams through an atomic temporary file. Machine storage and the Core-local fallback consume the bounded iterable into a
+buffer; only the machine leg encodes it as base64 at `AgentRegistry.fsWrite`.
+Legacy JSON parsing remains buffered. This route adds no environment variable or
+schema migration and continues to use the configured storage node URL/token.
+Multipart parsing must finish before metadata commits, so truncated or extra
+parts cannot produce a successful file record. `fileStorage/chat.test.ts` covers
+both backends, metadata, byte preservation, limits, authentication and CSRF.
+See [request forms](protocol.md#core-file-storage-and-chat-settings).
+Direct transfer uses `packages/file-storage/src/direct.ts` for HMAC-SHA256
+capabilities and `/v1/direct/:blobId?sig=...` on the node. Core loads per-node
+signing configuration at startup. A direct PUT writes one atomic staged part;
+Core's authenticated file/commit assembles it on the node and publishes metadata.
+The existing SQL and memory upload adapters persist the pending revision and
+five-minute deadline without a schema change. Node manifests survive restart.
+Completed/aborted sessions reject further signed PUTs, so URL replay cannot
+alter published bytes. Direct writes share the multipart capacity reservation
+of twice the declared size (staging plus assembly); quota reserves it once.
+Core carries only metadata for these transfers. The node still buffers each direct PUT
+up to 64 MiB and streams GET/Range from disk. Client switching is separate work.
+
+Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
+provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
+multipart output executes and emits one operation at a time under backpressure.
+Ordinary file downloads use a metadata-only authorization/stat lookup before
+opening the node response stream. This lets Core answer cache validators without
+node I/O and lets byte ranges stream node → Core → browser without buffering the
+file. The node parses one RFC-style byte range and streams it with a bounded
+filesystem read stream. Internal consumers and batch/small-content reads still
+explicitly collect the streamed client body with `storageBytes`. Small-content
+listing reads under the metadata transaction to keep content and revision paired.
+Core streams eligible full downloads through Brotli/gzip above 1 KiB and
+compresses eligible batch bodies before base64 or multipart emission. Range,
+media and archive responses remain identity. Raw PUT parsers optionally stream
+gzip/Brotli decompression. File PUTs enforce the configured file limit on decoded
+bytes; parts and batch requests retain their 64 MiB bound.
+Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
+bearer scope, validates both IDs, serializes capacity checks and copies through
+a temporary file plus rename. No file bytes pass through Core for copy.
+A missing node copy capability fails explicitly; there is no transfer fallback.
+No new environment variables or schema migrations are required.
+
+Core exposes resumable upload routes through the storage coordinator.
+Part transfers release the metadata transaction after authorization, allowing
+concurrent node writes. The node persists a private manifest and temporary parts,
+atomically replaces individual parts, and assembles one part at a time into a
+new blob before atomic rename. Core then commits the visible entry, preserving
+the old file until commit. Completion retries after a metadata rollback reuse
+the composed blob. Core and node run expiry sweeps at startup and every minute;
+Core also cleans sessions whose space was deleted. Node expiry removes temporary
+parts, retaining composed blobs because only Core knows whether they committed.
+As with ordinary writes, a crash after metadata commit can leave an orphan blob
+requiring host reconciliation. No fsync durability guarantee is introduced.
+
+
+Legacy duplicate spaces remain visible, but metadata adapters list the registered
+`storage_space_refs` canonical identity first for each owner/kind/ref. Without a
+registered identity, the oldest creation time then space ID determines the
+fallback, matching create-space adoption. The memory adapter retains identities
+too, so later legacy inserts cannot change a registered choice.
+
+`POST /api/storage/spaces/:id/merge-duplicates` previews with `{}` or
+`{"dryRun":true}`; apply the returned snapshot with `{"previewToken":"…"}`.
+Explicit `dryRun:true` always previews, and `dryRun:false` still requires the
+matching token. Stale tokens fail atomically with 409. The survivor is chosen by
+file count descending, creation time ascending, then ID. For each shared path,
+newest `updatedAt` wins, then highest revision, then survivor preference and
+space ID. Revisions are local to a space, so timestamps take precedence.
+Older entries move to `.duplicates/<sourceSpaceId>/<path>`; occupied archive
+paths receive a numeric directory below the source ID. Paths too long for the
+archive prefix use a SHA-256 filename, retaining the original path in the preview.
+Preview `moves` and
+`conflicts` expose `toPath` for archives. Even equal-content entries are preserved.
+Applying moves metadata and retains blob IDs, byte counts and entry revisions,
+revokes deleted spaces' shares, and rebinds the canonical identity atomically.
+Memory and SQL adapter contract tests cover conflicts and canonical ordering.
+
+`apps/server/src/fileStorage/` embeds the FS-1 coordinator when
+`VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
+`routes.ts` registers all `STORAGE_REST` operations after Core session auth,
+rejects anonymous link access and restricts cluster information to admins.
+The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
+`thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
+animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
+the source node and are probed before the source bytes are read.
+PUT file bodies bypass all content parsers as raw streams; GET uses
+`openFile` and Fastify `reply.send(stream)`. Both directions apply backpressure
+through the HTTP node client. Revision and create-only preconditions remain
+transactional. The configurable file limit defaults to 1 GiB. Legacy `readFile`
+collects bytes only for existing chat consumers; chat JSON/base64 upload is unchanged. Errors use `STORAGE_ERROR_STATUS`.
+`PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
+space. The coordinator checks ownership inside the metadata transaction; write
+collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
+This is the Core endpoint for Make project-title synchronization: send
+`{ "title": "Project title" }` using the space owner's authenticated identity.
+The route forwards only `title`; extra `ownerId`, `kind` or `ref` fields cannot
+change space identity. Whitespace is trimmed and `updatedAt` advances. Blank or
+non-string titles return 400 (`invalid_path`); a non-owner with a valid title
+receives 403. The response is the updated `StorageSpace`, including access and
+file usage. See `packages/shared/src/fileStorage.ts`,
+`packages/file-storage/src/service.ts` and the rename regression in
+`apps/server/src/fileStorage/routes.test.ts`.
+
+Make owns obtaining the project title and deciding when to synchronize it; Core
+does not resolve a Make conversation through its chat UI. Consumer title hooks
+and local-project import belong to the Make owner (`make:README.md`), while
+Core owns this authenticated space mutation. See the owner implementation for
+import availability and synchronization triggers.
+
+`runtime.ts` loads node tokens from configured files and polls health at startup
+and every 15 seconds, without overlapping polls. Two consecutive failures mark a
+node offline; a successful poll restores it. Shutdown clears and drains polling.
+`BuildOptions.storageNodes` supplies fake clients for host integration tests.
+Make consumers use these same authenticated REST paths with the user's context.
+
+`server.ts` enables ticket delegation for enabled local Make when paired
+application credentials are configured. `registerMakeProxy.prepareHeaders`
+replaces browser credentials and identity headers after Core authentication,
+sets the Core-to-Make bearer and Core ID, and issues a five-minute user grant.
+`authenticateRaw` accepts Make ticket grants for storage and Make/preview paths;
+`registerChatDelegation` admits storage only for Make ticket references. Storage
+routes retain their per-user space ACLs. Shared `/internal/whoami` uses the outer
+application delegation and rejects callers without a delegated user; forwarded
+body headers cannot replace that identity. See
+[Make authorization](data-auth.md#make-service-storage-authorization).
+
+When the account setting `chatFilesBackend` is `storage` and the service is
+enabled, uploads require a conversation owned by the caller. Core calls
+`fileStorage.createSpace` for its owner's `chat` space with `ref=conversationId`,
+then writes the file and returns `UploadInfo.storage`. Space creation is
+idempotent across coordinators; the subsequent file write has its own metadata
+transaction. Chat and Make project identities use the same uniquely indexed
+SQL mapping, while legacy duplicate spaces remain listable. See
+[idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+The default backend remains `machine`.
+Image uploads additionally expose `thumbnailAvailable`; consumers construct the
+preview URL from the storage reference rather than routing preview bytes through
+the transient upload map.
+Upload resolution, retouch sources and attachment reads use coordinator access
+checks. History JSON preserves `MessageAttachment.storage`; persistent reads
+do not depend on the transient UploadStore map. Display paths use
+`storage:<spaceId>/<path>`; file bytes remain on the configured nodes.
+
 ## Make file transport admission
 
 Make turns use explicit conversation machine/workdir settings and scoped MCP
@@ -32,6 +233,24 @@ file access; `db/chat` no longer clears these fields on write or restart.
 routes. Embedded availability requires both GET and PUT registrations; remote
 availability probes an existing file through the authenticated Core proxy.
 Older owner packages without these routes do not advertise transfers.
+
+## Kanban access to machine files and uploads
+
+`KanbanCore` gives the trusted Kanban service a narrow machine facade that
+includes `fsRead`, `fsWrite`, `fsMkdir`, rename and delete operations
+(`apps/server/src/kanban/core.ts`). The internal RPC dispatcher forwards those
+calls to that facade, and the in-process adapter supplies the existing
+`MachinesService` directly. These are transport primitives: Core does not use
+them to select, sanitize, register or bind an operator-owned input bundle to a
+task or run.
+
+The upload port is similarly limited to metadata and bytes for an upload that
+Core already knows. `kanbanBridge/localCore.ts` reads a local Core upload and
+returns `null` when it is missing or stored on a user machine. It is not an
+operator-state importer. Task preparation, orchestration and input
+materialization belong to the external Kanban owner; the exclusion is enforced
+by `apps/server/src/kanban/boundary.test.ts`, which asserts that preparation and
+cluster implementations are absent from Core.
 
 Android release endpoints are registered by the Machines module; the Machines
 proxy allows only exact GET/HEAD public download paths before forwarded auth.
@@ -45,6 +264,25 @@ filtering sources, then accepts an enabled local frontend ID or an enabled local
 owner from its catalog runtime dependencies. The gateway still validates paths,
 manifest IDs and source URLs, and uses the installed owner artifact when there
 is no selected override. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
+
+## Standalone browser chat integration
+
+The canonical integration note is `docs/browser-chat-integration.md`. Core
+allows exact external origins through `VC_CORS_ORIGINS` and exchanges an
+existing Identity authority at `POST /api/chat/session` for a short-lived,
+in-memory browser-chat handle. The handle is restricted to chat REST/uploads
+and the `/ws` session flow; Core rechecks the original authority and tenant or
+delegated resource binding. Origin admission is not authorization, and the
+text-only standalone socket does not expose the Sislexa shell or voice.
+
+Delegated public clients additionally require
+`VC_DELEGATED_CHAT_ENABLED=true` and managed Identity introspection. The flow
+stays scoped to the selected conversation and paid text execution still
+requires Billing admission. `scripts/external-chat-sample.mjs` is the pinned
+external-host fixture; its browser and server tests verify integration code,
+while deployed HTTPS/cookie behavior, Billing/runner execution and reconnect
+after rollout remain operator acceptance rather than facts established by the
+fixture.
 
 ## Запуск и dependency injection
 
@@ -177,6 +415,33 @@ already executing, agent callbacks, or writes through internal module RPC.
 Operators must quiesce those writers before the final migration snapshot.
 
 ## HTTP-поверхность
+
+### Identity OAuth session bootstrap
+
+`server.ts` calls `registerCoreOAuth` before registering the global auth guard.
+In OAuth mode the encapsulated Identity registration sets `sessionAuthenticate`
+to `oauth.authenticate` and returns without calling legacy `registerAuth`.
+Therefore `auth/oauth.ts` owns the compatibility session bootstrap routes;
+registering them only through `registerAuth` would leave Core UI's
+`GET /api/session/me` unregistered and cause repeated sign-in redirects.
+
+The session routes explicitly call the OAuth adapter because `/api/session/*`
+is excluded from the global guard. The adapter verifies credentials with the
+pinned auth client, then checks the current Identity user and claimed tenant
+through `db.identity`. It preserves the account-derived role/context and the
+optional `mustChangePassword` flag. The me handler returns the current user's
+notices and the cookie session's CSRF token without exposing access tokens.
+See [REST bootstrap responses and explicit rejections](protocol.md#rest).
+
+`auth/oauth.integration.test.ts` exercises login and callback with the issued
+cookie, compares the user to legacy `resolveUser`, and covers missing/invalid
+sessions, CSRF, blocked users and absent account access. Legacy REST integration
+coverage remains in `routes/rest.auth.test.ts`.
+
+`auth/oauth.test.ts` also advances the clock before the code callback and
+requires five authenticated cookie/CSRF Storage probes to return 200. Its signed
+JWT fixtures retain a fixed expiration so the exchange stub's subject-token
+lookup survives second boundaries; see [OAuth fixtures](data-auth.md#identity-oauth-mode).
 
 ### Chat message service data
 
@@ -1254,6 +1519,15 @@ MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
 
 ## Automatic agent bundle offers
+
+`agents/wsAgent.ts` catches message and pong dependency failures, logs them and
+closes the affected socket with retryable code 1013. This includes a failed
+Identity `agent_update_sent` audit after the update offer was sent. Close cleanup
+runs before the asynchronous last-seen write; its rejection is logged. Queued
+messages and in-flight registration cannot revive a closed connection.
+`agents/wsAgent.test.ts` verifies Identity RPC failure and recovery in a separate
+Node process with `--unhandled-rejections=strict`. Registry change notifications
+also catch rejected async subscriber promises (`agents/registry.test.ts`).
 
 After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
 `systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned

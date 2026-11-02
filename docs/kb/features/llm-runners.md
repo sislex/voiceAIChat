@@ -2,8 +2,8 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-11-02
+checked: 149d669f
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
@@ -30,6 +30,14 @@ aliases:
 ---
 
 # Исполнители LLM: контейнеры с claude/codex CLI
+
+## Storage-backed uploads in Core
+
+Core resolves storage-upload bytes before sending the existing `LlmAttachment`
+transport (`serverPath`, `runnerName`, `dataBase64`, `preserveServerPath: true`).
+`resolveUpload` receives the current user ID and rejects another owner's upload.
+The synthetic `storage:<spaceId>/<path>` is preserved as the attachment identity;
+this integration does not add a new runner protocol or filesystem backend.
 
 ## Repository boundary
 

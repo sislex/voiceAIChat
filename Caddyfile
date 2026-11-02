@@ -55,6 +55,12 @@ https://{$VC_PUBLIC_HOST} {
 	}
 }
 
+# Identity sign-in origin (profile `identity`). OAuth needs its own origin with path "/".
+https://{$VC_PUBLIC_HOST}:8443 {
+	tls internal
+	reverse_proxy identity:8798
+}
+
 # Обычный HTTP на 80 порту — редирект на HTTPS.
 http://{$VC_PUBLIC_HOST} {
 	redir https://{host}{uri} permanent

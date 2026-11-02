@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { createHash } from 'node:crypto'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
@@ -32,6 +32,7 @@ async function api(path: string, method = 'GET', body?: unknown) {
   return response
 }
 const SEARCH_TIMEOUT = 10_000
+const RESET_QUERY = '__palette_search_reset__'
 
 function matchesSearch(request: Request, target: Page, query: string) {
   if (request.url() !== base + '/api/universal-search' || request.method() !== 'POST'
@@ -101,11 +102,16 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
   const stages: Record<string, number> = {}
   const mark = (stage: string) => { stages[stage] = Math.round(performance.now() - started) }
   const dialog = target.getByRole('dialog', { name: 'Командная палитра' })
+  const input = dialog.getByRole('combobox')
   try {
     // A mounted input with the same value does not retrigger the published
-    // client's effect. Clear it explicitly before arming a fresh query.
-    if (await dialog.isVisible() && await dialog.getByRole('combobox').inputValue() === query) {
-      await dialog.getByRole('combobox').fill('', { timeout: SEARCH_TIMEOUT })
+    // client's effect. Prove that the client completed a different search
+    // generation before arming the wanted one. Merely clearing and immediately
+    // refilling can be batched into the unchanged state on a loaded browser.
+    if (await dialog.isVisible() && await input.inputValue() === query) {
+      const reset = await observeSearch(target, RESET_QUERY,
+        () => input.fill(RESET_QUERY, { timeout: SEARCH_TIMEOUT }))
+      await reset.finished()
     }
     const response = await observeSearch(target, query, async () => {
       if (!await dialog.isVisible()) {
@@ -113,9 +119,13 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
         await target.locator('#app-content').focus()
         await target.keyboard.press('Control+k')
       }
-      await dialog.waitFor({ timeout: SEARCH_TIMEOUT })
+      // A mounted dialog alone is not readiness: wait for the real, visible and
+      // editable palette input before changing the state that starts debounce.
+      await dialog.waitFor({ state: 'visible', timeout: SEARCH_TIMEOUT })
+      await input.waitFor({ state: 'visible', timeout: SEARCH_TIMEOUT })
+      await expect.poll(() => input.isEditable(), { timeout: SEARCH_TIMEOUT }).toBe(true)
       mark('opened')
-      await dialog.getByRole('combobox').fill(query, { timeout: SEARCH_TIMEOUT })
+      await input.fill(query, { timeout: SEARCH_TIMEOUT })
       mark('filled')
     }, mark)
     await checkSearchResponse(response, query, wanted)
@@ -154,28 +164,21 @@ if (acceptance) {
   }
 
   // @testCase TC-3
-  it('acceptance: three consecutive complete browser gates with two workers', async () => {
-    const { integrationBrowserFiles } = await import('../scripts/browser-gate.mjs')
-    for (let index = 1; index <= 3; index++) {
-      const name = 'browser-' + index
+  it('acceptance: twenty consecutive complete universal search runs', () => {
+    for (let index = 1; index <= 20; index++) {
+      const name = 'universal-search-' + String(index).padStart(2, '0')
       const report = join(evidence, name + '.tests.json')
-      run(name, process.execPath, ['scripts/browser-gate.mjs', '--integration'], {
-        VC_E2E_WORKERS: '2', GATE_TEST_REPORT: report
-      })
-      copyFileSync(join(ROOT, 'artifacts/gate-timings/browser.json'), join(evidence, name + '.batches.json'))
-      const batches = JSON.parse(readFileSync(join(evidence, name + '.batches.json'), 'utf8')).results
-      expect(batches.flatMap((batch: { files: string[] }) => batch.files).sort()).toEqual(integrationBrowserFiles().sort())
-      expect(batches.every((batch: { exitCode: number }) => batch.exitCode === 0)).toBe(true)
-      expect(batches.find((batch: { files: string[] }) => batch.files.includes('e2e/universalSearch.e2e.test.ts')).workers).toBe(2)
+      run(name, 'npm', ['exec', '--', 'vitest', 'run', '--config', 'e2e/vitest.config.ts',
+        'e2e/universalSearch.e2e.test.ts', '--retry=0', '--reporter=json', '--outputFile=' + report])
       const search = JSON.parse(readFileSync(report, 'utf8')).testResults
         .find((file: { name: string }) => file.name.endsWith('/e2e/universalSearch.e2e.test.ts'))
       expect(search?.status).toBe('passed')
       expect(search.assertionResults.length).toBeGreaterThanOrEqual(18)
       expect(search.assertionResults.every((result: { status: string; retryReasons?: unknown[] }) =>
         result.status === 'passed' && !result.retryReasons?.length)).toBe(true)
-      console.log('acceptance browser run ' + index + ': exit 0; universalSearch passed with two workers')
+      console.log('acceptance universalSearch run ' + index + ': exit 0; no retries or skips')
     }
-  }, 2_700_000)
+  }, 4_500_000)
 
   // @testCase TC-4
   it('acceptance: quick gate for the actual task diff', () => {
@@ -415,15 +418,25 @@ it('waits for a visible expected option after the successful real response', asy
 // @testCase TC-2
 it('checks unchanged input and reopening on the published client', async () => {
   await page.goto(base + '/#/chat/' + chatId)
-  const dialog = await open()
-  // Negative bounded observation: unchanged React state sends no request.
-  await expect(observeSearch(page, 'PaletteNeedle',
-    () => dialog.getByRole('combobox').fill('PaletteNeedle'), () => {}, 750))
-    .rejects.toThrow('timed out waiting for browser request')
-  await open()
-  await page.keyboard.press('Escape')
-  await open()
-  await page.keyboard.press('Escape')
+  const queries: string[] = []
+  const recordQuery = (request: Request) => {
+    if (request.url() === base + '/api/universal-search' && request.method() === 'POST') {
+      queries.push(request.postDataJSON()?.query)
+    }
+  }
+  page.on('request', recordQuery)
+  try {
+    const dialog = await open()
+    // Negative bounded observation: unchanged React state sends no request.
+    await expect(observeSearch(page, 'PaletteNeedle',
+      () => dialog.getByRole('combobox').fill('PaletteNeedle'), () => {}, 750))
+      .rejects.toThrow('timed out waiting for browser request')
+    await open()
+    expect(queries.slice(-2)).toEqual([RESET_QUERY, 'PaletteNeedle'])
+    await page.keyboard.press('Escape')
+    await open()
+    await page.keyboard.press('Escape')
+  } finally { page.off('request', recordQuery) }
 })
 
 // @testCase TC-UI
@@ -523,4 +536,3 @@ it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the d
   console.log('[palette:navigation] ' + JSON.stringify({ source, throughReload: Math.round(performance.now() - navigationStarted) }))
   // Projects and tasks are rendered by Kanban; Core verifies their deep links.
 })
-

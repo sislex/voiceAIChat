@@ -318,9 +318,11 @@ export class MakeProjectAdapters {
       const location = { reposRoot, repoName: clone.name, repositoryUrl: clone.url }
       const root = conversationWorktree(reposRoot, copyId)
       const live = stand.live?.find(l => l.component === selected && l.workingCopyPath === root)
-      state.components = environment?.mode === 'local-stand' ? (stand.live ?? []).filter(l => l.workingCopyPath === conversationWorktree(reposRoot, l.component === primary ? conversationId : conversationId + '-' + l.component)).map(l => ({
-        component: l.component, branch: l.branch ?? null, workingCopyPath: l.workingCopyPath, phase: l.error ? 'failed' : 'ready'
-      })) : undefined
+      state.components = environment?.mode === 'local-stand' ? (stand.live ?? []).flatMap(l => {
+        const known = localComponentSchema.safeParse(l.component)
+        if (!known.success || l.workingCopyPath !== conversationWorktree(reposRoot, l.component === primary ? conversationId : conversationId + '-' + l.component)) return []
+        return [{ component: known.data, branch: l.branch ?? null, workingCopyPath: l.workingCopyPath, phase: l.error ? 'failed' as const : 'ready' as const }]
+      }) : undefined
       if ((op.op === 'files' || op.op === 'git') && !live) throw new Error('component_not_in_stand')
       Object.assign(state, { workingCopyPath: root, branch: live?.branch ?? null,
         directUrls: stand.gateway?.urls.filter(url => /^https?:\/\//.test(url)) ?? [],

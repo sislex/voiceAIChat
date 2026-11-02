@@ -1,7 +1,7 @@
 ---
+updated: 2026-11-02
+checked: 79d261e89
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-30
-checked: 78f28530
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -28,8 +28,34 @@ areas:
 
 # Машины: компаньон-агент, политика, PTY, проводник
 
+## Operator handoff (SK-115)
+
+Core exposes the administrator-and-machine-owner route described in
+[the handoff contract](protocol.md#operator-handoff). AgentRegistry keeps pending
+switches in memory, correlates replies by request ID and agent ID, and resolves
+an unanswered request as failed after the requested timeout plus five seconds.
+An offline agent rejects dispatch. The target token is sent to the agent but is
+omitted from the response and the route's audit fields.
+
+Review since `592879f34` also covers shared MCP areas: explicit absolute owner
+roots extend file read/grep/edit only on the URL-selected machine; relative paths
+remain cwd-relative and traversal/root-directory grants are rejected.
+`HistoricalEvidence` verifies an authorized immutable journal through injected
+ports, with an 8 MiB cap and authorization checks before and after streaming;
+results disclose hashes and sizes, not journal bytes. Widget confirmations now
+expire with an explicit event and reject late replies. Model-price seed additions
+do not change machine credential storage or access checks.
+
 Module details: `agent:README.md`
 Module details: `core-ui:README.md`
+
+## Выбор backend для файлов чата
+
+`Settings.chatFilesBackend` по умолчанию равен `machine`. При значении `storage`
+и включённом Core file storage загрузки идут в `chat`-пространство разговора и
+возвращают storage-ссылку без `agentId`. Чтение выполняет Core через сервис с
+правами пользователя; существующие machine/workspace bindings этим не меняются.
+См. [server-internals](server-internals.md) и [shared](shared.md#filestorage-contract).
 
 ## Agent artifact ownership
 
@@ -62,6 +88,15 @@ folders are never an installer discovery dependency.
 терминал и телеметрию.
 
 ## Подключение и жизненный цикл
+
+Agent messages are serialized in `agents/wsAgent.ts`. An Identity audit RPC
+failure during registration, rejection or an update offer is logged and closes
+only that connection with WebSocket code 1013 (retry later), without a permanent
+`agent.denied` response. Pong persistence failures use the same boundary. Close
+clears the ping timer and unregisters before awaiting the last-seen write; a
+failed write is logged. In-flight registration cannot resume after close.
+`AgentRegistry.onChange` contains both synchronous exceptions and rejected
+subscriber promises, so an async machine-list refresh cannot crash Core.
 
 Агент коннектится по WS на `/agent` и шлёт `agent.register{token, version}`.
 Сервер (`apps/server/src/agents/wsAgent.ts` + `registry.ts`) сверяет хеш токена с

@@ -1,3 +1,4 @@
+import { registerCoreOAuth } from "./auth/oauth.js"
 import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
 import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
 import { standProxyKanban } from './standProxyKanban.js'
@@ -18,7 +19,7 @@ import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
 import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
-import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
+import { sameAccountContext, accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
 import { registerAnalyticsProxy } from './analyticsBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
@@ -30,7 +31,7 @@ import {registerRemoteIdentity} from '@sislexa/identity/client/server'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/image-studio-contracts/imageStudioInternal'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { createComponentRuntime } from '@sislexa/component-runtime'
+import { createComponentRuntime, verifyCoreMcpTokenWithSecret } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
@@ -200,7 +201,14 @@ const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
 
+import { createStorageRuntime } from './fileStorage/runtime.js'
+import { createRemoteStorageRuntime } from './fileStorage/remote.js'
+import { registerUploadParsers, readUpload, bufferUpload } from './uploadBody.js'
+import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
+import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
+
 export interface BuildOptions {
+  storageNodes?: StorageNodeClient[]
   /** Trusted existing-run authority and commissioned journal source; absent means fail closed. */
   historicalEvidence?: HistoricalEvidencePort
   applicationTickets?: ApplicationTicketOptions
@@ -393,7 +401,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerIntegrationTokenGuard(app)
   const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id'
+  const corsHeaders = 'Content-Type, Authorization, x-csrf-token, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -514,7 +522,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }) : undefined) : undefined
   // External applications with a service credential receive Core-issued delegations from redeemed tickets.
   const ticketStore = ticketOptions.tickets ?? new ApplicationTickets()
-  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'external')
+  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled
+    && (a.location === 'external' || id === 'make' && !!ticketOptions.serviceTokens?.make))
     && !!ticketOptions.credentials[id]
   const ticketDelegation = deployment.applications.some(a => ticketApplications(a.id))
     ? { delegations: ticketStore.delegations, enabled: ticketApplications } : undefined
@@ -541,6 +550,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
     component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
+  const oauth = opts.config.oauth ? await registerCoreOAuth(app, db, opts.config.oauth) : undefined
   let sessionAuthenticate: AuthenticateFn
   const makeRequests = new MakeRequestAuthority(async userId => {
     const user = await db.identity.getUser(userId)
@@ -549,10 +559,36 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const authenticateRaw: AuthenticateFn = async req => {
     const makeRequest = await makeRequests.authenticate(req)
     if (makeRequest) return makeRequest
+    // MCP has no browser session. Storage admits its verified user with Make's service credential.
+    const storageMcp = req.headers['x-sislexa-mcp-token']
+    if (storageMcp !== undefined && req.url.split('?')[0]!.startsWith('/api/storage/')) {
+      try {
+        if (typeof storageMcp !== 'string' || req.headers.cookie || req.headers[DELEGATION_HEADER] !== undefined) throw new DelegationDenied()
+        const shared = !!ticketOptions.credentials.make && ticketApplications('make')
+          && sameSecret(req.headers.authorization, 'Bearer ' + ticketOptions.credentials.make)
+        const service = shared || (component ? component.authorize(req.headers.authorization, 'make.core').ok
+          : !!opts.config.internalToken && sameSecret(req.headers.authorization, 'Bearer ' + opts.config.internalToken))
+        if (!service) throw new DelegationDenied()
+        const claims = verifyCoreMcpTokenWithSecret((shared ? ticketOptions.mcpSecrets?.make : opts.config.mcpSecret) ?? '', storageMcp)
+        if (claims.application !== 'make' || claims.coreId !== (shared ? deployment.coreId : 'legacy')) throw new DelegationDenied()
+        const owner = await makeCore.conversationOwner(claims.conversationId)
+        if (!owner) throw new DelegationDenied()
+        // A task source capability cannot become user-wide Storage access.
+        if (claims.scope || owner !== claims.userId) throw new DelegationDenied()
+        const conversation = await db.chat.getConversation(owner, claims.conversationId)
+        const row = await db.identity.getUser(claims.userId)
+        const access = await db.identity.getAccountAccess(claims.userId, conversation?.tenantId ?? undefined)
+        if (!conversation || !row || row.blocked || row.mustChangePassword || !access
+          || (conversation.tenantId && access.tenant.id !== conversation.tenantId)) throw new DelegationDenied()
+        const tenant = req.headers['x-sislexa-tenant-id']
+        if (tenant !== undefined && tenant !== access.tenant.id) throw new DelegationDenied()
+        return { ok: true, user: { name: claims.userId, role: access.systemRole, account: accountContext(access) } }
+      } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+    }
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
-      if (req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
+      if (!oauth && req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
         && req.headers.origin && req.headers.authorization === undefined) {
         // Issuance is read-only; the onRequest origin guard protects this cookie exchange.
         return sessionAuthenticate({ method: 'GET', url: req.url, headers: req.headers })
@@ -570,7 +606,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
       // Ticket delegations may also create a conversation of their application's kind (checked by the route).
       const createsConversation = req.method === 'POST' && req.url.split('?')[0] === '/api/conversations' && isTicketDelegationToken(grant)
-      if (!createsConversation && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      const makeApi = isTicketDelegationToken(grant) && delegation.ticketGrant(grant)?.applicationId === 'make'
+        && /^\/api\/(?:storage(?:\/|$)|make(?:\/|$)|preview\/make(?:-shared)?(?:\/|$))/.test(req.url)
+      if (!createsConversation && !makeApi && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
       if (isTicketDelegationToken(grant)) {
         // Ticket delegations are bearer-bound to the issuing application's own service credential.
         const ticket = delegation.ticketGrant(grant)
@@ -594,6 +632,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
     ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
   await app.register(async identityApp => {
+    if (oauth) { sessionAuthenticate = oauth.authenticate; return }
     const identity = managedIdentity
       ? await registerRemoteIdentity(identityApp, db, managedIdentity, sessionSecret, authOptions)
       : await registerAuth(identityApp, db, sessionSecret, authOptions)
@@ -737,7 +776,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return operation
   }
   let conversationSummary: ConversationSummaryService | undefined
+  const storageRuntime = opts.config.fileStorage?.mode === 'embedded'
+    ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes)
+    : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage, oauth?.storageToken) : undefined
+  const fileStorage = storageRuntime?.service
+  if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
+  registerFileStorageRoutes(app, fileStorage)
   await registerRest(app, db, opts.config.dataDir, {
+    fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
     runnerFs: runnerFs ?? undefined,
@@ -1000,7 +1046,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
   // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
-  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl })
+  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl,
+    ...(ticketApplications('make') && ticketOptions.serviceTokens?.make ? {
+      prepareHeaders: (req, headers) => {
+        // Only Core's authenticated request user can mint an application delegation.
+        for (const name of ['authorization', 'cookie', 'x-vc-csrf', 'x-sislexa-core-id', 'x-sislexa-delegation', 'x-sislexa-mcp-token', 'x-sislexa-tenant-id']) headers.delete(name)
+        if (!req.user) return
+        headers.set('authorization', `Bearer ${ticketOptions.serviceTokens!.make}`)
+        headers.set('x-sislexa-core-id', deployment.coreId)
+        headers.set('x-sislexa-delegation', ticketStore.delegations.issue({
+          applicationId: 'make', coreId: deployment.coreId, userId: req.user.name,
+          tenantId: req.user.account?.tenantId ?? null, sid: null, expiresAt: Date.now() + 5 * 60_000,
+        }).token)
+      },
+    } : {}),
+  })
   // Канбан отдельным процессом: общая база (Postgres), пути канбана ядро переправляет туда, состояние
   // машин/KB/виджета отдаёт по `/internal/*`, ленты событий принимает обратно (docs/plans/kanban-service.md).
   const kanbanRemote = opts.config.kanbanMode === 'remote'
@@ -1108,8 +1168,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уведомления об отзыве сессий отдаёт по `/internal/admin/rpc`.
   const adminRemote = opts.config.adminMode === 'remote'
   if (adminRemote && !(opts.config.adminUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_ADMIN_MODE=remote требует VC_ADMIN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
-  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
-  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
+  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'],
+    ...(oauth ? { prepareHeaders: (req, headers) => {
+      if (!req.authUser) throw new Error('Identity authentication required')
+      headers.set('authorization', `Bearer ${req.authUser.accessToken}`)
+      headers.delete('cookie')
+    } } : {}) })
+  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage, opts.config.oauth ? opts.config.fileStorage?.url : undefined)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -1232,7 +1297,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Process-wide admission also bounds the number of user keys admitted per window.
   const uploadTotal = new SlidingWindowLimiter(300, 60_000, () => Date.now())
   const uploadByUser = new SlidingWindowLimiter(20, 60_000, () => Date.now())
-  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
+  app.register(async uploadScope => {
+  await registerUploadParsers(uploadScope)
+  uploadScope.post(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
       // The auth guard runs first; sessions and IP changes share the same user budget.
@@ -1242,7 +1309,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
     } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
+      const upload = await readUpload(req)
+      const { name, agentId: requestedAgentId, conversationId, mimeType } = upload.metadata
       const userId = uid(req)
       if (browserSessions.requests.has(req) && !conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
       if (conversationId) {
@@ -1255,11 +1323,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         ? await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
         : null
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
-      if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
-      const bytes = Buffer.from(dataBase64, 'base64')
-      if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
+      if (fileStorage && (oauth || (await db.settings.getSettings(userId)).chatFilesBackend === 'storage')) {
+        if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
+        try {
+          const space = await fileStorage.createSpace(userId, {
+            kind: 'chat', title: 'Chat files', ref: conversationId,
+          })
+          const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
+          const entry = await fileStorage.writeFile(userId, space.id, path, upload.bytes, { mimeType: safeMime, createOnly: true })
+          const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
+          const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)
+          rec.tenantId = req.user?.account?.tenantId
+          return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }
+        } catch (error) { return storageError(reply, error) as never }
+      }
+      const bytes = await bufferUpload(upload.bytes)
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
       if (conversationId) {
         try {
@@ -1283,7 +1363,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             ? machineManagedFilePath(directory, randomBytes(16).toString('hex'), uploadName)
             : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
           await agentRegistry.fsMkdir(writeAgentId, directory)
-          await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
+          await agentRegistry.fsWrite(writeAgentId, target, bytes.toString('base64'))
           const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
           rec.tenantId = req.user?.account?.tenantId
           rec.conversationId = conversationId
@@ -1298,6 +1378,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
+  })
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,
@@ -1313,13 +1394,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
       const historyFiles = (await db.chat.historyFiles(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
       const allowed = (file: MessageAttachment): boolean => {
-        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
+        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId && known.storage?.spaceId === file.storage?.spaceId && known.storage?.path === file.storage?.path)) return true
         const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
-        return Boolean(upload && upload.path === file.path && upload.agentId === file.agentId)
+        return Boolean(upload && upload.ownerId === userId && upload.conversationId === body.conversationId && upload.path === file.path && upload.agentId === file.agentId && upload.storage?.spaceId === file.storage?.spaceId && upload.storage?.path === file.storage?.path)
       }
       if (!allowed(body.source) || (body.references ?? []).some((file) => !allowed(file))) return reply.code(403).send({ error: 'Изображение не принадлежит этому разговору' }) as never
 
       const readAttachment = async (file: MessageAttachment): Promise<Buffer> => {
+        if (file.storage) {
+          if (!fileStorage) throw new Error('File storage is disabled')
+          return Buffer.from((await fileStorage.readFile(userId, file.storage.spaceId, file.storage.path)).bytes)
+        }
         if (file.agentId) {
           if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
           const result = await agentRegistry.fsRead(file.agentId, file.path)
@@ -1510,9 +1595,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
     historyTool: historyTurnBroker,
-    resolveUpload: async (id) => {
+    resolveUpload: async (id, userId) => {
       const upload = uploads.get(id)
-      if (!upload) return null
+      if (!upload || upload.ownerId && upload.ownerId !== userId) return null
+      if (upload.storage && fileStorage && upload.ownerId) {
+        const file = await fileStorage.readFile(upload.ownerId, upload.storage.spaceId, upload.storage.path)
+        return { serverPath: upload.path, runnerName: upload.name, dataBase64: Buffer.from(file.bytes).toString('base64'), preserveServerPath: true }
+      }
       if (!upload.agentId) return upload.path
       try {
         const file = await agentRegistry.fsRead(upload.agentId, upload.path)
@@ -1537,6 +1626,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     studioContext: (conversationId) => imageStudio.service.promptContext(conversationId),
     captureStudioImages: (userId, conversationId, finalText) => imageStudio.service.captureImages(userId, conversationId, finalText),
     readServerFile: async (userId, path) => {
+      if (path.startsWith('storage:')) {
+        const match = /^storage:([^/]+)\/(.+)$/.exec(path)
+        if (!match || !fileStorage) return null
+        const file = await fileStorage.readFile(userId, decodeURIComponent(match[1]), match[2])
+        return {path, name: match[2].split('/').pop() ?? 'file', mimeType: file.entry.mimeType, size: file.entry.size, dataBase64: Buffer.from(file.bytes).toString('base64')}
+      }
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
         if (remote) return remote
@@ -1645,7 +1740,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, issuer: req => {
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, authenticate, issuer: req => {
     const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
     const sid = verifyToken(token, sessionSecret)?.sid ?? null
     const billingSession = token && req.user ? billingSessions.register(req.user, sid, token) : undefined
@@ -1786,7 +1881,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
       if (rejectsAttribution(request.query)) { socket.close(4003, 'Untrusted attribution'); return }
       const browserSession = browserSessions.requests.get(request)
-      const token = browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
+      const token = oauth ? request.headers.authorization?.replace(/^Bearer /, '') : browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
         : wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
@@ -1796,10 +1891,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       socket.on('message', buffer)
       const verifySocket = async () => {
         if (browserSession && !browserSessions.current(browserSession)) return null
-        if (!token && request.headers[DELEGATION_HEADER] === undefined) return null
+        if (!token && !(oauth && request.headers.cookie) && request.headers[DELEGATION_HEADER] === undefined) return null
         try {
           const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), ...(oauth ? {cookie: request.headers.cookie} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }
@@ -1955,7 +2050,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment)
+  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment, opts.config.applicationFrontendsOverride)
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
   if (opts.config.readerMode === 'embedded') {

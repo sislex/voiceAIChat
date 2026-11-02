@@ -32,6 +32,7 @@ export function executeTask(steps, {
 } = {}) {
   let count = 0
   const timings = []
+  const failures = []
   const seconds = () => (now() - started) / 1000
   const breach = pending => {
     // Contract (docs/plans/dev-lane-v1.md «Общий контракт»): file names after GATE-TASK-SLOW, slowest first.
@@ -79,6 +80,10 @@ export function executeTask(steps, {
           for (const suite of data.testResults) for (const assertion of suite.assertionResults) {
             timings.push({ name: `${suite.name}: ${assertion.fullName}`, duration: assertion.duration ?? 0 })
             log(`GATE-TASK-CASE: ${suite.name}: ${assertion.fullName}`)
+            if (assertion.status === 'failed') failures.push({
+              file: suite.name, name: assertion.fullName,
+              messages: assertion.failureMessages ?? []
+            })
           }
         } else if (step.runner && !result.error && result.status === 0) throw Error('Missing task test report')
         if (count > maxTests || seconds() > maxSeconds ||
@@ -89,6 +94,11 @@ export function executeTask(steps, {
       }
     }
   } finally {
+    // Keep actual failures after the case inventory so workflow log tails retain them.
+    for (const failure of failures) {
+      log(`GATE-TASK-FAILED: ${failure.file}: ${failure.name}`)
+      for (const message of failure.messages) log(message)
+    }
     log(`GATE-TASK: tests=${count} seconds=${seconds().toFixed(3)}`)
   }
 }

@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-11-02
+checked: 149d669f
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -33,6 +33,15 @@ areas:
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
+
+## Storage-backed chat attachments
+
+`turns.ts` передаёт `userId` в `resolveUpload`. Core отклоняет upload другого
+владельца; для storage-upload читает байты через сервис с правами владельца и
+возвращает `LlmAttachment` с `serverPath`, `runnerName`, `dataBase64` и
+`preserveServerPath: true`. Синтетический путь `storage:<spaceId>/<path>` также
+распознаётся в `readServerFile` с проверкой прав текущего пользователя.
+Транспорт раннера не меняется; см. [server-internals](server-internals.md).
 
 Module details: `llm-runner:README.md`
 
@@ -98,6 +107,23 @@ change. With no adapter the operation returns `source_unavailable`; invalid
 scope is denied before a source read. Connecting historical originals remains
 a separate integration prerequisite. The tests use synthetic bytes and do not
 confirm historical hashes from task descriptions.
+
+### Remote MCP file roots and retained operator materials
+
+The ordinary remote file tools resolve relative paths under the turn `cwd`.
+An absolute path is accepted only when it is inside that `cwd` or one of the
+explicit absolute `root` grants carried by the MCP URL; `remotePath` rejects
+other paths and parent traversal. Selecting another project machine changes the
+effective cwd to that machine's configured project directory, but does not add
+an arbitrary host-filesystem root. This boundary is implemented in
+`apps/server/src/mcp/remoteBashMcp.ts`.
+
+Consequently, the bridge cannot retrieve retained operator files outside the
+turn roots merely because their absolute path is known. The hash-only
+`historical_evidence_verify` path described above is not a material export:
+it returns verification metadata and never returns scenario or configuration
+bytes. Core exposes no fallback in these paths that copies an operator bundle
+into a task checkout.
 
 For SISL-771 (run `4fec4aaf-3645-4c71-9059-97c34501f71c`), the values
 `c93b8b72d269858971335166311ca47d8ea2e3ccc0b1c7b548c4239ea2655f23` for command
@@ -474,6 +500,12 @@ Claude и как ждёт `estimateCostUsd`; SQL сайдбара/отчёта �
 после F5. Модель хода зажимается по роли пользователя (`clampModelForRole`).
 
 ## Make: инструменты `mcp__make__*`
+
+Owner MCP calls in Make service-storage mode do not need a runner browser
+session. The paired SM-47 Make/Core changes carry signed user/conversation
+authority with the service credential; Core checks it before Storage ACLs.
+Task-source scopes are not admitted as user-wide Storage authority. See
+[Make MCP admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
 
 У разговора `assistantKind: 'make'` ход получает `makeMcpUrl` (`turns.ts`: база `MAKE_MCP_PATH`
 + `conv` + `turn`; в режиме «План» — `&ro=1`). Раннеры подключают MCP-сервер `make`

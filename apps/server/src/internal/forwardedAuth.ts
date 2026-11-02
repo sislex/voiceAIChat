@@ -30,7 +30,7 @@ export function registerForwardedAuth(app: FastifyInstance, opts: ForwardedAuthO
 
   const whoami = async (req: FastifyRequest): Promise<WhoamiResponse> => {
     const headers: WhoamiRequest['headers'] = {}
-    for (const name of ['cookie', 'authorization', 'x-vc-csrf'] as const) {
+    for (const name of ['cookie', 'authorization', 'x-vc-csrf', 'x-csrf-token'] as const) {
       const value = req.headers[name]
       if (typeof value === 'string') headers[name] = value
     }

@@ -142,6 +142,19 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
+  app.post<{Params:{id:string};Body:{serverUrl?:string;token?:string;timeoutMs?:number}}>('/api/agents/:id/switch-operator',async(req,reply)=>{
+    if(req.user?.role!=='admin' || !(await db.machines.listAgents(uid(req))).some(a=>a.id===req.params.id)) return reply.code(403).send({error:'Machine owner and administrator required'})
+    const body=req.body ?? {}
+    let url:URL
+    try {url=new URL(body.serverUrl ?? '')}catch{return reply.code(400).send({error:'Invalid target URL'})}
+    if(!['wss:','ws:'].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
+      typeof body.token!=='string' || !body.token || body.token.length>4096) return reply.code(400).send({error:'Invalid switch request'})
+    const timeoutMs=body.timeoutMs ?? 30000
+    if(!Number.isInteger(timeoutMs) || timeoutMs<1000 || timeoutMs>120000) return reply.code(400).send({error:'Invalid timeout'})
+    const status=await registry.switchOperator(req.params.id,{serverUrl:url.href,token:body.token,timeoutMs})
+    app.log.info({user:uid(req),agentId:req.params.id,status},'Operator switch')
+    return {agentId:req.params.id,status}
+  })
   registry.vpnService = new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY)
   registerVpnRoutes(app, registry.vpnService)
   const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentListItem[]> => {

@@ -2,12 +2,12 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-30
-checked: 78f28530
+updated: 2026-10-31
+checked: c01d1871
 areas:
-  - docs/kb/modules.md
   - packages/knowledge/src
   - packages/kb-tools
+  - docs/kb/modules.md
   - scripts/kb-search.mjs
   - apps/server/src/kb
   - packages/shared/src/kb.ts
@@ -51,6 +51,30 @@ related:
 ---
 
 # База знаний проекта
+
+## Source ownership and freshness
+
+The indexing/search implementation lives in `packages/knowledge/src`; Core's
+`apps/server/src/kb` supplies filesystem, Git, persistence and authorization
+adapters. The local maintenance/search CLI lives in `packages/kb-tools`.
+This topic tracks those implementations and the module-source configuration map.
+The Markdown corpus is input data, not the implementation area: including all
+of `docs/kb` also included this topic's own checked marker, so each verification
+commit immediately made it stale again.
+
+Review since `592879f34` found one runtime change in the KB area:
+`registerKbResearchRoutes` accepts an absent research manager. POST then returns
+503 `auxiliary_model_disabled`; authorized GET returns null. When research is
+available, project-membership checks and the existing start flow remain in force.
+Operator handoff only adds knowledge documents; it does not change KB search,
+module fetch or visibility behavior.
+
+The maintenance CLI's same-commit freshness rule excludes area commits that
+also modify the topic being checked. `touch` records HEAD; later source-only
+commits still invalidate the topic. `packages/kb-tools/cli.test.mjs` commits
+reconciliation separately before its stale-source fixture and checks the
+`после проверенного SHA:` row delimiter. See
+[the maintenance workflow](../kb-workflow.md#scoped-owner-gate-diagnostics-sk-115).
 
 ## Repository modules
 
@@ -160,6 +184,12 @@ which is parsed as runtime registration input. It does not track all of `docs/kb
 a content edit or freshness/log commit is not a change to the KB implementation,
 and that self-reference would make this topic stale immediately after its own
 reconciliation commit. The index is already excluded by the checker itself.
+
+The 0.1.1 maintenance CLI excludes area commits that also update the same topic.
+A later code-only commit still makes it stale, even if another topic was updated
+in that commit. `touch` records the current HEAD; this permits a combined
+code/topic commit without immediately invalidating that topic. See
+[maintenance workflow](../kb-workflow.md#reconciliation-after-repository-extraction).
 
 Module registration does not prove content availability. If an owner document is
 missing from search, inspect `/api/kb/modules` for its indexed SHA/status before

@@ -1,8 +1,11 @@
 ---
+updated: 2026-11-02
+checked: 72c4cd42a
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-30
-checked: 422cbebe
 areas:
+  - scripts/dev-stand-local.mjs
+  - scripts/dev-stand-local.test.mjs
+  - scripts/application-frontend-server.mjs
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
   - scripts/prod/test_compose_env.py
@@ -43,6 +46,95 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## File storage node example
+
+To enable direct transfer, add optional `publicUrl` and `directSecretFile` to
+each applicable `VC_FILE_STORAGE_NODES` entry. Nodes without publicUrl retain
+Core proxy transfer. The public URL must be reachable by browsers through a TLS
+proxy, routing `/v1/direct/*` to that node. On the node set
+`VC_FILE_STORAGE_DIRECT_SECRET_FILE` to the same per-node HMAC secret file
+(minimum 32 characters; use an independently generated random secret), and
+`VC_FILE_STORAGE_UI_ORIGINS` to a JSON array of exact Core UI origins, for example
+`["https://core.example"]`. Wildcards and credentialed CORS are not supported.
+Preflight permits GET/PUT with Content-Type and Range, exposing range/length
+response headers. Signing secrets are loaded at process startup; coordinate
+Core/node restarts on rotation, which invalidates outstanding URLs.
+Bearer authorization remains required for ordinary node APIs.
+Configure TLS, public reachability and origin/secret files during operator
+commissioning; this code change does not provision them. Allow up to five
+minutes for issued read URLs to expire after revoking a share.
+
+Core accepts `VC_FILE_STORAGE_PART_SIZE_BYTES` (default 8 MiB; integer
+1..64 MiB). Existing sessions keep their original part size.
+Allow a 24-hour upload window and retain the node's `.uploads/` directory
+across restarts. Placement reserves twice the declared size on a single node
+for parts plus atomic assembly; after completion only the final blob remains
+charged. Core quota reserves the declared size once. Node health includes
+active capacity reservations, so free space can be lower than published data
+usage. Multipart endpoints use the same node bearer scope as blob operations.
+Storage transfer compression introduces no environment variable. Proxies must
+preserve `Accept-Encoding`, `Content-Encoding` and `Vary` and must not
+recompress Range responses.
+
+`VC_FILE_STORAGE_MAX_FILE_BYTES` configures Core and blob-node single-file limits
+(default 1073741824 bytes, 1 GiB; positive safe integer). Set it consistently on
+both services. Owner quota is independent and still defaults to 100 MiB.
+The HTTP node client shares an undici Agent with keep-alive and HTTP/2 negotiation
+for HTTPS nodes (HTTP/1.1 fallback); request deadlines remain 60 seconds.
+
+The Docker target `file-storage-node` starts
+`packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
+its default blob directory. `deploy/compose.file-storage.example.yml` defines
+two nodes with decimal capacities of 10 GB and 60 GB, separate `/data` volumes,
+and separate token files under `deploy/secrets/`. Host ports 8795 and 8796 bind
+to loopback. Create the private token files before starting this example.
+
+Configure each node with `VC_FILE_STORAGE_NODE_ID`, `VC_FILE_STORAGE_DIR`,
+`VC_FILE_STORAGE_CAPACITY_BYTES` and `VC_FILE_STORAGE_TOKEN_FILE`. Managed mode
+uses `SISLEXA_COMPONENT_CONFIG` and component-runtime instead of the static token.
+The example does not add nodes to production. Enable the Core coordinator with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`) and configure
+`VC_FILE_STORAGE_NODES='[{"id":"node-a","url":"http://node-a:8795","tokenFile":"/run/secrets/storage-a"}]'`.
+IDs must be unique; HTTP(S) URLs cannot contain credentials, query or fragment.
+Mount the token files into Core as well as the corresponding nodes. Core loads
+tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
+integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
+per-user quota when available. Node health is polled every 15 seconds; two
+failed polls remove a node's capacity from the online pool.
+Thumbnail generation needs no new environment variable or volume. Core uses its
+existing Sharp dependency with a fixed concurrency bound; derived preview bytes
+consume node capacity but are excluded from user quota accounting and are
+removed with their source file.
+
+Core metadata lives in its existing SQLite/Postgres database and migrates
+additively on startup. Back up both metadata and node volumes. Selecting
+`chatFilesBackend=storage` in account settings opts chat uploads into the
+service; machine storage remains the default.
+Raw/multipart chat uploads require no new environment variables or schema
+migration. Core adds `@fastify/multipart` for its scoped upload parser and uses
+the existing storage node URL/token configuration for streaming HTTP writes.
+The legacy JSON form remains available to already deployed clients.
+
+Shared Make with `VC_MAKE_FILE_STORAGE=service` also needs the paired service
+credentials used by Core's application ticket configuration. Core enables
+Make delegation for a local deployment when both directions are configured,
+and converts authenticated browser proxy requests to short-lived user grants.
+Deploy compatible Core and Make versions together: service credentials identify
+the application, while the delegation supplies the user for Core storage ACLs.
+See [Make authorization](data-auth.md#make-service-storage-authorization).
+
+SM-47 also requires paired Core and Make versions for sessionless owner MCP
+calls. Make retains the service bearer and supplies short-lived signed authority;
+Core accepts legacy/managed `coreId: legacy` tokens with `VC_MCP_SECRET`, or the
+shared application's configured MCP secret and Core ID. No new environment
+variable is required. See [MCP Storage admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+Admin quota writes require an FS-3-capable Identity exposing
+`setUserStorageQuota`; the pinned Identity 1.5.2 lacks that method and Core
+returns 503 instead of claiming success. The standalone admin process creates
+its storage runtime when configured with embedded file storage and closes it
+on shutdown. See [quota management](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Public chat deployment isolation
 
@@ -109,15 +201,23 @@ personal account UI while other product applications remain disabled. Candidate 
 recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
 pins and distinguish installed packages from reachable runtime services. Other examples are
 `chat,make`, `chat,make=https://make.example.org`, and
-`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
-tickets. External URLs must be HTTPS without credentials, query or fragment.
+`chat,web-reader,projects`. Standalone Storage is selected with
+`storage=https://storage.example.org` and authenticates ticket redemption with the
+per-application `VC_APPLICATION_STORAGE_TOKEN`, following the same secret placement
+rules as other external applications. `VC_CORE_ID` identifies the issuing Core in application
+tickets. External URLs must be HTTPS without credentials, query or fragment; plain HTTP is accepted only for loopback hosts (`127.0.0.1`, `localhost`, `[::1]`) on local stands.
 No selector preserves legacy Core modes.
 
 `VC_APPLICATION_FRONTENDS` uses frontend catalog IDs (for example `make-ui`),
 while `VC_APPLICATIONS` uses owner IDs (`make`). Core validates the frontend map
 before retaining overrides for enabled local owners through catalog runtime
-dependencies. Disabled and external owners do not activate those overrides;
-unselected sources retain the installed artifact fallback. See
+dependencies. Disabled and external owners do not activate those overrides.
+With `NODE_ENV=production`, pinned owner frontend archives take priority even
+for local owners. Set `VC_APPLICATION_FRONTENDS_OVERRIDE=1` to opt in to their
+configured sources; development and frontends without a pinned owner package
+retain overrides. Missing or invalid pinned artifacts do not silently fall back
+to containers. Startup logs report the selected source and manifest version/commit.
+Unselected sources retain the installed artifact fallback. See
 [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 `VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
@@ -282,6 +382,15 @@ a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
 
+The npm subprocess helper in `scripts/contracts-release.mjs` sets the global
+`--loglevel=error` option before the subcommand and captures stdout and stderr.
+An inherited `npm_config_loglevel=silent` would otherwise suppress npm's peer
+conflict diagnostics even though stderr is piped. Consumer failure reports retain
+both streams. The regression in `contracts-release.test.mjs` deliberately enables
+`silent`, builds the conflicting peer from local tarballs with a `file:` peer
+reference, and uses an isolated cache in offline mode. It checks the ERESOLVE
+chain and successful installation in the subsequent consumer.
+
 `node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
 --commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local
 contract release. See [Shared](shared.md#one-command-contract-release) for owner
@@ -353,6 +462,16 @@ test these adapters without contacting real owners.
 
 `node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
 
+Selected owner repositories release concurrently in separate checkouts; applications
+sharing a repository use one owner release. Commands run asynchronously, with isolated
+verification deadlines and Docker credentials. Desktop remains frozen and excluded.
+The journal checkpoints each owner's steps independently. On failure, no new owner
+step starts, in-flight operations finish and save their results, and Core pinning is
+blocked. Resume skips completed steps and reconciles interrupted steps, including
+checkpoints from older sequential journals. Once every owner is verified, the train
+writes all pins in one Core commit, checks Core once and promotes once (a concurrent
+Core dev push can still require a rebase and another check).
+
 `plan --from-dev [--json]` previews the fast path. `run --from-dev` bumps
 changed owners from their planned dev commit and runs `gate:quick -- --base <pinned commit>`,
 falling back to `affected-check`, then `gate` only when the preceding scripts
@@ -409,6 +528,15 @@ directories remain available for diagnosis. Failures identify the journal and fa
 step and exit nonzero. The error and journal include the failed command, exit code,
 and last 40 output lines, with environment credentials, bearer tokens and recognized
 token formats redacted. Successful resume clears the saved error.
+
+Immediately before every Core gate, including a resumed gate after the pin step was
+already journaled, the runner fetches current `origin/dev` and rebases the train's
+single pin commit onto it. A package manifest or lockfile change in the refreshed
+dev history is reported as requiring dependency reinstallation; the gate's `npm ci`
+then installs that exact tree. The refresh also removes untracked `vendor/*.tgz`
+archives only when the shared reachability analysis finds no manifest, inventory or
+script reference. Its log reports the dev SHA, old/new pin SHA, dependency decision
+and removed archive paths, so an operator can see exactly what resume refreshed.
 
 The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
 the runner stops before planning or resuming with an installation hint. GitHub API
@@ -516,6 +644,38 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
 
+### Make frontend artifacts: preview-build and deploy-configuration
+
+In `scripts/dev-stand-local.mjs`, shared mode with a prepared Make source starts
+`make-ui-build` (`npm run dev` in `packages/make-app`) and `make-ui` (the Make
+checkout's `scripts/application-frontend-server.mjs`) as separate child processes.
+Core routes `make-ui` to that server through `VC_APPLICATION_FRONTENDS`.
+Setting an environment variable inside the watcher cannot configure its sibling
+server: `sharedServices` explicitly sets `VC_APPLICATION_DEV=1` on `make-ui`.
+This change applies to the shared stand with a prepared Make checkout.
+
+On a new build-process launch, `startService` removes the previous
+`packages/make-app/dist/manifest.json` and waits for its replacement before
+starting the frontend server. It initially derives metadata from repository HEAD,
+but for the frontend server it replaces `VC_APPLICATION_COMMIT`,
+`VC_APPLICATION_VERSION`, `VC_APPLICATION_API_VERSION` and release metadata with
+values from that manifest. The three manifest fields must be nonempty strings;
+the generated metadata overrides inherited environment values. The process fixture
+in `scripts/dev-stand-local.test.mjs` verifies manifest metadata and the dev flag
+received by the server; it substitutes the Make implementation and does not test
+Git-triggered rebuilds or mismatch handling.
+
+The Make watcher and its server implementation belong to the Make repository
+([ownership map](modules.md), `make:README.md`). This Core checkout has neither
+`application-frontend-dev.mjs` nor the owner topics `preview-build` and
+`deploy-configuration`. Git HEAD/ref/packed-refs watching, worktree path resolution,
+builder commit overrides and Make's dev-mode health/mismatch semantics therefore
+require verification in that owner checkout; this Core merge does not establish
+them. Core's own `scripts/application-frontend-server.mjs` is a different server:
+it has no `VC_APPLICATION_DEV` exception, rejects any version/commit/apiVersion
+mismatch and returns startup runtime metadata from `/v1/health`. Do not infer Make
+behavior from this same-named Core file.
+
 ### Isolated local stand without Docker (`npm run dev:stand`)
 
 `npm run dev:stand` (`scripts/dev-stand-local.mjs`) starts a complete Sislexa copy on
@@ -531,6 +691,8 @@ the service process group. Detaching Make also stops its frontend and watcher,
 and changing frontend routing restarts Core. Ports held by other processes are refused.
 Frontend servers take version, commit and apiVersion from the freshly built
 `dist/manifest.json`, rather than the launcher's static API defaults.
+The shared stand's Make frontend server also receives `VC_APPLICATION_DEV=1`;
+see the frontend configuration and build boundary below.
 Readiness failures include the last 4 KiB / 20 lines of the failing service log.
 In supervised `run` mode this diagnostic is written to stderr before rollback stops
 the service groups, so an operation runner can retain the bounded cause instead of
@@ -1154,6 +1316,16 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
+
+Standalone file storage is enabled in Core with
+`VC_FILE_STORAGE_MODE=remote`, `VC_FILE_STORAGE_URL=https://storage.example.org`
+and `VC_FILE_STORAGE_SERVICE_TOKEN_FILE=/run/secrets/file-storage-service`.
+The URL must be an HTTP(S) origin without credentials, path, query or fragment.
+The token file must contain the Core-to-Storage service credential; its contents
+are read at startup and are never logged. `embedded` continues to use
+`VC_FILE_STORAGE_NODES`; `off` remains the default. The standalone Storage URL
+is independent of the `VC_APPLICATIONS` browser-entry URL, although deployments
+normally point both at the same service origin.
 
 **Playwright Reader отдельным сервисом (2026-09-09).** В compose приложение
 `playwright-reader` включено по умолчанию, как Make: образ `voicechat-playwright-reader`,
@@ -3345,13 +3517,13 @@ production host (private link `10.77.0.2:8798`).
 
 ## Published Make 1.8.1 pin (2026-10-19)
 
-Core pins Make 1.8.1 at `e716089b55eb17059f51591fa88cd0506ac1c062` in the tools lock and
+Core pins Make 1.8.1 at `4a76ceb026842e4d654d0172b14b649e44a4434d` in the tools lock and
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-pin:playwright-reader-1.2.6 -->
-- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+- Playwright Reader 1.2.6: verified API and browser images at `c5642e5ffb708e71da63dc9132c8313e249cd069`.
 
 <!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
 - sislex/webreader: 1.3.2
@@ -3404,3 +3576,43 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:32212279-576e-468f-8fe5-48ccbe0bc7ab -->
 - sislex/webreader: 1.3.5
+
+<!-- release-train:e0dce216-35c4-4bbc-a8ff-5eb263aae7a7 -->
+- sislex/make: 1.8.5
+- sislex/playwrightreader: 1.2.7
+- sislex/webreader: 1.3.6
+- sislex/image-studio: 1.1.5
+- sislex/voice: 1.1.2
+- sislex/sislexa-kanban: 0.2.56
+
+<!-- release-train:6a4f9587-adf7-4c41-bcbe-977f1b58a654 -->
+- sislex/make: 1.8.6
+
+<!-- release-train:0a23378c-2a9c-479f-bf55-87b7f59f3d2f -->
+- sislex/sislexa-kanban: 0.2.57
+
+<!-- release-train:d6553d43-8e3a-4ece-886b-49ada2097bcc -->
+- sislex/sislexa-kanban: 0.2.58
+
+<!-- release-train:c239220b-3cd3-47c8-90a8-729dbc5f52a9 -->
+- sislex/sislexa-kanban: 0.2.59
+
+<!-- release-train:c54cf5b6-560c-431a-b53a-24ab53cda839 -->
+- sislex/make: 1.8.7
+
+<!-- release-train:140173b4-5e11-4436-99b9-3f9f8cd6697d -->
+- sislex/sislexa-kanban: 0.2.60
+
+<!-- release-train:e3e06576-37db-473b-8af6-cb573bb0a4e4 -->
+- sislex/make: 1.8.8
+- sislex/sislexa-kanban: 0.2.61
+
+<!-- release-train:707d5c7b-14f8-44d8-b6dc-dd2f25950309 -->
+- sislex/sislexa-kanban: 0.2.62
+
+<!-- release-train:df16a8b0-ccbb-41b2-b4c6-19a2d531c60a -->
+- sislex/make: 1.8.9
+- sislex/sislexa-kanban: 0.2.63
+
+<!-- release-train:5e11a4ef-fa41-4f4a-b932-3221178708ee -->
+- sislex/make: 1.8.10

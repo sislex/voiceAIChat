@@ -9,9 +9,13 @@ import type { AdminDeployResponse } from '@voicechat/shared'
 import type { ServerConfig } from '../../config.js'
 import { VoiceChatDb } from '../../db/database.js'
 import { registerForwardedAuth } from '../../internal/forwardedAuth.js'
+import { registerCoreOAuth } from '../../auth/oauth.js'
+import { registerAuthGuard } from '@sislexa/identity/server/users/auth'
 import { HttpMachines } from '../../machinesBridge/httpMachines.js'
 import type { MachinesService } from '../../machines/service.js'
 import { createRemoteMake } from '../../makeBridge/remote.js'
+import { createStorageRuntime } from '../../fileStorage/runtime.js'
+import { createRemoteStorageRuntime } from '../../fileStorage/remote.js'
 import { registerAdminRoutes } from '../../routes/admin.js'
 import { createMailer, type Mailer } from "@sislexa/identity/server/users/mailer"
 import { ADMIN_HEALTH_PATH, INTERNAL_ADMIN_RPC_PATH } from '../internal.js'
@@ -45,7 +49,9 @@ export async function buildAdminServer(opts: BuildAdminServerOptions): Promise<A
   await db.ready
   if (ownDb) app.addHook('onClose', async () => { await db.close() })
 
-  registerForwardedAuth(app, { name: 'admin', coreUrl, token, fetchImpl })
+  const oauth = config.oauth ? await registerCoreOAuth(app, db, config.oauth) : undefined
+  if (oauth) registerAuthGuard(app, db, oauth.authenticate, () => null)
+  else registerForwardedAuth(app, { name: 'admin', coreUrl, token, fetchImpl })
 
   const machines = opts.machines ?? (() => {
     const http = new HttpMachines({ machinesUrl: config.machinesUrl ?? coreUrl, token, publish: () => {}, fetchImpl, log: (level, message, extra) => app.log[level](extra ?? {}, message) })
@@ -59,7 +65,11 @@ export async function buildAdminServer(opts: BuildAdminServerOptions): Promise<A
   const deployTrigger = { trigger: () => core<AdminDeployResponse>('deploy') }
   const sessionHub = { emit: (user: string, revokedSid?: string) => { void core('sessionsChanged', user, revokedSid).catch((error) => warn({ err: error }, '[admin] ядро не уведомлено об отзыве сессии')) } }
 
-  registerAdminRoutes(app, db, machines, deployTrigger, make.service, mailer, config.publicUrl, sessionHub)
+  const storage = config.fileStorage?.mode === 'embedded'
+    ? await createStorageRuntime(db, config.fileStorage)
+    : config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(config.fileStorage, oauth?.storageToken) : undefined
+  if (storage) app.addHook('onClose', async () => storage.close())
+  registerAdminRoutes(app, db, machines, deployTrigger, make.service, mailer, config.publicUrl, sessionHub, storage?.service, oauth ? config.fileStorage?.url : undefined)
   app.get(ADMIN_HEALTH_PATH, async () => ({ ok: true, service: 'admin', version: opts.version ?? null, engine: db.engine }))
   return { app, db, machines }
 }

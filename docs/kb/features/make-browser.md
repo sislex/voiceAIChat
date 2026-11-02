@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-10-30
-checked: 91f51154
+updated: 2026-11-02
+checked: 149d669f
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -43,6 +43,12 @@ Chromium, иначе `panel`. Движок меняется переключен
 Для работы без открытой панели нужен движок Chromium.
 
 ## Scoped Make execution
+
+Make file tools use a separate Storage authority from browser/preview execution.
+For sessionless owner MCP calls, paired SM-47 Make/Core versions preserve the
+service credential and verify signed user/conversation authority; see
+[Make MCP Storage admission](../data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17). This does not change the bound
+browser selection or inspector cookie forwarding described below.
 
 Without a bound browser, non-delegated Make turns receive the Core preview MCP
 URL with a signed token for the Make conversation itself and

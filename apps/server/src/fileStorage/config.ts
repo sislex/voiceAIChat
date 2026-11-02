@@ -1,0 +1,49 @@
+import { DEFAULT_STORAGE_QUOTA_BYTES, storageMaxFileBytes } from '@voicechat/shared/fileStorage'
+export interface FileStorageConfig {
+  partSize?: number
+  mode: 'off' | 'embedded' | 'remote'
+  url?: string
+  serviceTokenFile?: string
+  nodes: Array<{id: string; url: string; tokenFile: string; publicUrl?: string; directSecretFile?: string}>
+  maxFileBytes?: number
+  defaultQuotaBytes: number
+}
+export function fileStorageConfig(env: NodeJS.ProcessEnv): FileStorageConfig {
+  const mode = env.STORAGE_URL ? "remote" : env.VC_FILE_STORAGE_MODE ?? 'off'
+  if (mode !== 'off' && mode !== 'embedded' && mode !== 'remote') throw new Error('Invalid VC_FILE_STORAGE_MODE')
+  let url: string | undefined
+  let serviceTokenFile: string | undefined
+  if (mode === 'remote') {
+    if (!env.STORAGE_URL && (typeof env.VC_FILE_STORAGE_URL !== 'string' || typeof env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE !== 'string' || !env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE.trim()))
+      throw new Error('Remote file storage requires VC_FILE_STORAGE_URL and VC_FILE_STORAGE_SERVICE_TOKEN_FILE')
+    const parsed = new URL(env.STORAGE_URL ?? env.VC_FILE_STORAGE_URL!)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/')
+      throw new Error('Invalid VC_FILE_STORAGE_URL')
+    url = parsed.origin
+    serviceTokenFile = env.VC_FILE_STORAGE_SERVICE_TOKEN_FILE
+  }
+  const nodes: unknown = JSON.parse(env.VC_FILE_STORAGE_NODES ?? '[]')
+  if (!Array.isArray(nodes)) throw new Error('Invalid VC_FILE_STORAGE_NODES')
+  const ids = new Set<string>()
+  for (const node of nodes) {
+    if (!node || typeof node.id !== 'string' || !node.id.trim() || ids.has(node.id) ||
+        typeof node.url !== 'string' || typeof node.tokenFile !== 'string' || !node.tokenFile.trim())
+      throw new Error('Invalid VC_FILE_STORAGE_NODES')
+    const url = new URL(node.url)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+      throw new Error('Invalid storage node URL')
+    if (node.publicUrl !== undefined) {
+      if (typeof node.publicUrl !== 'string' || typeof node.directSecretFile !== 'string' || !node.directSecretFile.trim())
+        throw new Error('Invalid direct storage configuration')
+      const publicUrl = new URL(node.publicUrl)
+      if (!['http:', 'https:'].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.search || publicUrl.hash)
+        throw new Error('Invalid storage public URL')
+    }
+    ids.add(node.id)
+  }
+  const defaultQuotaBytes = Number(env.VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES ?? DEFAULT_STORAGE_QUOTA_BYTES)
+  if (!Number.isSafeInteger(defaultQuotaBytes) || defaultQuotaBytes < 0) throw new Error('Invalid VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES')
+  const partSize = Number(env.VC_FILE_STORAGE_PART_SIZE_BYTES ?? 8 * 1024 * 1024)
+  if (!Number.isSafeInteger(partSize) || partSize < 1 || partSize > 64 * 1024 * 1024) throw new Error('Invalid VC_FILE_STORAGE_PART_SIZE_BYTES')
+  return { mode, url, serviceTokenFile, nodes, defaultQuotaBytes, partSize, maxFileBytes: storageMaxFileBytes(env.VC_FILE_STORAGE_MAX_FILE_BYTES) }
+}
