@@ -1,7 +1,7 @@
 # Append to the component deployment after preparing the private Identity grant.
 services:
   identity:
-    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e}
+    image: ${SISLEXA_IDENTITY_IMAGE:-ghcr.io/sislex/identity:70e28251f3faa79eabea664924abdf5a73e5500f}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -14,11 +14,19 @@ services:
       VC_MAIL_FROM: ${VC_MAIL_FROM:-}
       VC_GEOIP_URL: ${VC_GEOIP_URL:-}
       VC_HIBP_CHECK: ${VC_HIBP_CHECK:-0}
+      # OAuth sign-in (sso-auth-v1 A7). Empty AUTH_URL keeps OAuth off; the material
+      # comes from scripts/prod/identity-oauth-init.mjs in the shared vc-data volume.
+      AUTH_URL: ${AUTH_URL:-}
+      AUTH_CLIENT_ID: core
+      AUTH_CLIENT_SECRET_FILE: /vc-data/identity/oauth/core-client.secret
+      IDENTITY_OAUTH_KEY_FILE: /vc-data/identity/oauth/oauth-key.pem
+      IDENTITY_OAUTH_CLIENTS_FILE: /vc-data/identity/oauth/oauth-clients.json
     volumes:
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/config.json:/run/sislexa/config.json:ro
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/outgoing:/run/sislexa/outgoing:ro
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/provider:/run/sislexa/provider
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/identity/session.secret:/run/sislexa/session.secret:ro
+      - vc-data:/vc-data:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8798/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 20s
