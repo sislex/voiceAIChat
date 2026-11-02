@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1424. Последние:
+Всего записей: 1425. Последние:
 
+- [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-identity-session-bootstrap-gate.md) — identity-session-bootstrap-gate
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-core-identity-storage-oauth.md) — core-identity-storage-oauth
 - [2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md](log/2026-11-02-alexeys-macbook-air-tailae39a6-ts-net-a4-core-identity-storage.md) — a4-core-identity-storage
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-storage-transfer-compression.md) — storage-transfer-compression
@@ -76,7 +77,6 @@
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-818-storage-thumbnails.md) — sisl-818-storage-thumbnails
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-sisl-816-storage-http-cache-range.md) — sisl-816-storage-http-cache-range
 - [2026-11-01-pc-radvilovich-tailae39a6-ts-net-release-train-resume-core-refresh.md](log/2026-11-01-pc-radvilovich-tailae39a6-ts-net-release-train-resume-core-refresh.md) — release-train-resume-core-refresh
-- [2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md](log/2026-11-01-alexeys-macbook-air-tailae39a6-ts-net-storage-streaming-pool.md) — storage-streaming-pool
 
 ## Исторические планы
 

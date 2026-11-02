@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-02
-checked: 79d261e89
+checked: d1e8b3c6f
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -689,11 +689,29 @@ client compatibility. Details show the actual `prompt`, not a duplicate transcri
 
 ## REST
 
-Все пути под `/api/*` требуют `Authorization: Bearer <токен сессии>` — это
-глобальный `preHandler` в `apps/server/src/users/auth.ts`. Публичные исключения
-(там же, функция `isPublic`): `/api/health`, `/api/session/*`, скачивание
-агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
-и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
+Protected `/api/*` routes use the global guard from
+`@sislexa/identity/server/users/auth`, registered by Core's `server.ts`.
+Identity OAuth mode accepts its verified bearer or application-session cookie.
+`isPublic` excludes health, `/api/session/*` and public agent/desktop downloads
+from that guard; session handlers must authenticate their own requests.
+Admin routes additionally require `requireAdmin`.
+
+In Identity OAuth mode, `GET REST.sessionMe` (`/api/session/me`) returns
+`{ user, csrf, notices }` with `Cache-Control: no-store`. The user retains the
+legacy shape: `name`, account-derived `role`, `account`, and
+`mustChangePassword: true` only when required. Cookie sessions return the OAuth
+CSRF token; bearer requests omit it. Missing/invalid sessions return 401;
+blocked or missing accounts and denied tenant access return 403.
+`POST REST.sessionNoticesSeen` authenticates and acknowledges security notices;
+cookie requests require `x-csrf-token`. Core CORS permits that header alongside
+the legacy `x-vc-csrf`, as checked by `routes/rest.auth.test.ts`.
+
+OAuth mode explicitly rejects the legacy bootstrap helpers
+`POST /api/session/preview`, `POST /api/session/cookie`,
+`GET /api/session/signup` and `GET /api/session/account-access`: unauthenticated
+requests return 401 and authenticated requests return 403. They do not return
+route-not-found or issue legacy credentials. See the
+[Core registration boundary](server-internals.md#identity-oauth-session-bootstrap).
 
 `Conversation.contextUsage` — необязательный снимок заполнения текущего LLM-потока:
 `{ usedTokens, windowTokens, provider, model, measuredAt }`. Для Claude `usedTokens`
