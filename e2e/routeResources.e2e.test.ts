@@ -179,6 +179,10 @@ it('keeps routes navigable in both themes at all five sizes with touch and keybo
           // first control that is actually inside the viewport.
           const scope = await overlay.count() ? overlay : page.locator('body')
           const index = await scope.locator('button:visible').evaluateAll(nodes => nodes.findIndex(node => {
+            // Disclosure controls (sidebar toggle, menus, drawers) open overlays over the
+            // route; the touch check needs a plain control that leaves the route usable.
+            if (node.closest('#app-sidebar') || node.classList.contains('sidebar-toggle')
+              || node.hasAttribute('aria-expanded') || node.hasAttribute('aria-haspopup')) return false
             const box = node.getBoundingClientRect()
             return box.width > 0 && box.height > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight
           }))
@@ -186,6 +190,16 @@ it('keeps routes navigable in both themes at all five sizes with touch and keybo
           const button = scope.locator('button:visible').nth(index)
           await button.tap()
           await page.keyboard.press('Escape')
+          // A dialog opened by the tap may appear after an async request (Account opens
+          // «Мои приложения» after session.me) and attach its Escape listener late;
+          // give it a moment to appear, then close until no modal remains.
+          const modal = page.locator('[aria-modal="true"]:visible')
+          await modal.first().waitFor({ state: 'visible', timeout: 2_000 }).catch(() => {})
+          await expect.poll(async () => {
+            const open = await modal.count()
+            if (open) await page.keyboard.press('Escape')
+            return open
+          }, { timeout: 5_000 }).toBe(0)
           await page.evaluate(route => { location.hash = route }, section.route)
           await settle(page, section.selector)
         }
