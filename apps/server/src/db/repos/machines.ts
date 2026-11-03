@@ -53,6 +53,13 @@ export function hashAgentToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 export class MachinesRepo extends BaseRepo {
+  async renameAgent(userId: string, id: string, name: string): Promise<boolean> {
+    const value = name.trim()
+    if (!value || value.length > 120) throw new Error('Invalid machine name')
+    const result = await this.sql.run('UPDATE agents SET name = ? WHERE id = ? AND user_id = ?', [value, id, userId])
+    return result.changes === 1
+  }
+
   async readVpnNetwork(userId: string): Promise<{ tailnet: string; encryptedSecret: string; generation: number; state: string } | null> {
     const row = await this.sql.get('SELECT tailnet,encrypted_secret,generation,state FROM machine_vpn_networks WHERE user_id=?', [userId]) as { tailnet: string; encrypted_secret: string; generation: number; state: string } | undefined
     return row ? { tailnet: row.tailnet, encryptedSecret: row.encrypted_secret, generation: row.generation, state: row.state } : null

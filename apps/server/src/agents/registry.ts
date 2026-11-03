@@ -417,6 +417,12 @@ export class AgentRegistry {
     return [...this.ptys.entries()].map(([ptyId, sess]) => ({ ptyId, agentId: sess.agentId, context: sess.context }))
   }
 
+  rename(agentId: string, name: string): void {
+    const agent = this.online.get(agentId)
+    if (agent) agent.name = name
+    this.emitChange()
+  }
+
   nameOf(agentId: string): string | undefined {
     return this.online.get(agentId)?.name
   }

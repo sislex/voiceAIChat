@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-11-03
-checked: d247ecf75
+updated: 2026-11-04
+checked: 26f657327
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
