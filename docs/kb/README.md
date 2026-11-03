@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-03 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 355452a81 chore(ui): pin Core UI 1.5.41 |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 355452a8 chore(ui): pin Core UI 1.5.41 |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 355452a81 chore(ui): pin Core UI 1.5.41 |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 355452a8 chore(ui): pin Core UI 1.5.41 |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-02 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-03 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-03 | ✓ |
@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-03 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 903514a4c card-SISL-863 B01 |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 903514a4 card-SISL-863 B01 |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-03 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1447. Последние:
+Всего записей: 1448. Последние:
 
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md) — sisl-857-palette-shortcut-retry
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md) — sisl-855-identity-bearer
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md) — release-train-owner-reconcile
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md) — release-train-d2736740-699f-436e-869f-a2b9ac2f38ed
+- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md) — release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
 
 ## Исторические планы
 
