@@ -175,7 +175,15 @@ it('keeps routes navigable in both themes at all five sizes with touch and keybo
         }
         if (width <= 720) {
           const overlay = page.locator('[data-testid="overlay"]:visible, [data-testid="onboarding-overlay"]:visible').last()
-          const button = await overlay.count() ? overlay.locator('button:visible').first() : page.locator('button:visible').first()
+          // The closed mobile sidebar keeps its buttons rendered off-screen; tap the
+          // first control that is actually inside the viewport.
+          const scope = await overlay.count() ? overlay : page.locator('body')
+          const index = await scope.locator('button:visible').evaluateAll(nodes => nodes.findIndex(node => {
+            const box = node.getBoundingClientRect()
+            return box.width > 0 && box.height > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight
+          }))
+          expect(index, 'a tappable control is inside the viewport').toBeGreaterThanOrEqual(0)
+          const button = scope.locator('button:visible').nth(index)
           await button.tap()
           await page.keyboard.press('Escape')
           await page.evaluate(route => { location.hash = route }, section.route)
