@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-03
-checked: f5bc6cb04
+checked: d65f46abe
 areas:
   - scripts
   - apps/server/vitest.config.ts
