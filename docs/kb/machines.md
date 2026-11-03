@@ -63,6 +63,14 @@ folders are never an installer discovery dependency.
 
 ## Подключение и жизненный цикл
 
+The owner can rename a machine with `PATCH /api/agents/:id` and `{ name }`.
+Names are trimmed and must contain 1–120 characters (otherwise 400).
+The ownership-scoped database update returns 404 for missing or foreign machines.
+Success returns `{ id, name }`, updates the live registry name and emits its
+change event without disconnecting the agent or rotating its token. The name is
+stored in `agents.name` and is available while the machine is offline.
+Route coverage is in `routes/rest.machines.test.ts`.
+
 Агент коннектится по WS на `/agent` и шлёт `agent.register{token, version}`.
 Сервер (`apps/server/src/agents/wsAgent.ts` + `registry.ts`) сверяет хеш токена с
 таблицей `agents` и отвечает `agent.registered{name, policy}` либо
