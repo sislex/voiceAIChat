@@ -450,9 +450,10 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
       // Start each viewport from a fresh document while retaining authenticated storage.
       await page.goto('about:blank')
       await page.goto(base + '/#/chat/' + chatId)
-      // Mobile opens the existing sidebar before the same touch control.
+      // Mobile opens the sidebar drawer from the chat header (the bottom
+      // navigation was removed) before the same touch control.
       if (width! <= 720) {
-        await page.getByRole('button', { name: 'Ещё', exact: true }).click()
+        await page.getByRole('button', { name: 'Открыть боковую панель' }).first().click()
       }
       const button = page.locator('.cmdk-open')
       await button.waitFor({ state: 'visible' })
