@@ -234,7 +234,9 @@ it('keeps Account identity and navigation usable while an offline block retries'
   })
   try {
     await page.goto(base + '/#/account/usage')
-    await page.getByTestId('profile-head').waitFor()
+    // Core UI shows the profile header only on the Account overview; sections
+    // keep it mounted (identity loaded) but hidden.
+    await page.getByTestId('profile-head').waitFor({ state: 'attached' })
     const alert = page.getByRole('alert').filter({ hasText: 'Не удалось загрузить данные вкладки' })
     await alert.waitFor()
     expect(profileCalls).toBe(1)
