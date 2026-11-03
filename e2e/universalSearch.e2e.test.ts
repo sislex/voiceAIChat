@@ -115,9 +115,19 @@ async function open(query = 'PaletteNeedle', wanted = expected, target = page) {
     }
     const response = await observeSearch(target, query, async () => {
       if (!await dialog.isVisible()) {
+        // The shell can render the opener before its global shortcut listener is
+        // committed, so a single early Control+k is lost. The opener itself is not
+        // a readiness boundary either: a sidebar collapsed by a previous
+        // application (Make) leaves it outside the viewport. Repeat the shortcut
+        // until the dialog is visible; it never closes an already open dialog here.
         await target.locator('.cmdk-open').waitFor({ state: 'attached', timeout: SEARCH_TIMEOUT })
-        await target.locator('#app-content').focus()
-        await target.keyboard.press('Control+k')
+        await vi.waitFor(async () => {
+          if (!await dialog.isVisible()) {
+            await target.locator('#app-content').focus()
+            await target.keyboard.press('Control+k')
+          }
+          await dialog.waitFor({ state: 'visible', timeout: 1_000 })
+        }, { timeout: SEARCH_TIMEOUT, interval: 50 })
       }
       // A mounted dialog alone is not readiness: wait for the real, visible and
       // editable palette input before changing the state that starts debounce.
@@ -191,12 +201,16 @@ if (acceptance) {
 beforeAll(async () => {
   if (acceptance) return
   dataDir = await mkdtemp(join(tmpdir(), 'vc-palette-e2e-'))
-  const reservation = createServer()
-  await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve))
-  const address = reservation.address()
-  if (!address || typeof address === 'string') throw new Error('No test port')
-  const port = address.port
-  await new Promise<void>(resolve => reservation.close(() => resolve()))
+  const assignedPort = process.env.DELIVERY_PORTS?.split(',')[0]
+  let port = assignedPort ? Number(assignedPort) : 0
+  if (!port) {
+    const reservation = createServer()
+    await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve))
+    const address = reservation.address()
+    if (!address || typeof address === 'string') throw new Error('No test port')
+    port = address.port
+    await new Promise<void>(resolve => reservation.close(() => resolve()))
+  }
   base = 'http://127.0.0.1:' + port
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: join(ROOT, 'apps/server'),
@@ -499,6 +513,7 @@ it('keeps keyboard, touch, focus and geometry usable at all five sizes in both t
 // @testCase TC-NAV
 it('opens a kanban message by its explicit context after reload', async () => {
   await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('about:blank')
   await page.goto(base + '/#/chat/' + chatId)
   const response = await (await api('/api/universal-search', 'POST', { query: 'KanbanMessageNeedle' })).json() as UniversalSearchResult
   const hit = response.groups.flatMap(group => group.hits).find(hit => hit.source === 'messages')!
@@ -517,6 +532,10 @@ it('opens a kanban message by its explicit context after reload', async () => {
 // sources ran past the per-test timeout on a loaded release machine.
 it.each(SEARCH_SOURCES)('navigates %s through the real palette and retains the deep link after reload', async source => {
   await page.setViewportSize({ width: 1440, height: 900 })
+  // The previous case leaves a deep-linked application (Make files, KB) open; a
+  // hash-only goto keeps that document and its layout, where the palette opener
+  // can be hidden. Start from a fresh document as the viewport matrix does.
+  await page.goto('about:blank')
   await page.goto(base + '/#/chat/' + chatId)
   const hit = expected.find(hit => hit.source === source)!
   const navigationStarted = performance.now()
