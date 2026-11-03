@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path'
 import { spawn, execFileSync } from 'node:child_process'
 import { createServer } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
+import { STAND_BASE_PORT_OFFSETS, STAND_DERIVED_PORT_OFFSETS } from './dev-stand-local-ports.mjs'
 
 const script = resolve('scripts/dev-stand-local.mjs')
 async function freePort() {
@@ -14,6 +15,25 @@ async function freePort() {
   const port = server.address().port
   await new Promise(r => server.close(r))
   return port
+}
+async function freeBase() {
+  for (;;) {
+    const candidate = await freePort() - STAND_BASE_PORT_OFFSETS.core
+    if (candidate < 1024 || candidate + Math.max(...STAND_DERIVED_PORT_OFFSETS) > 65535) continue
+    const reservations = STAND_DERIVED_PORT_OFFSETS.map(() => createServer())
+    let available
+    try {
+      available = await Promise.all(reservations.map((server, index) => new Promise(resolve => {
+        server.once('error', () => resolve(false))
+        server.listen(candidate + STAND_DERIVED_PORT_OFFSETS[index], '127.0.0.1', () => resolve(true))
+      })))
+    } finally {
+      await Promise.all(reservations.map(server => server.listening
+        ? new Promise(resolve => server.close(resolve))
+        : undefined))
+    }
+    if (available.every(Boolean)) return candidate
+  }
 }
 async function until(check) {
   for (let n = 0; n < 150; n++) {
@@ -58,17 +78,9 @@ else http.createServer((req,res) => res.end('ok')).listen(Number(process.env.POR
   await write(join(shared, 'env', 'make.env'), 'VC_CORE_URL=http://localhost:2')
   for (const id of ['core', 'make']) await write(join(shared, 'components', id, 'config.json'), '{}')
   await write(join(shared, 'data', 'session.secret'), 'fixture-secret')
-  let base
-  for (;;) {
-    const port = await freePort()
-    const probe = createServer()
-    try { await new Promise((r, reject) => { probe.once('error', reject); probe.listen(port + 1, '127.0.0.1', r) }); base = port - 787 }
-    catch { continue }
-    finally { if (probe.listening) await new Promise(r => probe.close(r)) }
-    break
-  }
+  const base = await freeBase()
   let uiPort
-  do { uiPort = await freePort() } while ([base + 787, base + 788].includes(uiPort))
+  do { uiPort = await freePort() } while (STAND_DERIVED_PORT_OFFSETS.some(offset => uiPort === base + offset))
   let output = ''
   const launchEnv = { ...process.env, PATH: bin + ':' + process.env.PATH,
     // Core UI is configured through VC_WEB_PORT. An ambient PORT (for example

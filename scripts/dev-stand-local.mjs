@@ -35,6 +35,7 @@ import { connect } from 'node:net'
 import { homedir, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { STAND_BASE_PORT_OFFSETS, STAND_PROXY_PORT_OFFSETS } from './dev-stand-local-ports.mjs'
 
 const env = process.env
 const NAME = env.SISLEXA_STAND_NAME || 'local'
@@ -60,9 +61,10 @@ const SOURCES = resolve(env.SISLEXA_STAND_SOURCES || SHARE || join(homedir(), 's
 const shareDirs = { data: join(dirs.data, 'shared'), components: join(HOME, 'components-shared') }
 
 const port = n => BASE + n
+const O = STAND_BASE_PORT_OFFSETS
 const P = {
-  core: port(787), make: port(788), kanban: port(789), tts: port(791), stt: port(792), browser: port(793), automation: port(794),
-  reader: port(795), imageStudio: port(796), playwrightReader: port(797), identity: port(798), billing: port(800), analytics: port(801),
+  core: port(O.core), make: port(O.make), kanban: port(O.kanban), tts: port(O.tts), stt: port(O.stt), browser: port(O.browser), automation: port(O.automation),
+  reader: port(O.reader), imageStudio: port(O.imageStudio), playwrightReader: port(O.playwrightReader), identity: port(O.identity), billing: port(O.billing), analytics: port(O.analytics),
   ui: UI_PORT, playwrightReaderUi: UI_PORT + 8, webReaderUi: UI_PORT + 9, imageStudioUi: UI_PORT + 10
 }
 const url = p => `http://127.0.0.1:${p}`
@@ -100,7 +102,7 @@ function services(secrets, runner) {
         VC_BROWSER_RUNNER_URL: url(P.browser), VC_BROWSER_RUNNER_TOKEN: secrets.browser, VC_BROWSER_PREVIEW_BASE: url(P.core),
         VC_TTS_RUNNER_URL: url(P.tts), VC_TTS_RUNNER_TOKEN: secrets.tts, VC_STT_RUNNER_URL: url(P.stt), VC_STT_RUNNER_TOKEN: secrets.stt,
         VC_VPN_SECRET_KEY: secrets.vpn, VC_AGENT_OFFLINE_ALERT_MIN: '0',
-        VC_STAND_PROXY_PORTS: `${port(810)}-${port(814)}`,
+        VC_STAND_PROXY_PORTS: `${port(STAND_PROXY_PORT_OFFSETS[0])}-${port(STAND_PROXY_PORT_OFFSETS.at(-1))}`,
         VC_APPLICATION_FRONTENDS: JSON.stringify({ 'playwright-reader-ui': url(P.playwrightReaderUi), 'web-reader-ui': url(P.webReaderUi), 'image-studio-ui': url(P.imageStudioUi) }),
         ...runner } },
     { id: 'kanban', repo: 'sislexa-kanban', cmd: tsx('apps/server/src/kanban/standalone/index.ts'), port: P.kanban, health: '/v1/health',
@@ -143,14 +145,14 @@ function sharedServices(shared) {
   const common = { NODE_ENV: 'development', ...shared.secrets }
   return [
     { id: 'core', repo: 'voiceAIChat', cmd: ['npm', 'run', '-w', '@voicechat/server', 'dev'], port: P.core, health: '/api/health', version: 'core',
-      env: { ...shared.core, ...(preparedSource('make') ? { VC_APPLICATION_FRONTENDS: JSON.stringify({ ...JSON.parse(shared.core.VC_APPLICATION_FRONTENDS || '{}'), 'make-ui': url(port(802)) }) } : {}), PORT: P.core, SISLEXA_COMPONENT_CONFIG: C('core'), VC_DATA_DIR: D('core'), VC_PUBLIC_URL: url(P.ui),
+      env: { ...shared.core, ...(preparedSource('make') ? { VC_APPLICATION_FRONTENDS: JSON.stringify({ ...JSON.parse(shared.core.VC_APPLICATION_FRONTENDS || '{}'), 'make-ui': url(port(O.makeUi)) }) } : {}), PORT: P.core, SISLEXA_COMPONENT_CONFIG: C('core'), VC_DATA_DIR: D('core'), VC_PUBLIC_URL: url(P.ui),
         VC_MAKE_URL: url(P.make), VC_MAKE_MCP_PUBLIC_BASE: url(P.make), VC_MCP_PUBLIC_BASE: url(P.core), VC_BROWSER_PREVIEW_BASE: url(P.core),
         // Machines connect to the shared instance's Core; this Core must not raise offline alerts for them.
-        VC_AGENT_OFFLINE_ALERT_MIN: '0', VC_STAND_PROXY_PORTS: `${port(810)}-${port(814)}` } },
+        VC_AGENT_OFFLINE_ALERT_MIN: '0', VC_STAND_PROXY_PORTS: `${port(STAND_PROXY_PORT_OFFSETS[0])}-${port(STAND_PROXY_PORT_OFFSETS.at(-1))}` } },
     ...(preparedSource('make') ? [
       { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json', env: {} },
-      { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(802),
-        env: { PORT: port(802), VC_APPLICATION_ID: 'make-ui', VC_APPLICATION_DEV: '1', VC_DATA_DIR: null } }
+      { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(O.makeUi),
+        env: { PORT: port(O.makeUi), VC_APPLICATION_ID: 'make-ui', VC_APPLICATION_DEV: '1', VC_DATA_DIR: null } }
     ] : []),
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
