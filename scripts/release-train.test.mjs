@@ -139,20 +139,21 @@ test('planner preflight reports missing tsx before execution', async t => {
   assert.match(formatPlan(plan), /BLOCKED dependencies:.*node_modules\/\.bin\/tsx/)
 })
 
-test('protected root accepts clean fixture repositories and rejects dirty, symlink and stray entries', t => {
+test('protected root ignores unrelated dirty copies and entries but rejects unsafe roots', t => {
   const f = fixture(t)
   // A fixture root containing the Core checkout exercises actual git status.
   const directory = join(f.repository, '..')
   rmSync(f.worktreeRoot, { recursive: true })
   assert.equal(protectedWorktrees(directory).ok, true)
   writeFileSync(join(f.repository, 'untracked'), 'dirty')
-  assert.equal(protectedWorktrees(directory).ok, false)
+  assert.equal(protectedWorktrees(directory).ok, true)
   rmSync(join(f.repository, 'untracked'))
   symlinkSync(f.repository, join(directory, 'link'))
-  assert.equal(protectedWorktrees(directory).ok, false)
+  assert.equal(protectedWorktrees(directory).ok, true)
+  assert.equal(protectedWorktrees(join(directory, 'link')).ok, false)
   rmSync(join(directory, 'link'))
   writeFileSync(join(directory, 'stray'), '')
-  assert.equal(protectedWorktrees(directory).ok, false)
+  assert.equal(protectedWorktrees(directory).ok, true)
 })
 
 test('GitHub comparison paginates all commits using immutable heads', async () => {

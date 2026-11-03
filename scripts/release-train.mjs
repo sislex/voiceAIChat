@@ -1,6 +1,6 @@
 // @ts-check
 import { spawnSync } from 'node:child_process'
-import { readFileSync, readdirSync, lstatSync, realpathSync, existsSync } from 'node:fs'
+import { readFileSync, lstatSync, realpathSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -88,14 +88,10 @@ export async function reusableRelease(repository, version, dev, get) {
 export function protectedWorktrees(directory, run = command) {
   try {
     if (lstatSync(directory).isSymbolicLink() || realpathSync(directory) !== resolve(directory)) throw Error('Unsafe root')
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.isSymbolicLink()) throw Error('Unexpected root entry')
-      const cwd = join(directory, entry.name)
-      if (realpathSync(run('git', ['rev-parse', '--show-toplevel'], cwd)) !== realpathSync(cwd)) throw Error('Not a worktree')
-      if (run('git', ['status', '--porcelain=v1', '--untracked-files=all', '--ignore-submodules=none'], cwd)) throw Error('Dirty worktree')
-    }
-    return { ok: true, detail: 'Protected root exists; all worktrees are clean' }
-  } catch { return { ok: false, detail: 'Protected root missing, unreadable, unsafe or contains dirty/non-worktree entries' } }
+    // Execution uses private journal clones, never the development copies here.
+    if (!lstatSync(directory).isDirectory()) throw Error('Not a directory')
+    return { ok: true, detail: 'Protected root exists; unrelated worktrees are not used by the train' }
+  } catch { return { ok: false, detail: 'Protected root missing, unreadable or unsafe' } }
 }
 
 export function coreChanges(repository = root, run = command) {

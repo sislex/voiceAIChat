@@ -271,6 +271,32 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return await callback(options)
     } finally { rmSync(config, { recursive: true, force: true }) }
   }
+  const reconcileKnowledge = async (cwd, pkg, owner) => {
+    if (!pkg.scripts?.['kb:check']) return
+    try { await run('npm', ['run', 'kb:check'], cwd); return } catch (error) {
+      const kbDir = join(cwd, existsSync(join(cwd, 'kb.config.json')) ? json(join(cwd, 'kb.config.json')).kbDir ?? 'docs/kb' : 'docs/kb')
+      // Only the owner's exact stale-topic diagnostics authorize a touch.
+      // Other checker failures remain fatal on the subsequent check.
+      const output = error.message.replace(/\u001b\[[0-9;]*m/g, '')
+      const reported = new Set(output.split('\n').map(line => /^\s{4}([^\\]+\.md) — .+$/.exec(line)?.[1]).filter(Boolean))
+      const topics = existsSync(kbDir) ? readdirSync(kbDir, { recursive: true, withFileTypes: true })
+        .filter(entry => entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md')
+        .map(entry => relative(kbDir, join(entry.parentPath, entry.name)))
+        .filter(name => !name.startsWith('log/') && reported.has(name)) : []
+      if (!topics.length) throw error
+      const touch = existsSync(join(cwd, 'scripts/kb.mjs')) ? ['node', ['scripts/kb.mjs', 'touch']] : ['npx', ['--no-install', 'sislexa-kb', 'touch']]
+      const reviewedCommit = await git(cwd, 'rev-parse', 'HEAD')
+      for (const topic of topics) {
+        await run(touch[0], [...touch[1], topic], cwd)
+        recordFullKnowledgeCommit(join(kbDir, topic), reviewedCommit)
+      }
+      if (pkg.scripts['kb:index']) await run('npm', ['run', 'kb:index'], cwd)
+      await run('npm', ['run', 'kb:check'], cwd)
+      await git(cwd, 'add', '--all', '--', relative(cwd, kbDir))
+      if (await git(cwd, 'diff', '--cached', '--name-only'))
+        await git(cwd, 'commit', '-m', `docs(kb): reconcile topics before release ${owner.version}`)
+    }
+  }
   const adapter = async (action, owner, journal, { retry = false, save = () => {} } = {}) => {
     const workspace = join(directory, journal.id); mkdirSync(workspace, { recursive: true })
     const index = owner ? journal.owners.indexOf(owner) : -1
@@ -304,7 +330,7 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       // Topics must be fresh before the bump; afterwards only topics whose areas cover the bumped
       // manifests are re-checked, because a version-only commit does not change their content.
       if (kb || ownerBump) await run('npm', ['ci', '--ignore-scripts'], cwd)
-      if (kb) await run('npm', ['run', 'kb:check'], cwd)
+      if (kb) await reconcileKnowledge(cwd, pkg, owner)
       if (ownerBump) {
         await run(...ownerBump, cwd)
         files = [...new Set([...files, ...(await git(cwd, 'diff', '--name-only')).split('\n').filter(file => file.endsWith('package.json'))])]
@@ -332,8 +358,12 @@ export function concreteAdapter({ repository, directory, env = process.env, run 
       return await git(cwd, 'rev-parse', 'HEAD')
     }
     if (action === 'gate') {
+      if ((await git(cwd, 'status', '--porcelain')) || (await git(cwd, 'rev-parse', 'HEAD')) !== result('prepare')) throw Error('Gate changed release inputs')
       await run('npm', ['ci'], cwd)
       const pkg = json(join(cwd, 'package.json'))
+      await reconcileKnowledge(cwd, pkg, owner)
+      journal.results[`owner-${index}-prepare`] = await git(cwd, 'rev-parse', 'HEAD')
+      save()
       if (journal.fromDev) {
         const gate = pkg.scripts?.['gate:quick'] ? 'gate:quick' : pkg.scripts?.['affected-check'] ? 'affected-check' : 'gate'
         if (!pkg.scripts?.[gate]) throw Error('Owner gate missing')

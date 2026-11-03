@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-03
-checked: f06d3884
+checked: e1ad90e51
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -444,8 +444,9 @@ state, logs into Docker, publishes, or deploys.
 
 Prerequisites are a reachable Docker daemon (`docker info`), nonempty `GH_TOKEN`
 or `GITHUB_TOKEN` (never printed), and an existing `~/sislexa-worktrees` root.
-The root must not be a symlink and may contain only clean Git worktrees, with
-no untracked files or dirty submodules; an empty existing root is valid. Missing,
+The root must be a directory and must not be a symlink. Its unrelated development
+copies and other entries do not block planning: execution uses private journal
+clones and checks the owner checkout before its gate. An empty root is valid. Missing,
 unreadable or unsafe roots block planning; the planner never repairs them.
 API failures, diverged owner branches, mismatched published tags and missing
 Core refs also block readiness. JSON uses schema version 1 and `ready`; blocked
@@ -465,6 +466,12 @@ test these adapters without contacting real owners.
 Selected owner repositories release concurrently in separate checkouts; applications
 sharing a repository use one owner release. Commands run asynchronously, with isolated
 verification deadlines and Docker credentials. Desktop remains frozen and excluded.
+Before preparing a version bump and before each owner gate (including after rebase),
+the train runs the owner's `kb:check`. Stale-topic diagnostic lines from the KB CLI
+select existing topics for `touch`; the train records full checked SHAs, regenerates
+the index when supported, checks KB again and creates a separate `docs(kb): reconcile`
+commit. Other checker failures still block release. The journal records the reconciled
+HEAD so publication uses the exact gated commit; repeated gates do not add duplicate commits.
 The journal checkpoints each owner's steps independently. On failure, no new owner
 step starts, in-flight operations finish and save their results, and Core pinning is
 blocked. Resume skips completed steps and reconciles interrupted steps, including

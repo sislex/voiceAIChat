@@ -11,13 +11,13 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-03 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-03 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 46c0de6d0 chore(ui): pin Core UI 1.5.40 |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-02 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-02 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 46c0de6d0 chore(ui): pin Core UI 1.5.40 |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-02 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-03 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-03 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-03 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f64a7aad4 Pin release train d2736740-699f-436e-869f-a2b9ac2f38ed |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-10-31 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-03 | ✓ |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-03 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-02 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-03 | ✓ |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f64a7aad4 Pin release train d2736740-699f-436e-869f-a2b9ac2f38ed |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-10-31 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-03 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -45,10 +45,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-03 | ✓ |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-03 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-03 | ✓ |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f64a7aad4 Pin release train d2736740-699f-436e-869f-a2b9ac2f38ed |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-03 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-03 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f64a7aad4 Pin release train d2736740-699f-436e-869f-a2b9ac2f38ed |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-03 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f64a7aad4 Pin release train d2736740-699f-436e-869f-a2b9ac2f38ed |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-03 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
@@ -65,10 +65,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1445. Последние:
+Всего записей: 1446. Последние:
 
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md) — sisl-855-identity-bearer
+- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md) — release-train-owner-reconcile
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md) — release-train-d2736740-699f-436e-869f-a2b9ac2f38ed
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
@@ -76,7 +77,6 @@
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-merge-storage-admission.md) — sm-47-merge-storage-admission
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-mcp-storage-authority.md) — sm-47-mcp-storage-authority
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sisl-849-universal-search-readiness.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sisl-849-universal-search-readiness.md) — sisl-849-universal-search-readiness
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-remote-storage-stat-prefix.md) — remote-storage-stat-prefix
 
 ## Исторические планы
 

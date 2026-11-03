@@ -477,6 +477,43 @@ test('prepare without a bump commit does not reconcile knowledge topics', async 
   assert.ok(!f.calls.some(call => call.binary === 'git' && call.args[0] === 'commit'))
 })
 
+for (const phase of ['prepare', 'gate']) test(`owner ${phase} reconciles stale KB in a separate commit`, async t => {
+  const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+  pkg.scripts['kb:check'] = 'check'; pkg.scripts['kb:index'] = 'index'
+  put(join(f.owner, 'package.json'), pkg)
+  mkdirSync(join(f.owner, 'docs/kb'), { recursive: true })
+  const topic = `---\nchecked: ${'a'.repeat(40)}\nareas:\n  - src/\n---\n# Source behavior\n`
+  writeFileSync(join(f.owner, 'docs/kb/source.md'), topic)
+  f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Owner fix with stale knowledge')
+  f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  let enabled = phase === 'prepare', touches = 0
+  const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+    if (enabled && binary === 'npm' && args.join(' ') === 'run kb:check'
+      && readFileSync(join(cwd, 'docs/kb/source.md'), 'utf8').includes('a'.repeat(40)))
+      throw Error('KB stale:\n    source.md — 1 commit after checked SHA')
+    if (binary === 'npx' && args.includes('touch')) {
+      touches++
+      assert.equal(args.at(-1), 'source.md')
+      writeFileSync(join(cwd, 'docs/kb/source.md'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', '--short', 'HEAD')))
+      return ''
+    }
+    return f.run(binary, args, cwd, options)
+  } })
+  journal.results['owner-0-prepare'] = await adapter('prepare', journal.owners[0], journal)
+  enabled = true
+  await adapter('gate', journal.owners[0], journal)
+  await adapter('gate', journal.owners[0], journal)
+  const cwd = join(f.directory, journal.id, 'owner-0')
+  assert.equal(touches, 1)
+  const commit = f.git(cwd, 'log', '--format=%H', '--grep=reconcile topics before release', '-1')
+  assert.ok(commit)
+  assert.equal(f.git(cwd, 'show', '--format=', '--name-only', commit), 'docs/kb/source.md')
+  assert.equal(readFileSync(join(cwd, 'docs/kb/source.md'), 'utf8'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', `${commit}^`)))
+  assert.equal(journal.results['owner-0-prepare'], f.git(cwd, 'rev-parse', 'HEAD'))
+  assert.equal(f.git(cwd, 'status', '--porcelain'), '')
+})
+
 test('knowledge topics covering bumped manifests', t => {
   const dir = mkdtempSync(join(tmpdir(), 'kb-topics-')); t.after(() => rmSync(dir, { recursive: true, force: true }))
   writeFileSync(join(dir, 'deploy.md'), '---\ntitle: Deploy\nareas:\n  - package.json\n  - scripts/\n---\n# Deploy\n')
