@@ -546,6 +546,14 @@ export async function registerAgentRoutes(
     return await db.machines.createAgent(uid(req), name)
   })
 
+  app.patch<{ Params: { id: string }; Body: { name?: unknown } }>('/api/agents/:id', async (req, reply) => {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
+    if (!name || name.length > 120) return reply.code(400).send({ error: 'Название должно содержать от 1 до 120 символов' })
+    if (!await db.machines.renameAgent(uid(req), req.params.id, name)) return reply.code(404).send({ error: 'not found' })
+    registry.rename(req.params.id, name)
+    return { id: req.params.id, name }
+  })
+
   app.delete<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {
     const u = uid(req)
     const id = req.params.id

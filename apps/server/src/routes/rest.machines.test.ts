@@ -18,6 +18,36 @@ let agentRegistry: AgentRegistry
 beforeEach(() => { ({ app, db, agentRegistry } = harness) })
 
 
+describe('REST: machine rename', () => {
+  it('persists a trimmed name and updates the live registry without disconnecting', async () => {
+    const machine = await db.machines.createAgent(U, 'Before')
+    const record = (await db.machines.listAgents(U)).find(a => a.id === machine.id)!
+    const socket = { close: vi.fn(), send: vi.fn() }
+    agentRegistry.register(machine.id, record.name, socket, record.policy, '0.11.0')
+    const response = await inj({ method: 'PATCH', url: `/api/agents/${machine.id}`, payload: { name: '  After  ' } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ id: machine.id, name: 'After' })
+    expect((await db.machines.listAgents(U)).find(a => a.id === machine.id)?.name).toBe('After')
+    expect(agentRegistry.nameOf(machine.id)).toBe('After')
+    expect(agentRegistry.isOnline(machine.id)).toBe(true)
+    expect(socket.close).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid names and prevents renaming another owner’s machine', async () => {
+    const machine = await db.machines.createAgent(U, 'Original')
+    for (const name of ['', '   ', 'x'.repeat(121), 42, null]) {
+      expect((await inj({ method: 'PATCH', url: `/api/agents/${machine.id}`, payload: { name } })).statusCode).toBe(400)
+    }
+    expect((await db.machines.listAgents(U)).find(a => a.id === machine.id)?.name).toBe('Original')
+    await db.identity.createUser('rename-other', '', 'developer')
+    const other = await db.machines.createAgent('rename-other', 'Private')
+    for (const id of [other.id, 'missing-machine']) {
+      expect((await inj({ method: 'PATCH', url: `/api/agents/${id}`, payload: { name: 'Changed' } })).statusCode).toBe(404)
+    }
+    expect((await db.machines.listAgents('rename-other'))[0].name).toBe('Private')
+  })
+})
+
 describe('REST: хранилище машины', () => {
   it('returns null for an owned chat without storage and keeps other chats private', async () => {
     const own = await db.chat.createConversation(U, 'No storage')
