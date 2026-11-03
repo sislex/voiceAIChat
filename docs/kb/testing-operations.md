@@ -960,6 +960,14 @@ there is no readiness sleep. The delayed-response fixture also uses
 `vi.waitFor` deadline can expire while the fresh page opens the palette on a
 loaded machine, before the observed request is sent.
 
+The palette opener is not a readiness signal. Core UI can render `.cmdk-open`
+before the global `Control+k` listener is committed, so a single early shortcut
+is lost and no search request follows. A sidebar collapsed by Make (the files
+case) stays collapsed after navigation and leaves the opener outside the
+viewport, so clicking it is not reliable either. `open()` therefore repeats
+`Control+k` until the dialog is visible, and the navigation cases start from
+`about:blank` instead of a hash-only `goto` that keeps the previous document.
+
 The published Core UI 1.5.18 palette uses a 200 ms debounce for nonempty queries,
 resets its query on reopening and does not retrigger its search effect for an
 unchanged mounted input. The E2E verifies this behavior in Chromium. Calling
