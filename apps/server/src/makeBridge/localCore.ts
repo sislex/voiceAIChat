@@ -176,5 +176,7 @@ export async function runProjectGit(git: GitWorkspaceService, userId: string, pr
     if (operation.op === 'pull') { const value = await git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
     if (operation.op === 'commit') { const value = await git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
     if (operation.op === 'push') { const value = await git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
-    await git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
+    // make-contracts 1.8.13 adds merge, checkout and branch-from; SISL-871 implements them.
+    if (operation.op === 'branch' && !operation.from) { await git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name } }
+    throw new Error('git_operation_unsupported: ' + operation.op + (operation.op === 'branch' ? ' from' : ''))
 }
