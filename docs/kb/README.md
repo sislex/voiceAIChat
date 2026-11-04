@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-03 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 17a89cc2b chore(ui): pin Core UI 1.5.42 |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 9c8b6d31c card-SISL-867 B01 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-03 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 17a89cc2b chore(ui): pin Core UI 1.5.42 |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-02 | ✓ |
@@ -26,7 +26,7 @@
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-03 | ✓ |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-03 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-03 | ✓ |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-01 | ✓ |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-01 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c8b6d31c card-SISL-867 B01 |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-10-31 | ✓ |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-03 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
@@ -42,16 +42,16 @@
 | [modules.md](modules.md) | Module ownership map | 2026-10-31 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-01 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-04 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-04 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c8b6d31c card-SISL-867 B01 |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 9c8b6d31c card-SISL-867 B01 |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-04 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-04 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 139851b4b test(perf): Account route readiness uses the account content region |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-04 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-04 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
-| [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-09-29 | ✓ |
+| [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
 
 ## Инструкции по пакетам
 
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1450. Последние:
+Всего записей: 1451. Последние:
 
+- [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md) — sisl-869-account-settings-guidance
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md) — sisl-867-ephemeral-test-listeners
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md) — owner-cf2fda81-machines
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
@@ -76,7 +77,6 @@
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md) — release-train-d2736740-699f-436e-869f-a2b9ac2f38ed
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md) — release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
 
 ## Исторические планы
 
