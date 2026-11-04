@@ -33,6 +33,25 @@ describe('MakeCore project mode', () => {
     expect(await core.projectStructure('ann', 'p1')).toContainEqual({ path: 'apps/web', name: '@x/web', packageName: '@x/web', kind: 'app', stories: 1, styleFiles: ['apps/web/theme.css'] })
   })
 
+  it('discovers packages in a source tree larger than the byte limit without reading source files', async () => {
+    const largeSources = Array.from({ length: 17 }, (_, index) => ({
+      name: `source-${index}.ts`, kind: 'file' as const, size: 256 * 1024, content: 'x'.repeat(256 * 1024),
+    }))
+    const { core, read, list } = fixture({
+      '/repo': [{ name: 'package.json', kind: 'file', size: 30, content: '{"name":"root"}' }, { name: 'apps', kind: 'dir', size: 0 }, ...largeSources],
+      '/repo/apps': [{ name: 'web', kind: 'dir', size: 0 }, { name: '.nx', kind: 'dir', size: 0 }],
+      '/repo/apps/web': [{ name: 'package.json', kind: 'file', size: 40, content: '{"name":"@x/web"}' }, { name: 'Button.stories.tsx', kind: 'file', size: 256 * 1024, content: 'x'.repeat(256 * 1024) }],
+      '/repo/apps/.nx': [{ name: 'package.json', kind: 'file', size: 30, content: '{"name":"cache"}' }],
+    })
+
+    expect(await core.projectStructure('ann', 'p1')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '.', packageName: 'root' }),
+      expect.objectContaining({ path: 'apps/web', packageName: '@x/web', stories: 1 }),
+    ]))
+    expect(read.mock.calls.map(call => call[1])).toEqual(['/repo/package.json', '/repo/apps/web/package.json'])
+    expect(list).not.toHaveBeenCalledWith('a1', '/repo/apps/.nx')
+  })
+
   it('extracts CSS themes, token maps, stories and component exports', async () => {
     const { core } = fixture({ '/repo': [
       { name: 'theme.css', kind: 'file', size: 100, content: ':root { --space: 8px; }\n[data-theme="dark"] { --surface: #000; }' },

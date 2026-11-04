@@ -21,13 +21,13 @@
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-04 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-03 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-04 | ✓ |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 90b3f0976 fix(knowledge): honor CommonMark fences and avoid a duplicate rerank |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-03 | ✓ |
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-03 | ✓ |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-03 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-03 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-04 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-04 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 90b3f0976 fix(knowledge): honor CommonMark fences and avoid a duplicate rerank |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-03 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-02 | ✓ |
@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-01 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-04 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-04 | ✓ |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-05 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-04 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1455. Последние:
+Всего записей: 1456. Последние:
 
+- [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md) — sis-l-875-make-large-monorepo-structure
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md) — sisl-871-stand-git-operations
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md) — sisl-869-account-settings-guidance
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md) — sisl-867-ephemeral-test-listeners
@@ -76,7 +77,6 @@
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-knowledge-preview.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-knowledge-preview.md) — owner-cf2fda81-knowledge-preview
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md) — sisl-857-palette-shortcut-retry
-- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md) — sisl-855-identity-bearer
 
 ## Исторические планы
 
