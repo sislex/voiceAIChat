@@ -75,21 +75,23 @@ const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
 
 const savedTheme = async (): Promise<string> => ((await (await api('/api/settings')).json()) as { theme: string }).theme
 
-/** Меню аккаунта → «Настройки» → раздел «Интерфейс». */
+/** Account menu → «Настройки» page → «Интерфейс» section. */
 async function openInterfaceSettings(): Promise<void> {
-  // The URL survives reload before React restores the lazy settings dialog.
-  // An immediate visibility check can click the account button underneath it.
-  if (/^#\/settings(?:\/|$)/.test(new URL(page.url()).hash)) {
-    await page.getByTestId('overlay').waitFor({ state: 'visible', timeout: 30_000 })
-  } else {
-    // Кнопка меню подписана ролью пользователя; ждём её появления — сразу
-    // после загрузки страница ещё проверяет сессию.
-    const account = page.getByRole('button', { name: new RegExp('admin') })
+  // Settings is a page (region «Настройки»), not a dialog. The URL survives
+  // reload before React restores the lazy settings page; an immediate
+  // visibility check could click the account button underneath it.
+  const settings = page.getByRole('region', { name: 'Настройки', exact: true })
+  if (!/^#\/settings(?:\/|$)/.test(new URL(page.url()).hash)) {
+    // The compact account trigger is labelled «Аккаунт»; wait for it — right
+    // after load the page is still checking the session.
+    const account = page.getByRole('button', { name: 'Аккаунт', exact: true })
     await account.waitFor({ state: 'visible', timeout: 30_000 })
     await account.click()
     await page.getByRole('menuitem', { name: 'Настройки' }).click()
   }
-  await page.getByRole('button', { name: 'Интерфейс' }).click()
+  await settings.waitFor({ state: 'visible', timeout: 30_000 })
+  // Section navigation lives in the app sidebar («Разделы настроек»).
+  await page.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Интерфейс', exact: true }).click()
 }
 
 describe('Настройки E2E: релиз не сбрасывает выбор', () => {
@@ -182,6 +184,9 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
         const cdp = await context.newCDPSession(screen)
         await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 24, bottom: 34, left: 0, right: 0 } })
         await screen.goto(BASE + '/#/settings/ui')
+        await screen.getByRole('region', { name: 'Настройки', exact: true }).waitFor()
+        // At ≤720px the settings section navigation sits behind the ☰ sidebar menu.
+        if (width <= 720) await screen.getByRole('button', { name: 'Разделы настроек', exact: true }).tap()
         await screen.getByRole('button', { name: 'Мастер первого запуска' }).click()
         const dialog = screen.getByRole('dialog', { name: 'Добро пожаловать', exact: true })
         await dialog.waitFor()
