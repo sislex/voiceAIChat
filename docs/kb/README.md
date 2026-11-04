@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-03 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 9c8b6d31c card-SISL-867 B01 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 79f64995d chore(ui): pin Core UI 1.5.43 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 17a89cc2b chore(ui): pin Core UI 1.5.42 |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 79f64995d chore(ui): pin Core UI 1.5.43 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-02 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-04 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-04 | ✓ |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-02 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-04 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-10-29 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 139851b4b test(perf): Account route readiness uses the account content region |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 5ef57e5e3 test(e2e): locate Settings as a page for Core UI 1.5.43 … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-04 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-04 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
