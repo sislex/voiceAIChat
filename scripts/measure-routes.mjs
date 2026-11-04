@@ -163,7 +163,7 @@ export async function measure({ web, desktop, output, clients = ['web', 'electro
           await page.mouse.move(0, 0)
           await page.evaluate(hash => { location.hash = hash }, scenario.hash)
         }
-        await page.getByRole('button', { name: /admin/ }).first().waitFor({ timeout: 60000 }).catch(async error => { await page.screenshot({ path: join(output, client + '-failed.png') }); console.error(await page.locator('body').innerText(), errors); throw error })
+        await page.getByRole('button', { name: 'Аккаунт', exact: true }).first().waitFor({ timeout: 60000 }).catch(async error => { await page.screenshot({ path: join(output, client + '-failed.png') }); console.error(await page.locator('body').innerText(), errors); throw error })
         if (scenario.name === 'chat') await page.getByRole('textbox', { name: 'Поле ввода сообщения', exact: true }).waitFor({ timeout: 60000 })
         else if (scenario.name === 'account') await page.getByRole('region', { name: 'Содержимое аккаунта', exact: true }).waitFor({ timeout: 60000 })
         else await page.getByLabel('Тема интерфейса').waitFor({ timeout: 60000 })
