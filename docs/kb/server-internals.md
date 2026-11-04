@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-04
-checked: 26f657327
+checked: 8e4095c7b
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -948,6 +948,12 @@ Git-операции project mode используют тот же `GitWorkspace
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
 Те же методы проходят через schema-validated `/internal/make/core` RPC.
+Контракт Make 1.8.13 также проводит через этот сервис `branch {name, from?}`,
+`checkout {name}` и `merge {from}`. Все три операции требуют чистого рабочего
+дерева и существующей ветки; checkout создаёт локальную tracking-ветку из
+`origin`, когда локальной ещё нет. Merge выполняется с `--no-edit`, а при
+конфликте собирает имена конфликтующих файлов, делает `merge --abort` и
+возвращает штатный результат `conflict`, не оставляя stand в незавершённом merge.
 
 `makeBridge/projectAdapters.ts` accepts ready `managed`, `thin-client` and
 `local-stand` base environments only when `machines[0]` matches the selected

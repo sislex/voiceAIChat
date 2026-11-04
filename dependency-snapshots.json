@@ -8,35 +8,35 @@
   "packages": [
     {
       "name": "@sislexa/make",
-      "version": "1.8.12",
-      "filename": "sislexa-make-1.8.12.tgz",
-      "asset": "sislexa-make-1.8.12-7956a1f97d72.tgz",
-      "sha256": "7956a1f97d725dbe223c5f6c6ae08641624fe0587f13baf0d64f6f5f5c0ead58",
-      "integrity": "sha512-HHOs7d3fk+20aEstFzmc5ErmDnFOxNTFjCKspdWFHFxr/eshnCXtZz4dM+1U1qS28+BDwwvqx6i11jWgnSEyUQ==",
+      "version": "1.8.13",
+      "filename": "sislexa-make-1.8.13.tgz",
+      "asset": "sislexa-make-1.8.13-38a282044d68.tgz",
+      "sha256": "38a282044d6828d02c1fff65bfdcb08cc80074c13290d0523634691a18438ab8",
+      "integrity": "sha512-SWFDQ159W9A/G5GREF75OKqkOTg1sso+bcODocQwaOPtghgcXbzm+3lXF3EMyWOZkCNQy7sO/oAOr6XLFgYBwg==",
       "repository": "https://github.com/sislex/make",
-      "commit": "8f0e801b3953d5827ba5eb6e3484d51c8cd22320",
+      "commit": "8eaa415f78388e2ec8eee971f1f9f3b5226c0d48",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "version": "1.8.12",
-        "commit": "8f0e801b3953d5827ba5eb6e3484d51c8cd22320"
+        "version": "1.8.13",
+        "commit": "8eaa415f78388e2ec8eee971f1f9f3b5226c0d48"
       }
     },
     {
       "name": "@voicechat/make-contracts",
-      "version": "1.8.12",
-      "filename": "voicechat-make-contracts-1.8.12.tgz",
-      "asset": "voicechat-make-contracts-1.8.12-e435f4117116.tgz",
-      "sha256": "e435f41171167ad253247f3b9b8074043ec8c521b5e2d54eb8e8fea4cfcbe6ec",
-      "integrity": "sha512-UVfuvyPwnU4QBn5gRb3BPywV1heMmUMWs9+bLAoRMJ0+UeNnJHmC0Z55MgiKLokFTEsDEF88hevIDlQ+g6hLhg==",
+      "version": "1.8.13",
+      "filename": "voicechat-make-contracts-1.8.13.tgz",
+      "asset": "voicechat-make-contracts-1.8.13-1cead74148e6.tgz",
+      "sha256": "1cead74148e6927c8013ae533add3b0bf6d4706b9d2438e13db328e4bba7e4c2",
+      "integrity": "sha512-fFy5+cSQvbXObRARz9YTDG0pm5vaCsYKaqkGeUxwsWGqTVeo3KI5ziTAYHjFl0sLWzQSJmeYx+tp/XLXL0AkOg==",
       "repository": "https://github.com/sislex/make",
-      "commit": "8f0e801b3953d5827ba5eb6e3484d51c8cd22320",
+      "commit": "8eaa415f78388e2ec8eee971f1f9f3b5226c0d48",
       "provenance": {
         "schemaVersion": 1,
         "repository": "https://github.com/sislex/make",
-        "commit": "8f0e801b3953d5827ba5eb6e3484d51c8cd22320",
+        "commit": "8eaa415f78388e2ec8eee971f1f9f3b5226c0d48",
         "name": "@voicechat/make-contracts",
-        "version": "1.8.12",
+        "version": "1.8.13",
         "dirty": false,
         "command": "npm pack -w @voicechat/make-contracts"
       }
@@ -123,17 +123,17 @@
     },
     {
       "name": "@sislexa/core-ui",
-      "version": "1.5.43",
-      "filename": "sislexa-core-ui-1.5.43.tgz",
-      "asset": "sislexa-core-ui-1.5.43-29613442e61c.tgz",
-      "sha256": "29613442e61c0256ea0ace09f085b76fbfbb4df3ca912c573eeb4a59923949ae",
-      "integrity": "sha512-nB5l4VvgtzVmjxlUpWO7XkuD2qoeMNpjcw82+34bfZD/CH7UNmd0ZQMDMgOyt1dcrWlrJNGnvKwtmyiFmubWag==",
+      "version": "1.5.45",
+      "filename": "sislexa-core-ui-1.5.45.tgz",
+      "asset": "sislexa-core-ui-1.5.45-ba3f5c139c9d.tgz",
+      "sha256": "ba3f5c139c9d589b87b1f0c539b65c11b1a94c96c7c9024a65e3a5f2cf67ab1f",
+      "integrity": "sha512-qFz34tF3T5V/jrvYi2ey/pZiCFabAtfyrqujOa+/tgxM01hHb0FnTMU3L5THnB5p2xq7bCbc+MiDK34n55a4hQ==",
       "repository": "https://github.com/sislex/sislexa-core-ui",
-      "commit": "01063f79f5a04d997268dbd704b64602c8dbf06b",
+      "commit": "a67b149f4e9b2aeea75cb6dc476ed40ab8283cfc",
       "provenance": {
         "repository": "https://github.com/sislex/sislexa-core-ui",
-        "version": "1.5.43",
-        "commit": "01063f79f5a04d997268dbd704b64602c8dbf06b",
+        "version": "1.5.45",
+        "commit": "a67b149f4e9b2aeea75cb6dc476ed40ab8283cfc",
         "dirty": false,
         "requires": {
           "coreApi": "^1.0.0",

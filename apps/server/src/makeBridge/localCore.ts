@@ -176,5 +176,13 @@ export async function runProjectGit(git: GitWorkspaceService, userId: string, pr
     if (operation.op === 'pull') { const value = await git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
     if (operation.op === 'commit') { const value = await git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
     if (operation.op === 'push') { const value = await git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
-    await git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
+    if (operation.op === 'branch') { await git.createBranch(userId, projectId, workspace, operation.name, operation.from); return { op: 'branch', name: operation.name } }
+    if (operation.op === 'checkout') { await git.checkout(userId, projectId, workspace, operation.name, false); return { op: 'checkout', name: operation.name } }
+    if (operation.op === 'merge') {
+      const value = await git.merge(userId, projectId, workspace, operation.from)
+      return value.conflicts.length
+        ? { op: 'merge', status: 'conflict', conflicts: value.conflicts }
+        : { op: 'merge', status: 'ok', head: value.head ?? value.status.head ?? 'HEAD' }
+    }
+    throw new Error('git_operation_unsupported')
 }

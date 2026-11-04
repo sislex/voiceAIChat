@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { MakeProjectAdapters } from './projectAdapters.js'
+import { runProjectGit } from './localCore.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 
 const args = { targetProjectId: 'p', targetRepository: 'core-ui' as const, title: 'New button', files: ['src/Button.tsx'], designConversationId: 'design' }
@@ -168,6 +169,29 @@ describe('Make transfer adapter', () => {
     await expect(f.adapter.createTransferTask('alice', args)).rejects.toMatchObject({ statusCode: 409 })
     expect(f.git.checkout).not.toHaveBeenCalled(); expect(f.db.ci.createCiWorkspace).not.toHaveBeenCalled()
     expect(f.db.tasks.moveTask).not.toHaveBeenCalled()
+  })
+})
+
+describe('Make project git contract', () => {
+  it('maps branch-from, checkout and merge results to Make 1.8.13', async () => {
+    const git = {
+      createBranch: vi.fn(), checkout: vi.fn(),
+      merge: vi.fn(async () => ({ head: 'abc123', conflicts: [], status: { head: 'abc123' } }))
+    } as unknown as GitWorkspaceService
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'branch', name: 'feature/new', from: 'dev' }))
+      .resolves.toEqual({ op: 'branch', name: 'feature/new' })
+    expect(git.createBranch).toHaveBeenCalledWith('alice', 'p', 'ws', 'feature/new', 'dev')
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'checkout', name: 'dev' }))
+      .resolves.toEqual({ op: 'checkout', name: 'dev' })
+    expect(git.checkout).toHaveBeenCalledWith('alice', 'p', 'ws', 'dev', false)
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'merge', from: 'dev' }))
+      .resolves.toEqual({ op: 'merge', status: 'ok', head: 'abc123' })
+  })
+
+  it('maps an aborted merge conflict with its paths', async () => {
+    const git = { merge: vi.fn(async () => ({ head: null, status: { head: 'old' }, conflicts: ['src/a.ts'] })) } as unknown as GitWorkspaceService
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'merge', from: 'dev' }))
+      .resolves.toEqual({ op: 'merge', status: 'conflict', conflicts: ['src/a.ts'] })
   })
 })
 
