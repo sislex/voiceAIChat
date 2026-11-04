@@ -187,16 +187,21 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
         await screen.getByRole('region', { name: 'Настройки', exact: true }).waitFor()
         // At ≤720px the settings section navigation sits behind the ☰ sidebar menu.
         if (width <= 720) await screen.getByRole('button', { name: 'Разделы настроек', exact: true }).tap()
-        await screen.getByRole('button', { name: 'Мастер первого запуска' }).click()
-        const dialog = screen.getByRole('dialog', { name: 'Добро пожаловать', exact: true })
-        await dialog.waitFor()
-        if (width <= 720) expect((await dialog.getByRole('button', { name: 'Закрыть', exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(24)
-        await screen.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
-        await screen.getByRole('button', { name: 'Пропустить шаг' }).click()
+        // The wizard is an ordinary Settings section embedded in the page.
+        await screen.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Мастер первого запуска', exact: true }).tap()
+        await expect.poll(() => new URL(screen.url()).hash).toBe('#/settings/onboarding')
+        const wizard = screen.getByTestId('onboarding-page')
+        await wizard.waitFor()
+        // The removed dialog kept its Close button below the top safe-area inset on
+        // phones; the embedded wizard has no Close button, so its first control must
+        // clear the inset instead.
+        if (width <= 720) expect((await wizard.getByRole('button', { name: /^1\. / }).boundingBox())!.y).toBeGreaterThanOrEqual(24)
+        await wizard.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
+        await wizard.getByRole('button', { name: 'Пропустить шаг' }).click()
         await screen.keyboard.press('Tab')
-        expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true)
+        expect(await wizard.evaluate(el => el.contains(document.activeElement))).toBe(true)
         expect(await screen.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        const exit = screen.getByRole('button', { name: 'Продолжить в чате' })
+        const exit = wizard.getByRole('button', { name: 'Завершить настройку' })
         await exit.scrollIntoViewIfNeeded()
         expect(await exit.evaluate(el => Number.parseFloat(getComputedStyle(el.parentElement!).paddingBottom))).toBe(34)
         const box = await exit.boundingBox()
@@ -211,9 +216,12 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
           expect(reduced!.y + reduced!.height).toBeLessThanOrEqual(Math.floor(height * 0.6))
           if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + '-reduced-viewport.png') })
         }
+        // The embedded section has nothing to dismiss with Escape; its exit action
+        // must instead be operable from the keyboard and complete onboarding.
+        const completed = screen.waitForRequest(request => request.url() === BASE + '/api/settings' && request.method() === 'PUT' && request.postDataJSON()?.onboarded === true)
         await exit.focus()
-        await screen.keyboard.press('Escape')
-        await dialog.waitFor({ state: 'hidden' })
+        await screen.keyboard.press('Enter')
+        await completed
       } catch (error) {
         if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, theme + '-' + width + '-failure.png') })
         throw error
@@ -286,16 +294,19 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     await waitHealth()
     expect((await (await api('/api/settings')).json()).onboarding).toEqual(progress)
     await page.reload()
-    await page.goto(BASE + '/#/settings/ui')
-    await page.getByRole('button', { name: 'Мастер первого запуска' }).click()
-    await page.getByText(/Проверка прервана/).waitFor()
-    await page.getByRole('button', { name: 'Сбросить только прогресс' }).click()
+    // The wizard is the Settings section #/settings/onboarding, embedded in the page.
+    await page.goto(BASE + '/#/settings/onboarding')
+    const wizard = page.getByTestId('onboarding-page')
+    await wizard.getByText(/Проверка прервана/).waitFor()
+    await wizard.getByRole('button', { name: 'Сбросить только прогресс' }).click()
     await expect.poll(async () => (await (await api('/api/settings')).json()).onboarding.results.tts.status).toBe('idle')
     const after = await (await api('/api/settings')).json()
     expect(after.theme).toBe(before.theme)
     expect(after.voice).toBe(before.voice)
     expect(after.llmProvider).toBe(before.llmProvider)
-    await page.getByRole('button', { name: 'Продолжить в чате' }).click()
+    // The embedded exit action replaces the dialog's «Продолжить в чате».
+    await wizard.getByRole('button', { name: 'Завершить настройку' }).click()
+    await expect.poll(async () => (await (await api('/api/settings')).json()).onboarded).toBe(true)
   }, 120_000)
 
   it('keeps configured but unavailable TTS diagnostics and disabled controls reachable', async () => {
