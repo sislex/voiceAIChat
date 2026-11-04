@@ -109,12 +109,75 @@ export async function buildKbAutoContext(
   kb: KnowledgeBaseService,
   query: string | KbQuery,
   view: KbView,
-  budget: number = KB_AUTO_CONTEXT_BUDGET
+  budget: number = KB_AUTO_CONTEXT_BUDGET,
+  skipPreferred = false
 ): Promise<KbAutoContext> {
-  const preferred = await kb.preferredModule?.(view)
+  const preferred = skipPreferred ? undefined : await kb.preferredModule?.(view)
   if (preferred && !view.module) {
-    const scoped = await buildKbAutoContext(kb, query, { ...view, module: preferred }, budget)
-    if (scoped.text) return scoped
+    // Оставляем часть бюджета для навигации по другим модулям. Основной модуль
+    // по-прежнему идёт первым и получает полные тела релевантных разделов.
+    const navigationReserve = Math.min(700, Math.floor(budget * .2))
+    const scoped = await buildKbAutoContext(
+      kb,
+      query,
+      { ...view, module: preferred },
+      budget - navigationReserve,
+      true
+    )
+    if (scoped.text) {
+      const global = await buildKbAutoContext(kb, query, view, budget, true)
+      if (!global.text) return scoped
+      const used = new Set(scoped.bundle.sections.map((section) => section.chunkId))
+      const extras = global.bundle.sections.filter((section) =>
+        !used.has(section.chunkId) && section.module !== preferred)
+      let text = scoped.text
+      const added: KbContextSection[] = []
+      const blocks: string[] = []
+      for (const section of extras) {
+        const block = `${section.title} / ${section.heading} · \`${refOf(section)}\``
+        const addition = `${blocks.length ? '\n' : '\n\nСвязанные модули:\n'}${block}`
+        if (text.length + addition.length > budget) break
+        text += addition
+        blocks.push(block)
+        added.push(section)
+      }
+      if (!added.length) return scoped
+      const addedUsage = added.map((section, index) => ({
+        documentId: section.documentId,
+        title: section.title,
+        heading: section.heading,
+        anchor: section.anchor,
+        sourcePath: section.sourcePath,
+        relatedFiles: section.relatedFiles,
+        chars: blocks[index].length,
+        score: section.score,
+        matchTypes: section.matchTypes,
+        freshness: section.freshness
+      }))
+      const addedContext = added.map((section, index) => ({
+        documentId: section.documentId,
+        title: section.title,
+        heading: section.heading,
+        sourcePath: section.sourcePath,
+        anchor: section.anchor,
+        freshness: section.freshness,
+        chars: blocks[index].length,
+        estimatedTokens: estimateKbTokens(blocks[index].length)
+      }))
+      return {
+        ...scoped,
+        bundle: {
+          ...scoped.bundle,
+          sections: [...scoped.bundle.sections, ...added],
+          relatedFiles: [...new Set([...scoped.bundle.relatedFiles, ...added.flatMap((section) => section.relatedFiles)])],
+          relatedDocuments: [...new Set([...scoped.bundle.relatedDocuments, ...added.map((section) => section.documentId)])],
+          estimatedTokens: estimateKbTokens(text.length)
+        },
+        text,
+        sections: [...scoped.sections, ...addedUsage],
+        contextSections: [...scoped.contextSections, ...addedContext]
+      }
+    }
   }
   const parts = typeof query === 'string' ? prepareKbQuery(query) : query
   const lexical = parts.text ? await kb.context(parts.text, budget, view) : null

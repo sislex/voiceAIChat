@@ -6,7 +6,7 @@ import { runProjectGit } from './localCore.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 
 const args = { targetProjectId: 'p', targetRepository: 'core-ui' as const, title: 'New button', files: ['src/Button.tsx'], designConversationId: 'design' }
-function fixture() {
+function fixture(previewAccess?: (user: string, project: string, stand: string) => Promise<{ url: string }>) {
   const user = { name: 'alice', role: 'developer' as const, blocked: false }
   const project = { id: 'p', gitUrl: 'git@github.com:sislex/sislexa-core-ui.git', defaultAgentId: 'agent',
     machines: [{ agentId: 'agent', canUse: true, path: '/old', directories: { projectWorkdir: { path: '/work/core-ui' } } }] }
@@ -32,7 +32,7 @@ function fixture() {
   const readDesignFile = vi.fn(async () => 'export const Button = () => null')
   const boardChanged = vi.fn()
   const adapter = new MakeProjectAdapters({ db: db as unknown as VoiceChatDb, git: git as unknown as GitWorkspaceService,
-    kanbanUrl: 'http://kanban.test', authority, fetchImpl, readDesignFile, boardChanged })
+    kanbanUrl: 'http://kanban.test', authority, fetchImpl, ...(previewAccess ? { previewAccess } : {}), readDesignFile, boardChanged })
   return { adapter, db, git, stand, project, user, authority, fetchImpl, readDesignFile, boardChanged }
 }
 
@@ -44,6 +44,15 @@ describe('Make stand adapter', () => {
       .toEqual({ standId: 'stand', status: 'running', url: 'http://stand.test' })
     expect(f.fetchImpl).toHaveBeenCalledTimes(2)
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
+  })
+
+  it('returns an inspector lease for an authorized donor project preview', async () => {
+    const previewAccess = vi.fn(async () => ({ url: 'https://core.test/api/dev-stand-access/lease/' }))
+    const f = fixture(previewAccess)
+    f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
+    expect(await f.adapter.standPreview('alice', 'p', { op: 'status', subprojectPath: '.' }))
+      .toEqual({ standId: 'stand', status: 'running', url: 'https://core.test/api/dev-stand-access/lease/' })
+    expect(previewAccess).toHaveBeenCalledWith('alice', 'p', 'stand')
   })
 
   it.each(['managed', 'thin-client', 'local-stand'])('creates a stand on a ready %s environment, on behalf of the user', async mode => {

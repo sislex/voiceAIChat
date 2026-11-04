@@ -4,7 +4,7 @@
 
 import type { VoiceChatDb } from '../db/database.js'
 import { buildGitWorkspaceId } from '@voicechat/shared'
-import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult } from '@voicechat/make-contracts'
+import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult, ProjectReferenceList, ProjectReferenceFile } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 
@@ -17,6 +17,12 @@ type ProjectMachine = { agentId: string; path: string; name?: string; online?: b
 type ScannedFile = { path: string; content: string }
 
 function join(root: string, relative: string): string { return relative === '.' ? root : `${root.replace(/\/$/, '')}/${relative}` }
+function scopedPath(subprojectPath: string, relativePath: string): string {
+  return relativePath === '.' ? subprojectPath : subprojectPath === '.' ? relativePath : `${subprojectPath}/${relativePath}`
+}
+function safeEntryName(name: string): boolean {
+  return Boolean(name) && name !== '.' && name !== '..' && !/[\\/\x00-\x1f]/.test(name)
+}
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
 
 export interface LocalMakeCoreDeps {
@@ -96,6 +102,33 @@ export class LocalMakeCore implements MakeCore {
         stories, styleFiles: nested.filter(item => /\.(?:css|scss|sass|less)$/i.test(item.path)).map(item => item.path) })
     }
     return result.length ? result : [{ path: '.', name: 'root', kind: 'other', stories: 0, styleFiles: [] }]
+  }
+
+  async projectReferenceList(userId: string, projectId: string, subprojectPath: string, dir: string): Promise<ProjectReferenceList> {
+    const machine = await this.projectMachine(userId, projectId)
+    const relative = scopedPath(subprojectPath, dir)
+    const result = await this.machineFs!.list(machine.agentId, join(machine.path, relative))
+    return {
+      path: dir,
+      entries: (result.entries ?? []).filter(entry => safeEntryName(entry.name) && (entry.kind === 'file' || entry.kind === 'dir')).map(entry => ({
+        path: dir === '.' ? entry.name : `${dir}/${entry.name}`,
+        kind: entry.kind === 'dir' ? 'directory' as const : 'file' as const,
+        ...(entry.size === undefined ? {} : { size: entry.size }),
+      })),
+    }
+  }
+
+  async projectReferenceRead(userId: string, projectId: string, subprojectPath: string, path: string): Promise<ProjectReferenceFile> {
+    const machine = await this.projectMachine(userId, projectId)
+    const relative = scopedPath(subprojectPath, path)
+    const result = await this.machineFs!.read(machine.agentId, join(machine.path, relative))
+    const bytes = Buffer.from(result.dataBase64 ?? '', 'base64')
+    if (bytes.byteLength > 2 * 1024 * 1024) fail(413, 'reference_file_too_large')
+    if (bytes.includes(0)) fail(415, 'reference_file_binary')
+    let content: string
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+    catch { fail(415, 'reference_file_binary') }
+    return { path, content, size: bytes.byteLength }
   }
 
   async projectDesign(userId: string, projectId: string, subprojectPath: string): Promise<ProjectDesign> {

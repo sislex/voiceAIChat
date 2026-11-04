@@ -46,6 +46,27 @@ describe('MakeCore project mode', () => {
     expect(design.components).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Button', kind: 'component' }), expect.objectContaining({ name: 'Button', kind: 'story' })]))
   })
 
+  it('lists and reads donor files inside the selected subproject without write operations', async () => {
+    const { core, list, read } = fixture({
+      '/repo/apps/web': [
+        { name: 'src', kind: 'dir', size: 0 },
+        { name: 'index.html', kind: 'file', size: 18, content: '<main>Donor</main>' },
+      ],
+    })
+    expect(await core.projectReferenceList('ann', 'p1', 'apps/web', '.')).toEqual({
+      path: '.',
+      entries: [
+        { path: 'src', kind: 'directory', size: 0 },
+        { path: 'index.html', kind: 'file', size: 18 },
+      ],
+    })
+    expect(await core.projectReferenceRead('ann', 'p1', 'apps/web', 'index.html')).toEqual({
+      path: 'index.html', content: '<main>Donor</main>', size: 18,
+    })
+    expect(list).toHaveBeenCalledWith('a1', '/repo/apps/web')
+    expect(read).toHaveBeenCalledWith('a1', '/repo/apps/web/index.html')
+  })
+
   it('does not read oversized files', async () => {
     const { core, read } = fixture({ '/repo': [{ name: 'huge.css', kind: 'file', size: 300 * 1024, content: ':root { --secret: red; }' }] })
     expect(await core.projectDesign('ann', 'p1', '.')).toEqual({ tokens: [], themes: [], components: [] })

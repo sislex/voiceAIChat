@@ -4,6 +4,7 @@ import { KB_GAPS_HINT, KB_GAP_RULE, type KbDocument } from '@voicechat/shared'
 import type { KnowledgeBaseService, KbView } from './types.js'
 import type { KbUsageTracker } from './usage.js'
 import { KB_CONTEXT_HEADING } from './autoContext.js'
+import { markdownHeadings } from './engine.js'
 export { kbToolHint } from '@voicechat/shared'
 /** Кап на длину одного раздела: без него один вызов вливает в контекст всю БЗ. */
 export const KB_DOCUMENT_CHAR_CAP = 8000
@@ -78,54 +79,50 @@ export function kbRunDirective(mode: 'auto' | 'manual'): string {
   return `${mine}\n\n${KB_GAP_RULE}\n\n${KB_GAPS_HINT}`
 }
 
-/** Устойчивый anchor раздела — та же схема, что в индексе (service.ts). */
-function slug(text: string): string {
-  return text.toLowerCase().trim().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '')
-}
-
 export interface KbSectionSlice {
   heading: string
   anchor: string
   text: string
-  /** Текст обрезан капом — модель должна знать, что видит не весь раздел. */
+  offset: number
+  nextOffset?: number
+  /** После этого фрагмента в разделе остался текст. */
   truncated: boolean
 }
 
 /**
  * Вырезка раздела документа по anchor: от его заголовка до следующего заголовка
- * того же или более высокого уровня. Без anchor — документ целиком. Чистая
- * функция: тестируется отдельно от транспорта.
+ * того же или более высокого уровня. Заголовки и anchors берутся из общего
+ * Markdown-парсера индекса, поэтому fenced code и дубли трактуются одинаково.
  */
-export function sectionOf(doc: KbDocument, anchor?: string, cap = KB_DOCUMENT_CHAR_CAP): KbSectionSlice | null {
-  const lines = doc.body.split(/\r?\n/)
-  const clamp = (heading: string, resolved: string, body: string): KbSectionSlice => {
+export function sectionOf(
+  doc: KbDocument,
+  anchor?: string,
+  cap = KB_DOCUMENT_CHAR_CAP,
+  offset = 0
+): KbSectionSlice | null {
+  const clamp = (heading: string, resolved: string, body: string): KbSectionSlice | null => {
     const trimmed = body.trim()
-    const truncated = trimmed.length > cap
+    if (!Number.isInteger(offset) || offset < 0 || offset > trimmed.length) return null
+    const end = Math.min(trimmed.length, offset + cap)
+    const nextOffset = end < trimmed.length ? end : undefined
     return {
       heading,
       anchor: resolved,
-      text: truncated ? `${trimmed.slice(0, cap)}\n\n[…раздел обрезан: показаны первые ${cap} символов]` : trimmed,
-      truncated
+      offset,
+      ...(nextOffset !== undefined ? { nextOffset } : {}),
+      text: nextOffset !== undefined
+        ? `${trimmed.slice(offset, end)}\n\n[…раздел обрезан: продолжение — вызови document с offset ${nextOffset}]`
+        : trimmed.slice(offset),
+      truncated: nextOffset !== undefined
     }
   }
   if (!anchor) return clamp(doc.title, '', doc.body)
-  let level = 0
-  let heading = ''
-  const out: string[] = []
-  for (const line of lines) {
-    const match = /^(#{1,4})\s+(.+)$/.exec(line)
-    if (!heading) {
-      if (match && slug(match[2].trim()) === anchor) {
-        level = match[1].length
-        heading = match[2].trim()
-      }
-      continue
-    }
-    if (match && match[1].length <= level) break
-    out.push(line)
-  }
-  if (!heading) return null
-  return clamp(heading, anchor, out.join('\n'))
+  const lines = doc.body.split(/\r?\n/)
+  const headings = markdownHeadings(doc.body)
+  const selected = headings.find((heading) => heading.anchor === anchor)
+  if (!selected) return null
+  const next = headings.find((heading) => heading.line > selected.line && heading.level <= selected.level)
+  return clamp(selected.title, selected.anchor, lines.slice(selected.line + 1, next?.line).join('\n'))
 }
 
 
@@ -201,16 +198,21 @@ export function registerKbTools(server: McpServer, kb: KnowledgeBaseService, vie
         {
           description:
             'Раздел базы знаний целиком. documentId — из search или topics; anchor — раздел внутри документа ' +
-            `(без anchor вернётся весь документ). Длинный текст обрезается на ${KB_DOCUMENT_CHAR_CAP} символах.`,
-          inputSchema: { module: z.string().optional(), documentId: z.string().describe('id документа базы знаний'), anchor: z.string().optional().describe('anchor раздела (часть после #)') }
+            `(без anchor вернётся весь документ). Для продолжения длинного раздела передай offset из ответа.`,
+          inputSchema: {
+            module: z.string().optional(),
+            documentId: z.string().describe('id документа базы знаний'),
+            anchor: z.string().optional().describe('anchor раздела (часть после #)'),
+            offset: z.number().int().nonnegative().optional().describe('смещение продолжения из предыдущего ответа')
+          }
         },
-        async ({ documentId, anchor, module }) => {
+        async ({ documentId, anchor, module, offset }) => {
           if (!entry) return noContext
-          const label = `${documentId}${anchor ? `#${anchor}` : ''}`
+          const label = `${documentId}${anchor ? `#${anchor}` : ''}${offset ? `@offset:${offset}` : ''}`
           const handle = await open('tool_document', label)
           try {
             const doc = await kb.document(module && !documentId.includes(':') ? `${module}:${documentId}` : documentId, view)
-            const slice = doc && (!module || doc.module === module) ? sectionOf(doc, anchor) : null
+            const slice = doc && (!module || doc.module === module) ? sectionOf(doc, anchor, KB_DOCUMENT_CHAR_CAP, offset ?? 0) : null
             if (!doc || !slice) {
               handle?.empty('no-match')
               return { content: [{ type: 'text', text: `Раздел ${label} в базе знаний не найден.` }], isError: true }
