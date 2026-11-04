@@ -123,11 +123,11 @@ export function checkoutScript(branch: string): GitScript {
       mark('mode'),
       'if git show-ref --verify --quiet "refs/heads/$VC_GIT_BRANCH"; then',
       `  printf '%s\\n' 'local'`,
-      '  git checkout "$VC_GIT_BRANCH"',
+      '  git switch "$VC_GIT_BRANCH"',
       'else',
       `  printf '%s\\n' 'remote'`,
       '  git fetch --prune origin "+refs/heads/${VC_GIT_BRANCH}:refs/remotes/origin/${VC_GIT_BRANCH}"',
-      '  git checkout -b "$VC_GIT_BRANCH" --track "origin/$VC_GIT_BRANCH"',
+      '  git switch --track -c "$VC_GIT_BRANCH" "origin/$VC_GIT_BRANCH"',
       'fi',
       mark('done')
     ].join('\n')
@@ -141,7 +141,32 @@ export function createBranchScript(branch: string, from: string): GitScript {
     script: [
       'set -e',
       mark('create'),
-      'git checkout -b "$VC_GIT_BRANCH" "$VC_GIT_FROM"',
+      'if [ "$VC_GIT_FROM" != "HEAD" ]; then git show-ref --verify --quiet "refs/heads/$VC_GIT_FROM" || { printf "%s\\n" "branch_not_found"; exit 66; }; fi',
+      'git switch -c "$VC_GIT_BRANCH" "$VC_GIT_FROM"',
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/** Слияние локальной ветки с откатом незавершённого merge при конфликте. */
+export function mergeScript(from: string): GitScript {
+  return {
+    env: { VC_GIT_FROM: from },
+    script: [
+      'set -e',
+      'git show-ref --verify --quiet "refs/heads/$VC_GIT_FROM" || { printf "%s\\n" "branch_not_found"; exit 66; }',
+      mark('merge'),
+      'if git merge --no-edit "$VC_GIT_FROM"; then',
+      `  printf '%s\\n' 'ok'`,
+      'else',
+      `  ${mark('conflicts_b64')}`,
+      `  git diff --name-only --diff-filter=U -z | base64 | tr -d '\\n'`,
+      `  ${markAfterB64('abort')}`,
+      '  git merge --abort',
+      '  exit 65',
+      'fi',
+      mark('head'),
+      'git rev-parse HEAD',
       mark('done')
     ].join('\n')
   }

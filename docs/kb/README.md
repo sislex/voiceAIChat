@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1453. Последние:
+Всего записей: 1454. Последние:
 
+- [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md) — sisl-871-stand-git-operations
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md) — sisl-869-account-settings-guidance
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md) — sisl-867-ephemeral-test-listeners
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550.md) — release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550
@@ -76,7 +77,6 @@
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md) — sisl-857-palette-shortcut-retry
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-855-identity-bearer.md) — sisl-855-identity-bearer
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-owner-reconcile.md) — release-train-owner-reconcile
-- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-d2736740-699f-436e-869f-a2b9ac2f38ed.md) — release-train-d2736740-699f-436e-869f-a2b9ac2f38ed
 
 ## Исторические планы
 

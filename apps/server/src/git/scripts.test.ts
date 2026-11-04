@@ -7,7 +7,7 @@ import { evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@sislexa/agent-contr
 import { buildShellCommand } from '../util/shell.js'
 import {
   branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
-  fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript
+  fileAtRefScript, gitBaseEnv, mergeScript, pullScript, pushScript, statusScript, treeScript
 } from './scripts.js'
 
 const ALL = () => [
@@ -19,6 +19,7 @@ const ALL = () => [
   fileAtRefScript('HEAD', 'a.txt'),
   checkoutScript('feature/x'),
   createBranchScript('feature/y', 'HEAD'),
+  mergeScript('feature/y'),
   commitScript({ message: 'fix', paths: ['a.txt'], all: false, user: 'bob', email: 'bob@x' }),
   commitScript({ message: 'fix', paths: [], all: true, user: 'bob', email: 'bob@x' }),
   pushScript('feature/x'),
@@ -131,9 +132,9 @@ describe('состав скриптов', () => {
 
   it('checkout идёт без -f, а отсутствующая локально ветка берётся из origin с отслеживанием', () => {
     const { script } = checkoutScript('feature/x')
-    expect(script).toContain('git checkout "$VC_GIT_BRANCH"')
-    expect(script).not.toMatch(/checkout\s+-f/)
-    expect(script).toContain('git checkout -b "$VC_GIT_BRANCH" --track "origin/$VC_GIT_BRANCH"')
+    expect(script).toContain('git switch "$VC_GIT_BRANCH"')
+    expect(script).not.toMatch(/switch\s+-f/)
+    expect(script).toContain('git switch --track -c "$VC_GIT_BRANCH" "origin/$VC_GIT_BRANCH"')
   })
 
   it('push отправляет ветку и обязательно сверяет SHA в origin', () => {
@@ -144,7 +145,7 @@ describe('состав скриптов', () => {
   })
 
   it('мутации идут под set -e, чтение — нет', () => {
-    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD'), pullScript('b', 'rebase'), discardScript(['a'])]) {
+    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD'), mergeScript('b'), pullScript('b', 'rebase'), discardScript(['a'])]) {
       expect(script.script.startsWith('set -e'), script.script).toBe(true)
     }
     // У чтения `set -e` был бы вреден: у свежей ветки нет upstream, и статус
