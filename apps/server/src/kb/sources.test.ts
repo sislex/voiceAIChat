@@ -163,7 +163,14 @@ describe('KB module sources', () => {
     const db = { projects: { getProject }, kb: { kbDocumentsVersion: async () => '1', kbDocuments: async () => [] } } as unknown as VoiceChatDb
     const scoped = new ScopedKnowledgeBase(kb, db)
     const view = { userId: 'user', projectIds: ['project'], projectId: 'project' }
-    expect((await buildKbAutoContext(scoped, 'Widget', view)).bundle.relatedDocuments).toEqual(['remote:topic.md'])
+    // The project repository goes first with the full section body; other
+    // modules that also match follow only as navigation links.
+    const preferred = await buildKbAutoContext(scoped, 'Widget', view)
+    expect(preferred.bundle.relatedDocuments).toEqual(['remote:topic.md', 'core:topic.md'])
+    expect(preferred.sections[0]?.documentId).toBe('remote:topic.md')
+    expect(preferred.text).toContain('Widget first version.')
+    expect(preferred.text).not.toContain('Widget core knowledge.')
+    expect(preferred.text).toContain('Связанные модули:')
     expect(await scoped.preferredModule({ ...view, projectIds: [] })).toBeUndefined()
     expect(getProject).toHaveBeenCalledTimes(1)
     expect((await buildKbAutoContext(scoped, 'CoreOnly', view)).bundle.relatedDocuments).toEqual(['core:topic.md'])

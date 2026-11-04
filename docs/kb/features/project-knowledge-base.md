@@ -2,8 +2,8 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-31
-checked: c01d1871
+updated: 2026-11-04
+checked: d585e5016
 areas:
   - packages/knowledge/src
   - packages/kb-tools
@@ -142,14 +142,19 @@ File IDs are `<module>:<relative-path.md>`; `sourcePath` is relative to the
 source repository. Old unprefixed Core IDs, including frontmatter IDs and
 extensionless paths, continue to resolve. Database document IDs stay unchanged.
 Topics, search and context REST queries accept `module`; MCP `topics`, `search`
-and `document` accept the same optional filter. No filter searches all visible
-modules; an unknown module produces an empty result. File modules have the same
-public `usage` visibility as Core's existing files; `access.ts` is unchanged.
-The module filter narrows results and excludes unassociated database articles.
+and `document` accept the same optional filter. MCP `document` also accepts a
+non-negative `offset`: when a section is longer than 8000 characters, the response
+contains the next offset and the caller can retrieve the remainder without losing the
+tail of a long single section. No filter searches all visible modules; an unknown
+module produces an empty result. File modules have the same public `usage` visibility
+as Core's existing files; `access.ts` is unchanged. The module filter narrows results
+and excludes unassociated database articles.
 
-Auto-context first tries the module matching the authorized current project's
+Auto-context first puts the module matching the authorized current project's
 Git repository (or the repository explicitly supplied in the internal KB view).
-If it cannot produce useful context, it falls back to the normal visible search.
+It reserves part of the character budget and, when the main module produced useful
+context, adds compact links to relevant sections from other modules. If the main module
+has no useful context, the normal visible search still supplies the result.
 SSH-style and HTTPS project URLs match the same configured repository.
 
 Implementation and operator commissioning are separate: deploying the code
@@ -178,6 +183,12 @@ auto-context and read-only MCP definitions. Core's `kb/` files provide host
 adapters, HTTP transport, usage persistence and research. The `kbRpc` decorator
 uses the Shared RPC registry with live host identity; request filters cannot
 supply a different viewer. UI implementation belongs to `sislexa-core-ui`.
+
+Runtime indexing does not infer `freshness: current` from frontmatter `updated`:
+a timestamp alone does not prove that the checked Git SHA and declared areas still
+match. File documents therefore report `unknown` until a verified freshness signal
+is supplied; the maintenance CLI remains responsible for checked SHA and area
+validation.
 
 Freshness tracks the executable package and host adapters plus `docs/kb/modules.md`,
 which is parsed as runtime registration input. It does not track all of `docs/kb`:
@@ -226,9 +237,17 @@ Code remains authoritative when documentation disagrees with implementation.
 `mcp__kb__*` (`kbMcp.ts`, `viewOf`): модель видит общий раздел, персональные знания
 владельца чата и знания проекта этого чата — не больше.
 
-Индекс один на оба источника: BM25 из разных индексов несравним, поэтому статьи из БД
-разбираются тем же кодом, что и файлы (`kb/engine.ts`), а кэш пересобирается по версии
-набора (`db.kbDocumentsVersion()` — количество + максимум `updated_at`).
+Статьи из БД разбираются тем же кодом, что и файлы (`packages/knowledge/src/engine.ts`),
+а кэш пересобирается по версии набора (`db.kbDocumentsVersion()` — количество + максимум
+`updated_at`). BM25 внутри файлового и хранимого корпусов считается отдельно; итоговую
+выдачу `ScopedKnowledgeBase` объединяет Reciprocal Rank Fusion по позициям, сохраняя
+порядок reranker каждого источника, и при наличии reranker делает общий финальный проход.
+Численные BM25 score разных корпусов напрямую не сравниваются.
+
+Точное совпадение пути, символа, протокола или alias назначается одному наиболее
+релевантному разделу документа, а не всем его chunks. Markdown-заголовки внутри fenced
+code не индексируются; повторные заголовки получают уникальные anchors с числовым
+суффиксом. Поиск и MCP-чтение используют один парсер anchors.
 
 ## Скелет раздела при создании проекта
 

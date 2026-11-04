@@ -118,14 +118,56 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     const stored = await this.visibleStored(effective)
     const [usage, own] = await Promise.all([
       this.usageIncluded(effective) ? this.base.search({ ...request, module: effective.module, limit }) : Promise.resolve([]),
-      stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }, this.reranker) : Promise.resolve([])
+      // Stored articles are ranked lexically here; the shared reranker below
+      // orders them together with the usage corpus in a single LLM call.
+      stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }) : Promise.resolve([])
     ])
-    // Оценки из двух индексов сравниваем напрямую: BM25 в них считается по одной
-    // формуле, а разница в df на десятках статей меньше разрыва между попаданием
-    // в символ/путь и обычным лексическим совпадением.
-    return [...usage.map((item) => ({ ...item, scope: item.scope ?? ('usage' as const) })), ...own]
-      .sort((a, b) => b.score - a.score || a.chunkId.localeCompare(b.chunkId))
-      .slice(0, limit)
+    const lists = [
+      usage.map((item) => ({ ...item, scope: item.scope ?? ('usage' as const) })),
+      own
+    ]
+    // BM25 из разных корпусов нельзя сравнивать напрямую: df и средняя длина
+    // считаются отдельно. Reciprocal Rank Fusion объединяет позиции и сохраняет
+    // порядок LLM-reranker каждого источника.
+    const fused = new Map<string, { result: KbSearchResult; rankScore: number }>()
+    for (const list of lists) {
+      list.forEach((result, rank) => {
+        const found = fused.get(result.chunkId)
+        const rankScore = (found?.rankScore ?? 0) + 1 / (60 + rank + 1)
+        fused.set(result.chunkId, {
+          result: !found || result.score > found.result.score ? result : found.result,
+          rankScore
+        })
+      })
+    }
+    const candidates = [...fused.values()]
+      .sort((a, b) => b.rankScore - a.rankScore || a.result.chunkId.localeCompare(b.result.chunkId))
+      .map((item) => item.result)
+    // The usage corpus is already reranked by its own service. Without stored
+    // articles there is nothing to fuse, so a second LLM call would only repeat
+    // the same ordering at extra cost.
+    if (!this.reranker || !own.length || candidates.length < 2) return candidates.slice(0, limit)
+    try {
+      const ids = await this.reranker.rerank(
+        request.query,
+        candidates.slice(0, 15).map((result) => ({
+          chunkId: result.chunkId,
+          title: result.title,
+          heading: result.heading,
+          excerpt: result.excerpt
+        })),
+        limit
+      )
+      const rank = new Map(ids.map((id, index) => [id, index]))
+      return candidates
+        .sort((a, b) => (rank.get(a.chunkId) ?? 999) - (rank.get(b.chunkId) ?? 999))
+        .slice(0, limit)
+        .map((result) => rank.has(result.chunkId) && !result.matchTypes.includes('semantic')
+          ? { ...result, matchTypes: [...result.matchTypes, 'semantic'], explanation: `${result.explanation}; подтверждено общим LLM-reranking` }
+          : result)
+    } catch {
+      return candidates.slice(0, limit)
+    }
   }
 
   async context(query: string, budget = 3500, view: KbView = PUBLIC_KB_VIEW): Promise<KbContextBundle> {

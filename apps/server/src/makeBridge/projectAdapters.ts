@@ -169,7 +169,10 @@ export class MakeProjectAdapters {
     if (!stand) return { standId: null, status: 'stopped', url: null }
     const detail = standDetail(await this.request(user, base + '/' + encodeURIComponent(stand.standId)))
     if (detail.standId !== stand.standId || detail.machineId !== stand.machineId) projectModeError(502, 'invalid_stand_response')
-    const url = detail.gateway?.urls.find(url => /^https?:\/\//.test(url)) ?? null
+    const directUrl = detail.gateway?.urls.find(url => /^https?:\/\//.test(url)) ?? null
+    const url = directUrl && this.deps.previewAccess
+      ? (await this.deps.previewAccess(user, projectId, stand.standId)).url
+      : directUrl
     return { standId: stand.standId, status: detail.error ? 'failed' : pending ? 'starting' : detail.status ?? (url ? 'running' : 'starting'), url, ...(detail.error ? { error: detail.error } : {}) }
   }
 

@@ -69,7 +69,10 @@ configured conversation `execTarget` and `workdir`; no implicit project-machine
 fallback is applied. Both Claude and Codex receive `toolOnly: true`. Core provides
 scoped remote file tools and optional transfers to Make through owner raw-file
 routes; `mcp/makeFiles.ts` enforces a 10 MiB limit and rejects traversal, symlinks
-and protected paths. Attachment bytes are not forwarded as ordinary runner
+and protected paths. These target-project tools are independent of a paired donor.
+A donor defaults to preview-only; after the user explicitly enables read-only files,
+separate reference list/read tools derive the donor project and subproject from the
+saved conversation pair and never expose a donor write operation. Attachment bytes are not forwarded as ordinary runner
 attachments in Make turns. `makeBrowserSession` still verifies the linked chat's
 owner, Reader kind and required capability before exposing browser tools.
 
