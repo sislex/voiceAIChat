@@ -49,14 +49,27 @@ export interface MarkdownHeading {
 export function markdownHeadings(body: string): MarkdownHeading[] {
   const result: MarkdownHeading[] = []
   const counts = new Map<string, number>()
-  let fence: '`' | '~' | null = null
+  let fence: { kind: '`' | '~'; length: number } | null = null
   for (const [line, value] of body.split(/\r?\n/).entries()) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(value)?.[1]
-    if (marker) {
+    // CommonMark fence rules: a backtick fence's info string cannot contain
+    // backticks, so a line that starts with inline code (```` ```lang ````) is
+    // prose, not an opening fence. A closing fence is at least as long as the
+    // opening one and carries nothing but whitespace. Indentation stays lenient
+    // because fences nested in list items are common in the KB.
+    const fenceMatch = /^\s*(`{3,}|~{3,})(.*)$/.exec(value)
+    if (fenceMatch) {
+      const marker = fenceMatch[1]
       const kind = marker[0] as '`' | '~'
-      if (!fence) fence = kind
-      else if (fence === kind) fence = null
-      continue
+      const rest = fenceMatch[2]
+      if (!fence) {
+        if (!(kind === '`' && rest.includes('`'))) {
+          fence = { kind, length: marker.length }
+          continue
+        }
+      } else if (fence.kind === kind && marker.length >= fence.length && !rest.trim()) {
+        fence = null
+        continue
+      }
     }
     if (fence) continue
     const match = /^(#{1,4})\s+(.+)$/.exec(value)

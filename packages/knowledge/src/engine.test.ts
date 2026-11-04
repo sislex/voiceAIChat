@@ -37,6 +37,30 @@ describe('Markdown index', () => {
     ])
   })
 
+  it('treats a line starting with inline code as prose, not as an unclosed fence', () => {
+    const body = [
+      '# Document',
+      '',
+      '```` ```questions ```` block is rendered by the column.',
+      '',
+      '## After inline code',
+      'Text.',
+      '',
+      '````md',
+      '```',
+      '## Not a section',
+      '````',
+      '',
+      '## After nested fence',
+      'Text.'
+    ].join('\n')
+    expect(markdownHeadings(body).map(({ title }) => title)).toEqual([
+      'Document',
+      'After inline code',
+      'After nested fence'
+    ])
+  })
+
   it('назначает точное metadata-совпадение одному наиболее релевантному разделу', async () => {
     const indexed = indexBody(
       { ...meta, symbols: ['UniqueSymbol'] },
