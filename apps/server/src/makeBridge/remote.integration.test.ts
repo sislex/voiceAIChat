@@ -2,7 +2,7 @@
 // границу целиком: авторизация Make пересылается ядру (Bearer, cookie + CSRF), данные разговора
 // Make берёт у ядра по RPC, превью отдаётся с той же сессией, а сам процесс ядра роутов Make не
 // держит. Внутренние пути без общего токена закрыты.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,14 +19,6 @@ const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
 const MCP = 'mcp-secret'
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port)) })
-  })
-}
-
 let dataDir: string
 let db: VoiceChatDb
 let core: FastifyInstance
@@ -39,22 +31,19 @@ const auth = { authorization: `Bearer ${token}` }
 
 beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'vc-make-remote-'))
-  const [corePort, makePort] = [await freePort(), await freePort()]
-  coreUrl = `http://127.0.0.1:${corePort}`
-  makeUrl = `http://127.0.0.1:${makePort}`
   db = new VoiceChatDb(':memory:')
   await db.identity.createUser('ann', 'password-1', 'developer')
   convId = (await db.chat.createConversation('ann', 'Витрина', 'make', null))!.id
+  make = (await buildMakeServer({ fetchImpl: deferredCoreFetch(() => coreUrl), config: { host: '127.0.0.1', port: 0, dataDir, coreUrl: 'http://core.test', internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
+  makeUrl = await make.listen({ host: '127.0.0.1', port: 0 })
   core = await buildServer({
     config: loadConfig({
-      PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_MAKE_MODE: 'remote', VC_MAKE_URL: makeUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP
     }),
     db, sessionSecret: SECRET
   })
-  await core.listen({ host: '127.0.0.1', port: corePort })
-  make = (await buildMakeServer({ config: { host: '127.0.0.1', port: makePort, dataDir, coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test' } })).app
-  await make.listen({ host: '127.0.0.1', port: makePort })
+  coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
 }, 60_000)
 
 afterAll(async () => {

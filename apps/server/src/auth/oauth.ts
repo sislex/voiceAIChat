@@ -1,0 +1,108 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { REST } from '@voicechat/shared'
+import { AuthClient, MemorySessionStore, configFromEnv } from '@sislexa/auth-client'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { AuthenticateFn, AuthVerdict } from '@sislexa/identity/server/users/auth'
+import { accountContext } from '@sislexa/identity/server/users/productPolicy'
+import type { VoiceChatDb } from '../db/database.js'
+
+export interface CoreOAuthConfig { authUrl: string; publicUrl: string; secretFile?: string }
+const requests = new AsyncLocalStorage<{ token?: string }>()
+export function coreOAuthConfig(env: NodeJS.ProcessEnv): CoreOAuthConfig | undefined {
+  if ((env.AUTH_MODE ?? (env.AUTH_URL ? 'identity' : 'legacy')) === 'legacy') return undefined
+  if (env.AUTH_MODE && env.AUTH_MODE !== 'identity') throw new Error('Invalid AUTH_MODE')
+  if (!env.AUTH_URL || !env.PUBLIC_URL) throw new Error('Identity requires AUTH_URL and PUBLIC_URL')
+  if (env.AUTH_CLIENT_ID && env.AUTH_CLIENT_ID !== 'core') throw new Error('AUTH_CLIENT_ID must be core')
+  for (const value of [env.AUTH_URL, env.PUBLIC_URL]) {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Invalid OAuth origin')
+  }
+  return { authUrl: env.AUTH_URL, publicUrl: env.PUBLIC_URL, secretFile: env.AUTH_CLIENT_SECRET_FILE }
+}
+export async function registerCoreOAuth(app: FastifyInstance, db: VoiceChatDb, config: CoreOAuthConfig, authenticateBearer: AuthenticateFn) {
+  const authConfig = await configFromEnv({
+    AUTH_URL: config.authUrl, AUTH_CLIENT_ID: 'core', PUBLIC_URL: config.publicUrl,
+    AUTH_CLIENT_SECRET_FILE: config.secretFile,
+  })
+  // The pinned client owns the OAuth flow; Core supplies logout revocation via its store.
+  class CoreSessions extends MemorySessionStore {
+    override async delete(id: string) {
+      const session = await this.get(id)
+      await super.delete(id)
+      if (!session?.tokens) return
+      const token = session.tokens.refresh_token ?? session.tokens.access_token
+      const body = new URLSearchParams({ token, client_id: 'core',
+        token_type_hint: session.tokens.refresh_token ? 'refresh_token' : 'access_token' })
+      if (authConfig.clientSecret) body.set('client_secret', authConfig.clientSecret)
+      // Local logout must succeed even when Identity is unavailable.
+      try { await fetch(new URL('/oauth/revoke', authConfig.authUrl), {
+        method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(5000),
+      }) } catch { /* Identity logout will also terminate the upstream session. */ }
+    }
+  }
+  const client = new AuthClient({ config: authConfig, sessions: new CoreSessions() })
+  app.addHook('onRequest', (_req, _reply, done) => requests.run({}, done))
+  await client.plugin(app)
+  const authenticate: AuthenticateFn = async input => {
+    const request = input as FastifyRequest
+    delete request.authUser
+    // Identity owns API/session revocation, tenant selection and token permissions.
+    // Never fall back to browser cookies when an explicit bearer is rejected.
+    // OAuth access tokens are three-part JWTs and stay on the auth-client path;
+    // Identity session and API tokens are two-part signed values.
+    const bearer = /^Bearer\s+(\S+)$/i.exec(input.headers.authorization ?? '')?.[1]
+    const oauthAccessToken = bearer !== undefined && bearer.split('.').length === 3
+    if (/^Bearer(?:\s|$)/i.test(input.headers.authorization ?? '') && !oauthAccessToken) {
+      return authenticateBearer({ method: input.method, url: input.url, headers: { ...input.headers,
+        authorization: input.headers.authorization!.replace(/^Bearer\s*/i, 'Bearer '), cookie: undefined } })
+    }
+    let denied: AuthVerdict = { ok: false, status: 401, error: 'unauthorized' }
+    // Adapt the owner's reply-based guard to Core's transport-neutral verdict port.
+    const reply = {
+      code(status: 401 | 403) { denied = { ok: false, status, error: 'unauthorized' }; return this },
+      send(body: {error: string}) { if (!denied.ok) denied.error = body.error },
+    } as unknown as FastifyReply
+    await client.requireUser(request, reply)
+    const user = request.authUser as import('@sislexa/auth-client').AuthUser | undefined
+    if (!user) return denied
+    const { claims, accessToken } = user
+    const row = await db.identity.getUser(claims.sub)
+    const access = await db.identity.getAccountAccess(claims.sub, claims.tenant)
+    if (!row || row.blocked || !access || (claims.tenant && access.tenant.id !== claims.tenant))
+      return { ok: false, status: 403, error: 'account_access_denied' }
+    const context = requests.getStore()
+    if (context) context.token = accessToken
+    return { ok: true, user: { name: row.name, role: access.systemRole, account: accountContext(access),
+      ...(row.mustChangePassword ? { mustChangePassword: true } : {}) } }
+  }
+  // Session paths bypass the global auth guard, so authenticate them explicitly.
+  app.get(REST.sessionMe, async (req, reply) => {
+    reply.header('cache-control', 'no-store')
+    const verdict = await authenticate(req)
+    if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+    return { user: verdict.user, csrf: req.authUser?.csrfToken,
+      notices: await db.identity.unseenSecurityNotices(verdict.user.name) }
+  })
+  app.post(REST.sessionNoticesSeen, async (req, reply) => {
+    const verdict = await authenticate(req)
+    if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+    await db.identity.markNoticesSeen(verdict.user.name)
+    return { ok: true }
+  })
+  // Legacy bootstrap helpers cannot mint legacy credentials in OAuth mode.
+  for (const [method, url] of [
+    ['POST', REST.sessionPreview], ['POST', REST.sessionCookie],
+    ['GET', REST.sessionSignup], ['GET', REST.sessionAccountAccess],
+  ] as const) {
+    app.route({ method, url, handler: async (req, reply) => {
+      const verdict = await authenticate(req)
+      if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
+      return reply.code(403).send({ error: 'identity_session_required' })
+    } })
+  }
+  return { authenticate, async storageToken() {
+    const token = requests.getStore()?.token
+    if (!token) throw new Error('Storage requires an authenticated Identity request')
+    return client.exchange(token, 'storage')
+  } }
+}

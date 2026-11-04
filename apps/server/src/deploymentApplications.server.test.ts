@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -7,14 +8,21 @@ import { buildServer } from './server.js'
 import { VoiceChatDb } from './db/database.js'
 
 it.each(['make', 'web-reader', 'image-studio', 'playwright-reader'].flatMap(owner =>
-  ['local', 'disabled', 'external'].map(mode => ({ owner, mode }))
-))('uses the frontend source for $owner only when $mode is local', async ({ owner, mode }) => {
+  ['local', 'disabled', 'external'].flatMap(mode =>
+    [
+      { NODE_ENV: 'development' },
+      { NODE_ENV: 'production' },
+      { NODE_ENV: 'production', VC_APPLICATION_FRONTENDS_OVERRIDE: '1' },
+      { NODE_ENV: 'production', VC_APPLICATION_FRONTENDS_OVERRIDE: '0' },
+    ].map(env => ({ owner, mode, env }))
+  )
+))('selects the frontend for $owner ($mode, $env)', async ({ owner, mode, env }) => {
   const dataDir = mkdtempSync(join(tmpdir(), 'deployment-frontends-'))
   const id = owner + '-ui'
   const applications = mode === 'disabled' ? 'chat'
     : mode === 'external' ? `chat,${owner}=https://owner.example.org` : `chat,${owner}`
   const config = loadConfig({
-    VC_APPLICATIONS: applications, VC_DATA_DIR: dataDir,
+    ...env, VC_APPLICATIONS: applications, VC_DATA_DIR: dataDir,
     VC_APPLICATION_FRONTENDS: JSON.stringify({ [id]: 'http://127.0.0.1:25284' }),
     VC_INTERNAL_TOKEN: 'test-internal', VC_MCP_SECRET: 'test-mcp',
   })
@@ -29,18 +37,29 @@ it.each(['make', 'web-reader', 'image-studio', 'playwright-reader'].flatMap(owne
   const db = new VoiceChatDb(':memory:')
   const app = await buildServer({ config, db })
   vi.stubGlobal('fetch', fetchSource)
+  const sourceLog = vi.spyOn(console, 'info').mockImplementation(() => {})
   try {
     const response = await app.inject(`/applications/${id}/manifest.json`)
-    if (mode === 'local') {
+    if (mode === 'local' && (env.NODE_ENV !== 'production' || env.VC_APPLICATION_FRONTENDS_OVERRIDE === '1')) {
       expect(response.statusCode).toBe(200)
       expect(response.json()).toEqual(manifest)
-      expect(fetchSource).toHaveBeenCalledOnce()
+      expect(sourceLog).toHaveBeenCalledWith('[application-frontend]', JSON.stringify({
+        id, source: 'override', version: manifest.version, commit: manifest.commit
+      }))
+      expect(fetchSource).toHaveBeenCalledTimes(2) // startup manifest and HTTP request
       expect(String(fetchSource.mock.calls[0]?.[0])).toBe('http://127.0.0.1:25284/manifest.json')
     } else {
       expect(fetchSource).not.toHaveBeenCalled()
-      expect(response.body).not.toContain('9.8.7')
+      expect(response.statusCode).toBe(200)
+      const require = createRequire(import.meta.url)
+      const pinned = JSON.parse(readFileSync(require.resolve(`@sislexa/${owner}/frontend/manifest.json`), 'utf8'))
+      expect(response.json()).toEqual(pinned)
+      expect(sourceLog).toHaveBeenCalledWith('[application-frontend]', JSON.stringify({
+        id, source: 'pinned', version: pinned.version, commit: pinned.commit
+      }))
     }
   } finally {
+    sourceLog.mockRestore()
     vi.unstubAllGlobals()
     await app.close()
     await db.close()

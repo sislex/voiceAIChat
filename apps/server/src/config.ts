@@ -7,7 +7,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { coreOAuthConfig, type CoreOAuthConfig } from "./auth/oauth.js"
+import { fileStorageConfig, type FileStorageConfig } from './fileStorage/config.js'
+
 export interface ServerConfig {
+  oauth?: CoreOAuthConfig
+  fileStorage?: FileStorageConfig
   chatModels?: ChatModelPolicy
   chatTextOnly?: boolean
   chatRequireBilling?: boolean
@@ -45,6 +50,8 @@ export interface ServerConfig {
   loginApplicationPath?: string
   /** Owner-built panel directories explicitly selected by deployment configuration. */
   applicationFrontends?: Record<string, string>
+  /** Allow configured sources to replace pinned frontend archives. */
+  applicationFrontendsOverride?: boolean
   /** Published Core UI directory served by the API process when VC_WEB_DIR is set. */
   webDir?: string
   /** Persistent immutable browser releases and atomic activation record. */
@@ -260,6 +267,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
   return {
     deployment,
+    oauth: coreOAuthConfig(env),
+    fileStorage: fileStorageConfig(env),
     delegatedChatEnabled: env.VC_DELEGATED_CHAT_ENABLED === 'true',
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
@@ -275,7 +284,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     chatTextOnly: env.VC_CHAT_TEXT_ONLY === 'true',
     chatRequireBilling: env.VC_CHAT_REQUIRE_BILLING === 'true',
     mailFrom: env.VC_MAIL_FROM ?? null,
-    publicUrl: env.VC_PUBLIC_URL ?? null,
+    publicUrl: env.PUBLIC_URL ?? env.VC_PUBLIC_URL ?? null,
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
@@ -305,6 +314,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
     applicationFrontends: env.VC_APPLICATION_FRONTENDS ? JSON.parse(env.VC_APPLICATION_FRONTENDS) as Record<string, string> : undefined,
+    applicationFrontendsOverride: env.NODE_ENV !== 'production' || env.VC_APPLICATION_FRONTENDS_OVERRIDE === '1',
     imageStudioMode: mode('image-studio', env.VC_IMAGE_STUDIO_MODE),
     imageStudioUrl: env.VC_IMAGE_STUDIO_URL,
     makeMode: mode('make', env.VC_MAKE_MODE),

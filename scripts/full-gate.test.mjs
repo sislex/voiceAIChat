@@ -187,10 +187,27 @@ test('parallel test runner respects its concurrency bound', async () => {
   assert.equal(maximum, 2)
 })
 
-test('test concurrency defaults to three and rejects invalid overrides', () => {
+test('test concurrency defaults to three and rejects invalid overrides', t => {
+  const previous = process.env.VC_GATE_TEST_CONCURRENCY
+  t.after(() => {
+    if (previous === undefined) delete process.env.VC_GATE_TEST_CONCURRENCY
+    else process.env.VC_GATE_TEST_CONCURRENCY = previous
+  })
+  delete process.env.VC_GATE_TEST_CONCURRENCY
+  assert.equal(testConcurrency(), 3)
   assert.equal(testConcurrency(undefined), 3)
+  assert.equal(testConcurrency(''), 3)
   assert.equal(testConcurrency('4'), 4)
   for (const value of ['0', '-1', '1.5', 'many']) assert.throws(() => testConcurrency(value), /positive integer/)
+
+  // Environment defaults and explicit arguments are separate inputs.
+  process.env.VC_GATE_TEST_CONCURRENCY = '1'
+  assert.equal(testConcurrency(), 1)
+  assert.equal(testConcurrency(undefined), 1)
+  assert.equal(testConcurrency('4'), 4)
+  process.env.VC_GATE_TEST_CONCURRENCY = 'many'
+  assert.throws(() => testConcurrency(), /positive integer/)
+  assert.equal(testConcurrency('4'), 4)
 })
 
 test('full gate creates one process per test-bearing workspace without changing local npm test', () => {
@@ -200,6 +217,7 @@ test('full gate creates one process per test-bearing workspace without changing 
     '@voicechat/shared',
     '@voicechat/knowledge',
     '@sislexa/component-runtime',
+    '@sislexa/file-storage',
     '@voicechat/automation-runner',
     '@voicechat/server'
   ])

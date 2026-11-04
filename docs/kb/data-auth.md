@@ -1,8 +1,15 @@
 ---
+updated: 2026-11-04
+checked: 26f657327
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-10-30
-checked: 91f51154
 areas:
+  - packages/component-runtime/src/index.ts
+  - packages/component-runtime/src/runtime.test.ts
+  - packages/component-runtime/src/sharedServices.ts
+  - apps/server/src/auth/delegation.ts
+  - apps/server/src/makeBridge/proxy.ts
+  - apps/server/src/routes/internal.ts
+  - apps/server/src/routes/applicationTickets.delegation.test.ts
   - apps/server/src/billing
   - apps/billing
   - packages/shared/src/llmAccounting.ts
@@ -12,14 +19,385 @@ areas:
   - packages/identity-client
   - packages/identity-contracts
   - apps/server/src/uploads.ts
+  - apps/server/src/uploadBody.ts
+  - packages/file-storage/src/service.ts
   - apps/server/src/server.ts
   - apps/server/src/routes/rest.abuse.test.ts
   - apps/server/src/routes/admin.ts
   - packages/shared/src/types.ts
   - packages/shared/src/admin.ts
+  - packages/shared/src/deploymentProfiles.ts
+  - packages/component-runtime/src/sharedServices.ts
+  - packages/component-runtime/src/sharedServices.test.ts
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## File storage metadata and quotas
+
+### Identity OAuth mode
+
+Core checks explicit Bearer credentials through the existing Identity authentication
+port before consulting auth-client browser sessions. This preserves API session
+revocation, blocked-user checks, tenant selection and read-only restrictions in
+both embedded and managed Identity deployments. Bearer requests do not require
+CSRF and a rejected bearer never falls back to a browser cookie. The Identity
+route host used for this verification never listens or exposes legacy login
+routes. OAuth cookies and their Storage token exchange remain owned by auth-client.
+
+The OAuth exchange test (`apps/server/src/auth/oauth.test.ts`) indexes its
+subject-token fixtures by the complete signed JWT. Keep the fixture expiration
+fixed across issuance: recalculating `exp` when the code callback runs can change
+the JWT at a second boundary, miss the lookup and produce an exchanged token
+without `sub`, which the pinned client rejects and Core reports as Storage 503.
+The regression advances `Date.now` between fixture creation and the callback,
+then requires five authenticated cookie/CSRF Storage probes to return 200.
+
+Set `AUTH_MODE=identity`, `AUTH_URL`, `AUTH_CLIENT_ID=core`, `PUBLIC_URL`,
+optional `AUTH_CLIENT_SECRET_FILE`, and `STORAGE_URL` to opt into the Core
+adapter for pinned `@sislexa/auth-client`. `AUTH_MODE=legacy` retains the old
+login. With no explicit mode, `AUTH_URL` selects Identity. The owner client
+implements discovery, PKCE S256 top-level `/auth/login` and `/auth/callback`,
+JWT/JWKS validation, refresh and audience-bound token exchange. `/auth/session`
+returns the CSRF token; cookie mutations require `x-csrf-token`. Tokens stay
+in the process-local server session store, so a Core restart requires login.
+HTTPS is required for the Secure HttpOnly cookie. `/auth/logout` deletes the
+local session, attempts refresh-token revocation at `/oauth/revoke`, then
+redirects to Identity logout. Core resolves the verified subject through its
+Identity account port and retains blocked-user and tenant checks.
+
+**Production rollout (A7).** OAuth runs in the existing Identity component
+service from `deploy/compose.identity.yml` (image `ghcr.io/sislex/identity` 1.6.0,
+shared Postgres, so accounts and passwords stay unchanged). Do not add a second
+`identity` service: Compose merges same-named services, and the overlay's
+component config must stay intact. Empty `AUTH_URL` keeps OAuth off. Caddy serves
+the issuer on its own origin `https://<host>:8443` (the issuer must be an origin
+with path `/`). Core reaches it over the public address and trusts Caddy's local CA
+through `NODE_EXTRA_CA_CERTS` (`vc-caddy` is mounted read-only at `/caddy`).
+`docker compose exec -u node voicechat node scripts/prod/identity-oauth-init.mjs https://<host>`
+creates `/data/identity/oauth` once (ES256 key, `core` client with the four scopes,
+client secret; never overwrites). Identity reads it from `vc-data` mounted
+read-only at `/vc-data`. The script prints the `.env` lines: `AUTH_URL`,
+`VC_PUBLIC_URL`, `AUTH_CLIENT_SECRET_FILE`, `VC_NODE_EXTRA_CA_CERTS` and
+`SISLEXA_IDENTITY_IMAGE` (production pins the image through this variable). Load
+`/etc/voicechat/production.env` before `docker compose` so `COMPOSE_FILE` keeps the
+overlay chain, then recreate `identity caddy voicechat`. Port 8443 must be open.
+Rollback: remove `AUTH_URL` and recreate `voicechat` and `identity`.
+Core UI must include the identity-mode detection (SCU-45) before `AUTH_URL` is set.
+
+First production attempt (2026-11-03) findings. Caddy's `root.crt` in `vc-caddy`
+is root-only (0600), so copy it once into the shared volume for the `node` user:
+`docker cp voiceaichat-caddy-1:/data/caddy/pki/authorities/local/root.crt` to the
+host, then into `voicechat` at `/data/identity/oauth/caddy-root.crt` (owner
+`node`, 0644), and point `VC_NODE_EXTRA_CA_CERTS` there. ufw drops container
+traffic to the host's published 8443; allow it with
+`ufw allow from 172.16.0.0/12 to any port 8443 proto tcp`. Manual `docker compose`
+must include `/etc/voicechat/environment-overrides/current.yml`, the newest
+`/etc/voicechat/release-overrides/*.yml` and an identity image override, because
+`local-owner-images.yml` pins a local Identity image. With these, sign-in through
+Identity worked end to end, but `AUTH_URL` was rolled back: browser mutations got
+403 `invalid_csrf` (Core UI sends `x-vc-csrf`, the client expects `x-csrf-token`,
+SCU-51) and Bearer API tokens got 401 (SISL-855). Enable again only after both.
+
+`STORAGE_URL` selects remote storage. In Identity mode, chat uploads use Storage
+regardless of the legacy chat backend setting. Attachment reads, `/api/storage`,
+and admin usage use the current user's token exchanged for `aud=storage`, with
+no service-token fallback or asserted user headers. WebSocket message callbacks
+retain their connection context and reauthenticate before commands. Separate
+admin deployments receive the verified Core access token and perform their own
+validation and exchange. `GET /api/admin/storage` returns the caller's usage and
+`storageAdminUrl`; user rows link to Storage rather than misreporting the admin's
+usage as every user's usage. Quota edits return 409 in this mode; Storage owns
+quota administration. Legacy deployments retain the existing quota API.
+
+Commissioning remains an operator step: register Core's exact callback/logout
+URLs at Identity, provide its secret file if required, configure Storage to
+accept exchanged tokens, ensure Identity subjects resolve through Core's account
+port, and update the separately owned UI to consume the login/session and admin
+link contracts before switching the deployment. Core does not provision local
+accounts from untrusted names or token role claims.
+
+In legacy remote mode (`VC_FILE_STORAGE_MODE=remote`) Core authenticates to the storage
+service with its service token and asserts the acting user and tenant in
+`x-sislexa-user`/`x-sislexa-tenant`; the service trusts these headers only with
+that credential. Core still performs its own session, CSRF and conversation checks
+before any storage call.
+
+Streaming `writeFile` calls in `packages/file-storage/src/service.ts` retain the
+metadata transaction across upload completion. Each chunk updates the byte count
+and checks the storage size limit and replacement-aware owner quota. Source
+errors are preserved through node transport error mapping. Metadata is written
+only after the stream finishes; the multipart source also verifies truncation and
+absence of a second part before it can end successfully. A failure rolls back the
+transaction, attempts cleanup of the new blob and preserves the previous entry;
+post-commit cleanup removes the old blob as before. Chat admission separately caps
+decoded file bytes at 32 MiB in `uploadBody.ts`.
+The existing user/tenant conversation checks, machine access checks, cookie CSRF
+and upload rate limits still apply to all three request forms.
+Direct URL issuance checks the live space ACL. HMAC capabilities bind blob ID,
+method, byte count, MIME and expiry, and for writes the upload reservation ID.
+They expire within five minutes. Issued read capabilities remain usable until
+expiry even after share revocation; new issuance and write commit check live ACLs.
+Keep URLs out of logs and treat them as credentials. Direct responses use
+`Cache-Control: private, no-store`.
+
+Direct writes reuse durable `storage_uploads` reservations and reserve the full
+declared size against owner quota, conservatively including replacements and
+other pending uploads. The pending write binds the current revision (or absence);
+commit refuses intervening replacement. Parts stay invisible until node assembly
+and SQL metadata commit succeed. Expiry and deleted-space cleanup use the existing
+startup/minute sweeps; offline-node reservations remain charged until cleanup.
+
+File cache validation performs the same read-grant check as a download, but a
+304 stops after metadata and does not contact the storage node. A subsequent
+stream open rechecks the read grant and entry, so share revocation cannot be
+bypassed between validation and transfer. Range bounds are checked against the
+authorized entry size before node access; unauthorized and missing entries keep
+their existing error behavior.
+
+Batch preflight checks the owner's current usage plus upload reservations and
+the conservative sum of all write/copy sizes before any mutation. It does not
+credit deletions or replacements because those operations may fail independently.
+It follows possible write/copy/move sizes in request order, so copying a file
+created earlier in the batch is charged too. This can reject a batch whose final
+net size would fit; split such requests when necessary. Each operation rechecks
+ACL, revision and quota in its own serialized metadata transaction, including
+concurrent changes after preflight. Copy creates a new blob and publishes its
+entry only after node success; rollback cleans the new blob and replacement
+cleanup happens after commit.
+
+Upload sessions are persisted in `storage_uploads` through both metadata
+adapters. Creation reserves the full declared size against the space owner's
+quota, including other sessions and ordinary writes; replacements conservatively
+reserve their entire size until completion. The same serialized metadata
+transaction checks revision conditions and publishes the final entry.
+Parts never appear in file listings. Abort removes node parts and any unpublished
+composed blob before releasing the quota reservation. Expiry cleanup retries
+offline nodes without releasing their reservations prematurely.
+Compressed single-PUT and part bodies are charged by decompressed size;
+file PUTs enforce the configured file limit while streaming, rolling back on
+overflow. Parts retain their 64 MiB decoded bound before node mutation.
+
+Streaming writes keep the metadata transaction open across upload: ACL, revision,
+owner quota and placement decisions remain serialized. Known lengths are checked
+before sending bytes; unknown lengths are counted against the file limit, owner
+quota (subtracting the replaced file) and selected node capacity. Metadata stores
+the measured size only after a complete upload. Errors roll back metadata and
+clean the new blob; the previous blob remains until successful commit. Nodes
+stream into exclusive temporary files and unlink incomplete uploads.
+
+`fileStorage/metadata.ts` implements the library's `StorageMetadataStore`
+over Core's public SQL adapter. The additive schema creates `storage_spaces`,
+`storage_space_refs`, `storage_entries`, `storage_shares`, `storage_acceptances` and a singleton
+`storage_lock` row on both SQLite and Postgres. Entry/share/acceptance foreign
+keys cascade on deletion. The storage domain owns these tables.
+
+Every metadata transaction first updates the lock row, before reading any
+permissions, revision or owner usage. This serializes coordinators across SQL
+connections, rolls back failed callbacks and never retries node I/O.
+`VoiceChatDb.storageMetadata()` waits for migrations and enters the reentrant
+domain lane before SQL. Nested Identity quota reads reuse that lane, avoiding
+a deadlock with unrelated repositories waiting for the storage transaction. The common metadata contract runs against memory and SQL;
+`VC_TEST_DB_URL` selects an isolated Postgres schema for the SQL tests.
+
+Quota lookup calls `db.identity.getUserStorageQuota(userId)` when that optional
+Identity method exists, then normalizes through `storageQuotaBytes()` with
+`VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` (100 MiB by default). Collaborator writes
+charge the space owner. Direct shares and accepted links are checked on every
+operation; revoking a link deletes its acceptances immediately.
+
+Thumbnail blobs are derived from `(source blobId, size, format)` and have no
+`storage_entries` row, so they do not affect owner usage or file count. Replacing
+a file changes its blob ID and therefore invalidates the cache key; replacement,
+file deletion and space deletion remove the source plus all supported derived
+variants. Thumbnail generation accepts at most 32 MiB of source bytes even
+though ordinary files may be larger.
+
+### Idempotent chat and Make spaces (SISL-808)
+
+The file-storage coordinator's public `createSpace` delegates to
+`StorageMetadataTransaction.createSpace`; application code must not implement a
+separate find-then-`putSpace` sequence. For `chat` and `make-project`, the
+identity is `(ownerId, kind, ref)` and a repeated or parallel call returns the
+existing canonical space. Omitted and null refs are equivalent, while an empty
+string is distinct; kind and owner remain separate scopes. Personal spaces are
+always new. Existing titles, IDs, timestamps, entries and shares are preserved.
+The chat upload path calls this same coordinator method to ensure its chat space.
+
+SQL stores canonical identities in `storage_space_refs`, with the unique
+`storage_space_refs_unique` index on `(owner_id, kind, ref_key)` on SQLite and
+Postgres. JSON encoding of ref avoids NULL uniqueness differences. An insert
+uses `ON CONFLICT DO NOTHING`, then reads the winning space and removes its
+unused candidate if another identity won. The shared transaction lock still
+serializes coordinators. Low-level `putSpace` is for metadata updates/imports;
+application creation must use `createSpace`.
+
+No duplicate merge runs at startup. On first create, an existing group is
+adopted by oldest creation time, then ID. All legacy spaces remain available
+through `listSpaces`, but the registered canonical identity is returned first;
+without one, creation time then ID is the fallback. The memory store persists
+the same identity choice. The identity foreign key cascades when its space is
+deleted; merge cleanup rebinds it to the survivor in the same transaction.
+
+Owner cleanup is exposed by `POST /api/storage/spaces/:id/merge-duplicates`.
+Send `{}` to preview and `{"previewToken":"<returned token>"}` to apply;
+`dryRun:true` always previews, while apply without the matching current token
+returns 409. The survivor has the most files (ties use oldest creation time,
+then ID). For each repeated path, the entry with greatest `updatedAt` wins,
+then revision, survivor preference and space ID. Older versions are preserved
+under `.duplicates/<sourceSpaceId>/`; numeric subdirectories avoid occupied
+archive paths, and overlong source paths use a SHA-256 archive filename. Preview
+moves and conflicts expose these destinations through `toPath`.
+
+Apply rechecks the complete group snapshot inside the metadata transaction.
+Changed spaces, entries or shares invalidate the token without mutation. Entry
+metadata is moved without copying or deleting blobs and retains blob identity,
+size and revision. Duplicate spaces and their shares/acceptances are removed,
+the survivor's canonical identity is rebound, and owner usage includes all
+preserved versions. The action is owner-only; admin status alone does not grant
+access. Saved attachment references to removed IDs are not rewritten and must
+be reviewed before apply. Contract and HTTP tests cover conflicting versions,
+archive collisions, maximum-length paths and canonical ordering for memory and
+Core SQL stores.
+
+For manual cleanup: back up metadata and node blobs, inventory duplicates by owner,
+kind and ref, preview the server plan, and review files, archive destinations,
+revoked shares and saved attachment references before applying its token. Do not
+bulk-delete duplicate rows: space deletion cascades metadata and old attachments
+use the original space ID. Verify canonical file reads and owner usage afterward.
+No startup or production data cleanup runs automatically.
+
+### Make service storage authorization
+
+An enabled local Make with both `VC_APPLICATION_MAKE_TOKEN` and
+`VC_APPLICATION_MAKE_SERVICE_TOKEN` participates in ticket delegation, as does
+external Make. The Make proxy replaces browser credentials with the trusted
+Core ID, Core-to-Make token and a five-minute delegation of `req.user`.
+Client-supplied Core IDs, MCP tokens, cookies and delegation headers are removed.
+
+Shared Make calls `/internal/whoami` with its Make-to-Core credential and the
+delegation. Core ignores forwarded identity headers on this path and resolves
+the current user through the outer authenticated delegation. Missing or revoked
+delegations cannot authorize a user.
+
+Make ticket delegations may access `/api/storage/*`; ordinary Identity chat
+delegations still cannot. The credential must belong to Make, no cookie may be
+mixed in, and the live account/tenant must match. Storage resolves space ACLs for
+that user on every request, including reads, writes and shares. Tests in
+`routes/applicationTickets.delegation.test.ts` cover the cookie proxy, delegated
+whoami, file creation/readback, wrong credentials and revocation.
+
+For owner MCP calls without a browser session, Storage has a separate admission
+path: Make's service bearer accompanies `x-sislexa-mcp-token`, not a ticket
+delegation. Before SM-47, the Storage authenticator consumed ticket delegations
+but not the MCP authority accepted by shared internal RPCs. See the
+[SM-47 checks](#shared-service-rpc-and-mcp-deployment-profiles-b17) below; a task
+source token never acquires user-wide Storage access through this path.
+
+For the lookup “How does MCP authorize Core Storage without a browser session?”,
+the two credentials have separate roles: the service bearer identifies Make,
+while the signed MCP token identifies the conversation owner. Core resolves the
+current Identity account and tenant before Storage applies that user's ACLs.
+An MCP key or a bare service bearer is not a substitute for this pair. Invalid
+MCP authority returns `403 delegation_denied` on Storage; do not confuse that
+response with the internal RPC verifier's `401` contract.
+
+At reviewed Core SHA `6c74a78c`, the diff against `origin/dev` contains only the
+Core admission change and its direct Storage regression outside documentation.
+The test uses embedded Core Storage and fake nodes; it does not establish
+`VC_MAKE_FILE_STORAGE=service` end-to-end behavior. Make's installation of
+request authority before reading a stand binding (`.stand.json`) must be verified
+in the Make owner source and consumer test; `apps/make` is absent here.
+
+#### data-storage lookup and repository ownership
+
+This Core checkout has no `docs/kb/data-storage.md`. The service-backend
+authorization entry is this section; Make API/UI and project storage belong to
+the `make` module listed in [the ownership map](modules.md). Consult
+`make:README.md` for owner documentation rather than assuming a Core-local
+data-storage topic exists.
+
+#### Browser cookie, shared registry and managed transport
+
+The browser cookie is verified by Core before proxying. The proxy in
+`apps/server/src/server.ts` supplies `x-sislexa-core-id`,
+`x-sislexa-delegation` and the Core-to-Make bearer. The delegation lasts five
+minutes and is issued with `sid: null`; do not describe it as bound to the
+browser session's SID. The return call uses the distinct Make-to-Core credential
+with the delegation. `TrustedCoreRegistry` in
+`packages/component-runtime/src/sharedServices.ts` resolves the Core URL and
+credential from the selected `coreId`, validates the target origin and refuses
+unknown cores. Its `CoreDelegationClient` attaches the session's delegation and,
+when present, tenant. Core's shared `/internal/whoami` authenticates the outer
+headers, so identity headers embedded in the forwarded body cannot override the
+delegated user.
+
+Removing an explicit internal bearer from a cookie-based storage client is
+insufficient if its underlying managed transport is still `fetchImpl`.
+`ComponentRuntime.dependency()` in
+`packages/component-runtime/src/index.ts` overwrites Authorization with the
+component grant on that transport. Its `publicFetchImpl` performs the same
+dependency verification but preserves supplied user credentials without adding
+the component bearer. User-authenticated Storage API calls need that preserving
+transport; shared ticket calls must preserve the intended Make credential and
+delegation together. This is not permission to mix a cookie into a ticket call:
+Core explicitly rejects that combination. Core's Make browser proxy already
+uses `managedMake.publicFetchImpl`. Credential preservation and redirect behavior
+are covered by `packages/component-runtime/src/runtime.test.ts`.
+
+#### Verification boundary
+
+The Core integration test
+`apps/server/src/routes/applicationTickets.delegation.test.ts` intercepts the
+outbound Make request and then exercises delegated whoami and Storage API calls
+directly. With two fake storage nodes it creates a `make-project` space, writes
+and reads a file, lists that space through the browser cookie, and rejects
+another user's access, a wrong application credential, mixed cookie/delegation,
+missing or invalid grants and revoked delegations. It does not run two Make
+servers or open the Core storage UI.
+
+At merge SHA `49b74141`, the installed `@sislexa/make` source still has the
+shared guard rejecting requests without a shared session, MCP context or
+single-Core fallback in `apps/make/src/standalone/sharedServer.ts`; its
+`standalone/server.ts` constructs the local Make module. This checkout therefore
+proves the Core-side authorization contract and transport behavior, not inclusion
+of `fix/storage-cookie-session`, the updated Make service-backend wiring, or
+successful two-instance stand acceptance. Those require the matching Make owner
+revision and its evidence.
+
+Core admin quota management is exposed by `PATCH /api/admin/users/:name`
+with `{ storageQuotaBytes: number | null }`. Values must be non-negative safe
+integers; zero disallows additional bytes, and null restores the deployment
+default. Quota changes are separate from role/LLM-limit changes (mixed bodies
+return 400). The route uses the existing admin guard, checks that the user exists,
+and calls Identity's `setUserStorageQuota`. The pinned Identity 1.5.2 archive
+does not provide FS-3 methods: the setter returns 503 when absent instead of
+reporting a successful no-op. Deployments need an FS-3-capable Identity to persist
+quota overrides.
+
+`AdminUserInfo.storageQuotaBytes` is the nullable override from Identity's user
+row, so listing users does not call a new RPC method on older Identity releases.
+When file storage is enabled, `storageUsage` contains the storage service's
+`StorageUsage`, including current owner bytes/file count and effective
+`quotaBytes` after the deployment fallback. Disabled storage omits usage rather
+than reporting zero. Both embedded and standalone admin servers pass the storage
+service to the admin routes. Shared IPC declares `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result; Core UI wiring
+is a separate consumer change after contract publication.
+Route tests in `rest.auth.test.ts` exercise the Identity port, persisted storage
+metadata usage, validation, null reset, authorization, missing users and the
+pre-FS-3 compatibility response.
+
+## Shared-service ticket redemption diagnostics
+
+`TrustedCoreRegistry.redeem` maps a successful HTTP response that fails
+`isEnterTicketRedeemResponse` validation to `ticket_invalid`. Besides requiring a
+live session and a valid `sxd_` delegation token, the validator requires the
+delegation expiry to be no later than the enclosing session expiry. A fixture
+that calculates these two expiries with separate `Date.now()` calls can therefore
+fail intermittently when the second clock read advances. Redeem fixtures should
+derive both fields from one timestamp, as in
+`packages/component-runtime/src/sharedServices.test.ts`.
 
 ## Project integration tokens
 
@@ -601,7 +979,7 @@ Postgres идёт для всей базы сразу, одним кодом р�
 `LOGIN_LOCK_*`, `DbDeps`…) по-прежнему импортируются из `db/database.js` через
 реэкспорт. Зачем так и что дальше — `docs/plans/db-repositories.md`.
 
-Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = \`…\``), поэтому в
+Вся схема — один шаблонный литерал (`export const SCHEMA_SQL = `…``), поэтому в
 SQL-комментариях внутри него **нельзя обратных кавычек**: они закрывают литерал, и
 файл перестаёт разбираться (typecheck падает не в комментарии, а где-то ниже — искать
 приходится глазами). Имена таблиц и колонок в комментариях пишутся без кавычек.
@@ -1056,6 +1434,17 @@ Wrong application/core bindings do not consume them. Expiry returns `ticket_inva
 a replay before expiry returns `ticket_used`. Restart invalidates outstanding tickets;
 route redemption to the issuing Core process when running multiple replicas.
 
+Browser navigation uses `GET /applications/:id/open?return=<relative-path>`. For
+an enabled external application, a request without a Core session redirects to
+`/login/` with `next` pointing back to that exact entry URL. An authenticated
+request issues the same one-use ticket and redirects to the application's
+`/_sislexa/enter` endpoint with `core`, `ticket`, and a validated `return`. Absolute
+URLs, scheme/host forms, backslashes, and paths containing `//` are replaced with
+`/`. Unknown, disabled, local, or uncredentialed applications return 404. The
+deployment manifest exposes the relative `openUrl` for enabled external
+applications; clients do not need to construct this route. Ticket-bearing redirect
+URLs and their query strings must never be logged.
+
 Each application has its own server-side `VC_APPLICATION_<ID>_TOKEN`, with uppercase
 ids and hyphens replaced by underscores (for example `VC_APPLICATION_WEB_READER_TOKEN`).
 `POST /internal/v1/tickets/redeem` accepts `{ ticket, application }`, authenticates
@@ -1100,6 +1489,33 @@ shared service do not: they keep that application's MCP tools (B21) and run with
 (`preview_text_only_unavailable`, the connection closes) and a shared service needs its tools.
 
 ### Shared-service RPC and MCP (deployment-profiles B17)
+
+**Make MCP storage (SM-47).** `/api/storage/*` also accepts an unscoped
+`x-sislexa-mcp-token` together with Make's service credential. Shared calls use
+the configured application credential, MCP secret and Core ID. Legacy/managed
+calls use the internal credential or a `make.core` component grant plus a token
+signed with `VC_MCP_SECRET`, with `coreId: legacy`; Make creates that five-minute
+authority only after checking the MCP key and conversation owner. Core verifies
+signature, expiry, application, owner and the current unblocked account/tenant.
+Cookies or ticket delegation mixed with MCP authority are rejected. Task-source
+scopes are rejected rather than promoted to user-wide Storage access. The paired
+Make change preserves this authority in `storageFetch`; browser sessions still
+omit the service bearer. Integration coverage lives in
+`apps/server/src/routes/applicationTickets.delegation.test.ts`.
+
+The implementation is `authenticateRaw` in `apps/server/src/server.ts`. In
+managed mode, the non-shared branch requires a component grant for `make.core`;
+the internal-token fallback is used only without a component runtime. Core
+rejects users requiring a password change as well as blocked or missing users,
+missing conversations/account access, and mismatched conversation or explicit
+`x-sislexa-tenant-id` tenants. It rebuilds the account context from current
+Identity access rather than trusting a role in the token. Admission failures
+return `403 delegation_denied`, including invalid or expired MCP tokens; Storage
+ACL checks still follow successful authentication. The regression exercises
+legacy/shared Storage GET and PUT directly, including foreign owners, credentials,
+Core/application IDs, mixed authority and task scopes. It does not execute
+`make_read_file` or read `.stand.json` through a running Make process; that
+consumer regression belongs to the separate Make owner repository.
 
 **Service→Core.** On its own internal RPC paths an external application may present
 `authorization: Bearer <VC_APPLICATION_<ID>_TOKEN>` instead of `VC_INTERNAL_TOKEN` or a

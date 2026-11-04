@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-10-29
-checked: 2b9bba5e
+updated: 2026-11-01
+checked: 62e7641be
 areas:
   - apps/server/src/browser
   - apps/server/src/playwrightReaderBridge

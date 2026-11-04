@@ -23,6 +23,35 @@ function makeRegistry(): AgentRegistry {
 }
 
 describe('AgentRegistry', () => {
+  it('contains rejected async change listeners without skipping other subscribers', async () => {
+    const registry = makeRegistry()
+    const error = Object.assign(new Error('Dependency unavailable'), { statusCode: 503 })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const healthy = vi.fn()
+    registry.onChange(async () => { throw error })
+    registry.onChange(healthy)
+    try {
+      registry.register('m1', 'M1', fakeSocket())
+      await new Promise(resolve => setImmediate(resolve))
+      expect(healthy).toHaveBeenCalledTimes(1)
+      expect(log).toHaveBeenCalledWith('[agents] change listener failed:', error)
+      registry.unregister('m1')
+      await new Promise(resolve => setImmediate(resolve))
+      expect(healthy).toHaveBeenCalledTimes(2)
+      expect(log).toHaveBeenCalledTimes(2)
+    } finally { log.mockRestore() }
+  })
+
+  it('correlates operator switch results with the selected agent',async()=>{
+    const registry=makeRegistry(),socket=fakeSocket()
+    registry.register('m1','M1',socket)
+    const result=registry.switchOperator('m1',{serverUrl:'wss://target/agent',token:'new-token',timeoutMs:1000})
+    expect(socket.sent[0]).toMatchObject({t:'agent.switchOperator',requestId:'exec-1'})
+    await registry.handleMessage('other',{t:'agent.switchOperatorResult',requestId:'exec-1',status:'failed'})
+    await registry.handleMessage('m1',{t:'agent.switchOperatorResult',requestId:'exec-1',status:'switched'})
+    await expect(result).resolves.toBe('switched')
+  })
+
   it('exec: шлёт exec.start, копит chunks и резолвится по done', async () => {
     const reg = makeRegistry()
     const sock = fakeSocket()

@@ -150,7 +150,7 @@ function staleness(topic) {
     if (commits.length === 0) return { stale: false, why: '' }
     return {
       stale: true,
-      why: `${commits.length} коммит(ов) в areas после сверки: ${commits[0]}${commits.length > 1 ? ' …' : ''}`
+      why: `${commits.length} коммит(ов) в areas после проверенного SHA: ${commits[0]}${commits.length > 1 ? ' …' : ''}`
     }
   }
   const code = lastCommitDate(topic.areas)

@@ -1,7 +1,7 @@
 ---
+updated: 2026-11-02
+checked: 79d261e89
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-30
-checked: 78f28530
 areas:
   - packages/shared/src
 ---
@@ -15,6 +15,80 @@ areas:
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## Admin storage quota fields
+
+`AdminUserInfo` adds optional `storageQuotaBytes: number | null` and
+`storageUsage: StorageUsage`. The former is the Identity override; the latter
+contains current usage and effective quota when storage is enabled.
+`IpcInvokeMap` and `IPC_CHANNELS` both declare `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
+See [the admin API](protocol.md#admin-storage-quota-contract).
+
+## fileStorage contract
+
+`ChatUploadMetadata`, `ChatUploadJsonRequest`, `CHAT_UPLOAD_METADATA_HEADERS`
+and `MAX_CHAT_UPLOAD_BYTES` extend `src/fileStorage.ts` for chat upload request
+forms. Chat attachments retain a 32 MiB decoded limit, distinct from the general
+storage service's configurable file limit (1 GiB by default). `REST.uploads` documents JSON/base64, raw
+bytes and one multipart file; `UploadInfo` is unchanged. Query/header precedence,
+MIME inference and raw JSON disambiguation are described in
+[the upload protocol](protocol.md#core-file-storage-and-chat-settings).
+
+`MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
+`POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and
+`{"previewToken":"<returned token>"}` to apply; explicit `dryRun:true` always
+previews. Applying without a matching token returns 409.
+`MergeStorageSpacesResult` exposes `keepSpaceId`, `deleteSpaceIds`, `moves`,
+`conflicts`, `revokedShareIds`, `dryRun` and `previewToken`. Move/conflict items
+identify the source space and path; optional `toPath` identifies the archive
+destination of an older conflicting version in the survivor. Deleted spaces'
+shares are revoked, not transferred. Resolution and canonical lookup behavior
+belong to the coordinator and metadata adapters; see
+[Core storage](server-internals.md#core-file-storage).
+
+`src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
+entries, revisions, shares, owner usage, node health, error codes and both
+`STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
+the default maximum file size is 1 GiB, configurable by hosts with
+`storageMaxFileBytes` and `VC_FILE_STORAGE_MAX_FILE_BYTES`. Pure helpers normalize paths, resolve the
+strongest access, check replacement-aware quotas, sum online node capacity
+and select the online node with the most free space that can fit a file.
+
+`UpdateStorageSpaceRequest` contains `title: string` for
+`PATCH STORAGE_REST.space(spaceId)`. Core returns the updated `StorageSpace`.
+The coordinator validates a nonblank title and checks ownership in the metadata
+transaction; read/write grants do not authorize renaming. The request cannot
+change the owner, kind or conversation ref. Files and shares remain attached
+to the same space. See [Core storage routes](server-internals.md#core-file-storage)
+and [the coordinator](architecture.md#file-storage-service).
+
+`MessageAttachment` and `UploadInfo` have an optional `storage: StorageFileRef`
+(`spaceId`, `path`). For such an attachment the machine `path` is display-only
+and `agentId` is absent. Core installs the authenticated `STORAGE_REST` routes
+through `apps/server/src/fileStorage/routes.ts`; the service is enabled with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`). `Settings.chatFilesBackend`
+accepts `machine | storage`, defaults to `machine`, and is validated by
+`sanitizeSettingsPatch`, REST and settings persistence. See
+[server internals](server-internals.md) for the runtime and chat integration.
+The node/client/coordinator implementation is in `packages/file-storage`;
+see [architecture](architecture.md). The application catalog registers it as
+`file-storage`, with Shared and component-runtime build dependencies, node
+entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
+The contract does not declare lifecycle event names or payloads:
+`storage.file.created` and `storage.file.deleted` are neither protocol constants
+nor emitted strings in the current repository. Consumers use the documented REST
+surface rather than assume those event topics exist.
+
+## Contract release diagnostics
+
+`scripts/contracts-release.mjs` overrides an inherited
+`npm_config_loglevel=silent` with npm's global `--loglevel=error`; piping stderr
+alone cannot recover diagnostics npm has suppressed. Failed consumer reports
+include captured stdout and stderr. Its regression builds both sides of a peer
+conflict from local `file:` tarballs with an isolated empty cache in offline mode,
+asserts the ERESOLVE chain, and proves processing continues by installing the
+next consumer. Operational usage is in [Deploy](deploy.md#contract-pin-release).
 
 ## Current additive contracts
 

@@ -7,6 +7,13 @@ describe('deployment profiles', () => {
     const value = 'chat,make=https://make.example.org'
     expect(serializeApplications(parseApplications(value))).toBe(value)
     expect(parseApplications(value).find(a => a.id === 'projects')?.enabled).toBe(false)
+    expect(parseApplications('storage=https://storage.example.org').find(a => a.id === 'storage')).toMatchObject({
+      enabled: true, location: 'external', openUrl: '/applications/storage/open'
+    })
+  })
+  it('accepts plain HTTP only for loopback application URLs', () => {
+    expect(parseApplications('storage=http://127.0.0.1:28840').find(a => a.id === 'storage')).toMatchObject({ url: 'http://127.0.0.1:28840', location: 'external' })
+    expect(() => parseApplications('storage=http://storage.example.org')).toThrow()
   })
   it.each(['make,make', 'unknown', 'chat,', 'make=http://example.org', 'make=https://user:secret@example.org', 'make='])('rejects %s', value => expect(() => parseApplications(value)).toThrow())
   it.each(['a', '../core', 'UPPER', '-core', 'a'.repeat(64)])('rejects core %s', value => expect(() => validateCoreId(value)).toThrow())

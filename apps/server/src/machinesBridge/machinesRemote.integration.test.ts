@@ -3,7 +3,7 @@
 // машин. Проверяем цепочку целиком: регистрация агента через WebSocket-прокси, список машин через прокси
 // REST, команда через REST с журналом и кадром `machine.command` до WS-сессии ядра, PTY из сессии ядра —
 // RPC в процесс машин, вывод обратно по шине событий; внутренние пути без токена закрыты.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,14 +23,6 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
 const fakeLlm: LlmClient = { send: (_req, handlers) => { queueMicrotask(() => { void handlers.onDone('ок') }); return { cancel: () => {} } } }
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port)) })
-  })
-}
 
 let dataDir: string
 let db: VoiceChatDb
@@ -85,27 +77,26 @@ function collect(ws: WebSocket): ServerMessage[] {
 
 beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'vc-machines-remote-'))
-  const [corePort, machinesPort] = [await freePort(), await freePort()]
-  coreUrl = `http://127.0.0.1:${corePort}`
-  machinesUrl = `http://127.0.0.1:${machinesPort}`
   db = new VoiceChatDb(':memory:')
   await db.ready
   await db.identity.createUser('ann', 'password-1', 'developer')
   const created = await db.machines.createAgent('ann', 'Fake machine')
   agentId = created.id
+
   machines = await buildMachinesServer({
-    config: loadConfig({ PORT: String(machinesPort), VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_LONG_COMMAND_MS: '0', VC_AGENT_OFFLINE_GRACE_MS: '0' }),
-    coreUrl, db, version: 'test'
+    fetchImpl: deferredCoreFetch(() => coreUrl),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_LONG_COMMAND_MS: '0', VC_AGENT_OFFLINE_GRACE_MS: '0' }),
+    coreUrl: 'http://core.test', db, version: 'test'
   })
-  await machines.app.listen({ host: '127.0.0.1', port: machinesPort })
+  machinesUrl = await machines.app.listen({ host: '127.0.0.1', port: 0 })
   core = await buildServer({
     config: loadConfig({
-      PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_MACHINES_MODE: 'remote', VC_MACHINES_URL: machinesUrl, VC_INTERNAL_TOKEN: INTERNAL
     }),
     db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm
   })
-  await core.listen({ host: '127.0.0.1', port: corePort })
+  coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
   // Агент идёт в ядро — как через Caddy на публичный хост; ядро переправляет WebSocket в процесс машин.
   agent = await connectFakeAgent(coreUrl, created.token)
 }, 60_000)

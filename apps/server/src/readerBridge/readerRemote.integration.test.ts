@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 // превью идут через прокси ядра с его авторизацией и перепроверкой whoami у ридера; dev-сервер машины
 // открывается через мост машин ридера; MCP «browser» принимает подписанный токен хода из любого процесса;
 // действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии ядра; внутренние пути без токена закрыты.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -55,14 +55,6 @@ const MCP = 'mcp-secret'
 const fakeLlm: LlmClient = { send: (_req, handlers) => { queueMicrotask(() => { void handlers.onDone('ок') }); return { cancel: () => {} } } }
 const MCP_HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port)) })
-  })
-}
-
 let dataDir: string
 let db: VoiceChatDb
 let core: FastifyInstance
@@ -78,17 +70,16 @@ const json = { 'content-type': 'application/json' }
 
 beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'vc-reader-remote-'))
-  const [corePort, readerPort] = [await freePort(), await freePort()]
-  coreUrl = `http://127.0.0.1:${corePort}`
-  readerUrl = `http://127.0.0.1:${readerPort}`
   db = new VoiceChatDb(':memory:')
   await db.ready
   await db.identity.createUser('ann', 'password-1', 'developer')
   agentId = (await db.machines.createAgent('ann', 'Dev machine')).id
   conversationId = (await db.chat.createConversation('ann', 'Reader')).id
+  reader = await buildReaderServer({ fetchImpl: deferredCoreFetch(() => coreUrl), config: loadWebReaderConfig({ PORT: '0', VC_CORE_URL: 'http://core.test', VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_RELEASE_VERSION: 'test' }) })
+  readerUrl = await reader.app.listen({ host: '127.0.0.1', port: 0 })
   core = await buildServer({
     config: loadConfig({
-      PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_READER_MODE: 'remote', VC_READER_URL: readerUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP
     }),
     db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm, agentRegistry: (() => {
@@ -101,9 +92,7 @@ beforeAll(async () => {
       return registry
     })()
   })
-  await core.listen({ host: '127.0.0.1', port: corePort })
-  reader = await buildReaderServer({ config: loadWebReaderConfig({ PORT: String(readerPort), VC_CORE_URL: coreUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_RELEASE_VERSION: 'test' }) })
-  await reader.app.listen({ host: '127.0.0.1', port: readerPort })
+  coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
 }, 60_000)
 
 afterAll(async () => {

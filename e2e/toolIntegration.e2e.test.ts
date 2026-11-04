@@ -6,19 +6,20 @@ import { join, resolve } from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../apps/server/src/server.js'
-import { freePort } from './free-port'
+import { loopbackRelay } from './listening-server'
 import { previewOriginTarget } from '@sislexa/playwright-reader/browser-runner/security'
 import { loadConfig } from '../apps/server/src/config.js'
 import { buildBrowserRunner } from '@sislexa/playwright-reader/browser-runner/server'
 let app: FastifyInstance, runner: FastifyInstance, browser: Browser, page: Page, directory: string, base: string, token: string
+let relay: Awaited<ReturnType<typeof loopbackRelay>>
 const password = 'core-tool-integration-fixture'
 beforeAll(async () => {
   directory = await mkdtemp(join(tmpdir(), 'sislexa-tools-'))
-  const port = await freePort(); base = 'http://127.0.0.1:' + port
+  relay = await loopbackRelay(); base = relay.url
   runner = await buildBrowserRunner({ token: password, profilesRoot: join(directory, 'profiles'), previewOrigin: previewOriginTarget(base), idleMs: 0 })
   const runnerUrl = await runner.listen({ host: '127.0.0.1', port: 0 })
-  app = await buildServer({ config: loadConfig({ ...process.env, HOST: '127.0.0.1', PORT: String(port), VC_BROWSER_PREVIEW_BASE: base, VC_DB_URL: '', VC_BROWSER_RUNNER_URL: runnerUrl, VC_BROWSER_RUNNER_TOKEN: password, VC_DATA_DIR: directory, VC_ADMIN_PASSWORD: password, VC_WEB_DIR: resolve('node_modules/@sislexa/core-ui/web') }) })
-  await app.listen({ host: '127.0.0.1', port })
+  app = await buildServer({ config: loadConfig({ ...process.env, HOST: '127.0.0.1', PORT: '0', VC_BROWSER_PREVIEW_BASE: base, VC_DB_URL: '', VC_BROWSER_RUNNER_URL: runnerUrl, VC_BROWSER_RUNNER_TOKEN: password, VC_DATA_DIR: directory, VC_ADMIN_PASSWORD: password, VC_WEB_DIR: resolve('node_modules/@sislexa/core-ui/web') }) })
+  relay.forwardTo(await app.listen({ host: '127.0.0.1', port: 0 }))
   const response = await fetch(base + '/api/session/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'admin', password }) })
   expect(response.ok).toBe(true); token = (await response.json()).token
   const settings = await fetch(base + '/api/settings', { method: 'PUT', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ onboarded: true }) })
@@ -26,7 +27,7 @@ beforeAll(async () => {
   browser = await chromium.launch(); page = await browser.newPage()
   await page.addInitScript(token => { localStorage.setItem('vc.session.token', token); localStorage.setItem('vc:shell:admin:tour', 'true') }, token)
 })
-afterAll(async () => { await browser?.close(); await runner?.close(); await app?.close(); if (directory) await rm(directory, { recursive: true, force: true }) })
+afterAll(async () => { await browser?.close(); await relay?.close(); await runner?.close(); await app?.close(); if (directory) await rm(directory, { recursive: true, force: true }) })
 it.each([
   { kind: 'make', route: 'make', panel: '[data-testid="make-pane"]' },
   { kind: 'images', route: 'images', panel: '.image-studio' },

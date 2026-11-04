@@ -11,7 +11,9 @@ import { ghVendorPublisher, publishVendorArchives, vendorRef } from './vendor-st
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const write = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + '\n')
 function run(command, args, cwd) {
-  const result = spawnSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+  // npm run can inherit loglevel=silent; npm must emit errors for consumer reports.
+  if (command === 'npm') args = ['--loglevel=error', ...args]
+  const result = spawnSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 32 * 1024 * 1024 })
   if (result.error || result.status !== 0)
     throw Error(`${command} ${args.join(' ')}: ${result.error?.message ?? `exit ${result.status}`}\n${result.stdout ?? ''}${result.stderr ?? ''}`)
   return result.stdout

@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url'
  * правке фронта, потому что путь не распознавался.
  */
 export const PACKAGES = [
+  { id: 'file-storage', path: 'packages/file-storage', workspace: '@sislexa/file-storage', dependsOn: ['shared', 'component-runtime'] },
   { id: 'component-runtime', path: 'packages/component-runtime', workspace: '@sislexa/component-runtime', dependsOn: ['shared'] },
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared', dependsOn: [] },
   { id: 'knowledge', path: 'packages/knowledge', workspace: '@voicechat/knowledge', dependsOn: ['shared'] },

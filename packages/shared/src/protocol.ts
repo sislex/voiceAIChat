@@ -337,6 +337,7 @@ export const REST = {
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   messageServiceData: (conversationId: string, messageId: string) =>
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/service-data`,
+  /** JSON base64, raw bytes or one multipart file; see ChatUploadMetadata in fileStorage.ts. Returns UploadInfo; auth/CSRF required. */
   uploads: '/api/uploads',
   /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
   imageRetouch: '/api/images/retouch',
@@ -431,6 +432,7 @@ export const REST = {
   cxResume: '/api/cx/resume',
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
+  adminStorage: '/api/admin/storage',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
   /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
   adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,
@@ -741,6 +743,10 @@ export interface UploadInfo {
   mimeType: string
   size: number
   agentId?: string
+  /** Set when the file was stored in the storage service instead of a machine. */
+  storage?: import('./fileStorage').StorageFileRef
+  /** Storage-backed image has a generated-on-demand preview endpoint. */
+  thumbnailAvailable?: boolean
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */

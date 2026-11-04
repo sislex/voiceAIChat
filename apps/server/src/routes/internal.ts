@@ -92,7 +92,7 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
     const sharedCallers = new WeakMap<object, SharedServiceCaller>()
     scope.addHook('onRequest', async (req, reply) => {
       const path = req.url.split('?')[0]
-      const shared = deps.sharedServices?.authenticate(path, req.headers)
+      const shared = deps.sharedServices?.authenticate(path === INTERNAL_WHOAMI_PATH ? INTERNAL_MAKE_CORE_PATH : path, req.headers)
       if (shared) {
         if ('error' in shared) return reply.code(shared.status).send({ error: shared.error })
         sharedCallers.set(req, shared.caller)
@@ -112,6 +112,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
     scope.addHook('preHandler', async (req, reply) => {
       const caller = sharedCallers.get(req)
       if (!caller) return
+      if (req.url.split('?')[0] === INTERNAL_WHOAMI_PATH) {
+        if (!caller.userId) return reply.code(401).send({ error: 'delegation_required' })
+        return
+      }
       const verdict = authorizeSharedServiceRpc(req.url.split('?')[0]!, req.body, caller)
       if (!verdict.ok) return reply.code(verdict.status).send({ error: verdict.error })
       req.body = verdict.body
@@ -158,6 +162,10 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
     // Аутентификация пересланного запроса: тот же код, что в preHandler `/api/*`, по методу, пути и заголовкам.
     scope.post<{ Body: WhoamiRequest }>(INTERNAL_WHOAMI_PATH, async (req): Promise<WhoamiResponse | { ok: true; principal: IntegrationPrincipal }> => {
       const forwarded = req.body
+      if (sharedCallers.has(req)) {
+        // Resolve the live user from the authenticated application's outer delegation.
+        return deps.authenticate({ method: forwarded.method, url: forwarded.url, headers: req.headers as WhoamiRequest['headers'] })
+      }
       if (integrationBearer(forwarded?.headers?.authorization)) {
         const principal = await deps.identityCore?.projects.resolveIntegrationToken(forwarded.headers.authorization)
         return principal ? { ok: true, principal } : { ok: false, status: 401, error: 'unauthorized' }

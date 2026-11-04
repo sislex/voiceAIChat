@@ -1,11 +1,12 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-10-30
-checked: 78f28530
+updated: 2026-11-04
+checked: 26f657327
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
   - packages/shared/src/protocol.ts
+  - packages/shared/src/fileStorage.ts
   - packages/shared/src/threadCost.ts
   - packages/shared/src/chatContract.ts
   - packages/shared/src/index.ts
@@ -24,13 +25,171 @@ areas:
 
 # Контракт клиент↔сервер (REST, WS, мосты)
 
+## Admin storage quota contract
+
+`PATCH /api/admin/users/:name` accepts a separate `{ storageQuotaBytes }`
+update: a non-negative safe integer or `null` to restore the deployment default.
+The admin guard applies to reads and writes. Invalid or mixed role/LLM-limit
+updates return 400; missing users return 404; an Identity without
+`setUserStorageQuota` returns 503. The handler calls that Identity setter.
+`AdminUserInfo` exposes the nullable override and optional `storageUsage`
+(owner bytes, file count and effective quota). Shared IPC registers
+`admin:setUserStorageQuota` with `{ name, storageQuotaBytes }` and an
+`AdminUserInfo` result. See [quota ownership](data-auth.md#file-storage-metadata-and-quotas).
+
+In Identity mode (sso-auth-v1 A4) Storage owns quotas: `GET /api/admin/storage`
+(shared route `adminStorage`) returns `AdminStorageInfo` with `storageAdminUrl`
+and the caller's `storageUsage`; `AdminUserInfo.storageAdminUrl` links user rows
+to Storage administration, and the quota `PATCH` above returns 409.
+
+## Core file storage and chat settings
+
+Make owner MCP requests may send `x-sislexa-mcp-token` with the corresponding
+service bearer. This is a Storage admission path, not a replacement for browser
+cookies or user API tokens; no Storage request/response schema changes.
+See [credential and scope checks](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+`POST REST.uploads` accepts legacy JSON/base64, raw bytes and a streamed
+`multipart/form-data` body containing exactly one file and no text fields.
+For raw/multipart, metadata uses `name`, `conversationId`, `agentId` and
+`mimeType` query keys or same-name case-insensitive headers; query values win.
+Raw uploads require a nonblank name; multipart defaults to the file's filename.
+An explicit `mimeType` overrides the raw Content-Type or multipart file MIME.
+`application/json` without a query/header name selects legacy JSON; supply the
+name outside the body to upload a raw JSON file. Legacy JSON without a name
+still defaults to `file`. All forms retain the decoded 32 MiB limit and return
+the unchanged `UploadInfo`; the legacy JSON envelope is limited to 64 MiB.
+Cookie mutations still require CSRF, and CORS permits the four metadata headers.
+Bearer authentication, conversation ownership/tenant validation and upload rate
+limits are shared by all three forms; the storage backend additionally requires
+`conversationId`. The contract lives in `packages/shared/src/fileStorage.ts`; see
+[Core parsing and streaming](server-internals.md#core-file-storage).
+GET `STORAGE_REST.file(spaceId)` returns `ETag: "<spaceId>:<revision>"`,
+`Last-Modified`, `Cache-Control: private, no-cache` and `Accept-Ranges: bytes`.
+Matching `If-None-Match` (including weak/list validators) or, when no ETag
+condition is present, `If-Modified-Since`, returns 304 before Core contacts the
+storage node. A single byte range returns 206 with `Content-Range`; suffix and
+open-ended ranges are supported, while malformed, multiple or unsatisfiable
+ranges return 416 (`Content-Range: bytes */<size>` for known unsatisfiable size).
+Stored chat attachment references use this same file route and semantics.
+Full responses strictly above 1 KiB negotiate Brotli or gzip through
+`Accept-Encoding` for text, JSON, JavaScript, SVG, XML and Wasm. They always
+send `Vary: Accept-Encoding`; media, archives and byte ranges stay identity.
+Raw file and upload-part PUTs may use `Content-Encoding: gzip|br`; Core applies
+the configured file limit to decompressed file bytes; part bodies retain a 64 MiB limit.
+
+POST `STORAGE_REST.batch(spaceId)` accepts `application/x-ndjson` (64 MiB
+encoded request maximum). The first line is `{"operations":[...]}`, with 1..500
+ordered operations `{op,path,to?,ifMatch?,createOnly?,bodyRef?}`; subsequent lines
+are `{bodyRef,base64,mimeType}` payload records. References must be unique and
+base64 canonical. Operations are read/write/delete/move/copy; writes reference
+a payload record. Missing payloads, paths and revision conflicts are reported
+per operation. Malformed envelopes/payload records reject the request before
+mutation. Each operation commits independently; there is no batch rollback.
+
+The response is streamed `multipart/mixed`. Each operation has an
+`application/json` part with `Content-ID: result-N` (zero-based), carrying
+`{status,entry?,error?,content?,bodyRef?}`. Small text reads (at most 256 KiB)
+use `content:{encoding:"base64",data,contentEncoding?}`; other reads have
+`bodyRef:"read-N"` and a following typed part with that Content-ID,
+Content-Length and optional Content-Encoding. Compression follows the same
+MIME, size and `Accept-Encoding` policy as ordinary file reads.
+Clients must parse multipart boundaries, not split arbitrary binary on lines.
+A disconnected response can leave completed mutations committed.
+GET files with `?withContent=small` adds the same content object to eligible
+entries; ordinary listing is unchanged. Text MIME types include text/*,
+JSON, JavaScript, XML and +json/+xml suffixes.
+Copy replaces the destination unless createOnly is set; its ifMatch checks the
+destination revision. Move refuses occupied destinations and checks the source
+revision; delete also checks the source. Write keeps existing revision semantics.
+
+Resumable uploads use POST `STORAGE_REST.uploads(spaceId)` with
+`{path,size,mimeType,ifMatch?,createOnly?}`, returning
+`{uploadId,partSize,expiresAt}`. PUT `uploads/:uploadId/parts/:n` accepts
+raw bytes, with zero-based part numbers and an exact final-part length.
+GET `uploads/:uploadId` adds sorted `receivedParts` for resume;
+POST `uploads/:uploadId/complete` publishes a StorageEntry, and DELETE
+aborts. Missing parts or stale revision conditions return 409.
+Sessions expire after 24 hours, allow up to 10,000 parts and survive Core/node
+restart. The default part size is 8 MiB; the legacy single PUT remains capped
+at 64 MiB. Each operation checks the current space write grant and the
+session's authenticated creator. Concurrent part PUTs and part retries are supported.
+
+
+Duplicate cleanup uses `POST /api/storage/spaces/:id/merge-duplicates`:
+send `{}` to preview, then `{"previewToken":"<returned token>"}` to apply.
+`{"dryRun":true,"previewToken":"…"}` previews explicitly; `dryRun:false`
+without a matching token returns 409. A changed snapshot also returns 409.
+Conflicting older versions are archived, not rejected: preview items include
+optional `toPath` under `.duplicates/<spaceId>/`. See the deterministic ordering
+and archive collision rules in [Core storage](server-internals.md#core-file-storage).
+Space lists retain duplicates with the canonical owner/kind/ref space first.
+
+Image previews use `GET STORAGE_REST.thumbnail(spaceId)?path=&size=128|256|512`.
+PNG, JPEG, WebP and the first GIF frame are resized without enlargement and
+returned as WebP (JPEG fallback). The response has a revision-and-size ETag and
+supports 304; unsupported media returns 415. Storage-backed chat image metadata
+sets `thumbnailAvailable` on both the storage reference and upload response.
+
+`STORAGE_REST` из `shared/fileStorage.ts` реализован в `fileStorage/routes.ts`;
+маршруты требуют сессию, cluster доступен только администраторам. Сервис
+включается через `VC_FILE_STORAGE_MODE=embedded`. `chatFilesBackend` в настройках
+принимает только `machine | storage`; неверное значение REST отклоняет с 400.
+При включённом storage-backend загрузка в чат требует `conversationId` и
+возвращает `UploadInfo.storage`. `REST.serverFile` распознаёт синтетический путь
+`storage:<spaceId>/<path>` и читает файл с правами текущего пользователя.
+Подробности: [server-internals](server-internals.md).
+
+Shared Make may call `/api/storage/*` with its service bearer and a Core-issued
+Make user delegation. Core checks the live user, tenant and storage ACLs; the
+service bearer alone does not grant user access. For shared-service callers,
+`POST /internal/whoami` resolves identity from the authenticated outer delegation,
+not from headers supplied in the forwarded request body. Core's browser Make
+proxy issues that delegation after session authentication and replaces incoming
+authorization, cookies and delegation headers. See
+[Make authorization](data-auth.md#make-service-storage-authorization).
+
+Storage space title sync uses `PATCH STORAGE_REST.space(id)` with
+`UpdateStorageSpaceRequest {title}`. Only the owner can rename; the trimmed
+title must contain 1..200 characters. The response is `StorageSpace`.
+Readers, writers and unrelated users receive 403.
+
+Owner-only `POST STORAGE_REST.mergeDuplicates(id)` merges the matching
+`(ownerId, kind, ref)` group for chat/make-project spaces. The contract and
+archive behavior are defined once above; a changed snapshot returns 409 without
+mutation, while same-path older versions are preserved at their reported
+`toPath`. Personal spaces and malformed requests return 400. See
+[duplicate cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+
+## Operator handoff
+
+Core proxies `/api/kanban/handoff/*` to Kanban. The Kanban owner implements
+signed export/import, journals, task continuation and the transfer coordinator.
+`POST /api/agents/:id/switch-operator` requires an administrator who owns the
+machine and accepts serverUrl, a target-issued machine token and timeoutMs.
+It sends `agent.switchOperator`; AgentRegistry correlates the result by both
+request ID and agent ID, returning switched/failed. Missing support times out
+without claiming a successful switch. The response and audit log omit tokens.
+The caller obtains the target token from the existing target-machine token
+rotation route; handoff does not provision target projects or grant access.
+Runtime installation and production deployment are not part of this protocol.
+The route accepts WS(S) URLs without embedded credentials, query or fragment;
+tokens must be nonempty strings of at most 4096 characters. The integer timeout
+is 1000–120000 ms, default 30000 ms. Registry waiting adds a five-second result
+delivery allowance. The regression test ignores a reply from a different agent
+before accepting the selected agent's reply.
+
 ## Application frontend gateway
 
-`GET /applications/:id/manifest.json` returns the configured source manifest
-when the frontend or its catalog owner is enabled and local. Frontend IDs such
-as `make-ui` are distinct from deployment IDs such as `make`; registration
-validates every source ID before filtering. Without a selected source, the
-existing installed-artifact fallback applies. The manifest response keeps
+`GET /applications/:id/manifest.json` uses a configured source only when the
+frontend or its catalog owner is enabled and local, and the source policy allows
+it. With `NODE_ENV=production`, pinned owner archives take priority unless
+`VC_APPLICATION_FRONTENDS_OVERRIDE=1`; development and frontends without a
+pinned owner package retain configured sources. The same selection applies to
+assets. A broken pinned installation returns 503 rather than falling back to an
+override. Frontend IDs such as `make-ui` are distinct from deployment IDs such
+as `make`; registration validates every source ID before filtering. Without a
+selected source, the existing installed-artifact fallback applies. The manifest response keeps
 `Cache-Control: no-store`; asset paths, manifest identity and source URL checks
 remain in `routes/applicationFrontends.ts`. See
 [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
@@ -535,11 +694,29 @@ client compatibility. Details show the actual `prompt`, not a duplicate transcri
 
 ## REST
 
-Все пути под `/api/*` требуют `Authorization: Bearer <токен сессии>` — это
-глобальный `preHandler` в `apps/server/src/users/auth.ts`. Публичные исключения
-(там же, функция `isPublic`): `/api/health`, `/api/session/*`, скачивание
-агента/десктопа (`agentApp`, `agentScript`, `agentInstallAndroid`, `agentInstallWindows`, `desktopApp`)
-и `/api/agents/version`. Админские роуты дополнительно закрыты `requireAdmin`.
+Protected `/api/*` routes use the global guard from
+`@sislexa/identity/server/users/auth`, registered by Core's `server.ts`.
+Identity OAuth mode accepts its verified bearer or application-session cookie.
+`isPublic` excludes health, `/api/session/*` and public agent/desktop downloads
+from that guard; session handlers must authenticate their own requests.
+Admin routes additionally require `requireAdmin`.
+
+In Identity OAuth mode, `GET REST.sessionMe` (`/api/session/me`) returns
+`{ user, csrf, notices }` with `Cache-Control: no-store`. The user retains the
+legacy shape: `name`, account-derived `role`, `account`, and
+`mustChangePassword: true` only when required. Cookie sessions return the OAuth
+CSRF token; bearer requests omit it. Missing/invalid sessions return 401;
+blocked or missing accounts and denied tenant access return 403.
+`POST REST.sessionNoticesSeen` authenticates and acknowledges security notices;
+cookie requests require `x-csrf-token`. Core CORS permits that header alongside
+the legacy `x-vc-csrf`, as checked by `routes/rest.auth.test.ts`.
+
+OAuth mode explicitly rejects the legacy bootstrap helpers
+`POST /api/session/preview`, `POST /api/session/cookie`,
+`GET /api/session/signup` and `GET /api/session/account-access`: unauthenticated
+requests return 401 and authenticated requests return 403. They do not return
+route-not-found or issue legacy credentials. See the
+[Core registration boundary](server-internals.md#identity-oauth-session-bootstrap).
 
 `Conversation.contextUsage` — необязательный снимок заполнения текущего LLM-потока:
 `{ usedTokens, windowTokens, provider, model, measuredAt }`. Для Claude `usedTokens`
@@ -1231,3 +1408,32 @@ web-клиенте — авторизованный fetch → base64 (см. ui.m
 `packages/ui/src/remote/index.ts` переподключается после обрыва, передаёт
 последний sequence и не доставляет повторные или не-image кадры. Разовый
 screenshot остаётся совместимым fallback для host без `subscribeFrames`.
+
+## File storage contract
+
+POST `STORAGE_REST.fileUrl(spaceId)` accepts `{operation: 'read', path}` or
+`{operation: 'write', path, size, mimeType, ifMatch?, createOnly?}` and returns
+`StorageDirectUrl`: `{url, method, headers?, expiresAt, uploadId?}`.
+Send raw bytes with the returned headers for PUT, then POST
+`STORAGE_REST.fileCommit(spaceId)` with `{uploadId}`; the response is the
+published `StorageEntry`. Direct writes are limited to 64 MiB. Direct GET
+supports one byte range. A node without `publicUrl` returns the ordinary Core
+file URL and revision headers, without uploadId: use normal Core authentication
+and do not call commit. Core still checks write permission, quota and placement
+before returning that fallback; the actual PUT repeats these checks.
+Raw PUT/GET file bodies stream through Core to the node. Optional Content-Length
+allows early size/quota/placement checks; unknown lengths are counted while
+streaming. Exceeding the configured file limit returns `file_too_large` (413).
+`MAX_STORAGE_FILE_BYTES` is the 1 GiB default; `storageMaxFileBytes` validates host
+configuration as a positive safe integer. The default owner quota remains 100 MiB.
+
+`packages/shared/src/fileStorage.ts` defines the file storage service: pooled storage
+nodes (cluster capacity is the sum of online node capacities), per-user quotas from
+Identity (`storageQuotaBytes`, default `DEFAULT_STORAGE_QUOTA_BYTES` = 100 MB, charged
+to the space owner), spaces (`personal`, `chat`, `make-project`) and shares with
+`read` or `write` permission for a user or for anyone signed in with a link.
+`STORAGE_REST` is the Core REST surface (raw file bodies, `If-Match` revisions);
+`FILE_STORAGE_NODE_PATHS` is the node API with scope `STORAGE_NODE_SCOPE`. Chat
+history references stored files through `MessageAttachment.storage` /
+`UploadInfo.storage`. The rollout plan and task split are in
+[file-storage-service](../plans/file-storage-service.md).

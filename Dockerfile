@@ -81,6 +81,14 @@ FROM nginx:1.27-alpine AS storybook-runtime
 COPY --from=storybook-build /app/node_modules/@sislexa/core-ui/storybook /usr/share/nginx/html
 EXPOSE 80
 
+FROM runtime-base AS file-storage-node
+ENV PORT=8795 VC_FILE_STORAGE_DIR=/data/blobs
+RUN mkdir -p /data/blobs && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8795
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["node", "--import", "tsx", "packages/file-storage/src/node/main.ts"]
+
 FROM runtime-base AS automation-runner-runtime
 ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data
 RUN mkdir -p /data && chown -R node:node /data

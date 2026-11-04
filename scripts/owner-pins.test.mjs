@@ -1,10 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isOwnerPinFile, ownerPinChanges } from './owner-pins.mjs'
+import { isOwnerPinFile, ownerPinChanges, pinOnlyPackages } from './owner-pins.mjs'
 
 const manifest = (rows, extra = {}) => JSON.stringify({ schemaVersion: 1, ...extra, packages: rows })
 const row = (name, version, sha, asset) => ({ name, version, sha256: sha, asset, commit: sha.repeat(5).slice(0, 40) })
 const reader = (files) => (file) => files[file] ?? null
+
+test('pin-only fast path rejects mixed source, docs, scripts and unrelated lock edits', () => {
+  const name = '@sislexa/core-ui'
+  const state = (asset, version) => ({
+    'package.json': JSON.stringify({ dependencies: { [name]: `file:vendor/${asset}` } }),
+    'package-lock.json': JSON.stringify({ lockfileVersion: 3, packages: {
+      '': { dependencies: { [name]: `file:vendor/${asset}` } },
+      [`node_modules/${name}`]: { version, resolved: `file:vendor/${asset}`, integrity: asset },
+      'node_modules/other': { version: '1.0.0' }
+    } })
+  })
+  const before = state('old.tgz', '1.0.0'), after = state('new.tgz', '1.0.1')
+  const files = Object.keys(before)
+  const check = (paths = files, candidate = after) => pinOnlyPackages(paths, reader(before), reader(candidate), [name])
+  assert.deepEqual(check(), [name])
+  for (const file of ['apps/server/src/server.ts', 'docs/kb/deploy.md', 'untracked.txt']) assert.equal(check([...files, file]), null)
+  assert.equal(check(files, { ...after, 'package.json': JSON.stringify({ ...JSON.parse(after['package.json']), scripts: { test: 'changed' } }) }), null)
+  const lock = JSON.parse(after['package-lock.json'])
+  lock.packages['node_modules/other'].version = '2.0.0'
+  assert.equal(check(files, { ...after, 'package-lock.json': JSON.stringify(lock) }), null)
+  assert.equal(pinOnlyPackages(files, reader(before), reader(after), []), null)
+})
 
 test('pin files are recognised; source files are not', () => {
   for (const file of ['package.json', 'apps/server/package.json', 'package-lock.json'.replace('-lock', ''), 'dependency-snapshots.json', 'vendor/owner-artifacts.json', 'vendor/ui-libraries.json', 'vendor/sislexa-make-1.3.1-81a51e984158.tgz', 'deploy/tools.lock.json', 'docker-compose.yml', 'deploy/compose.tools.yml'])

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "applicationId": "file-storage",
+  "provides": [
+    "file-storage.blobs"
+  ],
+  "legacyScopes": [],
+  "dependencies": []
+}

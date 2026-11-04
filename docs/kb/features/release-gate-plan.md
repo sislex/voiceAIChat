@@ -1,7 +1,7 @@
 ---
 title: "Проверки по замене закреплённых архивов"
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-11-02
+checked: 8fa1c9744
 areas:
   - scripts/owner-pins.mjs
   - scripts/application-gate.mjs

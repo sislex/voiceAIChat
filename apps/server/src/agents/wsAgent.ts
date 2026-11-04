@@ -26,7 +26,27 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
     if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg))
   }
 
-  socket.on('message', async (data: Buffer, isBinary: boolean) => {
+  let stopped = false
+  let registered = false
+  const cleanup = (): void => {
+    stopped = true
+    if (pingTimer) clearInterval(pingTimer)
+    pingTimer = null
+    if (registered && agentId) {
+      registered = false
+      registry.unregister(agentId)
+    }
+  }
+  const failed = (event: string, error: unknown): void => {
+    console.error(`[agent-ws] ${event} failed:`, error)
+    cleanup()
+    // 1013 asks the companion to reconnect; do not report a permanent token denial.
+    try { socket.close(1013, 'Service temporarily unavailable; retry later') }
+    catch { /* The transport may already be gone. */ }
+  }
+
+  const handleMessage = async (data: Buffer, isBinary: boolean): Promise<void> => {
+    if (stopped) return
     if (isBinary) return
     let msg: AgentToServer
     try {
@@ -58,8 +78,11 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
       if (ip) await db.machines.recordAgentIp(rec.id, ip)
       if (rec.userId) await db.identity.logSecurityEvent({ user: rec.userId, type: 'agent_connected', ip, details: `${rec.name} v${msg.version ?? '0.1.0'}` })
       // Версия из рапорта агента; отсутствует (старый агент) → legacy '0.1.0'.
+      if (stopped) return
       registry.register(rec.id, rec.name, socket, rec.policy, msg.version ?? '0.1.0', msg.imageHost)
+      registered = true
       await db.machines.touchAgent(rec.id)
+      if (stopped) return
       send({ t: 'agent.registered', id: rec.id, name: rec.name, policy: rec.policy })
       pingTimer = setInterval(() => {
         try {
@@ -94,17 +117,23 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
     }
 
     await registry.handleMessage(agentId, msg)
+  }
+
+  // EventEmitter does not await listeners. Own every rejection and serialize registration.
+  let messages: Promise<void> = Promise.resolve()
+  socket.on('message', (data: Buffer, isBinary: boolean) => {
+    messages = messages.then(() => handleMessage(data, isBinary)).catch(error => failed('message', error))
+    return messages
   })
 
-  socket.on('pong', async () => {
-    if (agentId) await db.machines.touchAgent(agentId)
+  socket.on('pong', () => {
+    if (!stopped && agentId) return db.machines.touchAgent(agentId).catch(error => failed('pong', error))
   })
 
-  socket.on('close', async () => {
-    if (pingTimer) clearInterval(pingTimer)
-    if (agentId) {
-      await db.machines.touchAgent(agentId)
-      registry.unregister(agentId)
-    }
+  socket.on('close', () => {
+    cleanup()
+    if (agentId) return db.machines.touchAgent(agentId).catch(error => {
+      console.error('[agent-ws] close failed:', error)
+    })
   })
 }
