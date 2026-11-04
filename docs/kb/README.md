@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-03 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 17a89cc2b chore(ui): pin Core UI 1.5.42 |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-03 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-04 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-04 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 17a89cc2b chore(ui): pin Core UI 1.5.42 |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-02 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-04 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-04 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1449. Последние:
+Всего записей: 1450. Последние:
 
+- [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md) — sisl-867-ephemeral-test-listeners
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md) — owner-cf2fda81-machines
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md) — sisl-857-palette-shortcut-retry
@@ -76,7 +77,6 @@
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4.md) — release-train-0c9ee327-ed7c-4056-9c5c-63426f7117f4
 - [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-identity-rollout-findings.md) — identity-rollout-findings
 - [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-sessionless-storage-kb-verification.md) — sm-47-sessionless-storage-kb-verification
-- [2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md](log/2026-11-02-pc-radvilovich-tailae39a6-ts-net-sm-47-owner-kb-repair.md) — sm-47-owner-kb-repair
 
 ## Исторические планы
 

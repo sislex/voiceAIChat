@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-04
-checked: 26f657327
+checked: 8677259c8
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1507,6 +1507,18 @@ and `makeBridge/component.integration.test.ts`: real Core/Make listeners preserv
 user ownership, reject a component token as user login, observe live revocation,
 and recover after credential-file rotation. The deployment tests also require
 readiness in both directions for managed installations.
+
+## Ephemeral test listeners
+
+Integration fixtures bind the real server to `127.0.0.1:0` and use the URL
+returned by Fastify's `listen`; never probe, close and reuse a supposedly free
+port. Remote bridge fixtures start peers first and resolve Core's callback
+address at request time through `test/deferredCoreFetch.ts`, retaining real HTTP
+transport. E2E child processes report their bound address over IPC using
+`e2e/listening-address.mjs`. Restart tests and cyclic startup use the continuously
+bound TCP relay in `e2e/listening-server.ts`; backend processes still bind port 0.
+Docker chooses the Postgres published port, which the stand reads with
+`docker port` after startup. These fixtures own their listeners until teardown.
 
 ## E2E Make в реальном Chromium (2026-08-27)
 

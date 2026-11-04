@@ -1,7 +1,7 @@
 import { loadWebReaderConfig } from '@sislexa/web-reader/config'
 // Реальные HTTP-границы: ядро, приложение Playwright Reader и, в одном из режимов, Web Reader.
 // Фейком остаётся только Chromium: проверяем именно доставку, авторизацию и сохранность результатов.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,17 +22,6 @@ const INTERNAL = 'internal-token'
 const MCP = 'mcp-secret'
 const auth = { authorization: `Bearer ${signToken({ name: 'ann', role: 'developer' }, SECRET)}` }
 const json = { 'content-type': 'application/json' }
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = (server.address() as { port: number }).port
-      server.close(() => resolve(port))
-    })
-  })
-}
 
 describe.each([
   { playwrightMode: 'remote', webMode: 'embedded' },
@@ -59,10 +48,6 @@ describe.each([
 
   beforeAll(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'vc-playwright-app-'))
-    const corePort = await freePort(), playwrightPort = await freePort(), readerPort = await freePort()
-    coreUrl = `http://127.0.0.1:${corePort}`
-    browserUrl = playwrightMode === 'remote' ? `http://127.0.0.1:${playwrightPort}` : coreUrl
-    readerUrl = webMode === 'remote' ? `http://127.0.0.1:${readerPort}` : coreUrl
     db = new VoiceChatDb(':memory:')
     await db.ready
     await db.identity.createUser('ann', 'password-1', 'developer')
@@ -70,26 +55,30 @@ describe.each([
     conversationId = (await db.chat.createConversation('ann', 'Reader', 'playwright-reader')).id
     foreignId = (await db.chat.createConversation('bob', 'Чужой', 'playwright-reader')).id
     ordinaryId = (await db.chat.createConversation('ann', 'Чат')).id
+    if (playwrightMode === 'remote') {
+      playwright = (await buildPlaywrightReaderServer({
+        fetchImpl: deferredCoreFetch(() => coreUrl),
+        config: { host: '127.0.0.1', port: 0, coreUrl: 'http://core.test', internalToken: INTERNAL, runnerFacingBase: 'http://core.test', version: 'test' }, runner
+      })).app
+      browserUrl = await playwright.listen({ host: '127.0.0.1', port: 0 })
+    }
+    if (webMode === 'remote') {
+      webReader = (await buildReaderServer({
+        fetchImpl: deferredCoreFetch(() => coreUrl),
+        config: loadWebReaderConfig({ PORT: '0', VC_CORE_URL: 'http://core.test', VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP,
+          VC_PLAYWRIGHT_READER_URL: playwrightMode === 'remote' ? browserUrl : 'http://core.test' })
+      })).app
+      readerUrl = await webReader.listen({ host: '127.0.0.1', port: 0 })
+    }
     core = await buildServer({
-      config: loadConfig({ PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
         VC_PLAYWRIGHT_READER_MODE: playwrightMode, VC_PLAYWRIGHT_READER_URL: browserUrl,
         VC_READER_MODE: webMode, VC_READER_URL: readerUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
       db, sessionSecret: SECRET, ...(playwrightMode === 'embedded' ? { browserRunner: runner } : {})
     })
-    await core.listen({ host: '127.0.0.1', port: corePort })
-    if (playwrightMode === 'remote') {
-      playwright = (await buildPlaywrightReaderServer({
-        config: { host: '127.0.0.1', port: playwrightPort, coreUrl, internalToken: INTERNAL, runnerFacingBase: coreUrl, version: 'test' }, runner
-      })).app
-      await playwright.listen({ host: '127.0.0.1', port: playwrightPort })
-    }
-    if (webMode === 'remote') {
-      webReader = (await buildReaderServer({
-        config: loadWebReaderConfig({ PORT: String(readerPort), VC_CORE_URL: coreUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP,
-          VC_PLAYWRIGHT_READER_URL: playwrightMode === 'remote' ? browserUrl : coreUrl })
-      })).app
-      await webReader.listen({ host: '127.0.0.1', port: readerPort })
-    }
+    coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
+    if (playwrightMode === 'embedded') browserUrl = coreUrl
+    if (webMode === 'embedded') readerUrl = coreUrl
   }, 60_000)
 
   afterAll(async () => {

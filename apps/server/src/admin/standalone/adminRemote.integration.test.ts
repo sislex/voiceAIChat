@@ -2,7 +2,7 @@
 // админки на общей базе. Проверяем: `/api/admin/*` идёт через прокси ядра с его проверкой роли, машины
 // админка берёт у ядра тем же клиентом `HttpMachines`, деплой уходит в ядро по RPC, типы проектов остаются
 // у канбана (не в админке), внутренние пути без токена закрыты.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,14 +21,6 @@ const INTERNAL = 'internal-token'
 const MCP = 'mcp-secret'
 const fakeLlm: LlmClient = { send: (_req, handlers) => { queueMicrotask(() => { void handlers.onDone('ок') }); return { cancel: () => {} } } }
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port)) })
-  })
-}
-
 let dataDir: string
 let db: VoiceChatDb
 let core: FastifyInstance
@@ -42,26 +34,24 @@ const json = { 'content-type': 'application/json' }
 
 beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'vc-admin-remote-'))
-  const [corePort, adminPort] = [await freePort(), await freePort()]
-  coreUrl = `http://127.0.0.1:${corePort}`
-  adminUrl = `http://127.0.0.1:${adminPort}`
   db = new VoiceChatDb(':memory:')
   await db.ready
   await db.identity.createUser('ann', 'password-1', 'developer')
   await db.machines.createAgent('ann', 'Offline machine')
+  admin = await buildAdminServer({
+    fetchImpl: deferredCoreFetch(() => coreUrl),
+    config: loadConfig({ PORT: '0', VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
+    coreUrl: 'http://core.test', db, version: 'test'
+  })
+  adminUrl = await admin.app.listen({ host: '127.0.0.1', port: 0 })
   core = await buildServer({
     config: loadConfig({
-      PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_ADMIN_MODE: 'remote', VC_ADMIN_URL: adminUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP
     }),
     db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm, deployTrigger: { trigger: deploy }
   })
-  await core.listen({ host: '127.0.0.1', port: corePort })
-  admin = await buildAdminServer({
-    config: loadConfig({ PORT: String(adminPort), VC_DATA_DIR: dataDir, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
-    coreUrl, db, version: 'test'
-  })
-  await admin.app.listen({ host: '127.0.0.1', port: adminPort })
+  coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
 }, 60_000)
 
 afterAll(async () => {

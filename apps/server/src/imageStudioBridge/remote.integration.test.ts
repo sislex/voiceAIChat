@@ -1,7 +1,7 @@
 import sharp from 'sharp'
 // Те же пользовательские запросы проходят embedded и remote. В remote каталог
 // студии физически отдельный: тест не может случайно пройти за счёт общего store.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,14 +23,6 @@ const INTERNAL = 'studio-internal-token'
 const MCP = 'studio-mcp-secret'
 const PNG = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.from('fixture')])
 const auth = { authorization: `Bearer ${signToken({ name: 'ann', role: 'developer' }, SECRET)}` }
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer()
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => { const port = (server.address() as { port: number }).port; server.close(() => resolve(port)) })
-  })
-}
 
 describe.each(['embedded', 'remote'] as const)('студия картинок: %s', (mode) => {
   let dir: string
@@ -65,8 +57,10 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
     conv = (await db.chat.createConversation('ann', 'Картинки 1', 'images'))!.id
     foreign = (await db.chat.createConversation('bob', 'Чужая студия', 'images'))!.id
     plain = (await db.chat.createConversation('ann', 'Чат'))!.id
-    const studioPort = await freePort()
-    studioUrl = `http://127.0.0.1:${studioPort}`
+    if (mode === 'remote') {
+      studio = (await buildImageStudioServer({ fetchImpl: deferredCoreFetch(() => coreUrl), config: { host: '127.0.0.1', port: 0, dataDir: join(dir, 'studio'), coreUrl: 'http://core.test', internalToken: INTERNAL, mcpSecret: MCP, version: 'test', trashDays: 30 } })).app
+      studioUrl = await studio.listen({ host: '127.0.0.1', port: 0 })
+    }
     core = await buildServer({
       config: loadConfig({ PORT: '0', VC_DATA_DIR: join(dir, 'core'), VC_MODELS_DIR: join(dir, 'models'), VC_PIPER_VOICES_DIR: join(dir, 'voices'),
         VC_IMAGE_STUDIO_MODE: mode, VC_IMAGE_STUDIO_URL: studioUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP }),
@@ -78,10 +72,7 @@ describe.each(['embedded', 'remote'] as const)('студия картинок: %
       }
     })
     coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
-    if (mode === 'remote') {
-      studio = (await buildImageStudioServer({ config: { host: '127.0.0.1', port: studioPort, dataDir: join(dir, 'studio'), coreUrl, internalToken: INTERNAL, mcpSecret: MCP, version: 'test', trashDays: 30 } })).app
-      await studio.listen({ host: '127.0.0.1', port: studioPort })
-    } else studioUrl = coreUrl
+    if (mode === 'embedded') studioUrl = coreUrl
   }, 60_000)
 
   afterAll(async () => {

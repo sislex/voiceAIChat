@@ -5,7 +5,7 @@
 // связка целиком на живом сервере: настройка сохраняется, падение сервера не
 // превращает её в дефолт, а вернувшийся сервер подхватывается сам, без
 // перезагрузки страницы.
-import { freePort } from './free-port'
+import { childAddress, loopbackRelay } from './listening-server'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -20,7 +20,7 @@ const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 const VISUAL_ARTIFACTS = process.env.VC_VISUAL_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_ARTIFACTS) : null
 const FAILURE_ARTIFACTS = process.env.VC_VISUAL_FAILURE_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_FAILURE_ARTIFACTS) : null
-let PORT = 0
+let relay: Awaited<ReturnType<typeof loopbackRelay>>
 let BASE = ''
 const PASSWORD = 'e2e-settings-pass'
 
@@ -33,11 +33,11 @@ let voiceFixture: Server
 let voiceFixtureUrl = ''
 let voiceConfigured = true
 
-function startServer(): ChildProcess {
-  return spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
+async function startServer(): Promise<ChildProcess> {
+  const child = spawn(process.execPath, ['--import', 'tsx', '--import', join(ROOT, 'e2e/listening-address.mjs'), 'src/index.ts'], {
     cwd: join(ROOT, 'apps/server'),
     env: {
-      ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
+      ...process.env, PORT: '0', HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
       VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD,
       // STT reports the fixture outage. TTS availability uses resource thresholds,
       // so exceed host memory to exercise its real configured-but-blocked contract.
@@ -47,8 +47,10 @@ function startServer(): ChildProcess {
       VC_TTS_RUNNER_TOKEN: voiceConfigured ? 'settings-voice-fixture' : '',
       VC_MIN_MEM_TTS: String(totalmem() * 2)
     },
-    stdio: 'ignore'
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc']
   })
+  try { relay.forwardTo(await childAddress(child)); return child }
+  catch (error) { child.kill('SIGTERM'); throw error }
 }
 
 async function waitHealth(): Promise<void> {
@@ -92,8 +94,8 @@ async function openInterfaceSettings(): Promise<void> {
 
 describe('Настройки E2E: релиз не сбрасывает выбор', () => {
   beforeAll(async () => {
-    PORT = await freePort()
-    BASE = `http://127.0.0.1:${PORT}`
+    relay = await loopbackRelay()
+    BASE = relay.url
     if (!existsSync(WEB_DIST)) throw new Error('Build apps/web before running required settings/onboarding E2E')
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-settings-'))
     voiceFixture = createServer((_request, response) => {
@@ -104,7 +106,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     const address = voiceFixture.address()
     if (!address || typeof address === 'string') throw new Error('Voice fixture has no loopback address')
     voiceFixtureUrl = `http://127.0.0.1:${address.port}`
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     const login = await fetch(`${BASE}/api/session/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'admin', password: PASSWORD }) })
     token = ((await login.json()) as { token: string }).token
@@ -125,6 +127,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   afterAll(async () => {
     await browser?.close()
     server?.kill('SIGTERM')
+    await relay?.close()
     await new Promise<void>(done => voiceFixture?.close(() => done()) ?? done())
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
@@ -150,7 +153,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     await page.getByLabel('Тема интерфейса').selectOption('green').catch(() => {})
     await expect.poll(() => page.locator('html').getAttribute('data-theme'), { timeout: 10_000 }).toBe('dark')
 
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     expect(await savedTheme()).toBe('dark') // запись на сервере цела
 
@@ -274,7 +277,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     expect((await api('/api/settings', { method: 'PUT', body: JSON.stringify({ onboarding: progress }) })).ok).toBe(true)
     server?.kill('SIGTERM')
     await waitDown()
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     expect((await (await api('/api/settings')).json()).onboarding).toEqual(progress)
     await page.reload()
@@ -333,7 +336,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     server?.kill('SIGTERM')
     await waitDown()
     voiceConfigured = false
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     const context = await browser.newContext()
     const screen = await context.newPage()

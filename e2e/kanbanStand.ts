@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { freePort } from './free-port'
+import { childAddress, loopbackRelay } from './listening-server'
 import { StandDiagnostics } from './standDiagnostics'
 
 export const ROOT = resolve(__dirname, '..')
@@ -62,14 +62,16 @@ export function kanbanStandUnavailable(): string | null {
 
 async function startPostgres(): Promise<{ url: string; stop: () => void }> {
   if (process.env.VC_E2E_DB_URL) return { url: process.env.VC_E2E_DB_URL, stop: () => {} }
-  const port = await freePort()
-  const name = `vc-e2e-pg-${process.pid}-${port}`
-  const run = spawnSync('docker', ['run', '-d', '--rm', '--name', name, '-p', `127.0.0.1:${port}:5432`, '-e', 'POSTGRES_PASSWORD=e2e', 'postgres:16-alpine'], { encoding: 'utf8' })
+  const name = `vc-e2e-pg-${process.pid}-${Date.now()}`
+  const run = spawnSync('docker', ['run', '-d', '--rm', '--name', name, '-p', '127.0.0.1::5432', '-e', 'POSTGRES_PASSWORD=e2e', 'postgres:16-alpine'], { encoding: 'utf8' })
   if (run.status !== 0) throw new Error(`Postgres не запустился: ${run.stderr}`)
   const stop = () => { spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' }) }
   for (let i = 0; i < 60; i++) {
     // pg_isready внутри контейнера и подключение снаружи: порт публикуется не сразу.
     if (spawnSync('docker', ['exec', name, 'pg_isready', '-U', 'postgres'], { stdio: 'ignore' }).status === 0) {
+      const published = spawnSync('docker', ['port', name, '5432/tcp'], { encoding: 'utf8' })
+      const port = /^127\.0\.0\.1:(\d+)$/.exec(published.stdout.trim())?.[1]
+      if (published.status !== 0 || !port) { stop(); throw new Error('Postgres has no published loopback port') }
       return { url: `postgres://postgres:e2e@127.0.0.1:${port}/postgres`, stop }
     }
     await new Promise((r) => setTimeout(r, 1000))
@@ -90,40 +92,50 @@ export async function startKanbanStand(opts: { adminPassword: string; env?: Reco
   const postgres = await startPostgres()
   const children: ChildProcess[] = []
   const dirs: string[] = []
+  let coreRelay: Awaited<ReturnType<typeof loopbackRelay>> | undefined
+  let kanbanRelay: Awaited<ReturnType<typeof loopbackRelay>> | undefined
   const stop = async (): Promise<void> => {
     for (const child of children.reverse()) child.kill('SIGTERM')
     await new Promise((r) => setTimeout(r, 500))
+    await coreRelay?.close()
+    await kanbanRelay?.close()
     postgres.stop()
     for (const dir of dirs) await rm(dir, { recursive: true, force: true })
   }
   try {
-    const port = await freePort(), kanbanPort = await freePort()
-    const base = `http://127.0.0.1:${port}`, kanbanUrl = `http://127.0.0.1:${kanbanPort}`
+    coreRelay = await loopbackRelay()
+    const base = coreRelay.url
+    kanbanRelay = await loopbackRelay()
+    const kanbanUrl = kanbanRelay.url
     const shared = { VC_DB_URL: postgres.url, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_PUBLIC_URL: base, ...opts.env }
     const coreData = await mkdtemp(join(tmpdir(), 'vc-e2e-core-')), kanbanData = await mkdtemp(join(tmpdir(), 'vc-e2e-kanban-'))
     dirs.push(coreData, kanbanData)
     const secrets = [shared.VC_INTERNAL_TOKEN, shared.VC_MCP_SECRET, opts.adminPassword]
     const coreLog = new StandDiagnostics(secrets, process.env.VC_E2E_STAND_LOG === '1')
     const kanbanLog = new StandDiagnostics(secrets, process.env.VC_E2E_STAND_LOG === '1')
-    const core = spawn('npx', ['tsx', 'src/index.ts'], {
+    const core = spawn(process.execPath, ['--import', 'tsx', '--import', join(ROOT, 'e2e/listening-address.mjs'), 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
-      env: { ...process.env, ...shared, PORT: String(port), HOST: '127.0.0.1', VC_DATA_DIR: coreData, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: opts.adminPassword,
+      env: { ...process.env, ...shared, PORT: '0', HOST: '127.0.0.1', VC_DATA_DIR: coreData, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: opts.adminPassword,
         VC_KANBAN_MODE: 'remote', VC_KANBAN_URL: kanbanUrl, VC_KANBAN_MCP_PUBLIC_BASE: kanbanUrl },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
     children.push(core)
+    const coreAddress = childAddress(core)
     coreLog.attach(core)
+    coreRelay.forwardTo(await coreAddress)
     await coreLog.waitFor(`${base}/api/health`, 'Ядро', core)
-    const kanban = spawn('npx', ['tsx', 'src/kanban/standalone/index.ts'], {
+    const kanban = spawn(process.execPath, ['--import', 'tsx', '--import', join(ROOT, 'e2e/listening-address.mjs'), 'src/kanban/standalone/index.ts'], {
       cwd: join(KANBAN_SOURCE, 'apps/server'),
-      env: { ...process.env, ...shared, PORT: String(kanbanPort), HOST: '127.0.0.1', VC_DATA_DIR: kanbanData, VC_CORE_URL: base,
+      env: { ...process.env, ...shared, PORT: '0', HOST: '127.0.0.1', VC_DATA_DIR: kanbanData, VC_CORE_URL: base,
         VC_MCP_PUBLIC_BASE: base, VC_KANBAN_MCP_PUBLIC_BASE: kanbanUrl,
         // Модель стенду не нужна: адрес исполнителя обязателен при старте, но не вызывается.
         VC_LLM_RUNNER_URL: 'http://127.0.0.1:9' },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
     children.push(kanban)
+    const kanbanAddress = childAddress(kanban)
     kanbanLog.attach(kanban)
+    kanbanRelay.forwardTo(await kanbanAddress)
     await kanbanLog.waitFor(`${kanbanUrl}/v1/health`, 'Канбан', kanban)
     return { base, stop }
   } catch (error) {
