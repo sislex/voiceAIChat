@@ -97,7 +97,9 @@ describe.each(['embedded', 'remote'] as const)('Reader %s: вход на соб�
     expect(await site.getByRole('button', { name: 'Войти', exact: true }).count()).toBe(0)
     const originTime = await site.locator('html').evaluate(() => performance.timeOrigin)
     const saved = page.waitForResponse(response => response.url().startsWith(base + '/api/conversations/') && response.url().endsWith('/preview-url') && response.request().method() === 'POST')
-    await site.getByRole('button', { name: 'Закрыть', exact: true }).click()
+    // Machines is a standalone workspace without a close button (Core UI 1.5.42);
+    // an in-app hash navigation exercises the same preview-url persistence.
+    await site.locator('html').evaluate(() => { window.location.hash = '#/' })
     expect((await saved).ok()).toBe(true)
     await expect.poll(() => recorder.getByRole('textbox', { name: 'Адрес превью' }).inputValue()).toBe('https://app.internal/#/')
     await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
