@@ -1,7 +1,7 @@
 ---
 title: STT Runner: внутренний протокол, ресурсы и lifecycle
 updated: 2026-11-04
-checked: 26f657327
+checked: b17b67409
 areas:
   - apps/server/src/stt
   - apps/server/src/session.ts
