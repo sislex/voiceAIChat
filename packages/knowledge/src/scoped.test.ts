@@ -24,7 +24,7 @@ const usageHit: KbSearchResult = {
 
 const stored: KbStoredDocument = {
   id: 'z-personal',
-  scope: 'personal',
+  scope: 'user',
   ownerId: 'u',
   projectId: null,
   title: 'Personal',
