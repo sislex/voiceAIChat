@@ -165,7 +165,7 @@ export async function measure({ web, desktop, output, clients = ['web', 'electro
         }
         await page.getByRole('button', { name: /admin/ }).first().waitFor({ timeout: 60000 }).catch(async error => { await page.screenshot({ path: join(output, client + '-failed.png') }); console.error(await page.locator('body').innerText(), errors); throw error })
         if (scenario.name === 'chat') await page.getByRole('textbox', { name: 'Поле ввода сообщения', exact: true }).waitFor({ timeout: 60000 })
-        else if (scenario.name === 'account') await page.getByRole('heading', { name: 'Мой аккаунт', exact: true }).waitFor({ timeout: 60000 })
+        else if (scenario.name === 'account') await page.getByRole('region', { name: 'Содержимое аккаунта', exact: true }).waitFor({ timeout: 60000 })
         else await page.getByLabel('Тема интерфейса').waitFor({ timeout: 60000 })
         await delay(5000)
         await collect(client + '/' + scenario.name + '/' + cache, errors)
@@ -189,7 +189,7 @@ export async function measure({ web, desktop, output, clients = ['web', 'electro
         await page.getByRole('textbox', { name: 'Поле ввода сообщения', exact: true }).waitFor({ timeout: 60000 })
         await delay(5000)
         await page.evaluate(hash => { location.hash = hash }, target.hash)
-        if (target.name === 'account') await page.getByRole('heading', { name: 'Мой аккаунт', exact: true }).waitFor({ timeout: 60000 })
+        if (target.name === 'account') await page.getByRole('region', { name: 'Содержимое аккаунта', exact: true }).waitFor({ timeout: 60000 })
         else await page.getByLabel('Тема интерфейса').waitFor({ timeout: 60000 })
         await delay(5000)
         await collect(client + '/' + target.name + '/navigation', errors, report.routes[client + '/chat/cold'].initial)
