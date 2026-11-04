@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-04
-checked: 8e4095c7b
+checked: d585e5016
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -970,8 +970,14 @@ via `SISLEXA_STAND_CORE_SOURCE`; see [local stand setup](deploy.md#isolated-loca
 `server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
 Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is
 remote. Start reuses a stand on the selected project machine or creates one
-from an environment assigned to that machine. Status and URL use the stand's
-gateway URLs. `live_on` and `live_off` address a component of a specified stand;
+from an environment assigned to that machine. Status and URL resolve the stand's
+gateway, then exchange it for an owner-checked inspector lease when `previewAccess`
+is available. Make uses that lease for donor previews and browser actions. Donor file access is a
+separate, explicit read-only Core port: list/read resolve the current member's project
+machine, scope every relative path below the subproject saved in the conversation pair,
+reject text files above 2 MiB and binary files, and expose no write method. The Make MCP
+does not accept a donor project ID from the model and calls this port only for a saved
+project reference with `access: files`; `preview` remains the default. `live_on` and `live_off` address a component of a specified stand;
 live writes use that stand machine's configured project working-copy path,
 never a caller-supplied absolute path. Project access and write roles are
 checked before mutation; Kanban remains responsible for allocation, durable

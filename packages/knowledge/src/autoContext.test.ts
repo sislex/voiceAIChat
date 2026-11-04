@@ -145,6 +145,32 @@ describe('buildKbAutoContext', () => {
     expect(noneResult.emptyReason).toBe('no-match')
   })
 
+  it('добавляет навигацию по связанным модулям после основного модуля', async () => {
+    const preferredSection = { ...section(1, 'основной раздел'), module: 'make' }
+    const relatedSection = { ...section(2, 'связанный раздел'), module: 'core' }
+    const preferred: KbContextBundle = {
+      query: 'q', confidence: 'high', autoInjectAllowed: true,
+      sections: [preferredSection], relatedFiles: [], relatedDocuments: ['doc-1'],
+      staleWarnings: [], estimatedTokens: 0
+    }
+    const global: KbContextBundle = {
+      ...preferred,
+      sections: [preferredSection, relatedSection],
+      relatedDocuments: ['doc-1', 'doc-2']
+    }
+    const service = kb(preferred)
+    service.preferredModule = async () => 'make'
+    service.context = async (_query, _budget, view) =>
+      structuredClone(view?.module === 'make' ? preferred : global)
+
+    const result = await buildKbAutoContext(service, 'q', { userId: 'u', projectIds: [] })
+    expect(result.text).toContain('основной раздел')
+    expect(result.text).toContain('Связанные модули:')
+    expect(result.text).toContain('Документ 2 / Раздел 2 · `doc-2#section-2`')
+    expect(result.bundle.sections.map((item) => item.chunkId)).toEqual(['doc-1#section-1', 'doc-2#section-2'])
+    expect(result.text.length).toBeLessThanOrEqual(KB_AUTO_CONTEXT_BUDGET)
+  })
+
   it('бюджет меньше минимального блока даёт причину budget, а не молчание', async () => {
     const bundle: KbContextBundle = {
       query: 'q', confidence: 'high', autoInjectAllowed: true, sections: [section(1, 'т'.repeat(900))],
