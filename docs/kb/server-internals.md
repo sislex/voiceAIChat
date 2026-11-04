@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-04
-checked: 8e4095c7b
+checked: d585e5016
 areas:
   - apps/server/src
   - packages/knowledge/src
