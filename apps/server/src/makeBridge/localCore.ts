@@ -9,6 +9,7 @@ import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 
 const MAX_FILES = 2_000
+const MAX_TRAVERSAL_ENTRIES = 50_000
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.nx', '.angular', '.turbo', 'out-tsc'])
@@ -78,17 +79,22 @@ export class LocalMakeCore implements MakeCore {
       const result = await fs.list(machine.agentId, current.absolute)
       for (const entry of result.entries ?? []) {
         entries += 1
-        if (entries > MAX_FILES) fail(413, 'project_file_limit_exceeded')
+        if (entries > MAX_TRAVERSAL_ENTRIES) fail(413, 'project_file_limit_exceeded')
         const relative = current.relative === '.' ? entry.name : `${current.relative}/${entry.name}`
         if (entry.kind === 'dir') { if (!SKIP_DIRS.has(entry.name)) pending.push({ absolute: join(root, relative), relative }); continue }
         if (entry.kind !== 'file' || !options.include(entry.name)) continue
-        if (!options.read(entry.name)) { files.push({ path: relative, content: '' }); continue }
+        if (!options.read(entry.name)) {
+          if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
+          files.push({ path: relative, content: '' })
+          continue
+        }
         if ((entry.size ?? 0) > MAX_FILE_BYTES) continue
         const read = await fs.read(machine.agentId, join(root, relative))
         const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
         if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) continue
         total += bytes.byteLength
         if (total > MAX_TOTAL_BYTES) fail(413, 'project_byte_limit_exceeded')
+        if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
         files.push({ path: relative, content: bytes.toString('utf8') })
       }
     }

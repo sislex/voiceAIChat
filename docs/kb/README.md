@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1456. Последние:
+Всего записей: 1457. Последние:
 
+- [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md) — sisl-877-make-project-scan-limits
 - [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md) — sis-l-875-make-large-monorepo-structure
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md) — sisl-871-stand-git-operations
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md) — sisl-869-account-settings-guidance
@@ -76,7 +77,6 @@
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-machines.md) — owner-cf2fda81-machines
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-knowledge-preview.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-knowledge-preview.md) — owner-cf2fda81-knowledge-preview
 - [2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md](log/2026-11-03-pc-radvilovich-tailae39a6-ts-net-sisl-853-universal-search-repeat-race.md) — sisl-853-universal-search-repeat-race
-- [2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md](log/2026-11-03-alexeys-macbook-air-tailae39a6-ts-net-sisl-857-palette-shortcut-retry.md) — sisl-857-palette-shortcut-retry
 
 ## Исторические планы
 
