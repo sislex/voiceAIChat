@@ -9,6 +9,7 @@ import { externalStandUrl, resolveExternalStand, type ExternalStandTarget, type 
 import type { CommandGate } from '../agents/commandGate.js'
 import { buildShellCommand } from '../util/shell.js'
 import { checkoutScript, commitScript, createBranchScript, gitBaseEnv, type GitScript } from '../git/scripts.js'
+import { standResearchOperationSchema, standResearchResultSchema, type StandResearch, type StandResearchOperation, type StandResearchResult } from './standResearch.js'
 
 // Make "stands library": user-scoped stands (no project) with a folder, a start command and a
 // localhost URL on one of the user's machines. Local shapes mirror make-contracts 1.8.16 plus the
@@ -52,7 +53,9 @@ export const userStandOperationSchema = z.union([
   z.object({ op: z.literal('git'), machineId, folder, operation: gitOperation }).strict(),
   // Free the StandProxy lease of a stand Make no longer shows (deleted, moved or off screen).
   z.object({ op: z.literal('release'), machineId, port }).strict(),
-  z.object({ op: z.literal('release'), url: z.string().min(1).max(4000) }).strict()
+  z.object({ op: z.literal('release'), url: z.string().min(1).max(4000) }).strict(),
+  // Read-only page research of a stand in the conversation's headless browser-runner session.
+  standResearchOperationSchema
 ])
 export const userStandArgsSchema = z.tuple([z.string().min(1), userStandOperationSchema])
 export const userStandResultSchema = z.union([
@@ -67,7 +70,8 @@ export const userStandResultSchema = z.union([
     branch: z.string().nullable().optional(), files: z.array(z.object({ path: z.string(), status: z.string() }).strict()).optional(),
     branches: z.array(z.object({ name: z.string(), current: z.boolean() }).strict()).optional(),
     commit: z.string().optional(), diff: z.string().optional(), truncated: z.boolean().optional(), output: z.string().optional()
-  }).strict() }).strict()
+  }).strict() }).strict(),
+  standResearchResultSchema
 ])
 
 export type UserStandStatus = 'stopped' | 'starting' | 'running' | 'failed'
@@ -82,6 +86,7 @@ export type UserStandOperation =
   | { op: 'git'; machineId: string; folder: string; operation: UserStandGitOperation }
   | { op: 'release'; machineId: string; port: number }
   | { op: 'release'; url: string }
+  | StandResearchOperation
 export type UserStandGitOperation = z.infer<typeof gitOperation>
 export interface UserStandGitResult {
   op: UserStandGitOperation['op']; ok: boolean; branch?: string | null; files?: Array<{ path: string; status: string }>
@@ -95,6 +100,7 @@ export type UserStandResult =
   | { content: string; encoding: 'utf8' | 'base64' }
   | { ok: true }
   | { git: UserStandGitResult }
+  | StandResearchResult
 
 const STATUS_CODES: Record<typeof USER_STAND_ERROR_CODES[number], number> = {
   invalid_user_stand: 400, path_outside_stand: 400, machine_forbidden: 403, stand_command_forbidden: 403,
@@ -140,6 +146,8 @@ interface Deps {
   previewAccess?: (user: string, standId: string) => Promise<{ url: string }>
   /** SSRF guard overrides (tests); defaults to system DNS and `VC_STAND_PROXY_ALLOW_PRIVATE`. */
   externalGuard?: { lookup?: StandLookup; allowPrivate?: boolean }
+  /** Stand research through browser-runner; absent when Core has no runner. */
+  research?: Pick<StandResearch, 'research'>
 }
 
 export class UserStands {
@@ -213,6 +221,10 @@ export class UserStands {
       } else standId = userStandId(op.machineId, op.port)
       await this.deps.releaseAccess?.(user, standId)
       return { ok: true }
+    }
+    if (op.op === 'research') {
+      if (!this.deps.research) userStandError('stand_proxy_unavailable')
+      return this.deps.research.research(user, op)
     }
     await this.machine(user, op.machineId, op.op !== 'status')
     this.port(op.port)
