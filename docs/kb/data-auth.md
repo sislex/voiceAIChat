@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: 29ee2a0e8
+checked: f82b55f09
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
