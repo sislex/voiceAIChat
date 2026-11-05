@@ -991,9 +991,11 @@ client errors retain their HTTP status.
 
 `MakeRequestAuthority` creates an in-memory, random capability for each outbound
 request, bound to the user, exact method and URL, with a 30-second lifetime and
-immediate revocation on completion. The ordinary Core authenticator recognizes
-these capabilities, including through Kanban/Make's authenticated whoami
-callback. No user session or persistent credential is created. Design file
+immediate revocation on completion. The ordinary Core authenticator recognizes the forwarded original request from
+the remote service's authenticated `POST /internal/whoami` callback. Relative and
+absolute URL representations are canonicalized to the same path plus query before
+the exact comparison; method, query and path changes remain denied. No user session
+or persistent credential is created. Design file
 reads use the authenticated Make file API through Fastify injection, so the
 same adapter works with embedded Make and the remote Make proxy.
 
