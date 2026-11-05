@@ -13,6 +13,20 @@ const MAX_FILES = 2_000
 const MAX_TRAVERSAL_ENTRIES = 50_000
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024
+
+// Design inventory reads only style, token/theme and styling-config files; stories are listed by name.
+function isDesignFile(name: string): boolean {
+  return /\.(?:css|scss|sass|less)$/i.test(name)
+    || name === 'package.json'
+    || /^(?:tailwind|postcss)\.config\.[cm]?[jt]s$/i.test(name)
+    || /\.stories\.[jt]sx?$/i.test(name)
+    || (/\.(?:json|[cm]?[jt]sx?)$/i.test(name) && /token|theme/i.test(name))
+    || isComponentFile(name)
+}
+
+function isComponentFile(name: string): boolean {
+  return !/\.(?:stories|test|spec)\./i.test(name) && !/token|theme/i.test(name) && (/\.[jt]sx$/i.test(name) || /\.component\.ts$/i.test(name))
+}
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.nx', '.angular', '.turbo', 'out-tsc'])
 
 type ProjectMachine = { agentId: string; path: string; name?: string; online?: boolean; canUse?: boolean }
@@ -68,7 +82,7 @@ export class LocalMakeCore implements MakeCore {
     userId: string,
     projectId: string,
     subproject = '.',
-    options: { include(name: string): boolean; read(name: string): boolean },
+    options: { include(name: string): boolean; read(name: string): boolean; partial?: boolean; deferred?(name: string): boolean },
   ): Promise<ScannedFile[]> {
     const machine = await this.projectMachine(userId, projectId)
     const fs = this.machineFs!
@@ -77,6 +91,22 @@ export class LocalMakeCore implements MakeCore {
     const files: ScannedFile[] = []
     let total = 0
     let entries = 0
+    const deferred: Array<{ relative: string; size: number }> = []
+    const readFile = async (relative: string, size: number | undefined): Promise<boolean> => {
+      if ((size ?? 0) > MAX_FILE_BYTES) return true
+      const read = await fs.read(machine.agentId, join(root, relative))
+      const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
+      if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) return true
+      if (total + bytes.byteLength > MAX_TOTAL_BYTES) {
+        // Partial scans keep what fits instead of failing the whole request.
+        if (options.partial) return true
+        fail(413, 'project_byte_limit_exceeded')
+      }
+      total += bytes.byteLength
+      if (files.length >= MAX_FILES) { if (options.partial) return false; fail(413, 'project_file_limit_exceeded') }
+      files.push({ path: relative, content: bytes.toString('utf8') })
+      return true
+    }
     while (pending.length) {
       const current = pending.shift()!
       const result = await fs.list(machine.agentId, current.absolute)
@@ -91,15 +121,14 @@ export class LocalMakeCore implements MakeCore {
           files.push({ path: relative, content: '' })
           continue
         }
-        if ((entry.size ?? 0) > MAX_FILE_BYTES) continue
-        const read = await fs.read(machine.agentId, join(root, relative))
-        const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
-        if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) continue
-        total += bytes.byteLength
-        if (total > MAX_TOTAL_BYTES) fail(413, 'project_byte_limit_exceeded')
-        if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
-        files.push({ path: relative, content: bytes.toString('utf8') })
+        if (options.deferred?.(entry.name)) { deferred.push({ relative, size: entry.size ?? 0 }); continue }
+        if (!await readFile(relative, entry.size)) return files
       }
+    }
+    // Deferred files (component sources) use only the budget left after design files, smallest first.
+    for (const item of deferred.sort((left, right) => left.size - right.size)) {
+      if (total + item.size > MAX_TOTAL_BYTES) break
+      if (!await readFile(item.relative, item.size)) break
     }
     return files
   }
@@ -153,8 +182,10 @@ export class LocalMakeCore implements MakeCore {
 
   async projectDesign(userId: string, projectId: string, subprojectPath: string): Promise<ProjectDesign> {
     const files = await this.scan(userId, projectId, subprojectPath, {
-      include: name => /\.(?:json|css|scss|sass|less|ts|tsx|js|jsx)$/i.test(name),
-      read: () => true,
+      include: isDesignFile,
+      read: name => !/\.stories\.[jt]sx?$/i.test(name),
+      deferred: isComponentFile,
+      partial: true,
     })
     const tokens: ProjectDesign['tokens'] = []; const themes = new Set<string>(); const components: ProjectDesign['components'] = []
     for (const file of files) {

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: 8768aaaa3
+checked: ed1682f8d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1012,6 +1012,14 @@ workspace guard prevents overlapping Make transfers. Transfers are bounded to
 200 files, the Git editor per-file limit and 4 MiB total. The explicit internal
 transfer option on `linkTaskDesign` permits an owned design from another
 project; ordinary link requests retain the same-project rule.
+
+Project-mode scans of the machine working copy (`LocalMakeCore`) count the
+4 MiB budget only for files they read. `projectStructure` reads only
+`package.json`; `projectDesign` reads style files, `package.json`,
+tailwind/postcss configs and token/theme files, lists stories by name and reads
+component sources (`*.tsx`, `*.jsx`, `*.component.ts`) last, smallest first,
+with the remaining budget. A design over the budget is returned partially
+instead of `413 project_byte_limit_exceeded`.
 
 The Core RPC compatibility adapter dispatches all six project-mode methods,
 preserves adapter HTTP errors, accepts `live_on`/`live_off` and retains transfer
