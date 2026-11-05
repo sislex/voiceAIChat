@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: 29ee2a0e8
+checked: 7b5b86b0d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1352,6 +1352,29 @@ component and has a config) bypass Kanban dev-stands: options/create/status/atta
 start or probe the command and return the inspector lease URL; files/git act on
 the machine root; detach only unbinds. Without a config, options report
 `preview_command_missing`; `preview_*` error codes pass through to Make.
+
+### User stands (Make stands library)
+
+Make conversations without a project use user-scoped stands (name, URL, optional
+folder/command/machine stored by Make). Core implements
+`MakeProjectCore.userStand(userId, operation)` (make-contracts 1.8.16) in
+`makeBridge/userStand.ts` (`UserStands`), wired through `LocalMakeCore.userStand`;
+`coreRpc.ts` dispatches `userStand` with a local zod schema while Core still pins
+make-contracts 1.8.15, and the shared-service authority table grants it per user
+(`u0`). Operations: `machines` (own machines plus machines shared with any project
+where the user is an active member, `db.machines.listUserMachineAccess`),
+`start|status|stop` (same fixed program via `ProjectPreviews.runAt` with root =
+the absolute stand folder, state id `sha256(user, machine, folder, port)`, command
+gate with `projectId: null` and machine policy), `preview` (inspector lease) and
+`files` list/read/write (folder-relative paths, containment through the program's
+`check` action, 2 MiB limit, read returns `utf8` or `base64`). Start/stop/write need
+owner or `full` share access; `read` shares allow status, preview, list and read.
+Errors are `Error(code)` with an HTTP `statusCode`: `machine_unavailable`,
+`machine_forbidden`, `path_outside_stand`, `stand_command_forbidden`,
+`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`.
+StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
+(no project membership; port override rejected) and machine usability is
+re-checked on every proxied request.
 
 ## Stand delivery to dev
 

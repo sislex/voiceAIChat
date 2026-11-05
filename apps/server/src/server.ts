@@ -11,6 +11,7 @@ import { integrationBearer, registerIntegrationTokenGuard } from './auth/integra
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
 import { registerProjectStandPreviewRoutes } from './routes/projectStandPreview.js'
 import { ProjectPreviews } from './makeBridge/projectPreview.js'
+import { UserStands } from './makeBridge/userStand.js'
 import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, APPLICATION_ASSISTANT_KIND, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
@@ -183,7 +184,7 @@ import { createReaderModule } from '@sislexa/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerMakePreviewInspector, registerReaderProxy } from './readerBridge/proxy.js'
-import { makeStandPreviewAccess } from './makeBridge/previewAccess.js'
+import { makeStandPreviewAccess, makeUserStandPreviewAccess } from './makeBridge/previewAccess.js'
 import { registerBrowserShotRoutes } from './routes/browserShots.js'
 import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@sislexa/playwright-reader'
 import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
@@ -743,8 +744,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
   const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   const projectPreviews = new ProjectPreviews({ db, machines: agentRegistry, gate: commandGate, reservedPorts: proxyPorts(opts.config.standProxyPorts) })
+  // User-scoped Make stands (stands library); the preview lease closes over `standProxy` lazily.
+  const userStands: UserStands = new UserStands({
+    db, machines: agentRegistry, previews: projectPreviews, reservedPorts: proxyPorts(opts.config.standProxyPorts),
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user: string, stand: string): Promise<{ url: string }> => makeUserStandPreviewAccess(
+      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost'))(user, stand) : undefined
+  })
   const kanbanStand = standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
-  const standProxy = new StandProxy({
+  const standProxy: StandProxy = new StandProxy({
     secret: sessionSecret,
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
     publicScheme: opts.config.standProxyPublicScheme,
@@ -759,7 +766,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin), headers: { cookie } })
       return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
     },
-    stand: (user, project, stand) => ProjectPreviews.agentOf(stand) ? projectPreviews.target(user, project, stand) : kanbanStand(user, project, stand)
+    stand: (user, project, stand) => ProjectPreviews.agentOf(stand) ? projectPreviews.target(user, project, stand) : kanbanStand(user, project, stand),
+    userStand: (user, stand) => userStands.target(user, stand)
   })
   registerStandProxy(app, standProxy, standSession)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
@@ -1029,6 +1037,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     git: gitWorkspaces,
     standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
     makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
+    userStand: (user, operation) => userStands.userStand(user, operation),
     transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),

@@ -289,6 +289,25 @@ export class MachinesRepo extends BaseRepo {
   }
 
   /**
+   * Machines a user may use without a project context (Make user stands): own machines plus
+   * machines shared with any project where the user is an active member. A machine shared with
+   * several projects gets the strongest share level.
+   */
+  async listUserMachineAccess(userId: string): Promise<Array<{ agentId: string; name: string; access: MachineAccessLevel }>> {
+    const own = (await this.listAgents(userId)).map(agent => ({ agentId: agent.id, name: agent.name, access: 'owner' as MachineAccessLevel }))
+    const shared = (await this.sql.all(`SELECT a.id AS id, a.name AS name,
+         MAX(CASE WHEN share.access = 'read' THEN 0 ELSE 1 END) AS full_access
+       FROM machine_project_shares share
+       JOIN agents a ON a.id = share.agent_id
+       JOIN project_members member ON member.project_id = share.project_id
+       JOIN users u ON u.name = member.username
+       WHERE share.shared = 1 AND member.username = ? AND u.blocked = 0 AND (a.user_id IS NULL OR a.user_id <> ?)
+       GROUP BY a.id, a.name
+       ORDER BY a.name ASC`, [userId, userId])) as Array<{ id: string; name: string; full_access: number | string }>
+    return [...own, ...shared.map(row => ({ agentId: row.id, name: row.name, access: (Number(row.full_access) ? 'full' : 'read') as MachineAccessLevel }))]
+  }
+
+  /**
    * Права пользователя на машину (machines-roadmap п.18): 'owner' — своя машина (полный доступ),
    * 'full'/'read' — уровень, с которым владелец предоставил её проекту, null — доступа нет.
    */
