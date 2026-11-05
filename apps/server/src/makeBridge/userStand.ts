@@ -5,13 +5,14 @@ import type { MachineAccessLevel } from '@sislexa/agent-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import type { MachinesService } from '../machines/service.js'
 import type { ProjectPreviews } from './projectPreview.js'
+import { externalStandUrl, resolveExternalStand, type ExternalStandTarget, type StandLookup } from '../standExternal.js'
 
 // Make "stands library": user-scoped stands (no project) with a folder, a start command and a
 // localhost URL on one of the user's machines. Local shapes mirror make-contracts 1.8.16
 // (`MakeProjectCore.userStand`); once Core pins that release the published types replace these.
 
 export const USER_STAND_ERROR_CODES = ['machine_unavailable', 'machine_forbidden', 'path_outside_stand', 'stand_command_forbidden',
-  'stand_proxy_unavailable', 'file_too_large', 'invalid_user_stand'] as const
+  'stand_proxy_unavailable', 'file_too_large', 'invalid_user_stand', 'stand_url_forbidden'] as const
 export const USER_STAND_MAX_FILE_BYTES = 2 * 1024 * 1024
 
 const machineId = z.string().min(1).max(200).regex(/^[A-Za-z0-9_-]+$/)
@@ -27,6 +28,8 @@ export const userStandOperationSchema = z.union([
   z.object({ op: z.literal('machines') }).strict(),
   z.object({ op: z.enum(['start', 'status', 'stop']), machineId, folder, command, port }).strict(),
   z.object({ op: z.literal('preview'), machineId, port }).strict(),
+  // External http(s) stand (no machine): proxied through a `ue-` lease after the SSRF guard.
+  z.object({ op: z.literal('preview'), url: z.string().min(1).max(4000) }).strict(),
   z.object({ op: z.literal('files'), machineId, folder, action: z.literal('list'), dir: relative }).strict(),
   z.object({ op: z.literal('files'), machineId, folder, action: z.literal('read'), path: filePath }).strict(),
   z.object({ op: z.literal('files'), machineId, folder, action: z.literal('write'), path: filePath,
@@ -47,6 +50,7 @@ export type UserStandOperation =
   | { op: 'machines' }
   | { op: 'start' | 'status' | 'stop'; machineId: string; folder: string; command: string; port: number }
   | { op: 'preview'; machineId: string; port: number }
+  | { op: 'preview'; url: string }
   | { op: 'files'; machineId: string; folder: string; action: 'list'; dir: string }
   | { op: 'files'; machineId: string; folder: string; action: 'read'; path: string }
   | { op: 'files'; machineId: string; folder: string; action: 'write'; path: string; content: string; encoding: 'utf8' | 'base64' }
@@ -60,7 +64,7 @@ export type UserStandResult =
 
 const STATUS_CODES: Record<typeof USER_STAND_ERROR_CODES[number], number> = {
   invalid_user_stand: 400, path_outside_stand: 400, machine_forbidden: 403, stand_command_forbidden: 403,
-  machine_unavailable: 409, file_too_large: 413, stand_proxy_unavailable: 503
+  machine_unavailable: 409, file_too_large: 413, stand_proxy_unavailable: 503, stand_url_forbidden: 403
 }
 export function userStandError(code: typeof USER_STAND_ERROR_CODES[number]): never {
   throw Object.assign(new Error(code), { statusCode: STATUS_CODES[code] })
@@ -84,6 +88,9 @@ export function parseUserStandId(standId: string): { machineId: string; port: nu
   return port >= 1 && port <= 65535 ? { machineId: match[1]!, port } : null
 }
 
+/** `ue-<sha256(origin)>`: StandProxy id of an external user stand; the origin itself is kept by `UserStands`. */
+export function externalUserStandId(origin: string): string { return 'ue-' + createHash('sha256').update(origin).digest('hex').slice(0, 32) }
+
 export type UserStandMachines = Pick<MachinesService, 'isOnline' | 'fsList' | 'fsRead' | 'fsWrite'>
 interface Deps {
   db: Pick<VoiceChatDb, 'machines'>
@@ -93,9 +100,13 @@ interface Deps {
   reservedPorts: number[]
   /** Make inspector lease for a `us-` stand id; absent when the proxy has no ports. */
   previewAccess?: (user: string, standId: string) => Promise<{ url: string }>
+  /** SSRF guard overrides (tests); defaults to system DNS and `VC_STAND_PROXY_ALLOW_PRIVATE`. */
+  externalGuard?: { lookup?: StandLookup; allowPrivate?: boolean }
 }
 
 export class UserStands {
+  /** `ue-` id -> upstream origin, registered by `preview {url}`; bounded, oldest entries drop first. */
+  private readonly external = new Map<string, string>()
   constructor(private readonly deps: Deps) {}
 
   /** Usable machine of the user or `machine_forbidden`; `write` requires owner or full share access. */
@@ -112,7 +123,12 @@ export class UserStands {
   }
 
   /** StandProxy resolver for `us-` ids; re-run on every proxied request. */
-  async target(user: string, standId: string): Promise<{ machineId: string; gatewayPort: number }> {
+  async target(user: string, standId: string): Promise<{ machineId: string; gatewayPort: number } | ExternalStandTarget> {
+    if (standId.startsWith('ue-')) {
+      const origin = this.external.get(standId)
+      if (!origin) throw Object.assign(new Error('stand_not_found'), { statusCode: 404 })
+      return resolveExternalStand(origin, this.deps.externalGuard)
+    }
     const parsed = parseUserStandId(standId)
     if (!parsed) throw Object.assign(new Error('stand_not_found'), { statusCode: 404 })
     await this.machine(user, parsed.machineId, false)
@@ -126,6 +142,19 @@ export class UserStands {
     if (op.op === 'machines') {
       const machines = await this.deps.db.machines.listUserMachineAccess(user)
       return { machines: machines.map(m => ({ agentId: m.agentId, name: m.name, online: this.deps.machines.isOnline(m.agentId) })) }
+    }
+    if (op.op === 'preview' && 'url' in op) {
+      const url = externalStandUrl(op.url)
+      await resolveExternalStand(url.href, this.deps.externalGuard)
+      if (!this.deps.previewAccess) userStandError('stand_proxy_unavailable')
+      const standId = externalUserStandId(url.origin)
+      this.external.delete(standId); this.external.set(standId, url.origin)
+      if (this.external.size > 1000) this.external.delete(this.external.keys().next().value!)
+      const lease = await this.deps.previewAccess(user, standId).catch((error: { statusCode?: number }) => {
+        userStandError(error?.statusCode === 403 ? 'stand_url_forbidden' : 'stand_proxy_unavailable')
+      })
+      // The proxied app is served at the root of the lease origin; keep the stand path and query.
+      return { url: new URL(lease.url).origin + url.pathname + url.search + url.hash, interactive: true }
     }
     if (op.op === 'preview') {
       await this.machine(user, op.machineId, false)
