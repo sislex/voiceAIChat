@@ -41,7 +41,7 @@ describe('Make stand adapter', () => {
     const f = fixture()
     f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
     expect(await f.adapter.standPreview('alice', 'p', { op: 'start', subprojectPath: '.' }))
-      .toEqual({ standId: 'stand', status: 'running', url: 'http://stand.test' })
+      .toEqual({ standId: 'stand', status: 'running', url: 'http://stand.test', interactive: false })
     expect(f.fetchImpl).toHaveBeenCalledTimes(2)
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
   })
@@ -51,7 +51,7 @@ describe('Make stand adapter', () => {
     const f = fixture(previewAccess)
     f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
     expect(await f.adapter.standPreview('alice', 'p', { op: 'status', subprojectPath: '.' }))
-      .toEqual({ standId: 'stand', status: 'running', url: 'https://core.test/api/dev-stand-access/lease/' })
+      .toEqual({ standId: 'stand', status: 'running', url: 'https://core.test/api/dev-stand-access/lease/', interactive: true })
     expect(previewAccess).toHaveBeenCalledWith('alice', 'p', 'stand')
   })
 
@@ -70,7 +70,7 @@ describe('Make stand adapter', () => {
     f.stand.gateway.urls = ['http://127.0.0.1:5273']
     f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
     expect(await f.adapter.standPreview('alice', 'p', { op: 'url', subprojectPath: '.' }))
-      .toEqual({ standId: 'stand', status: 'running', url: 'http://127.0.0.1:5273' })
+      .toEqual({ standId: 'stand', status: 'running', url: 'http://127.0.0.1:5273', interactive: false })
   })
 
   it.each(['live_on', 'live_off'] as const)('%s uses the stand machine working copy', async op => {
