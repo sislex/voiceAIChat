@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: 06ae9f17
+checked: 91bf61b06
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1427,6 +1427,19 @@ lease, then gets the `sxs_<key>_` prefix; `X-Frame-Options`, CSP
 `frame-ancestors`, HSTS and Alt-Svc are removed and `frame-ancestors 'self'
 <Core origin> <lease origin>` is added. HTTPS upstreams use SNI and certificate
 verification of the upstream hostname; WebSocket upgrades use the same path.
+Apps embed their own absolute origin (an Angular `assets/config.json` with
+`https://<stand>/meridian/api`), which would send API calls cross-origin and fail
+CORS, so `standRewrite.ts` rewrites the upstream origin to the lease origin in
+textual bodies of external leases only: `text/*`, `application/json`,
+`*/*+json`, JavaScript, XHTML. Absolute, protocol-relative (`//host`),
+JSON-escaped (`https:\/\/host`) and `ws`/`wss` forms are matched for the exact
+host (a default port also matches its explicit `:443`/`:80`; other ports and
+longer hostnames are left alone). Accept-Encoding sent upstream keeps only
+gzip/deflate/br/identity; encoded bodies are decoded, sent as identity with an
+exact Content-Length, and a strong ETag becomes weak. Bodies over 10 MiB, ranges
+and binary types stream untouched. `Access-Control-Allow-Origin` equal to the
+upstream origin and CSP sources naming it are rewritten too. Machine-tunnel
+leases are unchanged.
 
 Stand research: `{ op: 'research', conversationId, stand, url, navigate?, reload?, action }`
 (`makeBridge/standResearch.ts`, `StandResearch`) runs one read-only browser-runner

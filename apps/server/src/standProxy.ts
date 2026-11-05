@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { REST, type DevStandAccessResponse } from '@voicechat/shared'
 import type { ExternalStandTarget } from './standExternal.js'
+import { canRewriteOrigin, rewritableAcceptEncoding, rewriteOriginBody, rewriteOriginHeaders, rewrittenBodyHeaders, REWRITE_MAX_BYTES } from './standRewrite.js'
 
 export const IDLE_MS = 60 * 60 * 1000
 export function proxyPorts(value = ''): number[] {
@@ -69,6 +70,10 @@ export function externalStandHeaders(headers: IncomingHttpHeaders, key: string, 
   if (headers.origin === origin) result.origin = upstream
   const referer = headers.referer
   if (typeof referer === 'string' && (referer === origin || referer.startsWith(origin + '/'))) result.referer = upstream + referer.slice(origin.length)
+  // Textual responses are rewritten to the lease origin, so only ask for codings the proxy can decode.
+  const encoding = rewritableAcceptEncoding(headers['accept-encoding'])
+  if (encoding) result['accept-encoding'] = encoding
+  else delete result['accept-encoding']
   return result
 }
 /**
@@ -97,7 +102,7 @@ export function externalStandResponseHeaders(headers: IncomingHttpHeaders, key: 
     return [pair, ...kept, ' SameSite=Lax'].join(';')
   })
   if (cookies) result['set-cookie'] = standCookies(cookies, key)
-  return result
+  return rewriteOriginHeaders(result, upstream, origin)
 }
 type MachineTarget = { machineId: string; gatewayPort: number }
 type Target = MachineTarget | ExternalStandTarget
@@ -268,23 +273,38 @@ export class StandProxy {
       if (res) {
         res.on('close', () => { response.destroy(); tunnel.destroy() })
         const scriptUrl = lease.origin + INSPECTOR_SCRIPT_PATH
-        if (lease.inject === 'make-inspector' && req.method !== 'HEAD' && response.statusCode !== 204 && response.statusCode !== 304 && scriptUrl && canInjectInspector(headers, scriptUrl)) {
+        const hasBody = req.method !== 'HEAD' && response.statusCode !== 204 && response.statusCode !== 304
+        const inject = lease.inject === 'make-inspector' && hasBody && canInjectInspector(headers, scriptUrl)
+        // External upstreams embed their own absolute origin (config.json API URLs, bundles); point it at the lease.
+        const upstreamOrigin = isExternal(target) ? target.origin : undefined
+        const rewrite = upstreamOrigin !== undefined && hasBody && canRewriteOrigin(headers)
+        if (inject || rewrite) {
           void (async () => {
             const chunks: Buffer[] = []
-            for await (const chunk of response) chunks.push(Buffer.from(chunk))
-            const original = Buffer.concat(chunks)
-            const rewritten = await injectInspectorHtml(original, headers, scriptUrl, [lease.origin + PREVIEW_INSPECTOR_SCRIPT_PATH])
-            if (res.destroyed) return
-            if (rewritten) {
-              headers['content-length'] = String(rewritten.length)
-              delete headers['transfer-encoding']
-              delete headers['content-encoding']
-              delete headers.etag
-              delete headers['content-md5']
-              delete headers.digest
+            let size = 0
+            for await (const chunk of response) {
+              chunks.push(Buffer.from(chunk)); size += chunk.length
+              if (size > REWRITE_MAX_BYTES) {
+                // Too large to buffer: stream the original bytes and headers as they are.
+                if (res.destroyed) return
+                res.writeHead(response.statusCode ?? 502, headers)
+                for (const buffered of chunks) res.write(buffered)
+                response.pipe(res)
+                return
+              }
             }
+            let body: Buffer = Buffer.concat(chunks)
+            if (rewrite && upstreamOrigin) {
+              const rewritten = await rewriteOriginBody(body, headers, upstreamOrigin, lease.origin)
+              if (rewritten) { body = rewritten; rewrittenBodyHeaders(headers, body.length) }
+            }
+            if (inject) {
+              const injected = await injectInspectorHtml(body, headers, scriptUrl, [lease.origin + PREVIEW_INSPECTOR_SCRIPT_PATH])
+              if (injected) { body = injected; rewrittenBodyHeaders(headers, body.length); delete headers.etag }
+            }
+            if (res.destroyed) return
             res.writeHead(response.statusCode ?? 502, headers)
-            res.end(rewritten ?? original)
+            res.end(body)
           })().catch(() => { res.destroy(); tunnel.destroy() })
         } else { res.writeHead(response.statusCode ?? 502, headers); response.pipe(res) }
       }
