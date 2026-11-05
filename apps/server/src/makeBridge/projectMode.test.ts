@@ -52,6 +52,21 @@ describe('MakeCore project mode', () => {
     expect(list).not.toHaveBeenCalledWith('a1', '/repo/apps/.nx')
   })
 
+  it('builds the design from style files in a tree larger than the byte limit of non-style files', async () => {
+    const largeSources = Array.from({ length: 17 }, (_, index) => ({
+      name: `source-${index}.ts`, kind: 'file' as const, size: 256 * 1024, content: 'x'.repeat(256 * 1024),
+    }))
+    const { core, read } = fixture({
+      '/repo/apps/web': [{ name: 'styles.scss', kind: 'file', size: 30, content: ':root { --brand: #f00; }' },
+        { name: 'Button.stories.ts', kind: 'file', size: 10, content: 'export {}' }, ...largeSources],
+    })
+    expect(await core.projectDesign('ann', 'p1', 'apps/web')).toEqual({
+      tokens: [expect.objectContaining({ name: '--brand', value: '#f00', file: 'styles.scss' })], themes: [],
+      components: [{ name: 'Button', kind: 'story', file: 'Button.stories.ts' }],
+    })
+    expect(read.mock.calls.map(call => call[1])).toEqual(['/repo/apps/web/styles.scss'])
+  })
+
   it('discovers packages when traversal contains more than 2,000 mostly excluded entries', async () => {
     const excludedSources = Array.from({ length: 4_000 }, (_, index) => ({
       name: `source-${index}.ts`, kind: 'file' as const, size: 1,

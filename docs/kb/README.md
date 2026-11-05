@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1461. Последние:
+Всего записей: 1462. Последние:
 
 - [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md) — sisl-877-make-project-scan-limits
 - [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md) — sis-l-875-make-large-monorepo-structure
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-user-stands.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-user-stands.md) — user-stands
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-preview-stands.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-preview-stands.md) — project-preview-stands
+- [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-design-limit.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-design-limit.md) — project-design-limit
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-request-authority.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-owner-cf2fda81-request-authority.md) — owner-cf2fda81-request-authority
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-external-stand-proxy.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-external-stand-proxy.md) — external-stand-proxy
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-871-stand-git-operations.md) — sisl-871-stand-git-operations
 - [2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md](log/2026-11-04-pc-radvilovich-tailae39a6-ts-net-sisl-869-account-settings-guidance.md) — sisl-869-account-settings-guidance
 - [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-sisl-867-ephemeral-test-listeners.md) — sisl-867-ephemeral-test-listeners
-- [2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550.md](log/2026-11-04-alexeys-macbook-air-tailae39a6-ts-net-release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550.md) — release-train-88f3b8d7-adad-496a-8bf0-aa4eb0cad550
 
 ## Исторические планы
 
