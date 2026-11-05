@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-04
-checked: d585e5016
+updated: 2026-11-05
+checked: ebc399a45
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -939,10 +939,14 @@ multi-repository bindings and component routing.
 
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
 текущего участника. Структуру и дизайн рабочей копии он читает только через
-read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
-элементами, 256 КиБ на файл и 4 МиБ суммарно. Инвентарь включает package roots,
-stories, style files, CSS custom properties из `:root` и `data-theme`, простые
-JSON/TypeScript token maps и экспортированные компоненты.
+read-only `machineFs`: обход исключает каталоги сборки, VCS и кэши (`.nx`,
+`.angular`, `.turbo`, `out-tsc`), ограничен 50 000 просмотренными записями и 2000
+включёнными в результат файлами, 256 КиБ на прочитанный файл и 4 МиБ суммарно для
+прочитанного содержимого. Структурный скан читает только
+`package.json`, а stories и style files считает по именам, поэтому размер исходников
+монорепозитория не расходует байтовый лимит. Отдельный дизайн-скан выбранного
+подпроекта читает style/JSON/TypeScript-файлы и извлекает CSS custom properties из
+`:root` и `data-theme`, простые token maps и экспортированные компоненты.
 
 Git-операции project mode используют тот же `GitWorkspaceService`, что REST
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,

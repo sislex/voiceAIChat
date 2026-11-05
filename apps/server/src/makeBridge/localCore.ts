@@ -9,9 +9,10 @@ import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 
 const MAX_FILES = 2_000
+const MAX_TRAVERSAL_ENTRIES = 50_000
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next'])
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.nx', '.angular', '.turbo', 'out-tsc'])
 
 type ProjectMachine = { agentId: string; path: string; name?: string; online?: boolean; canUse?: boolean }
 type ScannedFile = { path: string; content: string }
@@ -60,27 +61,40 @@ export class LocalMakeCore implements MakeCore {
       path: machine.directories?.projectWorkdir.path || machine.path }
   }
 
-  private async scan(userId: string, projectId: string, subproject = '.'): Promise<ScannedFile[]> {
+  private async scan(
+    userId: string,
+    projectId: string,
+    subproject = '.',
+    options: { include(name: string): boolean; read(name: string): boolean },
+  ): Promise<ScannedFile[]> {
     const machine = await this.projectMachine(userId, projectId)
     const fs = this.machineFs!
     const root = join(machine.path, subproject)
     const pending = [{ absolute: root, relative: '.' }]
     const files: ScannedFile[] = []
     let total = 0
+    let entries = 0
     while (pending.length) {
       const current = pending.shift()!
       const result = await fs.list(machine.agentId, current.absolute)
       for (const entry of result.entries ?? []) {
-        if (files.length + pending.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
+        entries += 1
+        if (entries > MAX_TRAVERSAL_ENTRIES) fail(413, 'project_file_limit_exceeded')
         const relative = current.relative === '.' ? entry.name : `${current.relative}/${entry.name}`
         if (entry.kind === 'dir') { if (!SKIP_DIRS.has(entry.name)) pending.push({ absolute: join(root, relative), relative }); continue }
-        if (entry.kind !== 'file' || (entry.size ?? 0) > MAX_FILE_BYTES) continue
-        if (!/\.(?:json|css|scss|sass|less|ts|tsx|js|jsx)$/i.test(entry.name)) continue
+        if (entry.kind !== 'file' || !options.include(entry.name)) continue
+        if (!options.read(entry.name)) {
+          if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
+          files.push({ path: relative, content: '' })
+          continue
+        }
+        if ((entry.size ?? 0) > MAX_FILE_BYTES) continue
         const read = await fs.read(machine.agentId, join(root, relative))
         const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
         if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) continue
         total += bytes.byteLength
         if (total > MAX_TOTAL_BYTES) fail(413, 'project_byte_limit_exceeded')
+        if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
         files.push({ path: relative, content: bytes.toString('utf8') })
       }
     }
@@ -88,7 +102,10 @@ export class LocalMakeCore implements MakeCore {
   }
 
   async projectStructure(userId: string, projectId: string): Promise<ProjectSubproject[]> {
-    const files = await this.scan(userId, projectId)
+    const files = await this.scan(userId, projectId, '.', {
+      include: name => name === 'package.json' || /\.stories\.[jt]sx?$/i.test(name) || /\.(?:css|scss|sass|less)$/i.test(name),
+      read: name => name === 'package.json',
+    })
     const packages = files.filter(file => /(^|\/)package\.json$/.test(file.path))
     const result: ProjectSubproject[] = []
     for (const file of packages) {
@@ -132,7 +149,10 @@ export class LocalMakeCore implements MakeCore {
   }
 
   async projectDesign(userId: string, projectId: string, subprojectPath: string): Promise<ProjectDesign> {
-    const files = await this.scan(userId, projectId, subprojectPath)
+    const files = await this.scan(userId, projectId, subprojectPath, {
+      include: name => /\.(?:json|css|scss|sass|less|ts|tsx|js|jsx)$/i.test(name),
+      read: () => true,
+    })
     const tokens: ProjectDesign['tokens'] = []; const themes = new Set<string>(); const components: ProjectDesign['components'] = []
     for (const file of files) {
       if (/\.(?:css|scss|sass|less)$/i.test(file.path)) {
