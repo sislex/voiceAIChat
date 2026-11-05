@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: f82b55f09
+checked: 23675079d
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -3475,7 +3475,14 @@ browser WebSocket/HMR verification.
 
 Core's `POST /api/dev-stand-access` leases a same-host public port to the current
 session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
-enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
+enable the pool; an empty value disables it. Every shown Make stand (bound,
+library, local or external) holds one port per lease for up to an hour of
+idleness; Make releases leases of deleted or hidden stands (`userStand {op:'release'}`),
+but conversations with several numbered stands still need more ports than five.
+For development stands use a 40-port range that no other local service listens on
+(for example `VC_STAND_PROXY_PORTS=28850-28889`; Core reserves the whole range, so a
+stand can never target a port inside it, and a busy port is skipped). The range may
+span at most 1001 ports; published ports and firewall rules must cover it. `VC_STAND_PROXY_PUBLIC_HOST` is an
 optional hostname override, otherwise Core uses the access request's Host
 (without its original port). Keep this hostname equal to the browser's Core
 hostname so its session cookie reaches the listener.

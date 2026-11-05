@@ -320,6 +320,14 @@ export class StandProxy {
     await new Promise<void>(resolve => lease.server.close(() => resolve()))
   }
   async expire(): Promise<void> { for (const [id, lease] of this.leases) if (lease.expiresAt <= this.now()) await this.remove(id, lease) }
+  /** Close every lease of this user for one stand id now instead of after the idle timeout; returns how many closed. */
+  release(user: string, standId: string): Promise<number> {
+    return this.serial(async () => {
+      let closed = 0
+      for (const [id, lease] of this.leases) if (lease.user === user && lease.standId === standId) { await this.remove(id, lease); closed++ }
+      return closed
+    })
+  }
   async close(): Promise<void> {
     this.closed = true; clearInterval(this.timer)
     await this.serial(async () => { for (const [id, lease] of this.leases) await this.remove(id, lease) })
