@@ -18,8 +18,11 @@ const a = JSON.parse(Buffer.from(process.argv[1], 'base64').toString());
 const fail = code => { throw new Error(code) };
 const inside = (root, target) => target === root || target.startsWith(root + path.sep);
 const alive = pid => { if (!pid) return false; try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } };
-const listening = port => new Promise(done => { const s = net.connect({ host: '127.0.0.1', port }); const end = v => { s.destroy(); done(v) }; s.setTimeout(1000, () => end(false)); s.once('connect', () => end(true)); s.once('error', () => end(false)) });
-const ready = (port, p) => new Promise(done => { const r = http.get({ host: '127.0.0.1', port, path: p || '/', timeout: 1000 }, res => { res.resume(); done(true) }); r.on('timeout', () => { r.destroy(); done(false) }); r.on('error', () => done(false)) });
+const listening4 = (port, host) => new Promise(done => { const s = net.connect({ host, port }); const end = v => { s.destroy(); done(v) }; s.setTimeout(1000, () => end(false)); s.once('connect', () => end(true)); s.once('error', () => end(false)) });
+const ready4 = (port, p, host) => new Promise(done => { const r = http.get({ host, port, path: p || '/', timeout: 1000 }, res => { res.resume(); done(true) }); r.on('timeout', () => { r.destroy(); done(false) }); r.on('error', () => done(false)) });
+// Dev servers on localhost often bind only ::1 (macOS); the agent tunnel falls back the same way.
+const listening = async port => (await listening4(port, '127.0.0.1')) || listening4(port, '::1');
+const ready = async (port, p) => (await ready4(port, p, '127.0.0.1')) || ready4(port, p, '::1');
 const rel = (value, missing) => {
   const relative = value || '.';
   if (path.isAbsolute(relative) || relative.includes('\\') || relative.split('/').some(p => p === '..' || p.toLowerCase() === '.git')) fail('path_outside_working_copy');
