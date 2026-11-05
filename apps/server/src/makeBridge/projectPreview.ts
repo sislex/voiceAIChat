@@ -51,7 +51,14 @@ let root;
   let state = null;
   try { state = JSON.parse(fs.readFileSync(stateFile, 'utf8')) } catch {}
   const save = value => fs.writeFileSync(stateFile, JSON.stringify(value), { mode: 0o600 });
-  const kill = () => { if (state?.pid && alive(state.pid)) { try { process.kill(-state.pid, 'SIGTERM') } catch {} } try { fs.unlinkSync(stateFile) } catch {} state = null };
+  const kill = () => {
+    if (state?.pid && alive(state.pid)) {
+      try { process.kill(-state.pid, 'SIGTERM') } catch {}
+      // Dev servers such as nx serve may ignore SIGTERM; escalate after 5 s.
+      for (let i = 0; i < 50 && alive(state.pid); i++) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      if (alive(state.pid)) { try { process.kill(-state.pid, 'SIGKILL') } catch {} }
+    }
+    try { fs.unlinkSync(stateFile) } catch {} state = null };
   const status = async () => {
     const port = state?.port ?? a.port;
     if (!state) return { status: 'stopped' };
