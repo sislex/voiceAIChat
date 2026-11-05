@@ -746,7 +746,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const projectPreviews = new ProjectPreviews({ db, machines: agentRegistry, gate: commandGate, reservedPorts: proxyPorts(opts.config.standProxyPorts) })
   // User-scoped Make stands (stands library); the preview lease closes over `standProxy` lazily.
   const userStands: UserStands = new UserStands({
-    db, machines: agentRegistry, previews: projectPreviews, reservedPorts: proxyPorts(opts.config.standProxyPorts),
+    db, machines: agentRegistry, previews: projectPreviews, reservedPorts: proxyPorts(opts.config.standProxyPorts), gate: commandGate,
+    releaseAccess: async (user: string, stand: string) => { await standProxy.release(user, stand) },
     previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user: string, stand: string): Promise<{ url: string }> => makeUserStandPreviewAccess(
       standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost'))(user, stand) : undefined
   })

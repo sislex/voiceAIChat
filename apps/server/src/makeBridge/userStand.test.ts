@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ProjectPreviews } from './projectPreview.js'
-import { UserStands, userStandId } from './userStand.js'
+import { UserStands, externalUserStandId, userStandId } from './userStand.js'
 import { StandProxy } from '../standProxy.js'
 
 const freePort = () => new Promise<number>(resolve => {
@@ -14,7 +14,7 @@ const freePort = () => new Promise<number>(resolve => {
 let home = ''
 afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }) })
 
-function stands(access: Array<{ agentId: string; name: string; access: 'owner' | 'full' | 'read' }> = [{ agentId: 'm1', name: 'Mac', access: 'owner' }]) {
+function stands(access: Array<{ agentId: string; name: string; access: 'owner' | 'full' | 'read' }> = [{ agentId: 'm1', name: 'Mac', access: 'owner' }], extra: { gate?: (input: { command: string }) => Promise<{ allowed: boolean }>; releaseAccess?: (user: string, stand: string) => Promise<void> } = {}) {
   home = mkdtempSync(path.join(tmpdir(), 'us-'))
   const folder = path.join(home, 'stand')
   mkdirSync(folder, { recursive: true })
@@ -30,8 +30,13 @@ function stands(access: Array<{ agentId: string; name: string; access: 'owner' |
     fsWrite: async (_agent: string, file: string, data: string) => { writeFileSync(file, Buffer.from(data, 'base64')); return { root: '/', cwd: '' } }
   }
   const previews = new ProjectPreviews({ db: {} as never, machines: machines as never, gate: async () => ({ allowed: true }) as never, reservedPorts: [] })
-  const db = { machines: { listUserMachineAccess: async () => access } }
-  return { folder, stands: new UserStands({ db: db as never, machines: machines as never, previews, reservedPorts: [] }) }
+  const locks = new Set<string>()
+  const db = { machines: {
+    listUserMachineAccess: async () => access,
+    acquireGitWorkspaceLock: async (agent: string, root: string) => locks.has(agent + root) ? null : (locks.add(agent + root), { expiresAt: 1 }),
+    releaseGitWorkspaceLock: async (agent: string, root: string) => { locks.delete(agent + root) }
+  } }
+  return { folder, stands: new UserStands({ db: db as never, machines: machines as never, previews, reservedPorts: [], ...(extra as object) }) }
 }
 
 describe('UserStands', () => {
@@ -87,6 +92,10 @@ describe('UserStands', () => {
       access = []
       const response = await fetch(lease.url, { headers: { cookie: 'vc_session=alice', connection: 'close' } })
       expect(response.status).toBe(401)
+      // Make releases a lease it no longer shows: the port is free at once, other users' leases stay.
+      expect(await proxy.release('bob', userStandId('m1', 5173))).toBe(0)
+      expect(await proxy.release('alice', userStandId('m1', 5173))).toBe(1)
+      await expect(fetch(lease.url, { headers: { cookie: 'vc_session=alice', connection: 'close' } })).rejects.toThrow()
     } finally { await proxy.close() }
   })
 
@@ -101,5 +110,45 @@ describe('UserStands', () => {
     expect(await s.target('alice', leases[0]!)).toMatchObject({ kind: 'external', origin: 'https://stg-02.mrdstaging.com', address: '93.184.216.34' })
     await expect(s.userStand('alice', { op: 'preview', url: 'http://10.0.0.1/' })).rejects.toThrow('stand_url_forbidden')
     await expect(s.userStand('alice', { op: 'preview', url: 'ftp://stg.example.com/' })).rejects.toThrow('stand_url_forbidden')
+  })
+
+  it('runs Git only at the root of a stand folder, honours the gate and access, and releases leases', async () => {
+    const commands: string[] = []
+    let allowed = true
+    const released: string[] = []
+    const { folder, stands: s } = stands(undefined, {
+      gate: async ({ command }) => { commands.push(command); return { allowed } },
+      releaseAccess: async (_user, stand) => { released.push(stand) }
+    })
+    const git = (operation: Record<string, unknown>, target = folder) => s.userStand('alice', { op: 'git', machineId: 'm1', folder: target, operation } as never)
+    await expect(git({ op: 'status' })).rejects.toThrow('not_a_repository')
+    const sh = (command: string) => new Promise<void>((resolve, reject) => execFile('sh', ['-c', command], { cwd: folder }, error => error ? reject(error) : resolve()))
+    await sh('git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m init && mkdir -p sub && printf x > sub/a.txt')
+    expect(await git({ op: 'status' })).toEqual({ git: { op: 'status', ok: true, branch: 'main', files: [{ status: '??', path: 'sub/a.txt' }] } })
+    // A subfolder of a repository is not a stand repository: add -A would reach outside it.
+    await expect(git({ op: 'status' }, path.join(folder, 'sub'))).rejects.toThrow('not_a_repository')
+    expect(await git({ op: 'create_branch', name: 'feat/n' })).toEqual({ git: { op: 'create_branch', ok: true, branch: 'feat/n' } })
+    const commit = await git({ op: 'commit', message: 'Add a', files: ['sub/a.txt'] }) as { git: { ok: boolean; commit: string; branch: string } }
+    expect(commit.git).toMatchObject({ ok: true, branch: 'feat/n', commit: expect.stringMatching(/^[0-9a-f]{40}$/) })
+    expect((await git({ op: 'branches' }) as { git: { branches: unknown } }).git.branches).toEqual([{ name: 'feat/n', current: true }, { name: 'main', current: false }])
+    expect(await git({ op: 'checkout', name: 'missing' })).toMatchObject({ git: { op: 'checkout', ok: false } })
+    expect((await git({ op: 'commit', message: 'Nothing' }) as { git: { ok: boolean } }).git.ok).toBe(false)
+    // Paths outside the folder, option-like branches and .git never reach the machine.
+    for (const bad of [{ op: 'commit', message: 'x', files: ['../x'] }, { op: 'commit', message: 'x', files: ['.git/config'] }, { op: 'checkout', name: '--orphan' }, { op: 'push' }])
+      await expect(git(bad)).rejects.toThrow('invalid_user_stand')
+    // User data travels in environment variables, never in the script text.
+    expect(commands.find(command => command.includes('Add a'))).toContain("export VC_GIT_MESSAGE='Add a'")
+    allowed = false
+    await expect(git({ op: 'status' })).rejects.toThrow('stand_command_forbidden')
+
+    expect(await s.userStand('alice', { op: 'release', machineId: 'm1', port: 5173 })).toEqual({ ok: true })
+    expect(await s.userStand('alice', { op: 'release', url: 'https://stg.example.com/app' })).toEqual({ ok: true })
+    expect(released).toEqual([userStandId('m1', 5173), externalUserStandId('https://stg.example.com')])
+  }, 30_000)
+
+  it('refuses Git mutations on a read-only machine share', async () => {
+    const { folder, stands: s } = stands([{ agentId: 'm1', name: 'Mac', access: 'read' }])
+    await expect(s.userStand('alice', { op: 'git', machineId: 'm1', folder, operation: { op: 'commit', message: 'x' } })).rejects.toThrow('machine_forbidden')
+    await expect(s.userStand('alice', { op: 'git', machineId: 'm1', folder, operation: { op: 'status' } })).rejects.toThrow('not_a_repository')
   })
 })

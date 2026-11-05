@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: ed1682f8d
+checked: 23675079d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1379,7 +1379,29 @@ gate with `projectId: null` and machine policy), `preview` (inspector lease) and
 owner or `full` share access; `read` shares allow status, preview, list and read.
 Errors are `Error(code)` with an HTTP `statusCode`: `machine_unavailable`,
 `machine_forbidden`, `path_outside_stand`, `stand_command_forbidden`,
-`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`, `stand_url_forbidden`.
+`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`, `stand_url_forbidden`,
+`not_a_repository`.
+
+`{ op: 'git', machineId, folder, operation }` runs Git for the Make `stand_git`
+tool (make-contracts `userStandGitOperationSchema`): `status`, `branches`,
+`checkout {name}`, `create_branch {name, from?}`, `commit {message, files?}` (no
+files = `add -A`), `diff {path?}`. The folder is resolved to its realpath by the
+program's `check` action and must be the repository root (`rev-parse
+--show-toplevel` equals it, else exit 64 → `not_a_repository`), so `add -A` and
+checkout never reach outside the stand. Paths reuse the folder-relative schema
+(no `..`, no `.git`), branch names `isValidGitBranchName`; scripts come from
+`userStandGitScript` (status/branches/diff) and `git/scripts.ts`
+(checkout/create_branch/commit), user data only in `VC_GIT_*` variables. Every
+script goes through the command gate (`projectId: null`) and the per-folder
+`acquireGitWorkspaceLock` shared with project Git; mutations need owner or `full`
+access. A failing git command answers `{ git: { op, ok: false, output } }`
+(last 20 lines), success carries `branch`, `files`, `branches`, `commit` or `diff`
+(capped at 200 000 characters, `truncated`).
+
+`{ op: 'release', machineId, port }` / `{ op: 'release', url }` closes the
+caller's StandProxy leases of that `us-`/`ue-` id at once (`StandProxy.release`)
+instead of after the one-hour idle timeout; Make sends it when a stand is deleted,
+moves to another address or leaves its preview frames. Leases of other users stay.
 StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
 (no project membership; port override rejected) and machine usability is
 re-checked on every proxied request.
