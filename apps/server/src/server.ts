@@ -9,6 +9,8 @@ import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
+import { registerProjectStandPreviewRoutes } from './routes/projectStandPreview.js'
+import { ProjectPreviews } from './makeBridge/projectPreview.js'
 import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, APPLICATION_ASSISTANT_KIND, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
@@ -739,6 +741,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const verdict = await sessionAuthenticate({ method: 'GET', url: '/api/dev-stand-access', headers: { cookie } })
     return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
   }
+  const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
+  const projectPreviews = new ProjectPreviews({ db, machines: agentRegistry, gate: commandGate, reservedPorts: proxyPorts(opts.config.standProxyPorts) })
+  const kanbanStand = standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
   const standProxy = new StandProxy({
     secret: sessionSecret,
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
@@ -754,10 +759,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin), headers: { cookie } })
       return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
     },
-    stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+    stand: (user, project, stand) => ProjectPreviews.agentOf(stand) ? projectPreviews.target(user, project, stand) : kanbanStand(user, project, stand)
   })
   registerStandProxy(app, standProxy, standSession)
-  const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
   if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
   if (remoteMachines) {
@@ -999,7 +1003,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeProjectAdapters = new MakeProjectAdapters({
     db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
-    machines: agentRegistry,
+    machines: agentRegistry, previews: projectPreviews,
     previewAccess: proxyPorts(opts.config.standProxyPorts).length ? makeStandPreviewAccess(
       standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
     authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
@@ -1750,6 +1754,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
+  registerProjectStandPreviewRoutes(app, db, projectPreviews)
   registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, authenticate, issuer: req => {
     const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
     const sid = verifyToken(token, sessionSecret)?.sid ?? null

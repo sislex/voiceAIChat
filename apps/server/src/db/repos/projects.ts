@@ -166,6 +166,20 @@ export class ProjectsRepo extends BaseRepo {
     return r ? parseProjectCommandPolicy(r.command_policy) : null
   }
 
+  /** Raw preview stand config of a project (validated by the caller); null when absent. */
+  async getProjectStandPreview(projectId: string): Promise<unknown> {
+    const row = await this.sql.get<{ config_json: string }>(`SELECT config_json FROM project_stand_previews WHERE project_id = ?`, [projectId])
+    if (!row) return null
+    try { return JSON.parse(row.config_json) } catch { return null }
+  }
+
+  async setProjectStandPreview(projectId: string, config: object | null, userId: string): Promise<void> {
+    if (!config) { await this.sql.run(`DELETE FROM project_stand_previews WHERE project_id = ?`, [projectId]); return }
+    await this.sql.run(`INSERT INTO project_stand_previews (project_id, config_json, updated_by, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(project_id) DO UPDATE SET config_json = excluded.config_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [projectId, JSON.stringify(config), userId, this.now()])
+  }
+
   async isProjectMember(userId: string, projectId: string): Promise<boolean> {
     return (
       await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`, [projectId, userId]) !== undefined

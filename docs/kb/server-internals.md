@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: ebc399a45
+checked: 19f40e157
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1326,6 +1326,32 @@ Kanban and agent
 failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.
+
+## Project preview stands
+
+An ordinary web project (for example an Angular app without a Sislexa component)
+can show a Make stand through an owner-configured dev command. Config lives in the
+Core-only table `project_stand_previews` (no Kanban or snapshot change):
+`GET /api/projects/:id/stand-preview` (member) and `PUT` with
+`{ command, port, workdir?, readinessPath? }` or `null` (project owner only;
+`parseProjectStandPreview` in `packages/shared`, port 1024..65535 outside
+`VC_STAND_PROXY_PORTS`, `workdir` relative without `..`/`.git`).
+
+`makeBridge/projectPreview.ts` (`ProjectPreviews`) runs a fixed `node -e` program
+through the agent exec bridge: realpath containment of `root/workdir` (root =
+`projectWorkdir` directory or machine path), state/log in
+`~/.voicechat/project-previews/<projectId>.{json,log}` (0700/0600), detached
+`shell: true` spawn with `PORT`, adoption of a foreign listener on the port (never
+killed), status = own pid alive + HTTP probe (1 s), stop kills only its own
+process group. The command passes Core's command gate and the machine policy
+before start; command and log contents are never returned. Stand id is
+`pp-<agentId>`; the StandProxy `stand` resolver routes `pp-` ids to
+`ProjectPreviews.target` (port from config) and everything else to Kanban.
+`MakeProjectAdapters.standPreview` and `makeStand` (when the project has no
+component and has a config) bypass Kanban dev-stands: options/create/status/attach
+start or probe the command and return the inspector lease URL; files/git act on
+the machine root; detach only unbinds. Without a config, options report
+`preview_command_missing`; `preview_*` error codes pass through to Make.
 
 ## Stand delivery to dev
 

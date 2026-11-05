@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition, type StandConversationWorktree } from '@voicechat/shared'
+import { buildGitWorkspaceId, DEV_COMPONENT_IDS, DEV_COMPONENT_REGISTRY, GIT_TEXT_MAX_BYTES, isSafeRepoRelativePath, searchHref, type EnvironmentDefinition, type ProjectDetail, type StandConversationWorktree } from '@voicechat/shared'
 import { hasProjectPermission } from '@sislexa/identity/server/users/auth'
 import { makeStandOperationSchema, MAKE_STAND_ERROR_CODES, MAKE_STAND_MAX_FILE_BYTES, type MakeStandResult as PublishedStandResult, type CreateTransferTaskArgs, type StandPreviewOperation, type StandPreviewResult } from '@voicechat/make-contracts'
 import { componentClone, conversationWorktree, workspaceCommand, type StandMachines } from './standWorkspace.js'
@@ -8,6 +8,7 @@ import { runProjectGit } from './localCore.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeRequestAuthority } from './requestAuthority.js'
+import { ProjectPreviews } from './projectPreview.js'
 
 const localComponentSchema = z.enum(['core', 'core-ui', 'make'])
 export const extendedStandOperationSchema = z.union([
@@ -65,6 +66,8 @@ interface Deps {
   fetchImpl?: typeof fetch
   machines?: StandMachines
   previewAccess?: (user: string, project: string, stand: string) => Promise<{ url: string }>
+  /** Owner-configured preview stands of ordinary web projects; bypass Kanban dev-stands. */
+  previews?: ProjectPreviews
   readDesignFile(userId: string, conversationId: string, path: string): Promise<string>
   boardChanged(projectId: string): void
 }
@@ -82,7 +85,7 @@ export function repositoryId(repository: string | null | undefined): string | nu
 }
 
 function makeStandErrorCode(code: string, status?: number): string {
-  return code.startsWith('branch_checked_out: /') ? code
+  return code.startsWith('branch_checked_out: /') || code.startsWith('preview_') ? code
     : (MAKE_STAND_ERROR_CODES as readonly string[]).includes(code) ? code
     : /machine|offline|stand_preview_unavailable/.test(code) ? 'machine_unavailable'
     : /base_environment/.test(code) ? 'base_environment_missing'
@@ -95,6 +98,8 @@ export class MakeProjectAdapters {
   private transfers = new Set<string>()
   private standMutations = new Set<string>()
   private standProgress = new Map<string, MakeStandResult>()
+  /** Make conversation → machine of its bound project preview stand. */
+  private previewBindings = new Map<string, string>()
   constructor(private readonly deps: Deps) {}
 
   private async project(userId: string, projectId: string, write: boolean) {
@@ -140,6 +145,8 @@ export class MakeProjectAdapters {
     const agentId = op.op === 'start' ? op.agentId : undefined
     const machine = machines.find(m => m.agentId === (agentId ?? project.defaultAgentId)) ?? (!agentId ? machines[0] : undefined)
     if (!machine) projectModeError(409, 'project_working_copy_unavailable')
+    if (this.deps.previews && op.op !== 'live_on' && op.op !== 'live_off' && await this.deps.previews.config(projectId))
+      return this.previewStandStatus(user, projectId, machine.agentId, op.op === 'start')
     let stand: Stand | undefined
     let pending = false
     if (op.op === 'live_on' || op.op === 'live_off') {
@@ -177,6 +184,125 @@ export class MakeProjectAdapters {
     return { standId: stand.standId, status: detail.error ? 'failed' : pending ? 'starting' : detail.status ?? (url ? 'running' : 'starting'), url, interactive, ...(detail.error ? { error: detail.error } : {}) }
   }
 
+  private async previewStandStatus(user: string, projectId: string, agentId: string, start: boolean): Promise<StandPreviewResult> {
+    const previews = this.deps.previews!
+    const standId = previews.previewStandId(agentId)
+    let status: StandPreviewResult['status']
+    try {
+      status = (await (start ? previews.start(user, projectId, agentId) : previews.status(user, projectId, agentId))).status
+    } catch (error) {
+      if ((error as { statusCode?: number }).statusCode) throw error
+      return { standId, status: 'failed', url: null, error: error instanceof Error ? error.message : 'operation_conflict' }
+    }
+    if (status !== 'running') return { standId, status, url: null }
+    if (!this.deps.previewAccess) return { standId, status: 'failed', url: null, error: 'stand_proxy_unavailable' }
+    return { standId, status, url: (await this.deps.previewAccess(user, projectId, standId)).url, interactive: true }
+  }
+
+  /** Make stand operations for a project without a Sislexa component that has a preview command. */
+  private async previewMakeStand(user: string, conversationId: string, projectId: string, project: ProjectDetail, op: MakeStandOperation, state: MakeStandResult, write: boolean): Promise<MakeStandResult> {
+    const previews = this.deps.previews!
+    const machines = this.deps.machines
+    const key = user + ':' + conversationId
+    const rootOf = (m: typeof project.machines[number]) => m.directories?.projectWorkdir.path || m.path || null
+    const usable = project.machines.filter(m => m.canUse)
+    const ready = async (agentId: string, status: string, root: string): Promise<MakeStandResult> => {
+      const next: MakeStandResult = { ...state, standId: previews.previewStandId(agentId), hostProjectId: projectId, machineId: agentId, workingCopyPath: root }
+      if (status === 'starting') return { ...next, phase: 'creating' }
+      if (status !== 'running') return { ...next, phase: 'failed', error: 'preview_not_running' }
+      if (!this.deps.previewAccess) return { ...next, phase: 'failed', error: 'stand_proxy_unavailable' }
+      return { ...next, phase: 'ready', previewUrl: (await this.deps.previewAccess(user, projectId, next.standId!)).url }
+    }
+    if (op.op === 'options') {
+      state.options = { component: null, repository: repositoryId(project.gitUrl), stands: [], machines: usable.map(m => {
+        const online = machines?.isOnline(m.agentId) ?? false
+        const root = rootOf(m)
+        return { agentId: m.agentId, name: machines?.nameOf(m.agentId) ?? m.name ?? m.agentId, online, canCreate: online && !!root,
+          ...(!root ? { reason: 'project_working_copy_unavailable' } : !online ? { reason: 'machine_unavailable' } : {}) }
+      }) }
+      for (const m of usable) {
+        if (!machines?.isOnline(m.agentId) || !rootOf(m)) continue
+        const current = await previews.status(user, projectId, m.agentId).catch(() => undefined)
+        if (!current || current.status === 'stopped') continue
+        state.options.stands.push({ standId: current.standId, hostProjectId: projectId, hostProjectName: project.name, machineId: m.agentId,
+          machineName: machines.nameOf(m.agentId) ?? m.name ?? m.agentId, online: true, status: current.status, componentSource: 'live', branch: null, sha: null })
+      }
+      return state
+    }
+    if (op.op === 'create') {
+      if (!machines?.isOnline(op.agentId) || !usable.some(m => m.agentId === op.agentId)) throw new Error('machine_unavailable')
+      const started = await previews.start(user, projectId, op.agentId)
+      this.previewBindings.set(key, op.agentId)
+      return { ...state, standId: started.standId, hostProjectId: projectId, machineId: op.agentId, workingCopyPath: started.root, operationId: randomUUID(), phase: 'creating' }
+    }
+    if (op.op === 'status' || op.op === 'attach' || op.op === 'detach') {
+      const agentId = ProjectPreviews.agentOf(op.standId)
+      if (!agentId || op.hostProjectId !== projectId) throw new Error('stand_not_found')
+      if (op.op === 'detach') { this.previewBindings.delete(key); return { ...state, phase: 'idle' } }
+      const current = op.op === 'attach' ? await previews.start(user, projectId, agentId) : await previews.status(user, projectId, agentId)
+      this.previewBindings.set(key, agentId)
+      return ready(agentId, current.status, current.root)
+    }
+    if (op.op !== 'files' && op.op !== 'git') throw new Error('component_not_in_stand')
+    const agentId = this.previewBindings.get(key) ?? (usable.find(m => m.agentId === project.defaultAgentId && rootOf(m)) ?? usable.find(m => rootOf(m)))?.agentId
+    if (!agentId || !machines?.isOnline(agentId)) throw new Error('machine_unavailable')
+    const { root } = await previews.machine(user, projectId, agentId)
+    Object.assign(state, { standId: previews.previewStandId(agentId), hostProjectId: projectId, machineId: agentId, workingCopyPath: root, phase: 'ready' })
+    const workspace = buildGitWorkspaceId({ kind: 'project-machine', agentId })
+    await this.deps.git.resolve(user, projectId, workspace, { write })
+    await this.workingCopyOperation(user, projectId, op, state, machines, agentId, workspace, root, async (relative, allowMissing = false) => {
+      if (relative !== '.' && (!isSafeRepoRelativePath(relative) || relative.split('/').some(p => p.toLowerCase() === '.git'))) throw new Error('path_outside_working_copy')
+      return previews.check(user, agentId, root, relative, allowMissing)
+    })
+    return state
+  }
+
+  /** Files and Git operations on a checked working copy; `check` enforces root containment. */
+  private async workingCopyOperation(user: string, projectId: string, op: MakeStandOperation, state: MakeStandResult, machines: StandMachines, agentId: string, workspace: string, root: string,
+    check: (relative: string, allowMissing?: boolean) => Promise<{ target: string; directory: boolean }>): Promise<void> {
+    if (op.op === 'git') {
+      await check('.')
+      if (op.operation.op === 'commit') for (const file of op.operation.files) await check(file, true)
+      state.git = await runProjectGit(this.deps.git.atWorkingCopy(user, projectId, workspace, root), user, projectId, workspace, op.operation)
+    } else if (op.op !== 'files') {
+      return
+    } else if (op.action === 'list') {
+      const target = await check(op.dir)
+      const entries = (await machines.fsList(agentId, target.target)).entries ?? []
+      state.files = { action: 'list', entries: [] }
+      for (const entry of entries) {
+        if (!['file', 'dir'].includes(entry.kind) || entry.name === '.git' || /[/\\]/.test(entry.name)) continue
+        const relative = op.dir === '.' ? entry.name : op.dir + '/' + entry.name
+        try { await check(relative) } catch (error) {
+          if (error instanceof Error && ['path_outside_working_copy', 'file_too_large'].includes(error.message)) continue
+          throw error
+        }
+        state.files.entries.push({ path: relative, kind: entry.kind === 'dir' ? 'directory' : 'file' })
+      }
+    } else if (op.action === 'rename') {
+      const from = await check(op.from), to = await check(op.to, true)
+      if (from.directory || to.directory || op.from === '.' || op.to === '.') throw new Error('path_outside_working_copy')
+      await machines.fsRename(agentId, from.target, to.target)
+      state.files = { action: 'rename' }
+    } else {
+      const target = await check(op.path, op.action === 'write')
+      if (target.directory || op.path === '.') throw new Error('path_outside_working_copy')
+      if (op.action === 'read') {
+        const file = await machines.fsRead(agentId, target.target)
+        const content = Buffer.from(file.dataBase64 ?? '', 'base64')
+        if (file.truncated || content.length > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
+        state.files = { action: 'read', content: content.toString('utf8') }
+      } else if (op.action === 'write') {
+        if (Buffer.byteLength(op.content) > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
+        await machines.fsWrite(agentId, target.target, Buffer.from(op.content).toString('base64'))
+        state.files = { action: 'write' }
+      } else {
+        await machines.fsDeleteFileSafe(agentId, target.target)
+        state.files = { action: 'delete' }
+      }
+    }
+  }
+
   private async standHosts(user: string, projectId: string, component: string | null) {
     const projects = await this.deps.db.projects.listProjects(user)
     const hosts = []
@@ -208,6 +334,7 @@ export class MakeProjectAdapters {
     const component = DEV_COMPONENT_IDS.find(id => DEV_COMPONENT_REGISTRY[id].repository.toLowerCase() === repository) ?? null
     const state: MakeStandResult = { standId: null, hostProjectId: null, machineId: null, component, branch: null, workingCopyPath: null, phase: 'idle', previewUrl: null, directUrls: [] }
     const machines = this.deps.machines
+    const previewConfig = !component && this.deps.previews ? await this.deps.previews.config(projectId) : null
     let lock: string | undefined
     try {
       if (write) {
@@ -215,6 +342,7 @@ export class MakeProjectAdapters {
         if (this.standMutations.has(lock)) { lock = undefined; throw new Error('operation_conflict') }
         this.standMutations.add(lock)
       }
+      if (previewConfig && op.op !== 'component') return await this.previewMakeStand(user, conversationId, projectId, project, op, state, write)
       if (op.op === 'options' || op.op === 'create') {
         const hosts = await this.standHosts(user, projectId, component)
         const candidates: Array<typeof hosts[number] & { environments: EnvironmentDefinition[] }> = []
@@ -228,7 +356,7 @@ export class MakeProjectAdapters {
             const online = machines?.isOnline(m.agentId) ?? false
             const ready = Boolean(component && hostFor(m.agentId))
             return { agentId: m.agentId, name: machines?.nameOf(m.agentId) ?? m.name ?? m.agentId, online, canCreate: ready && online,
-              ...(!ready ? { reason: 'base_environment_missing' } : !online ? { reason: 'machine_unavailable' } : {}) }
+              ...(!ready ? { reason: !component && this.deps.previews ? 'preview_command_missing' : 'base_environment_missing' } : !online ? { reason: 'machine_unavailable' } : {}) }
           }) }
           // Kanban waits on an offline machine for its stand details; list entries are enough there.
           const details = await Promise.all(hosts.flatMap(host => host.stands.map(async summary => ({ host, stand:
@@ -373,51 +501,12 @@ export class MakeProjectAdapters {
         if (op.op === 'component') { state.branch = state.components?.find(c => c.component === primary)?.branch ?? null; state.workingCopyPath = conversationWorktree(reposRoot, conversationId) }
         return state
       } else if (op.op === 'files' || op.op === 'git') {
-        const check = async (relative: string, allowMissing = false) => {
+        await this.workingCopyOperation(user, projectId, op, state, machines, machine.agentId, workspace, root, async (relative, allowMissing = false) => {
           if (relative !== '.' && (!isSafeRepoRelativePath(relative) || relative.split('/').some(p => p.toLowerCase() === '.git'))) throw new Error('path_outside_working_copy')
           const checked = await workspaceCommand(machines, user, machine.agentId, { action: 'check', ...location, conversation: copyId, relative, allowMissing })
           if (checked.root !== root) throw new Error('path_outside_working_copy')
           return checked
-        }
-        if (op.op === 'git') {
-          await check('.')
-          if (op.operation.op === 'commit') for (const file of op.operation.files) await check(file, true)
-          state.git = await runProjectGit(this.deps.git.atWorkingCopy(user, projectId, workspace, root), user, projectId, workspace, op.operation)
-        } else if (op.action === 'list') {
-          const target = await check(op.dir)
-          const entries = (await machines.fsList(machine.agentId, target.target)).entries ?? []
-          state.files = { action: 'list', entries: [] }
-          for (const entry of entries) {
-            if (!['file', 'dir'].includes(entry.kind) || entry.name === '.git' || /[/\\]/.test(entry.name)) continue
-            const relative = op.dir === '.' ? entry.name : op.dir + '/' + entry.name
-            try { await check(relative) } catch (error) {
-              if (error instanceof Error && ['path_outside_working_copy', 'file_too_large'].includes(error.message)) continue
-              throw error
-            }
-            state.files.entries.push({ path: relative, kind: entry.kind === 'dir' ? 'directory' : 'file' })
-          }
-        } else if (op.action === 'rename') {
-          const from = await check(op.from), to = await check(op.to, true)
-          if (from.directory || to.directory || op.from === '.' || op.to === '.') throw new Error('path_outside_working_copy')
-          await machines.fsRename(machine.agentId, from.target, to.target)
-          state.files = { action: 'rename' }
-        } else {
-          const target = await check(op.path, op.action === 'write')
-          if (target.directory || op.path === '.') throw new Error('path_outside_working_copy')
-          if (op.action === 'read') {
-            const file = await machines.fsRead(machine.agentId, target.target)
-            const content = Buffer.from(file.dataBase64 ?? '', 'base64')
-            if (file.truncated || content.length > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
-            state.files = { action: 'read', content: content.toString('utf8') }
-          } else if (op.action === 'write') {
-            if (Buffer.byteLength(op.content) > MAKE_STAND_MAX_FILE_BYTES) projectModeError(413, 'file_too_large')
-            await machines.fsWrite(machine.agentId, target.target, Buffer.from(op.content).toString('base64'))
-            state.files = { action: 'write' }
-          } else {
-            await machines.fsDeleteFileSafe(machine.agentId, target.target)
-            state.files = { action: 'delete' }
-          }
-        }
+        })
       }
       if (selected !== primary) {
         state.branch = state.components?.find(c => c.component === primary)?.branch ?? null

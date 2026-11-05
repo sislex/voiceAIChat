@@ -2058,6 +2058,13 @@ CREATE TABLE IF NOT EXISTS environment_settings (
   PRIMARY KEY (project_id, environment_id, key),
   FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
 );
+-- Owner-configured preview stand of an ordinary web project (Core-only; see makeBridge/projectPreview.ts).
+CREATE TABLE IF NOT EXISTS project_stand_previews (
+  project_id  TEXT PRIMARY KEY,
+  config_json TEXT NOT NULL,
+  updated_by  TEXT,
+  updated_at  INTEGER
+);
 -- The compose-project index is installed after column migration on existing SQLite databases.
 CREATE INDEX IF NOT EXISTS idx_environment_operations ON environment_operations(project_id, environment_id, started_at DESC);
 
