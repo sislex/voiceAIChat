@@ -89,4 +89,17 @@ describe('UserStands', () => {
       expect(response.status).toBe(401)
     } finally { await proxy.close() }
   })
+
+  it('previews an external URL through a ue- lease keeping the stand path, and refuses private hosts', async () => {
+    const leases: string[] = []
+    const s = new UserStands({ db: {} as never, machines: {} as never, previews: {} as never, reservedPorts: [],
+      externalGuard: { allowPrivate: false, lookup: async () => [{ address: '93.184.216.34', family: 4 }] },
+      previewAccess: async (_user, stand) => { leases.push(stand); return { url: 'http://core.example:24001/' } } })
+    expect(await s.userStand('alice', { op: 'preview', url: 'https://stg-02.mrdstaging.com/webapp/?a=1' }))
+      .toEqual({ url: 'http://core.example:24001/webapp/?a=1', interactive: true })
+    expect(leases[0]).toMatch(/^ue-[a-f0-9]{32}$/)
+    expect(await s.target('alice', leases[0]!)).toMatchObject({ kind: 'external', origin: 'https://stg-02.mrdstaging.com', address: '93.184.216.34' })
+    await expect(s.userStand('alice', { op: 'preview', url: 'http://10.0.0.1/' })).rejects.toThrow('stand_url_forbidden')
+    await expect(s.userStand('alice', { op: 'preview', url: 'ftp://stg.example.com/' })).rejects.toThrow('stand_url_forbidden')
+  })
 })
