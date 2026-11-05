@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: ebc399a45
+checked: f82b55f09
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1326,6 +1326,55 @@ Kanban and agent
 failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.
+
+## Project preview stands
+
+An ordinary web project (for example an Angular app without a Sislexa component)
+can show a Make stand through an owner-configured dev command. Config lives in the
+Core-only table `project_stand_previews` (no Kanban or snapshot change):
+`GET /api/projects/:id/stand-preview` (member) and `PUT` with
+`{ command, port, workdir?, readinessPath? }` or `null` (project owner only;
+`parseProjectStandPreview` in `packages/shared`, port 1024..65535 outside
+`VC_STAND_PROXY_PORTS`, `workdir` relative without `..`/`.git`).
+
+`makeBridge/projectPreview.ts` (`ProjectPreviews`) runs a fixed `node -e` program
+through the agent exec bridge: realpath containment of `root/workdir` (root =
+`projectWorkdir` directory or machine path), state/log in
+`~/.voicechat/project-previews/<projectId>.{json,log}` (0700/0600), detached
+`shell: true` spawn with `PORT`, adoption of a foreign listener on the port (never
+killed), status = own pid alive + HTTP probe (1 s), stop kills only its own
+process group. The command passes Core's command gate and the machine policy
+before start; command and log contents are never returned. Stand id is
+`pp-<agentId>`; the StandProxy `stand` resolver routes `pp-` ids to
+`ProjectPreviews.target` (port from config) and everything else to Kanban.
+`MakeProjectAdapters.standPreview` and `makeStand` (when the project has no
+component and has a config) bypass Kanban dev-stands: options/create/status/attach
+start or probe the command and return the inspector lease URL; files/git act on
+the machine root; detach only unbinds. Without a config, options report
+`preview_command_missing`; `preview_*` error codes pass through to Make.
+
+### User stands (Make stands library)
+
+Make conversations without a project use user-scoped stands (name, URL, optional
+folder/command/machine stored by Make). Core implements
+`MakeProjectCore.userStand(userId, operation)` (make-contracts 1.8.16) in
+`makeBridge/userStand.ts` (`UserStands`), wired through `LocalMakeCore.userStand`;
+`coreRpc.ts` dispatches `userStand` with a local zod schema while Core still pins
+make-contracts 1.8.15, and the shared-service authority table grants it per user
+(`u0`). Operations: `machines` (own machines plus machines shared with any project
+where the user is an active member, `db.machines.listUserMachineAccess`),
+`start|status|stop` (same fixed program via `ProjectPreviews.runAt` with root =
+the absolute stand folder, state id `sha256(user, machine, folder, port)`, command
+gate with `projectId: null` and machine policy), `preview` (inspector lease) and
+`files` list/read/write (folder-relative paths, containment through the program's
+`check` action, 2 MiB limit, read returns `utf8` or `base64`). Start/stop/write need
+owner or `full` share access; `read` shares allow status, preview, list and read.
+Errors are `Error(code)` with an HTTP `statusCode`: `machine_unavailable`,
+`machine_forbidden`, `path_outside_stand`, `stand_command_forbidden`,
+`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`.
+StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
+(no project membership; port override rejected) and machine usability is
+re-checked on every proxied request.
 
 ## Stand delivery to dev
 

@@ -452,3 +452,41 @@ it('exposes inspected conversation worktrees independently of the live stand bra
   expect((await f.call({ op: 'options' })).options?.stands[0]).not.toHaveProperty('conversationWorktree')
   expect(f.machines.exec).not.toHaveBeenCalled()
 })
+
+describe('makeStand project preview stands', () => {
+  function previewFixture(config: unknown = { command: 'npm start', port: 4200 }) {
+    const f = fixture()
+    f.project.gitUrl = 'git@github.com:acme/piara.git'
+    let status = 'starting'
+    const previews = {
+      previewStandId: (agent: string) => 'pp-' + agent,
+      config: vi.fn(async () => config),
+      start: vi.fn(async (_u: string, _p: string, agent: string) => ({ standId: 'pp-' + agent, status, root: '/work/ui' })),
+      status: vi.fn(async (_u: string, _p: string, agent: string) => ({ standId: 'pp-' + agent, status, root: '/work/ui' })),
+      machine: vi.fn(async () => ({ root: '/work/ui' })), check: vi.fn()
+    }
+    Object.assign(f.deps, { previews, previewAccess: f.previewAccess })
+    return { ...f, previews, setStatus: (value: string) => { status = value } }
+  }
+
+  it('offers machines, starts the command and reports the proxied preview when running', async () => {
+    const f = previewFixture()
+    const options = await f.call({ op: 'options' })
+    expect(options.options?.machines).toEqual([{ agentId: 'agent', name: 'Live Mac', online: true, canCreate: true }])
+    const created = await f.call({ op: 'create', agentId: 'agent' })
+    expect(created).toMatchObject({ standId: 'pp-agent', hostProjectId: 'project', machineId: 'agent', phase: 'creating', component: null })
+    expect(f.previews.start).toHaveBeenCalledWith('alice', 'project', 'agent')
+    expect(await f.call({ op: 'status', standId: 'pp-agent', hostProjectId: 'project' })).toMatchObject({ phase: 'creating' })
+    f.setStatus('running')
+    expect(await f.call({ op: 'status', standId: 'pp-agent', hostProjectId: 'project' }))
+      .toMatchObject({ phase: 'ready', previewUrl: 'http://core.test:24032/', workingCopyPath: '/work/ui', branch: null })
+    expect(f.previewAccess).toHaveBeenCalledWith('alice', 'project', 'pp-agent')
+    expect(f.fetchImpl).not.toHaveBeenCalledWith(expect.stringContaining('/dev-stands'), expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('explains a missing preview command for projects without a component', async () => {
+    const f = previewFixture(null)
+    const options = await f.call({ op: 'options' })
+    expect(options.options?.machines[0]).toMatchObject({ canCreate: false, reason: 'preview_command_missing' })
+  })
+})

@@ -4,6 +4,7 @@ import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, s
   RpcError, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
 import { extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
+import { userStandArgsSchema, userStandResultSchema, type UserStandOperation, type UserStandResult } from './userStand.js'
 
 // Compatibility with make-contracts 1.4: preserve new result fields and accept live operations.
 // Keep all other methods on the owner's schema-validated dispatcher.
@@ -45,6 +46,14 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         try { validateMakeStandResult(operation, result) }
         catch { throw new RpcError(502, 'Mismatched Make stand result') }
         return result
+      }
+      // make-contracts 1.8.15 does not list `userStand` yet; validate it locally until Core pins 1.8.16.
+      if (request.method === 'userStand') {
+        const parsed = userStandArgsSchema.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        const fn = (core as MakeCore & { userStand?: (user: string, op: UserStandOperation) => Promise<UserStandResult> }).userStand
+        if (typeof fn !== 'function') throw new RpcError(409, 'Project mode is unavailable on this Core')
+        return userStandResultSchema.parse(await fn.call(core, parsed.data[0], parsed.data[1] as UserStandOperation))
       }
       if (request.method === 'createTransferTask') {
         const parsed = transferArgs.safeParse(request.args)

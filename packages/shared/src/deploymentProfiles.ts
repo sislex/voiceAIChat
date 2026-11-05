@@ -96,7 +96,7 @@ export const SHARED_SERVICE_RPC_ROUTES: Readonly<Record<string, SharedServiceRpc
   '/internal/make/core': { application: 'make', methods: {
     conversation: u0, isProjectViewer: u0, makeConversationIdsOf: u0, linkableTasks: u0, linkTaskDesign: u0, unlinkTaskDesign: u0,
     taskDesigns: u0, project: u0, listProjects: u0, projectStructure: u0, projectDesign: u0, projectNotesRead: u0,
-    projectNotesUpdate: u0, projectGit: u0, standPreview: u0, makeStand: u0, createTransferTask: u0,
+    projectNotesUpdate: u0, projectGit: u0, standPreview: u0, makeStand: u0, userStand: u0, createTransferTask: u0,
     conversationOwner: 'service', conversationProject: 'service', taskLinks: 'service', userExists: 'service', boardChanged: 'service'
   }, readMethods: ['conversation', 'isProjectViewer', 'makeConversationIdsOf', 'taskDesigns', 'project', 'listProjects', 'projectStructure',
     'projectDesign', 'projectNotesRead', 'conversationOwner', 'conversationProject', 'taskLinks', 'userExists'] },
