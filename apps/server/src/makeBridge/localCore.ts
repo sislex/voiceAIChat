@@ -7,6 +7,7 @@ import { buildGitWorkspaceId } from '@voicechat/shared'
 import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult, ProjectReferenceList, ProjectReferenceFile } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
+import type { UserStandOperation, UserStandResult } from './userStand.js'
 
 const MAX_FILES = 2_000
 const MAX_TRAVERSAL_ENTRIES = 50_000
@@ -35,6 +36,8 @@ export interface LocalMakeCoreDeps {
   standPreview?: (userId: string, projectId: string, operation: PreviewOperation) => Promise<StandPreviewResult>
   transferTask?: MakeProjectAdapters['createTransferTask']
   makeStand?: (userId: string, conversationId: string, operation: MakeStandOperation) => Promise<MakeStandResult>
+  /** User-scoped Make stands library (make-contracts 1.8.16 `MakeProjectCore.userStand`). */
+  userStand?: (userId: string, operation: UserStandOperation) => Promise<UserStandResult>
 }
 
 export class LocalMakeCore implements MakeCore {
@@ -185,6 +188,7 @@ export class LocalMakeCore implements MakeCore {
   standPreview(userId: string, projectId: string, operation: PreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(503, 'stand_preview_unavailable') }
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
   makeStand(userId: string, conversationId: string, operation: MakeStandOperation) { return this.deps.makeStand ? this.deps.makeStand(userId, conversationId, operation) : fail(501, 'make_stand_unavailable') }
+  userStand(userId: string, operation: UserStandOperation): Promise<UserStandResult> { return this.deps.userStand ? this.deps.userStand(userId, operation) : fail(503, 'stand_proxy_unavailable') }
   // Project notes are not hosted by Core yet; Make reports the 501 to the assistant.
   projectNotesRead(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
   projectNotesUpdate(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }

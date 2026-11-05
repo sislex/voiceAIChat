@@ -141,19 +141,33 @@ export class ProjectPreviews {
     const config = await this.config(projectId)
     if (!config) throw new Error('preview_command_missing')
     const { root } = await this.machine(user, projectId, agentId)
+    const status = await this.runAt(user, agentId, action, {
+      id: projectId, root, command: config.command, port: config.port, workdir: config.workdir ?? '.', readinessPath: config.readinessPath, projectId
+    })
+    return { standId: this.previewStandId(agentId), status, root }
+  }
+
+  /**
+   * Runs the fixed preview program against an explicit absolute root (a project working copy or a
+   * user stand folder). Callers authorize the machine first; this applies the command gate and
+   * machine policy on start. `id` names the private state/log files under ~/.voicechat/project-previews.
+   */
+  async runAt(user: string, agentId: string, action: 'start' | 'status' | 'stop', target: {
+    id: string; root: string; command: string; port: number; workdir?: string; readinessPath?: string; projectId?: string | null
+  }): Promise<ProjectPreviewStatus> {
     if (!this.deps.machines.isOnline(agentId)) throw new Error('machine_unavailable')
     if (action === 'start') {
-      const verdict = await this.deps.gate({ command: config.command, userId: user, projectId, source: 'console' })
+      const verdict = await this.deps.gate({ command: target.command, userId: user, projectId: target.projectId ?? null, source: 'console' })
       const policy = this.deps.machines.policyOf(agentId)
-      if (!verdict.allowed || (policy && !evaluateAgentCommand(policy, config.command).allowed)) throw new Error('preview_command_forbidden')
+      if (!verdict.allowed || (policy && !evaluateAgentCommand(policy, target.command).allowed)) throw new Error('preview_command_forbidden')
     }
-    const hash = createHash('sha256').update(JSON.stringify([config.command, config.port, config.workdir ?? '.'])).digest('hex')
+    const workdir = target.workdir ?? '.'
+    const hash = createHash('sha256').update(JSON.stringify([target.command, target.port, workdir])).digest('hex')
     const result = await previewCommand(this.deps.machines, user, agentId, {
-      action, id: projectId, root, port: config.port, workdir: config.workdir ?? '.', readinessPath: config.readinessPath, hash,
-      ...(action === 'start' ? { command: config.command } : {})
+      action, id: target.id, root: target.root, port: target.port, workdir, readinessPath: target.readinessPath, hash,
+      ...(action === 'start' ? { command: target.command } : {})
     })
-    const status = (['stopped', 'starting', 'running'] as const).find(s => s === result.status) ?? 'failed'
-    return { standId: this.previewStandId(agentId), status: status as ProjectPreviewStatus, root }
+    return (['stopped', 'starting', 'running'] as const).find(s => s === result.status) ?? 'failed'
   }
 
   start(user: string, projectId: string, agentId: string) { return this.run(user, projectId, agentId, 'start') }

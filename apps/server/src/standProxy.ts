@@ -70,6 +70,11 @@ export interface StandProxyDeps {
   publicScheme?: 'http' | 'https'
   member(user: string, project: string): Promise<boolean>
   stand(user: string, project: string, stand: string): Promise<Target>
+  /**
+   * Resolver for user-scoped stands (`us-<machineId>-<port>`, Make stands library): no project,
+   * it must reject when the user may no longer use the machine. Called on every proxied request.
+   */
+  userStand?(user: string, stand: string): Promise<Target>
   session(cookie: string): Promise<string | null>
   connect(machine: string, port: number): Duplex
   /** Serves the Make inspector script on injected leases so the stand itself never has to know the route. */
@@ -80,6 +85,9 @@ export interface StandProxyDeps {
 const INSPECTOR_SCRIPT_PATH = '/api/make/inspector.js'
 const PREVIEW_INSPECTOR_SCRIPT_PATH = '/__sislexa/preview-inspector.js'
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
+
+/** User-scoped stand ids carry no project; their lease is authorized by machine usability alone. */
+export function isUserStandId(standId: string): boolean { return standId.startsWith('us-') }
 
 export class StandProxy {
   private leases = new Map<string, Lease>()
@@ -97,9 +105,11 @@ export class StandProxy {
   }
   async access(user: string, projectId: string, standId: string, host: string, port?: number, options: StandProxyAccessOptions = {}): Promise<DevStandAccessResponse> {
     if (port !== undefined && (!Number.isInteger(port) || port < 1024 || port > 65535)) fail(400, 'invalid_stand_access')
-    if (!await this.deps.member(user, projectId)) fail(403, 'project_access_denied')
+    const userStand = isUserStandId(standId)
+    if (userStand) { if (!this.deps.userStand) fail(404, 'stand_not_found'); if (port !== undefined) fail(400, 'invalid_stand_access'); projectId = '' }
+    else if (!await this.deps.member(user, projectId)) fail(403, 'project_access_denied')
     if (!this.deps.ports.length || this.closed) fail(503, 'stand_proxy_unavailable')
-    const stand = await this.deps.stand(user, projectId, standId)
+    const stand = userStand ? await this.deps.userStand!(user, standId) : await this.deps.stand(user, projectId, standId)
     const target = { ...stand, gatewayPort: port ?? stand.gatewayPort }
     return this.serial(async () => {
       if (this.closed) fail(503, 'stand_proxy_unavailable')
@@ -141,7 +151,7 @@ export class StandProxy {
     if (!publicArtifact) {
       let user: string | null = null
       try { user = req.headers.cookie ? await this.deps.session(req.headers.cookie) : null } catch {}
-      if (user !== lease.user || !await this.deps.member(lease.user, lease.projectId)) return deny(401)
+      if (user !== lease.user || !await this.authorized(lease)) return deny(401)
     }
     if (this.closed || lease.expiresAt <= this.now()) return deny(401)
     if (res?.destroyed || socket?.destroyed) return
@@ -219,6 +229,13 @@ export class StandProxy {
     socket?.once('close', () => upstream.destroy())
     if (socket) upstream.end()
     else req.pipe(upstream)
+  }
+  private async authorized(lease: Lease): Promise<boolean> {
+    if (!isUserStandId(lease.standId)) return this.deps.member(lease.user, lease.projectId)
+    try {
+      const target = await this.deps.userStand!(lease.user, lease.standId)
+      return target.machineId === lease.machineId && target.gatewayPort === lease.gatewayPort
+    } catch { return false }
   }
   private async remove(id: string, lease: Lease): Promise<void> {
     this.leases.delete(id)

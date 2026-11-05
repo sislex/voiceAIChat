@@ -68,3 +68,20 @@ describe('canUseAgentForPreview', () => {
     expect(await db.machines.canUseAgentForPreview('member', agent.id)).toBe(false)
   })
 })
+
+describe('listUserMachineAccess', () => {
+  it('lists own machines and machines shared with the member, with the share level', async () => {
+    const db = makeDb()
+    await db.identity.ensureAdmin()
+    await db.identity.createUser('member', '', 'developer')
+    const own = await db.machines.createAgent('member', 'Own')
+    const shared = await db.machines.createAgent(U, 'Shared')
+    const project = await db.projects.createProject(U, { name: 'Shop' })
+    await db.projects.addMember(U, project.id, 'member')
+    await db.machines.setMachineSharedWithProject(U, project.id, shared.id, true, 'read')
+    expect(await db.machines.listUserMachineAccess('member')).toEqual([
+      { agentId: own.id, name: 'Own', access: 'owner' }, { agentId: shared.id, name: 'Shared', access: 'read' }])
+    await db.machines.setMachineSharedWithProject(U, project.id, shared.id, false)
+    expect(await db.machines.listUserMachineAccess('member')).toEqual([{ agentId: own.id, name: 'Own', access: 'owner' }])
+  })
+})

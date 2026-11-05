@@ -14,6 +14,7 @@ describe('/internal/make/core project methods', () => {
     ['makeStand', ['alice', 'conversation', { op: 'files', action: 'read', component: 'make', path: 'file.ts' }], { ...componentState, files: { action: 'read', content: 'make' } }],
     ['makeStand', ['alice', 'conversation', { op: 'git', component: 'core-ui', operation: { op: 'push' } }], { ...componentState, git: { op: 'push', output: 'done' } }],
     ['listProjects', ['alice'], []],
+    ['userStand', ['alice', { op: 'status', machineId: 'm1', folder: '/work/stand', command: 'npm run dev', port: 5173 }], { status: 'running' }],
     ['projectStructure', ['alice', 'p'], []],
     ['projectDesign', ['alice', 'p', '.'], { tokens: [], themes: [], components: [] }],
     ['projectGit', ['alice', 'p', { op: 'push' }], { op: 'push', output: 'done' }],
