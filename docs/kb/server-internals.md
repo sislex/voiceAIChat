@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: 23675079d
+checked: 06ae9f17
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1427,6 +1427,23 @@ lease, then gets the `sxs_<key>_` prefix; `X-Frame-Options`, CSP
 `frame-ancestors`, HSTS and Alt-Svc are removed and `frame-ancestors 'self'
 <Core origin> <lease origin>` is added. HTTPS upstreams use SNI and certificate
 verification of the upstream hostname; WebSocket upgrades use the same path.
+
+Stand research: `{ op: 'research', conversationId, stand, url, navigate?, reload?, action }`
+(`makeBridge/standResearch.ts`, `StandResearch`) runs one read-only browser-runner
+`research` command (`tree`, `styles`, `screenshot`, `network`, `resource`; wire
+shape in Playwright Reader `browser-contracts/browserResearch`) and returns
+`{ research: <runner result> }`. The session is headless and ephemeral, id
+`make-research-<sha256(user, conversation)>`, one tab per `stand` key, kept in
+Core memory with the runner incarnation; a stale incarnation or closed tab is
+reopened once. The tab opens the stand `url` when it is new or with `reload`;
+`navigate` opens another page of the stand now; otherwise the current page
+(after the assistant's own clicks) is kept. Every navigation URL and
+resource URL (relative ones resolve against the tab page) passes
+`resolveExternalStand`; loopback is allowed only with
+`VC_STAND_RESEARCH_ALLOW_LOOPBACK=1` (Core and runner on the user's machine; the
+runner then also needs `VC_BROWSER_ALLOW_LOOPBACK=1`). Calls of one session are
+serialized. Without a runner the op answers `stand_proxy_unavailable`. The Make
+core RPC route accepts 4 MiB bodies so 2 MiB stand files fit base64.
 
 ## Stand delivery to dev
 

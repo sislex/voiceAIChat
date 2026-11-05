@@ -145,7 +145,8 @@ export function registerInternalRoutes(app: FastifyInstance, deps: InternalRoute
         return {result:(await target[name].apply(target,args))??null}
       })
     }
-    scope.post<{ Body: RpcRequest }>(INTERNAL_MAKE_CORE_PATH, async (req, reply) => {
+    // Stand files (2 MiB) and research results travel base64 in RPC bodies.
+    scope.post<{ Body: RpcRequest }>(INTERNAL_MAKE_CORE_PATH, { bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
       try { return { result: await dispatch(req.body ?? { method: '', args: [] }) } } catch (error) { return sendRpcError(reply, error) }
     })
     scope.post<{ Body: MakeEventsRequest }>(INTERNAL_MAKE_EVENTS_PATH, async (req, reply) => {

@@ -12,6 +12,7 @@ import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
 import { registerProjectStandPreviewRoutes } from './routes/projectStandPreview.js'
 import { ProjectPreviews } from './makeBridge/projectPreview.js'
 import { UserStands } from './makeBridge/userStand.js'
+import { StandResearch, type StandResearchRunner } from './makeBridge/standResearch.js'
 import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, APPLICATION_ASSISTANT_KIND, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
@@ -749,7 +750,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db, machines: agentRegistry, previews: projectPreviews, reservedPorts: proxyPorts(opts.config.standProxyPorts), gate: commandGate,
     releaseAccess: async (user: string, stand: string) => { await standProxy.release(user, stand) },
     previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user: string, stand: string): Promise<{ url: string }> => makeUserStandPreviewAccess(
-      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost'))(user, stand) : undefined
+      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost'))(user, stand) : undefined,
+    // The runner client is created further down; resolve it per call.
+    research: new StandResearch({ runner: () => browserRunner as StandResearchRunner | undefined })
   })
   const kanbanStand = standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
   const standProxy: StandProxy = new StandProxy({
