@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-11-03
-checked: d247ecf75
+updated: 2026-11-05
+checked: 29ee2a0e8
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts

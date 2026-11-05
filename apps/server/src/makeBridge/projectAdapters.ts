@@ -239,7 +239,9 @@ export class MakeProjectAdapters {
       const agentId = ProjectPreviews.agentOf(op.standId)
       if (!agentId || op.hostProjectId !== projectId) throw new Error('stand_not_found')
       if (op.op === 'detach') { this.previewBindings.delete(key); return { ...state, phase: 'idle' } }
-      const current = op.op === 'attach' ? await previews.start(user, projectId, agentId) : await previews.status(user, projectId, agentId)
+      // A bound preview whose dev server exited (manual stop, crash, reboot) restarts on the next status poll.
+      let current = op.op === 'attach' ? await previews.start(user, projectId, agentId) : await previews.status(user, projectId, agentId)
+      if (current.status === 'stopped') current = await previews.start(user, projectId, agentId)
       this.previewBindings.set(key, agentId)
       return ready(agentId, current.status, current.root)
     }
