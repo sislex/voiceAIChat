@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-05
-checked: f82b55f09
+checked: 8768aaaa3
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1371,10 +1371,32 @@ gate with `projectId: null` and machine policy), `preview` (inspector lease) and
 owner or `full` share access; `read` shares allow status, preview, list and read.
 Errors are `Error(code)` with an HTTP `statusCode`: `machine_unavailable`,
 `machine_forbidden`, `path_outside_stand`, `stand_command_forbidden`,
-`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`.
+`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`, `stand_url_forbidden`.
 StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
 (no project membership; port override rejected) and machine usability is
 re-checked on every proxied request.
+
+External stands: `{ op: 'preview', url }` (http/https, no machine) opens an
+inspector lease with id `ue-<sha256(origin)[:32]>`; `UserStands` keeps the
+id -> origin map in memory (bounded to 1000, lost on restart: Make asks again).
+The result is `{ url: <lease origin> + stand path/query, interactive: true }`, so
+apps with absolute paths (`/webapp/main.js`) work at the root of the lease origin.
+`standExternal.ts` is the SSRF guard: credentials and non-http(s) schemes are
+refused, every DNS answer must be public (loopback, 10/8, 172.16/12, 192.168/16,
+100.64/10, 169.254/16, 0/8, multicast, `::`, `::1`, fe80::/10, fc00::/7, NAT64 and
+`metadata`/`localhost` names are refused) and the first address is pinned for
+the connection via a fixed `lookup` (no DNS rebinding). The guard runs again on
+every proxied request; `VC_STAND_PROXY_ALLOW_PRIVATE=1` (never set by default,
+read from the process env) allows private targets for tests and local runs.
+External leases have no public-artifact bypass. Request headers drop Core
+cookies, Authorization, `x-vc-*`/`x-forwarded-*`; Host is the upstream host and
+Origin/Referer of the lease origin are rewritten to the upstream origin. Response
+headers: absolute `Location` on the upstream origin moves to the lease origin;
+`Set-Cookie` loses Domain, SameSite (forced to `Lax`) and Secure on an http
+lease, then gets the `sxs_<key>_` prefix; `X-Frame-Options`, CSP
+`frame-ancestors`, HSTS and Alt-Svc are removed and `frame-ancestors 'self'
+<Core origin> <lease origin>` is added. HTTPS upstreams use SNI and certificate
+verification of the upstream hostname; WebSocket upgrades use the same path.
 
 ## Stand delivery to dev
 
