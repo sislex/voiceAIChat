@@ -30,6 +30,7 @@ interface ConversationRow {
   deep_thinking: number | boolean | null
   permission_mode: string | null
   kb_context_mode: string | null
+  assistant_mode: string | null
   disabled_context_json: string | null
   project_id: string | null
   preview_engine: 'proxy' | 'chromium'
@@ -434,12 +435,18 @@ export class ChatRepo extends BaseRepo {
     // «минимальный контекст» действует только после того, как человек вспомнит
     // про кнопку. Пункты безопасности пресет не трогает — их фильтрует запись.
     const settings = await this.repos.settings.getSettings(userId)
-    const preset = settings.defaultContextPresetId
-      ? settings.contextPresets.find((entry) => entry.id === settings.defaultContextPresetId)
+    const defaultMode = settings.defaultContextPresetId
+    const preset = defaultMode && !defaultMode.startsWith('mode:')
+      ? settings.contextPresets.find((entry) => entry.id === defaultMode)
       : undefined
     const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
-    await this.sql.run(`UPDATE conversations SET disabled_context_json = ?, reasoning_effort = ?, deep_thinking = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), settings.reasoningEffort, settings.deepThinking ? 1 : 0, id, userId])
-    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, reasoningEffort: settings.reasoningEffort, deepThinking: settings.deepThinking, permissionMode: null, kbContextMode: 'auto', disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
+    const assistantMode = assistantKind === 'make'
+      ? 'make'
+      : defaultMode === 'mode:chat' || preset?.assistantMode === 'chat'
+        ? 'chat'
+        : 'workspace'
+    await this.sql.run(`UPDATE conversations SET disabled_context_json = ?, assistant_mode = ?, reasoning_effort = ?, deep_thinking = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), assistantMode, settings.reasoningEffort, settings.deepThinking ? 1 : 0, id, userId])
+    return { id, ...(tenantId ? { tenantId } : {}), title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames, llmEngineId: null, llmProvider: null, llmModel: null, reasoningEffort: settings.reasoningEffort, deepThinking: settings.deepThinking, permissionMode: null, kbContextMode: 'auto', assistantMode, disabledContext, scope, projectId, assistantKind, previewEngine: 'proxy', status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -878,6 +885,13 @@ export class ChatRepo extends BaseRepo {
 
   async setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Promise<Conversation | null> {
     await this.sql.run(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`, [mode, id, userId])
+    return await this.getConversation(userId, id)
+  }
+
+  async setConversationAssistantMode(userId: string, id: string, mode: 'chat' | 'workspace' | 'make'): Promise<Conversation | null> {
+    // Смена режима обрывает сессию движка: иначе Chat продолжил бы помнить
+    // проектный контекст и инструменты, полученные предыдущим Workspace-ходом.
+    await this.sql.run(`UPDATE conversations SET assistant_mode = ?, claude_session_id = CASE WHEN assistant_mode <> ? THEN NULL ELSE claude_session_id END, context_usage_json = CASE WHEN assistant_mode <> ? THEN NULL ELSE context_usage_json END WHERE id = ? AND user_id = ?`, [mode, mode, mode, id, userId])
     return await this.getConversation(userId, id)
   }
 
@@ -2004,6 +2018,7 @@ export class ChatRepo extends BaseRepo {
           ? row.permission_mode
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
+      assistantMode: row.assistant_mode === 'chat' || row.assistant_mode === 'make' ? row.assistant_mode : 'workspace',
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
       scope: row.scope === 'kanban' || row.scope === 'make' || row.scope === 'images' || row.scope === 'console' || row.scope === 'playwright-reader' || row.scope === 'web-reader' ? row.scope : 'chat',
       projectId: row.project_id ?? null,

@@ -84,6 +84,37 @@ describe('sanitizeSettingsPatch', () => {
     expect(patch.aiAssistPrompts).toEqual([{ id: 'p1', title: 'Свой', text: 'текст', enabled: true }])
   })
 
+  it('сохраняет конфигурацию ассистента и нормализует старый пресет', () => {
+    expect(sanitizeSettingsPatch({
+      contextPresets: [{
+        id: 'dev',
+        name: '  Разработка  ',
+        description: '  Инструкции и инструменты проекта  ',
+        assistantMode: 'chat',
+        disabled: ['mcp-console-pty']
+      }, {
+        id: 'legacy',
+        name: 'Старый пресет',
+        disabled: []
+      }]
+    }).contextPresets).toEqual([
+      {
+        id: 'dev',
+        name: 'Разработка',
+        description: 'Инструкции и инструменты проекта',
+        assistantMode: 'chat',
+        disabled: ['mcp-console-pty']
+      },
+      {
+        id: 'legacy',
+        name: 'Старый пресет',
+        description: '',
+        assistantMode: 'workspace',
+        disabled: []
+      }
+    ])
+  })
+
   it('не считает патчем не-объект', () => {
     expect(sanitizeSettingsPatch(null)).toEqual({})
     expect(sanitizeSettingsPatch('theme=dark')).toEqual({})
