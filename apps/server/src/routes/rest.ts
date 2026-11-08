@@ -9,7 +9,7 @@ import { clientMessages, loadsServiceData } from '../serviceData.js'
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -85,6 +85,8 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   const { isOnline, kbStatus, cliMcpServers = [], viewer = userId, makeContext = null } = options
   const conversation = await db.chat.getConversation(userId, conversationId)
   if (!conversation) return null
+  const workspaceMode = isWorkspaceAssistantMode(conversation.assistantMode)
+  const chatModeItemIds = new Set(['platform-instructions', 'application-instructions', 'assistant-mode', 'conversation-history', 'current-message'])
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
   const disabled = new Set(conversation.disabledContext ?? [])
@@ -108,14 +110,15 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     // Причина замка приходит с сервера словом, а не выводится в UI по id:
     // правила гейтинга живут в одном месте (`contextGating.ts`).
     const lockReason = toggleable ? null : contextLockReason(value.id)
-    return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled }
+    const allowedByMode = workspaceMode || chatModeItemIds.has(value.id) || value.id.startsWith('instruction-')
+    return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled && allowedByMode }
   }
   const settings = await db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = (await db.identity.getUser(viewer))?.role ?? 'developer'
   // Match turn execution: Make uses the explicitly configured machine only.
   const makeChat = conversation.assistantKind === 'make'
-  const resolution = makeChat && (!conversation.execTarget || conversation.execTarget === 'none') ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
+  const resolution = !workspaceMode || (makeChat && (!conversation.execTarget || conversation.execTarget === 'none')) ? null : await db.chat.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? (await db.machines.listUsableAgents(userId, conversation.projectId)).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
   const project = conversation.projectId ? await db.projects.getProject(userId, conversation.projectId) : null
@@ -173,7 +176,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // снимок считал режим только по разговору, выключенная тумблером база знаний
   // показывалась работающей: пункты `mcp-kb-*` оставались «доступны», хотя ход
   // их не подключает.
-  const kbMode: KbContextMode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
+  const kbMode: KbContextMode = workspaceMode && !disabled.has('knowledge-mode') ? (conversation.kbContextMode ?? 'auto') : 'off'
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
   const workdir = makeChat ? conversation.workdir : conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = await db.chat.listMessages(userId, conversationId)
@@ -190,7 +193,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     ? ((await db.tasks.getCiTask(userId, conversation.projectId, conversation.taskId))?.designs ?? [])
     : []
   const taskContext = await (async () => {
-    if (!conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
+    if (!workspaceMode || !conversation.taskId || disabled.has('project-binding') || disabled.has('task-context')) return null
     const tc = await db.tasks.getTaskChatContext(userId, conversationId, isOnline)
     if (!tc) return null
     return taskContextBlock({
@@ -305,6 +308,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   }
   const groups: ContextSnapshotGroup[] = [
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
+      contextItem({ id: 'assistant-mode', type: 'Режим ассистента', source: 'Настройки разговора', scope: 'Следующий ход', priority: '0 · режим', title: conversation.assistantMode === 'make' ? 'Make' : workspaceMode ? 'Workspace' : 'Chat', description: conversation.assistantMode === 'make' ? 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' : workspaceMode ? 'Полный контекст, инструменты и MCP доступны модели.' : 'Только история, сообщение и инструкции; дополнительный контекст и инструменты отключены.', explanation: conversation.assistantMode === 'make' ? 'Make использует все источники Workspace и добавляет возможности, привязанные к Make-разговору.' : workspaceMode ? 'Workspace использует все настроенные источники.' : 'Chat принудительно запускается без машин, навыков, БЗ, MCP и инструментов.', configured: true, available: true, includedInNextTurn: true, details: { value: conversation.assistantMode ?? 'workspace' } }),
       contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: 'Применяются всегда; полный текст закрыт.', configured: true, available: true, includedInNextTurn: true }),
       contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу.', configured: true, available: true, includedInNextTurn: true }),
       // Описание — человеческая сводка, а не сырое значение поля: раньше здесь
@@ -561,16 +565,16 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // выключенный пункт исчезает и здесь. История и автоконтекст БЗ в него не
   // входят — им нужен текст ещё не отправленного сообщения.
   const previewBlocks = buildContextBlocks({
-    personalization: disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
+    personalization: !workspaceMode || disabled.has('personalization') ? { ...p, preferredName: '', responseLanguage: '', responseStyle: 'normal', tone: 'neutral', birthYear: null, birthMonth: null, birthDay: null } : p,
     // Фильтр по виду чата общий с ходом: в «Консоли с ассистентом» не уходит
     // подсказка про терминал, в Make — про терминал и заведение задачи, у
     // канбан-ассистента с «Автопилотом» — task-launch.
     instructions: turnChatInstructions(effectiveChatInstructions(settings.chatInstructions, disabled), conversation, conversation.assistantKind === 'kanban'),
-    project: disabled.has('project-binding') ? null : project,
-    projectId: disabled.has('project-binding') ? null : conversation.projectId ?? null,
-    taskContext: await taskContext,
+    project: !workspaceMode || disabled.has('project-binding') ? null : project,
+    projectId: !workspaceMode || disabled.has('project-binding') ? null : conversation.projectId ?? null,
+    taskContext: workspaceMode ? await taskContext : null,
     // Тумблер `make-context` настоящий: ход его тоже проверяет.
-    makeContext: disabled.has('make-context') ? null : makeContext,
+    makeContext: !workspaceMode || disabled.has('make-context') ? null : makeContext,
     now
   })
   const previewText = previewBlocks.map((block) => block.text).join('\n\n')
@@ -709,7 +713,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         .filter((candidate) => candidate !== model)
         .map((candidate) => ({ model: candidate, costUsd: promptCostUsd(provider, candidate, approxTokens(previewText.length + (resumeId ? 0 : historyText.length)), prices) }))
         .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
-      omitted: [
+      omitted: workspaceMode ? [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
         // Системные хинты, которые к промпту приклеивает сам исполнитель CLI.
         // Их условия сервер знает (машина, режим БЗ, вид чата), а тексты для
@@ -748,6 +752,13 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         'Текущее сообщение: его текст ещё не отправлен серверу.',
         kbMode === 'off' ? 'Автоконтекст базы знаний: режим выключен.' : 'Автоконтекст базы знаний: документы подбираются по тексту отправляемого сообщения.',
         'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
+      ] : [
+        'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        'Режим Chat: машина, навыки, БЗ, MCP, инструменты и дополнительный контекст не подключаются.',
+        resumeId
+          ? 'История разговора уже находится в сессии движка; сервер отправит только новое сообщение и инструкции.'
+          : `История разговора: пересобирается в момент отправки, ≈${approxTokens(historyText.length)} токенов.`,
+        'Текущее сообщение: его текст ещё не отправлен серверу.'
       ]
     }
   }
@@ -1335,6 +1346,7 @@ export async function registerRest(
       deepThinking?: boolean
       permissionMode?: string | null
       kbContextMode?: string
+      assistantMode?: string
     }
   }>(
     '/api/conversations/:id',
@@ -1352,6 +1364,12 @@ export async function registerRest(
       }
       if (typeof req.body.title === 'string') await db.chat.renameConversation(userId, req.params.id, req.body.title)
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') await db.chat.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
+      if (req.body.assistantMode === 'make' && current.assistantKind !== 'make') {
+        return reply.code(400).send({ error: 'Make mode belongs to a Make conversation' })
+      }
+      if (req.body.assistantMode === 'chat' || req.body.assistantMode === 'workspace' || req.body.assistantMode === 'make') {
+        await db.chat.setConversationAssistantMode(uid(req), req.params.id, req.body.assistantMode)
+      }
       if (req.body.execTarget !== undefined || req.body.llmEngineId !== undefined || req.body.llmProvider !== undefined || req.body.llmModel !== undefined || req.body.permissionMode !== undefined || req.body.reasoningEffort !== undefined || req.body.deepThinking !== undefined) {
         const role = (await db.identity.getUser(uid(req)))?.role ?? 'developer'
         if (req.body.llmEngineId && !(await db.llm.listLlmEnginesForRole(role)).some((engine) => engine.id === req.body.llmEngineId)) {

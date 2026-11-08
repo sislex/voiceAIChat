@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   reasoning_effort  TEXT NOT NULL DEFAULT 'medium',
   deep_thinking     INTEGER NOT NULL DEFAULT 0,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
+  assistant_mode    TEXT NOT NULL DEFAULT 'workspace',
   disabled_context_json TEXT NOT NULL DEFAULT '[]',
   project_id        TEXT,
   preview_url       TEXT,

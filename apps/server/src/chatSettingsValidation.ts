@@ -25,7 +25,13 @@ const account = z.object({
   personalization,
   chatInstructions: z.array(z.object({ id: text, title: text, description: text, enabled: z.boolean(),
     kind: z.enum(CHAT_INSTRUCTION_KINDS).optional(), text: text.optional() }).strict()),
-  contextPresets: z.array(z.object({ id: text, name: text.max(60), disabled: strings }).strict()).max(20),
+  contextPresets: z.array(z.object({
+    id: text,
+    name: text.max(60),
+    description: text.max(240).optional(),
+    assistantMode: z.enum(['chat', 'workspace', 'make']).optional(),
+    disabled: strings
+  }).strict()).max(20),
   defaultContextPresetId: nullableText, whisperModel: z.enum(WHISPER_MODELS),
   diarization: z.boolean(), voice: text, autoSpeak: z.boolean(), bargeIn: z.boolean(),
   handsFree: z.boolean(), theme: z.enum(['light', 'dark', 'green', 'system']), showConsole: z.boolean()

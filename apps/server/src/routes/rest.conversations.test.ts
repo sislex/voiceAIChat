@@ -1342,6 +1342,44 @@ describe('REST: conversations/messages/settings', () => {
     expect(plainDesign?.available).toBe(false)
   })
 
+  it('новый Make mode сохраняет тот же эффективный контекст, что прежний Workspace в Make', async () => {
+    const legacy = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Legacy Make', assistantKind: 'make' } })).json()
+    await db.chat.setConversationAssistantMode(U, legacy.id, 'workspace')
+    const modern = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Modern Make', assistantKind: 'make' } })).json()
+    expect(modern.assistantMode).toBe('make')
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Plain chat' } })).json()
+    expect((await inj({ method: 'PATCH', url: `/api/conversations/${plain.id}`, payload: { assistantMode: 'make' } })).statusCode).toBe(400)
+
+    type SnapshotItem = {
+      id: string
+      title: string
+      configured: boolean
+      available: boolean
+      includedInNextTurn: boolean
+      enabled: boolean
+      toggleable: boolean
+    }
+    const snapshotOf = async (id: string): Promise<{ groups: Array<{ items: SnapshotItem[] }> }> =>
+      (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json()
+    const legacySnapshot = await snapshotOf(legacy.id)
+    const modernSnapshot = await snapshotOf(modern.id)
+    const itemsOf = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }): SnapshotItem[] =>
+      snapshot.groups.flatMap((group) => group.items)
+    const modeOf = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }): SnapshotItem | undefined =>
+      itemsOf(snapshot).find((item) => item.id === 'assistant-mode')
+    const operationalSignature = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }) =>
+      itemsOf(snapshot)
+        .filter((item) => item.id !== 'assistant-mode')
+        .map(({ id, configured, available, includedInNextTurn, enabled, toggleable }) =>
+          ({ id, configured, available, includedInNextTurn, enabled, toggleable }))
+
+    expect(modeOf(legacySnapshot)?.title).toBe('Workspace')
+    expect(modeOf(modernSnapshot)?.title).toBe('Make')
+    expect(operationalSignature(modernSnapshot)).toEqual(operationalSignature(legacySnapshot))
+    expect(itemsOf(modernSnapshot).find((item) => item.id === 'mcp-make-files')?.includedInNextTurn).toBe(true)
+    expect(itemsOf(modernSnapshot).find((item) => item.id === 'make-context')?.includedInNextTurn).toBe(true)
+  })
+
   it('в режиме планирования инструменты вида чата честно обещают только чтение', async () => {
     // Ход подключает консоль, Make и канбан с &ro=1 в режиме «Только
     // планирование» (turns.ts): чтение работает, запись отклоняется. Пункт

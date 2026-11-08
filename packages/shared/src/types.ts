@@ -928,6 +928,8 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
+  /** Chat — только сообщения; Workspace — рабочий контекст; Make — рабочий контекст Make-разговора. */
+  assistantMode?: ConversationAssistantMode
   /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
   disabledContext?: string[]
   /** Обязательная область происхождения и авторизации разговора. */
@@ -1128,6 +1130,24 @@ export const SESSION_SHORT_TTL_MS = 12 * 60 * 60_000
  * acceptEdits (авто-правки файлов), plan (только планирование, без изменений).
  */
 export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan'
+
+/**
+ * Режим наполнения хода. Chat отправляет только историю/сообщение и инструкции;
+ * Workspace подключает общий рабочий контекст, а Make — тот же рабочий контекст
+ * со специализацией Make-разговора (проект, превью и mcp__make__*).
+ */
+export type ConversationAssistantMode = 'chat' | 'workspace' | 'make'
+
+export const CONVERSATION_ASSISTANT_MODES: Array<{ id: ConversationAssistantMode; label: string; description: string }> = [
+  { id: 'workspace', label: 'Workspace', description: 'Контекст проекта, БЗ, навыки, машины, MCP и инструменты доступны модели.' },
+  { id: 'make', label: 'Make', description: 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' },
+  { id: 'chat', label: 'Chat', description: 'Только история, текущее сообщение и инструкции — без инструментов и дополнительного контекста.' }
+]
+
+/** Legacy-разговоры работают как раньше: полный Workspace-контекст. */
+export function isWorkspaceAssistantMode(mode: ConversationAssistantMode | null | undefined): boolean {
+  return mode !== 'chat'
+}
 
 /** Режим прав для меню настроек. */
 export interface PermissionModeInfo {
@@ -1660,9 +1680,9 @@ export interface Settings {
    */
   contextPresets: ContextPreset[]
   /**
-   * Пресет, который применяется к **новым** разговорам. Настроил «минимальный
-   * контекст» один раз — и он действует сразу, а не после того как человек
-   * вспомнит про кнопку. null — новые чаты начинают с полным контекстом.
+   * Мод, который применяется к **новым обычным** разговорам: id пользовательского
+   * мода либо mode:chat. null и mode:workspace означают встроенный Workspace.
+   * Make-разговоры всегда создаются во встроенном mode:make.
    */
   defaultContextPresetId: string | null
 }
@@ -1938,10 +1958,17 @@ export interface ContextDiff {
   settings: Array<{ label: string; here: string; there: string }>
 }
 
-/** Именованный набор выключенных источников контекста. */
+/**
+ * Пользовательская конфигурация ассистента. Старое имя ContextPreset оставлено
+ * в контракте для совместимости с уже сохранёнными настройками.
+ */
 export interface ContextPreset {
   id: string
   name: string
+  /** Коротко объясняет назначение конфигурации в селекторе и каталоге. */
+  description?: string
+  /** Базовый режим определяет, подключать ли расширенный контекст и инструменты. */
+  assistantMode?: ConversationAssistantMode
   /** id выключенных пунктов; остальные считаются включёнными. */
   disabled: string[]
 }
@@ -2092,6 +2119,10 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
       .map((item) => ({
         id: item.id,
         name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
+        description: String(item.description ?? '').trim().slice(0, 240),
+        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make'
+          ? item.assistantMode
+          : 'workspace' as const,
         disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []
       }))
       .slice(0, 20)

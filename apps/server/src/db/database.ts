@@ -491,6 +491,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     }
+    if (!convCols.some((c) => c.name === 'assistant_mode')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN assistant_mode TEXT NOT NULL DEFAULT 'workspace'`)
+    }
     if (!convCols.some((c) => c.name === 'disabled_context_json')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN disabled_context_json TEXT NOT NULL DEFAULT '[]'`)
     }
