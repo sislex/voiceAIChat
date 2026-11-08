@@ -326,6 +326,8 @@ export interface IpcInvokeMap {
       permissionMode?: PermissionMode | null
       /** Режим автоматического KB-контекста. */
       kbContextMode?: KbContextMode
+      /** Chat — только сообщения; Workspace — рабочий контекст; Make — рабочий контекст Make-разговора. */
+      assistantMode?: import('./types').ConversationAssistantMode
     }
     result: Conversation
   }

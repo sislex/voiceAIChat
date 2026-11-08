@@ -1535,6 +1535,36 @@ describe('turns: conversation history MCP', () => {
   })
 })
 
+describe('turns: режим Chat', () => {
+  it('оставляет только диалог и инструкции без MCP, навыков и машины', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'Chat mode')
+    await db.chat.setConversationAssistantMode(U, conversation.id, 'chat')
+    // A cold start rebuilds the prompt from stored history; the WS handler stores the reply first.
+    await db.chat.addMessage(U, conversation.id, 'u1', 'Только диалог', '10:00')
+    const rec = recorder()
+    const tool = { register: vi.fn(), unregister: vi.fn() }
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      historyMcpBaseUrl: 'http://127.0.0.1:8787/mcp/history?k=secret',
+      historyTool: tool
+    })
+
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Только диалог' }] })
+    await turns.idle()
+
+    expect(rec.last()).toMatchObject({ textOnly: true })
+    expect(rec.last()?.prompt).toContain('Только диалог')
+    expect(rec.last()?.historyMcpUrl).toBeUndefined()
+    expect(rec.last()?.kbMcpUrl).toBeUndefined()
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.remote).toBeUndefined()
+    expect(tool.register).not.toHaveBeenCalled()
+    await db.close()
+  })
+})
+
 describe('turns: MCP-инструменты базы знаний и режимы kbContextMode', () => {
   const bundle = {
     query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,

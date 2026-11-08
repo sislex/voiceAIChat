@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -680,17 +680,18 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     //   off    — ничего.
     // Инспектор контекста: пункты, выключенные пользователем, не попадают ассистенту.
     const disabledContext = new Set(conv?.disabledContext ?? [])
-    const kbMode = disabledContext.has('knowledge-mode') ? 'off' : (conv?.kbContextMode ?? 'auto')
-    // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
-    const effectiveSkills = enabledContextSkills(conv?.skillNames ?? [], disabledContext)
+    const workspaceMode = isWorkspaceAssistantMode(conv?.assistantMode)
+    const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
+    // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
+    const effectiveSkills = workspaceMode ? enabledContextSkills(conv?.skillNames ?? [], disabledContext) : []
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
-    const historyEnabled = !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
+    const historyEnabled = workspaceMode && !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
     if (historyEnabled && (conv?.messageCount ?? 0) > 200) {
       basePrompt += '\n\nЭтот разговор длинный. Если для ответа нужны прежние детали, используй mcp__history__history_search и затем mcp__history__history_get вместо догадок.'
     }
-    if (!req.delegation && deps.kb && kbMode === 'auto') {
+    if (workspaceMode && !req.delegation && deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
       if (kbQuery) {
         const usage = await deps.kbUsage?.begin(
@@ -728,7 +729,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // у проекта ещё нет описания или репозитория: модель не должна угадывать,
     // к какому проекту относится разговор.
     const projectContext = conv?.projectId ? await deps.db.projects.getProject(userId, conv.projectId) : null
-    if (conv?.projectId && !disabledContext.has('project-binding')) {
+    if (workspaceMode && conv?.projectId && !disabledContext.has('project-binding')) {
       // Тот же блок, что показывает инспектор контекста (`prompt/contextBlocks.ts`).
       const block = projectContextBlock(projectContext, conv.projectId)
       if (block) basePrompt = `${basePrompt}\n\n${block}`
@@ -737,7 +738,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
     // Контекст задачи выключается отдельно от проекта: постановка бывает
     // длинной, и «убрать критерии приёмки, оставив проект» — законное желание.
-    if (!req.delegation && conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
+    if (workspaceMode && !req.delegation && conv?.taskId && !disabledContext.has('project-binding') && !disabledContext.has('task-context')) {
       const tc = await deps.db.tasks.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
         const task = conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
@@ -756,10 +757,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Панель ассистента работает и в приватном kanban-чате, и в обычном чате
     // проекта, выбранном в её селекторе. Признак второго — `assistantContext`:
     // его шлёт только эта панель, обычный чат сайдбара такого поля не имеет.
-    const kanbanTurn = Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
+    const kanbanTurn = workspaceMode && Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
     // An external application gets its tools on its own turns and on the user's turns; never on another application's.
     const externalTools = (application: import('@voicechat/shared').ApplicationId, toolConversationId = conversationId) =>
-      !req.delegation || req.delegation.applicationId === application
+      workspaceMode && (!req.delegation || req.delegation.applicationId === application)
         ? deps.externalMcpUrl?.(application, { userId, conversationId: toolConversationId, turnId }) : undefined
     // External Kanban (projects=https://…) serves `/mcp/kanban` with a core MCP token instead of the shared secret.
     const externalKanban = kanbanTurn ? externalTools('projects') : undefined
@@ -773,7 +774,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Блок персонализации строит `prompt/contextBlocks.ts` — тот же код, что и
     // предпросмотр в инспекторе контекста: иначе панель обещает не то, что уйдёт.
-    const personalizationBlock = req.delegation ? '' : personalizationPromptBlock(settings.personalization, new Date())
+    const personalizationBlock = !workspaceMode || req.delegation ? '' : personalizationPromptBlock(settings.personalization, new Date())
     if (personalizationBlock && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n${personalizationBlock}`
     // Инструкции чата (терминал/проводник, вопросы, картинки, task-launch, свои) —
     // включённые в настройках и не выключенные в инспекторе этого разговора.
@@ -793,23 +794,23 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
-    const makeContextBlock = !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
+    const makeContextBlock = workspaceMode && !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
       ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
     // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
     // что нарисованное надо показать fenced-блоком — иначе оно туда не попадёт.
-    const studioContextBlock = !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
+    const studioContextBlock = workspaceMode && !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
       ? await deps.studioContext(conversationId).catch(() => '')
       : ''
     // Make: the browser belongs to a bound Web Reader or Playwright Reader conversation of
     // the same user. The executor (Claude or Codex) is independent of that engine.
-    const makeBrowser = !req.delegation && conv?.assistantKind === 'make' ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities) : null
+    const makeBrowser = workspaceMode && !req.delegation && conv?.assistantKind === 'make' ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities) : null
     const makeBrowserBlock = makeBrowser ? makeBrowserPromptBlock(makeBrowser) : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
-    const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
+    const makeQuestion = workspaceMode && conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
-    let prompt = makeAutoPlan
+    let prompt = workspaceMode && makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptQ
     // Make uses only an explicitly configured machine; project/default machines are not inherited.
@@ -819,11 +820,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // null хранит наследование, явный override не получает молчаливый fallback.
     // The server's tool-free policy needs neither a machine nor Git preflight,
     // regardless of saved or request-level machine preferences.
-    const machine = (makeChat && (!conv?.execTarget || conv.execTarget === 'none')) || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
+    const machine = !workspaceMode || (makeChat && (!conv?.execTarget || conv.execTarget === 'none')) || deps.chatTextOnly === true ? null : await deps.db.chat.resolveConversationMachine(userId, conversationId, {
       ...(!makeChat && req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
       ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
     })
-    const executionDisabled = deps.chatTextOnly === true || machine?.source === 'disabled'
+    const executionDisabled = !workspaceMode || deps.chatTextOnly === true || machine?.source === 'disabled'
     if (machine?.error === 'unavailable') {
       starting.delete(conversationId)
       broadcast({ t: 'claude.error', conversationId, message: 'Выбранная машина больше недоступна для этого чата' }, userId)
@@ -978,13 +979,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewMcpUrl: string | undefined
     let previewSurface: 'panel' | 'chromium' | 'make-preview' | undefined
     // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
-    const previewAllowed = conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+    const previewAllowed = workspaceMode && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
     const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
     if (externalPreview) previewMcpUrl = externalPreview
     else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
-    if (!req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
+    if (workspaceMode && !req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
       previewSurface = 'make-preview'
       prompt += '\n\n' + [
@@ -997,7 +998,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // A bound Make browser keeps priority and uses the reader conversation.
     const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
-    if (makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
+    if (workspaceMode && makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
       previewMcpUrl = externalMakeBrowser
         ?? `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns!.issue({ userId, conversationId: makeBrowser.session.id }))}`
       previewSurface = makeBrowser.surface
@@ -1005,14 +1006,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
     // разговора (ptyId `console:<conv>`). Только у чата этого вида.
     let consoleMcpUrl: string | undefined
-    if (!req.delegation && conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
+    if (workspaceMode && !req.delegation && conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
       consoleMcpUrl = `${deps.consoleMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}`
     }
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
     const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
-    if (conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
+    if (workspaceMode && conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
@@ -1021,19 +1022,19 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     let imageStudioMcpUrl: string | undefined
     const externalImages = conv?.assistantKind === 'images' ? externalTools('image-studio') : undefined
-    if (conv?.assistantKind === 'images' && (externalImages || (!req.delegation && deps.imageStudioMcpBaseUrl))) {
+    if (workspaceMode && conv?.assistantKind === 'images' && (externalImages || (!req.delegation && deps.imageStudioMcpBaseUrl))) {
       imageStudioMcpUrl = `${externalImages ?? deps.imageStudioMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&user=${encodeURIComponent(userId)}`
     }
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl)) {
+    if (workspaceMode && (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl))) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
       kanbanMcpUrl = `${externalKanban ?? deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
-    if (makeChat && deps.remoteFileTool && deps.mcpBaseUrl) {
+    if (workspaceMode && makeChat && deps.remoteFileTool && deps.mcpBaseUrl) {
       remoteFileToken = randomUUID()
       deps.remoteFileTool.register(remoteFileToken, loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
         ? [{ uploadId, path: attachment.serverPath, name: attachment.runnerName, dataBase64: attachment.dataBase64 }] : []))
@@ -1086,7 +1087,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // инструментов (shell/файлы сервера) — остаются только MCP. Роль здесь не важна:
     // админ в Make-чате раньше получал встроенные Bash/Write и мог править
     // репозиторий сервера — для мастерской это лишние права, а не удобство.
-    const makeOnlyExecution = makeChat && permissionMode !== 'plan'
+    const makeOnlyExecution = workspaceMode && makeChat && permissionMode !== 'plan'
     // Канбан-ассистент: «План» для его инструментов — только явный выбор
     // пользователя в этом разговоре. Ход панели идёт без машины, и принудительный
     // plan ниже раньше делал канбан read-only (ro=1): ассистент не мог ни создать
@@ -1159,7 +1160,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? { ...remote, mcpUrl: `${remote.mcpUrl}&ro=1` }
       : remote
     const linkedTask = !req.delegation && conv?.taskId && conv.projectId ? await deps.db.tasks.getCiTask(userId, conv.projectId, conv.taskId) : null
-    const makeSources = linkedTask && conv?.projectId
+    const makeSources = workspaceMode && linkedTask && conv?.projectId
       ? deps.make?.taskSources({ designs: linkedTask.designs ?? [], userId, projectId: conv.projectId, taskId: linkedTask.id }) ?? []
       : []
     // Codex reports the cumulative totals of the whole thread in
@@ -1188,8 +1189,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.handle = client.send(
       {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
-        ...(deps.chatTextOnly ? { textOnly: true } : {}),
-        ...(makeChat ? { toolOnly: true } : {}),
+        ...(!workspaceMode || deps.chatTextOnly ? { textOnly: true } : {}),
+        ...(workspaceMode && makeChat ? { toolOnly: true } : {}),
         userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(!makeChat && attachments.length ? { attachments } : {}),
