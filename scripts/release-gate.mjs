@@ -10,7 +10,10 @@ import { FRONTEND_E2E_FILES } from './full-gate.mjs'
 const root = resolve(import.meta.dirname, '..')
 /** Owner archives whose repositories carry the system suites of `gate:system`. */
 export const SYSTEM_OWNER_PACKAGES = Object.freeze(['@sislexa/core-ui', '@sislexa/web-reader', '@sislexa/playwright-reader'])
-export const FULL_RELEASE_COMMANDS = Object.freeze([['npm', ['run', 'gate:all']], ['npm', ['run', 'gate:performance']], ['npm', ['run', 'gate:system']]])
+// `--release` adds what development gates defer: the complete test:tooling chain and the
+// Kanban-stand browser suites.
+export const RELEASE_FULL_GATE = Object.freeze(['npm', Object.freeze(['run', 'gate:all', '--', '--release'])])
+export const FULL_RELEASE_COMMANDS = Object.freeze([RELEASE_FULL_GATE, ['npm', ['run', 'gate:performance']], ['npm', ['run', 'gate:system']]])
 
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', env: process.env })
@@ -118,8 +121,11 @@ export async function main(args = process.argv.slice(2), execute = run, plan = p
   const decision = releaseCommands(selected, (adapters.releaseImpact ?? releaseImpact)(base))
   console.log(`[release-gate] ${decision.mode} relative to base ${base.slice(0, 12)}: ${selected.reasons.join('; ')}`)
   if (decision.mode === 'full') {
-    execute('npm', ['run', 'gate:all'])
-  } else executeApplicationPlan({ ...selected, e2eFiles: (selected.e2eFiles ?? []).filter(file => !FRONTEND_E2E_FILES.includes(file)) }, execute, 'release')
+    execute(RELEASE_FULL_GATE[0], [...RELEASE_FULL_GATE[1]])
+  } else {
+    const e2eFiles = [...(selected.e2eFiles ?? []), ...(selected.releaseE2eFiles ?? [])].filter(file => !FRONTEND_E2E_FILES.includes(file))
+    executeApplicationPlan({ ...selected, release: true, e2eFiles, releaseE2eFiles: [] }, execute, 'release')
+  }
   if (!decision.performance) console.log('[release-gate] performance: skipped (no rendering, Core UI pin, measurement or budget changes)')
   for (const [command, commandArgs] of decision.extra) execute(command, commandArgs)
   return { mode: decision.mode, reason: selected.reasons.join('; ') }

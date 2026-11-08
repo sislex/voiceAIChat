@@ -7,6 +7,15 @@ import { prepareKanbanStand } from './kanban-stand-prepare.mjs'
 
 /** Suites that need the Core + Kanban stand (e2e/kanbanStand.ts). */
 export const KANBAN_STAND_FILES = Object.freeze(['e2e/projects.e2e.test.ts', 'e2e/gitPane.e2e.test.ts'])
+// Kanban-owned pages need Postgres-in-Docker + Core + Kanban + Chromium. They run in the release
+// regression (`gate:release`, `gate:all -- --release`); development gates run them only when the
+// suite file itself changed.
+export const RELEASE_ONLY_BROWSER_FILES = KANBAN_STAND_FILES
+
+/** Development selection: release-only suites stay only when the diff edits them. */
+export function developmentBrowserFiles(files, changed = []) {
+  return [...new Set(files)].filter(file => !RELEASE_ONLY_BROWSER_FILES.includes(file) || changed.includes(file))
+}
 // These suites use separate ephemeral ports, databases and browser contexts.
 // New suites stay serial until their isolation has been reviewed.
 const parallelFiles = new Set([
@@ -14,8 +23,9 @@ const parallelFiles = new Set([
   'webReaderOwnProject', 'webReaderProject', 'toolIntegration'
 ].map(name => `e2e/${name}.e2e.test.ts`))
 
-export function integrationBrowserFiles(root = resolve(import.meta.dirname, '..')) {
+export function integrationBrowserFiles(root = resolve(import.meta.dirname, '..'), { release = false } = {}) {
   return readdirSync(resolve(root, 'e2e')).filter(file => file.endsWith('.e2e.test.ts') && file !== 'routeBudgets.e2e.test.ts').sort().map(file => 'e2e/' + file)
+    .filter(file => release || !RELEASE_ONLY_BROWSER_FILES.includes(file))
 }
 
 export function browserWorkers(value, cpus = availableParallelism()) {
@@ -68,7 +78,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   try {
     const root = resolve(import.meta.dirname, '..')
     const args = process.argv.slice(2)
-    const files = args.length === 1 && args[0] === '--integration' ? integrationBrowserFiles(root) : args
+    const integration = args[0] === '--integration' && (args.length === 1 || (args.length === 2 && args[1] === '--release'))
+    const files = integration ? integrationBrowserFiles(root, { release: args[1] === '--release' }) : args
     const batches = browserBatches(files)
     for (const file of files) if (!existsSync(resolve(root, file))) throw Error(`Missing browser suite: ${file}`)
     // Сьюты страниц проекта идут на стенде «ядро + канбан»: чекаут закреплённого канбана готовится

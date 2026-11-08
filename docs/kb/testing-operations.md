@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-11-05
-checked: 97cadc810
+updated: 2026-11-09
+checked: 6bc06e493
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -495,7 +495,8 @@ missing their separate dependencies produces TS2307 for `electron` and
 `VC_E2E_KANBAN_CACHE_KEEP` (по умолчанию 3) последних по использованию чекаутов — время использования
 хранит маркер `.sislexa-e2e-ready`), иначе соседний `../sislexa-kanban`.
 Деревья сравниваются с закреплённым коммитом (merge-коммит с тем же содержимым подходит;
-`SISLEXA_KANBAN_SOURCE_ANY_COMMIT=1` снимает проверку). `scripts/browser-gate.mjs` готовит
+`SISLEXA_KANBAN_SOURCE_ANY_COMMIT=1` снимает проверку). Since 2026-11 these suites are
+release-only (see "Development and release scope of the full gate"). `scripts/browser-gate.mjs` готовит
 кэш перед этими сьютами сам; если стенд поднять нельзя (нет core-ui, docker, чекаута или
 закреплённого коммита), сьюты пропускаются и печатают причину. `VC_E2E_STAND_LOG=1` выводит
 логи обоих процессов. Письма приглашений шлёт канбан, поэтому SMTP-приёмник получают оба.
@@ -596,6 +597,37 @@ optimization candidates are removing the overlapping E2E scheduling, validating
 cached Desktop dependencies against the lockfile/runtime, and caching compressed
 asset sizes by content hash and compression settings. Removing Core bridge
 coverage or reusing unvalidated stale route inventories would weaken the gate.
+
+## Development and release scope of the full gate
+
+Development gates (`gate:quick`, `gate:task`, `gate`/`gate:fast`, `gate:all`,
+promotion and merges) and the release regression (`gate:release`) differ in two places:
+
+- **Kanban-stand browser suites.** `e2e/projects.e2e.test.ts` and
+  `e2e/gitPane.e2e.test.ts` test Kanban-owned pages and each boots
+  Postgres-in-Docker + Core + Kanban + Chromium (`e2e/kanbanStand.ts`).
+  They are `RELEASE_ONLY_BROWSER_FILES` in `scripts/browser-gate.mjs`:
+  `test:browser` (development `gate:all`) skips them, `test:browser:release` runs
+  them. `planApplicationChecks` moves them from `e2eFiles` into `releaseE2eFiles`
+  unless the diff edits the suite file itself; `gate:release` restores them
+  (`gate:all -- --release` on full mode, `plan.release` on narrowed mode).
+  The stand proves Postgres readiness by a `select 1` over TCP through the
+  published port (the entrypoint's init server answers `pg_isready` on the unix
+  socket and is then restarted); the projects suite's `beforeAll` has a 180 s budget.
+- **Root tooling tests.** `test:tooling` is the complete chain (release, `npm test`).
+  Development `gate:all` runs `test:tooling:dev` — `packages/kb-tools`, gate planners
+  (quick/task/application/full/browser/merge/release/promotion gates, test-files,
+  task-tests, affected-check), pins, frontend artifact/route tooling and the
+  `scripts/prod` Python checks — plus `relatedTooling` suites of changed
+  `scripts/` files (a changed `scripts/<name>.mjs` selects its sibling
+  `<name>.test.mjs` and every tooling test importing it). Release/stand/operator
+  suites (release-train*, dev-stand*, vendor-*, *-release, component-*,
+  operations-*, long-run, stand-diagnostics, system-gate, shared-chat/s3
+  artifacts, application-deploy, `gate:a07`) therefore run in development only
+  when their script changes. If `full-gate.mjs` cannot compute the diff against
+  `origin/dev` (fallback `origin/main`), it runs the complete chain.
+  The narrowed application plan (`plan.tooling`) does the same:
+  `test:tooling:dev` plus related suites, complete `test:tooling` under `plan.release`.
 
 ## Матрица проверок
 

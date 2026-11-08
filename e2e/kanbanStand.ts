@@ -66,18 +66,31 @@ async function startPostgres(): Promise<{ url: string; stop: () => void }> {
   const run = spawnSync('docker', ['run', '-d', '--rm', '--name', name, '-p', '127.0.0.1::5432', '-e', 'POSTGRES_PASSWORD=e2e', 'postgres:16-alpine'], { encoding: 'utf8' })
   if (run.status !== 0) throw new Error(`Postgres не запустился: ${run.stderr}`)
   const stop = () => { spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' }) }
-  for (let i = 0; i < 60; i++) {
-    // pg_isready внутри контейнера и подключение снаружи: порт публикуется не сразу.
-    if (spawnSync('docker', ['exec', name, 'pg_isready', '-U', 'postgres'], { stdio: 'ignore' }).status === 0) {
-      const published = spawnSync('docker', ['port', name, '5432/tcp'], { encoding: 'utf8' })
-      const port = /^127\.0\.0\.1:(\d+)$/.exec(published.stdout.trim())?.[1]
-      if (published.status !== 0 || !port) { stop(); throw new Error('Postgres has no published loopback port') }
-      return { url: `postgres://postgres:e2e@127.0.0.1:${port}/postgres`, stop }
+  const { default: pg } = await import('pg')
+  let lastError = 'no published loopback port yet'
+  for (let i = 0; i < 90; i++) {
+    // Readiness is proven by a query over TCP through the published port. pg_isready over the
+    // container's unix socket answers during the entrypoint's init server, which is then
+    // restarted; the init server does not listen on TCP, so a TCP query reaches the final one.
+    const published = spawnSync('docker', ['port', name, '5432/tcp'], { encoding: 'utf8' })
+    const port = /^127\.0\.0\.1:(\d+)$/m.exec(published.stdout ?? '')?.[1]
+    if (port) {
+      const url = `postgres://postgres:e2e@127.0.0.1:${port}/postgres`
+      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 2_000 })
+      try {
+        await client.connect()
+        await client.query('select 1')
+        return { url, stop }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error)
+      } finally {
+        await client.end().catch(() => {})
+      }
     }
     await new Promise((r) => setTimeout(r, 1000))
   }
   stop()
-  throw new Error('Postgres не поднялся за 60 с')
+  throw new Error(`Postgres не поднялся за 90 с: ${lastError}`)
 }
 
 export interface KanbanStand {

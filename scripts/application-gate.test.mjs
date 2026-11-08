@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { main, planApplicationChecks, lockChangedApplications, validateApplicationDependencies, applicationCommands, applicationPlanCommands, executeApplicationPlan } from './application-gate.mjs'
 import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
-import { integrationBrowserFiles } from './browser-gate.mjs'
+import { integrationBrowserFiles, RELEASE_ONLY_BROWSER_FILES } from './browser-gate.mjs'
 import { PACKAGES } from './affected-check.mjs'
 import { APPLICATION_CATALOG } from '../packages/shared/src/applicationCatalog.ts'
 
@@ -80,9 +80,9 @@ test('an explicitly changed integration scenario remains selected', () => {
 // suites. Route-budget/lazy-boundary cases already run in frontend:route-gates.
 test('every retained Core browser suite has a full-gate owner', () => {
   const plan = planApplicationChecks(['Dockerfile'])
-  const scheduled = [...FRONTEND_E2E_FILES, ...integrationBrowserFiles()]
+  const scheduled = [...FRONTEND_E2E_FILES, ...integrationBrowserFiles(undefined, { release: true })]
   assert.deepEqual(remainingBrowserFiles(plan.e2eFiles, true), [])
-  for (const file of plan.e2eFiles) assert.ok(scheduled.includes(file))
+  for (const file of [...plan.e2eFiles, ...plan.releaseE2eFiles]) assert.ok(scheduled.includes(file))
   assert.equal(new Set(scheduled).size, scheduled.length, 'Full gate repeats browser files')
   for (const file of readdirSync(new URL('../e2e/', import.meta.url))) {
     if (!file.endsWith('.e2e.test.ts')) continue
@@ -106,7 +106,8 @@ test('every known browser test selects its complete suite without unrelated appl
 test('browser configuration covers every suite including performance but does not select server units', () => {
   const plan = planApplicationChecks(['e2e/vitest.config.ts'])
   assert.equal(plan.full, false)
-  assert.deepEqual(new Set(plan.e2eFiles), new Set([...FRONTEND_E2E_FILES, ...APPLICATION_CATALOG.flatMap(app => app.e2eFiles)]))
+  assert.deepEqual(new Set([...plan.e2eFiles, ...plan.releaseE2eFiles]), new Set([...FRONTEND_E2E_FILES, ...APPLICATION_CATALOG.flatMap(app => app.e2eFiles)]))
+  for (const file of RELEASE_ONLY_BROWSER_FILES) assert.ok(!plan.e2eFiles.includes(file), file)
   assert.deepEqual(plan.applications, [])
   assert.equal(plan.tooling, true)
 })
@@ -115,7 +116,36 @@ test('budget edits preserve real Web/Electron measurements and tooling regressio
   assert.equal(plan.full, false)
   assert.deepEqual(plan.e2eFiles, FRONTEND_E2E_FILES)
   assert.equal(plan.tooling, true)
-  assert.equal(applicationPlanCommands(plan).filter(([, args]) => args.includes('test:tooling')).length, 1)
+  assert.equal(applicationPlanCommands(plan).filter(([, args]) => args.includes('test:tooling:dev')).length, 1)
+  assert.equal(applicationPlanCommands(plan).filter(([, args]) => args.includes('test:tooling')).length, 0)
+  assert.equal(applicationPlanCommands({ ...plan, release: true }).filter(([, args]) => args.includes('test:tooling')).length, 1)
+})
+
+test('Kanban-stand suites are release-only unless the diff edits them', () => {
+  for (const changed of [['Dockerfile'], ['e2e/vitest.config.ts']]) {
+    const plan = planApplicationChecks(changed)
+    assert.deepEqual([...plan.releaseE2eFiles].sort(), [...RELEASE_ONLY_BROWSER_FILES].sort())
+    for (const file of RELEASE_ONLY_BROWSER_FILES) assert.ok(!plan.e2eFiles.includes(file), file)
+  }
+  const edited = planApplicationChecks(['e2e/projects.e2e.test.ts'])
+  assert.deepEqual(edited.e2eFiles, ['e2e/projects.e2e.test.ts'])
+  assert.deepEqual(edited.releaseE2eFiles, [])
+  const config = planApplicationChecks(['e2e/vitest.config.ts'])
+  const browser = commands => commands.find(([, args]) => args.includes('scripts/browser-gate.mjs'))[1]
+  for (const file of RELEASE_ONLY_BROWSER_FILES) {
+    assert.ok(!browser(applicationPlanCommands(config)).includes(file))
+    assert.ok(browser(applicationPlanCommands({ ...config, release: true })).includes(file))
+  }
+  assert.deepEqual(integrationBrowserFiles().filter(file => RELEASE_ONLY_BROWSER_FILES.includes(file)), [])
+  assert.deepEqual(integrationBrowserFiles(undefined, { release: true }).filter(file => RELEASE_ONLY_BROWSER_FILES.includes(file)).sort(), [...RELEASE_ONLY_BROWSER_FILES].sort())
+})
+
+test('development tooling adds only the suites of changed scripts', () => {
+  const plan = planApplicationChecks(['scripts/long-run.mjs'])
+  const commands = applicationPlanCommands(plan).map(([command, args]) => [command.split('/').pop(), args.join(' ')])
+  assert.ok(commands.some(([, args]) => args === 'run test:tooling:dev'))
+  assert.ok(commands.some(([, args]) => args.startsWith('--import tsx --test') && args.includes('scripts/long-run.test.mjs')))
+  assert.ok(!commands.some(([, args]) => args.includes('scripts/dev-stand.test.mjs')))
 })
 test('narrow tooling scope never hides another changed critical file', () => {
   for (const file of ['scripts/core-ui-artifact.mjs', 'scripts/browser-ui-release.mjs', 'scripts/browser-ui-release.test.mjs', 'scripts/long-run.mjs', 'scripts/long-run.test.mjs', 'scripts/operations-restore-drill.mjs', 'scripts/operations-restore-drill.test.mjs', 'scripts/operations-backup-retention.mjs']) {
