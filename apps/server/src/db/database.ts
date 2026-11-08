@@ -38,8 +38,6 @@ export { PROD_REBUILD_TASK_TITLE, PROD_REBUILD_TASK_INTRO } from './repos/tasks.
 export type { MessageSearchOptions } from './repos/chat.js'
 export type { KbChatUsage, KbProjectUsage, KbStoredDocument } from './repos/kb.js'
 export { projectKbSkeleton } from './repos/kb.js'
-export type { CiStageExecutionContext } from './repos/ci.js'
-export type { AutomatedQaExecutionContext } from './repos/qa.js'
 export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repos/base.js'
 
 import { createSqlMetadataStore } from '../fileStorage/metadata.js'

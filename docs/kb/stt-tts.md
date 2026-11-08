@@ -1,7 +1,7 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
-updated: 2026-10-29
-checked: 4aa06d23
+updated: 2026-11-09
+checked: 927d6bc37
 areas:
   - apps/server/src/stt
   - apps/server/src/stt/client.ts
@@ -52,10 +52,10 @@ stores only fixed diagnostics and configuration identifiers. Each active stage h
 a 120-second timeout; a slow earlier stage does not consume the next stage's budget.
 
 `e2e/settings.e2e.test.ts` covers the renderer in Chromium and Electron, server
-restart and isolated reset, both themes at 1440×900, 1280×720, 768×1024, 390×844
-and 320×700, touch, keyboard focus, overflow and CDP safe-area insets. Reduced
-viewport checks emulate keyboard occlusion; they do not claim a physical mobile
-keyboard test. Screenshots are written to `artifacts/onboarding`. Existing
+restart and isolated reset, and one representative wizard pass (light theme,
+1280×720) reached by touch and completed from the keyboard. Theme, viewport,
+safe-area and keyboard-occlusion geometry belongs to Core UI's own suites.
+Screenshots are written to `VC_VISUAL_ARTIFACTS` when set. Existing
 `SettingsModal.stories.tsx` covers settings loading and missing voices; wizard
 states are covered by component tests and the integrated browser matrix. A page
 `ToolFrame` without close/Escape actions does not register a dialog layer: the

@@ -167,67 +167,45 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   }, 180_000)
 
   // @testCase TC-UI-1
-  it('keeps onboarding navigation and actions reachable across themes, touch and keyboard', async () => {
+  // Theme/viewport/safe-area geometry of the wizard is owned by Core UI. Core proves
+  // the served Settings section reaches the wizard by touch and completes it from the keyboard.
+  it('keeps onboarding navigation and completion reachable by touch and keyboard', async () => {
     if (VISUAL_ARTIFACTS) await mkdir(VISUAL_ARTIFACTS, { recursive: true })
     if (FAILURE_ARTIFACTS) await mkdir(FAILURE_ARTIFACTS, { recursive: true })
-    const sizes = [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]
-    for (const theme of ['light', 'dark']) for (const [width, height] of sizes) {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ theme, onboarded: true }) })
-      const context = await browser.newContext({ viewport: { width, height }, hasTouch: true })
-      const screen = await context.newPage()
-      try {
-        await screen.addInitScript((sessionToken) => {
-          localStorage.setItem('vc.session.token', sessionToken)
-          localStorage.setItem('vc:shell:admin:tour', 'true')
-          navigator.mediaDevices.getUserMedia = async () => { throw new Error('Unexpected permission request') }
-        }, token)
-        const cdp = await context.newCDPSession(screen)
-        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 24, bottom: 34, left: 0, right: 0 } })
-        await screen.goto(BASE + '/#/settings/ui')
-        await screen.getByRole('region', { name: 'Настройки', exact: true }).waitFor()
-        // At ≤720px the settings section navigation sits behind the ☰ sidebar menu.
-        if (width <= 720) await screen.getByRole('button', { name: 'Разделы настроек', exact: true }).tap()
-        // The wizard is an ordinary Settings section embedded in the page.
-        await screen.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Мастер первого запуска', exact: true }).tap()
-        await expect.poll(() => new URL(screen.url()).hash).toBe('#/settings/onboarding')
-        const wizard = screen.getByTestId('onboarding-page')
-        await wizard.waitFor()
-        // The removed dialog kept its Close button below the top safe-area inset on
-        // phones; the embedded wizard has no Close button, so its first control must
-        // clear the inset instead.
-        if (width <= 720) expect((await wizard.getByRole('button', { name: /^1\. / }).boundingBox())!.y).toBeGreaterThanOrEqual(24)
-        await wizard.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
-        await wizard.getByRole('button', { name: 'Пропустить шаг' }).click()
-        await screen.keyboard.press('Tab')
-        expect(await wizard.evaluate(el => el.contains(document.activeElement))).toBe(true)
-        expect(await screen.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        const exit = wizard.getByRole('button', { name: 'Завершить настройку' })
-        await exit.scrollIntoViewIfNeeded()
-        expect(await exit.evaluate(el => Number.parseFloat(getComputedStyle(el.parentElement!).paddingBottom))).toBe(34)
-        const box = await exit.boundingBox()
-        expect(box).not.toBeNull()
-        expect(box!.y + box!.height).toBeLessThanOrEqual(height)
-        if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + 'x' + height + '.png') })
-        // Reduced visual viewport models keyboard occlusion; this is not a physical OS keyboard test.
-        if (width <= 390) {
-          await screen.setViewportSize({ width, height: Math.floor(height * 0.6) })
-          await exit.scrollIntoViewIfNeeded()
-          const reduced = await exit.boundingBox()
-          expect(reduced!.y + reduced!.height).toBeLessThanOrEqual(Math.floor(height * 0.6))
-          if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + '-reduced-viewport.png') })
-        }
-        // The embedded section has nothing to dismiss with Escape; its exit action
-        // must instead be operable from the keyboard and complete onboarding.
-        const completed = screen.waitForRequest(request => request.url() === BASE + '/api/settings' && request.method() === 'PUT' && request.postDataJSON()?.onboarded === true)
-        await exit.focus()
-        await screen.keyboard.press('Enter')
-        await completed
-      } catch (error) {
-        if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, theme + '-' + width + '-failure.png') })
-        throw error
-      } finally { await context.close() }
-    }
-  }, 180_000)
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ theme: 'light', onboarded: true }) })
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, hasTouch: true })
+    const screen = await context.newPage()
+    try {
+      await screen.addInitScript((sessionToken) => {
+        localStorage.setItem('vc.session.token', sessionToken)
+        localStorage.setItem('vc:shell:admin:tour', 'true')
+        navigator.mediaDevices.getUserMedia = async () => { throw new Error('Unexpected permission request') }
+      }, token)
+      await screen.goto(BASE + '/#/settings/ui')
+      await screen.getByRole('region', { name: 'Настройки', exact: true }).waitFor()
+      // The wizard is an ordinary Settings section embedded in the page.
+      await screen.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Мастер первого запуска', exact: true }).tap()
+      await expect.poll(() => new URL(screen.url()).hash).toBe('#/settings/onboarding')
+      const wizard = screen.getByTestId('onboarding-page')
+      await wizard.waitFor()
+      await wizard.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
+      await wizard.getByRole('button', { name: 'Пропустить шаг' }).click()
+      await screen.keyboard.press('Tab')
+      expect(await wizard.evaluate(el => el.contains(document.activeElement))).toBe(true)
+      const exit = wizard.getByRole('button', { name: 'Завершить настройку' })
+      await exit.scrollIntoViewIfNeeded()
+      if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, 'onboarding.png') })
+      // The embedded section has nothing to dismiss with Escape; its exit action
+      // must instead be operable from the keyboard and complete onboarding.
+      const completed = screen.waitForRequest(request => request.url() === BASE + '/api/settings' && request.method() === 'PUT' && request.postDataJSON()?.onboarded === true)
+      await exit.focus()
+      await screen.keyboard.press('Enter')
+      await completed
+    } catch (error) {
+      if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, 'onboarding-failure.png') })
+      throw error
+    } finally { await context.close() }
+  }, 60_000)
 
   // @testCase TC-HOST-1
   it.skipIf(process.env.VC_ELECTRON_TESTS !== '1')('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {

@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-09
-checked: 6bc06e493
+checked: 927d6bc37
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -1028,22 +1028,16 @@ leak an unhandled rejection into later cases.
 
 Navigation remains six separate `it.each(SEARCH_SOURCES)` cases, each checking
 the deep link after reload, plus the kanban-message context case. Existing
-authentication, secret exclusion, keyboard, touch, focus and geometry checks
-remain in the same suite. `[palette:timing]` logs opening, fill, request,
+authentication and secret exclusion checks remain in the same suite; the
+palette UI case covers touch opening, focus trap and focus restoration at one
+desktop viewport in the light theme (multi-theme/viewport geometry belongs to
+Core UI). `[palette:timing]` logs opening, fill, request,
 completed response and visible-option elapsed times; `[palette:navigation]`
 records each source through reload.
 
-The opt-in acceptance tests in the same file carry TC-3 and TC-4 markers.
-Run them with `VC_SEARCH_ACCEPTANCE=1`, `VC_SEARCH_BASE=<base-sha>` and
-`npm exec -- vitest run --config e2e/vitest.config.ts e2e/universalSearch.e2e.test.ts -t '^acceptance:'`.
-Supply `SISLEXA_KANBAN_SOURCE` for a prepared pinned Kanban checkout when
-required by the environment. Child runs disable acceptance mode to prevent
-recursion. TC-3 runs the complete `universalSearch.e2e.test.ts` file twenty times
-sequentially with retries disabled, stops on failure, verifies every case, and
-retains separate logs, exit codes and Vitest JSON results under
-`artifacts/universal-search-acceptance/`. The source revision is checked between
-runs. TC-4 runs the quick gate against the supplied base. Ordinary browser runs
-keep their normal case inventory. The
+The former opt-in `VC_SEARCH_ACCEPTANCE` mode (twenty repeated runs and a nested
+quick gate) was removed in wave 2 of test reduction; repeat the file with Vitest
+manually when stability evidence is needed. The
 parallel allowlist includes sessions, projects,
 gitPane, universalSearch, both Web Reader suites and toolIntegration; other
 integration suites remain serial. The normal `browser.json` is overwritten,
@@ -1622,8 +1616,8 @@ Missing runtime/browser dependencies fail the system gate instead of skipping it
 своих часов: контракт двигает их сам, поэтому кейсы про TTL, экономию записей при
 `touch` и чистку не зависят от настенного времени. Браузерный сценарий —
 `npm run e2e:sessions` (`e2e/sessions.e2e.test.ts`, нужен собранный `apps/web/dist`):
-живое появление входа с другого устройства, отзыв чужой сессии и уход вкладки на
-экран входа при отзыве текущей. Порт e2e берётся у системы (`listen(0)`) — со
+один сквозной случай — живое появление входа с другого устройства; отзыв сессий
+и отказ в доступе проверяет серверный `session.test.ts`. Порт e2e берётся у системы (`listen(0)`) — со
 случайным портом из узкого диапазона тест иногда подключался к не добитому
 серверу прошлого прогона и падал на чужих данных.
 

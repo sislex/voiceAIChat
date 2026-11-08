@@ -1,7 +1,6 @@
-// E2E модуля «Сессии и устройства» в реальном Chromium. Проверяет то, чего не
-// видят jsdom-тесты: живое обновление списка по WS (вход с другого устройства
-// появляется без перезагрузки) и мгновенный уход на экран входа, когда текущую
-// сессию завершают со стороны.
+// E2E модуля «Сессии и устройства» в реальном Chromium: один сквозной UI-случай —
+// живое обновление списка по WS (вход с другого устройства появляется без
+// перезагрузки). Отзыв сессий и отказ в доступе проверяет серверный session.test.ts.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -93,33 +92,5 @@ describe('Сессии и устройства E2E', () => {
     // Список обновляет WS-кадр sessions.update — страницу не трогаем.
     await expect.poll(() => page.getByText('Safari 17 · iOS').count(), { timeout: 30_000 }).toBe(1)
     await expect.poll(() => page.getByRole('button', { name: /Выйти на других устройствах/ }).count()).toBe(1)
-  })
-
-  it('завершение чужой сессии убирает карточку и отбирает доступ у того устройства', async () => {
-    // A distinct device and its exact session ID prevent revoking a stale row
-    // while the realtime list is still receiving the new login.
-    const phoneToken = await loginAs('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0.0.0 Mobile Safari/537.36')
-    const list = await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${phoneToken}` } })
-    expect(list.ok).toBe(true)
-    const sessions = (await list.json()) as { sessions: Array<{ sid: string; current?: boolean }> }
-    const own = sessions.sessions.find(session => session.current)
-    expect(own).toBeDefined()
-    await page.getByTestId(`session-${own!.sid}`).getByRole('button', { name: 'Завершить', exact: true }).click()
-    await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Продолжить' }).click()
-
-    await expect.poll(async () => {
-      const res = await fetch(`${BASE}/api/conversations`, { headers: { authorization: `Bearer ${phoneToken}` } })
-      return res.status
-    }, { timeout: 30_000 }).toBe(401)
-  })
-
-  it('когда завершают текущую сессию, вкладка сама уходит на экран входа', async () => {
-    const sessions = (await (await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${token}` } })).json()) as { sessions: Array<{ sid: string; current?: boolean }> }
-    // Именно та сессия, которой живёт вкладка: по User-Agent её не отличить —
-    // Electron-вход тоже представляется Chrome.
-    const current = sessions.sessions.find((s) => s.current)!
-    // Отзыв «со стороны» — как из админки или с другого устройства.
-    await fetch(`${BASE}/api/admin/sessions/${current.sid}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } })
-    await expect.poll(() => page.getByTestId('login-form').count(), { timeout: 30_000 }).toBe(1)
   })
 })

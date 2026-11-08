@@ -153,7 +153,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       await (db as unknown as { init(): Promise<void> }).init()
       const token = await db.projects.createIntegrationToken('owner', projectId, 'Migrated', ['tasks:external'])
       expect(token).not.toBeNull()
-      await db.projects.deleteProject('owner', projectId)
+      await sql().run('DELETE FROM projects WHERE id = ?', [projectId])
       expect(await db.projects.resolveIntegrationToken('Bearer ' + token!.token)).toBeNull()
     })
 

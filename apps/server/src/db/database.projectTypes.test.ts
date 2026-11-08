@@ -5,6 +5,14 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BUILTIN_PROJECT_TYPE_IDS, PROJECT_FEATURES } from '@voicechat/shared'
+import type { Sql } from '@sislexa/identity/storage-sql/types'
+
+/** Kanban owns project-type and column editing; tests seed the shared tables directly. */
+const sqlOf = (d: VoiceChatDb): Sql => (d as unknown as { sql: Sql }).sql
+async function seedType(d: VoiceChatDb, id: string, input: { parentId: string | null; name: string; ownerId: string; status?: string; description?: string }): Promise<void> {
+  await sqlOf(d).run(`INSERT INTO project_types (id, parent_id, name, description, owner_id, status, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+    [id, input.parentId, input.name, input.description ?? '', input.ownerId, input.status ?? 'private', input.ownerId])
+}
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
@@ -32,81 +40,15 @@ describe('дерево типов: посев и каталог', () => {
   })
 
   it('каталог показывает встроенные, свои и опубликованные, но не чужие личные', async () => {
-    const mine = await db.projects.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Мой подтип' })
-    expect((await db.projects.listProjectTypes('alice')).map((t) => t.id)).toContain(mine.id)
-    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).not.toContain(mine.id)
+    await seedType(db, 'mine', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Мой подтип', ownerId: 'alice' })
+    expect((await db.projects.listProjectTypes('alice')).map((t) => t.id)).toContain('mine')
+    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).not.toContain('mine')
 
-    await db.projects.setProjectTypeStatus('alice', mine.id, 'pending')
+    await sqlOf(db).run(`UPDATE project_types SET status = 'pending' WHERE id = 'mine'`)
     // Отправленный на утверждение ещё не общий.
-    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).not.toContain(mine.id)
-    await db.projects.setProjectTypeStatus('admin', mine.id, 'published')
-    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).toContain(mine.id)
-  })
-
-  it('встроенный узел нельзя изменить или удалить', async () => {
-    await expect(async () => await db.projects.updateProjectType(BUILTIN_PROJECT_TYPE_IDS.general, { name: 'Другое' })).rejects.toThrow(/встроенн/i)
-    await expect(async () => await db.projects.deleteProjectType(BUILTIN_PROJECT_TYPE_IDS.general)).rejects.toThrow(/встроенн/i)
-  })
-})
-
-describe('дерево типов: инварианты структуры', () => {
-  it('цикл при смене родителя запрещён', async () => {
-    const parent = await db.projects.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Родитель' })
-    const child = await db.projects.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
-    await expect(async () => await db.projects.updateProjectType(parent.id, { parentId: child.id })).rejects.toThrow(/потомком самого себя/i)
-    await expect(async () => await db.projects.updateProjectType(parent.id, { parentId: parent.id })).rejects.toThrow(/потомком самого себя/i)
-  })
-
-  it('глубина ограничена', async () => {
-    let parentId: string = BUILTIN_PROJECT_TYPE_IDS.software
-    // Корень уже занимает первый уровень, поэтому пятый узел ещё проходит, шестой — нет.
-    for (let i = 2; i <= 5; i++) parentId = (await db.projects.createProjectType('alice', { parentId, name: `Уровень ${i}` })).id
-    await expect(async () => await db.projects.createProjectType('alice', { parentId, name: 'Уровень 6' })).rejects.toThrow(/вложенност/i)
-  })
-
-  it('несуществующий родитель отклоняется, пустое имя тоже', async () => {
-    await expect(async () => await db.projects.createProjectType('alice', { parentId: 'нет-такого', name: 'X' })).rejects.toThrow(/не найден/i)
-    await expect(async () => await db.projects.createProjectType('alice', { parentId: null, name: '   ' })).rejects.toThrow(/Название/i)
-  })
-
-  it('удаление запрещено при детях и при используемых проектах', async () => {
-    const parent = await db.projects.createProjectType('alice', { parentId: null, name: 'Родитель' })
-    const child = await db.projects.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
-    await expect(async () => await db.projects.deleteProjectType(parent.id)).rejects.toThrow(/подтип/i)
-
-    await db.projects.createProject('alice', { name: 'P', typeId: child.id })
-    await expect(async () => await db.projects.deleteProjectType(child.id)).rejects.toThrow(/используют проекты/i)
-  })
-})
-
-describe('дерево типов: публикация', () => {
-  it('нельзя опубликовать узел с приватным предком', async () => {
-    const parent = await db.projects.createProjectType('alice', { parentId: null, name: 'Личный родитель' })
-    const child = await db.projects.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
-    await expect(async () => await db.projects.setProjectTypeStatus('alice', child.id, 'pending')).rejects.toThrow(/родительск/i)
-
-    await db.projects.setProjectTypeStatus('admin', parent.id, 'published')
-    expect((await db.projects.setProjectTypeStatus('alice', child.id, 'pending'))?.status).toBe('pending')
-  })
-
-  it('решения администратора пишутся в аудит', async () => {
-    const node = await db.projects.createProjectType('alice', { parentId: null, name: 'На ревью' })
-    await db.projects.setProjectTypeStatus('alice', node.id, 'pending')
-    const rejected = await db.projects.setProjectTypeStatus('admin', node.id, 'rejected', 'слишком узкий')
-    expect(rejected?.status).toBe('rejected')
-    expect(rejected?.reviewNote).toBe('слишком узкий')
-
-    const audit = await db.projects.projectTypeReviewAudit(node.id)
-    expect(audit.map((a) => [a.oldStatus, a.newStatus])).toEqual([['private', 'pending'], ['pending', 'rejected']])
-    expect(audit[1].actor).toBe('admin')
-    expect(audit[1].note).toBe('слишком узкий')
-  })
-
-  it('публикацию нельзя отозвать, пока тип используют чужие проекты', async () => {
-    const node = await db.projects.createProjectType('alice', { parentId: null, name: 'Общий' })
-    await db.projects.setProjectTypeStatus('admin', node.id, 'published')
-    await db.projects.createProject('bob', { name: 'Чужой проект', typeId: node.id })
-    await expect(async () => await db.projects.setProjectTypeStatus('alice', node.id, 'private')).rejects.toThrow(/чужие проекты/i)
+    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).not.toContain('mine')
+    await sqlOf(db).run(`UPDATE project_types SET status = 'published' WHERE id = 'mine'`)
+    expect((await db.projects.listProjectTypes('bob')).map((t) => t.id)).toContain('mine')
   })
 })
 
@@ -177,57 +119,6 @@ describe('проект и его тип', () => {
     // Заготовки — снимок: колонки остаются теми же самыми.
     expect((await db.tasks.getBoard('alice', p.id))!.columns.map((c) => c.id)).toEqual(before)
     await expect(async () => await db.projects.updateProject('alice', p.id, { typeId: 'нет-такого' })).rejects.toThrow(/не найден/i)
-  })
-
-  it('правка возможностей типа действует на существующие проекты живьём', async () => {
-    const own = await db.projects.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Без релизов', features: { releases: false } })
-    const p = await db.projects.createProject('alice', { name: 'P', typeId: own.id })
-    expect((await db.projects.projectFeatures(p.id)).releases).toBe(false)
-    await db.projects.updateProjectType(own.id, { features: { releases: true } })
-    // Кэш цепочек обязан сброситься, иначе гейт останется на старом значении.
-    expect((await db.projects.projectFeatures(p.id)).releases).toBe(true)
-  })
-})
-
-describe('сохранить проект как подтип', () => {
-  it('узел встаёт под текущим типом и повторяет доску, теги и настройки проекта', async () => {
-    const p = await db.projects.createProject('alice', { name: 'Настроенный', typeId: BUILTIN_PROJECT_TYPE_IDS.general, technologies: ['ремонт'], skills: ['смета'] })
-    await db.projects.renameColumn('alice', p.id, (await db.tasks.getBoard('alice', p.id))!.columns[0].id, 'Идеи')
-    const board = (await db.tasks.getBoard('alice', p.id))!
-    expect(board.columns[0].name).toBe('Идеи')
-
-    const derived = (await db.projects.deriveProjectType('alice', p.id, '  Ремонтный проект  '))!
-    expect(derived.name).toBe('Ремонтный проект')
-    expect(derived.parentId).toBe(BUILTIN_PROJECT_TYPE_IDS.general)
-    expect(derived.status).toBe('private')
-    expect(derived.ownerId).toBe('alice')
-    expect(derived.defaults.technologies).toEqual(['ремонт'])
-    expect(derived.defaults.columns?.map((c) => c.semanticType)).toEqual(board.columns.map((c) => c.semanticType))
-    // Переименованная колонка переносится в заготовку вместе с именем.
-    expect(derived.defaults.columns?.[0]?.name).toBe('Идеи')
-
-    // Новый проект от этого узла воспроизводит исходную доску и теги.
-    const clone = await db.projects.createProject('alice', { name: 'Клон', typeId: derived.id })
-    expect(clone.technologies).toEqual(['ремонт'])
-    expect((await db.tasks.getBoard('alice', clone.id))!.columns.map((c) => c.name)).toEqual(board.columns.map((c) => c.name))
-  })
-
-  it('возможности снимаются эффективные и не зависят от последующей правки родителя', async () => {
-    const parent = await db.projects.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Без релизов', features: { releases: false } })
-    const p = await db.projects.createProject('alice', { name: 'P', typeId: parent.id })
-    const derived = (await db.projects.deriveProjectType('alice', p.id, 'Слепок'))!
-    expect(derived.features.releases).toBe(false)
-    expect(derived.features.ci).toBe(true)
-
-    // Родителю вернули релизы — слепок остаётся при своём.
-    await db.projects.updateProjectType(parent.id, { features: { releases: true } })
-    expect((await db.projects.projectTypeChain(derived.id)).features.releases).toBe(false)
-  })
-
-  it('не владелец и пустое имя отклоняются', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P' })
-    expect(await db.projects.deriveProjectType('bob', p.id, 'X')).toBeNull()
-    await expect(async () => await db.projects.deriveProjectType('alice', p.id, '   ')).rejects.toThrow(/Название/i)
   })
 })
 
@@ -304,9 +195,9 @@ describe('миграция существующей базы', () => {
       const board = (await first.tasks.getBoard('alice', project.id))!
       const backlog = board.columns.find((c) => c.semanticType === 'backlog')!
 
-      first.projects.renameColumn('alice', project.id, backlog.id, 'Идеи')
+      await sqlOf(first).run(`UPDATE kanban_columns SET name = 'Идеи' WHERE id = ?`, [backlog.id])
       const custom = (await first.projects.createColumn('alice', project.id, 'Согласование'))!
-      first.projects.setColumnHidden('alice', project.id, board.columns.find((c) => c.semanticType === 'merge')!.id, true)
+      await sqlOf(first).run('UPDATE kanban_columns SET hidden = 1 WHERE id = ?', [board.columns.find((c) => c.semanticType === 'merge')!.id])
       const task = (await first.tasks.createTask('alice', project.id, { columnId: backlog.id, title: 'Задача' }))!
       const before = (await first.tasks.getBoard('alice', project.id))!
       await first.close()
@@ -358,8 +249,9 @@ describe('миграция существующей базы', () => {
     try {
       const first = new VoiceChatDb(file)
       await first.ready
-      first.identity.createUser('alice', '', 'developer')
-      const own = await first.projects.createProjectType('alice', { parentId: null, name: 'Мой', description: 'моё описание' })
+      await first.identity.createUser('alice', '', 'developer')
+      const own = { id: 'own-type' }
+      await seedType(first, own.id, { parentId: null, name: 'Мой', ownerId: 'alice', description: 'моё описание' })
       await first.close()
       const second = new VoiceChatDb(file)
 

@@ -29,8 +29,7 @@ describe.skipIf(!URL)('перенос базы в Postgres', () => {
     const conv = await src.chat.createConversation('ann', 'Разговор', null, project.id)
     for (let i = 0; i < 7; i++) await src.chat.addMessage('ann', conv.id, i % 2 ? 'ai' : 'u1', `сообщение ${i}`, '10:0' + i)
     const board = (await src.tasks.getBoard('ann', project.id))!
-    const task = (await src.tasks.createTask('ann', project.id, { columnId: board.columns[0]!.id, title: 'Задача' }))!
-    await src.tasks.addTaskComment('ann', project.id, task.id, 'комментарий')
+    await src.tasks.createTask('ann', project.id, { columnId: board.columns[0]!.id, title: 'Задача' })
     await src.close()
 
     const lines: string[] = []
