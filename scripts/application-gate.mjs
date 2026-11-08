@@ -8,7 +8,8 @@ import {
   applicationForPath,
   validateApplicationCatalog
 } from '../packages/shared/src/applicationCatalog.ts'
-import { FRONTEND_E2E_FILES, remainingBrowserFiles } from './full-gate.mjs'
+import { DEVELOPMENT_TOOLING_SCRIPT, FRONTEND_E2E_FILES, RELEASE_TOOLING_SCRIPT, relatedToolingTests, remainingBrowserFiles } from './full-gate.mjs'
+import { developmentBrowserFiles } from './browser-gate.mjs'
 import { PACKAGES, selectAffected, validatePackageDependencies } from './affected-check.mjs'
 import { isOwnerPinFile, ownerPinChanges } from './owner-pins.mjs'
 
@@ -164,7 +165,18 @@ export function scriptReferences(rootScripts) {
   return [...found].sort()
 }
 
-export function planApplicationChecks(
+/**
+ * Development plans keep release-only browser suites (Kanban stand) in `releaseE2eFiles`;
+ * `gate:release` runs them, development gates only when the diff edits the suite itself.
+ */
+export function splitReleaseSuites(plan, files = []) {
+  const e2eFiles = developmentBrowserFiles(plan.e2eFiles ?? [], files)
+  return { ...plan, e2eFiles, releaseE2eFiles: (plan.e2eFiles ?? []).filter(file => !e2eFiles.includes(file)) }
+}
+export function planApplicationChecks(files, options = {}) {
+  return splitReleaseSuites(planAllApplicationChecks(files, options), files)
+}
+function planAllApplicationChecks(
   files,
   { catalog = APPLICATION_CATALOG, lockBefore, lockAfter, pins, frozenDesktop = desktopFrozen() } = {}
 ) {
@@ -321,6 +333,7 @@ export function planApplicationChecks(
     reasons,
     e2eFiles: [...e2eFiles],
     tooling, verifyArtifacts, pinChecks, rootScriptPaths,
+    toolingFiles: tooling ? files.filter(file => file.startsWith('scripts/')) : [],
     pinnedPackages: pins?.packages ?? [],
     // Release narrowing is allowed only for pure archive replacements plus documentation.
     onlyPins: pinChecks && files.every((file) => docs(file) || file === 'package-lock.json' || isOwnerPinFile(file))
@@ -395,10 +408,19 @@ export function applicationCommands(app) {
 export function applicationPlanCommands(plan) {
   const commands = []
   const add = (command, args) => commands.push([command, args])
-  if (plan.full) add('npm', ['run', 'gate:all'])
-  if (plan.tooling && !plan.full) add('npm', ['run', 'test:tooling'])
+  // `plan.release` is set by gate:release: complete tooling and the release-only browser suites.
+  if (plan.full) add('npm', ['run', 'gate:all', ...(plan.release ? ['--', '--release'] : [])])
+  const releaseTooling = plan.tooling && !plan.full && plan.release
+  if (plan.tooling && !plan.full) {
+    add('npm', ['run', plan.release ? RELEASE_TOOLING_SCRIPT : DEVELOPMENT_TOOLING_SCRIPT])
+    if (!plan.release) {
+      const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+      const related = relatedToolingTests(root, [...(plan.toolingFiles ?? []), ...(plan.rootScriptPaths ?? [])], manifest.scripts[DEVELOPMENT_TOOLING_SCRIPT])
+      if (related.length) add(process.execPath, ['--import', 'tsx', '--test', ...related])
+    }
+  }
   // Pin integrity: archive bytes, provenance, lock entries and the Desktop renderer.
-  if (plan.pinChecks && !plan.full && !plan.tooling) add(process.execPath, ['--import', 'tsx', '--test', ...OWNER_PIN_TESTS])
+  if (plan.pinChecks && !plan.full && !releaseTooling) add(process.execPath, ['--import', 'tsx', '--test', ...OWNER_PIN_TESTS])
   for (const app of plan.applications)
     for (const command of applicationCommands(app)) commands.push(command)
   const contracts = new Map()
@@ -417,7 +439,7 @@ export function applicationPlanCommands(plan) {
     add('npm', ['run', '-w', workspace, 'typecheck'])
     add('npm', ['run', '-w', workspace, 'test', ...(files.length ? ['--', ...files] : [])])
   }
-  const browserFiles = remainingBrowserFiles(plan.e2eFiles ?? [], plan.full)
+  const browserFiles = remainingBrowserFiles([...(plan.e2eFiles ?? []), ...(plan.release ? plan.releaseE2eFiles ?? [] : [])], plan.full)
   if ((browserFiles.length || plan.verifyArtifacts) && !plan.full) {
     add('npm', ['run', 'build:frontends'])
     add('npm', ['run', 'verify:core-ui'])
@@ -510,7 +532,7 @@ export async function main(args = process.argv.slice(2), { execute = (plan) => e
         pins = ownerPinChanges(files, readBefore, readAfter)
       }
     } catch (error) {
-      plan = {
+      plan = splitReleaseSuites({
         full: true,
         applications: [],
         contracts: [],
@@ -518,7 +540,7 @@ export async function main(args = process.argv.slice(2), { execute = (plan) => e
           ...new Set(APPLICATION_CATALOG.flatMap((app) => app.e2eFiles))
         ],
         reasons: [`Не удалось получить diff: ${error.message}`]
-      }
+      })
     }
     changedFiles = files ?? []
     if (!plan)

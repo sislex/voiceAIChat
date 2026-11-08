@@ -30,7 +30,8 @@ test('without a production commit or with an unproven diff the full release chai
     const fullCalls = []
     const outcome = await main(['--base', head], (command, args) => fullCalls.push([command, args]), async () => ({ full: true, reasons: ['Core'], applications: [], contracts: [], e2eFiles: [] }), { releaseBase: () => ({ base: sha, reason: null }), verifiedBase: base => base, releaseImpact: () => ({ files: ['apps/server/src/db/schema.ts'], pinnedPackages: [] }) })
     assert.equal(outcome.mode, 'full')
-    assert.deepEqual(fullCalls, [['npm', ['run', 'gate:all']]])
+    assert.deepEqual(fullCalls, [['npm', ['run', 'gate:all', '--', '--release']]])
+    assert.deepEqual(FULL_RELEASE_COMMANDS[0], ['npm', ['run', 'gate:all', '--', '--release']])
   } finally { if (saved !== undefined) process.env.VOICECHAT_RELEASE_BASE_SHA = saved }
 })
 
@@ -43,6 +44,14 @@ test('a proven owner replacement runs the narrowed plan and the owner system sui
   assert.ok(calls.some(([, args]) => args.includes('shared-chat-artifacts.test.mjs')))
   assert.deepEqual(calls.at(-1), ['npm', 'run gate:system -- --owners playwrightreader'])
   assert.ok(!calls.some(([, args]) => args === 'run gate:all'))
+})
+
+test('a narrowed release restores the Kanban-stand suites deferred by development gates', async () => {
+  const calls = []
+  const plan = { full: false, reasons: ['pin'], applications: [], contracts: [], e2eFiles: ['e2e/settings.e2e.test.ts'], releaseE2eFiles: ['e2e/projects.e2e.test.ts'], onlyPins: true, pinnedPackages: ['@sislexa/core-ui'] }
+  await main(['--base', sha], (command, args) => calls.push(args.join(' ')), async () => plan, { releaseBase: () => ({ base: sha, reason: null }), verifiedBase: base => base, releaseImpact: () => ({ files: [], pinnedPackages: [] }) })
+  const browser = calls.find(args => args.includes('scripts/browser-gate.mjs'))
+  assert.ok(browser.includes('e2e/settings.e2e.test.ts') && browser.includes('e2e/projects.e2e.test.ts'))
 })
 
 const newer = 'b'.repeat(40), older = 'c'.repeat(40)
@@ -138,5 +147,5 @@ test('verified base reaches planning and impact inspection before full-mode owne
     assert.equal(base, newer); return { files: [], pinnedPackages: ['@sislexa/core-ui'] }
   } })
   assert.deepEqual(order, ['fetch', 'plan'])
-  assert.deepEqual(calls, [['npm', ['run', 'gate:all']], ['npm', ['run', 'gate:performance']], ['npm', ['run', 'gate:system', '--', '--owners', 'sislexa-core-ui']]])
+  assert.deepEqual(calls, [['npm', ['run', 'gate:all', '--', '--release']], ['npm', ['run', 'gate:performance']], ['npm', ['run', 'gate:system', '--', '--owners', 'sislexa-core-ui']]])
 })

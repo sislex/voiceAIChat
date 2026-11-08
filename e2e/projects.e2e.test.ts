@@ -129,7 +129,8 @@ describe.skipIf(unavailable !== null)('Проекты E2E', () => {
     await page.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
     await page.goto(`${BASE}/#/projects`)
     await page.reload()
-  })
+    // Postgres container, Core, Kanban and Chromium start here; the 120 s hook default is too tight on a busy machine.
+  }, 180_000)
 
   afterAll(async () => {
     agent?.close()

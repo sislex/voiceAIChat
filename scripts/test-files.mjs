@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, realpathSync } from 'node:fs'
-import { resolve, relative, isAbsolute } from 'node:path'
+import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, realpathSync, statSync } from 'node:fs'
+import { resolve, relative, isAbsolute, dirname } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const root = resolve(import.meta.dirname, '..')
@@ -77,6 +77,32 @@ export function reportFailure(error) {
   console.error(error.message)
   console.log(`GATE-FAILED-TESTS: ${JSON.stringify(error.failedTests ?? [])}`)
   process.exitCode = error.exitCode || 1
+}
+export function walkFiles(path) {
+  if (!existsSync(path)) return []
+  if (statSync(path).isFile()) return [path]
+  return readdirSync(path).filter(name => !['node_modules', 'dist', '.git'].includes(name))
+    .flatMap(name => walkFiles(resolve(path, name)))
+}
+export function relatedTooling(files, repository = root) {
+  const changed = new Set(files.map(file => resolve(repository, file)))
+  function touches(file, seen = new Set()) {
+    if (changed.has(file)) return true
+    if (seen.has(file) || !existsSync(file) || !statSync(file).isFile()) return false
+    seen.add(file)
+    const source = readFileSync(file, 'utf8')
+    return [...source.matchAll(/(?:from\s*|import\s*\(|import\s*|require\s*\()\s*['"]([^'"]+)['"]/g)]
+      .filter(match => match[1].startsWith('.'))
+      .some(match => {
+        const target = resolve(dirname(file), match[1])
+        return [target, target + '.mjs', target + '.ts', target.replace(/\.js$/, '.ts')]
+          .some(candidate => touches(candidate, seen))
+      })
+  }
+  // Scripts tested as child processes are not imported by their tests; the sibling test still owns them.
+  const sibling = file => changed.has(file.replace(/\.test(\.[cm]?js)$/, '$1'))
+  return walkFiles(resolve(repository, 'scripts')).filter(file => isTest(file) && (touches(file) || sibling(file)))
+    .map(file => relative(repository, file))
 }
 export function main(files = process.argv.slice(2)) {
   for (const group of mapTestFiles(files)) runTests(group)
