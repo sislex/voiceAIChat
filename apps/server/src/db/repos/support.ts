@@ -131,7 +131,7 @@ export function parseStringArray(raw: string | null): string[] {
   }
 }
 
-export function normColumnSemantic(raw: string): KanbanColumnSemanticType {
+function normColumnSemantic(raw: string): KanbanColumnSemanticType {
   return raw === 'backlog' || raw === 'preparation' || raw === 'ready' || raw === 'development' || raw === 'component_qa' || raw === 'integration_tests' || raw === 'automated_qa' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' || raw === 'cancelled' ? raw : 'custom'
 }
 
@@ -174,7 +174,7 @@ export function parseJsonValue<T>(raw: string | null | undefined, fallback: T): 
   try { return JSON.parse(raw) as T } catch { return fallback }
 }
 
-export function parseSlotProgress(j: string): CiSlotProgress {
+function parseSlotProgress(j: string): CiSlotProgress {
   try {
     const o = JSON.parse(j) as Partial<CiSlotProgress>
     return { done: Number(o.done ?? 0), total: Number(o.total ?? 0), phase: String(o.phase ?? ''), fixing: o.fixing === true }

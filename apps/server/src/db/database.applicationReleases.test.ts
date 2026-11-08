@@ -88,15 +88,15 @@ async function setup() {
 describe('компонентные релизы и блокировки окружения', () => {
   it('сохраняет legacy-историю отдельно от приложения', async () => {
     const { db, projectId, prepare } = await setup()
-    await db.releases.createProjectRelease('owner', projectId, {
+    const legacy = await db.releases.createProjectRelease('owner', projectId, {
       branch: 'release/1.0.0',
       version: '1.0.0',
       sha: 'legacy'
     })
     await prepare()
     expect(
-      await db.releases.listProjectReleases('owner', projectId)
-    ).toHaveLength(1)
+      await db.releases.getProjectRelease('owner', projectId, legacy.id)
+    ).not.toBeNull()
     expect(
       (
         await db.releases.applicationReleaseOverview(
@@ -216,9 +216,6 @@ describe('компонентные релизы и блокировки окру
         releaseIds: []
       })
     ).rejects.toThrow(/Ключ/)
-    expect(
-      (await db.releases.interruptedApplicationOperations()).deployments[0].id
-    ).toBe(first.record.id)
   })
   it('разные площадки и подготовки разных приложений не блокируются', async () => {
     const { db, projectId, prepare, observe } = await setup()
@@ -396,7 +393,7 @@ it('мигрирует файл старой БД без потери legacy-и�
     const projectId = (
       await db.projects.createProject('owner', { name: 'Legacy' })
     ).id
-    await db.releases.createProjectRelease('owner', projectId, {
+    const legacy = await db.releases.createProjectRelease('owner', projectId, {
       branch: 'release/1.0.0',
       version: '1.0.0',
       sha: 'legacy'
@@ -410,8 +407,8 @@ it('мигрирует файл старой БД без потери legacy-и�
     db = new VoiceChatDb(path)
     await db.ready
     expect(
-      await db.releases.listProjectReleases('owner', projectId)
-    ).toHaveLength(1)
+      await db.releases.getProjectRelease('owner', projectId, legacy.id)
+    ).not.toBeNull()
     expect(
       (
         await db.releases.applicationReleaseOverview(

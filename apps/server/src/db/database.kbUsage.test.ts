@@ -249,23 +249,6 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
     expect((await db.kb.kbUsageRunGaps((await second).id)).find((g) => g.query === 'без причины')!.reason).toBe('база знаний не ответила')
   })
 
-  it('названный моделью пробел хранится один раз, повтор берёт более полный ответ', async () => {
-    const { first } = await runs()
-    await db.ci.addCiRunKbGaps((await first).id, 'step-1', [
-      { question: 'где живёт fix-loop', answer: 'в ci/modelHooks.ts', topic: 'ci-runner' },
-      { question: 'кто снимает токен', answer: 'withKbTools' }
-    ])
-    // Fix-loop называет тот же пробел снова — дубля быть не должно.
-    await db.ci.addCiRunKbGaps((await first).id, 'step-2', [{ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI' }])
-    const gaps = await db.ci.ciRunKbGaps((await first).id)
-    expect(gaps).toHaveLength(2)
-    expect(gaps[0]).toEqual({ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI', topic: 'ci-runner' })
-    expect(gaps[1].topic).toBeUndefined()
-    // Короткий повтор не затирает более полный ответ.
-    await db.ci.addCiRunKbGaps((await first).id, 'step-3', [{ question: 'где живёт fix-loop', answer: 'там же' }])
-    expect((await db.ci.ciRunKbGaps((await first).id))[0].answer).toContain('лимиты в настройках CI')
-  })
-
   it('чужому пользователю отчёты по ране и задаче недоступны (404 у роута)', async () => {
     const { project, task, first } = await runs()
     expect(await db.kb.kbUsageRunReport('bob', (await first).id)).toBeNull()

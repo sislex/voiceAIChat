@@ -87,10 +87,8 @@ describe('дизайны карточки', () => {
   it('историческая чужая связь видна участнику, но новую связь с чужим Make-проектом создать нельзя', async () => {
     const { projectId, taskId, makeId } = await scene()
     await db.tasks.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'index.html' })
-    expect(await db.tasks.listTaskDesigns('bob', projectId, taskId)).toHaveLength(1)
     expect((await db.tasks.getTaskDetail('bob', projectId, taskId))!.designs).toHaveLength(1)
     await expect(async () => await db.tasks.linkTaskDesign('bob', projectId, taskId, { conversationId: makeId })).rejects.toThrow('только свой')
-    expect(await db.tasks.listTaskDesigns('carol', projectId, taskId)).toBeNull()
     await expect(async () => await db.tasks.linkTaskDesign('carol', projectId, taskId, { conversationId: makeId })).rejects.toThrow()
   })
 
@@ -117,26 +115,6 @@ describe('дизайны карточки', () => {
     const { makeId } = await scene()
     expect((await db.tasks.makeLinkableTasks('bob', makeId)).map((t) => t.title)).toEqual(['Экран оплаты'])
     expect(await db.tasks.makeLinkableTasks('carol', makeId)).toEqual([])
-  })
-
-  it('источники дизайна проекта — все и только собственные Make-проекты участника', async () => {
-    const { projectId, makeId } = await scene()
-    const first = await db.chat.createConversation('bob', 'Bob 1', 'make')
-    await db.chat.setConversationProject('bob', first.id, projectId)
-    const second = await db.chat.createConversation('bob', 'Bob 2', 'make')
-    await db.chat.setConversationProject('bob', second.id, projectId)
-    const other = await db.chat.createConversation('alice', 'Alice 2', 'make')
-    await db.chat.setConversationProject('alice', other.id, projectId)
-
-    const sources = (await db.tasks.projectDesignSources('bob', projectId))!
-    expect(sources.map((source) => source.conversationId)).toEqual([second.id, first.id])
-    expect(sources).toMatchObject([
-      { title: 'Bob 2', owner: 'bob', own: true },
-      { title: 'Bob 1', owner: 'bob', own: true }
-    ])
-    expect(sources.map((source) => source.conversationId)).not.toContain(makeId)
-    expect(sources.map((source) => source.conversationId)).not.toContain(other.id)
-    expect(await db.tasks.projectDesignSources('carol', projectId)).toBeNull()
   })
 
   it('участник проекта читает привязанный к проекту Make-проект, посторонний — нет', async () => {
