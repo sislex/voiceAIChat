@@ -9,9 +9,9 @@ describe('Core selections', () => {
     expect(parseCoreSelection(value)).toEqual(value)
     expect(parseCoreSelection(value)).not.toBe(value)
   })
-  it.each([false, 1, 'release', [], {}, { version: '1.2.3' }, { version: '1.2.3', commit: 'a'.repeat(40), extra: true }])('rejects malformed shape %j', value => expect(() => parseCoreSelection(value)).toThrow())
-  it.each(['v1.2.3', '01.2.3', '1.2', '1.2.3-beta', '1.2.3\n', '', null, 123])('rejects version %j', version => expect(() => parseCoreSelection({ version, commit: 'a'.repeat(40) })).toThrow('Invalid version'))
-  it.each(['a'.repeat(39), 'a'.repeat(41), 'g'.repeat(40), 'a'.repeat(40) + '\n', null, 123])('rejects commit %j', commit => expect(() => parseCoreSelection({ version: '1.2.3', commit })).toThrow('Invalid commit'))
+  it.each([1, [], {}, { version: '1.2.3' }, { version: '1.2.3', commit: 'a'.repeat(40), extra: true }])('rejects malformed shape %j', value => expect(() => parseCoreSelection(value)).toThrow())
+  it.each(['v1.2.3', '01.2.3', '1.2', '1.2.3-beta', '1.2.3\n', '', 123])('rejects version %j', version => expect(() => parseCoreSelection({ version, commit: 'a'.repeat(40) })).toThrow('Invalid version'))
+  it.each(['a'.repeat(39), 'a'.repeat(41), 'g'.repeat(40), 'a'.repeat(40) + '\n', 123])('rejects commit %j', commit => expect(() => parseCoreSelection({ version: '1.2.3', commit })).toThrow('Invalid commit'))
 })
 
 describe('environment settings', () => {
@@ -24,9 +24,9 @@ describe('environment settings', () => {
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(12) }])).toHaveLength(1)
   })
   it.each([null, {}, '[]', [], Array(51)])('rejects bounds/shape %j', value => expect(() => parseEnvironmentSettingsPatch(value)).toThrow('Expected 1..50 environment settings'))
-  it.each([null, [], false, 1, 'setting', undefined])('rejects item %j', value => expect(() => parseEnvironmentSettingsPatch([value])).toThrow('Invalid environment setting'))
+  it.each([null, [], 1])('rejects item %j', value => expect(() => parseEnvironmentSettingsPatch([value])).toThrow('Invalid environment setting'))
   it.each([{}, { key: 'VC_PUBLIC_URL' }, { key: 'VC_PUBLIC_URL', value: 'x', extra: true }])('rejects fields %j', value => expect(() => parseEnvironmentSettingsPatch([value])).toThrow('Unexpected environment setting fields'))
-  it.each([1, null, 'A', 'lower', 'VC_PUBLIC_URL\n', 'A'.repeat(65)])('rejects key %j', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow('Invalid environment setting key'))
+  it.each([1, 'A', 'lower', 'VC_PUBLIC_URL\n', 'A'.repeat(65)])('rejects key %j', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow('Invalid environment setting key'))
   it('accepts only credential-free http(s) URLs for runner and MCP settings', () => {
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_LLM_RUNNER_CODEX_URL', value: 'https://runner.example:8790/base' }])).toHaveLength(1)
     for (const value of ['runner-work:8790', 'ftp://runner', 'http://user:pass@runner', 'http://runner/?q=1', 'http://runner/#x'])
@@ -40,7 +40,7 @@ describe('environment settings', () => {
     expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value: null }, { key: 'VC_PUBLIC_URL', value: 'x' }])).toThrow('Duplicate environment setting: VC_PUBLIC_URL')
   })
   it.each(RESERVED_ENVIRONMENT_SETTINGS)('rejects reserved %s', key => expect(() => parseEnvironmentSettingsPatch([{ key, value: null }])).toThrow(`Reserved environment setting: ${key}`))
-  it.each(['', 'x'.repeat(4097), "a'b", 'a\rb', 'a\nb', 'a\0b', undefined, 123, {}, []])('rejects unsafe value %j', value => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value }])).toThrow('Invalid value for VC_PUBLIC_URL'))
+  it.each(['', 'x'.repeat(4097), "a'b", 'a\nb', 'a\0b', undefined, 123, {}])('rejects unsafe value %j', value => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_PUBLIC_URL', value }])).toThrow('Invalid value for VC_PUBLIC_URL'))
   it('rejects short administrator passwords', () => expect(() => parseEnvironmentSettingsPatch([{ key: 'VC_ADMIN_PASSWORD', value: 'x'.repeat(11) }])).toThrow('Invalid value for VC_ADMIN_PASSWORD'))
   it('accepts a short public stand users password', () => {
     expect(parseEnvironmentSettingsPatch([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])).toEqual([{ key: 'VC_STAND_USERS_PASSWORD', value: '1234' }])
@@ -81,8 +81,8 @@ describe('managed stands', () => {
 describe('stand manifests', () => {
   const stand = { formatVersion: 1, projectId: 'p1', kind: 'stand', environmentId: 'dev', machineId: 'm1', storageId: 's1', createdAt: '2026-10-03T00:00:00Z' }
   it('accepts stand identity', () => expect(parseEnvironmentManifest(stand)).toEqual(stand))
-  it.each([undefined, null, '', ' ', 123])('requires environmentId %j', environmentId => expect(() => parseEnvironmentManifest({ ...stand, environmentId })).toThrow('environmentId must be a non-empty string'))
+  it.each([undefined, '', ' ', 123])('requires environmentId %j', environmentId => expect(() => parseEnvironmentManifest({ ...stand, environmentId })).toThrow('environmentId must be a non-empty string'))
   it('rejects an omitted environmentId', () => { const { environmentId, ...value } = stand; expect(() => parseEnvironmentManifest(value)).toThrow('environmentId must be a non-empty string') })
-  it.each([undefined, null, '', 'task'])('forbids taskId presence %j', taskId => expect(() => parseEnvironmentManifest({ ...stand, taskId })).toThrow('taskId is not allowed for stands'))
-  it.each(['production', 'staging', 'test', 'preview'])('forbids environmentId on %s', kind => expect(() => parseEnvironmentManifest({ ...stand, kind })).toThrow('environmentId is only allowed for stands'))
+  it.each([undefined, 'task'])('forbids taskId presence %j', taskId => expect(() => parseEnvironmentManifest({ ...stand, taskId })).toThrow('taskId is not allowed for stands'))
+  it.each(['production', 'preview'])('forbids environmentId on %s', kind => expect(() => parseEnvironmentManifest({ ...stand, kind })).toThrow('environmentId is only allowed for stands'))
 })

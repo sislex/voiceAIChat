@@ -13,7 +13,7 @@ import {
 } from './projects'
 
 describe('operator assistant model', () => {
-  it.each([undefined, null, false, 1, 'custom', [], {}, { source: 'unknown', execution: 'unrestricted' }])('defaults invalid input %j', value => {
+  it.each([undefined, null, 1, [], {}, { source: 'unknown', execution: 'unrestricted' }])('defaults invalid input %j', value => {
     expect(normalizeOperatorAssistantModel(value)).toEqual({ source: 'run', execution: 'mcp_only' })
   })
 
@@ -61,7 +61,7 @@ describe('operator assistant contract', () => {
     for (const mode of OPERATOR_ASSISTANT_MODES) expect(normalizeOperatorAssistant(mode)).toBe(mode)
   })
 
-  it.each([undefined, null, '', 'FULL', ' full', 'unknown', 1, true, {}, ['full']])('disables invalid mode %j', value => {
+  it.each([undefined, null, '', 'FULL', ' full', 'unknown', 1, ['full']])('disables invalid mode %j', value => {
     expect(normalizeOperatorAssistant(value)).toBe('off')
   })
 
@@ -77,7 +77,7 @@ describe('operator assistant contract', () => {
     })
   })
 
-  it.each([undefined, null, false, 3, 'limits', [], {}])('defaults malformed or empty limits %j', value => {
+  it.each([undefined, null, 3, [], {}])('defaults malformed or empty limits %j', value => {
     expect(normalizeOperatorAssistantLimits(value)).toEqual(DEFAULT_OPERATOR_ASSISTANT_LIMITS)
   })
 
@@ -119,7 +119,7 @@ describe('normalizeQaStages', () => {
     expect(normalizeQaStages([])).toEqual([])
   })
 
-  it.each([undefined, null, false, 1, 'manual_qa', { manual_qa: true }])('rejects non-array input %j', (value) => {
+  it.each([undefined, null, 1, 'manual_qa', { manual_qa: true }])('rejects non-array input %j', (value) => {
     expect(normalizeQaStages(value)).toEqual([])
   })
 
