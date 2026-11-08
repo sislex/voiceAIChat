@@ -1540,6 +1540,8 @@ describe('turns: режим Chat', () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'Chat mode')
     await db.chat.setConversationAssistantMode(U, conversation.id, 'chat')
+    // A cold start rebuilds the prompt from stored history; the WS handler stores the reply first.
+    await db.chat.addMessage(U, conversation.id, 'u1', 'Только диалог', '10:00')
     const rec = recorder()
     const tool = { register: vi.fn(), unregister: vi.fn() }
     const turns = createTurnManager({
