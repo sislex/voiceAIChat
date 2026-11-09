@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -85,9 +85,12 @@ exceptions and rejected promises. A failing async machine-list subscriber no
 longer escapes as an unhandled rejection. This change does not modify CI stage
 selection or Kanban orchestration; see [agent lifecycle](../machines.md#подключение-и-жизненный-цикл).
 
-Core retains `packages/shared/src/ci.ts`, SQL state in `db/repos/ci.ts`,
-Automation Runner and the machine/MCP/KB ports. `getCiRunLog` defaults to 5000
-lines and caps explicit requests at 20000. Execution hooks and cleanup managers
+Core retains `packages/shared/src/ci.ts`, SQL tables, CI readers and workspace /
+log support in `db/repos/ci.ts`, Automation Runner and the machine/MCP/KB ports.
+Workflow mutation methods were removed; fixture-only writers now live in
+`apps/server/src/test/seed.ts`, which awaits database readiness and enters the
+same port lane on SQLite and Postgres. `getCiRunLog` is no longer a Core
+repository method. Execution hooks and cleanup managers
 run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains

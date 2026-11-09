@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -19,10 +19,11 @@ areas:
 
 ## Current Core boundary
 
-Core retains `merge.ts` contracts and `db/repos/ci.ts` persistence, including
-queued assignment revisions and `claimQueuedMergeRun`. `MergeRunManager` and
-its gate/KB worktrees execute in Kanban. Core proxies `/api/merge` and delivers
-run frames through `KanbanRunFeed`.
+Core retains `merge.ts` contracts and the merge tables. Workflow methods such
+as `claimQueuedMergeRun` have been removed from `db/repos/ci.ts`; queued
+assignment and merge execution belong to Kanban. `MergeRunManager` and its
+gate/KB worktrees execute there. Core proxies `/api/merge` and delivers run
+frames through `KanbanRunFeed`.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

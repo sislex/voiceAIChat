@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 
 areas:
   - packages/shared/src/qa.ts
@@ -18,9 +18,10 @@ areas:
 
 ## Current Core boundary
 
-Core retains `DevelopmentReadiness` and its pure gate in `qa.ts`, with
-attempt/event/question persistence in `db/repos/tasks.ts`. Preparation execution,
-strict response parsing and REST routes run in Kanban. Core's bridge delivers
+Core retains `DevelopmentReadiness` and its pure gate in `qa.ts`, the SQL
+schema and board readers. Attempt/event/question workflow methods have been
+removed from `db/repos/tasks.ts`. Preparation persistence operations, execution,
+strict response parsing and REST routes belong to Kanban. Core's bridge delivers
 `preparationRun` updates and provides machine, KB and upload access.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains

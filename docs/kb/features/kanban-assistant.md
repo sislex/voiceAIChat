@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -26,7 +26,9 @@ areas:
 ## Current Core boundary
 
 Core retains `WidgetContextStore`, `WidgetUiRelay`, turn assembly and Shared
-widget contracts. `/mcp/kanban` is proxied to Kanban. The public renderer bridge
+widget contracts. `turns.ts` gates Kanban tool/context assembly with
+`isWorkspaceAssistantMode`: Chat mode omits these tools, while Workspace and
+Make modes retain workspace context subject to the existing authority checks. `/mcp/kanban` is proxied to Kanban. The public renderer bridge
 supports optional `expiresAt` and `onExpired`; the owner UI must fence delayed
 actions. Kanban owns the MCP tool handlers and orchestration manager.
 

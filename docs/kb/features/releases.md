@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -34,6 +34,10 @@ Core retains release contracts, application build/deploy/gate scripts and
 artifact pins. The Release Center manager runs in Kanban; release updates arrive
 through `KanbanService.board.subscribeReleases`. See
 [release gate selection](release-gate-plan.md) for the current Core planner.
+Development plans separate Kanban stand browser suites into `releaseE2eFiles`
+and use development tooling plus related changed-script tests. Release plans
+include those suites and complete tooling; `gate:release:full` passes
+`--release` to `gate:all`.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-09
-checked: 694e6cbd
+checked: 5ceebde17
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage

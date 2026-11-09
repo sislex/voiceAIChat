@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-11-05
-checked: 97cadc810
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - package.json
   - packages/shared/tsconfig.json
@@ -70,8 +70,12 @@ use the owner package instructions for those commands.
 (на Postgres — реально), поэтому `await new Promise(r => setTimeout(r, 0))` или «два тика» после события
 (onDone хода, cancel рана, статус в базе) ничего не гарантируют: утверждение должно ждать наблюдаемое
 следствие — `await turns.idle()`, `vi.waitFor(async () => expect(await db….).toBe(…))`, пустой
-`activeRunIds()`, терминальный статус релиза. Тест WS-сессии ждёт первый кадр `claude.active`
-(готовность сессии), а не `open` клиента: сервер ещё проверяет сессию в базе. То же правило и для
+`activeRunIds()`, терминальный статус релиза. Transport `open` does not mean
+that server subscriptions are ready. `claude.active` confirms the turn feed,
+but is sent before `resumeQueues` and the awaited agents snapshot. For Kanban
+notifications, `eventsDelivery.test.ts` waits for `agents`: notification and
+board subscriptions are installed in the same synchronous continuation after
+that snapshot. It then uses `vi.waitFor` for the expected notification frames. То же правило и для
 тестов межпроцессных мостов: RPC зеркала (`machinesBridge/httpMachines.test.ts`) — настоящий HTTP-запрос к
 фейковому соседу, события — кадр WebSocket, и фиксированная пауза здесь такой же таймер. Пауза в 30 мс
 проходила на свободной машине и разваливалась в полном прогоне: под параллельной нагрузкой тест падал
@@ -94,6 +98,10 @@ Desktop are pinned owner artifacts, not extra installs under `apps/`.
 `gate:fast -- --dry-run` previews application selection. A root `package.json`
 change limited to npm scripts selects referenced tooling tests; it does not
 force the full application gate. Other unknown/config changes retain fallback.
+Development tooling uses `test:tooling:dev` plus related changed-script tests;
+release plans select complete tooling. Kanban stand browser suites are retained
+in `releaseE2eFiles` and run in development only when explicitly changed.
+`gate:release:full` passes `--release` to the full gate.
 
 ## Покрытие: пороги по каталогам, когда пакет считать целиком бессмысленно
 

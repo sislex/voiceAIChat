@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-11-05
-checked: 29ee2a0e8
+updated: 2026-11-09
+checked: 5ceebde17
 
 areas:
   - packages/shared/src/projects.ts
@@ -29,8 +29,11 @@ areas:
 `sislex/sislexa-kanban` owns task preparation, board workflow, CI/QA, merge,
 release, autopilot and preview execution. Core supports remote/off Kanban only.
 `apps/server/src/kanban/boundary.test.ts` prohibits local manager/route copies.
-Core retains public Shared contracts, SQL schema/repositories and the
-`kanban/core.ts` and `kanban/service.ts` ports. `kanbanBridge/proxy.ts` forwards
+Core retains public Shared contracts, SQL schema, the repository methods still
+used by Core and the `kanban/core.ts` and `kanban/service.ts` ports. Kanban-only
+workflow writers (preparation, QA, merge, autopilot) have been removed from the
+Core repositories. Fixture-only writers live in `apps/server/src/test/seed.ts`;
+they await database readiness and use the port lane on SQLite and Postgres. `kanbanBridge/proxy.ts` forwards
 project/task APIs after Core authorization; specific Core routes still take
 precedence over the wildcard proxy. The remote bridge receives board, run,
 preparation, QA, repository, release and notification events for Core sessions.
