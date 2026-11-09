@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BUILTIN_PROJECT_TYPE_IDS, PROJECT_FEATURES } from '@voicechat/shared'
 import type { Sql } from '@sislexa/identity/storage-sql/types'
+import * as dbSeed from '../test/seed.js'
 
 /** Kanban owns project-type and column editing; tests seed the shared tables directly. */
 const sqlOf = (d: VoiceChatDb): Sql => (d as unknown as { sql: Sql }).sql
@@ -113,12 +114,11 @@ describe('проект и его тип', () => {
   it('смена типа меняет возможности, но не трогает уже созданную доску', async () => {
     const p = await db.projects.createProject('alice', { name: 'P' })
     const before = (await db.tasks.getBoard('alice', p.id))!.columns.map((c) => c.id)
-    const updated = (await db.projects.updateProject('alice', p.id, { typeId: BUILTIN_PROJECT_TYPE_IDS.general }))!
+    const updated = (await dbSeed.updateProject(db, 'alice', p.id, { typeId: BUILTIN_PROJECT_TYPE_IDS.general }))!
     expect(updated.typeChain.features.releases).toBe(false)
     expect((await db.projects.projectFeatures(p.id)).releases).toBe(false)
     // Заготовки — снимок: колонки остаются теми же самыми.
     expect((await db.tasks.getBoard('alice', p.id))!.columns.map((c) => c.id)).toEqual(before)
-    await expect(async () => await db.projects.updateProject('alice', p.id, { typeId: 'нет-такого' })).rejects.toThrow(/не найден/i)
   })
 })
 
@@ -196,7 +196,7 @@ describe('миграция существующей базы', () => {
       const backlog = board.columns.find((c) => c.semanticType === 'backlog')!
 
       await sqlOf(first).run(`UPDATE kanban_columns SET name = 'Идеи' WHERE id = ?`, [backlog.id])
-      const custom = (await first.projects.createColumn('alice', project.id, 'Согласование'))!
+      const custom = (await dbSeed.createColumn(first, 'alice', project.id, 'Согласование'))!
       await sqlOf(first).run('UPDATE kanban_columns SET hidden = 1 WHERE id = ?', [board.columns.find((c) => c.semanticType === 'merge')!.id])
       const task = (await first.tasks.createTask('alice', project.id, { columnId: backlog.id, title: 'Задача' }))!
       const before = (await first.tasks.getBoard('alice', project.id))!
@@ -228,7 +228,7 @@ describe('миграция существующей базы', () => {
       await first.ready
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
-      const custom = (await first.projects.createColumn('alice', project.id, 'Закупка'))!
+      const custom = (await dbSeed.createColumn(first, 'alice', project.id, 'Закупка'))!
       await first.close()
       const second = new VoiceChatDb(file)
 
@@ -276,7 +276,7 @@ describe('миграция существующей базы', () => {
       first.identity.createUser('alice', '', 'developer')
       const project = await first.projects.createProject('alice', { name: 'Ветки' })
       // Человек осознанно выбирает исторический шаблон — он ничем не хуже нового.
-      first.projects.updateProject('alice', project.id, { ciBranchTemplate: 'feature/{task_number}' })
+      await dbSeed.updateProject(first, 'alice', project.id, { ciBranchTemplate: 'feature/{task_number}' })
       expect((await first.projects.getProject('alice', project.id))!.ciBranchTemplate).toBe('feature/{task_number}')
       await first.close()
       const second = new VoiceChatDb(file)

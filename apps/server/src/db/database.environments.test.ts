@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from './database.js'
 import { PG_SCHEMA, postgresColumnUpgradePlan } from './schemaPg.js'
+import * as dbSeed from '../test/seed.js'
 
 const input = { id: 'production', name: 'Production', machines: ['agent'], checkoutPath: '/srv/compose' }
 
@@ -32,8 +33,8 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       for (const user of ['owner', 'member', 'outsider']) await db.identity.createUser(user, 'pw', 'developer')
       projectId = (await db.projects.createProject('owner', { name: 'Project' })).id
       otherProjectId = (await db.projects.createProject('owner', { name: 'Other' })).id
-      await db.projects.addMember('owner', projectId, 'member')
-      await db.environments.upsertEnvironment('owner', projectId, input)
+      await dbSeed.addMember(db, 'owner', projectId, 'member')
+      await dbSeed.upsertEnvironment(db, 'owner', projectId, input)
     })
     afterEach(async () => {
       await peer?.close(); peer = undefined
@@ -56,9 +57,9 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       await expect(db.environments.ensureLink({ ...request, listenerPort: -1 })).rejects.toThrow()
       await db.environments.deleteLink(otherProjectId, input.id, link.id)
       expect(await db.environments.listLinks(projectId, input.id)).toEqual([link])
-      await db.environments.setEnvironmentState(projectId, input.id, { state: 'provisioning' })
+      await dbSeed.setEnvironmentState(db, projectId, input.id, { state: 'provisioning' })
       expect(await db.environments.authorizeLink(link.id)).toBe(true)
-      await db.environments.setEnvironmentState(projectId, input.id, { state: 'removed' })
+      await dbSeed.setEnvironmentState(db, projectId, input.id, { state: 'removed' })
       expect(await db.environments.authorizeLink(link.id)).toBe(false)
       await expect(db.environments.ensureLink(request)).rejects.toThrow('not active')
       const sql = (db as unknown as { sql: Sql }).sql
@@ -66,23 +67,17 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect(await db.environments.listLinks(projectId, input.id)).toEqual([])
       expect(await db.environments.authorizeLink(link.id)).toBe(false)
     })
-    it('scopes definitions by project and preserves creation metadata on update', async () => {
+    it('scopes definitions by project', async () => {
       const before = await db.environments.getEnvironment('member', projectId, input.id)
       expect(before).toMatchObject({ ...input, projectId, createdBy: 'owner' })
-      const updated = await db.environments.upsertEnvironment('owner', projectId, { ...input, name: 'Renamed' })
-      expect(updated.createdAt).toBe(before!.createdAt)
-      expect(updated.name).toBe('Renamed')
       expect(await db.environments.getEnvironment('owner', otherProjectId, input.id)).toBeNull()
-      await db.environments.upsertEnvironment('owner', otherProjectId, input)
+      await dbSeed.upsertEnvironment(db, 'owner', otherProjectId, input)
       expect(await db.environments.listEnvironments('member', projectId)).toHaveLength(1)
-      await expect(db.environments.upsertEnvironment('member', projectId, input)).rejects.toThrow('owner')
-      await expect(db.environments.upsertEnvironment('owner', projectId, { ...input, machines: [] })).rejects.toThrow()
     })
     it('denies every user-facing repository method to non-members', async () => {
       for (const call of [
         () => db.environments.listEnvironments('outsider', projectId),
         () => db.environments.getEnvironment('outsider', projectId, input.id),
-        () => db.environments.upsertEnvironment('outsider', projectId, input),
         () => db.environments.listSettings('outsider', projectId, input.id)
       ]) await expect(call()).rejects.toThrow('membership')
     })

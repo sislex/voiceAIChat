@@ -16,6 +16,7 @@ import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import type { ChatAccounting } from './billing/chatAccounting.js'
 import { ACCOUNTING_PENDING_MESSAGE } from './billing/chatAccounting.js'
+import * as dbSeed from './test/seed.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
@@ -490,7 +491,7 @@ describe('turns: актуальная main проекта', () => {
     const agent = await db.machines.createAgent(U, 'Mac')
     await db.machines.linkMachine(U, project.id, agent.id)
     await db.machines.setProjectMachinePath(U, project.id, agent.id, '/srv/project')
-    await db.projects.setProjectDefaultMachine(U, project.id, agent.id)
+    await dbSeed.setProjectDefaultMachine(db, U, project.id, agent.id)
     const conv = await db.chat.createConversation(U, 'Проектный чат')
     await db.chat.setConversationProject(U, conv.id, project.id)
     await db.chat.addMessage(U, conv.id, 'u0', 'проверь код', '10:00')

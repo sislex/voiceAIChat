@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -19,10 +19,11 @@ areas:
 
 ## Current Core boundary
 
-Core retains QA contracts in `qa.ts` and persistence in `db/repos/qa.ts`
-and `db/repos/ci.ts`. Manual sessions and generic stage runs belong to the QA
-repository; Component QA and Integration Tests belong to the CI repository.
-Execution and `/api/qa` handlers run in Kanban, behind Core's proxy.
+Core retains Shared QA contracts and the SQL tables, but `db/repos/qa.ts` is
+now an empty domain class. Manual sessions, stage transitions and Component QA /
+Integration Tests workflow writers were removed from Core repositories; those
+operations and `/api/qa` handlers belong to Kanban, behind Core's proxy.
+Test-only row writers live in `apps/server/src/test/seed.ts`.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

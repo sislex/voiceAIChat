@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-05
-checked: 91bf61b06
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -500,11 +500,26 @@ projection's `serviceData` marker and reduced request never replace stored diagn
 
 ### Серверный снимок контекста разговора
 
+`conversations.assistant_mode` defaults to `workspace`, including migrated rows.
+The Shared modes are `chat`, `workspace` and `make`. Both the context snapshot
+and `turns.ts` use `isWorkspaceAssistantMode`: Chat excludes workspace context,
+KB, skills, machine execution and MCP tools and sends `textOnly: true` to the
+runner. Workspace and Make retain extended context with the existing authority
+checks. Settings presets may carry a mode and description; Make conversation
+creation selects Make mode independently of the ordinary-chat default.
+
 Защищённый `GET /api/conversations/:id/context-snapshot` в `apps/server/src/routes/rest.ts` формирует preview сохранённого контекста следующего хода. Effective LLM разрешается атомарно по цепочке: явные provider/model разговора → собственная `ci_llm_config` привязанного проекта → пользовательские настройки. Проектная конфигурация читается только при отсутствии override provider разговора; если выбранный уровень не задаёт модель, fallback берётся из пользовательской модели соответствующего provider.
 
 Одна вычисленная пара попадает и в `summary`, и в элемент `llm` группы `conversation`. Для элемента сервер ставит `source` соответственно «Разговор», «Проект» или «Настройки пользователя», а `explanation` различает явное переопределение и наследование с конкретного уровня. Контрактные сценарии приоритета и наследования закреплены в `apps/server/src/routes/rest.test.ts`.
 
 ## WebSocket `/ws`
+
+The transport `open` event precedes authenticated session setup. `claude.active`
+confirms the turn subscription, but Kanban notification subscriptions are added
+only after `resumeQueues` and the agents-list await. `eventsDelivery.test.ts`
+waits for the `agents` snapshot, whose synchronous continuation installs the
+remaining subscriptions, before publishing a Kanban event. Expected notification
+frames are awaited with `vi.waitFor`; teardown awaits `db.close()`.
 
 `attachWs` installs message and close listeners before awaiting asynchronous
 `onOpen`. A single initialization barrier keeps commands queued until session
@@ -564,6 +579,13 @@ uncertain-usage behavior and compatibility with hard cancellation elsewhere.
 Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 
 ## SQLite и репозитории данных
+
+Core repositories expose only operations still consumed by Core. Kanban-only
+workflow methods were removed from CI, QA, tasks, environments and releases;
+`QaRepo` is now an empty domain class retaining table ownership. Test-only
+writers moved to `test/seed.ts`, whose `withCtx` awaits `db.ready` and uses the
+port lane. These helpers seed the same SQLite/Postgres tables without exposing
+unused workflow writers on production ports.
 
 `VoiceChatDb` — синхронный адаптер `better-sqlite3`: ядро (`db/database.ts`) при создании выполняет идемпотентную DDL и миграции старых колонок и раздаёт доменные репозитории `db.chat`, `db.tasks`, `db.ci`, `db.machines`, `db.identity` и т.д. (`db/repos/<домен>.ts`, по одному владельцу на таблицу — `db/ownership.ts`). Маршруты и сервисы зовут методы адресно и асинхронно (`await db.projects.getProject(...)` — поля `db.<домен>` это `AsyncPort<Repo>`), а зависимости-интерфейсы в тестах описываются той же формой `{ projects: { getProject: async () => … } }`. Сообщения одного WS-сокета обрабатываются строго по очереди (`ws.ts`): обработчики асинхронны, а порядок `audio.start → чанки → audio.stop` — часть контракта. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children. Подробнее — [data-auth.md](data-auth.md#схема).
 

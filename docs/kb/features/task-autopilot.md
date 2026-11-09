@@ -1,7 +1,7 @@
 ---
 title: Автопроход задачи по QA-конвейеру
-updated: 2026-11-05
-checked: 29ee2a0e8
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/projects.ts
   - apps/server/src/kanban
@@ -16,10 +16,11 @@ areas:
 
 ## Current Core boundary
 
-Core retains project/task contracts and SQL transitions. `autoPilotSnapshot`
-and `transitionAutoPilotTask` are in `db/repos/tasks.ts`; `recordAutoPilotEvent`
-is in `db/repos/qa.ts`, not the `database.ts` facade. The board-driven tick,
-retry scheduling and runner dispatch execute in Kanban.
+Core retains project/task contracts, schema and board readers. The workflow
+methods `autoPilotSnapshot`, `transitionAutoPilotTask` and
+`recordAutoPilotEvent` were removed from Core's task/QA repositories. Autopilot
+transitions, the board-driven tick, retry scheduling and runner dispatch belong
+to Kanban; the detailed workflow descriptions below refer to that owner.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

@@ -2,6 +2,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from './database'
+import * as dbSeed from '../test/seed.js'
 
 const U = 'admin'
 
@@ -23,7 +24,7 @@ describe('тестовые пользователи проекта', () => {
 
   it('сохраняются владельцем и читаются в ProjectDetail', async () => {
     const project = await db.projects.createProject(U, { name: 'Магазин' })
-    const updated = await db.projects.updateProject(U, project.id, {
+    const updated = await dbSeed.updateProject(db, U, project.id, {
       testUsers: [
         { name: 'tester', password: 'test-pass', role: 'admin', note: 'полный доступ' },
         { name: 'viewer', password: '' }
@@ -60,7 +61,7 @@ describe('canUseAgentForPreview', () => {
   it('участник проекта получает доступ через share машины, не-участник — нет', async () => {
     const agent = await db.machines.createAgent(U, 'Мак')
     const project = await db.projects.createProject(U, { name: 'Магазин' })
-    await db.projects.addMember(U, project.id, 'member')
+    await dbSeed.addMember(db, U, project.id, 'member')
     await db.machines.setMachineSharedWithProject(U, project.id, agent.id, true)
     expect(await db.machines.canUseAgentForPreview('member', agent.id)).toBe(true)
     expect(await db.machines.canUseAgentForPreview('stranger', agent.id)).toBe(false)
@@ -77,7 +78,7 @@ describe('listUserMachineAccess', () => {
     const own = await db.machines.createAgent('member', 'Own')
     const shared = await db.machines.createAgent(U, 'Shared')
     const project = await db.projects.createProject(U, { name: 'Shop' })
-    await db.projects.addMember(U, project.id, 'member')
+    await dbSeed.addMember(db, U, project.id, 'member')
     await db.machines.setMachineSharedWithProject(U, project.id, shared.id, true, 'read')
     expect(await db.machines.listUserMachineAccess('member')).toEqual([
       { agentId: own.id, name: 'Own', access: 'owner' }, { agentId: shared.id, name: 'Shared', access: 'read' }])

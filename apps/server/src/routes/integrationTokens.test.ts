@@ -11,6 +11,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { registerIntegrationTokenGuard } from '../auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './integrationTokens.js'
 import { registerInternalRoutes } from './internal.js'
+import * as dbSeed from '../test/seed.js'
 
 for (const engine of ['sqlite', 'postgres'] as const) {
   describe.skipIf(engine === 'postgres' && !process.env.VC_TEST_DB_URL)(`integration tokens (${engine})`, () => {
@@ -41,7 +42,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       for (const name of ['owner', 'member', 'outsider', 'admin']) await db.identity.createUser(name, '', name === 'admin' ? 'admin' : 'developer')
       projectId = (await db.projects.createProject('owner', { name: 'Project' })).id
       otherId = (await db.projects.createProject('owner', { name: 'Other' })).id
-      await db.projects.addMember('owner', projectId, 'member')
+      await dbSeed.addMember(db, 'owner', projectId, 'member')
       app = Fastify()
       registerIntegrationTokenGuard(app)
       const { authenticate } = await registerAuth(app, db, sessionSecret)
@@ -143,7 +144,7 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect(user.principal).toBeUndefined()
       expect((await app.inject({ method: 'POST', url: path(), headers: { cookie: 'vc_session=' + headers().authorization.slice(7) },
         payload: { name: 'CSRF', scopes: ['tasks:external'] } })).statusCode).toBe(403)
-      await db.projects.updateMemberRole('owner', projectId, 'member', 'owner')
+      await dbSeed.updateMemberRole(db, 'owner', projectId, 'member', 'owner')
       expect((await app.inject({ method: 'POST', url: path(), headers: headers('member'), payload: { name: 'Co-owner', scopes: ['tasks:external'] } })).statusCode).toBe(201)
     })
 

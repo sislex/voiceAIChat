@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-11-09
-checked: c5fd9ebe4
+checked: bc7d4930c
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -34,28 +34,14 @@ Core retains release contracts, application build/deploy/gate scripts and
 artifact pins. The Release Center manager runs in Kanban; release updates arrive
 through `KanbanService.board.subscribeReleases`. See
 [release gate selection](release-gate-plan.md) for the current Core planner.
+Development plans separate Kanban stand browser suites into `releaseE2eFiles`
+and use development tooling plus related changed-script tests. Release plans
+include those suites and complete tooling; `gate:release:full` passes
+`--release` to `gate:all`.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths
 are owner migration references, not local Core implementations.
-
-## Core build failure reporting
-
-`scripts/prod/release-manager-deploy.sh` builds `voicechat` synchronously with
-the selected release's application metadata after owner-image pinning. Docker
-output and a nonzero build exit return to the Release Center building step before
-the detached launcher starts. The historical background-build description below
-applies to direct launcher invocations, not this entrypoint.
-
-The Dockerfile retries transient npm downloads. A known failed Compose command
-in `deploy.sh` is recovered when the exact previous Core commit and component
-readiness are verified; reconciliation can recover historical nonzero exits
-without `composeCompleted`. Unknown completion still blocks a new operation.
-See [operation status](../deploy.md#controlled-deployment-operation-status).
-
-The current application gate separates development tooling/browser suites from
-release-only suites through `splitReleaseSuites` and `plan.release`; this repair
-does not change that selection or the release contracts.
 
 ## Source-owned tool releases
 

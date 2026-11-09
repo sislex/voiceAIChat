@@ -2,7 +2,7 @@ import { applicationReleaseIdentity, applicationReleaseBranch, parseApplicationR
 // Домен «releases»: таблицы project_releases, project_release_steps, project_release_events.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { RELEASE_STEP_ORDER, type ProjectRelease, type ReleaseStepKind, type ReleaseStepStatus, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS, validateReleaseTimeouts, releaseFailureSummary, releaseStepLimit } from '@voicechat/shared'
+import { type ProjectRelease, type ReleaseStepKind, type ReleaseStepStatus } from '@voicechat/shared'
 import { BaseRepo } from './base.js'
 
 // ============== Релизы: строки БД ==================
@@ -147,50 +147,10 @@ export class ReleasesRepo extends BaseRepo {
   }
 
 
-  async createProjectRelease(userId: string, projectId: string, input: { branch: string; version: string; sha: string; status?: ProjectRelease['status']; models?: Partial<Record<ReleaseStepKind, string>>; previousReleaseId?: string | null; agentId?: string; checkoutPath?: string; limits?: ReleaseTimeouts }): Promise<ProjectRelease> {
-    if (!(await this.repos.projects.isProjectOwner(userId, projectId))) throw new Error('release permission required')
-    const previous = input.previousReleaseId ? await this.releaseRow(input.previousReleaseId) : null
-    if (input.previousReleaseId && (!previous || previous.project_id !== projectId || previous.branch !== input.branch)) throw new Error('invalid previous release')
-    // Номер попытки — всегда max+1 по ветке: после неудачного deploy повторная
-    // попытка от того же подготовленного релиза не должна падать в UNIQUE.
-    const nextByBranch = (((await this.sql.get(`SELECT MAX(attempt) AS n FROM project_releases WHERE project_id=? AND branch=?`, [projectId, input.branch])) as {n:number|null}).n ?? 0) + 1
-    const attempt = previous ? Math.max(previous.attempt + 1, nextByBranch) : nextByBranch
-    const id=this.newId(), now=this.now()
-    await this.sql.transaction(async ()=>{
-      if (input.previousReleaseId) {
-        const component = await this.sql.get<{state_json:string;active_deployment_id:string|null}>(`SELECT state_json,active_deployment_id FROM application_environments WHERE project_id=? AND environment='production'`, [projectId])
-        if (component && (component.active_deployment_id || parseApplicationEnvironment(JSON.parse(component.state_json)).applications.length)) throw new Error('Production управляется выпусками приложений; общий deploy перезаписал бы независимые артефакты')
-      }
-      const limits=validateReleaseTimeouts(input.limits??DEFAULT_RELEASE_TIMEOUTS)
-      await this.sql.run(`INSERT INTO project_releases (id,project_id,version,branch,commit_sha,status,triggered_by,attempt,previous_release_id,created_at,agent_id,checkout_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [id, projectId, input.version, input.branch, input.sha, input.status??'preparing', userId, attempt, input.previousReleaseId??null, now, input.agentId??null, input.checkoutPath??null])
-      for (const [position, kind] of RELEASE_STEP_ORDER.entries()) await this.sql.run(`INSERT INTO project_release_steps (id,release_id,kind,position,status,model,attempt,limit_ms) VALUES (?,?,?,?,?,?,?,?)`, [this.newId(), id, kind, position, 'queued', input.models?.[kind]??null, attempt, releaseStepLimit(kind,limits)])
-      await this.addReleaseEvent(id,'release.created',userId,{branch:input.branch,version:input.version,sha:input.sha,attempt})
-    })
-    return (await this.getProjectRelease(userId,projectId,id)) as ProjectRelease
-  }
-
   async getProjectRelease(userId:string,projectId:string,id:string):Promise<ProjectRelease|null> {
     if (!(await this.repos.projects.isProjectMember(userId,projectId))) return null
     const row=await this.releaseRow(id)
     return row?.project_id===projectId?await this.mapProjectRelease(row):null
-  }
-
-  async setProjectReleaseStatus(id:string,status:ProjectRelease['status'],actor:string):Promise<void> {
-    const now=this.now()
-    await this.sql.run(`UPDATE project_releases SET status=?,released_at=? WHERE id=?`, [status, status==='released'?now:null, id])
-    await this.addReleaseEvent(id,`release.${status}`,actor,{})
-    if(['ready','released','failed'].includes(status)){
-      const release=await this.releaseRow(id)
-      if(release){
-        const owner=await this.sql.get<{username:string}>(`SELECT username FROM project_members WHERE project_id=? AND role='owner' ORDER BY added_at LIMIT 1`,[release.project_id])
-        if(owner){
-          const failed=(await this.sql.get(`SELECT kind,log FROM project_release_steps WHERE release_id=? AND status='failed' ORDER BY position DESC LIMIT 1`,[id])) as {kind:string;log:string}|undefined
-          const title=status==='released'?`Релиз ${release.version} опубликован`:status==='ready'?`Сборка ${release.version} завершена`:`Сборка ${release.version} упала`
-          const text=status==='failed'?`Сборка ${release.version} упала: ${releaseFailureSummary(failed?.kind??'',failed?.log??'')}`:status==='released'?`Релиз ${release.version} опубликован`:`Сборка ${release.version} готова к деплою`
-          await this.sql.run(`INSERT INTO release_notifications (id,user_id,project_id,release_id,title,text,created_at) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM release_notifications WHERE release_id=?)`,[this.newId(),owner.username,release.project_id,id,title,text,now,id])
-        }
-      }
-    }
   }
 
   private async releaseRow(id:string):Promise<ReleaseRow|undefined> {
@@ -202,7 +162,4 @@ export class ReleasesRepo extends BaseRepo {
     return {id:row.id,projectId:row.project_id,version:row.version,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],triggeredBy:row.triggered_by,attempt:row.attempt,previousReleaseId:row.previous_release_id,createdAt:row.created_at,releasedAt:row.released_at,agentId:row.agent_id??null,checkoutPath:row.checkout_path??null,deletedAt:row.deleted_at??null,archivedAt:row.archived_at??null,steps}
   }
 
-  private async addReleaseEvent(releaseId:string,type:string,actor:string,payload:unknown):Promise<void> {
-    await this.sql.run(`INSERT INTO project_release_events (id,release_id,type,actor,payload_json,created_at) VALUES (?,?,?,?,?,?)`, [this.newId(), releaseId, type, actor, JSON.stringify(payload), this.now()])
-  }
 }

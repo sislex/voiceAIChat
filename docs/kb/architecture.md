@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-09
-checked: 6626dcfde
+checked: 5ceebde17
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -384,7 +384,7 @@ The LLM Runner implementation and its internal tests belong to `sislex/llm-runne
 Core uses authenticated HTTP clients and no longer has an embedded CLI fallback.
 Core retains chat, machine authorization/registry, SQL repositories and host integration. Kanban owns project workflow, CI/QA, merge, previews and release orchestration; Core connects through `kanbanBridge` with remote/off modes only. The companion runtime is owned by `sislex/agent`, and the Electron host by `sislex/desktop`. Shared UI primitives belong to `sislex/sielexa-ui`.
 
-Kanban keeps its own copies of the CI/QA/autopilot/release repositories and writes the shared tables. Core's `db/repos/{ci,tasks,projects,qa,releases,environments}.ts` therefore keep only methods with a Core caller (readers such as board snapshots, task chat badges, run summaries, environment links/settings, the Identity hooks `attachInvitationsToNewUser`/`detachDeletedUser`/`unassignUser`); `QaRepo` is empty. Schema and tables stay. A few writers remain only as test fixtures for Kanban-owned rows (`createCiRun`, `updateCiRun`, `updateProject`, `updateTask`, `deleteTask`, `createColumn`, `setCiLlmConfig`, `setProjectDefaultMachine`, `upsertEnvironment`, `setEnvironmentState`, `transferTenant`, `createProjectRelease`, `setProjectReleaseStatus`, `addMember`, `updateMemberRole`); other tests seed shared tables with SQL.
+Kanban keeps its own copies of the CI/QA/autopilot/release repositories and writes the shared tables. Core's `db/repos/{ci,tasks,projects,qa,releases,environments}.ts` therefore keep only methods with a Core caller (readers such as board snapshots, task chat badges, run summaries, environment links/settings, the Identity hooks `attachInvitationsToNewUser`/`detachDeletedUser`/`unassignUser`); `QaRepo` is empty. Schema and tables stay. Writers that tests need to prepare Kanban-owned rows (`createCiRun`, `updateCiRun`, `updateProject`, `updateTask`, `deleteTask`, `createColumn`, `setCiLlmConfig`, `setProjectDefaultMachine`, `upsertEnvironment`, `setEnvironmentState`, `transferTenant`, `createProjectRelease`, `setProjectReleaseStatus`, `addMember`, `updateMemberRole`) are not repository methods: they live in the test-only module `apps/server/src/test/seed.ts` and are called as `dbSeed.<name>(db, ...)`. Each helper waits for `db.ready`, enters the port lane and uses the same SQL adapter, so it works on SQLite and Postgres; an unawaited call is not ordered before the next port call. Other tests seed shared tables with SQL directly. No production module imports it.
 
 ### Final removal of transitional workspaces
 

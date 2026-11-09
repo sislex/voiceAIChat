@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { VoiceChatDb, hashAgentToken } from './database'
 import { SCHEMA_SQL } from './schema'
 import { DEFAULT_SETTINGS } from '@voicechat/shared'
+import * as dbSeed from '../test/seed.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
@@ -1207,7 +1208,7 @@ describe('VoiceChatDb — хранилища машин', () => {
     const conversation = await db.chat.createConversation(U, 'Storage')
     const project = await db.projects.createProject(U, { name: 'Project' })
     await db.machines.linkMachine(U, project.id, machine.id, storage.id)
-    await db.projects.setProjectDefaultMachine(U, project.id, machine.id)
+    await dbSeed.setProjectDefaultMachine(db, U, project.id, machine.id)
     await db.machines.saveChatStorageBinding(U, {
       conversationId: conversation.id,
       machineId: machine.id,

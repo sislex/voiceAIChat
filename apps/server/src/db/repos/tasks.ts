@@ -16,7 +16,7 @@ export const PROD_REBUILD_TASK_TITLE = 'Пересборка прода'
 export const PROD_REBUILD_TASK_INTRO = 'Влито в прод-ветку, но прод-контейнер в ране не пересобирался. Пересобрать прод для задач:'
 
 /** Валидный приоритет (неизвестное → medium). */
-function normPriority(raw: string): TaskPriority {
+export function normPriority(raw: string): TaskPriority {
   return raw === 'low' || raw === 'high' || raw === 'urgent' || raw === 'medium' ? raw : 'medium'
 }
 
@@ -601,149 +601,6 @@ export class TasksRepo extends BaseRepo {
     return task
   }
 
-  async updateTask(
-    userId: string,
-    projectId: string,
-    taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean; autoPilotRequiresManualQa?: boolean }
-  ): Promise<Task | null> {
-    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return null
-    const current = await this.getTask(projectId, taskId)
-
-    if (!current) return null
-    if (fields.assignee != null && !(await this.repos.projects.isActiveProjectMember(fields.assignee, projectId))) {
-      throw new Error('Исполнитель должен быть активным участником проекта')
-    }
-    if (fields.agentId !== undefined) await this.validateTaskAgent(userId, projectId, fields.agentId)
-    const nextType = fields.type ?? current.type
-    const nextParentId = fields.parentId === undefined ? current.parentId : fields.parentId
-    if (nextParentId === taskId) throw new Error('Элемент не может быть своим родителем')
-    const nextParent = nextParentId ? await this.getTask(projectId, nextParentId) : null
-    if (nextType === 'epic' && nextParentId) throw new Error('Эпик не может иметь родителя')
-    if (nextParentId && !nextParent) throw new Error('Родитель не найден в проекте')
-    if (nextType === 'story' && nextParent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
-    if (nextType === 'task' && nextParent && nextParent.type !== 'story' && nextParent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
-    let ancestor = nextParent
-    while (ancestor) {
-      if (ancestor.id === taskId) throw new Error('Циклическая иерархия')
-      ancestor = ancestor.parentId ? await this.getTask(projectId, ancestor.parentId) : null
-    }
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (fields.title !== undefined) {
-      set.push('title = ?')
-      vals.push(fields.title)
-    }
-    if (fields.description !== undefined) {
-      set.push('description = ?')
-      vals.push(fields.description)
-    }
-    if (fields.acceptanceCriteria !== undefined) {
-      set.push('acceptance_criteria = ?')
-      vals.push(fields.acceptanceCriteria)
-    }
-    if (fields.type !== undefined) {
-      set.push('type = ?')
-      vals.push(fields.type)
-    }
-    if (fields.parentId !== undefined) {
-      set.push('parent_id = ?')
-      vals.push(fields.parentId)
-    }
-    if (fields.priority !== undefined) {
-      set.push('priority = ?')
-      vals.push(normPriority(fields.priority))
-    }
-    if (fields.assignee !== undefined) {
-      set.push('assignee = ?')
-      vals.push(fields.assignee)
-    }
-    if (fields.agentId !== undefined) {
-      set.push('agent_id = ?')
-      vals.push(fields.agentId)
-    }
-    if (fields.labels !== undefined) {
-      set.push('labels = ?')
-      vals.push(JSON.stringify(fields.labels.map((l) => l.trim()).filter(Boolean)))
-    }
-    if (fields.skills !== undefined) {
-      set.push('skills = ?')
-      vals.push(JSON.stringify(fields.skills.map((s) => s.trim()).filter(Boolean)))
-    }
-    if (fields.storyPoints !== undefined) {
-      set.push('story_points = ?')
-      vals.push(fields.storyPoints != null && fields.storyPoints >= 0 ? fields.storyPoints : null)
-    }
-    if (fields.dueDate !== undefined) {
-      set.push('due_date = ?')
-      vals.push(fields.dueDate)
-    }
-    if (fields.flagged !== undefined) {
-      set.push('flagged = ?')
-      vals.push(fields.flagged ? 1 : 0)
-    }
-    if (fields.autoPilot !== undefined) {
-      if (typeof fields.autoPilot !== 'boolean') throw new Error('autoPilot must be a boolean')
-      set.push('auto_pilot = ?')
-      vals.push(fields.autoPilot ? 1 : 0)
-    }
-    if (fields.autoPilotRequiresManualQa !== undefined) {
-      if (typeof fields.autoPilotRequiresManualQa !== 'boolean') throw new Error('autoPilotRequiresManualQa must be a boolean')
-      set.push('auto_pilot_requires_manual_qa = ?')
-      vals.push(fields.autoPilotRequiresManualQa ? 1 : 0)
-    }
-    if (!set.length) return current
-    const ts = this.now()
-    set.push('updated_at = ?')
-    vals.push(ts)
-    await this.sql.run(`UPDATE tasks SET ${set.join(', ')} WHERE id = ? AND project_id = ?`, [...vals, taskId, projectId])
-    // История изменений (вкладка «Активность», как в Jira): пишем только
-    // реально изменившиеся человекочитаемые поля — техника (позиции, ранги)
-    // человеку в истории не нужна.
-    await this.recordTaskHistoryDiff(userId, projectId, taskId, current, fields, ts)
-    await this.repos.projects.touchProject(projectId, ts)
-    return await this.getTask(projectId, taskId)
-  }
-
-  /** Дифф видимых полей задачи → строки истории. Пустая строка и null равны. */
-  private async recordTaskHistoryDiff(
-    actor: string,
-    projectId: string,
-    taskId: string,
-    before: Task,
-    fields: Record<string, unknown>,
-    at: number,
-    via: 'user' | 'model' = 'user'
-  ): Promise<void> {
-    const norm = (value: unknown): string | null => {
-      if (value === undefined || value === null) return null
-      if (Array.isArray(value)) return value.length ? value.join(', ') : null
-      const text = String(value).trim()
-      return text === '' ? null : text
-    }
-    const watched: Array<[string, unknown, unknown]> = [
-      ['title', before.title, fields.title],
-      ['description', before.description, fields.description],
-      ['acceptanceCriteria', before.acceptanceCriteria, fields.acceptanceCriteria],
-      ['priority', before.priority, fields.priority],
-      ['assignee', before.assignee, fields.assignee],
-      ['storyPoints', before.storyPoints, fields.storyPoints],
-      ['dueDate', before.dueDate, fields.dueDate],
-      ['labels', before.labels, fields.labels],
-      ['skills', before.skills, fields.skills],
-      ['type', before.type, fields.type],
-      ['flagged', before.flagged, fields.flagged]
-    ]
-    const insert = this.sql.prepare(`INSERT INTO task_history (id, project_id, task_id, actor, via, field, from_value, to_value, at) VALUES (?,?,?,?,?,?,?,?,?)`)
-    for (const [field, was, next] of watched) {
-      if (next === undefined) continue
-      const fromValue = norm(was)
-      const toValue = norm(next)
-      if (fromValue === toValue) continue
-      await insert.run(this.newId(), projectId, taskId, actor, via, field, fromValue, toValue, at)
-    }
-  }
-
   private async renormalizeColumn(projectId: string, columnId: string): Promise<void> {
     const rows = (await this.sql.all(`SELECT id FROM tasks WHERE project_id = ? AND column_id = ? ORDER BY position ASC, id ASC`, [projectId, columnId])) as Array<{ id: string }>
     const upd = this.sql.prepare(`UPDATE tasks SET position = ? WHERE id = ?`)
@@ -805,16 +662,6 @@ export class TasksRepo extends BaseRepo {
     })
     await this.repos.projects.touchProject(projectId, ts)
     return await this.getTask(projectId, taskId)
-  }
-
-  async deleteTask(userId: string, projectId: string, taskId: string): Promise<boolean> {
-    if (!(await this.repos.projects.isProjectMember(userId, projectId))) return false
-    let changes = 0
-    await this.sql.transaction(async () => {
-      changes = (await this.sql.run(`DELETE FROM tasks WHERE id = ? AND project_id = ?`, [taskId, projectId])).changes
-    })
-    if (changes) await this.repos.projects.touchProject(projectId)
-    return changes > 0
   }
 
   /** Публичный доступ к задаче для CI-раннера (по членству проекта). */

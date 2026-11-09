@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VoiceChatDb } from './database.js'
+import * as dbSeed from '../test/seed.js'
 
 let db: VoiceChatDb
 
@@ -17,7 +18,7 @@ afterEach(() => db.close())
 /** Проект с одной задачей и Make-чатом, привязанным к этому же проекту. */
 async function scene(): Promise<{ projectId: string; taskId: string; makeId: string }> {
   const project = await db.projects.createProject('alice', { name: 'Piara' })
-  await db.projects.addMember('alice', project.id, 'bob')
+  await dbSeed.addMember(db, 'alice', project.id, 'bob')
   const column = (await db.tasks.getBoard('alice', project.id))!.columns[0]
   const task = (await db.tasks.createTask('alice', project.id, { columnId: column.id, title: 'Экран оплаты' }))!
   const make = await db.chat.createConversation('alice', 'Проект 1', 'make')

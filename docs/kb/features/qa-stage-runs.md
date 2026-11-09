@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -19,10 +19,11 @@ areas:
 
 ## Current Core boundary
 
-Core retains `QaRunStage` contracts and `db/repos/qa.ts` stage-run persistence.
-The `qaStage` bridge event carries project/task/stage, including `manual_qa`;
-Core relays it through `subscribeQaStages`. Generic stage execution and the
-specialized Component QA/Integration Tests managers run in Kanban.
+Core retains `QaRunStage` contracts and the QA tables; `db/repos/qa.ts` no
+longer implements stage-run persistence methods. The `qaStage` bridge event
+carries project/task/stage, including `manual_qa`; Core relays it through
+`subscribeQaStages`. Stage writes, execution and the specialized Component QA /
+Integration Tests managers belong to Kanban.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths

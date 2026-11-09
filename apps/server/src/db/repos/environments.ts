@@ -1,4 +1,4 @@
-import { ACTIVE_ENVIRONMENT_OPERATION_STATUSES, type EnvironmentState, type EnvironmentOperationKind, type StoredEnvironmentSetting, parseEnvironmentId, type EnvironmentDefinition, type EnvironmentOperation } from '@voicechat/shared'
+import { ACTIVE_ENVIRONMENT_OPERATION_STATUSES, type EnvironmentState, type EnvironmentOperationKind, type StoredEnvironmentSetting, type EnvironmentDefinition, type EnvironmentOperation } from '@voicechat/shared'
 import { BaseRepo } from './base.js'
 
 interface DefinitionRow { mode: EnvironmentDefinition["mode"]; storage_id: string | null; state: EnvironmentState; compose_project: string | null; port: number | null; id: string; project_id: string; name: string; machines_json: string; checkout_path: string; created_by: string; created_at: number; updated_at: number }
@@ -62,22 +62,6 @@ export class EnvironmentsRepo extends BaseRepo {
     if (!result.changes) throw new Error('Environment not found')
   }
 
-  /** Internal worker port. */
-  async setEnvironmentState(projectId: string, environmentId: string, patch: { state?: EnvironmentState; port?: number | null }): Promise<void> {
-    const fields = ['updated_at = ?']
-    const values: (string | number | null)[] = [this.now()]
-    if (patch.state !== undefined) {
-      if (!['draft', 'provisioning', 'ready', 'failed', 'removing', 'removed'].includes(patch.state)) throw new Error('Invalid environment state')
-      fields.push('state = ?'); values.push(patch.state)
-    }
-    if (patch.port !== undefined) {
-      if (patch.port !== null && (!Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535)) throw new Error('Invalid environment port')
-      fields.push('port = ?'); values.push(patch.port)
-    }
-    const result = await this.sql.run(`UPDATE environments SET ${fields.join(', ')} WHERE project_id = ? AND id = ?`, [...values, projectId, environmentId])
-    if (!result.changes) throw new Error('Environment not found')
-  }
-
   async listSettings(userId: string, projectId: string, environmentId: string): Promise<StoredEnvironmentSetting[]> {
     await this.requireMember(userId, projectId)
     return this.readSettings(projectId, environmentId)
@@ -123,19 +107,6 @@ export class EnvironmentsRepo extends BaseRepo {
     await this.requireMember(userId, projectId)
     const row = await this.sql.get('SELECT * FROM environments WHERE project_id = ? AND id = ?', [projectId, environmentId]) as DefinitionRow | undefined
     return row ? definition(row) : null
-  }
-
-  async upsertEnvironment(userId: string, projectId: string, input: Pick<EnvironmentDefinition, 'id' | 'name' | 'machines' | 'checkoutPath'>): Promise<EnvironmentDefinition> {
-    await this.requireMember(userId, projectId)
-    if (!await this.repos.projects.isProjectOwner(userId, projectId)) throw new Error('Project owner required')
-    const id = parseEnvironmentId(input.id)
-    if (typeof input.name !== 'string' || !input.name.trim() || typeof input.checkoutPath !== 'string' || !input.checkoutPath.trim() || !Array.isArray(input.machines) || input.machines.length !== 1 || typeof input.machines[0] !== 'string' || !input.machines[0].trim()) throw new Error('Invalid environment definition')
-    if ((await this.getEnvironment(userId, projectId, id))?.mode === 'managed') throw new Error('Managed environment cannot be changed')
-    const now = this.now()
-    const written = await this.sql.run(`INSERT INTO environments (id, project_id, name, machines_json, checkout_path, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(project_id, id) DO UPDATE SET name = excluded.name, machines_json = excluded.machines_json, checkout_path = excluded.checkout_path, updated_at = excluded.updated_at WHERE environments.mode = 'external'`, [id, projectId, input.name, JSON.stringify(input.machines), input.checkoutPath, userId, now, now])
-    if (!written.changes) throw new Error('Managed environment cannot be changed')
-    return (await this.getEnvironment(userId, projectId, id))!
   }
 
   /** Internal worker lookup, scoped by project and environment. */
