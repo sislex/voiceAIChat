@@ -6,7 +6,7 @@
 
 import {
   INTERNAL_MAKE_SERVICE_PATH, MakeHub, buildTaskMakeSources, createRpcClient,
-  type MakeService
+  type MakeBrowserTarget, type MakeService
 } from '@voicechat/make-contracts'
 import type { AdminMakeStats } from '@voicechat/shared'
 import type { MakeFileInfo } from '@voicechat/make-contracts/make'
@@ -26,6 +26,7 @@ export function createRemoteMake(opts: RemoteMakeOptions): RemoteMake {
   const hub = new MakeHub()
   const service: MakeService = {
     promptContext: (conversationId) => rpc<string>('promptContext', conversationId),
+    browserTarget: (conversationId) => rpc<MakeBrowserTarget | null>('browserTarget', conversationId),
     turnSnapshot: (turn) => hub.turnSnapshot(turn),
     listFiles: (conversationId) => rpc<MakeFileInfo[]>('listFiles', conversationId),
     taskSources: (args) => buildTaskMakeSources({ ...args, baseUrl: opts.mcpBaseUrl, secret: opts.mcpSecret }),

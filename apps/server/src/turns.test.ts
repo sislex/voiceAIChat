@@ -1751,6 +1751,30 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
+  it('выбранный стенд Make имеет приоритет над прежней привязкой Reader', async () => {
+    const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make')
+    const reader = await db.chat.createConversation(U, 'Старый Reader', 'web-recorder')
+    await db.chat.setConversationPreviewUrl(U, reader.id, 'https://old-reader.example/', 'chromium')
+    await db.chat.setConversationMakeBrowserSession(U, make.id, reader.id)
+    const rec = recorder(); const tool = tokens()
+    const makeService = {
+      browserTarget: async () => ({ standId: 'stand-piara', name: 'Piara', url: 'http://localhost:4200/' }),
+      promptContext: async () => '',
+      turnSnapshot: () => undefined,
+      taskSources: () => [],
+    } as never
+    const turns = createTurnManager({ db: await db, claude: rec.client, make: makeService, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool })
+    await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'проверь стенд' }] })
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${make.id}`)}`)
+    expect(rec.last()?.previewSurface).toBe('make-preview')
+    expect(rec.last()?.prompt).toContain('Текущий тестовый стенд: «Piara» (http://localhost:4200/)')
+    expect(rec.last()?.prompt).toContain('stand_roles переключает следующие браузерные действия')
+    expect(rec.last()?.prompt).not.toContain('https://old-reader.example/')
+    expect(tool.entries).toEqual([{ userId: U, conversationId: make.id }])
+    await turns.idle()
+    db.close()
+  })
+
   it('без previewMcpBaseUrl инструменты превью не подключаются', async () => {
     const db = await freshDb(); const conv = await db.chat.createConversation(U, 'Чат'); const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, previewTurns: tokens() })
