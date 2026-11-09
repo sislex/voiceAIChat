@@ -9,6 +9,7 @@ import { signToken } from '@sislexa/identity/server/users/accounts'
 import { VoiceChatDb } from '../db/database.js'
 import { ProjectPreviews } from '../makeBridge/projectPreview.js'
 import { registerProjectStandPreviewRoutes } from './projectStandPreview.js'
+import * as dbSeed from '../test/seed.js'
 
 describe('project stand preview routes', () => {
   let db: VoiceChatDb, app: FastifyInstance, dir: string, projectId: string, secret: string
@@ -20,7 +21,7 @@ describe('project stand preview routes', () => {
     await db.ready
     for (const name of ['owner', 'member']) await db.identity.createUser(name, '', 'developer')
     projectId = (await db.projects.createProject('owner', { name: 'Piara' })).id
-    await db.projects.addMember('owner', projectId, 'member')
+    await dbSeed.addMember(db, 'owner', projectId, 'member')
     app = Fastify()
     await registerAuth(app, db, secret)
     registerProjectStandPreviewRoutes(app, db, new ProjectPreviews({ db, machines: {} as never, gate: async () => ({ allowed: true }), reservedPorts: [28810] }))

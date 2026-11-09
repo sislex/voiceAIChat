@@ -10,6 +10,7 @@ import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { LlmClient, LlmRequest } from './claude/types.js'
 import { createTurnManager } from './turns.js'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
+import * as dbSeed from './test/seed.js'
 
 const SECRET = 'task-ctx-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -44,7 +45,7 @@ async function setup() {
   const agent = await db.machines.createAgent('admin', 'Прод-машина')
   await db.machines.linkMachine('admin', project.id, agent.id)
   await db.machines.setProjectMachinePath('admin', project.id, agent.id, '/srv/app')
-  await db.projects.setProjectDefaultMachine('admin', project.id, agent.id)
+  await dbSeed.setProjectDefaultMachine(db, 'admin', project.id, agent.id)
   const board = (await db.tasks.getBoard('admin', project.id))!
   const backlog = board.columns.find((c) => c.semanticType === 'backlog')!
   const epic = (await db.tasks.createTask('admin', project.id, { columnId: backlog.id, title: 'Канбан', type: 'epic' }))!

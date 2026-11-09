@@ -14,6 +14,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { INTERNAL_KANBAN_EVENTS_PATH, type KanbanEvent } from '../kanban/internal.js'
+import * as dbSeed from '../test/seed.js'
 
 const SECRET = 'test-secret'
 const INTERNAL = 'internal-test'
@@ -93,7 +94,7 @@ describe('состав проекта и приглашения', () => {
   })
 
   it('смена состава участнику приходит двумя кадрами: project.membership и инвалидация уведомлений', async () => {
-    await db.projects.addMember('admin', projectId, 'bob')
+    await dbSeed.addMember(db, 'admin', projectId, 'bob')
     const bob = await connect('bob')
     const carol = await connect('carol')
     await kanbanSends({ kind: 'notification', event: { projectId, kind: 'membership' } })

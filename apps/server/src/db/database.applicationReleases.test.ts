@@ -4,6 +4,7 @@ import type {
   ApplicationReleaseManifest,
   ApplicationEnvironment
 } from '@voicechat/shared'
+import * as dbSeed from '../test/seed.js'
 const requirement = {
   applicationId: 'core',
   minVersion: '1.0.0',
@@ -88,7 +89,7 @@ async function setup() {
 describe('компонентные релизы и блокировки окружения', () => {
   it('сохраняет legacy-историю отдельно от приложения', async () => {
     const { db, projectId, prepare } = await setup()
-    const legacy = await db.releases.createProjectRelease('owner', projectId, {
+    const legacy = await dbSeed.createProjectRelease(db, 'owner', projectId, {
       branch: 'release/1.0.0',
       version: '1.0.0',
       sha: 'legacy'
@@ -393,7 +394,7 @@ it('мигрирует файл старой БД без потери legacy-и�
     const projectId = (
       await db.projects.createProject('owner', { name: 'Legacy' })
     ).id
-    const legacy = await db.releases.createProjectRelease('owner', projectId, {
+    const legacy = await dbSeed.createProjectRelease(db, 'owner', projectId, {
       branch: 'release/1.0.0',
       version: '1.0.0',
       sha: 'legacy'
@@ -470,14 +471,14 @@ it('мигрирует файл старой БД без потери legacy-и�
 })
 it('общий production deploy и переход к компонентам не обходят блокировки друг друга', async () => {
   const { db, projectId, prepare } = await setup()
-  const legacy = await db.releases.createProjectRelease('owner', projectId, { branch: 'release/1.0.0', version: '1.0.0', sha: 'legacy', status: 'ready' })
-  const attempt = await db.releases.createProjectRelease('owner', projectId, { branch: legacy.branch, version: legacy.version, sha: legacy.sha, previousReleaseId: legacy.id, status: 'queued' })
+  const legacy = await dbSeed.createProjectRelease(db, 'owner', projectId, { branch: 'release/1.0.0', version: '1.0.0', sha: 'legacy', status: 'ready' })
+  const attempt = await dbSeed.createProjectRelease(db, 'owner', projectId, { branch: legacy.branch, version: legacy.version, sha: legacy.sha, previousReleaseId: legacy.id, status: 'queued' })
   await expect(db.releases.observeApplicationEnvironment('owner', projectId, 'production', state(manifest('core'), manifest()), 0)).rejects.toThrow('общий production deploy')
   const releaseId = await prepare()
   await expect(db.releases.beginApplicationDeployment('owner', projectId, 'production', { requestId: 'parallel-legacy', expectedRevision: 0, releaseIds: [releaseId] })).rejects.toThrow('общий production deploy')
   // Отдельный staging не блокируется production-операцией.
   await db.releases.observeApplicationEnvironment('owner', projectId, 'staging', state(manifest('core'), manifest()), 0)
-  await db.releases.setProjectReleaseStatus(attempt.id, 'released', 'owner')
+  await dbSeed.setProjectReleaseStatus(db, attempt.id, 'released', 'owner')
   await db.releases.observeApplicationEnvironment('owner', projectId, 'production', state(manifest('core'), manifest()), 0)
-  await expect(db.releases.createProjectRelease('owner', projectId, { branch: legacy.branch, version: legacy.version, sha: legacy.sha, previousReleaseId: legacy.id, status: 'queued' })).rejects.toThrow('управляется выпусками приложений')
+  await expect(dbSeed.createProjectRelease(db, 'owner', projectId, { branch: legacy.branch, version: legacy.version, sha: legacy.sha, previousReleaseId: legacy.id, status: 'queued' })).rejects.toThrow('управляется выпусками приложений')
 })

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { TASK_COMMIT_COMMAND_SCRIPT, VoiceChatDb } from './database.js'
 import { CI_KB_UPDATE_COMMAND_ID, DEFAULT_CI_STAGE_MODELS, DEFAULT_TOOL_OUTPUT_SETTINGS } from '@voicechat/shared'
+import * as dbSeed from '../test/seed.js'
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
@@ -114,7 +115,7 @@ describe('ci: движок и модель', () => {
   // из бэкапа), но ран обязан пойти на доступном исполнителе, а не упасть.
   it('удалённый движок в конфигурации подменяется доступным, а не ломает ран', async () => {
     const engine = await db.llm.createLlmEngine({ name: 'Временный', kind: 'claude', baseUrl: 'http://runner:8790', token: '', enabled: true, allowedRoles: ['admin', 'developer'], isDefault: true })
-    await db.ci.setCiLlmConfig('project', 'p-engine-gone', { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3, llmEngineId: engine.id })
+    await dbSeed.setCiLlmConfig(db, 'project', 'p-engine-gone', { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3, llmEngineId: engine.id })
     await db.llm.deleteLlmEngine(engine.id)
 
     const resolved = await db.llm.resolveLlmEngine((await db.ci.getCiLlmConfig('project', 'p-engine-gone'))?.llmEngineId ?? null, 'claude', 'admin')
@@ -138,9 +139,9 @@ describe('ci: глобальные настройки', () => {
 describe('ci: раны, шаги, лог, метрики', () => {
   it('создаёт ран и отдаёт сводку только участнику', async () => {
     const { p, col, task } = await project()
-    const run = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 0, total: 2, phase: 'Подготовка' } })
+    const run = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 0, total: 2, phase: 'Подготовка' } })
     expect(run.status).toBe('queued')
-    await db.ci.updateCiRun(run.id, { status: 'success', durationMs: 700 })
+    await dbSeed.updateCiRun(db, run.id, { status: 'success', durationMs: 700 })
     expect((await db.ci.getCiRun('alice', run.id))!.run.status).toBe('success')
     // Сводка ранов по задаче.
     const summaries = await db.ci.latestCiRunSummaries(p.id)
@@ -151,10 +152,10 @@ describe('ci: раны, шаги, лог, метрики', () => {
 
   it('success → cancelled сохраняет успех основным результатом и отмену отдельной попыткой', async () => {
     const { p, col, task } = await project()
-    const success = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
-    await db.ci.updateCiRun(success.id, { status: 'success', terminalColumnId: col.id })
-    const cancelled = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
-    await db.ci.updateCiRun(cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
+    const success = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+    await dbSeed.updateCiRun(db, success.id, { status: 'success', terminalColumnId: col.id })
+    const cancelled = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    await dbSeed.updateCiRun(db, cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
 
     const summary = (await db.ci.latestCiRunSummary(task.id))!
     expect(summary.id).toBe(success.id)
@@ -164,10 +165,10 @@ describe('ci: раны, шаги, лог, метрики', () => {
 
   it('отмена перестаёт быть актуальной после ручного переноса на другой этап', async () => {
     const { p, col, task } = await project()
-    const cancelled = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
-    await db.ci.updateCiRun(cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
+    const cancelled = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    await dbSeed.updateCiRun(db, cancelled.id, { status: 'cancelled', terminalColumnId: col.id })
     expect((await db.ci.latestCiRunSummary(task.id))?.status).toBe('cancelled')
-    const other = (await db.projects.createColumn('alice', p.id, 'Другой этап'))!
+    const other = (await dbSeed.createColumn(db, 'alice', p.id, 'Другой этап'))!
     await db.tasks.moveTask('alice', p.id, task.id, { columnId: other.id })
     expect(await db.ci.latestCiRunSummary(task.id)).toBeNull()
   })
@@ -182,24 +183,24 @@ describe('последний актуальный результат задач�
 
   it('новый ран сразу вытесняет старую ошибку, а новый терминальный итог возвращает её при повторном падении', async () => {
     const { p, col, task } = await project()
-    const failed = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
-    await db.ci.updateCiRun(failed.id, { status: 'failed', finishedAt: 2000 })
+    const failed = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
+    await dbSeed.updateCiRun(db, failed.id, { status: 'failed', finishedAt: 2000 })
     expect(await db.tasks.latestTaskRunResult(task.id)).toMatchObject({ id: failed.id, outcome: 'failure' })
 
-    const retry = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 2, phase: 'Очередь' } })
+    const retry = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 2, phase: 'Очередь' } })
     expect(await db.tasks.latestTaskRunResult(task.id)).toMatchObject({ id: retry.id, outcome: 'active', status: 'queued' })
-    await db.ci.updateCiRun(retry.id, { status: 'success', finishedAt: 3000 })
+    await dbSeed.updateCiRun(db, retry.id, { status: 'success', finishedAt: 3000 })
     expect(await db.tasks.latestTaskRunResult(task.id)).toMatchObject({ id: retry.id, outcome: 'success' })
 
-    const failedAgain = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
-    await db.ci.updateCiRun(failedAgain.id, { status: 'timeout', finishedAt: 4000 })
+    const failedAgain = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
+    await dbSeed.updateCiRun(db, failedAgain.id, { status: 'timeout', finishedAt: 4000 })
     expect(await db.tasks.latestTaskRunResult(task.id)).toMatchObject({ id: failedAgain.id, outcome: 'failure', status: 'timeout' })
   })
 
   it('cancelled не является ошибкой', async () => {
     const { p, col, task } = await project()
-    const run = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
-    await db.ci.updateCiRun(run.id, { status: 'cancelled', finishedAt: 2000 })
+    const run = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    await dbSeed.updateCiRun(db, run.id, { status: 'cancelled', finishedAt: 2000 })
     expect(await db.tasks.latestTaskRunResult(task.id)).toMatchObject({ outcome: 'cancelled' })
   })
 })
@@ -298,8 +299,8 @@ describe('ci: метки чатов задач для списка бесед', 
     // по умолчанию поля нет вовсе.
     expect(before[0]).not.toHaveProperty('run')
 
-    const run = await db.ci.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 1, total: 3, phase: 'Модель работает' } })
-    await db.ci.updateCiRun(run.id, { status: 'awaiting_input' })
+    const run = await dbSeed.createCiRun(db, { projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, slotProgress: { done: 1, total: 3, phase: 'Модель работает' } })
+    await dbSeed.updateCiRun(db, run.id, { status: 'awaiting_input' })
     expect((await db.tasks.taskChatBadges('alice'))[0]).not.toHaveProperty('run')
 
     // Кто просит состояние явно — получает ту же сводку, что подсвечивает карточку.
@@ -409,7 +410,7 @@ describe.skipIf(ON_POSTGRES)('ci: расход модели и семантик�
 
   async function run() {
     const { p, task } = await project()
-    return await db.ci.createCiRun({
+    return await dbSeed.createCiRun(db, {
       projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null,
       llmProvider: 'codex', llmModel: 'gpt-5.4', slotProgress: { done: 0, total: 1, phase: '' }
     })

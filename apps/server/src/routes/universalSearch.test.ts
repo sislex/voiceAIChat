@@ -5,6 +5,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { ScopedKnowledgeBase } from '../kb/scoped.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 import { registerUniversalSearch, UniversalSearch, SearchCursorError, type SearchAdapters, type SearchCandidate } from './universalSearch.js'
+import * as dbSeed from '../test/seed.js'
 
 let db: VoiceChatDb
 let app: FastifyInstance
@@ -65,7 +66,7 @@ it('excludes foreign data, secret matches, sensitive file names and revoked rece
   const before = await search('Найти')
   const serialized = JSON.stringify(before)
   expect(serialized).not.toMatch(/hidden-needle|api_key|script|alert|\.env/)
-  await db.projects.addMember('alice', seeded.project.id, 'bob')
+  await dbSeed.addMember(db, 'alice', seeded.project.id, 'bob')
   const shared = await search('Найти', {}, 'bob')
   expect([...new Set(hits(shared).map(hit => hit.source))].sort()).toEqual(['kb', 'projects', 'tasks'])
   await db.projects.removeMember('alice', seeded.project.id, 'bob')
@@ -78,14 +79,14 @@ it('reflects confirmed creates, updates and deletes without index refresh', asyn
   const seeded = await seed()
   expect(hits(await search('updated'))).toEqual([])
   await db.chat.renameConversation('alice', seeded.chat.id, 'updated chat')
-  await db.tasks.updateTask('alice', seeded.project.id, seeded.task.id, { title: 'updated task' })
-  await db.projects.updateProject('alice', seeded.project.id, { name: 'updated project' })
+  await dbSeed.updateTask(db, 'alice', seeded.project.id, seeded.task.id, { title: 'updated task' })
+  await dbSeed.updateProject(db, 'alice', seeded.project.id, { name: 'updated project' })
   await db.kb.saveKbDocument({ id: seeded.doc.id, scope: 'project', projectId: seeded.project.id, title: 'updated KB', body: 'updated body', createdBy: 'alice' })
   files.set(seeded.make.id, [{ path: 'updated.ts', size: 1, updatedAt: 1 }])
   await db.chat.addMessage('alice', seeded.chat.id, 'u1', 'updated message', '12:01')
   expect(new Set(hits(await search('updated')).map(hit => hit.source)).size).toBe(6)
   await db.chat.deleteConversation('alice', seeded.chat.id)
-  await db.tasks.deleteTask('alice', seeded.project.id, seeded.task.id)
+  await dbSeed.deleteTask(db, 'alice', seeded.project.id, seeded.task.id)
   await db.kb.deleteKbDocument(seeded.doc.id)
   files.set(seeded.make.id, [])
   const remaining = hits(await search('updated'))

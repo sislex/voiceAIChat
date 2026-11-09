@@ -1,9 +1,9 @@
 // Домен «ci»: таблицы ci_commands, ci_slot_commands, ci_command_suggestions, ci_events, ci_fix_attempts, ci_gate_results, ci_interactions, ci_llm_configs, ci_stage_llm_configs, ci_run_kb_gaps, ci_run_kb_metrics, ci_run_logs, ci_run_steps, ci_run_tool_calls, ci_run_tool_responses, ci_run_usage, ci_runs, ci_settings, ci_stage_runs, ci_task_browser_checks, ci_task_process_stages, ci_test_events, ci_test_fix_cycles, ci_test_fix_decisions, ci_test_fix_targeted_runs, ci_test_fix_task_state, ci_test_group_configs, ci_test_group_runs, ci_test_runs, ci_test_targeted_runs, ci_workspaces, merge_runs, integration_test_runs, component_qa_runs.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type KbContextMode, type CiBrowserCheck, DEFAULT_CI_BROWSER_CHECK, normalizeCiBrowserCheck, type CiLlmConfig, DEFAULT_CI_CLAUDE_MODEL, CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME, DEFAULT_CI_LLM_CONFIG, type CiRunMode, type CiClarifyLevel, type CiInteraction, type CiInteractionKind, type CiInteractionStatus, type QuestionSpec, type CiGlobalSettings, DEFAULT_CI_GLOBAL_SETTINGS, type CiRun, type CiRunDetail, type CiExecutionLlmSnapshot, type CiStageRun, type CiRunStep, type CiStatus, type CiStepKind, type CiInitiatedBy, type CiSlotProgress, type CiLogLine, type CiFixAttempt, type CiFixDiagnosticContext, type CiTargetedTestRun, type CiTestFailure, type CiWorkspace, type CiWorkspaceReportItem, type CiRunSummary, type CiEventActor, type CiRunUsage, type CiUsageKind, type CiInputSemantics, ciUsageTotals, normCiStageModels, buildCiAutomationProgress } from '@voicechat/shared'
+import { type CiBrowserCheck, DEFAULT_CI_BROWSER_CHECK, normalizeCiBrowserCheck, type CiLlmConfig, CI_KB_UPDATE_COMMAND_ID, CI_KB_UPDATE_COMMAND_NAME, DEFAULT_CI_LLM_CONFIG, type CiInteraction, type CiInteractionKind, type CiInteractionStatus, type QuestionSpec, type CiGlobalSettings, DEFAULT_CI_GLOBAL_SETTINGS, type CiRun, type CiRunDetail, type CiExecutionLlmSnapshot, type CiStageRun, type CiRunStep, type CiStepKind, type CiInitiatedBy, type CiLogLine, type CiFixAttempt, type CiTargetedTestRun, type CiTestFailure, type CiWorkspace, type CiWorkspaceReportItem, type CiRunSummary, type CiEventActor, type CiRunUsage, type CiUsageKind, type CiInputSemantics, ciUsageTotals, normCiStageModels, buildCiAutomationProgress } from '@voicechat/shared'
 import { BaseRepo } from './base.js'
-import { normCiStatus, normKbContextMode, normRunMode, normClarifyLevel, clampClarifyMax, parseJsonValue, mapCiRun, type CiRunRow } from './support.js'
+import { normCiStatus, normRunMode, normClarifyLevel, clampClarifyMax, parseJsonValue, mapCiRun, type CiRunRow } from './support.js'
 
 /** Разбор JSON-объекта из колонки; битое или пустое значение — `null`. */
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
@@ -221,24 +221,6 @@ export class CiRepo extends BaseRepo {
     }
   }
 
-  async setCiLlmConfig(ownerType: 'project' | 'task', ownerId: string, config: CiLlmConfig): Promise<CiLlmConfig> {
-    const provider = config.provider === 'codex' ? 'codex' : 'claude'
-    const model = config.model.trim() || (provider === 'codex' ? 'gpt-5.4' : DEFAULT_CI_CLAUDE_MODEL)
-    const next: CiLlmConfig = {
-      ...(config.llmEngineId ? { llmEngineId: config.llmEngineId } : {}),
-      provider,
-      model,
-      mode: normRunMode(config.mode),
-      clarifyLevel: normClarifyLevel(config.clarifyLevel),
-      clarifyMax: clampClarifyMax(config.clarifyMax)
-    }
-    await this.sql.run(`INSERT INTO ci_llm_configs (owner_type, owner_id, llm_engine_id, provider, model, mode, clarify_level, clarify_max)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(owner_type, owner_id) DO UPDATE SET llm_engine_id=excluded.llm_engine_id, provider=excluded.provider, model=excluded.model,
-           mode=excluded.mode, clarify_level=excluded.clarify_level, clarify_max=excluded.clarify_max`, [ownerType, ownerId, next.llmEngineId, next.provider, next.model, next.mode, next.clarifyLevel, next.clarifyMax])
-    return next
-  }
-
   /** Пользовательские LLM-настройки — последний уровень наследования CI. */
   async ciLlmDefaultsForUser(userId: string): Promise<CiLlmConfig> {
     const settings = await this.repos.settings.getSettings(userId)
@@ -276,13 +258,6 @@ export class CiRepo extends BaseRepo {
 
   // --- Раны и шаги ---
 
-  async createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'explicit_bypass' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): Promise<CiRun> {
-    const id = this.newId()
-    const ts = this.now()
-    await this.sql.run(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, agent_owner_id, agent_owner_name, agent_selection_source, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [id, args.projectId, args.taskId, args.agentId, args.agentOwnerId ?? null, args.agentOwnerName ?? 'неизвестно', args.agentSelectionSource ?? 'unknown', args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts])
-    return mapCiRun((await this.sql.get(`SELECT * FROM ci_runs WHERE id = ?`, [id])) as CiRunRow)
-  }
-
   /**
    * Сколько незавершённых ранов сейчас закреплено за каждой машиной — для
    * распределения параллельных запусков. Ран с пустым `agent_id` (карточки до
@@ -317,35 +292,6 @@ export class CiRepo extends BaseRepo {
     const fixAttempts = ((await this.sql.all(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`, [runId])) as CiFixRow[]).map(mapCiFix)
     const stageRuns = await this.listCiStageRuns(runId)
     return { run, executionLlm: this.ciExecutionLlm(run, stageRuns), stageRuns, steps, fixAttempts, interactions: await this.listCiInteractions(runId) }
-  }
-
-  async updateCiRun(runId: string, patch: { status?: CiStatus; error?: string | null; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; agentSelectionSource?: CiRun['agentSelectionSource']; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): Promise<CiRun | null> {
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
-    if (patch.error !== undefined || patch.status !== undefined) {
-      const error = patch.error?.trim() || (patch.status === 'failed' ? 'Ран завершился с ошибкой до появления подробной диагностики.' : null)
-      set.push('error = ?'); vals.push(error)
-    }
-    if (patch.runColumnId !== undefined) { set.push('run_column_id = ?'); vals.push(patch.runColumnId) }
-    if (patch.terminalColumnId !== undefined) { set.push('terminal_column_id = ?'); vals.push(patch.terminalColumnId) }
-    if (patch.agentId !== undefined) { set.push('agent_id = ?'); vals.push(patch.agentId) }
-    if (patch.agentSelectionSource !== undefined) { set.push('agent_selection_source = ?'); vals.push(patch.agentSelectionSource) }
-    if (patch.workspaceId !== undefined) { set.push('workspace_id = ?'); vals.push(patch.workspaceId) }
-    if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
-    if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
-    if (patch.durationMs !== undefined) { set.push('duration_ms = ?'); vals.push(patch.durationMs) }
-    if (patch.slotProgress !== undefined) { set.push('slot_progress_json = ?'); vals.push(JSON.stringify(patch.slotProgress)) }
-    if (patch.llmEngineId !== undefined) { set.push('llm_engine_id = ?'); vals.push(patch.llmEngineId) }
-    if (patch.llmProvider !== undefined) { set.push('llm_provider = ?'); vals.push(patch.llmProvider) }
-    if (patch.llmModel !== undefined) { set.push('llm_model = ?'); vals.push(patch.llmModel) }
-    if (patch.mode !== undefined) { set.push('mode = ?'); vals.push(normRunMode(patch.mode)) }
-    if (patch.conversationId !== undefined) { set.push('conversation_id = ?'); vals.push(patch.conversationId) }
-    if (patch.modelSessionId !== undefined) { set.push('model_session_id = ?'); vals.push(patch.modelSessionId) }
-    if (patch.fixContext !== undefined) { set.push('fix_context_json = ?'); vals.push(patch.fixContext ? JSON.stringify(patch.fixContext) : null) }
-    if (!set.length) return await this.getCiRunRaw(runId)
-    await this.sql.run(`UPDATE ci_runs SET ${set.join(', ')} WHERE id = ?`, [...vals, runId])
-    return await this.getCiRunRaw(runId)
   }
 
   private ciExecutionLlm(run: CiRun, stageRuns: CiStageRun[]): CiExecutionLlmSnapshot {

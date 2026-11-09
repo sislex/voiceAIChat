@@ -7,6 +7,7 @@ import { VoiceChatDb } from '../db/database.js'
 import { ModuleKnowledgeBaseService } from './sources.js'
 import { ScopedKnowledgeBase } from './scoped.js'
 import { createLocalKbRpc } from './rpc.js'
+import * as dbSeed from '../test/seed.js'
 
 let db: VoiceChatDb
 let root: string
@@ -76,9 +77,9 @@ describe('B01 RPC contract against the embedded knowledge package', () => {
 
   it('serves all usage targets through the database access checks', async () => {
     const project = await db.projects.createProject('admin', { name: 'Project' })
-    const column = await db.projects.createColumn('admin', project.id, 'Work')
+    const column = await dbSeed.createColumn(db, 'admin', project.id, 'Work')
     const task = await db.tasks.createTask('admin', project.id, { columnId: column!.id, title: 'Task' })
-    const run = await db.ci.createCiRun({ projectId: project.id, taskId: task!.id, agentId: null,
+    const run = await dbSeed.createCiRun(db, { projectId: project.id, taskId: task!.id, agentId: null,
       triggeredBy: 'admin', prevColumnId: column!.id, slotProgress: { done: 0, total: 1, phase: '' } })
     const conversation = await db.chat.createConversation('admin')
     const requests: KbUsageRequest[] = [

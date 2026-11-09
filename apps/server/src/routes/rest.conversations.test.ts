@@ -11,6 +11,7 @@ import { setupRestHarness } from './restHarness.js'
 import { skillNameForContextId, toolNameForContextId } from '@voicechat/shared'
 import { enabledContextSkills } from '../turns.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
+import * as dbSeed from '../test/seed.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -414,7 +415,7 @@ describe('REST: conversations/messages/settings', () => {
     const settings = await db.settings.getSettings(U)
     await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'claude', model: 'default' } })
     const project = await db.projects.createProject(U, { name: 'Codex project' })
-    await db.ci.setCiLlmConfig('project', project.id, {
+    await dbSeed.setCiLlmConfig(db, 'project', project.id, {
       provider: 'codex',
       model: 'gpt-5.6-sol',
       mode: 'development',
@@ -437,7 +438,7 @@ describe('REST: conversations/messages/settings', () => {
 
   it('LLM override разговора имеет приоритет над проектом', async () => {
     const project = await db.projects.createProject(U, { name: 'Project defaults' })
-    await db.ci.setCiLlmConfig('project', project.id, {
+    await dbSeed.setCiLlmConfig(db, 'project', project.id, {
       provider: 'codex',
       model: 'gpt-5.6-sol',
       mode: 'development',
@@ -1742,7 +1743,7 @@ describe('REST: conversations/messages/settings', () => {
     const project = await db.projects.createProject(U, { name: 'Проект задач' })
     const board = (await db.tasks.getBoard(U, project.id))!
     const task = (await db.tasks.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Починить гейт' }))!
-    await db.tasks.updateTask(U, project.id, task.id, { description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт' })
+    await dbSeed.updateTask(db, U, project.id, task.id, { description: 'Гейт красный', acceptanceCriteria: 'Зелёный гейт' })
     const chat = (await db.chat.openOrCreateTaskChat(U, project.id, task.id))!
 
     const snap = async (): Promise<{ blocks: Array<{ title: string; text: string }>; item: { enabled: boolean; includedInNextTurn: boolean } }> => {
