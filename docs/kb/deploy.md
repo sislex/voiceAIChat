@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-05
-checked: 23675079d
+updated: 2026-11-09
+checked: 694e6cbdf
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -1053,9 +1053,23 @@ cannot clear its journal. Plain manual invocations retain the existing behavior.
 `--reconcile-operation <id>` acquires the same host lock and observes health and
 readiness without deploying. After confirmed Compose completion it can record the
 exact intended runtime as succeeded, or the exact previous runtime as recovered.
-Recovery is not successful release acceptance. If command completion is unknown
-(including SIGKILL during Compose), observation alone cannot clear the barrier;
-operator recovery is required. Pending/uncertain records block new controlled
+Recovery is not successful release acceptance. A known nonzero Compose exit is
+persisted before observation. If health reports the exact previous commit and
+component readiness passes, the launcher automatically records `recovered`,
+preserving the failed exit code and leaving `composeCompleted` unset. The next
+controlled deployment can then start. Reconcile also closes historical failed
+operations with a nonzero `exitCode` and the exact previous runtime without
+requiring `composeCompleted`; it cannot accept the intended commit without
+successful Compose completion. If command completion is unknown (including
+SIGKILL during Compose), observation alone cannot clear the barrier.
+
+The Dockerfile configures npm fetch retries (three retries, 10–60 second backoff)
+for transient download errors, including vendor archives. The Release Center
+entrypoint `scripts/prod/release-manager-deploy.sh` builds Core synchronously
+after owner-image pinning, with the selected release's application metadata.
+Docker output and a nonzero build exit return directly to the build step, before
+the detached deployment or health polling starts. The detached launcher retains
+its host lock and reuses the build cache during Compose up. Pending/uncertain records block new controlled
 operations and must not be deleted to retry. Normal legacy invocations remain
 available for existing callers; delivery-control must use the controlled form.
 

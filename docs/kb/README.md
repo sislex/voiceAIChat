@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: c3f3326bb test(gates): run Kanban-stand e2e and release tooling only in the release regression … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-05 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-09 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
@@ -44,7 +44,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-05 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-05 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 1 коммит(ов) в areas после проверенного SHA: bfbeee9e9 feat(make): add dedicated assistant mode and context behavior |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: b6c96ac96 test(shared): trim it.each rows that repeat the same branch … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-09 | ✓ |
@@ -65,10 +65,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1468. Последние:
+Всего записей: 1469. Последние:
 
 - [2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-tests-wave1-release-only.md](log/2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-tests-wave1-release-only.md) — tests-wave1-release-only
 - [2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-e2e-core-ui-visual-trim.md](log/2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-e2e-core-ui-visual-trim.md) — e2e-core-ui-visual-trim
+- [2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-deploy-network-recovery.md](log/2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-deploy-network-recovery.md) — deploy-network-recovery
 - [2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-dead-db-repo-methods.md](log/2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-dead-db-repo-methods.md) — dead-db-repo-methods
 - [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sisl-877-make-project-scan-limits.md) — sisl-877-make-project-scan-limits
 - [2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md](log/2026-11-05-pc-radvilovich-tailae39a6-ts-net-sis-l-875-make-large-monorepo-structure.md) — sis-l-875-make-large-monorepo-structure
@@ -76,7 +77,6 @@
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-stands-n-tools.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-stands-n-tools.md) — stands-n-tools
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-stand-research.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-stand-research.md) — stand-research
 - [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-preview-stands.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-preview-stands.md) — project-preview-stands
-- [2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-design-limit.md](log/2026-11-05-alexeys-macbook-air-tailae39a6-ts-net-project-design-limit.md) — project-design-limit
 
 ## Исторические планы
 

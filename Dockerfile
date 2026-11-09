@@ -9,7 +9,8 @@ RUN apt-get update \
 
 COPY . .
 # Electron is only a host integration test dependency; its binary is not used by Core services.
-RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+# Retry interrupted archive downloads, including GitHub vendor tarballs.
+RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --fetch-retries=3 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=60000
 ARG VC_APPLICATION_COMMIT
 RUN VC_APPLICATION_COMMIT="$VC_APPLICATION_COMMIT" npm run build:frontends
 RUN npm run verify:core-ui
