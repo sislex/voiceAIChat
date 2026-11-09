@@ -17,9 +17,9 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-09 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-09 | ✓ |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-10-31 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-04 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-09 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner … |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-02 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c3f3326bb test(gates): run Kanban-stand e2e and release tooling only in the release regression |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-05 | ⚠ 6 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-09 | ✓ |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -45,10 +45,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-05 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-05 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: b6c96ac96 test(shared): trim it.each rows that repeat the same branch … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-09 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-09 | ✓ |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-09 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |

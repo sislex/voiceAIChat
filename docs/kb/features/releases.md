@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: c5fd9ebe4
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -38,6 +38,24 @@ through `KanbanService.board.subscribeReleases`. See
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths
 are owner migration references, not local Core implementations.
+
+## Core build failure reporting
+
+`scripts/prod/release-manager-deploy.sh` builds `voicechat` synchronously with
+the selected release's application metadata after owner-image pinning. Docker
+output and a nonzero build exit return to the Release Center building step before
+the detached launcher starts. The historical background-build description below
+applies to direct launcher invocations, not this entrypoint.
+
+The Dockerfile retries transient npm downloads. A known failed Compose command
+in `deploy.sh` is recovered when the exact previous Core commit and component
+readiness are verified; reconciliation can recover historical nonzero exits
+without `composeCompleted`. Unknown completion still blocks a new operation.
+See [operation status](../deploy.md#controlled-deployment-operation-status).
+
+The current application gate separates development tooling/browser suites from
+release-only suites through `splitReleaseSuites` and `plan.release`; this repair
+does not change that selection or the release contracts.
 
 ## Source-owned tool releases
 

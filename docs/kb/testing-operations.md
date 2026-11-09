@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-09
-checked: 927d6bc37
+checked: c5fd9ebe4
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -18,6 +18,16 @@ areas:
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`
+
+## Deployment failure regression checks
+
+`scripts/application-build.test.mjs` exercises the Dockerfile npm retry flags
+against a local HTTP server that resets the first vendor-archive connection.
+`scripts/affected-check.test.mjs` verifies recovery after a known Compose failure
+at the previous commit, historical reconciliation without `composeCompleted`,
+admission of the next operation, and continued blocking after unknown completion.
+`scripts/prod/test_release_manager_profiles.py` checks that a synchronous Core
+build error returns its output and exit status without detaching the launcher.
 
 ## Browser temporary paths and release verification
 

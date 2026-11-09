@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-11-04
-checked: 26f657327
+updated: 2026-11-09
+checked: c5fd9ebe4
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
@@ -27,7 +27,9 @@ The retained Compose fixture builds `server-runtime` and `storybook-runtime`,
 binds their ports to loopback, uses a separate preview-data volume and applies
 CPU/memory limits and health checks. Core's Dockerfile now verifies published
 Core UI assets and copies Storybook from `@sislexa/core-ui/storybook`; it does
-not build UI sources with `build:storybook`.
+not build UI sources with `build:storybook`. Its shared build stage retries npm
+archive downloads three times with 10–60 second backoff. The preview Compose
+targets, isolation and lifecycle contracts are unchanged by that retry policy.
 
 SK-115 changes the shared registry only to dispatch/correlate operator switches.
 It adds no preview start, stop, migration or recovery operation. See
