@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: 2dfd7992
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -15,10 +15,13 @@ areas:
 задач B01 и C01. В Core нет локального `docs/plans/make-browser.md`, поэтому имя
 плана приведено как текст, без относительной ссылки.
 
-Этот файл — тема Core для поиска сведений о make-browser. Исполнитель и браузер
-разделены. Claude или Codex выполняет ход, а страница открывается в браузере привязанного чата Web Reader или Playwright Reader того же
-пользователя. Чат Make хранит ссылку на такой чат в `conversations.make_browser_session`
-(`Conversation.makeBrowserSessionId`).
+Make-browser — браузерный маршрут ассистента Make, а не отдельный исполнитель:
+Claude или Codex выполняет ход, а страница открывается в браузере привязанного
+чата Web Reader или Playwright Reader того же пользователя. Чат Make хранит
+ссылку на Reader-чат в `conversations.make_browser_session`
+(`Conversation.makeBrowserSessionId`). Если выбран embedded stand, он имеет
+приоритет; иначе `makeBrowserSession` проверяет владельца, вид Reader и capability,
+после чего выбирает пользовательскую panel либо server-side Chromium.
 
 - `GET /api/conversations/:id/make-browser` — сессии пользователя в его пространстве:
   движок (`panel` или `chromium`), место выполнения (`user_panel` или

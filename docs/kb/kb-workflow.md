@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-11-09
-checked: 5ceebde17
+checked: 2dfd7992
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -21,12 +21,16 @@ areas:
 ## Scoped owner-gate diagnostics (SK-115)
 
 The stale-topic rows now use `после проверенного SHA:` before commit details.
-The footer retains `после сверки:`. Owner/merge workflows split the stale section
-at that footer text; using it inside each row previously truncated discovery at
-the first commit-based stale topic. The unchanged workflow parser is exercised
-against real strict CLI output with three stale topics, including a nested path,
-in `packages/kb-tools/cli.test.mjs`. Strict mode still exits 1 for stale topics,
-missing package instructions or broken links.
+The footer retains `после сверки:`. The pinned KB CLI 0.1.1 used `после сверки:`
+both inside every commit-based diagnostic row and in the footer; owner/merge
+workflows split the stale section at the first occurrence, so the supplied owner
+gate lost the topic list instead of reporting the pre-existing stale topics.
+The row wording was changed without changing that workflow parser. Its regression
+test feeds real strict CLI output with three stale topics, including a nested path,
+through the same delimiter logic in `packages/kb-tools/cli.test.mjs`. All nine
+topics hidden in the affected run were reconciled with their source before the
+strict check passed. Strict mode still exits 1 for stale topics, missing package
+instructions or broken links.
 
 Core uses `packages/kb-tools/cli.mjs`; the scripts under `scripts/kb*` are
 compatibility adapters. The repository-independent configuration defaults and
