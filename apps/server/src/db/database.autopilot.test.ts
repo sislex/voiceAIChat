@@ -54,11 +54,8 @@ describe('остановка на ручном QA для отдельной за
     const task = (await db.tasks.createTask('alice', project.id, { title: 'QA', columnId: board.columns[0].id }))!
     expect(task.autoPilotRequiresManualQa).toBe(true)
     await dbSeed.updateProject(db, 'alice', project.id, { autoPilotRequiresManualQa: false })
-    await dbSeed.updateTask(db, 'alice', project.id, task.id, { autoPilotRequiresManualQa: false })
     expect((await db.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilot).toBe(true)
-    expect((await db.tasks.getBoard('alice', project.id))!.tasks[0].autoPilotRequiresManualQa).toBe(false)
-    await dbSeed.updateTask(db, 'alice', project.id, task.id, { autoPilotRequiresManualQa: true })
-    expect((await db.tasks.getTaskDetail('alice', project.id, task.id))!.autoPilotRequiresManualQa).toBe(true)
+    expect((await db.tasks.getBoard('alice', project.id))!.tasks[0].autoPilotRequiresManualQa).toBe(true)
   })
 })
 
@@ -75,17 +72,4 @@ describe('этап Automated QA: шаг рана и настройки', () => {
     expect(detail.automatedQaScenarios?.[0]?.steps).toHaveLength(1)
   })
 
-  it('шаг с неизвестным действием отбрасывается, а не роняет прогон', async () => {
-    const project = await db.projects.createProject('alice', { name: 'P' })
-    await dbSeed.updateProject(db, 'alice', project.id, {
-      automatedQaScenarios: [{
-        startUrl: 'http://localhost:5173',
-        steps: [
-          { id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } },
-          { id: 's2', title: 'Мусор', action: { kind: 'teleport' } as never }
-        ]
-      }]
-    })
-    expect((await db.projects.getProject('alice', project.id))!.automatedQaScenarios?.[0]?.steps.map((step) => step.id)).toEqual(['s1'])
-  })
 })

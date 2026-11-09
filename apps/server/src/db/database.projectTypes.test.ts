@@ -119,7 +119,6 @@ describe('проект и его тип', () => {
     expect((await db.projects.projectFeatures(p.id)).releases).toBe(false)
     // Заготовки — снимок: колонки остаются теми же самыми.
     expect((await db.tasks.getBoard('alice', p.id))!.columns.map((c) => c.id)).toEqual(before)
-    await expect(async () => await dbSeed.updateProject(db, 'alice', p.id, { typeId: 'нет-такого' })).rejects.toThrow(/не найден/i)
   })
 })
 

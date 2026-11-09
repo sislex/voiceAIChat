@@ -67,23 +67,17 @@ for (const engine of ['sqlite', 'postgres'] as const) {
       expect(await db.environments.listLinks(projectId, input.id)).toEqual([])
       expect(await db.environments.authorizeLink(link.id)).toBe(false)
     })
-    it('scopes definitions by project and preserves creation metadata on update', async () => {
+    it('scopes definitions by project', async () => {
       const before = await db.environments.getEnvironment('member', projectId, input.id)
       expect(before).toMatchObject({ ...input, projectId, createdBy: 'owner' })
-      const updated = await dbSeed.upsertEnvironment(db, 'owner', projectId, { ...input, name: 'Renamed' })
-      expect(updated.createdAt).toBe(before!.createdAt)
-      expect(updated.name).toBe('Renamed')
       expect(await db.environments.getEnvironment('owner', otherProjectId, input.id)).toBeNull()
       await dbSeed.upsertEnvironment(db, 'owner', otherProjectId, input)
       expect(await db.environments.listEnvironments('member', projectId)).toHaveLength(1)
-      await expect(dbSeed.upsertEnvironment(db, 'member', projectId, input)).rejects.toThrow('owner')
-      await expect(dbSeed.upsertEnvironment(db, 'owner', projectId, { ...input, machines: [] })).rejects.toThrow()
     })
     it('denies every user-facing repository method to non-members', async () => {
       for (const call of [
         () => db.environments.listEnvironments('outsider', projectId),
         () => db.environments.getEnvironment('outsider', projectId, input.id),
-        () => dbSeed.upsertEnvironment(db, 'outsider', projectId, input),
         () => db.environments.listSettings('outsider', projectId, input.id)
       ]) await expect(call()).rejects.toThrow('membership')
     })

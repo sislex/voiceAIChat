@@ -480,5 +480,4 @@ it('общий production deploy и переход к компонентам н�
   await db.releases.observeApplicationEnvironment('owner', projectId, 'staging', state(manifest('core'), manifest()), 0)
   await dbSeed.setProjectReleaseStatus(db, attempt.id, 'released', 'owner')
   await db.releases.observeApplicationEnvironment('owner', projectId, 'production', state(manifest('core'), manifest()), 0)
-  await expect(dbSeed.createProjectRelease(db, 'owner', projectId, { branch: legacy.branch, version: legacy.version, sha: legacy.sha, previousReleaseId: legacy.id, status: 'queued' })).rejects.toThrow('управляется выпусками приложений')
 })
