@@ -109,7 +109,7 @@ export interface TurnManagerDeps {
   /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
   widgetContexts?: { remember(conversationId: string, turnId: string, context: WidgetAssistantContext): void }
   /** Make глазами хода: контекст проекта в промпт, снимок «До правок» для meta, scope-источники рана (make/service.ts). */
-  make?: Pick<MakeService, 'promptContext' | 'turnSnapshot' | 'taskSources'>
+  make?: Pick<MakeService, 'promptContext' | 'browserTarget' | 'turnSnapshot' | 'taskSources'>
   /** Контекст студии картинок: список галереи + правило показа результата. */
   studioContext?: (conversationId: string) => Promise<string>
   /** Подписанные токены ходов для инструментов превью (`reader/turnToken.ts`): проверяет их любой процесс. */
@@ -802,9 +802,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const studioContextBlock = workspaceMode && !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
       ? await deps.studioContext(conversationId).catch(() => '')
       : ''
-    // Make: the browser belongs to a bound Web Reader or Playwright Reader conversation of
-    // the same user. The executor (Claude or Codex) is independent of that engine.
-    const makeBrowser = workspaceMode && !req.delegation && conv?.assistantKind === 'make' ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities) : null
+    // A selected conversation stand is the default Make browser. A bound Reader remains a
+    // compatibility fallback for Make conversations that do not yet have a stand target.
+    const makeStandBrowser = workspaceMode && !req.delegation && conv?.assistantKind === 'make'
+      ? await deps.make?.browserTarget?.(conversationId).catch(() => null) ?? null
+      : null
+    const makeBrowser = workspaceMode && !req.delegation && conv?.assistantKind === 'make' && !makeStandBrowser
+      ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities)
+      : null
     const makeBrowserBlock = makeBrowser ? makeBrowserPromptBlock(makeBrowser) : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
@@ -990,6 +995,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       previewSurface = 'make-preview'
       prompt += '\n\n' + [
         '## Превью Make (make-preview)',
+        ...(makeStandBrowser ? [`Текущий тестовый стенд: «${makeStandBrowser.name}»${makeStandBrowser.url ? ` (${makeStandBrowser.url})` : ''}. Смена роли test через stand_roles переключает следующие браузерные действия.`] : []),
         'Инструменты mcp__browser__* выполняют действия в открытом превью пользователя в панели Make. Пользователь видит каждое действие.',
         'Сначала вызови browser_capabilities и используй только поддерживаемые действия. Для визуальной проверки используй screenshot, если он поддерживается, иначе read.',
         'Ошибка make_preview_closed означает, что нужно попросить пользователя открыть превью Make.',
