@@ -42,8 +42,11 @@ const SKIP_REQUEST = new Set(['host', 'connection', 'content-length', 'transfer-
 // `set-cookie` fetch склеивает в одну строку — переносим отдельно через getSetCookie().
 const SKIP_RESPONSE = new Set(['connection', 'content-length', 'transfer-encoding', 'content-encoding', 'keep-alive', 'set-cookie'])
 
+export const MAKE_PROXY_BODY_LIMIT = 56 * 1024 * 1024
+
 export function registerMakeProxy(app: FastifyInstance, opts: MakeProxyOptions): void {
-  registerServiceProxy(app, { name: 'make', baseUrl: opts.makeUrl, prefixes: MAKE_PROXY_PREFIXES, ...opts })
+  // Make accepts ZIP imports up to ~40 MiB sent as base64 (56 MiB body); the proxy must not cut them earlier.
+  registerServiceProxy(app, { name: 'make', baseUrl: opts.makeUrl, prefixes: MAKE_PROXY_PREFIXES, bodyLimit: MAKE_PROXY_BODY_LIMIT, ...opts })
 }
 
 export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOptions): void {
