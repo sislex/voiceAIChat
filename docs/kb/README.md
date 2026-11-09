@@ -44,7 +44,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-05 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-05 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 927d6bc37 refactor(server): delete repository methods whose workflow moved to Kanban … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 1 коммит(ов) в areas после проверенного SHA: bfbeee9e9 feat(make): add dedicated assistant mode and context behavior |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: b6c96ac96 test(shared): trim it.each rows that repeat the same branch … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-05 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 34bab5844 feat(make-bridge): userStand research operation over browser-runner … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-09 | ✓ |
