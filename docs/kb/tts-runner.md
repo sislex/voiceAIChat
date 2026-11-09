@@ -1,7 +1,7 @@
 ---
 title: TTS Runner: ресурсный API, движки и жизненный цикл WAV
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-09
+checked: c5fd9ebe4
 areas:
   - apps/server/src/tts
   - apps/server/src/tts/client/types.ts
@@ -15,6 +15,13 @@ areas:
 # TTS Runner: ресурсный API, движки и жизненный цикл WAV
 
 Module details: `voice:README.md`
+
+## Core image build boundary
+
+Core's Dockerfile retries transient npm archive downloads three times with
+10–60 second backoff. It does not build the extracted Voice runner. The reviewed
+`server.ts` changes wire Make user stands; the voice clients, session protocol,
+runner URLs/tokens and Compose wiring are unchanged.
 
 ## Граница подсистемы
 

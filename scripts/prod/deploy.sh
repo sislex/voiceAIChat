@@ -232,6 +232,9 @@ with os.fdopen(fd,'r+') as guard:
  elif action=='composed':
   if record['state']!='running' or record.get('pid')!=int(pid): raise SystemExit('operation_owner_changed')
   record['composeCompleted']=True
+ elif action=='compose-failed':
+  if record['state']!='running' or record.get('pid')!=int(pid): raise SystemExit('operation_owner_changed')
+  record['exitCode']=int(value)
  elif action=='finish':
   if record['state'] not in ('accepted','running'): raise SystemExit('operation_terminal')
   code=int(value)
@@ -241,8 +244,11 @@ with os.fdopen(fd,'r+') as guard:
   if any(record['request'][k]!=request[k] for k in ('repository','healthUrl','hostLock')): raise SystemExit('operation_environment_changed')
   if record['request'].get('delivery')!=request.get('delivery'): raise SystemExit('operation_delivery_identity_changed')
   if record['state'] not in ('accepted','running','uncertain'): output(record);sys.exit(0)
-  if record.get('phase')=='deploying' and not record.get('composeCompleted'): raise SystemExit('deployment_command_completion_unknown')
-  if value==record['request']['expectedCommit']: record['state']='succeeded'
+  failed_at_previous=record.get('exitCode',0)!=0 and value and value==record.get('previousCommit')
+  if record.get('phase')=='deploying' and not record.get('composeCompleted') and not failed_at_previous:
+   raise SystemExit('deployment_command_completion_unknown')
+  if failed_at_previous: record['state']='recovered'
+  elif value==record['request']['expectedCommit']: record['state']='succeeded'
   elif value and value==record.get('previousCommit'): record['state']='recovered'
   else: raise SystemExit('observed_commit_does_not_resolve_operation')
   record.update(observedCommit=value,reconciled=True)
@@ -486,8 +492,24 @@ if [[ -n $operation_id ]]; then
   operation_record phase "$previous" >/dev/null
 fi
 log 'docker compose up -d --build'
-app_compose up -d --build
-[[ -z $operation_id ]] || operation_record composed >/dev/null
+if app_compose up -d --build; then
+  [[ -z $operation_id ]] || operation_record composed >/dev/null
+else
+  code=$?
+  if [[ -n $operation_id ]]; then
+    # A returned nonzero command is distinct from SIGKILL/unknown completion.
+    operation_record compose-failed "$code" >/dev/null
+    if observed=$(observed_commit) && [[ $observed == "$previous" ]] &&
+       app_compose exec -T voicechat node /app/scripts/component-readiness.mjs >/dev/null &&
+       operation_record reconcile "$observed" >/dev/null; then
+      log 'Compose failed; previous runtime verified, operation recovered'
+    else
+      operation_record finish "$code" >/dev/null
+    fi
+    trap - EXIT
+  fi
+  exit "$code"
+fi
 
 log 'ждём /api/health'
 for ((i = 1; i <= HEALTH_TRIES; i++)); do

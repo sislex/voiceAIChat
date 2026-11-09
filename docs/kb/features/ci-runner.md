@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-11-09
-checked: 5ceebde17
+checked: bc7d4930c
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -90,7 +90,10 @@ log support in `db/repos/ci.ts`, Automation Runner and the machine/MCP/KB ports.
 Workflow mutation methods were removed; fixture-only writers now live in
 `apps/server/src/test/seed.ts`, which awaits database readiness and enters the
 same port lane on SQLite and Postgres. `getCiRunLog` is no longer a Core
-repository method. Execution hooks and cleanup managers
+repository method.
+The Core Docker build retries transient npm archive downloads three times with
+10–60 second backoff. This changes image preparation, not CI stage selection.
+Execution hooks and cleanup managers
 run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
 
 The [ownership map](../projects.md#kanban-implementation-ownership) explains

@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
 updated: 2026-11-09
-checked: 5ceebde17
+checked: bc7d4930c
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts

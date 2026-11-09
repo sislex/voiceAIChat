@@ -10,6 +10,39 @@ import {
 } from './application-build.mjs'
 
 
+test('Docker npm ci retries a reset vendor archive connection', async () => {
+  const { createServer } = await import('node:http')
+  const { execFile, spawnSync } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const root = mkdtempSync(join(tmpdir(), 'npm-retry-'))
+  let requests = 0
+  const server = createServer((req, res) => {
+    requests++
+    if (requests === 1) { req.socket.destroy(); return }
+    res.end(readFileSync(join(root, 'vendor.tgz')))
+  })
+  try {
+    mkdirSync(join(root, 'package'))
+    writeFileSync(join(root, 'package/package.json'), JSON.stringify({ name: 'retry-fixture', version: '1.0.0' }))
+    const packed = spawnSync('tar', ['-czf', join(root, 'vendor.tgz'), '-C', root, 'package'])
+    assert.equal(packed.status, 0)
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${server.address().port}/vendor.tgz`
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'consumer', version: '1.0.0', dependencies: { 'retry-fixture': url } }))
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ name: 'consumer', version: '1.0.0', lockfileVersion: 3,
+      packages: { '': { name: 'consumer', version: '1.0.0', dependencies: { 'retry-fixture': url } },
+        'node_modules/retry-fixture': { version: '1.0.0', resolved: url } } }))
+    const dockerfile = readFileSync(new URL('../Dockerfile', import.meta.url), 'utf8')
+    const flags = dockerfile.match(/^RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci (.+)$/m)[1].split(' ')
+    await promisify(execFile)('npm', ['ci', ...flags, '--cache', join(root, 'cache'), '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: root, timeout: 90000 })
+    assert.ok(requests >= 2)
+    assert.equal(JSON.parse(readFileSync(join(root, 'node_modules/retry-fixture/package.json'))).version, '1.0.0')
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('неизвестное приложение и небезопасная версия отклоняются до сборки', () => {
   assert.throws(() => applicationBuildPaths('unknown'))
   assert.throws(() =>

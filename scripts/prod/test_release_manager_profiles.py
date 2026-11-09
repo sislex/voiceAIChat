@@ -14,12 +14,14 @@ BROWSER = 'ghcr.io/sislex/playwrightreader-browser:' + SHA
 
 
 class ReleaseManagerProfilesTest(unittest.TestCase):
-    def run_wrapper(self, voice='on'):
+    def run_wrapper(self, voice='on', fail_build=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
         helpers = root / 'scripts/prod'
         helpers.mkdir(parents=True)
+        (root / 'apps/server').mkdir(parents=True)
+        (root / 'apps/server/release.json').write_text(json.dumps({'apiVersion': '1.0.0', 'dataVersion': '1.0.0'}))
         for name in ['compose_env.py', 'local_image_pins.py']:
             shutil.copyfile(HERE / name, helpers / name)
         (helpers / 'owner_image_switches.py').write_text('import json\nprint(json.dumps(' + repr({'browser-runner': BROWSER}) + '))\n')
@@ -50,6 +52,10 @@ if args[:2]==['compose','config']:
     print(json.dumps({'services':services}))
 elif args[:2]==['image','inspect']:
     print('sha256:'+'a'*64)
+elif args==['compose','build','voicechat']:
+    if os.environ.get('FAIL_BUILD')=='1':
+        print('npm error ECONNRESET socket hang up', file=sys.stderr)
+        raise SystemExit(17)
 elif args[:1]!=['pull']:
     raise SystemExit('Unexpected Docker invocation: '+repr(args))
 ''',
@@ -59,7 +65,7 @@ elif args[:1]!=['pull']:
             path.write_text(content); path.chmod(0o700)
         env = {k: v for k, v in os.environ.items() if not k.startswith('VC_') and k not in ['COMPOSE_PROFILES', 'COMPOSE_FILE']}
         env.update(PATH=str(root) + ':' + env['PATH'], FIXTURE_ROOT=str(root), VC_RELEASE_VERSION='1.0.0',
-                   VC_RELEASE_EXPECTED_COMMIT=SHA, VC_VOICE=voice,
+                   VC_RELEASE_EXPECTED_COMMIT=SHA, VC_VOICE=voice, FAIL_BUILD='1' if fail_build else '0',
                    VC_LLM_RUNNER_CLAUDE_URL='http://runner', VC_LLM_RUNNER_CODEX_URL='http://runner')
         result = subprocess.run(['bash', str(root / 'wrapper')], cwd=root, env=env, capture_output=True, text=True)
         return result, root
@@ -75,6 +81,12 @@ elif args[:1]!=['pull']:
         self.assertIn('image: "' + BROWSER + '"', pins[0].read_text())
         self.assertIn('pull_policy: never', pins[0].read_text())
         self.assertEqual((root / 'launched').read_text().splitlines()[0], calls[0]['profiles'])
+
+    def test_build_error_returns_to_release_step_without_detaching(self):
+        result, root = self.run_wrapper(fail_build=True)
+        self.assertEqual(result.returncode, 17)
+        self.assertIn('npm error ECONNRESET socket hang up', result.stderr)
+        self.assertFalse((root / 'launched').exists())
 
     def test_voice_off_is_respected_before_pin_generation(self):
         result, root = self.run_wrapper('off')
