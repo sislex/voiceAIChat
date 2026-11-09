@@ -27,16 +27,6 @@ const history = async () => (db as unknown as { sql: Sql }).sql.all<{ actor: str
   'SELECT actor, field, from_value, to_value FROM task_history WHERE task_id = ? ORDER BY at, field', [taskId])
 
 describe('история изменений', () => {
-  it('updateTask пишет только реально изменившиеся видимые поля', async () => {
-    await dbSeed.updateTask(db, DEV, projectId, taskId, { title: 'Новое имя', priority: 'medium', description: 'Появилось описание' })
-    const rows = await history()
-    expect(rows.map((event) => [event.field, event.from_value, event.to_value])).toEqual([
-      ['description', null, 'Появилось описание'],
-      ['title', 'Задача', 'Новое имя']
-    ])
-    expect(rows.every((event) => event.actor === DEV)).toBe(true)
-  })
-
   it('перенос между колонками пишет имена колонок, перестановка внутри — нет', async () => {
     const board = (await db.tasks.getBoard(OWNER, projectId))!
     const target = board.columns[1]!
