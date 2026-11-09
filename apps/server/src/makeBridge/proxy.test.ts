@@ -10,7 +10,7 @@ let seen: Array<{ method: string; url: string; headers: Record<string, unknown>;
 
 async function setup(makeDown = false): Promise<void> {
   seen = []
-  make = Fastify()
+  make = Fastify({ bodyLimit: 64 * 1024 * 1024 })
   make.removeAllContentTypeParsers()
   make.addContentTypeParser('*', { parseAs: 'string' }, (_req, body, done) => done(null, body))
   make.all('/api/make/*', async (req, reply) => {
@@ -49,6 +49,14 @@ describe('registerMakeProxy', () => {
     expect(seen[0]).toMatchObject({ method: 'PUT', url: '/api/make/c1/file?rev=3', body: '{"path":"a.css","content":"x"}' })
     expect(seen[0]!.headers).toMatchObject({ authorization: 'Bearer t', cookie: 'vc_session=s', 'x-vc-csrf': 'c', 'content-type': 'application/json', 'x-forwarded-host': 'stand.local', 'x-request-id': expect.any(String) })
     expect(seen[0]!.headers.host).not.toBe('stand.local')
+  })
+
+  it('passes a ZIP import above the default 16 MiB through to Make', async () => {
+    await setup()
+    const payload = JSON.stringify({ dataBase64: 'A'.repeat(20 * 1024 * 1024) })
+    const res = await core.inject({ method: 'POST', url: '/api/make/c1/import', headers: { 'content-type': 'application/json' }, payload })
+    expect(res.statusCode).toBe(201)
+    expect(seen[0]!.body.length).toBe(payload.length)
   })
 
   it('DELETE без тела уходит без content-type — иначе Fastify у Make отвечал бы 400 на пустой JSON', async () => {
