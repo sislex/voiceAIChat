@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
 updated: 2026-11-09
-checked: 5ceebde17
+checked: 2d771f92
 areas:
   - package.json
   - packages/shared/tsconfig.json
@@ -71,11 +71,14 @@ use the owner package instructions for those commands.
 (onDone хода, cancel рана, статус в базе) ничего не гарантируют: утверждение должно ждать наблюдаемое
 следствие — `await turns.idle()`, `vi.waitFor(async () => expect(await db….).toBe(…))`, пустой
 `activeRunIds()`, терминальный статус релиза. Transport `open` does not mean
-that server subscriptions are ready. `claude.active` confirms the turn feed,
-but is sent before `resumeQueues` and the awaited agents snapshot. For Kanban
-notifications, `eventsDelivery.test.ts` waits for `agents`: notification and
-board subscriptions are installed in the same synchronous continuation after
-that snapshot. It then uses `vi.waitFor` for the expected notification frames. То же правило и для
+that server subscriptions are ready. `claude.active` confirms only the turn
+feed and is sent before `resumeQueues` and the awaited agents snapshot. In
+`eventsDelivery.test.ts`, `connect` waits for the `agents` frame before
+publishing a Kanban notification: `session.ts` sends that snapshot after the
+last awaited setup step, then installs notification and board listeners in the
+same synchronous continuation. Expected notification frames are also awaited
+with `vi.waitFor`; this readiness barrier, rather than a transport event or a
+fixed delay, is what makes the test portable between SQLite and Postgres. То же правило и для
 тестов межпроцессных мостов: RPC зеркала (`machinesBridge/httpMachines.test.ts`) — настоящий HTTP-запрос к
 фейковому соседу, события — кадр WebSocket, и фиксированная пауза здесь такой же таймер. Пауза в 30 мс
 проходила на свободной машине и разваливалась в полном прогоне: под параллельной нагрузкой тест падал

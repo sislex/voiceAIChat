@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-11-09
-checked: 5ceebde17
+checked: 2d771f92
 
 areas:
   - packages/shared/src/projects.ts
@@ -31,9 +31,11 @@ release, autopilot and preview execution. Core supports remote/off Kanban only.
 `apps/server/src/kanban/boundary.test.ts` prohibits local manager/route copies.
 Core retains public Shared contracts, SQL schema, the repository methods still
 used by Core and the `kanban/core.ts` and `kanban/service.ts` ports. Kanban-only
-workflow writers (preparation, QA, merge, autopilot) have been removed from the
-Core repositories. Fixture-only writers live in `apps/server/src/test/seed.ts`;
-they await database readiness and use the port lane on SQLite and Postgres. `kanbanBridge/proxy.ts` forwards
+workflow writers for preparation, QA, merge and autopilot have been removed
+from the Core repositories; `apps/server/src/db/repos/qa.ts` now keeps an empty
+`QaRepo` domain class solely for table ownership. Fixture-only writers live in
+`apps/server/src/test/seed.ts`; its shared context waits for database readiness
+and enters the same port lane on SQLite and Postgres. `kanbanBridge/proxy.ts` forwards
 project/task APIs after Core authorization; specific Core routes still take
 precedence over the wildcard proxy. The remote bridge receives board, run,
 preparation, QA, repository, release and notification events for Core sessions.
