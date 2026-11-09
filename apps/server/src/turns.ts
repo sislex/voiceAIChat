@@ -802,8 +802,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const studioContextBlock = workspaceMode && !req.delegation && conv?.assistantKind === 'images' && deps.studioContext
       ? await deps.studioContext(conversationId).catch(() => '')
       : ''
-    // A selected conversation stand is the default Make browser. A bound Reader remains a
-    // compatibility fallback for Make conversations that do not yet have a stand target.
+    // A selected embedded stand is the default Make browser. A separate stand window reports
+    // no embedded target and therefore keeps its bound Playwright Reader route.
     const makeStandBrowser = workspaceMode && !req.delegation && conv?.assistantKind === 'make'
       ? await deps.make?.browserTarget?.(conversationId).catch(() => null) ?? null
       : null

@@ -1693,7 +1693,13 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     await db.chat.setConversationPreviewUrl(U, reader.id, 'https://example.com/', 'chromium')
     await db.chat.setConversationMakeBrowserSession(U, make.id, reader.id)
     const rec = recorder(); const tool = tokens()
-    const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool, makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    const makeService = {
+      browserTarget: async () => null,
+      promptContext: async () => '',
+      turnSnapshot: () => undefined,
+      taskSources: () => [],
+    } as never
+    const turns = createTurnManager({ db: await db, claude: rec.client, make: makeService, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool, makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
     await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'прочитай сайт' }] })
     expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${reader.id}`)}`)
     expect(rec.last()?.previewSurface).toBe('chromium')
@@ -1751,7 +1757,7 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
-  it('выбранный стенд Make имеет приоритет над прежней привязкой Reader', async () => {
+  it('выбранный встроенный стенд Make имеет приоритет над прежней привязкой Reader', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make')
     const reader = await db.chat.createConversation(U, 'Старый Reader', 'web-recorder')
     await db.chat.setConversationPreviewUrl(U, reader.id, 'https://old-reader.example/', 'chromium')
