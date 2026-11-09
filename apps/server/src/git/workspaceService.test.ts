@@ -138,6 +138,30 @@ const expectGitError = async (promise: Promise<unknown>, code: string, status?: 
   return gitError
 }
 
+describe('compare references', () => {
+  it.each([
+    [0, 3, true], [2, 3, false], [0, 0, true]
+  ])('returns ahead=%s behind=%s contained=%s on read-only workspaces', async (ahead, behind, contained) => {
+    const { service, exec, fsWrite } = setup({ canWrite: false, allowWrite: false,
+      outputs: [`==VC:counts==\n${ahead}\t${behind}\n==VC:mergebase==\n${SHA}\n==VC:done==`] })
+    expect(await service.compare('bob', 'p1', 'ws:ws-1', 'origin/dev', 'feature/x')).toEqual({ ahead, behind, contained, mergeBase: SHA })
+    expect(exec.mock.calls[0][1]).not.toMatch(/git (checkout|merge |fetch)/)
+    expect(fsWrite).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when fetching fails', async () => {
+    const { service, exec } = setup({ outputs: [{ output: 'fetch failed', exitCode: 128 }] })
+    await expect(service.compare('bob', 'p1', 'ws:ws-1', 'origin/dev', 'HEAD', true)).rejects.toMatchObject({ code: 'git_failed' })
+    expect(exec.mock.calls[0][1]).toContain('git fetch --quiet origin')
+  })
+
+  it('rejects invalid references without executing commands', async () => {
+    const { service, exec } = setup()
+    await expect(service.compare('bob', 'p1', 'ws:ws-1', '--all', 'HEAD')).rejects.toMatchObject({ code: 'invalid_ref' })
+    expect(exec).not.toHaveBeenCalled()
+  })
+})
+
 describe('резолвер рабочих копий', () => {
   it('список собирается из БД без единого обращения к машине', async () => {
     const { service, exec } = setup()

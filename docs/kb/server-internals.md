@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-09
-checked: 5ceebde17
+checked: 547a88819
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -953,6 +953,26 @@ the `statusCode` and code of errors that carry them: stand proxy
 exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
+
+### Comparing conversation branches with dev
+
+Stand Git accepts `compare {base, head, fetch?}`. For each component, compare
+its conversation branch (or commit SHA) as `head` against `base: origin/dev`,
+with `fetch: true` for current remote evidence. `ahead` counts commits exclusive
+to head, `behind` counts commits exclusive to base, `mergeBase` is the common
+ancestor SHA (null for unrelated histories), and `contained` is true exactly
+when ahead is zero. Upstream status alone does not prove delivery to dev.
+
+`GitWorkspaceService.compare` validates both refs, optionally fetches origin,
+resolves both to commits and runs rev-list/merge-base under the existing
+workspace lock and command policy. A failed fetch or unresolved ref fails the
+operation; it never falls back to stale success. It requires read access and
+does not checkout, merge, or edit the worktree. Component routing uses the same
+conversation worktree and authorization as other stand Git reads.
+Core's RPC adapter validates compare inputs/results locally for compatibility
+with the pinned pre-compare Make contract; the owner contract exposes the same
+operation to Make clients.
+
 
 See [conversation stand worktrees](#make-conversation-stand-worktrees) for local
 multi-repository bindings and component routing.

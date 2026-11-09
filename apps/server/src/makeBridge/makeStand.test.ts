@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { makeStandResultSchema, validateMakeStandResult, type MakeStandOperation } from '@voicechat/make-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
-import { MakeProjectAdapters } from './projectAdapters.js'
+import { extendedStandOperationSchema, MakeProjectAdapters } from './projectAdapters.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 import { makeStandPreviewAccess } from './previewAccess.js'
 import type { StandMachines } from './standWorkspace.js'
@@ -35,6 +35,7 @@ function fixture(component = 'core-ui') {
     branches: vi.fn(async () => ({ current: 'make/test', branches: [{ name: 'make/test', remote: false }] })),
     pull: vi.fn(async () => ({ pulled: 1 })), commit: vi.fn(async () => ({ sha: 'sha' })),
     push: vi.fn(async () => ({ branch: 'make/test', sha: 'sha' })), createBranch: vi.fn(async () => ({})),
+    compare: vi.fn(async () => ({ ahead: 0, behind: 2, mergeBase: 'a'.repeat(40), contained: true })),
     atWorkingCopy: vi.fn()
   }
   git.atWorkingCopy.mockReturnValue(git)
@@ -76,6 +77,20 @@ function fixture(component = 'core-ui') {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it.each([true, false])('compares the conversation worktree read-only (contained=%s)', async contained => {
+    const f = fixture()
+    f.bind()
+    f.git.compare.mockResolvedValue({ ahead: contained ? 0 : 1, behind: 2, mergeBase: 'a'.repeat(40), contained })
+    const result = await f.adapter.makeStand('alice', 'conversation', extendedStandOperationSchema.parse({
+      op: 'git', operation: { op: 'compare', base: 'origin/dev', head: 'make/test', fetch: true }
+    }))
+    expect(result.git).toMatchObject({ op: 'compare', contained, ahead: contained ? 0 : 1, behind: 2 })
+    expect(f.git.compare).toHaveBeenCalledWith('alice', 'project', expect.any(String), 'origin/dev', 'make/test', true)
+    expect(f.git.resolve.mock.calls.every(call => (call as unknown[])[3] && ((call as unknown[])[3] as { write: boolean }).write === false)).toBe(true)
+    expect(f.git.atWorkingCopy).toHaveBeenCalledWith('alice', 'project', expect.any(String), root)
+    expect(f.machines.fsWrite).not.toHaveBeenCalled()
+  })
+
   it('passes the host environment shared root to local clone preparation', async () => {
     const f = fixture('core')
     f.base.mode = 'local-stand'

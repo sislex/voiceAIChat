@@ -2,11 +2,15 @@
 // машине, поэтому тесты здесь про безопасность, а не про удобство: инъекция,
 // запрещённые политикой конструкции и опасные формы git.
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { isDangerousCommand } from '@voicechat/shared'
 import { evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import { buildShellCommand } from '../util/shell.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
+  branchesScript, compareScript, checkoutScript, commitScript, createBranchScript, discardScript,
   fileAtRefScript, gitBaseEnv, mergeScript, pullScript, pushScript, statusScript, treeScript
 } from './scripts.js'
 
@@ -14,6 +18,8 @@ const ALL = () => [
   statusScript('main'),
   branchesScript(false),
   branchesScript(true),
+  compareScript('origin/dev', 'feature/x', false),
+  compareScript('origin/dev', 'feature/x', true),
   treeScript('HEAD', ''),
   treeScript('HEAD', 'apps/server'),
   fileAtRefScript('HEAD', 'a.txt'),
@@ -29,6 +35,36 @@ const ALL = () => [
 
 const command = (script: { script: string; env: Record<string, string> }): string =>
   buildShellCommand(script.script, '/repo', { ...gitBaseEnv(), ...script.env })
+
+describe('comparison against a real Git history', () => {
+  it('distinguishes merged, unmerged and unrelated branches without changing HEAD', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'git-compare-'))
+    const git = (...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    const compare = (head: string) => {
+      const script = compareScript('dev', head, false)
+      return execFileSync('bash', ['-c', script.script], { cwd, env: { ...process.env, ...script.env }, encoding: 'utf8' })
+    }
+    try {
+      git('init', '-b', 'dev')
+      git('config', 'user.name', 'Test')
+      git('config', 'user.email', 'test@example.com')
+      git('commit', '--allow-empty', '-m', 'base')
+      git('branch', 'merged')
+      git('commit', '--allow-empty', '-m', 'dev')
+      git('checkout', '-b', 'unmerged', 'merged')
+      git('commit', '--allow-empty', '-m', 'feature')
+      const head = git('rev-parse', 'HEAD')
+      expect(compare('merged')).toContain('0\t1')
+      expect(compare('unmerged')).toContain('1\t1')
+      expect(compare(head)).toContain('1\t1')
+      expect(() => compare('missing')).toThrow()
+      expect(git('rev-parse', 'HEAD')).toBe(head)
+      git('checkout', '--orphan', 'unrelated')
+      git('commit', '--allow-empty', '-m', 'unrelated')
+      expect(compare('unrelated')).toContain('==VC:mergebase==\n==VC:done==')
+    } finally { rmSync(cwd, { recursive: true, force: true }) }
+  })
+})
 
 describe('безопасность скриптов', () => {
   it('в тексте скрипта нет перенаправлений и запрещённых политикой слов', () => {
@@ -48,7 +84,7 @@ describe('безопасность скриптов', () => {
 
   it('читающие скрипты проходят политику машины без allowWrite и без сети', () => {
     const readOnly = { ...DEFAULT_AGENT_POLICY, allowWrite: false, allowNetwork: false }
-    for (const script of [statusScript('main'), branchesScript(false), treeScript('HEAD', ''), fileAtRefScript('HEAD', 'a.txt')]) {
+    for (const script of [compareScript('origin/dev', 'HEAD', false), statusScript('main'), branchesScript(false), treeScript('HEAD', ''), fileAtRefScript('HEAD', 'a.txt')]) {
       const verdict = evaluateAgentCommand(readOnly, command(script))
       expect(verdict.allowed, verdict.reason ?? '').toBe(true)
     }

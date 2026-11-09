@@ -3,7 +3,7 @@ import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, s
   makeStandResultSchema, makeStandOptionsSchema, validateMakeStandResult,
   RpcError, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
-import { extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
+import { compareOperationSchema, compareResultSchema, extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
 import { userStandArgsSchema, userStandResultSchema, type UserStandOperation, type UserStandResult } from './userStand.js'
 
 // Compatibility with make-contracts 1.4: preserve new result fields and accept live operations.
@@ -19,6 +19,7 @@ const transferResult = transferTaskResultSchema.extend({
 })
 
 const standResult = makeStandResultSchema.extend({
+  git: z.union([makeStandResultSchema.shape.git.unwrap(), compareResultSchema]).optional(),
   components: z.array(z.object({ component: z.enum(['core', 'core-ui', 'make']), branch: z.string().nullable(), workingCopyPath: z.string().min(1), phase: makeStandResultSchema.shape.phase })).optional(),
   options: makeStandOptionsSchema.extend({
     stands: z.array(makeStandOptionsSchema.shape.stands.element.extend({
@@ -38,12 +39,18 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         const preview = core.standPreview as (user: string, project: string, op: PreviewOperation) => Promise<unknown>
         return standPreviewResultSchema.parse(await preview.apply(core, parsed.data))
       }
+      if (request.method === 'projectGit' && Array.isArray(request.args) && (request.args[2] as { op?: string })?.op === 'compare') {
+        const parsed = z.tuple([z.string().min(1), z.string().min(1), compareOperationSchema]).safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        return compareResultSchema.parse(await core.projectGit(parsed.data[0], parsed.data[1], parsed.data[2] as unknown as Parameters<MakeCore['projectGit']>[2]))
+      }
       if (request.method === 'makeStand') {
         const parsed = z.tuple([z.string().min(1), z.string().min(1), extendedStandOperationSchema]).safeParse(request.args)
         if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
         const operation = parsed.data[2] as Parameters<MakeCore['makeStand']>[2]
         const result = standResult.parse(await core.makeStand(parsed.data[0], parsed.data[1], operation))
-        try { validateMakeStandResult(operation, result) }
+        // The owner validator compares operation discriminators, including the new compare value.
+        try { validateMakeStandResult(operation, result as z.infer<typeof makeStandResultSchema>) }
         catch { throw new RpcError(502, 'Mismatched Make stand result') }
         return result
       }

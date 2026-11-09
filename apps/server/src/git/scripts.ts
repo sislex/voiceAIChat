@@ -78,6 +78,24 @@ export function branchesScript(refresh: boolean): GitScript {
   }
 }
 
+/** Resolve commits once, then compare head against base without touching the worktree. */
+export function compareScript(base: string, head: string, fetch: boolean): GitScript {
+  return {
+    env: { VC_GIT_BASE: base, VC_GIT_HEAD: head },
+    script: [
+      'set -e',
+      ...(fetch ? ["git fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*'"] : []),
+      'base=$(git rev-parse --verify --end-of-options "$VC_GIT_BASE^{commit}")',
+      'head=$(git rev-parse --verify --end-of-options "$VC_GIT_HEAD^{commit}")',
+      mark('counts'),
+      `${READ} rev-list --left-right --count "$head...$base"`,
+      mark('mergebase'),
+      'git merge-base "$base" "$head" || { code=$?; test "$code" -eq 1; }',
+      mark('done')
+    ].join('\n')
+  }
+}
+
 /** Один уровень дерева файлов. Целиком (`ls-files`) не берём: монорепо не влезает в вывод exec. */
 export function treeScript(ref: string, dir: string): GitScript {
   const listing = dir

@@ -210,7 +210,7 @@ export class LocalMakeCore implements MakeCore {
     return { tokens, themes: [...themes].sort(), components }
   }
 
-  async projectGit(userId: string, projectId: string, operation: ProjectGitOperation): Promise<ProjectGitResult> {
+  async projectGit(userId: string, projectId: string, operation: ProjectGitOperation | { op: 'compare'; base: string; head: string; fetch?: boolean }): Promise<ProjectGitResult> {
     if (!this.deps.git) fail(501, 'project_git_unavailable')
     const machine = await this.projectMachine(userId, projectId)
     const workspace = buildGitWorkspaceId({ kind: 'project-machine', agentId: machine.agentId })
@@ -258,9 +258,11 @@ export class LocalMakeCore implements MakeCore {
   boardChanged(projectId: string): void { this.deps.boardChanged?.(projectId) }
 }
 
-export async function runProjectGit(git: GitWorkspaceService, userId: string, projectId: string, workspace: string, operation: ProjectGitOperation): Promise<ProjectGitResult> {
+export async function runProjectGit(git: GitWorkspaceService, userId: string, projectId: string, workspace: string, operation: ProjectGitOperation | { op: 'compare'; base: string; head: string; fetch?: boolean }): Promise<ProjectGitResult> {
     if (operation.op === 'status') { const value = await git.status(userId, projectId, workspace); return { op: 'status', branch: value.branch, ahead: value.ahead, behind: value.behind, files: value.changes.map(item => ({ path: item.path, index: item.staged ? 'M' : ' ', workingTree: item.staged ? ' ' : 'M' })) } }
     if (operation.op === 'branches') { const value = await git.branches(userId, projectId, workspace, false); return { op: 'branches', branches: value.branches.map(item => ({ name: item.name, current: item.name === value.current, remote: item.remote })) } }
+    // The RPC compatibility schema validates this result until the owner contract is pinned.
+    if (operation.op === 'compare') return { op: 'compare', ...await git.compare(userId, projectId, workspace, operation.base, operation.head, operation.fetch) } as unknown as ProjectGitResult
     if (operation.op === 'pull') { const value = await git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
     if (operation.op === 'commit') { const value = await git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
     if (operation.op === 'push') { const value = await git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }

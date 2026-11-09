@@ -10,8 +10,18 @@ import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeRequestAuthority } from './requestAuthority.js'
 import { ProjectPreviews } from './projectPreview.js'
 
+// Compatibility until Core consumes the Make owner release containing compare.
+export const compareOperationSchema = z.object({
+  op: z.literal('compare'), base: z.string().min(1).max(200), head: z.string().min(1).max(200), fetch: z.boolean().optional()
+}).strict()
+export const compareResultSchema = z.object({
+  op: z.literal('compare'), ahead: z.number().int().nonnegative(), behind: z.number().int().nonnegative(),
+  mergeBase: z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), contained: z.boolean()
+}).strict().refine(value => value.contained === (value.ahead === 0), 'Inconsistent containment')
 const localComponentSchema = z.enum(['core', 'core-ui', 'make'])
 export const extendedStandOperationSchema = z.union([
+  z.object({ op: z.literal('git'), component: localComponentSchema.optional(), operation: compareOperationSchema }).strict()
+    .transform(value => value as unknown as z.infer<typeof makeStandOperationSchema> & { component?: z.infer<typeof localComponentSchema> }),
   z.object({ op: z.literal('component'), standId: z.string().min(1).optional(), hostProjectId: z.string().min(1).optional(), action: z.enum(['attach', 'detach']), component: localComponentSchema }).strict(),
   z.object({ component: localComponentSchema.optional() }).passthrough().transform((value, ctx) => {
     const { component, ...rest } = value
@@ -330,7 +340,7 @@ export class MakeProjectAdapters {
     const op = parsed.data
     const projectId = await this.deps.db.chat.makeConversationProject(conversationId)
     if (!projectId) projectModeError(404, 'project_not_found')
-    const write = !['options', 'status'].includes(op.op) && !(op.op === 'files' && ['list', 'read'].includes(op.action)) && !(op.op === 'git' && ['status', 'branches'].includes(op.operation.op))
+    const write = !['options', 'status'].includes(op.op) && !(op.op === 'files' && ['list', 'read'].includes(op.action)) && !(op.op === 'git' && ['status', 'branches', 'compare'].includes(op.operation.op))
     const project = await this.project(user, projectId, write)
     const repository = repositoryId(project.gitUrl)
     const component = DEV_COMPONENT_IDS.find(id => DEV_COMPONENT_REGISTRY[id].repository.toLowerCase() === repository) ?? null

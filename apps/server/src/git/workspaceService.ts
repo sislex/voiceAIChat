@@ -17,7 +17,7 @@ import { buildShellCommand } from '../util/shell.js'
 import type { CommandGate } from '../agents/commandGate.js'
 import { hasProjectPermission } from "@sislexa/identity/server/users/auth"
 import {
-  branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
+  branchChangesScript, branchesScript, checkoutScript, compareScript, commitDetailScript, commitScript,
   conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,
   grepScript, logScript, mergeScript, pullScript, pushScript, resolveConflictScript, stageScript, storyFilesScript,
   statusScript, treeScript, type GitScript
@@ -234,6 +234,22 @@ export class GitWorkspaceService {
       branches: parseGitRefs(sections.refs ?? ''),
       fetchedAt: refresh ? this.now() : null
     }
+  }
+
+  /** Ahead counts commits exclusive to head; contained means head is an ancestor of base. */
+  async compare(userId: string, projectId: string, workspaceId: string, base: string, head: string, fetch = false) {
+    if (!isValidGitRef(base) || !isValidGitRef(head))
+      throw new GitError(400, 'invalid_ref', 'Invalid comparison reference')
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
+    const result = await this.run(userId, projectId, ref, compareScript(base, head, fetch), fetch ? NETWORK_TIMEOUT_MS : READ_TIMEOUT_MS)
+    if (result.exitCode !== 0) throw new GitError(409, 'git_failed', lastLine(result.output) || 'Git comparison failed')
+    const sections = splitGitSections(result.output)
+    const counts = /^(\d+)\s+(\d+)$/.exec((sections.counts ?? '').trim())
+    const mergeBase = (sections.mergebase ?? '').trim() || null
+    if (!counts || (mergeBase !== null && !/^[a-f0-9]{40,64}$/.test(mergeBase)))
+      throw new GitError(409, 'git_failed', 'Invalid Git comparison output')
+    const ahead = Number(counts[1])
+    return { ahead, behind: Number(counts[2]), mergeBase, contained: ahead === 0 }
   }
 
   /** Один уровень дерева файлов ревизии. */
