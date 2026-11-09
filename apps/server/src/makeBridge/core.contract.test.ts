@@ -7,6 +7,7 @@ import { HttpMakeCore, MakeHub, INTERNAL_MAKE_EVENTS_PATH, INTERNAL_WHOAMI_PATH,
 import { VoiceChatDb } from '../db/database.js'
 import { registerInternalRoutes } from '../routes/internal.js'
 import { LocalMakeCore } from './localCore.js'
+import * as dbSeed from '../test/seed.js'
 
 const headersOf = (init: RequestInit['headers']): Record<string, string> => { const out: Record<string, string> = {}; new Headers(init).forEach((v, k) => { out[k] = v }); return out }
 
@@ -16,7 +17,7 @@ type Mode = 'local' | 'http'
 async function seed(db: VoiceChatDb) {
   for (const [name, role] of [['ann', 'developer'], ['bob', 'developer'], ['eve', 'developer']] as const) await db.identity.createUser(name, '', role)
   const project = await db.projects.createProject('ann', { name: 'Проект' })
-  await db.projects.addMember('ann', project.id, 'bob')
+  await dbSeed.addMember(db, 'ann', project.id, 'bob')
   const conv = (await db.chat.createConversation('ann', 'Витрина', 'make', project.id))!
   const personal = (await db.chat.createConversation('ann', 'Личный', 'make', null))!
   const board = (await db.tasks.getBoard('ann', project.id))!

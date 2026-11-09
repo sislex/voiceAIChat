@@ -3,6 +3,7 @@ import type { LlmProvider, ServerMessage } from '@voicechat/shared'
 import type { LlmClient } from './claude/types.js'
 import { VoiceChatDb } from './db/database.js'
 import { createTurnManager, type TurnManagerDeps } from './turns.js'
+import * as dbSeed from './test/seed.js'
 
 const user = 'model-notices'
 const policy = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'].map(model => ({ provider: 'codex' as const, model }))
@@ -76,7 +77,7 @@ it('retains a warning for a substituted explicit provider without warning about 
 it.each(['claude', 'codex'] as const)('retains the explicit %s project substitution warning', async provider => {
   const project = await db.projects.createProject(user, { name: 'Project choice', gitUrl: 'https://example.invalid/project.git' })
   await db.chat.setConversationProject(user, conversationId, project.id)
-  await db.ci.setCiLlmConfig('project', project.id, { provider, model: provider === 'codex' ? 'gpt-6-astra' : 'sonnet',
+  await dbSeed.setCiLlmConfig(db, 'project', project.id, { provider, model: provider === 'codex' ? 'gpt-6-astra' : 'sonnet',
     mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
   const result = await reply({ chatTextOnly: true })
   expect(result.request.model).toBe('gpt-5.6-luna')

@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import type { Sql } from '@sislexa/identity/storage-sql/types'
 import { VoiceChatDb } from './database.js'
+import * as dbSeed from '../test/seed.js'
 
 let db: VoiceChatDb
 let projectId: string
@@ -16,7 +17,7 @@ beforeEach(async () => {
   await db.identity.createUser(DEV, '', 'developer')
   const project = await db.projects.createProject(OWNER, { name: 'P' })
   projectId = project.id
-  await db.projects.addMember(OWNER, projectId, DEV)
+  await dbSeed.addMember(db, OWNER, projectId, DEV)
   const board = (await db.tasks.getBoard(OWNER, projectId))!
   taskId = (await db.tasks.createTask(OWNER, projectId, { columnId: board.columns[0]!.id, title: 'Задача', priority: 'medium' }))!.id
 })
@@ -27,7 +28,7 @@ const history = async () => (db as unknown as { sql: Sql }).sql.all<{ actor: str
 
 describe('история изменений', () => {
   it('updateTask пишет только реально изменившиеся видимые поля', async () => {
-    await db.tasks.updateTask(DEV, projectId, taskId, { title: 'Новое имя', priority: 'medium', description: 'Появилось описание' })
+    await dbSeed.updateTask(db, DEV, projectId, taskId, { title: 'Новое имя', priority: 'medium', description: 'Появилось описание' })
     const rows = await history()
     expect(rows.map((event) => [event.field, event.from_value, event.to_value])).toEqual([
       ['description', null, 'Появилось описание'],

@@ -12,6 +12,7 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
 import type { KnowledgeBaseService } from './types.js'
+import * as dbSeed from '../test/seed.js'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -107,7 +108,7 @@ describe('разделы базы знаний', () => {
 
   it('участник проекта видит его знания сразу после добавления', async () => {
     const p = await project('Общий')
-    await db.projects.addMember('admin', p.id, 'bob')
+    await dbSeed.addMember(db, 'admin', p.id, 'bob')
     const topics = (await inj(bobTok, { method: 'GET', url: `${REST.kbTopics}?scope=project&projectId=${p.id}` })).json() as KbDocumentSummary[]
     expect(topics.map((t) => t.title)).toEqual(['Разработка: Общий'])
   })

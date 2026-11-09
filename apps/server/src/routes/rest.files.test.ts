@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { VoiceChatDb } from '../db/database.js'
 import { setupRestHarness } from './restHarness.js'
+import * as dbSeed from '../test/seed.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -66,7 +67,7 @@ describe('REST: машины настроек разговора', () => {
     const hidden = await db.machines.createAgent('outsider', 'Чужая')
     const project = await db.projects.createProject('owner', { name: 'Shared' })
     await db.machines.linkMachine('owner', project.id, shared.id)
-    await db.projects.addMember('owner', project.id, U)
+    await dbSeed.addMember(db, 'owner', project.id, U)
     const plain = await db.chat.createConversation(U, 'Обычный')
 
     const plainMachines = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/machines` })).json()

@@ -3,12 +3,12 @@ import { integrationBearer, type IntegrationPrincipal } from '../../auth/integra
 // Домен «projects»: таблицы projects, project_members, project_member_role_audit, project_invitations, project_types, project_type_review_audit, kanban_columns, board_views.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type { ProjectCommandPolicy, AutomatedQaMode, AutomatedQaScenario } from '@voicechat/shared'
+import type { ProjectCommandPolicy } from '@voicechat/shared'
 import type { MachineShareAccess } from '@sislexa/agent-contracts'
-import { parseProjectCommandPolicy, parseAutomatedQaScenarios, BUILTIN_PROJECT_TYPES, DEFAULT_PROJECT_TYPE_ID, isProjectTypeVisible, projectTypeChainLabel, resolveProjectTypeDefaults, resolveProjectTypeFeatures, type ProjectFeatureOverride, type ProjectFeatureSet, type ProjectTypeChain, type ProjectTypeDefaults, type ProjectTypeNode, type ProjectTypeStatus, type KanbanColumn, type ProjectDetail, type ProjectMember, type ProjectSummary, type WorkItemType, type WorkItemDefaultSkills, type ProjectMachineDirectoryAssignments, recommendedProjectMachineDirectories, type KbContextMode, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS, validateReleaseTimeouts } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseAutomatedQaScenarios, BUILTIN_PROJECT_TYPES, DEFAULT_PROJECT_TYPE_ID, isProjectTypeVisible, projectTypeChainLabel, resolveProjectTypeDefaults, resolveProjectTypeFeatures, type ProjectFeatureOverride, type ProjectFeatureSet, type ProjectTypeChain, type ProjectTypeDefaults, type ProjectTypeNode, type ProjectTypeStatus, type ProjectDetail, type ProjectMember, type ProjectSummary, type WorkItemType, type WorkItemDefaultSkills, type ProjectMachineDirectoryAssignments, recommendedProjectMachineDirectories, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import { createHash, randomBytes } from 'node:crypto'
 import { BaseRepo } from './base.js'
-import { normalizeAutomatedQaScenario, RANK_STEP, parseStringArray, mapColumn, normKbContextMode, parseJsonValue } from './support.js'
+import { RANK_STEP, parseStringArray, normKbContextMode, parseJsonValue } from './support.js'
 
 interface ProjectTypeRow {
   id: string
@@ -551,149 +551,6 @@ export class ProjectsRepo extends BaseRepo {
     }
   }
 
-  async transferTenant(userId: string, projectId: string, currentTenantId: string, targetTenantId: string, targetTenantKind: 'personal' | 'team'): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    return this.sql.transaction(async () => {
-      const changed = await this.sql.run('UPDATE projects SET tenant_id = ?, tenant_kind = ?, updated_at = ? WHERE id = ? AND tenant_id = ?', [targetTenantId, targetTenantKind, this.now(), projectId, currentTenantId])
-      if (changed.changes !== 1) return null
-      await this.repos.chat.moveProjectToTenant(projectId, targetTenantId)
-      return this.getProject(userId, projectId, targetTenantId, targetTenantKind)
-    })
-  }
-
-  async updateProject(
-    userId: string,
-    id: string,
-    fields: {
-      name?: string
-      description?: string
-      gitUrl?: string | null
-      previewUrl?: string | null
-      testUsers?: import('@voicechat/shared').ProjectTestUser[]
-      technologies?: string[]
-      skills?: string[]
-      defaultSkills?: Partial<WorkItemDefaultSkills>
-      commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
-      mergeTransport?: 'local' | 'github_pull_request'
-      agentPlanApprovalMode?: 'manual' | 'automatic'
-      testCommand?: string
-      mergeTestCommand?: string
-      componentQaCommand?: string
-      integrationTestCommand?: string
-      automatedQaCommand?: string
-      automatedQaMode?: AutomatedQaMode
-      automatedQaScenarios?: AutomatedQaScenario[]
-      autoPilotDefault?: boolean
-      autoPilotRequiresManualQa?: boolean
-      autoPilotFixLimit?: number
-      commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
-      productionDeployCommand?: string
-      productionAgentId?: string | null
-      productionEnvironmentMode?: 'legacy' | 'managed'
-      productionCheckoutPath?: string
-      productionHealthCheckCommand?: string
-      releaseTimeouts?: ReleaseTimeouts
-      ciBaseBranch?: string
-      ciBranchTemplate?: string
-      ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
-      ciExecAuthRef?: string
-      ciKbContextMode?: KbContextMode
-      ciTestFixCycleLimit?: number
-      doneRetentionDays?: number | null
-      typeId?: string
-    }
-  ): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (fields.typeId !== undefined) {
-      // Меняются только ЖИВЫЕ возможности: доска, теги и CI-настройки проекта
-      // остаются как есть — они были снимком заготовок на момент создания.
-      if (!(await this.getProjectType(fields.typeId))) throw new Error('Тип проекта не найден')
-      set.push('project_type_id = ?')
-      vals.push(fields.typeId)
-    }
-    if (fields.name !== undefined) {
-      set.push('name = ?')
-      vals.push(fields.name)
-    }
-    if (fields.description !== undefined) {
-      set.push('description = ?')
-      vals.push(fields.description)
-    }
-    if (fields.gitUrl !== undefined) {
-      set.push('git_url = ?')
-      vals.push(fields.gitUrl)
-    }
-    if (fields.previewUrl !== undefined) {
-      set.push('preview_url = ?')
-      vals.push(fields.previewUrl)
-    }
-    if (fields.testUsers !== undefined) {
-      set.push('test_users_json = ?')
-      vals.push(JSON.stringify(fields.testUsers))
-    }
-    if (fields.technologies !== undefined) {
-      set.push('technologies = ?')
-      vals.push(JSON.stringify(fields.technologies))
-    }
-    if (fields.skills !== undefined) {
-      set.push('skills = ?')
-      vals.push(JSON.stringify(fields.skills))
-    }
-    if (fields.commitPolicy !== undefined) {
-      set.push('commit_policy = ?')
-      vals.push(fields.commitPolicy)
-    }
-    if (fields.mergeTransport !== undefined) {
-      set.push('merge_transport = ?')
-      vals.push(fields.mergeTransport)
-    }
-    if (fields.agentPlanApprovalMode !== undefined) {
-      set.push('agent_plan_approval_mode = ?')
-      vals.push(fields.agentPlanApprovalMode)
-    }
-    if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
-    if (fields.mergeTestCommand !== undefined) { set.push('merge_test_command = ?'); vals.push(fields.mergeTestCommand) }
-    if (fields.componentQaCommand !== undefined) { set.push('component_qa_command = ?'); vals.push(fields.componentQaCommand) }
-    if (fields.integrationTestCommand !== undefined) { set.push('integration_test_command = ?'); vals.push(fields.integrationTestCommand) }
-    if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
-    if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
-    if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
-    if (fields.autoPilotDefault !== undefined) { set.push('autopilot_default = ?'); vals.push(fields.autoPilotDefault ? 1 : 0) }
-    if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
-    if (fields.autoPilotFixLimit !== undefined) {
-      if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
-      set.push('autopilot_fix_limit = ?'); vals.push(fields.autoPilotFixLimit)
-    }
-    if (fields.commandPolicy !== undefined) { set.push('command_policy = ?'); vals.push(JSON.stringify(fields.commandPolicy)) }
-    if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
-    if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
-    if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }
-    if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
-    if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
-    if (fields.releaseTimeouts !== undefined) { set.push('release_timeouts_json = ?'); vals.push(JSON.stringify(validateReleaseTimeouts(fields.releaseTimeouts))) }
-    if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
-    if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
-    if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
-    if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
-    if (fields.ciKbContextMode !== undefined) { set.push('ci_kb_context_mode = ?'); vals.push(normKbContextMode(fields.ciKbContextMode)) }
-    if (fields.ciTestFixCycleLimit !== undefined) {
-      if (!Number.isInteger(fields.ciTestFixCycleLimit) || fields.ciTestFixCycleLimit < 0) throw new Error('ciTestFixCycleLimit must be a non-negative integer')
-      set.push('ci_test_fix_cycle_limit = ?'); vals.push(fields.ciTestFixCycleLimit)
-    }
-    if (fields.doneRetentionDays !== undefined) { set.push('done_retention_days = ?'); vals.push(fields.doneRetentionDays) }
-    if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
-    if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
-    if (fields.defaultSkills?.task !== undefined) { set.push('default_skills_task = ?'); vals.push(JSON.stringify(fields.defaultSkills.task)) }
-
-    const ts = this.now()
-    set.push('updated_at = ?')
-    vals.push(ts)
-    await this.sql.run(`UPDATE projects SET ${set.join(', ')} WHERE id = ?`, [...vals, id])
-    return await this.getProject(userId, id)
-  }
-
   private async auditProjectMemberRole(
     projectId: string,
     actor: string,
@@ -706,46 +563,6 @@ export class ProjectsRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO project_member_role_audit
        (id, project_id, target_user, actor, old_role, new_role, action, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), projectId, targetUser, actor, oldRole, newRole, action, createdAt])
-  }
-
-  async addMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    if (!(await this.sql.get(`SELECT 1 FROM users WHERE name = ?`, [username]))) {
-      throw new Error(`Пользователь ${username} не найден`)
-    }
-    const ts = this.now()
-    const inserted = await this.sql.run(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`, [id, username, ts])
-    if (inserted.changes) await this.auditProjectMemberRole(id, userId, username, null, 'member', 'add', ts)
-    return await this.getProject(userId, id)
-  }
-
-  async updateMemberRole(
-    userId: string,
-    id: string,
-    username: string,
-    role: 'owner' | 'member'
-  ): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const change = () => this.sql.transaction(async () => {
-      const row = (await this.sql.get(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`, [id, username])) as { role: string } | undefined
-      if (!row) throw new Error('Сначала добавьте пользователя в участники проекта')
-      const oldRole = row.role === 'owner' ? 'owner' : 'member'
-      if (oldRole === role) return
-      if (oldRole === 'owner') {
-        const owners = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`, [id])) as { count: number }
-        if (owners.count <= 1) {
-          throw new Error('Нельзя понизить последнего владельца. Сначала назначьте другого владельца')
-        }
-      }
-      const ts = this.now()
-      await this.sql.run(`UPDATE project_members SET role = ? WHERE project_id = ? AND username = ?`, [role, id, username])
-      await this.auditProjectMemberRole(id, userId, username, oldRole, role, 'role_change', ts)
-      await this.touchProject(id, ts)
-    })
-    // Транзакции адаптера выполняются по одной: два параллельных понижения не могут
-    // оба увидеть устаревший count (раньше это обеспечивал BEGIN IMMEDIATE).
-    await change()
-    return await this.getProject(userId, id)
   }
 
   async removeMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
@@ -768,31 +585,6 @@ export class ProjectsRepo extends BaseRepo {
     })
     await remove()
     return await this.getProject(userId, id)
-  }
-
-  /** Назначить машину проекта по умолчанию (только владелец; машина должна быть в проекте). */
-  async setProjectDefaultMachine(userId: string, id: string, agentId: string): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const inProject = await this.sql.get(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`, [id, agentId])
-    if (!inProject) throw new Error('Машина не привязана к проекту')
-    await this.sql.run(`UPDATE projects SET default_agent_id = ? WHERE id = ?`, [agentId, id])
-    await this.touchProject(id)
-    return await this.getProject(userId, id)
-  }
-
-  async createColumn(userId: string, projectId: string, name: string): Promise<KanbanColumn | null> {
-    if (!(await this.isProjectMember(userId, projectId))) return null
-    const id = this.newId()
-    const ts = this.now()
-    const max = (
-      (await this.sql.get(`SELECT MAX(position) AS m FROM kanban_columns WHERE project_id = ?`, [projectId])) as {
-        m: number | null
-      }
-    ).m
-    const position = (max ?? 0) + RANK_STEP
-    await this.sql.run(`INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`, [id, projectId, name, position, ts])
-    await this.touchProject(projectId, ts)
-    return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, wip_limit: null, created_at: ts })
   }
 
   /** Навыки по умолчанию проекта для типа элемента (из настроек проекта). */

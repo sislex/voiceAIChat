@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VoiceChatDb } from './database'
+import * as dbSeed from '../test/seed.js'
 
 const U = 'admin'
 
@@ -162,7 +163,7 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
     const task = (await db.tasks.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id }))!
     const other = (await db.tasks.createTask('alice', project.id, { title: 'T2', columnId: board.columns[0].id }))!
     const conv = await db.chat.createConversation('alice', 'Чат задачи')
-    const mk = async (taskId: string) => await db.ci.createCiRun({
+    const mk = async (taskId: string) => await dbSeed.createCiRun(db, {
       projectId: project.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: null,
       conversationId: conv.id, slotProgress: { done: 0, total: 2, phase: 'В очереди' }
     })
@@ -181,17 +182,17 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
 
   it('режим БЗ рана — снимок настройки проекта на старте', async () => {
     const project = await db.projects.createProject('alice', { name: 'P' })
-    await db.projects.updateProject('alice', project.id, { ciKbContextMode: 'manual' })
+    await dbSeed.updateProject(db, 'alice', project.id, { ciKbContextMode: 'manual' })
     expect((await db.projects.getProject('alice', project.id))!.ciKbContextMode).toBe('manual')
     const board = (await db.tasks.getBoard('alice', project.id))!
     const task = (await db.tasks.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id }))!
-    const run = await db.ci.createCiRun({
+    const run = await dbSeed.createCiRun(db, {
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null,
       kbContextMode: 'manual', slotProgress: { done: 0, total: 2, phase: 'В очереди' }
     })
     expect(run.kbContextMode).toBe('manual')
     // Смена настройки не переписывает уже созданный ран.
-    await db.projects.updateProject('alice', project.id, { ciKbContextMode: 'off' })
+    await dbSeed.updateProject(db, 'alice', project.id, { ciKbContextMode: 'off' })
     expect((await db.ci.getCiRunRaw(run.id))!.kbContextMode).toBe('manual')
   })
 

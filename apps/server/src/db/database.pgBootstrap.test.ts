@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 import { VoiceChatDb } from './database.js'
+import * as dbSeed from '../test/seed.js'
 
 const URL = process.env.VC_TEST_DB_URL
 const schema = `b_${randomUUID().replace(/-/g, '').slice(0, 12)}`
@@ -38,7 +39,7 @@ describe.skipIf(!URL)('старт нескольких процессов на �
       await first.identity.createUser('upgrade-owner', 'pw', 'admin')
       const project = await first.projects.createProject('upgrade-owner', { name: 'Upgrade' })
       projectId = project.id
-      await first.projects.updateProject('upgrade-owner', projectId, { autoPilotRequiresManualQa: true })
+      await dbSeed.updateProject(first, 'upgrade-owner', projectId, { autoPilotRequiresManualQa: true })
       const board = (await first.tasks.getBoard('upgrade-owner', projectId))!
       const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
       const task = await first.tasks.createTask('upgrade-owner', projectId, { columnId: backlog.id, title: 'Existing task' })

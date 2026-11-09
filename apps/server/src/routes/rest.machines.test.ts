@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'
 import { servedAgent } from '../agents/agentScript.js'
+import * as dbSeed from '../test/seed.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -259,7 +260,7 @@ describe('REST: доступ участников к машине проекта
     agentRegistry.register(machine.id, 'Общая', socket, (await db.machines.listAgents(U)).find((a) => a.id === machine.id)!.policy, '0.15.0')
     const project = await db.projects.createProject(U, { name: 'Shared' })
     await db.identity.createUser('dev2', '', 'developer')
-    await db.projects.addMember(U, project.id, 'dev2')
+    await dbSeed.addMember(db, U, project.id, 'dev2')
     const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
     const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
 
@@ -318,7 +319,7 @@ describe('REST: групповая команда (п.15)', () => {
     // пустое тело и политика
     expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
     const project = await db.projects.createProject(U, { name: 'PB' })
-    await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } })
+    await dbSeed.updateProject(db, U, project.id, { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } })
     const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
     expect(denied.statusCode).toBe(403)
   })
@@ -331,7 +332,7 @@ describe('REST: политика команд проекта и роли (п.10)
     agentRegistry.register(created.id, 'M', socket, (await db.machines.listAgents(U)).find((a) => a.id === created.id)!.policy, '0.15.0')
     const project = await db.projects.createProject(U, { name: 'P' })
     // Политику проекта сохраняет канбан (PATCH проекта); ядро применяет её к консоли.
-    expect((await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } }))?.commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
+    expect((await dbSeed.updateProject(db, U, project.id, { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } }))?.commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
     const denied = await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'docker ps' } })
     expect(denied.statusCode).toBe(403)
     expect(denied.json().error).toContain('политикой проекта')
