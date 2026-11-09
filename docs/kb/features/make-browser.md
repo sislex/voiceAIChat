@@ -50,16 +50,21 @@ service credential and verify signed user/conversation authority; see
 [Make MCP Storage admission](../data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17). This does not change the bound
 browser selection or inspector cookie forwarding described below.
 
-When a Make conversation has a selected stand (the separate-window stand, then
-the `test` marker, then the developed stand), non-delegated turns receive the
-Core preview MCP URL with a signed token for the Make conversation itself and
-`previewSurface: 'make-preview'`. The prompt names the selected stand, says that
-`stand_roles` switches subsequent browser actions, requires
-`browser_capabilities` first, recommends `screenshot` when supported and `read`
-otherwise, and treats `make_preview_closed` as a request to open the preview.
-The selected conversation stand is authoritative even when an older Reader is
-still bound. A bound Reader remains a compatibility fallback only when Make has
-no stand target.
+When a Make conversation has an embedded stand target (the `test` marker, then
+the developed stand), non-delegated turns receive the Core preview MCP URL with
+a signed token for the Make conversation itself and `previewSurface:
+'make-preview'`. The prompt names the selected stand, says that `stand_roles`
+switches subsequent browser actions, requires `browser_capabilities` first,
+recommends `screenshot` when supported and `read` otherwise, and treats
+`make_preview_closed` as a request to open the preview. The selected embedded
+stand is authoritative even when an older Reader is still bound.
+
+`roles.window` is different: «Открыть в отдельном окне» creates or reuses a
+Playwright Reader conversation, starts its headed Chromium and binds that Reader
+through `make_browser_session`. While the window role exists, Make reports no
+embedded browser target, so Core issues the Reader conversation token and uses
+`previewSurface: 'chromium'`. An explicit `stand_roles` test change clears the
+window role and returns subsequent turns to the embedded Make preview.
 
 Core's session subscribes each user's sockets to the preview relay and forwards
 `preview.result` with its conversation ID. The Reader Core bridge preserves
