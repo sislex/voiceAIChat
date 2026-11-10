@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, standPreviewResultSchema, transferTaskResultSchema,
   makeStandResultSchema, makeStandOptionsSchema, validateMakeStandResult,
-  RpcError, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
+  RpcError, makeStandWindowSchema, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
 import { compareOperationSchema, compareResultSchema, extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
 import { userStandArgsSchema, userStandResultSchema, type UserStandOperation, type UserStandResult } from './userStand.js'
@@ -13,6 +13,9 @@ const liveArgs = z.tuple([z.string().min(1), z.string().min(1), z.object({
   standId: z.string().min(1), component: z.enum(DEV_COMPONENT_IDS as [typeof DEV_COMPONENT_IDS[number], ...typeof DEV_COMPONENT_IDS])
 }).strict()])
 const transferArgs = z.tuple([z.string().min(1), createTransferTaskSchema])
+const standWindowArgs = z.tuple([
+  z.string().min(1), z.string().min(1), z.string().min(1), z.string().url(), makeStandWindowSchema.nullable().optional()
+])
 const transferResult = transferTaskResultSchema.extend({
   branch: z.string().min(1).optional(), taskUrl: z.string().min(1).optional(),
   branchUrl: z.string().min(1).optional(), designUrl: z.string().min(1).optional()
@@ -61,6 +64,13 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         const fn = (core as MakeCore & { userStand?: (user: string, op: UserStandOperation) => Promise<UserStandResult> }).userStand
         if (typeof fn !== 'function') throw new RpcError(409, 'Project mode is unavailable on this Core')
         return userStandResultSchema.parse(await fn.call(core, parsed.data[0], parsed.data[1] as UserStandOperation))
+      }
+      if (request.method === 'openStandWindow') {
+        const parsed = standWindowArgs.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid stand window arguments')
+        const fn = (core as MakeCore & { openStandWindow?: (...args: typeof parsed.data) => Promise<unknown> }).openStandWindow
+        if (typeof fn !== 'function') throw new RpcError(503, 'stand_window_unavailable')
+        return makeStandWindowSchema.parse(await fn.call(core, ...parsed.data))
       }
       if (request.method === 'createTransferTask') {
         const parsed = transferArgs.safeParse(request.args)

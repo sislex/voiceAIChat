@@ -21,7 +21,7 @@ import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
 import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
-import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
+import { registerAccountAccess, commandAccessError, TARIFF_DENIED, userHasCapability } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
 import { sameAccountContext, accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
@@ -1042,6 +1042,36 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
     makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
     userStand: (user, operation) => userStands.userStand(user, operation),
+    openStandWindow: async (user, conversationId, standId, url, current) => {
+      if (!await userHasCapability(db, user, 'playwright-reader.use'))
+        throw Object.assign(new Error('playwright_reader_forbidden'), { statusCode: 403 })
+      const makeConversation = await db.chat.getConversation(user, conversationId)
+      if (!makeConversation || makeConversation.assistantKind !== 'make')
+        throw Object.assign(new Error('conversation_not_found'), { statusCode: 404 })
+      const title = `Make window · ${conversationId.slice(0, 8)}`
+      let reader = current?.sessionId ? await db.chat.getConversation(user, current.sessionId) : null
+      if (reader?.assistantKind !== 'playwright-reader') reader = null
+      if (!reader && makeConversation.makeBrowserSessionId) {
+        const bound = await db.chat.getConversation(user, makeConversation.makeBrowserSessionId)
+        if (bound?.assistantKind === 'playwright-reader') reader = bound
+      }
+      if (!reader) {
+        reader = (await db.chat.listConversations(user, {
+          scope: 'playwright-reader', ...(makeConversation.tenantId ? { tenantId: makeConversation.tenantId } : {}), limit: 50
+        })).find(item => item.assistantKind === 'playwright-reader' && item.title === title) ?? null
+      }
+      if (!reader) {
+        reader = await db.chat.createConversation(user, title, 'playwright-reader', null, 'playwright-reader', makeConversation.tenantId)
+      }
+      if (!reader || !browserRunner)
+        throw Object.assign(new Error('playwright_reader_unavailable'), { statusCode: 503 })
+      await browserRunner.start({ sessionId: reader.id, userKey: user, conversationKey: reader.id, window: { url } })
+      await db.chat.setConversationMakeBrowserSession(user, conversationId, reader.id)
+      return {
+        standId, url, sessionId: reader.id,
+        previousSessionId: current ? current.previousSessionId : makeConversation.makeBrowserSessionId ?? null,
+      }
+    },
     transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),

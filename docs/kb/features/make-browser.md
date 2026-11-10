@@ -56,15 +56,28 @@ browser selection or inspector cookie forwarding described below.
 When a Make conversation has an embedded stand target (the `test` marker, then
 the developed stand), non-delegated turns receive the Core preview MCP URL with
 a signed token for the Make conversation itself and `previewSurface:
-'make-preview'`. The prompt names the selected stand, says that `stand_roles`
-switches subsequent browser actions, requires `browser_capabilities` first,
-recommends `screenshot` when supported and `read` otherwise, and treats
-`make_preview_closed` as a request to open the preview. The selected embedded
-stand is authoritative even when an older Reader is still bound.
+'make-preview'`. Role markers and the user's visible tab are separate state:
+`stand_roles` changes markers only, while `stand_view {action:"focus", stand:N}`
+atomically selects a single visible tab and makes it the test target. Its
+`status` action returns the stored `tabs|split|grid` view, visible and active
+stands, test target, browser route and saved window binding. The prompt repeats
+that state as `USER VIEW`; for a separately navigated Chromium window the live
+URL still comes from `mcp__browser__status`.
+
+The prompt requires `browser_capabilities` first, recommends `screenshot` when
+supported and `read` otherwise, and treats `make_preview_closed` as an unavailable
+embedded executor. The selected embedded stand is authoritative even when an older
+Reader is still bound.
 
 `roles.window` is different: «Открыть в отдельном окне» creates or reuses a
 Playwright Reader conversation, starts its headed Chromium and binds that Reader
-through `make_browser_session`. While the window role exists, Make reports no
+through `make_browser_session`. The assistant-facing `stand_view {action:"focus", stand:N}`
+performs the same server-side transition atomically: Core validates ownership and the
+`playwright-reader.use` capability, opens or refocuses the stand URL in the reusable
+`Make window · <conversation>` session, binds it to the Make chat, and Make persists
+both the focused panel tab and `roles.window`. This is required for external frames
+that cannot host the Make preview executor; changing only the `test` marker would
+still end in `make_preview_closed`. While the window role exists, Make reports no
 embedded browser target, so Core issues the Reader conversation token and uses
 `previewSurface: 'chromium'`. An explicit `stand_roles` test change clears the
 window role and returns subsequent turns to the embedded Make preview.
