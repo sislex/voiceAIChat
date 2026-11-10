@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, REQUIRED_ONLY_CONTEXT_ID, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -679,7 +679,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
     //   off    — ничего.
     // Инспектор контекста: пункты, выключенные пользователем, не попадают ассистенту.
-    const disabledContext = new Set(conv?.disabledContext ?? [])
+    const requiredContext = new Set(settings.requiredContextItems ?? [])
+    const disabledContext = effectiveDisabledContext(conv?.disabledContext ?? [], requiredContext)
+    if (disabledContext.has(REQUIRED_ONLY_CONTEXT_ID)) {
+      if (!requiredContext.has('personalization')) disabledContext.add('personalization')
+      for (const instruction of settings.chatInstructions) {
+        const itemId = instructionContextId(instruction.id)
+        if (!requiredContext.has(itemId)) disabledContext.add(itemId)
+      }
+    }
     const workspaceMode = isWorkspaceAssistantMode(conv?.assistantMode)
     const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
     // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
@@ -788,7 +796,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // не будет. Канбан-ассистент с «Автопилотом» действует сам — task-launch
     // ему не даём (`turnChatInstructions`).
     const instructions = turnChatInstructions(
-      effectiveChatInstructions(req.delegation || disabledContext.has(REQUIRED_ONLY_CONTEXT_ID) ? [] : settings.chatInstructions, disabledContext),
+      effectiveChatInstructions(req.delegation ? [] : settings.chatInstructions, disabledContext),
       conv,
       kanbanTurn
     )

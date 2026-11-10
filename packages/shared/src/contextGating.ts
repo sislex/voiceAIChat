@@ -2,7 +2,7 @@
 // выключенный пункт убирается из промпта/инструментов. Чистая логика без БД —
 // её используют и строитель снапшота (rest.ts), и сборка хода (turns.ts).
 
-/** Служебный маркер встроенного мода «Только обязательное». */
+/** Служебный маркер встроенного базового мода Required. */
 export const REQUIRED_ONLY_CONTEXT_ID = 'required-only'
 
 /** Правила безопасности — выключить нельзя (всегда в каждом ходе). */
@@ -40,10 +40,11 @@ export function contextLockReason(id: string): 'safety' | 'info' | 'kind' | null
 }
 
 /** Человеческое объяснение замка — один текст на весь интерфейс. */
-export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info' | 'kind', string> = {
+export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info' | 'kind' | 'required', string> = {
   safety: 'Правила безопасности платформы и приложения действуют в каждом ходе — выключить их нельзя.',
   info: 'Это справочная информация о конфигурации: отдельным блоком в промпт она не добавляется, выключать нечего.',
-  kind: 'Инструмент подключает сам вид чата или привязка задачи (превью, консоль, Make, панель ассистента, макет задачи). Он появляется и исчезает вместе с этой связью, тумблера у него нет.'
+  kind: 'Инструмент подключает сам вид чата или привязка задачи (превью, консоль, Make, панель ассистента, макет задачи). Он появляется и исчезает вместе с этой связью, тумблера у него нет.',
+  required: 'Источник включён в базовом моде Required и обязателен для всех наследующих модов.'
 }
 
 /** Можно ли выключить пункт контекста по его id. */
@@ -55,10 +56,18 @@ export function isContextToggleable(id: string): boolean {
   return true // personalization, project-binding, skill-*, mcp-remote-*, mcp-kb-*, knowledge-mode
 }
 
-/** Учитывает как отдельный тумблер, так и встроенный мод «Только обязательное». */
-export function isContextDisabled(disabledContext: Iterable<string>, id: string): boolean {
+/** Учитывает отдельный тумблер, базовый Required и обязательные унаследованные источники. */
+export function isContextDisabled(disabledContext: Iterable<string>, id: string, requiredContext: Iterable<string> = []): boolean {
   const disabled = disabledContext instanceof Set ? disabledContext : new Set(disabledContext)
+  const required = requiredContext instanceof Set ? requiredContext : new Set(requiredContext)
+  if (required.has(id)) return false
   return disabled.has(id) || (disabled.has(REQUIRED_ONLY_CONTEXT_ID) && isContextToggleable(id))
+}
+
+/** Удаляет из выключений обязательные источники, сохраняя маркер Required. */
+export function effectiveDisabledContext(disabledContext: Iterable<string>, requiredContext: Iterable<string>): Set<string> {
+  const required = requiredContext instanceof Set ? requiredContext : new Set(requiredContext)
+  return new Set([...disabledContext].filter((id) => !required.has(id)))
 }
 
 /**

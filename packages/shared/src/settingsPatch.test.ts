@@ -85,6 +85,8 @@ describe('sanitizeSettingsPatch', () => {
   })
 
   it('сохраняет конфигурацию ассистента и нормализует старый пресет', () => {
+    expect(sanitizeSettingsPatch({ requiredContextItems: ['instruction-console', 'instruction-console', 7] }).requiredContextItems)
+      .toEqual(['instruction-console'])
     expect(sanitizeSettingsPatch({
       contextPresets: [{
         id: 'dev',

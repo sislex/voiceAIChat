@@ -1680,6 +1680,11 @@ export interface Settings {
    */
   contextPresets: ContextPreset[]
   /**
+   * Источники базового мода Required. Они принудительно включены во всех
+   * наследниках и редактируются только в самом Required.
+   */
+  requiredContextItems?: string[]
+  /**
    * Мод, который применяется к **новым обычным** разговорам: id пользовательского
    * мода либо mode:chat/mode:required. null и mode:workspace означают встроенный Workspace.
    * Make-разговоры всегда создаются во встроенном mode:make.
@@ -1714,7 +1719,9 @@ export interface ContextSnapshotItem {
   configured: boolean
   available: boolean
   includedInNextTurn: boolean
-  /** Можно ли выключить пункт (безопасность и чистая информация — нельзя). */
+  /** Доступен ли источник в редакторе конфигураций, даже если унаследован и заблокирован в разговоре. */
+  configurable?: boolean
+  /** Можно ли выключить пункт в текущем разговоре (безопасность, информация и Required-наследование — нельзя). */
   toggleable: boolean
   /**
    * На что влияет тумблер: `prompt-block` — исчезает блок промпта, `tool` —
@@ -1730,10 +1737,11 @@ export interface ContextSnapshotItem {
   /**
    * Почему пункт нельзя выключить: `safety` — правила платформы и приложения,
    * `info` — чистая информация без вклада в промпт, `kind` — инструмент даёт
-   * сам вид чата (превью, консоль, Make, панель ассистента). У выключаемого — null.
+   * сам вид чата (превью, консоль, Make, панель ассистента), `required` — источник
+   * унаследован из базового мода Required. У выключаемого — null.
    * UI объясняет замок словами, а не догадкой по id.
    */
-  lockReason?: 'safety' | 'info' | 'kind' | null
+  lockReason?: 'safety' | 'info' | 'kind' | 'required' | null
   /** Размер вклада пункта в промпт: символы и грубая оценка токенов (chars/4). */
   size?: { chars: number; approxTokens: number } | null
   /**
@@ -2060,6 +2068,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
   loginNewDeviceEmails: true,
   contextPresets: [],
+  requiredContextItems: [],
   defaultContextPresetId: null
 }
 
@@ -2113,6 +2122,9 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
   // Пресеты контекста: имя и список id. Приводим к контракту здесь, иначе мусор
   // осядет в записи настроек навсегда (она мержится, а не заменяется).
+  if (Array.isArray(input.requiredContextItems)) {
+    patch.requiredContextItems = [...new Set(input.requiredContextItems.filter((entry): entry is string => typeof entry === 'string'))].slice(0, 200)
+  }
   if (Array.isArray(input.contextPresets)) {
     patch.contextPresets = (input.contextPresets as unknown[])
       .filter((item): item is ContextPreset => typeof item === 'object' && item !== null && typeof (item as ContextPreset).id === 'string')

@@ -409,6 +409,14 @@ describe('REST: conversations/messages/settings', () => {
     // Безопасность выключить нельзя.
     expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })).statusCode).toBe(400)
     expect((await db.chat.getConversation(U, created.id))?.disabledContext).not.toContain('platform-instructions')
+    // Источник, включённый в Required, наследуется включённым и тоже не выключается.
+    const settings = await db.settings.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, requiredContextItems: ['knowledge-mode'] } })
+    const inherited = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    expect(inherited.statusCode).toBe(400)
+    const inheritedSnapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(inheritedSnapshot.groups.flatMap((g: { items: { id: string }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode'))
+      .toMatchObject({ configurable: true, toggleable: false, enabled: true, lockReason: 'required' })
   })
 
   it('снимок проектного чата наследует LLM проекта', async () => {

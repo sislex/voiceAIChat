@@ -9,7 +9,7 @@ import { clientMessages, loadsServiceData } from '../serviceData.js'
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextDisabled, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup, isWorkspaceAssistantMode } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextDisabled, isContextToggleable, toolNameForContextId, REQUIRED_ONLY_CONTEXT_ID, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -90,6 +90,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
   const disabled = new Set(conversation.disabledContext ?? [])
+  const settings = await db.settings.getSettings(userId)
+  const requiredContext = new Set(settings.requiredContextItems ?? [])
+  const requiredMode = disabled.has(REQUIRED_ONLY_CONTEXT_ID)
   /**
    * Что делает тумблер этого пункта. Считается по id — там же, где живёт само
    * правило выключения: инструменты уходят в `--disallowedTools`, навыки не
@@ -104,16 +107,17 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     if (id === 'knowledge-mode') return 'tool'
     return 'prompt-block'
   }
-  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
-    const toggleable = isContextToggleable(value.id)
-    const enabled = toggleable ? !isContextDisabled(disabled, value.id) : true
-    // Причина замка приходит с сервера словом, а не выводится в UI по id:
-    // правила гейтинга живут в одном месте (`contextGating.ts`).
-    const lockReason = toggleable ? null : contextLockReason(value.id)
+  const contextItem = (value: Omit<ContextSnapshotItem, 'configurable' | 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
+    const configurable = isContextToggleable(value.id)
+    const inheritedRequired = configurable && requiredContext.has(value.id)
+    const toggleable = configurable && !inheritedRequired && !requiredMode
+    const enabled = configurable ? !isContextDisabled(disabled, value.id, requiredContext) : true
+    // Унаследованные из Required источники и сам базовый мод правятся только
+    // через редактор Required, а не тумблером отдельного разговора.
+    const lockReason = configurable && (inheritedRequired || requiredMode) ? 'required' : toggleable ? null : contextLockReason(value.id)
     const allowedByMode = workspaceMode || chatModeItemIds.has(value.id) || value.id.startsWith('instruction-')
-    return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled && allowedByMode }
+    return { ...value, configurable, toggleable, enabled, lockReason, effect: configurable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled && allowedByMode }
   }
-  const settings = await db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = (await db.identity.getUser(viewer))?.role ?? 'developer'
   // Match turn execution: Make uses the explicitly configured machine only.
@@ -1182,6 +1186,15 @@ export async function registerRest(
     // люди, и журнал должен показать именно того, кто нажал.
     const owner = await contextOwnerFor(req, req.params.id)
     if (!owner) return reply.code(404).send({ error: 'not found' })
+    const conversation = await db.chat.getConversation(owner, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    if (conversation.disabledContext?.includes(REQUIRED_ONLY_CONTEXT_ID) && req.params.itemId !== REQUIRED_ONLY_CONTEXT_ID) {
+      return reply.code(400).send({ error: 'Источники базового мода Required меняются в редакторе мода' })
+    }
+    const settings = await db.settings.getSettings(owner)
+    if (req.body?.enabled === false && (settings.requiredContextItems ?? []).includes(req.params.itemId)) {
+      return reply.code(400).send({ error: 'Источник унаследован из Required и не может быть выключен' })
+    }
     const updated = await db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
