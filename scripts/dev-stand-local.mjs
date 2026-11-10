@@ -23,6 +23,8 @@
 //   SISLEXA_STAND_RUNNER_FILE   private env file (mode 600) with VC_LLM_RUNNER_CLAUDE_URL,
 //                               VC_LLM_RUNNER_CODEX_URL and VC_LLM_RUNNER_TOKEN,
 //                               default ~/.config/sislexa/dev-stand/runner.env
+//   SISLEXA_STAND_SERVICES      all: run all checkouts with shared persistent state; core: legacy three-process mode
+//   SISLEXA_STAND_<COMPONENT>_SOURCE  prepared checkout; component uses uppercase and underscores
 //   SISLEXA_STAND_SHARE         root of a running dev-mode instance (e.g. ~/sislexa-dev with env/, run.sh).
 //                               The stand then runs only Core, Make and Core UI from its working copies and
 //                               uses that instance's database, secrets, session secret, LLM Runner and other
@@ -41,7 +43,7 @@ const env = process.env
 const NAME = env.SISLEXA_STAND_NAME || 'local'
 if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(NAME)) fail('SISLEXA_STAND_NAME must be lowercase letters, digits and dashes')
 const HOME = resolve(env.SISLEXA_STAND_HOME || join(homedir(), '.sislexa', 'stands', NAME))
-const SOURCE_KEYS = { voiceAIChat: 'SISLEXA_STAND_CORE_SOURCE', 'sislexa-core-ui': 'SISLEXA_STAND_CORE_UI_SOURCE', make: 'SISLEXA_STAND_MAKE_SOURCE' }
+const SOURCE_KEYS = Object.fromEntries(Object.entries({ core: 'voiceAIChat', 'core-ui': 'sislexa-core-ui', make: 'make', kanban: 'sislexa-kanban', identity: 'identity', billing: 'billing', analytics: 'analytics', 'web-reader': 'webreader', 'playwright-reader': 'playwrightreader', 'image-studio': 'image-studio', voice: 'voice', storage: 'storage' }).map(([component, repo]) => [repo, 'SISLEXA_STAND_' + component.toUpperCase().replaceAll('-', '_') + '_SOURCE']))
 const preparedSource = repo => env[SOURCE_KEYS[repo]] ? resolve(env[SOURCE_KEYS[repo]]) : null
 const sourceRoot = repo => preparedSource(repo) || join(dirs.src, repo)
 const REF = env.SISLEXA_STAND_REF || 'origin/dev'
@@ -54,14 +56,16 @@ const RUNNER_FILE = resolve(env.SISLEXA_STAND_RUNNER_FILE || join(homedir(), '.c
 const SELF_REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const dirs = { src: join(HOME, 'src'), data: join(HOME, 'data'), logs: join(HOME, 'logs'), run: join(HOME, 'run'), components: join(HOME, 'components'), private: join(HOME, 'private') }
 const MODE_FILE = join(HOME, 'mode.json')
-const SAVED_SHARE = existsSync(MODE_FILE) ? JSON.parse(readFileSync(MODE_FILE, 'utf8')).share ?? null : null
+const SAVED_MODE = existsSync(MODE_FILE) ? JSON.parse(readFileSync(MODE_FILE, 'utf8')) : {}
+const SAVED_SHARE = SAVED_MODE.share ?? null
+const FULL = (env.SISLEXA_STAND_SERVICES ?? SAVED_MODE.services) === 'all'
 const SHARE = env.SISLEXA_STAND_SHARE === undefined ? SAVED_SHARE : env.SISLEXA_STAND_SHARE ? resolve(env.SISLEXA_STAND_SHARE) : null
 const SOURCES = resolve(env.SISLEXA_STAND_SOURCES || SHARE || join(homedir(), 'sislexa-dev'))
 // Shared mode keeps its data and component configuration apart from the isolated stand's.
 const shareDirs = { data: join(dirs.data, 'shared'), components: join(HOME, 'components-shared') }
 
 const port = n => BASE + n
-const O = STAND_BASE_PORT_OFFSETS
+const O = { ...STAND_BASE_PORT_OFFSETS, storage: 799 }
 const P = {
   core: port(O.core), make: port(O.make), kanban: port(O.kanban), tts: port(O.tts), stt: port(O.stt), browser: port(O.browser), automation: port(O.automation),
   reader: port(O.reader), imageStudio: port(O.imageStudio), playwrightReader: port(O.playwrightReader), identity: port(O.identity), billing: port(O.billing), analytics: port(O.analytics),
@@ -75,7 +79,7 @@ const VERSIONS = {
   'web-reader-ui': ['1.0.0', '1.0.0'], 'playwright-reader-ui': ['1.0.0', '1.0.0'], 'image-studio-ui': ['1.0.0', '1.0.0']
 }
 
-const REPOS = SHARE ? ['voiceAIChat', 'sislexa-core-ui', 'make']
+const REPOS = SHARE && FULL ? Object.keys(SOURCE_KEYS) : SHARE ? ['voiceAIChat', 'sislexa-core-ui', 'make']
   : ['voiceAIChat', 'sislexa-core-ui', 'sislexa-kanban', 'make', 'identity', 'billing', 'analytics', 'webreader', 'playwrightreader', 'image-studio', 'voice']
 
 function services(secrets, runner) {
@@ -140,6 +144,7 @@ function services(secrets, runner) {
 
 // Shared mode: Core, Make and Core UI of the stand on the shared instance's database and services.
 function sharedServices(shared) {
+  if (FULL) return fullSharedServices(shared)
   const D = name => join(shareDirs.data, name)
   const C = id => join(shareDirs.components, id, 'config.json')
   const common = { NODE_ENV: 'development', ...shared.secrets }
@@ -158,6 +163,45 @@ function sharedServices(shared) {
       env: { ...shared.make, PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
     { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: coreUiEnv() }
   ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
+}
+// Full shared stands reuse persistent state but run every application from a checkout.
+function fullSharedServices(shared) {
+  const configs = { ...shared.services, core: shared.core, make: shared.make }
+  const origins = { core: P.core, make: P.make, kanban: P.kanban, identity: P.identity, billing: P.billing, analytics: P.analytics,
+    'web-reader': P.reader, 'playwright-reader': P.playwrightReader, 'image-studio': P.imageStudio,
+    'tts-runner': P.tts, 'stt-runner': P.stt, storage: port(O.storage) }
+  const routes = { AUTH_URL: P.identity, PUBLIC_URL: P.ui, VC_CORE_URL: P.core, VC_MAKE_URL: P.make, VC_MAKE_MCP_PUBLIC_BASE: P.make,
+    VC_KANBAN_URL: P.kanban, VC_KANBAN_MCP_PUBLIC_BASE: P.kanban, VC_READER_URL: P.reader, VC_READER_MCP_PUBLIC_BASE: P.reader,
+    VC_PLAYWRIGHT_READER_URL: P.playwrightReader, VC_IMAGE_STUDIO_URL: P.imageStudio,
+    VC_BROWSER_RUNNER_URL: P.browser, VC_BROWSER_PREVIEW_BASE: P.core, VC_TTS_RUNNER_URL: P.tts, VC_STT_RUNNER_URL: P.stt,
+    VC_AUTOMATION_RUNNER_URL: P.automation, VC_FILE_STORAGE_URL: port(O.storage), STORAGE_URL: port(O.storage),
+    VC_MCP_PUBLIC_BASE: P.core, VC_PUBLIC_URL: P.ui, IDENTITY_PUBLIC_URL: P.ui }
+  const list = services({}, {}).filter(s => s.id !== 'core-ui')
+  list.push({ id: 'storage', repo: 'storage', cmd: ['npx', 'tsx', 'watch', 'apps/service/src/main.ts'], port: port(O.storage) })
+  list.push(
+    { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json' },
+    { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(O.makeUi) },
+    { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/' })
+  return list.map(s => {
+    const source = configs[s.id] ?? {}
+    const values = { ...shared.secrets, ...source, NODE_ENV: 'development', HOST: '127.0.0.1' }
+    // Never substitute fresh stand data paths for shared Postgres, SQLite or file nodes.
+    for (const [key, p] of Object.entries(routes)) if (key in values) values[key] = url(p)
+    if (s.port) values.PORT = s.port
+    if (source.SISLEXA_COMPONENT_CONFIG) values.SISLEXA_COMPONENT_CONFIG = join(shareDirs.components, Object.keys(origins).find(id => origins[id] === s.port) ?? s.id, 'config.json')
+    if (s.frontend) Object.assign(values, { VC_APPLICATION_ID: s.frontend, VC_APPLICATION_DEV: '1', VC_DATA_DIR: null })
+    if (s.id === 'core') Object.assign(values, {
+      VC_KANBAN_URL: url(P.kanban), VC_MAKE_URL: url(P.make), VC_READER_URL: url(P.reader),
+      VC_PLAYWRIGHT_READER_URL: url(P.playwrightReader), VC_IMAGE_STUDIO_URL: url(P.imageStudio),
+      VC_AGENT_OFFLINE_ALERT_MIN: '0',
+      VC_APPLICATION_FRONTENDS: JSON.stringify({ ...JSON.parse(source.VC_APPLICATION_FRONTENDS || '{}'),
+        'make-ui': url(port(O.makeUi)), 'web-reader-ui': url(P.webReaderUi), 'playwright-reader-ui': url(P.playwrightReaderUi), 'image-studio-ui': url(P.imageStudioUi) }),
+      VC_STAND_PROXY_PORTS: `${port(STAND_PROXY_PORT_OFFSETS[0])}-${port(STAND_PROXY_PORT_OFFSETS.at(-1))}`
+    })
+    if (s.id === 'kanban') values.VC_KANBAN_BACKGROUND = 'off'
+    if (s.id === 'core-ui') Object.assign(values, coreUiEnv(), { PORT: null })
+    return { ...s, env: values }
+  })
 }
 const standServices = (secrets, runner, shared) => SHARE ? sharedServices(shared ?? { core: {}, make: {}, secrets: {} }) : services(secrets, runner)
 
@@ -224,6 +268,13 @@ function loadShared() {
   const shared = { secrets: readEnvFile(file('secrets')), core: readEnvFile(file('core')), make: readEnvFile(file('make')) }
   for (const key of ['VC_DB_URL', 'VC_DATA_DIR', 'SISLEXA_COMPONENT_CONFIG', 'VC_MAKE_URL']) if (!shared.core[key]) fail(`${file('core')} is missing ${key}`)
   if (!shared.make.VC_CORE_URL) fail(`${file('make')} is missing VC_CORE_URL`)
+  if (FULL) {
+    shared.services = {}
+    for (const id of ['identity', 'billing', 'analytics', 'kanban', 'reader', 'playwright-reader', 'browser-runner', 'image-studio', 'tts', 'stt', 'automation', 'storage']) {
+      if (!existsSync(file(id))) fail(`shared instance file not found: ${file(id)}`)
+      shared.services[id] = readEnvFile(file(id))
+    }
+  }
   return shared
 }
 
@@ -242,7 +293,8 @@ function prepareSharedComponents(shared) {
     }
   }
   rewrite(shareDirs.components)
-  for (const [id, target, origin] of [['core', 'make', P.make], ['make', 'core', P.core]]) {
+  const fullOrigins = { core: P.core, make: P.make, identity: P.identity, billing: P.billing, analytics: P.analytics, 'web-reader': P.reader, 'playwright-reader': P.playwrightReader, 'image-studio': P.imageStudio, 'tts-runner': P.tts, 'stt-runner': P.stt, storage: port(O.storage) }
+  for (const [id, target, origin] of (FULL ? Object.keys(fullOrigins).filter(id => existsSync(join(shareDirs.components, id, 'config.json'))).flatMap(id => Object.entries(fullOrigins).map(([target, origin]) => [id, target, origin])) : [['core', 'make', P.make], ['make', 'core', P.core]])) {
     const file = join(shareDirs.components, id, 'config.json')
     const config = JSON.parse(readFileSync(file, 'utf8'))
     for (const dependency of config.dependencies ?? []) if (dependency.applicationId === target) dependency.url = url(origin)
@@ -395,7 +447,7 @@ async function startService(s) {
   try { previous = readFileSync(stateFile, 'utf8') } catch {}
   if (runningPid(s.id) && previous !== signature) await stopService(s.id)
   if (runningPid(s.id)) {
-    if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
+    if (FULL || s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
     return 'running'
   }
   if (s.port && await portOpen(s.port)) fail(`port ${s.port} for ${s.id} is used by another process; change SISLEXA_STAND_PORT_BASE / SISLEXA_STAND_UI_PORT`)
@@ -428,7 +480,7 @@ async function startService(s) {
   if (!child.pid) fail(`could not spawn ${s.id}`)
   writeFileSync(pidFile(s.id), String(child.pid) + '\n')
   writeFileSync(stateFile, signature, { mode: 0o600 })
-  if (s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
+  if (FULL || s.id === 'core' || s.id === 'core-ui') supervised.add(s.id)
   child.unref()
   if (s.waitFor) {
     const until = Date.now() + 180_000
@@ -445,7 +497,7 @@ async function start() {
   for (const d of Object.values(dirs)) if (d !== dirs.components) mkdirSync(d, { recursive: true, mode: d === dirs.private ? 0o700 : 0o755 })
   if (SHARE !== SAVED_SHARE && readdirSync(dirs.run).some(f => runningPid(f.replace(/\.pid$/, ''))))
     fail(`the stand runs in ${SAVED_SHARE ? 'shared mode with ' + SAVED_SHARE : 'isolated mode'}; run npm run dev:stand:stop before switching`)
-  writeFileSync(MODE_FILE, JSON.stringify({ share: SHARE }) + '\n')
+  writeFileSync(MODE_FILE, JSON.stringify({ share: SHARE, services: FULL ? 'all' : 'core' }) + '\n')
   if (SHARE) return startShared()
   const runner = loadRunner()
   const secrets = loadSecrets()
@@ -475,7 +527,7 @@ async function status() {
   if (!existsSync(dirs.run)) { console.log(`dev-stand ${NAME}: not created (${HOME})`); return }
   console.log(`dev-stand ${NAME} (${HOME}), ${SHARE ? 'shared with ' + SHARE : 'database ' + DB_NAME}`)
   let up = 0
-  const list = standServices({}, {})
+  const list = standServices({}, {}, SHARE && FULL ? loadShared() : undefined)
   for (const s of list) {
     const pid = runningPid(s.id)
     let endpoint = ''
@@ -505,8 +557,9 @@ async function stopService(id) {
 
 async function stop() {
   // Include services removed from the current configuration (e.g. detached Make UI).
-  if (existsSync(dirs.run)) for (const file of readdirSync(dirs.run).filter(f => f.endsWith('.pid')).reverse())
-    await stopService(file.slice(0, -4))
+  // Independent service groups must share one shutdown deadline, even with many watchers.
+  if (existsSync(dirs.run)) await Promise.all(readdirSync(dirs.run).filter(f => f.endsWith('.pid'))
+    .map(file => stopService(file.slice(0, -4))))
   console.log(`dev-stand ${NAME}: stopped; data kept in ${HOME}${SHARE ? '' : ' and database ' + DB_NAME}`)
 }
 

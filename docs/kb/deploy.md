@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 694e6cbdf
+updated: 2026-11-10
+checked: b1833b22e
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -773,7 +773,30 @@ owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).
 Kanban supplies the stand name, shared root, every attached component checkout, UI/gateway port and
 reserved `SISLEXA_STAND_PORT_BASE`; Core and Make use base + 787 and base + 788.
 
-**Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
+**Full shared mode.** Set `SISLEXA_STAND_SERVICES=all` together with
+`SISLEXA_STAND_SHARE` to run the complete service set, including Storage, from
+working copies. Kanban's local-stand supervisor selects this mode. Source overrides
+are `SISLEXA_STAND_<COMPONENT>_SOURCE` (uppercase, dashes become underscores):
+core, core-ui, make, kanban, identity, billing, analytics, web-reader,
+playwright-reader, image-studio, voice and storage. Missing overrides retain normal
+stand worktree preparation. All processes are supervised; loss of a service stops
+the group. Shutdown signals independent service groups concurrently, so their
+10-second graceful-stop deadlines overlap instead of accumulating. The mode is persisted for subsequent status/start calls.
+
+The launcher requires shared `env/<service>.env` for identity, billing, analytics,
+kanban, reader, playwright-reader, browser-runner, image-studio, tts, stt,
+automation and storage, in addition to secrets/core/make. It preserves those
+services' database, SQLite, data-directory, LLM and file-node settings, rewriting
+local service URLs and copied component dependencies to stand ports. Kanban always
+receives `VC_KANBAN_BACKGROUND=off`. Core's data/session directory remains shared.
+Storage runs `apps/service/src/main.ts` from its owner checkout on base + 799;
+its `STORAGE_DB_URL` and `STORAGE_NODES` are retained. With port base 32000
+and UI 23002, Core is 32787. This code does not itself stop a manually launched
+stand or mutate a running machine's Kanban bindings; commissioning requires
+stopping the previous supervisor and attaching the conversation checkouts.
+
+**Legacy shared mode.** Without `SISLEXA_STAND_SERVICES=all`,
+ `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
 dev-mode instance with `env/secrets.env`, `env/core.env`, `env/make.env`) makes the
 stand run only Core, Make and Core UI from its working copies, on that instance's
 database. Everything else is reused from the shared instance: secrets and LLM Runner
