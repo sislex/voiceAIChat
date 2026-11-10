@@ -4,7 +4,7 @@
 
 import type { VoiceChatDb } from '../db/database.js'
 import { buildGitWorkspaceId } from '@voicechat/shared'
-import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult, ProjectReferenceList, ProjectReferenceFile } from '@voicechat/make-contracts'
+import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeStandWindow, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult, ProjectReferenceList, ProjectReferenceFile } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
 import type { UserStandOperation, UserStandResult } from './userStand.js'
@@ -52,6 +52,7 @@ export interface LocalMakeCoreDeps {
   makeStand?: (userId: string, conversationId: string, operation: MakeStandOperation) => Promise<MakeStandResult>
   /** User-scoped Make stands library (make-contracts 1.8.16 `MakeProjectCore.userStand`). */
   userStand?: (userId: string, operation: UserStandOperation) => Promise<UserStandResult>
+  openStandWindow?: (userId: string, conversationId: string, standId: string, url: string, current?: MakeStandWindow | null) => Promise<MakeStandWindow>
 }
 
 export class LocalMakeCore implements MakeCore {
@@ -220,6 +221,9 @@ export class LocalMakeCore implements MakeCore {
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
   makeStand(userId: string, conversationId: string, operation: MakeStandOperation) { return this.deps.makeStand ? this.deps.makeStand(userId, conversationId, operation) : fail(501, 'make_stand_unavailable') }
   userStand(userId: string, operation: UserStandOperation): Promise<UserStandResult> { return this.deps.userStand ? this.deps.userStand(userId, operation) : fail(503, 'stand_proxy_unavailable') }
+  openStandWindow(userId: string, conversationId: string, standId: string, url: string, current?: MakeStandWindow | null): Promise<MakeStandWindow> {
+    return this.deps.openStandWindow ? this.deps.openStandWindow(userId, conversationId, standId, url, current) : fail(503, 'stand_window_unavailable')
+  }
   // Project notes are not hosted by Core yet; Make reports the 501 to the assistant.
   projectNotesRead(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
   projectNotesUpdate(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
