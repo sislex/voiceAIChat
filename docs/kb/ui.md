@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-10
+checked: bdb620e22
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -50,6 +50,16 @@ Core принимает настройку `chatFilesBackend: machine | storage`
 `machine`) и возвращает `UploadInfo.storage` при загрузке через включённый сервис.
 Это серверный контракт; элементы выбора backend и отображение вложений принадлежат
 UI owner. Изменение FS-2 не обновляет закреплённый UI-артефакт.
+
+## Conversation mode consumer contract
+
+Core exposes `Conversation.assistantMode` and accepts it in conversation settings.
+`chat` omits workspace context and tools; `workspace` and `make` retain them.
+Make conversations start in `make`, while assigning that mode to an ordinary
+conversation returns 400. Changing modes clears engine session/context usage.
+The context snapshot reports an `assistant-mode` item and uses the same
+`isWorkspaceAssistantMode` predicate as turn execution. Rendering remains in
+Core UI; see [turn context](llm.md) for the execution boundary.
 
 ## Core UI owner and consumer boundary
 

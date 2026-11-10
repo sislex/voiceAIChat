@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-11-09
-checked: 2dfd7992
+updated: 2026-11-10
+checked: bdb620e22
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -75,7 +75,11 @@ through `make_browser_session`. The assistant-facing `stand_view {action:"focus"
 performs the same server-side transition atomically: Core validates ownership and the
 `playwright-reader.use` capability, opens or refocuses the stand URL in the reusable
 `Make window · <conversation>` session, binds it to the Make chat, and Make persists
-both the focused panel tab and `roles.window`. This is required for external frames
+both the focused panel tab and `roles.window`. Core passes the selected URL in
+`window.url` to `browserRunner.start` before saving the Reader binding. The
+`startInput` local variable preserves that runtime payload while accommodating
+the pinned browser contract's narrower TypeScript input type.
+This is required for external frames
 that cannot host the Make preview executor; changing only the `test` marker would
 still end in `make_preview_closed`. While the window role exists, Make reports no
 embedded browser target, so Core issues the Reader conversation token and uses

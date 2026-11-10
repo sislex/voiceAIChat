@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-10
+checked: bdb620e22
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -32,6 +32,18 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Make transport limits and conversation mode
+
+The Make browser proxy admits bodies up to 56 MiB for base64 ZIP imports;
+Core's internal Make RPC route admits 4 MiB for stand-file and research payloads.
+These limits are configured in `makeBridge/proxy.ts` and `routes/internal.ts`
+and retain the existing service/user authorization checks.
+
+`conversations.assistant_mode` defaults to `workspace`. Changing it through
+`ChatRepo.setConversationAssistantMode` clears the saved engine session and
+context usage only when the value changes, preventing a Chat turn from reusing
+Workspace context. This is separate from authentication and resource ownership.
 
 ## File storage metadata and quotas
 

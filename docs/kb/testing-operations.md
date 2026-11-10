@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-11-09
-checked: c5fd9ebe4
+updated: 2026-11-10
+checked: bdb620e22
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -126,6 +126,15 @@ temporary JSON report is removed in `finally`. Inspect the preceding test
 output; zero in that summary does not establish that discovery found no tests.
 
 ## Dev stand focused checks (C02)
+
+The full shared-mode fixture in `scripts/dev-stand-local.test.mjs` runs real
+loopback processes from prepared owner checkout fixtures with
+`SISLEXA_STAND_SERVICES=all`. It checks shared Postgres, Billing/Analytics data
+paths, Storage SQLite and external file-node/LLM settings, local Core routing,
+and `VC_KANBAN_BACKGROUND=off`. Killing Kanban must fail the supervisor and stop
+the stand. This verifies launcher wiring with fake service executables; it does
+not prove owner-service compatibility or commission the live 23002 stand.
+Independent service groups stop concurrently, sharing their graceful-stop wait.
 
 `scripts/dev-stand-local.test.mjs` starts real loopback HTTP processes. Its fake
 Core UI is configured through `VC_WEB_PORT`, while the other fake services use

@@ -2,8 +2,8 @@
 id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-10
+checked: bdb620e22
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -83,9 +83,14 @@ definitions now live in `packages/knowledge/src`; Core's `kb/autoContext.ts` and
 `kb/taskQuery.ts` are compatibility re-exports. `kb/usage.ts` remains the concrete
 Core telemetry writer. The package defines a 3500-character chat budget and a
 separate `CI_KB_AUTO_CONTEXT_BUDGET` of 1600 characters; both include navigation
-and formatting. `db/repos/kb.ts` owns persisted reports and
-`db/repos/kbHit.ts` owns the hit calculation used by the CI repository.
-Kanban model hooks run in `sislexa-kanban`; UI paths below belong to Core UI.
+and formatting. `db/repos/kb.ts` owns persisted reports. Core no longer contains
+`db/repos/kbHit.ts` or the CI workflow mutation methods that used it; the CI
+calculation and model-hook paths below describe the extracted Kanban workflow,
+not a local Core implementation. UI paths below belong to Core UI.
+
+In `turns.ts`, `assistantMode: 'chat'` forces the effective KB mode to `off`,
+even when the saved `kbContextMode` is `auto` or `manual`. Workspace and Make
+retain the configured KB behavior, subject to the `knowledge-mode` context toggle.
 
 ## Два источника обращений
 
