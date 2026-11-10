@@ -80,6 +80,10 @@ describe('canonical persisted chat settings', () => {
     const builtIn = await db.chat.createConversation('alice', 'Built-in default')
     expect(builtIn).toMatchObject({ assistantMode: 'chat', disabledContext: [] })
 
+    await db.settings.saveSettings('alice', { ...DEFAULT_SETTINGS, defaultContextPresetId: 'mode:required' })
+    const required = await db.chat.createConversation('alice', 'Required-only default')
+    expect(required).toMatchObject({ assistantMode: 'chat', disabledContext: ['required-only'] })
+
     await db.settings.saveSettings('alice', {
       ...DEFAULT_SETTINGS,
       contextPresets: [{ id: 'quiet', name: 'Quiet', assistantMode: 'workspace', disabled: ['personalization'] }],

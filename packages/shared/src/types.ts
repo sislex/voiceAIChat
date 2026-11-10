@@ -1681,7 +1681,7 @@ export interface Settings {
   contextPresets: ContextPreset[]
   /**
    * Мод, который применяется к **новым обычным** разговорам: id пользовательского
-   * мода либо mode:chat. null и mode:workspace означают встроенный Workspace.
+   * мода либо mode:chat/mode:required. null и mode:workspace означают встроенный Workspace.
    * Make-разговоры всегда создаются во встроенном mode:make.
    */
   defaultContextPresetId: string | null

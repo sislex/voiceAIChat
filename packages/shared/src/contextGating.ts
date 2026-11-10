@@ -2,6 +2,9 @@
 // выключенный пункт убирается из промпта/инструментов. Чистая логика без БД —
 // её используют и строитель снапшота (rest.ts), и сборка хода (turns.ts).
 
+/** Служебный маркер встроенного мода «Только обязательное». */
+export const REQUIRED_ONLY_CONTEXT_ID = 'required-only'
+
 /** Правила безопасности — выключить нельзя (всегда в каждом ходе). */
 export const SAFETY_CONTEXT_IDS = ['platform-instructions', 'application-instructions'] as const
 
@@ -45,10 +48,17 @@ export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info' | 'kind', string> = {
 
 /** Можно ли выключить пункт контекста по его id. */
 export function isContextToggleable(id: string): boolean {
+  if (id === REQUIRED_ONLY_CONTEXT_ID) return true // служебный выключатель всех необязательных источников
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return false
   if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return false
   if (KIND_TOOL_PREFIXES.some((prefix) => id.startsWith(prefix))) return false
   return true // personalization, project-binding, skill-*, mcp-remote-*, mcp-kb-*, knowledge-mode
+}
+
+/** Учитывает как отдельный тумблер, так и встроенный мод «Только обязательное». */
+export function isContextDisabled(disabledContext: Iterable<string>, id: string): boolean {
+  const disabled = disabledContext instanceof Set ? disabledContext : new Set(disabledContext)
+  return disabled.has(id) || (disabled.has(REQUIRED_ONLY_CONTEXT_ID) && isContextToggleable(id))
 }
 
 /**
