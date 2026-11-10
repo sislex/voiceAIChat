@@ -5,15 +5,15 @@
       "package": "@sislexa/make",
       "workspace": "apps/make",
       "repository": "https://github.com/sislex/make",
-      "version": "1.8.18",
-      "commit": "05cd7ed3c0b471e409b41ee1b2e57789f8704ce6"
+      "version": "1.8.19",
+      "commit": "f48a6c6433820bcc6b6ac0e1355e69e020de7d2e"
     },
     "playwright-reader": {
       "package": "@sislexa/playwright-reader",
       "workspace": "apps/playwright-reader",
       "repository": "https://github.com/sislex/playwrightreader",
-      "version": "1.2.7",
-      "commit": "c5642e5ffb708e71da63dc9132c8313e249cd069"
+      "version": "1.2.8",
+      "commit": "f70c70d5294bd09882867dcace00a756a85e405f"
     },
     "web-reader": {
       "package": "@sislexa/web-reader",
