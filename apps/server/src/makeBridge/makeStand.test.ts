@@ -116,24 +116,26 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect(f.fetchImpl.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
   })
 
-  it('routes a secondary component to its own checkout and retains the primary binding', async () => {
+  it.each(['make', 'kanban', 'identity', 'storage', 'web-reader'])('routes secondary %s files to its checkout and retains the primary binding', async component => {
     const f = fixture('core'); f.bind()
     f.base.mode = 'local-stand'
     Object.assign(f.stand, { baseEnvironmentId: 'base' })
-    f.stand.components.make = { repository: 'sislex/make', source: 'base', sha: 'abc' }
-    f.stand.live.push({ component: 'make', workingCopyPath: root + '-make', branch: 'make/conversation-conversa', head: 'sha' })
-    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: root + '-make', target: root + '-make/a.ts', directory: false }) })
-    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'files', action: 'write', component: 'make', path: 'a.ts', content: 'updated' })
+    f.stand.components[component] = { repository: 'sislex/' + component, source: 'base', sha: 'abc' }
+    const secondaryRoot = root + '-' + component
+    f.stand.live.push({ component, workingCopyPath: secondaryRoot, branch: 'make/conversation-conversa', head: 'sha' })
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: secondaryRoot, target: secondaryRoot + '/a.ts', directory: false }) })
+    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'files', action: 'write', component, path: 'a.ts', content: 'updated' })
     expect(result.phase).toBe('ready')
     expect(result.component).toBe('core')
     expect(result.workingCopyPath).toBe(root)
-    expect(f.machines.fsWrite).toHaveBeenCalledWith('agent', root + '-make/a.ts', Buffer.from('updated').toString('base64'))
-    expect(result.components?.map(c => c.component)).toEqual(['core', 'make'])
+    expect(f.machines.fsWrite).toHaveBeenCalledWith('agent', secondaryRoot + '/a.ts', Buffer.from('updated').toString('base64'))
+    expect(result.components?.map(c => c.component)).toEqual(['core', component])
+    expect(result).toMatchObject({ availableComponents: ['core', component] })
     f.base.mode = 'managed'
     expect((await f.adapter.makeStand('alice', 'conversation', { op: 'git', component: 'make', operation: { op: 'status' } })).phase).toBe('failed')
   })
 
-  it.each(['make', 'core-ui'] as const)('runs status, commit and push in the attached %s repository', async component => {
+  it.each(['make', 'core-ui', 'kanban', 'identity', 'web-reader', 'playwright-reader', 'image-studio', 'billing', 'analytics', 'voice', 'storage'] as const)('runs status, commit and push in the attached %s repository', async component => {
     const f = fixture('core'); f.bind()
     f.base.mode = 'local-stand'
     Object.assign(f.stand, { baseEnvironmentId: 'base' })
@@ -154,6 +156,19 @@ describe('makeStand concrete Kanban and agent adapters', () => {
     expect(f.git.atWorkingCopy).toHaveBeenLastCalledWith('alice', 'project', expect.any(String), secondaryRoot)
     expect(f.git.commit).toHaveBeenCalled()
     expect(f.git.push).toHaveBeenCalled()
+  })
+
+  it('rejects unlisted components and foreign live copies before file writes', async () => {
+    const f = fixture('core'); f.bind()
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    const write = { op: 'files' as const, action: 'write' as const, component: 'identity', path: 'a.ts', content: 'updated' }
+    expect(await f.adapter.makeStand('alice', 'conversation', write)).toMatchObject({ phase: 'failed', error: 'component_not_in_stand' })
+    f.stand.components.identity = { repository: 'sislex/identity', source: 'base', sha: 'abc' }
+    f.stand.live.push({ component: 'identity', workingCopyPath: '/work/other', branch: 'make/other', head: 'sha' })
+    expect(await f.adapter.makeStand('alice', 'conversation', write)).toMatchObject({ phase: 'failed', error: 'component_not_in_stand' })
+    expect(f.machines.fsWrite).not.toHaveBeenCalled()
+    expect(extendedStandOperationSchema.safeParse({ ...write, component: '../identity' }).success).toBe(false)
   })
 
   it('keeps a missing manifest creating for a running create job', async () => {

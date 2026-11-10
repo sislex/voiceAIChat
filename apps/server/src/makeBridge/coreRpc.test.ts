@@ -8,9 +8,10 @@ import { registerInternalRoutes } from '../routes/internal.js'
 describe('/internal/make/core project methods', () => {
   const transfer = { targetProjectId: 'p', targetRepository: 'core-ui', title: 'Button', files: ['Button.tsx'], designConversationId: 'design' }
   const componentState = { standId: 's', hostProjectId: 'p', machineId: 'agent', component: 'core', branch: 'make/test', workingCopyPath: '/core', phase: 'ready', previewUrl: null, directUrls: [],
-    components: [{ component: 'make', branch: 'make/test', workingCopyPath: '/make', phase: 'ready' }] }
+    availableComponents: ['core', 'identity', 'kanban', 'storage'],
+    components: [{ component: 'identity', branch: 'make/test', workingCopyPath: '/identity', phase: 'ready' }] }
   const cases = [
-    ['makeStand', ['alice', 'conversation', { op: 'component', action: 'attach', component: 'make', standId: 's', hostProjectId: 'p' }], componentState],
+    ['makeStand', ['alice', 'conversation', { op: 'component', action: 'attach', component: 'identity', standId: 's', hostProjectId: 'p' }], componentState],
     ['makeStand', ['alice', 'conversation', { op: 'files', action: 'read', component: 'make', path: 'file.ts' }], { ...componentState, files: { action: 'read', content: 'make' } }],
     ['makeStand', ['alice', 'conversation', { op: 'git', component: 'core-ui', operation: { op: 'push' } }], { ...componentState, git: { op: 'push', output: 'done' } }],
     ['makeStand', ['alice', 'conversation', { op: 'git', component: 'make', operation: { op: 'compare', base: 'origin/dev', head: 'make/test', fetch: true } }], { ...componentState, git: { op: 'compare', ahead: 0, behind: 2, mergeBase: 'a'.repeat(40), contained: true } }],

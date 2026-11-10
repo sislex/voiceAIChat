@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 2dfd7992
+updated: 2026-11-10
+checked: b1833b22e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1263,7 +1263,14 @@ RPC event client is required to keep a link alive.
 ## Make conversation stand worktrees
 
 Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
-for core, core-ui and make. Optional `component` on files/git selects the attached
+for every component in the authorized Kanban stand manifest (including identity,
+kanban, billing, analytics, readers, image-studio, voice and storage). Core validates
+component identifiers and requires a manifest entry plus a conversation-owned live
+binding; it does not use a three-component enum. The RPC result validator uses the
+same identifier schema. `availableComponents` lists the local stand manifest's
+component identifiers for the Make attachment selector. Make also needs the matching
+owner contract/MCP/UI update: its older client schemas reject non-core components
+before calling Core. Optional `component` on files/git selects the attached
 repository; omission selects the conversation's primary repository. The primary
 binding remains the top-level stand result even after an operation against a
 secondary checkout, while `components` reports every matching live checkout with

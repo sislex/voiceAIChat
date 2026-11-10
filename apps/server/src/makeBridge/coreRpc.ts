@@ -3,7 +3,7 @@ import { createCoreRpcDispatcher, createTransferTaskSchema, projectPathSchema, s
   makeStandResultSchema, makeStandOptionsSchema, validateMakeStandResult,
   RpcError, makeStandWindowSchema, type MakeCore, type RpcRequest } from '@voicechat/make-contracts'
 import { DEV_COMPONENT_IDS } from '@voicechat/shared'
-import { compareOperationSchema, compareResultSchema, extendedStandOperationSchema, type PreviewOperation } from './projectAdapters.js'
+import { compareOperationSchema, compareResultSchema, extendedStandOperationSchema, localComponentSchema, type PreviewOperation } from './projectAdapters.js'
 import { userStandArgsSchema, userStandResultSchema, type UserStandOperation, type UserStandResult } from './userStand.js'
 
 // Compatibility with make-contracts 1.4: preserve new result fields and accept live operations.
@@ -22,8 +22,9 @@ const transferResult = transferTaskResultSchema.extend({
 })
 
 const standResult = makeStandResultSchema.extend({
+  availableComponents: z.array(localComponentSchema).optional(),
   git: z.union([makeStandResultSchema.shape.git.unwrap(), compareResultSchema]).optional(),
-  components: z.array(z.object({ component: z.enum(['core', 'core-ui', 'make']), branch: z.string().nullable(), workingCopyPath: z.string().min(1), phase: makeStandResultSchema.shape.phase })).optional(),
+  components: z.array(z.object({ component: localComponentSchema, branch: z.string().nullable(), workingCopyPath: z.string().min(1), phase: makeStandResultSchema.shape.phase })).optional(),
   options: makeStandOptionsSchema.extend({
     stands: z.array(makeStandOptionsSchema.shape.stands.element.extend({
       conversationWorktree: z.object({ branch: z.string().min(1) }).optional()
@@ -68,7 +69,7 @@ export function createMakeCoreDispatcher(core: MakeCore) {
       if (request.method === 'openStandWindow') {
         const parsed = standWindowArgs.safeParse(request.args)
         if (!parsed.success) throw new RpcError(400, 'Invalid stand window arguments')
-        const fn = (core as MakeCore & { openStandWindow?: (...args: typeof parsed.data) => Promise<unknown> }).openStandWindow
+        const fn = (core as MakeCore & { openStandWindow?: (...args: z.infer<typeof standWindowArgs>) => Promise<unknown> }).openStandWindow
         if (typeof fn !== 'function') throw new RpcError(503, 'stand_window_unavailable')
         return makeStandWindowSchema.parse(await fn.call(core, ...parsed.data))
       }

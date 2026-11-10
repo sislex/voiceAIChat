@@ -1065,7 +1065,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       if (!reader || !browserRunner)
         throw Object.assign(new Error('playwright_reader_unavailable'), { statusCode: 503 })
-      await browserRunner.start({ sessionId: reader.id, userKey: user, conversationKey: reader.id, window: { url } })
+      const startInput = { sessionId: reader.id, userKey: user, conversationKey: reader.id, window: { url } }
+      await browserRunner.start(startInput)
       await db.chat.setConversationMakeBrowserSession(user, conversationId, reader.id)
       return {
         standId, url, sessionId: reader.id,

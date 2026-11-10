@@ -18,7 +18,8 @@ export const compareResultSchema = z.object({
   op: z.literal('compare'), ahead: z.number().int().nonnegative(), behind: z.number().int().nonnegative(),
   mergeBase: z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), contained: z.boolean()
 }).strict().refine(value => value.contained === (value.ahead === 0), 'Inconsistent containment')
-const localComponentSchema = z.enum(['core', 'core-ui', 'make'])
+// The authorized Kanban stand manifest supplies the component/repository allowlist.
+export const localComponentSchema = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/)
 export const extendedStandOperationSchema = z.union([
   z.object({ op: z.literal('git'), component: localComponentSchema.optional(), operation: compareOperationSchema }).strict()
     .transform(value => value as unknown as z.infer<typeof makeStandOperationSchema> & { component?: z.infer<typeof localComponentSchema> }),
@@ -34,7 +35,7 @@ export const extendedStandOperationSchema = z.union([
   })
 ])
 type MakeStandOperation = z.infer<typeof extendedStandOperationSchema>
-type MakeStandResult = PublishedStandResult & { components?: Array<{ component: string; branch: string | null; workingCopyPath: string; phase: PublishedStandResult['phase'] }> }
+type MakeStandResult = Omit<PublishedStandResult, 'components'> & { availableComponents?: string[]; components?: Array<{ component: string; branch: string | null; workingCopyPath: string; phase: PublishedStandResult['phase'] }> }
 
 export type PreviewOperation = StandPreviewOperation | {
   op: 'live_on' | 'live_off'; subprojectPath: string; component: typeof DEV_COMPONENT_IDS[number]; standId: string
@@ -328,7 +329,12 @@ export class MakeProjectAdapters {
     return hosts.sort((a, b) => Number(b.project.id === projectId) - Number(a.project.id === projectId) || a.project.id.localeCompare(b.project.id))
   }
 
-  async makeStand(user: string, conversationId: string, operation: MakeStandOperation): Promise<MakeStandResult> {
+  // The pinned Make port has a narrower component union; Core RPC validates the extension.
+  async makeStand(user: string, conversationId: string, operation: MakeStandOperation): Promise<PublishedStandResult> {
+    return await this.extendedMakeStand(user, conversationId, operation) as PublishedStandResult
+  }
+
+  private async extendedMakeStand(user: string, conversationId: string, operation: MakeStandOperation): Promise<MakeStandResult> {
     // Owner access is deliberately stricter than the project-viewer path in Make.
     if (await this.deps.db.chat.conversationOwner(conversationId) !== user) projectModeError(403, 'conversation_access_denied')
     const conversation = await this.deps.db.chat.getConversation(user, conversationId)
@@ -462,9 +468,10 @@ export class MakeProjectAdapters {
       const location = { reposRoot, repoName: clone.name, repositoryUrl: clone.url }
       const root = conversationWorktree(reposRoot, copyId)
       const live = stand.live?.find(l => l.component === selected && l.workingCopyPath === root)
+      if (environment?.mode === 'local-stand') state.availableComponents = Object.keys(stand.components ?? {}).filter(id => localComponentSchema.safeParse(id).success)
       state.components = environment?.mode === 'local-stand' ? (stand.live ?? []).flatMap(l => {
         const known = localComponentSchema.safeParse(l.component)
-        if (!known.success || l.workingCopyPath !== conversationWorktree(reposRoot, l.component === primary ? conversationId : conversationId + '-' + l.component)) return []
+        if (!known.success || !stand.components?.[known.data] || l.workingCopyPath !== conversationWorktree(reposRoot, l.component === primary ? conversationId : conversationId + '-' + l.component)) return []
         return [{ component: known.data, branch: l.branch ?? null, workingCopyPath: l.workingCopyPath, phase: l.error ? 'failed' as const : 'ready' as const }]
       }) : undefined
       if ((op.op === 'files' || op.op === 'git') && !live) throw new Error('component_not_in_stand')
