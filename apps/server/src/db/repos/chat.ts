@@ -1,7 +1,7 @@
 // Домен «chat»: таблицы conversations, messages, messages_fts, fts_state, speakers, conversation_context_events, conversation_draft_requests, conversation_turn_queue, conversation_turn_control, conversation_workspaces.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type ReasoningEffort, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, type ConversationGroup, codexThreadUsageOf, codexTurnUsage, isContextToggleable } from '@voicechat/shared'
+import { type CodexThreadUsage, type Conversation, type ConversationScope, type ContextChangeEvent, type ConversationStatus, DEFAULT_CONVERSATION_STATUS, type DesktopMigrationBundle, type DesktopMigrationResult, type LlmProvider, type Message, type MessageAttachment, type MessageRole, type MessageSearchHit, type MessageSearchResult, type QueuedTurn, type QueueTurnPayload, type PermissionMode, type ReasoningEffort, type TurnMeta, type UsageBucket, type UsageByModel, type UsageByConversation, type UsageReport, type UsageTotals, type UsageUnit, type WorkspaceView, type ConversationGroup, codexThreadUsageOf, codexTurnUsage, isContextToggleable, REQUIRED_ONLY_CONTEXT_ID } from '@voicechat/shared'
 import { stripServiceData, type ClaudeLogEntry, type TurnRequestInfo } from '@voicechat/shared'
 import { MAKE_KIND } from '@voicechat/make-contracts/make'
 import { MESSAGES_FTS_SQL } from '../schema.js'
@@ -439,10 +439,12 @@ export class ChatRepo extends BaseRepo {
     const preset = defaultMode && !defaultMode.startsWith('mode:')
       ? settings.contextPresets.find((entry) => entry.id === defaultMode)
       : undefined
-    const disabledContext = preset ? preset.disabled.filter(isContextToggleable) : []
+    const disabledContext = defaultMode === 'mode:required' && assistantKind !== 'make'
+      ? [REQUIRED_ONLY_CONTEXT_ID]
+      : preset ? preset.disabled.filter(isContextToggleable) : []
     const assistantMode = assistantKind === 'make'
       ? 'make'
-      : defaultMode === 'mode:chat' || preset?.assistantMode === 'chat'
+      : defaultMode === 'mode:chat' || defaultMode === 'mode:required' || preset?.assistantMode === 'chat'
         ? 'chat'
         : 'workspace'
     await this.sql.run(`UPDATE conversations SET disabled_context_json = ?, assistant_mode = ?, reasoning_effort = ?, deep_thinking = ? WHERE id = ? AND user_id = ?`, [JSON.stringify(disabledContext), assistantMode, settings.reasoningEffort, settings.deepThinking ? 1 : 0, id, userId])

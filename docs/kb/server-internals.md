@@ -505,8 +505,13 @@ The Shared modes are `chat`, `workspace` and `make`. Both the context snapshot
 and `turns.ts` use `isWorkspaceAssistantMode`: Chat excludes workspace context,
 KB, skills, machine execution and MCP tools and sends `textOnly: true` to the
 runner. Workspace and Make retain extended context with the existing authority
-checks. Settings presets may carry a mode and description; Make conversation
-creation selects Make mode independently of the ordinary-chat default.
+checks. The built-in `mode:required` configuration uses Chat plus the
+`required-only` disabled-context marker. `isContextDisabled` interprets that
+marker as disabling every toggleable snapshot item, while `turns.ts` also
+suppresses optional chat instructions; non-toggleable platform/application
+instructions, history and the current message remain. Settings presets may carry
+a mode and description; Make conversation creation selects Make mode independently
+of the ordinary-chat default and does not inherit the required-only marker.
 
 Защищённый `GET /api/conversations/:id/context-snapshot` в `apps/server/src/routes/rest.ts` формирует preview сохранённого контекста следующего хода. Effective LLM разрешается атомарно по цепочке: явные provider/model разговора → собственная `ci_llm_config` привязанного проекта → пользовательские настройки. Проектная конфигурация читается только при отсутствии override provider разговора; если выбранный уровень не задаёт модель, fallback берётся из пользовательской модели соответствующего provider.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isContextToggleable, toolNameForContextId, skillNameForContextId } from './contextGating.js'
+import { REQUIRED_ONLY_CONTEXT_ID, isContextDisabled, isContextToggleable, toolNameForContextId, skillNameForContextId } from './contextGating.js'
 
 describe('contextGating', () => {
   it('безопасность и служебную информацию выключить нельзя', () => {
@@ -19,6 +19,14 @@ describe('contextGating', () => {
     expect(isContextToggleable('mcp-remote-bash')).toBe(true)
     expect(isContextToggleable('mcp-kb-search')).toBe(true)
     expect(isContextToggleable('mcp-history')).toBe(true)
+  })
+
+  it('мод «Только обязательное» выключает любой необязательный источник, но не безопасность', () => {
+    expect(isContextToggleable(REQUIRED_ONLY_CONTEXT_ID)).toBe(true)
+    expect(isContextDisabled([REQUIRED_ONLY_CONTEXT_ID], 'personalization')).toBe(true)
+    expect(isContextDisabled([REQUIRED_ONLY_CONTEXT_ID], 'mcp-kb-search')).toBe(true)
+    expect(isContextDisabled([REQUIRED_ONLY_CONTEXT_ID], 'platform-instructions')).toBe(false)
+    expect(isContextDisabled([], 'personalization')).toBe(false)
   })
 
   it('id инструмента маппится в имя MCP-инструмента', () => {
