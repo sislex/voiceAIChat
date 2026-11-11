@@ -83,7 +83,7 @@ describe('REST: conversations/messages/settings', () => {
     }
     const firstHandoff = await inj({ method: 'POST', url: '/api/conversations/draft', payload: handoff })
     const replayHandoff = await inj({ method: 'POST', url: '/api/conversations/draft', payload: handoff })
-    expect(firstHandoff.json()).toMatchObject({ created: true, conversation: { assistantKind: 'make', scope: 'make', projectId: project.id } })
+    expect(firstHandoff.json()).toMatchObject({ created: true, conversation: { assistantKind: 'make', assistantMode: 'make', scope: 'make', projectId: project.id } })
     expect(replayHandoff.json()).toMatchObject({ created: false, conversation: { id: firstHandoff.json().conversation.id } })
     for (let i = 0; i < 200 && exec.mock.calls.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 5))
     expect(exec).toHaveBeenCalledTimes(1)
@@ -157,8 +157,26 @@ describe('REST: conversations/messages/settings', () => {
     // Drill-in: у пунктов есть полная детализация.
     const detailed = (id: string): { details?: Record<string, unknown> } => items.find((entry: { id: string }) => entry.id === id)
     expect(Object.keys(detailed('personalization').details ?? {})).toEqual(expect.arrayContaining(['Обращение', 'Язык ответа', 'Стиль', 'Тон', 'Текст в промпте']))
+    expect(detailed('platform-instructions').details?.['Публичный текст правил']).toContain('Соблюдай безопасность')
+    expect(detailed('application-instructions').details?.['Публичный текст правил']).toContain('Используй выбранный режим разговора')
     expect(detailed('mcp-remote-bash').details).toMatchObject({ 'Инструмент': 'mcp__remote__bash', 'Изменяет данные': true })
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
+  })
+
+  it('предпросматривает любой мод без изменения разговора', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Независимый Context' } })).json()
+    const preview = (await inj({
+      method: 'GET',
+      url: `/api/conversations/${created.id}/context-snapshot?assistantMode=make&disabledContext=knowledge-mode`
+    })).json()
+    const previewItems = preview.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items)
+    expect(previewItems.find((item: { id: string }) => item.id === 'assistant-mode')).toMatchObject({ title: 'Make' })
+    expect(previewItems.find((item: { id: string }) => item.id === 'knowledge-mode')).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect(previewItems.find((item: { id: string }) => item.id === 'mcp-make-files')).toMatchObject({ includedInNextTurn: true })
+
+    const stored = await db.chat.getConversation(U, created.id)
+    expect(stored).toMatchObject({ assistantMode: 'workspace' })
+    expect(stored?.disabledContext ?? []).not.toContain('knowledge-mode')
   })
 
   // @testCase TC-API-01
@@ -375,8 +393,14 @@ describe('REST: conversations/messages/settings', () => {
     const first = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
     expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
     const consoleItem = first.items.find((item) => item.id === 'instruction-console')!
-    expect(consoleItem).toMatchObject({ toggleable: true, enabled: true, includedInNextTurn: true })
+    expect(consoleItem).toMatchObject({ configurable: true, toggleable: true, enabled: true, includedInNextTurn: true })
     expect(String(consoleItem.details?.['Текст'])).toContain('```tool')
+    // Любую встроенную инструкцию можно открыть независимо от активности мода:
+    // снимок всегда несёт её сохранённый/стандартный текст.
+    for (const item of first.items) {
+      expect(item).toMatchObject({ configurable: true })
+      expect(String(item.details?.['Текст']).trim().length).toBeGreaterThan(20)
+    }
 
     await inj({ method: 'POST', url: `/api/conversations/${conv.id}/context/instruction-console`, payload: { enabled: false } })
     const second = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
@@ -397,18 +421,63 @@ describe('REST: conversations/messages/settings', () => {
 
   it('тумблер контекста: выключает пункт, отражает в снимке и отказывает выключить безопасность', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Toggle' } })).json()
-    // Выключаем knowledge-mode.
+    await db.chat.setClaudeSession(U, created.id, 'codex:thread-with-old-tools')
+    // Выключаем knowledge-mode. Любое фактическое изменение состава контекста
+    // сбрасывает thread: иначе resume сохраняет уже выключенные MCP/инструкции.
     const off = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
     expect(off.statusCode).toBe(200)
     const kbItem = off.json().groups.flatMap((g: { items: { id: string; enabled: boolean; includedInNextTurn: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode')
     expect(kbItem).toMatchObject({ enabled: false, includedInNextTurn: false })
-    expect((await db.chat.getConversation(U, created.id))?.disabledContext).toContain('knowledge-mode')
+    const disabledConversation = await db.chat.getConversation(U, created.id)
+    expect(disabledConversation?.disabledContext).toContain('knowledge-mode')
+    expect(disabledConversation?.claudeSessionId).toBeNull()
     // Включаем обратно.
     const on = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: true } })
     expect(on.json().groups.flatMap((g: { items: { id: string; enabled: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode').enabled).toBe(true)
     // Безопасность выключить нельзя.
     expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })).statusCode).toBe(400)
     expect((await db.chat.getConversation(U, created.id))?.disabledContext).not.toContain('platform-instructions')
+    // Источник, включённый в Required, наследуется включённым и тоже не выключается.
+    const settings = await db.settings.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, requiredContextItems: ['knowledge-mode'] } })
+    const inherited = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    expect(inherited.statusCode).toBe(400)
+    const inheritedSnapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+    expect(inheritedSnapshot.groups.flatMap((g: { items: { id: string }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode'))
+      .toMatchObject({ configurable: true, toggleable: false, enabled: true, lockReason: 'required' })
+  })
+
+  it('каждый встроенный и пользовательский мод наследует Required', async () => {
+    const workspace = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Workspace inherits Required' } })).json()
+    const chat = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Chat inherits Required' } })).json()
+    expect((await inj({ method: 'PATCH', url: `/api/conversations/${chat.id}`, payload: { assistantMode: 'chat' } })).statusCode).toBe(200)
+    const makeConversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Make inherits Required', assistantKind: 'make' } })).json()
+    const consoleConversation = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Console inherits Required', assistantKind: 'console-reader' } })).json()
+
+    // И пользовательская конфигурация может хранить старое выключение. После
+    // включения источника в Required оно должно игнорироваться без миграции чата.
+    expect((await inj({ method: 'POST', url: `/api/conversations/${workspace.id}/context/instruction-questions`, payload: { enabled: false } })).statusCode).toBe(200)
+    const settings = await db.settings.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, requiredContextItems: ['instruction-questions'] } })
+
+    for (const conversation of [workspace, chat, makeConversation, consoleConversation]) {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+      const inherited = snapshot.groups
+        .flatMap((group: { items: Array<{ id: string }> }) => group.items)
+        .find((item: { id: string }) => item.id === 'instruction-questions')
+      expect(inherited).toMatchObject({
+        configurable: true,
+        toggleable: false,
+        enabled: true,
+        includedInNextTurn: true,
+        lockReason: 'required'
+      })
+      expect((await inj({
+        method: 'POST',
+        url: `/api/conversations/${conversation.id}/context/instruction-questions`,
+        payload: { enabled: false }
+      })).statusCode).toBe(400)
+    }
   })
 
   it('снимок проектного чата наследует LLM проекта', async () => {
@@ -923,7 +992,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(before.promptPreview.text).toContain('## Персонализация пользователя')
     expect(before.promptPreview.chars).toBe(before.promptPreview.text.length)
     expect(before.promptPreview.approxTokens).toBe(Math.ceil(before.promptPreview.text.length / 4))
-    expect(before.promptPreview.omitted.join(' ')).toContain('Правила платформы')
+    // Platform rules are now visible in the snapshot; only provider-side rules stay outside Core.
+    expect(before.promptPreview.omitted.join(' ')).toContain('Дополнительные системные правила провайдера')
     // Размер вклада виден и на самом пункте — иначе непонятно, кто занял место.
     const item = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization')
     expect(item?.size).toEqual({ chars: personalization?.chars, approxTokens: personalization?.approxTokens })
@@ -1087,6 +1157,14 @@ describe('REST: conversations/messages/settings', () => {
 
     // Обычному пользователю чужой разговор неотличим от несуществующего.
     const marinaToken = signToken({ name: 'marina', role: 'developer' }, SECRET)
+    // Временная продуктовая политика: публичный текст платформенных правил виден
+    // и обычному владельцу разговора. Позже canViewPlatformRules сузит это до admin.
+    const developerOwn = await app.inject({ method: 'GET', url: `/api/conversations/${foreign.id}/context-snapshot`, headers: { authorization: `Bearer ${marinaToken}` } })
+    expect(developerOwn.statusCode).toBe(200)
+    const developerPlatform = developerOwn.json().groups.flatMap((group: { items: Array<{ id: string }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'platform-instructions')
+    expect(developerPlatform.details['Публичный текст правил']).toContain('Соблюдай безопасность')
+
     const asDeveloper = await app.inject({
       method: 'GET',
       url: `/api/conversations/${(await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Мой' } })).json().id}/context-snapshot`,
@@ -1331,10 +1409,11 @@ describe('REST: conversations/messages/settings', () => {
     }
     const design = await item('mcp-make-design')
     expect(design?.available).toBe(true)
-    // Тумблера нет: источник даёт привязка задачи, ход disabledContext не читает.
-    expect(design?.toggleable).toBe(false)
-    expect(design?.lockReason).toBe('kind')
-    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(400)
+    // The task binding makes the source available; a mode or conversation may still exclude it
+    // (the turn denies mcp__make_design_*__*).
+    expect(design?.toggleable).toBe(true)
+    expect(design?.lockReason ?? null).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(200)
 
     // Обычный чат без задачи честно говорит, что источник появится в чате задачи.
     const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
@@ -1379,6 +1458,42 @@ describe('REST: conversations/messages/settings', () => {
     expect(operationalSignature(modernSnapshot)).toEqual(operationalSignature(legacySnapshot))
     expect(itemsOf(modernSnapshot).find((item) => item.id === 'mcp-make-files')?.includedInNextTurn).toBe(true)
     expect(itemsOf(modernSnapshot).find((item) => item.id === 'make-context')?.includedInNextTurn).toBe(true)
+  })
+
+  it('новый Console mode сохраняет тот же эффективный контекст, что прежний Workspace в консоли', async () => {
+    const legacy = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Legacy Console', assistantKind: 'console-reader' } })).json()
+    await db.chat.setConversationAssistantMode(U, legacy.id, 'workspace')
+    const modern = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Modern Console', assistantKind: 'console-reader' } })).json()
+    expect(modern.assistantMode).toBe('console')
+    const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Plain chat' } })).json()
+    expect((await inj({ method: 'PATCH', url: `/api/conversations/${plain.id}`, payload: { assistantMode: 'console' } })).statusCode).toBe(400)
+
+    type SnapshotItem = {
+      id: string
+      title: string
+      configured: boolean
+      available: boolean
+      includedInNextTurn: boolean
+      enabled: boolean
+      toggleable: boolean
+    }
+    const snapshotOf = async (id: string): Promise<{ groups: Array<{ items: SnapshotItem[] }> }> =>
+      (await inj({ method: 'GET', url: `/api/conversations/${id}/context-snapshot` })).json()
+    const legacySnapshot = await snapshotOf(legacy.id)
+    const modernSnapshot = await snapshotOf(modern.id)
+    const itemsOf = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }): SnapshotItem[] =>
+      snapshot.groups.flatMap((group) => group.items)
+    const modeOf = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }): SnapshotItem | undefined =>
+      itemsOf(snapshot).find((item) => item.id === 'assistant-mode')
+    const operationalSignature = (snapshot: { groups: Array<{ items: SnapshotItem[] }> }) =>
+      itemsOf(snapshot)
+        .filter((item) => item.id !== 'assistant-mode')
+        .map(({ id, configured, available, includedInNextTurn, enabled, toggleable }) =>
+          ({ id, configured, available, includedInNextTurn, enabled, toggleable }))
+
+    expect(modeOf(legacySnapshot)?.title).toBe('Workspace')
+    expect(modeOf(modernSnapshot)?.title).toBe('Console')
+    expect(operationalSignature(modernSnapshot)).toEqual(operationalSignature(legacySnapshot))
   })
 
   it('в режиме планирования инструменты вида чата честно обещают только чтение', async () => {
@@ -1529,9 +1644,13 @@ describe('REST: conversations/messages/settings', () => {
     expect(ids).toEqual([
       'instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
       'knowledge-mode',
+      // Surface tools: turns.ts skips the server and denies the wildcard (browserToolsEnabled & co.).
+      'mcp-browser-preview', 'mcp-console-pty',
       // mcp-history: turns.ts reads it (historyEnabled), see turns.test «honours the mcp-history context toggle».
       'mcp-history',
+      'mcp-kanban-board',
       'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
+      'mcp-make-design', 'mcp-make-files',
       'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
       'personalization', 'project-binding', 'task-context'
     ])
@@ -1668,7 +1787,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(items.some((item: { id: string }) => item.id === 'assistant-autonomy')).toBe(false)
   })
 
-  it('перечисляет инструменты, которые даёт вид чата, и не даёт их выключить', async () => {
+  it('перечисляет инструменты вида чата и позволяет исключить их из режима', async () => {
     const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
     const make = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Витрина', assistantKind: 'make' } })).json()
     const tools = async (id: string): Promise<Record<string, { available: boolean; toggleable: boolean; lockReason?: string | null }>> => {
@@ -1685,15 +1804,47 @@ describe('REST: conversations/messages/settings', () => {
     expect(plainTools['mcp-console-pty']?.available).toBe(false)
 
     const makeTools = await tools(make.id)
-    // В Make наоборот: файлы проекта — да, браузер превью — нет.
+    // В Make: файлы проекта — да; браузер доступен через окно стенда, привязанное к Chromium.
     expect(makeTools['mcp-make-files']?.available).toBe(true)
-    expect(makeTools['mcp-browser-preview']?.available).toBe(false)
+    expect(makeTools['mcp-browser-preview']?.available).toBe(true)
 
-    // Тумблера у них нет: набор решает вид чата, а не настройки разговора.
-    expect(plainTools['mcp-browser-preview']?.toggleable).toBe(false)
-    expect(plainTools['mcp-browser-preview']?.lockReason).toBe('kind')
+    // Вид чата определяет доступность, а мод/разговор — включён ли
+    // доступный инструмент. Это обычный источник, пока его явно не добавили
+    // в Required.
+    expect(plainTools['mcp-browser-preview']).toMatchObject({ toggleable: true, lockReason: null })
     const attempt = await inj({ method: 'POST', url: `/api/conversations/${plain.id}/context/mcp-browser-preview`, payload: { enabled: false } })
-    expect(attempt.statusCode).toBe(400)
+    expect(attempt.statusCode).toBe(200)
+    const after = (await attempt.json()).groups
+      .flatMap((group: { items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'mcp-browser-preview')
+    expect(after).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect((await attempt.json()).disallowedTools).toContain('mcp__browser__*')
+
+    // Required без явно выбранных MCP разворачивается в реальный deny-list,
+    // а не только рисует выключенные строки в инспекторе.
+    await inj({ method: 'POST', url: `/api/conversations/${plain.id}/context/mcp-browser-preview`, payload: { enabled: true } })
+    const required = await inj({ method: 'POST', url: `/api/conversations/${plain.id}/context/required-only`, payload: { enabled: false } })
+    expect(required.statusCode).toBe(200)
+    expect(required.json().disallowedTools).toEqual(expect.arrayContaining([
+      'mcp__remote__machines',
+      'mcp__remote__read',
+      'mcp__remote__edit',
+      'mcp__remote__bash',
+      'mcp__browser__*',
+      'mcp__console__*',
+      'mcp__make__*',
+      'mcp__make_design_*__*',
+      'mcp__kanban__*'
+    ]))
+
+    // Только явный выбор в Required делает MCP обязательным и снимает deny.
+    const settings = await db.settings.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, requiredContextItems: ['mcp-browser-preview'] } })
+    const inherited = (await inj({ method: 'GET', url: `/api/conversations/${plain.id}/context-snapshot` })).json()
+    expect(inherited.disallowedTools).not.toContain('mcp__browser__*')
+    expect(inherited.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items)
+      .find((item: { id: string }) => item.id === 'mcp-browser-preview'))
+      .toMatchObject({ configurable: true, toggleable: false, enabled: true, lockReason: 'required' })
   })
 
   it('в живой сессии движка предупреждает о повторе настроек каждым ходом', async () => {
@@ -1771,6 +1922,7 @@ describe('REST: conversations/messages/settings', () => {
 
   it('предпросмотр не показывает инструкции, которых в чате этого вида не будет', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Консоль', assistantKind: 'console-reader' } })).json()
+    expect(created.assistantMode).toBe('console')
     const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
     // «Открывать терминал в чате» включена в настройках, но в консоли терминал
     // уже открыт справа — подсказка туда не уходит, и блока быть не должно.

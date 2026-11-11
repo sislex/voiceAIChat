@@ -928,7 +928,7 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
-  /** Chat — только сообщения; Workspace — рабочий контекст; Make — рабочий контекст Make-разговора. */
+  /** Chat — только сообщения; Workspace — рабочий контекст; Make/Console — специализированный рабочий контекст соответствующего разговора. */
   assistantMode?: ConversationAssistantMode
   /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
   disabledContext?: string[]
@@ -1133,14 +1133,15 @@ export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan'
 
 /**
  * Режим наполнения хода. Chat отправляет только историю/сообщение и инструкции;
- * Workspace подключает общий рабочий контекст, а Make — тот же рабочий контекст
- * со специализацией Make-разговора (проект, превью и mcp__make__*).
+ * Workspace подключает общий рабочий контекст, Make — тот же контекст со
+ * специализацией Make-разговора, а Console — со специализацией живой консоли.
  */
-export type ConversationAssistantMode = 'chat' | 'workspace' | 'make'
+export type ConversationAssistantMode = 'chat' | 'workspace' | 'make' | 'console'
 
 export const CONVERSATION_ASSISTANT_MODES: Array<{ id: ConversationAssistantMode; label: string; description: string }> = [
   { id: 'workspace', label: 'Workspace', description: 'Контекст проекта, БЗ, навыки, машины, MCP и инструменты доступны модели.' },
   { id: 'make', label: 'Make', description: 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' },
+  { id: 'console', label: 'Console', description: 'Полный Workspace-контекст и специализированные инструкции для работы в видимой консоли через mcp__console__*.' },
   { id: 'chat', label: 'Chat', description: 'Только история, текущее сообщение и инструкции — без инструментов и дополнительного контекста.' }
 ]
 
@@ -1680,6 +1681,11 @@ export interface Settings {
    */
   contextPresets: ContextPreset[]
   /**
+   * Источники базового мода Required. Их наследуют все остальные встроенные
+   * и пользовательские моды; выключить их можно только в самом Required.
+   */
+  requiredContextItems?: string[]
+  /**
    * Мод, который применяется к **новым обычным** разговорам: id пользовательского
    * мода либо mode:chat/mode:required. null и mode:workspace означают встроенный Workspace.
    * Make-разговоры всегда создаются во встроенном mode:make.
@@ -1714,7 +1720,9 @@ export interface ContextSnapshotItem {
   configured: boolean
   available: boolean
   includedInNextTurn: boolean
-  /** Можно ли выключить пункт (безопасность и чистая информация — нельзя). */
+  /** Доступен ли источник в редакторе конфигураций, даже если унаследован и заблокирован в разговоре. */
+  configurable?: boolean
+  /** Можно ли выключить пункт в текущем разговоре (безопасность, информация и Required-наследование — нельзя). */
   toggleable: boolean
   /**
    * На что влияет тумблер: `prompt-block` — исчезает блок промпта, `tool` —
@@ -1730,10 +1738,11 @@ export interface ContextSnapshotItem {
   /**
    * Почему пункт нельзя выключить: `safety` — правила платформы и приложения,
    * `info` — чистая информация без вклада в промпт, `kind` — инструмент даёт
-   * сам вид чата (превью, консоль, Make, панель ассистента). У выключаемого — null.
+   * сам вид чата (превью, консоль, Make, панель ассистента), `required` — источник
+   * унаследован из базового мода Required. У выключаемого — null.
    * UI объясняет замок словами, а не догадкой по id.
    */
-  lockReason?: 'safety' | 'info' | 'kind' | null
+  lockReason?: 'safety' | 'info' | 'kind' | 'required' | null
   /** Размер вклада пункта в промпт: символы и грубая оценка токенов (chars/4). */
   size?: { chars: number; approxTokens: number } | null
   /**
@@ -2060,6 +2069,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
   loginNewDeviceEmails: true,
   contextPresets: [],
+  requiredContextItems: [],
   defaultContextPresetId: null
 }
 
@@ -2113,6 +2123,9 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
   // Пресеты контекста: имя и список id. Приводим к контракту здесь, иначе мусор
   // осядет в записи настроек навсегда (она мержится, а не заменяется).
+  if (Array.isArray(input.requiredContextItems)) {
+    patch.requiredContextItems = [...new Set(input.requiredContextItems.filter((entry): entry is string => typeof entry === 'string'))].slice(0, 200)
+  }
   if (Array.isArray(input.contextPresets)) {
     patch.contextPresets = (input.contextPresets as unknown[])
       .filter((item): item is ContextPreset => typeof item === 'object' && item !== null && typeof (item as ContextPreset).id === 'string')
@@ -2120,7 +2133,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
         id: item.id,
         name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
         description: String(item.description ?? '').trim().slice(0, 240),
-        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make'
+        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make' || item.assistantMode === 'console'
           ? item.assistantMode
           : 'workspace' as const,
         disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []

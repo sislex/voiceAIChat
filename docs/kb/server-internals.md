@@ -506,9 +506,14 @@ and `turns.ts` use `isWorkspaceAssistantMode`: Chat excludes workspace context,
 KB, skills, machine execution and MCP tools and sends `textOnly: true` to the
 runner. Workspace and Make retain extended context with the existing authority
 checks. The built-in `mode:required` configuration uses Chat plus the
-`required-only` disabled-context marker. `isContextDisabled` interprets that
-marker as disabling every toggleable snapshot item, while `turns.ts` also
-suppresses optional chat instructions; non-toggleable platform/application
+`required-only` disabled-context marker, while its editable base set lives in
+`Settings.requiredContextItems`. Workspace, Chat and user presets inherit that
+set. `isContextDisabled` gives inherited Required items precedence over both the
+marker and per-conversation disables, the context mutation route rejects attempts
+to disable them, and `turns.ts` computes the same effective set for the actual
+run. Changing Required therefore affects existing inheriting conversations without
+rewriting their rows. When Required itself is active, the marker disables every
+other configurable source dynamically; non-toggleable platform/application
 instructions, history and the current message remain. Settings presets may carry
 a mode and description; Make conversation creation selects Make mode independently
 of the ordinary-chat default and does not inherit the required-only marker.

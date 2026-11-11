@@ -1687,6 +1687,45 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
+  it('не подключает выключенные browser, Make и Console MCP и не рекламирует их модели', async () => {
+    const db = await freshDb()
+    const rec = recorder()
+    const tool = tokens()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      previewMcpBaseUrl: PREVIEW_MCP,
+      previewTurns: tool,
+      makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret',
+      consoleMcpBaseUrl: 'http://127.0.0.1:8787/mcp/console?k=secret'
+    })
+
+    const chat = await db.chat.createConversation(U, 'Без браузера')
+    await db.chat.setConversationContextEnabled(U, chat.id, 'mcp-browser-preview', false)
+    await turns.start({ userId: U, conversationId: chat.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toContain('mcp__browser__*')
+
+    const make = await db.chat.createConversation(U, 'Make без инструментов', 'make')
+    await db.chat.setConversationContextEnabled(U, make.id, 'mcp-browser-preview', false)
+    await db.chat.setConversationContextEnabled(U, make.id, 'mcp-make-files', false)
+    await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'прочитай проект' }] })
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.makeMcpUrl).toBeUndefined()
+    expect(rec.last()?.prompt).not.toContain('## Превью Make')
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['mcp__browser__*', 'mcp__make__*']))
+    // Neither disabled browser issued a preview token.
+    expect(tool.entries).toEqual([])
+
+    const console = await db.chat.createConversation(U, 'Консоль без инструментов', 'console-reader')
+    await db.chat.setConversationContextEnabled(U, console.id, 'mcp-console-pty', false)
+    await turns.start({ userId: U, conversationId: console.id, segments: [{ speakerId: 1, text: 'прочитай терминал' }] })
+    expect(rec.last()?.consoleMcpUrl).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toContain('mcp__console__*')
+    await turns.idle()
+    db.close()
+  })
+
   it('Make-чат действует в браузере привязанного Web Reader-чата того же пользователя', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make')
     const reader = await db.chat.createConversation(U, 'Сайт клиента', 'web-recorder')

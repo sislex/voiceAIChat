@@ -75,7 +75,7 @@ Desktop installer lookup uses configured `VC_AGENT_APP`, `VC_DESKTOP_APP` and
 folders are never an installer discovery dependency.
 
 
-**Консоль с ассистентом (`assistantKind: 'console-reader'`) — правила хода.** Терминал
+**Консоль с ассистентом (`assistantKind: 'console-reader'`) — правила хода.** Каждый новый разговор консоли автоматически получает встроенный `assistantMode: 'console'`, независимо от общего default-пресета. По наполнению этот режим совместим с Workspace, но сервер разрешает назначать его только `console-reader`; старые консольные разговоры в Workspace продолжают работать без миграции. Терминал
 уже открыт справа, поэтому сервер убирает из промпта инструкцию чата «Открывать терминал»
 (`turns.ts`, фильтр по `kind === 'console'`) и вырезает tool-блок console из ответа, а стор
 не перехватывает фразу «открой консоль» (`maybeOpenUtility` пропускает console-reader).

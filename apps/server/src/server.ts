@@ -812,6 +812,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
+    deployment,
+    browserMcpEnabled: opts.config.readerMode !== 'off',
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),

@@ -1,4 +1,5 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
+import { effectiveCapabilities } from '../deploymentApplications.js'
 import { storageError } from '../fileStorage/routes.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
@@ -9,7 +10,7 @@ import { clientMessages, loadsServiceData } from '../serviceData.js'
 import { join } from 'node:path'
 import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, promptCostUsd, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock, taskContextBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextDisabled, isContextToggleable, toolNameForContextId, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup, isWorkspaceAssistantMode } from '@voicechat/shared'
+import { REST, CONVERSATION_STATUSES, type ConversationStatus, ccResumeMessages, ccResumeTitle, ccTimeLabel, cxResumeMessages, cxResumeTitle, cxTimeLabel, type AddMessageArgs, type DesktopMigrationBundle, type Settings, type UsageUnit, type UserProfileInfo, type SecurityEvent, effectiveChatInstructions, designPromptLines, taskMakeSources, makeDesignPreviewUrl, instructionContextId, instructionText, resumeSessionIdFor, contextLockReason, isContextDisabled, isContextToggleable, effectiveDisabledContext, toolNameForContextId, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, sanitizeSettingsPatch, claudeModelAlias, kbToolHint, MAKE_ASSISTANT_HINT, KANBAN_ASSISTANT_HINT, firstAllowedProvider, isProviderAllowed, CLAUDE_MODELS, CODEX_MODELS, filterSecurityGroup, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentInfo } from '@sislexa/agent-contracts'
 import { previewToolHint } from '@voicechat/browser-contracts/previewActions'
 import type { VoiceChatDb } from '../db/database.js'
@@ -19,7 +20,7 @@ import { RUNNER_NOT_CONFIGURED, unconfiguredLoginStatus } from '../llm/unconfigu
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
 import { conversationThreadCost, ThreadResetError } from '../conversationThread.js'
 import type { ConversationSummaryService } from '../conversationSummary.js'
-import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, AssistantKind, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationAssistantMode, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, LlmProvider, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import { MAKE_ONLY_DISALLOWED_TOOLS, makeBrowserSession } from '../turns.js'
@@ -48,6 +49,38 @@ const CONTEXT_GROWTH_RATIO_NOTICE = 1.5
 const CONTEXT_HISTORY_TOKENS_NOTICE = 1000
 /** Меньше трёх ходов — среднее не среднее, а случайная величина. */
 const CONTEXT_GROWTH_MIN_TURNS = 3
+
+/**
+ * Публичная часть правил платформы. Это не скрытый базовый system prompt
+ * провайдера: Claude/Codex не возвращают его Core. Текст объясняет человеку
+ * обязательную политику Sislexa, которую представляет пункт снимка.
+ */
+const PLATFORM_RULES_PUBLIC_TEXT = [
+  'Соблюдай безопасность, конфиденциальность и границы разрешённых действий.',
+  'Не раскрывай секреты, персональные данные других пользователей и внутренние данные без разрешения.',
+  'Не выполняй опасные, необратимые или внешние действия без необходимого подтверждения пользователя.',
+  'Следуй ограничениям ролей, доступных инструментов и среды выполнения; не пытайся обходить их.'
+].join('\n')
+
+/**
+ * Временная политика видимости: публичный текст открыт всем ролям. Когда
+ * продукт переключит доступ на admin-only, меняется только эта функция.
+ */
+function canViewPlatformRules(_role: ConversationContextSnapshot['viewerRole']): boolean {
+  return true
+}
+
+/**
+ * Публичный текст прикладных правил VoiceChat. В отличие от скрытого system
+ * prompt провайдера этот блок принадлежит приложению и объясняет фактическую
+ * маршрутизацию контекста и инструментов следующего хода.
+ */
+const VOICECHAT_RULES_PUBLIC_TEXT = [
+  'Используй выбранный режим разговора и только те источники контекста, которые доступны в нём.',
+  'Вызывай только подключённые и разрешённые инструменты, навыки и MCP; учитывай режим прав и ограничения среды.',
+  'Не выдавай недоступный инструмент, машину, проект, базу знаний или браузер за доступные — прямо сообщай об ограничении.',
+  'Соблюдай правила работы с проектом, подтверждениями и внешними действиями, которые переданы в инструкции текущего разговора.'
+].join('\n')
 
 const permissionDisplay: Record<PermissionMode, { displayName: string; explanation: string }> = {
   plan: { displayName: 'Только планирование', explanation: 'Изменение данных отключено.' },
@@ -79,17 +112,44 @@ interface ContextSnapshotOptions {
   viewer?: string
   /** Текст контекста Make-проекта, если чат Make: читается вне снимка (async). */
   makeContext?: string | null
+  /** Эффективные права аккаунта — те же, которыми ход допускает MCP-поверхности. */
+  capabilities?: string[]
+  /** Настроен ли транспорт Web Reader/preview в этом Core. */
+  browserMcpEnabled?: boolean
+  /** Независимый read-only предпросмотр мода: сохранённый разговор не меняется. */
+  preview?: {
+    assistantMode: ConversationAssistantMode
+    assistantKind: AssistantKind | null
+    disabledContext: string[]
+  }
 }
 
 async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, options: ContextSnapshotOptions = {}): Promise<ConversationContextSnapshot | null> {
-  const { isOnline, kbStatus, cliMcpServers = [], viewer = userId, makeContext = null } = options
-  const conversation = await db.chat.getConversation(userId, conversationId)
-  if (!conversation) return null
+  const {
+    isOnline, kbStatus, cliMcpServers = [], viewer = userId, makeContext = null, preview,
+    capabilities = ['web-reader.use'], browserMcpEnabled = true
+  } = options
+  const storedConversation = await db.chat.getConversation(userId, conversationId)
+  if (!storedConversation) return null
+  const conversation = preview
+    ? { ...storedConversation, assistantMode: preview.assistantMode, assistantKind: preview.assistantKind, disabledContext: preview.disabledContext }
+    : storedConversation
   const workspaceMode = isWorkspaceAssistantMode(conversation.assistantMode)
   const chatModeItemIds = new Set(['platform-instructions', 'application-instructions', 'assistant-mode', 'conversation-history', 'current-message'])
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
   // не считается включённым в следующий ход (includedInNextTurn=false).
   const disabled = new Set(conversation.disabledContext ?? [])
+  const settings = await db.settings.getSettings(userId)
+  const requiredContext = new Set(settings.requiredContextItems ?? [])
+  const requiredMode = disabled.has(REQUIRED_ONLY_CONTEXT_ID)
+  // Список deny должен совпадать с ходом: маркер Required разворачивается в
+  // конкретные MCP id, кроме явно выбранных в базовом моде.
+  const disabledTools = effectiveDisabledContext(disabled, requiredContext)
+  if (requiredMode) {
+    for (const itemId of CONTEXT_MCP_ITEM_IDS) {
+      if (!requiredContext.has(itemId)) disabledTools.add(itemId)
+    }
+  }
   /**
    * Что делает тумблер этого пункта. Считается по id — там же, где живёт само
    * правило выключения: инструменты уходят в `--disallowedTools`, навыки не
@@ -104,16 +164,20 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     if (id === 'knowledge-mode') return 'tool'
     return 'prompt-block'
   }
-  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
-    const toggleable = isContextToggleable(value.id)
-    const enabled = toggleable ? !isContextDisabled(disabled, value.id) : true
-    // Причина замка приходит с сервера словом, а не выводится в UI по id:
-    // правила гейтинга живут в одном месте (`contextGating.ts`).
-    const lockReason = toggleable ? null : contextLockReason(value.id)
-    const allowedByMode = workspaceMode || chatModeItemIds.has(value.id) || value.id.startsWith('instruction-')
-    return { ...value, toggleable, enabled, lockReason, effect: toggleable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled && allowedByMode }
+  const contextItem = (value: Omit<ContextSnapshotItem, 'configurable' | 'toggleable' | 'enabled' | 'lockReason' | 'effect'>): ContextSnapshotItem => {
+    const configurable = isContextToggleable(value.id)
+    const inheritedRequired = configurable && requiredContext.has(value.id)
+    const toggleable = configurable && !inheritedRequired && !requiredMode
+    const enabled = configurable ? !isContextDisabled(disabled, value.id, requiredContext) : true
+    // Унаследованные из Required источники и сам базовый мод правятся только
+    // через редактор Required, а не тумблером отдельного разговора.
+    const lockReason = configurable && (inheritedRequired || requiredMode) ? 'required' : toggleable ? null : contextLockReason(value.id)
+    // Required — база каждого мода. Если источник выбран в ней, фильтр
+    // наполнения конкретного режима не должен второй раз исключить его из
+    // предпросмотра; физическая доступность по виду чата остаётся в `available`.
+    const allowedByMode = inheritedRequired || workspaceMode || chatModeItemIds.has(value.id) || value.id.startsWith('instruction-')
+    return { ...value, configurable, toggleable, enabled, lockReason, effect: configurable ? effectOf(value.id) : null, includedInNextTurn: value.includedInNextTurn && enabled && allowedByMode }
   }
-  const settings = await db.settings.getSettings(userId)
   // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
   const role = (await db.identity.getUser(viewer))?.role ?? 'developer'
   // Match turn execution: Make uses the explicitly configured machine only.
@@ -250,14 +314,22 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
    * сможет модель» снова станет неполным.
    */
   const autonomy = conversation.assistantAutonomy ?? 'auto'
+  const browserMcpAvailable = browserMcpEnabled && (
+    conversation.assistantKind === 'make'
+    || capabilities.some((capability) => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+  )
   const kindTools = [
     {
       id: 'mcp-browser-preview', title: 'browser:* (веб-превью)', source: 'Вид чата: превью страницы', readOnlyInPlan: false,
       scope: 'Браузер пользователя', tools: ['mcp__browser__*'],
       description: 'Клики, ввод и чтение страницы в браузере пользователя.',
-      available: conversation.assistantKind !== 'make',
-      whenAvailable: 'Подключается в чатах с превью: действия выполняет браузер пользователя, машина-агент для них не нужна.',
-      whenUnavailable: 'В Make-чате браузерные инструменты не подключаются: панель — iframe проекта, и модель упиралась в таймауты.'
+      available: browserMcpAvailable,
+      whenAvailable: conversation.assistantKind === 'make'
+        ? 'Подключается к тестовому стенду Make: действия выполняет браузер превью пользователя.'
+        : 'Подключается в чатах с доступом к Web Reader: действия выполняет браузер пользователя, машина-агент для них не нужна.',
+      whenUnavailable: browserMcpEnabled
+        ? 'Web Reader не разрешён тарифом или ролью текущего пользователя.'
+        : 'Транспорт Web Reader отключён в этом Core.'
     },
     {
       id: 'mcp-console-pty', title: 'console:* (живой терминал)', source: 'Вид чата: консоль с ассистентом', readOnlyInPlan: true,
@@ -308,9 +380,9 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
   }
   const groups: ContextSnapshotGroup[] = [
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
-      contextItem({ id: 'assistant-mode', type: 'Режим ассистента', source: 'Настройки разговора', scope: 'Следующий ход', priority: '0 · режим', title: conversation.assistantMode === 'make' ? 'Make' : workspaceMode ? 'Workspace' : 'Chat', description: conversation.assistantMode === 'make' ? 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' : workspaceMode ? 'Полный контекст, инструменты и MCP доступны модели.' : 'Только история, сообщение и инструкции; дополнительный контекст и инструменты отключены.', explanation: conversation.assistantMode === 'make' ? 'Make использует все источники Workspace и добавляет возможности, привязанные к Make-разговору.' : workspaceMode ? 'Workspace использует все настроенные источники.' : 'Chat принудительно запускается без машин, навыков, БЗ, MCP и инструментов.', configured: true, available: true, includedInNextTurn: true, details: { value: conversation.assistantMode ?? 'workspace' } }),
-      contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: 'Применяются всегда; полный текст закрыт.', configured: true, available: true, includedInNextTurn: true }),
-      contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу.', configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'assistant-mode', type: 'Режим ассистента', source: 'Настройки разговора', scope: 'Следующий ход', priority: '0 · режим', title: conversation.assistantMode === 'make' ? 'Make' : conversation.assistantMode === 'console' ? 'Console' : workspaceMode ? 'Workspace' : 'Chat', description: conversation.assistantMode === 'make' ? 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' : conversation.assistantMode === 'console' ? 'Полный Workspace-контекст и специализированные инструкции для работы в видимой консоли.' : workspaceMode ? 'Полный контекст, инструменты и MCP доступны модели.' : 'Только история, сообщение и инструкции; дополнительный контекст и инструменты отключены.', explanation: conversation.assistantMode === 'make' ? 'Make использует все источники Workspace и добавляет возможности, привязанные к Make-разговору.' : conversation.assistantMode === 'console' ? 'Console использует все источники Workspace и добавляет возможности живой консоли, привязанные к console-reader.' : workspaceMode ? 'Workspace использует все настроенные источники.' : 'Chat принудительно запускается без машин, навыков, БЗ, MCP и инструментов.', configured: true, available: true, includedInNextTurn: true, details: { value: conversation.assistantMode ?? 'workspace' } }),
+      contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: canViewPlatformRules(role) ? 'Применяются всегда; публичный текст правил открыт для текущей роли.' : 'Применяются всегда; текст доступен только администратору.', configured: true, available: true, includedInNextTurn: true, details: canViewPlatformRules(role) ? { 'Публичный текст правил': PLATFORM_RULES_PUBLIC_TEXT } : undefined }),
+      contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу; публичный текст открыт для просмотра.', configured: true, available: true, includedInNextTurn: true, details: { 'Публичный текст правил': VOICECHAT_RULES_PUBLIC_TEXT } }),
       // Описание — человеческая сводка, а не сырое значение поля: раньше здесь
       // стояло `responseLanguage || responseStyle`, и в карточке было просто «normal».
       contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: personalizationSummary, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean), details: personalizationDetails })
@@ -685,7 +757,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
     changes: await db.chat.listConversationContextEvents(userId, conversationId, 20),
     // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
     disallowedTools: [
-      ...[...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
+      ...[...disabledTools].map(toolNameForContextId).filter((tool): tool is string => tool !== null),
       // Make: ход глушит встроенные инструменты вместо понижения режима —
       // значит модель их не получит, и список это обязан показывать.
       ...(makeChat ? MAKE_ONLY_DISALLOWED_TOOLS : [])
@@ -714,7 +786,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         .map((candidate) => ({ model: candidate, costUsd: promptCostUsd(provider, candidate, approxTokens(previewText.length + (resumeId ? 0 : historyText.length)), prices) }))
         .filter((entry): entry is { model: string; costUsd: number } => entry.costUsd !== null),
       omitted: workspaceMode ? [
-        'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        'Дополнительные системные правила провайдера: их добавляет CLI движка и не возвращает Core.',
         // Системные хинты, которые к промпту приклеивает сам исполнитель CLI.
         // Их условия сервер знает (машина, режим БЗ, вид чата), а тексты для
         // части хинтов лежат в shared — тогда называем и размер. Без этих строк
@@ -753,7 +825,7 @@ async function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: 
         kbMode === 'off' ? 'Автоконтекст базы знаний: режим выключен.' : 'Автоконтекст базы знаний: документы подбираются по тексту отправляемого сообщения.',
         'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
       ] : [
-        'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
+        'Дополнительные системные правила провайдера: их добавляет CLI движка и не возвращает Core.',
         'Режим Chat: машина, навыки, БЗ, MCP, инструменты и дополнительный контекст не подключаются.',
         resumeId
           ? 'История разговора уже находится в сессии движка; сервер отправит только новое сообщение и инструкции.'
@@ -816,6 +888,10 @@ export async function registerRest(
     fileStorage?: import('../../../../packages/file-storage/src/service.js').FileStorageService
     conversationSummary?: () => ConversationSummaryService | undefined
     resetThread?: import('../turns.js').TurnManager['resetThread']
+    /** Manifest нужен снимку для той же фильтрации capabilities, что и ходу. */
+    deployment?: import('@voicechat/shared').DeploymentManifest
+    /** Настроен ли локальный/удалённый Web Reader MCP. */
+    browserMcpEnabled?: boolean
   } = {}
 ): Promise<void> {
   const runnerFs = opts.runnerFs
@@ -1156,7 +1232,7 @@ export async function registerRest(
     return await db.chat.conversationOwner(conversationId)
   }
 
-  app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { assistantMode?: string; disabledContext?: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
     // Список MCP-серверов спрашиваем у самого движка: он показывает, что видит
     // CLI, а не что подключает приложение. Ошибка или отсутствие движка не
     // должны ломать снимок — тогда список просто пуст.
@@ -1167,10 +1243,34 @@ export async function registerRest(
     // сам снимок синхронный. Ошибка чтения не должна ломать экран — тогда
     // блока просто не будет, как и в ходе (там та же `.catch`).
     const makeConv = owner ? await db.chat.getConversation(owner, req.params.id) : null
-    const makeContextText = makeConv?.assistantKind === 'make' && opts.makeContext
+    const accountAccess = owner ? await db.identity.getAccountAccess(owner, makeConv?.tenantId) : null
+    if (accountAccess && opts.deployment) {
+      accountAccess.capabilities = effectiveCapabilities(accountAccess.capabilities, opts.deployment)
+    }
+    const previewMode: ConversationAssistantMode | null = req.query.assistantMode === 'workspace' || req.query.assistantMode === 'chat' || req.query.assistantMode === 'make' || req.query.assistantMode === 'console'
+      ? req.query.assistantMode as ConversationAssistantMode
+      : null
+    const preview = previewMode
+      ? {
+          assistantMode: previewMode,
+          assistantKind: previewMode === 'make' ? 'make' as const : previewMode === 'console' ? 'console-reader' as const : null,
+          disabledContext: req.query.disabledContext ? req.query.disabledContext.split(',').filter(Boolean) : []
+        }
+      : undefined
+    const makeContextText = (preview?.assistantKind === 'make' || makeConv?.assistantKind === 'make') && opts.makeContext
       ? await opts.makeContext(req.params.id).catch(() => '')
       : null
-    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), cliMcpServers: cliMcp, viewer: uid(req), makeContext: makeContextText }) : null)
+    const snapshot = await (owner ? contextSnapshot(db, owner, req.params.id, {
+      chatModels: opts.chatModels,
+      isOnline: opts.isAgentOnline,
+      kbStatus: await kbStatusSafe(),
+      cliMcpServers: cliMcp,
+      viewer: uid(req),
+      makeContext: makeContextText,
+      capabilities: accountAccess?.capabilities ?? [],
+      browserMcpEnabled: opts.browserMcpEnabled ?? false,
+      ...(preview ? { preview } : {})
+    }) : null)
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -1182,6 +1282,15 @@ export async function registerRest(
     // люди, и журнал должен показать именно того, кто нажал.
     const owner = await contextOwnerFor(req, req.params.id)
     if (!owner) return reply.code(404).send({ error: 'not found' })
+    const conversation = await db.chat.getConversation(owner, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    if (conversation.disabledContext?.includes(REQUIRED_ONLY_CONTEXT_ID) && req.params.itemId !== REQUIRED_ONLY_CONTEXT_ID) {
+      return reply.code(400).send({ error: 'Источники базового мода Required меняются в редакторе мода' })
+    }
+    const settings = await db.settings.getSettings(owner)
+    if (req.body?.enabled === false && (settings.requiredContextItems ?? []).includes(req.params.itemId)) {
+      return reply.code(400).send({ error: 'Источник унаследован из Required и не может быть выключен' })
+    }
     const updated = await db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
@@ -1367,7 +1476,10 @@ export async function registerRest(
       if (req.body.assistantMode === 'make' && current.assistantKind !== 'make') {
         return reply.code(400).send({ error: 'Make mode belongs to a Make conversation' })
       }
-      if (req.body.assistantMode === 'chat' || req.body.assistantMode === 'workspace' || req.body.assistantMode === 'make') {
+      if (req.body.assistantMode === 'console' && current.assistantKind !== 'console-reader') {
+        return reply.code(400).send({ error: 'Console mode belongs to a Console Assistant conversation' })
+      }
+      if (req.body.assistantMode === 'chat' || req.body.assistantMode === 'workspace' || req.body.assistantMode === 'make' || req.body.assistantMode === 'console') {
         await db.chat.setConversationAssistantMode(uid(req), req.params.id, req.body.assistantMode)
       }
       if (req.body.execTarget !== undefined || req.body.llmEngineId !== undefined || req.body.llmProvider !== undefined || req.body.llmModel !== undefined || req.body.permissionMode !== undefined || req.body.reasoningEffort !== undefined || req.body.deepThinking !== undefined) {

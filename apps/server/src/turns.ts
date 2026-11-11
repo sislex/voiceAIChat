@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, REQUIRED_ONLY_CONTEXT_ID, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -77,6 +77,7 @@ export interface TurnManagerDeps {
       conversationId: string
       projectId: string | null
       turnId: string
+      disabledTools?: Array<'search' | 'document' | 'topics'>
       runtimeContext?: {
         projectName?: string
         projectGitUrl?: string | null
@@ -679,13 +680,34 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
     //   off    — ничего.
     // Инспектор контекста: пункты, выключенные пользователем, не попадают ассистенту.
-    const disabledContext = new Set(conv?.disabledContext ?? [])
+    const requiredContext = new Set(settings.requiredContextItems ?? [])
+    const disabledContext = effectiveDisabledContext(conv?.disabledContext ?? [], requiredContext)
+    if (disabledContext.has(REQUIRED_ONLY_CONTEXT_ID)) {
+      if (!requiredContext.has('personalization')) disabledContext.add('personalization')
+      if (!requiredContext.has('knowledge-mode')) disabledContext.add('knowledge-mode')
+      for (const itemId of CONTEXT_MCP_ITEM_IDS) {
+        if (!requiredContext.has(itemId)) disabledContext.add(itemId)
+      }
+      for (const instruction of settings.chatInstructions) {
+        const itemId = instructionContextId(instruction.id)
+        if (!requiredContext.has(itemId)) disabledContext.add(itemId)
+      }
+    }
     const workspaceMode = isWorkspaceAssistantMode(conv?.assistantMode)
     const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
     // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
     const effectiveSkills = workspaceMode ? enabledContextSkills(conv?.skillNames ?? [], disabledContext) : []
-    // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
+    // Любые MCP-источники, выключенные пользователем или модом
+    // (remote/browser/console/make/kanban/kb/history), уходят в --disallowedTools.
     const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
+    // Для цельных MCP-поверхностей deny-list остаётся защитой раннера, но
+    // выключенная конфигурация не должна даже подключать сервер и рекламировать
+    // его модели. Иначе модель видит подсказку об инструменте, который затем
+    // отклоняется политикой.
+    const browserToolsEnabled = !disabledContext.has('mcp-browser-preview')
+    const consoleToolsEnabled = !disabledContext.has('mcp-console-pty')
+    const makeToolsEnabled = !disabledContext.has('mcp-make-files')
+    const kanbanToolsEnabled = !disabledContext.has('mcp-kanban-board')
     const turnId = randomUUID()
     const historyEnabled = workspaceMode && !req.delegation && !disabledContext.has('mcp-history') && Boolean(deps.historyMcpBaseUrl && deps.historyTool)
     if (historyEnabled && (conv?.messageCount ?? 0) > 200) {
@@ -763,12 +785,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       workspaceMode && (!req.delegation || req.delegation.applicationId === application)
         ? deps.externalMcpUrl?.(application, { userId, conversationId: toolConversationId, turnId }) : undefined
     // External Kanban (projects=https://…) serves `/mcp/kanban` with a core MCP token instead of the shared secret.
-    const externalKanban = kanbanTurn ? externalTools('projects') : undefined
+    const externalKanban = kanbanTurn && kanbanToolsEnabled ? externalTools('projects') : undefined
     if (kanbanTurn && req.assistantContext) {
       // С инструментами канбана envelope не нужен: модель читает и меняет доску
       // сама. Без них (старый деплой, инструменты не подняты) остаётся прежний
       // режим предложений — иначе ассистент вообще ничего не сможет сделать.
-      basePrompt = deps.kanbanMcpBaseUrl || externalKanban
+      basePrompt = kanbanToolsEnabled && (deps.kanbanMcpBaseUrl || externalKanban)
         ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
         : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
@@ -788,7 +810,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // не будет. Канбан-ассистент с «Автопилотом» действует сам — task-launch
     // ему не даём (`turnChatInstructions`).
     const instructions = turnChatInstructions(
-      effectiveChatInstructions(req.delegation || disabledContext.has(REQUIRED_ONLY_CONTEXT_ID) ? [] : settings.chatInstructions, disabledContext),
+      effectiveChatInstructions(req.delegation ? [] : settings.chatInstructions, disabledContext),
       conv,
       kanbanTurn
     )
@@ -945,6 +967,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         conversationId,
         projectId: conv?.projectId ?? null,
         turnId,
+        disabledTools: [
+          ...(disabledContext.has('mcp-kb-search') ? ['search' as const] : []),
+          ...(disabledContext.has('mcp-kb-document') ? ['document' as const] : []),
+          ...(disabledContext.has('mcp-kb-topics') ? ['topics' as const] : [])
+        ],
         runtimeContext: {
           ...(projectContext ? { projectName: projectContext.name, projectGitUrl: projectContext.gitUrl } : {}),
           llm: {
@@ -984,13 +1011,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let previewMcpUrl: string | undefined
     let previewSurface: 'panel' | 'chromium' | 'make-preview' | undefined
     // External Web Reader (web-reader=https://…) serves `/mcp/preview` with a core MCP token for the conversation.
-    const previewAllowed = workspaceMode && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
+    const previewAllowed = browserToolsEnabled && workspaceMode && conv && conv.assistantKind !== 'make' && entitlements.capabilities.some(capability => capability === 'web-reader.use' || capability === 'playwright-reader.use')
     const externalPreview = previewAllowed ? externalTools('web-reader') : undefined
     if (externalPreview) previewMcpUrl = externalPreview
     else if (!req.delegation && previewAllowed && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
     }
-    if (workspaceMode && !req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
+    if (browserToolsEnabled && workspaceMode && !req.delegation && conv?.assistantKind === 'make' && !makeBrowser && deps.previewMcpBaseUrl && deps.previewTurns) {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns.issue({ userId, conversationId }))}`
       previewSurface = 'make-preview'
       prompt += '\n\n' + [
@@ -1003,8 +1030,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ].join('\n')
     }
     // A bound Make browser keeps priority and uses the reader conversation.
-    const externalMakeBrowser = makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
-    if (workspaceMode && makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
+    const externalMakeBrowser = browserToolsEnabled && makeBrowser?.available ? externalTools('web-reader', makeBrowser.session.id) : undefined
+    if (browserToolsEnabled && workspaceMode && makeBrowser?.available && (externalMakeBrowser || (deps.previewMcpBaseUrl && deps.previewTurns))) {
       previewMcpUrl = externalMakeBrowser
         ?? `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(deps.previewTurns!.issue({ userId, conversationId: makeBrowser.session.id }))}`
       previewSurface = makeBrowser.surface
@@ -1012,14 +1039,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
     // разговора (ptyId `console:<conv>`). Только у чата этого вида.
     let consoleMcpUrl: string | undefined
-    if (workspaceMode && !req.delegation && conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
+    if (consoleToolsEnabled && workspaceMode && !req.delegation && conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
       consoleMcpUrl = `${deps.consoleMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}`
     }
     // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
-    const externalMake = conv?.assistantKind === 'make' ? externalTools('make') : undefined
-    if (workspaceMode && conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
+    const externalMake = makeToolsEnabled && conv?.assistantKind === 'make' ? externalTools('make') : undefined
+    if (makeToolsEnabled && workspaceMode && conv?.assistantKind === 'make' && (externalMake || (!req.delegation && deps.makeMcpBaseUrl))) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
@@ -1034,7 +1061,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
     // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
     let kanbanMcpUrl: string | undefined
-    if (workspaceMode && (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl))) {
+    if (kanbanToolsEnabled && workspaceMode && (externalKanban || (!req.delegation && kanbanTurn && deps.kanbanMcpBaseUrl))) {
       if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
       kanbanMcpUrl = `${externalKanban ?? deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
     }

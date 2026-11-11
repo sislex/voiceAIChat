@@ -33,6 +33,8 @@ export interface KbToolEntry {
   /** Ход внутри CI-рана: ран и шаг его ленты — для отчётов по ране и задаче. */
   ciRunId?: string | null
   ciStepId?: string | null
+  /** Individual KB tools disabled by the effective conversation configuration. */
+  disabledTools?: Array<'search' | 'document' | 'topics'>
   /** Preparation-run: expose only search/document/topics, never operational tools. */
   coreReadOnly?: boolean
 }
@@ -127,6 +129,10 @@ export function sectionOf(
 
 
 export const noKbContext = { content: [{ type: 'text' as const, text: 'Контекст хода недоступен: обращение к базе знаний не записано.' }], isError: true }
+const disabledKbTool = (name: 'search' | 'document' | 'topics') => ({
+  content: [{ type: 'text' as const, text: `Инструмент kb:${name} отключён конфигурацией текущего разговора.` }],
+  isError: true
+})
 export function registerKbTools(server: McpServer, kb: KnowledgeBaseService, view: KbView, entry?: KbToolEntry, usage?: KbUsageTracker): void {
   const noContext = noKbContext
       const open = (source: 'tool_search' | 'tool_document' | 'tool_topics', query: string) =>
@@ -155,6 +161,7 @@ export function registerKbTools(server: McpServer, kb: KnowledgeBaseService, vie
         },
         async ({ query, limit, module }) => {
           if (!entry) return noContext
+          if (entry.disabledTools?.includes('search')) return disabledKbTool('search')
           const handle = await open('tool_search', query)
           try {
             const found = await kb.search({ query, module, limit: limit && limit > 0 ? Math.min(limit, 20) : 8 }, view)
@@ -208,6 +215,7 @@ export function registerKbTools(server: McpServer, kb: KnowledgeBaseService, vie
         },
         async ({ documentId, anchor, module, offset }) => {
           if (!entry) return noContext
+          if (entry.disabledTools?.includes('document')) return disabledKbTool('document')
           const label = `${documentId}${anchor ? `#${anchor}` : ''}${offset ? `@offset:${offset}` : ''}`
           const handle = await open('tool_document', label)
           try {
@@ -245,6 +253,7 @@ export function registerKbTools(server: McpServer, kb: KnowledgeBaseService, vie
         { description: 'Оглавление базы знаний: все документы с типом, тегами и путём к источнику.', inputSchema: { module: z.string().optional() } },
         async ({ module }) => {
           if (!entry) return noContext
+          if (entry.disabledTools?.includes('topics')) return disabledKbTool('topics')
           const handle = await open('tool_topics', 'оглавление')
           try {
             const topics = await kb.topics({ ...view, module })
