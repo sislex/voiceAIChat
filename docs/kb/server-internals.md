@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 2dfd7992
+updated: 2026-11-11
+checked: 92494505
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1000,6 +1000,17 @@ read-only `machineFs`: обход исключает каталоги сборк
 подпроекта читает style/JSON/TypeScript-файлы и извлекает CSS custom properties из
 `:root` и `data-theme`, простые token maps и экспортированные компоненты.
 
+Make project-context tools call three additional Core ports: `currentContext`
+returns the current conversation and linked-project settings with
+`ciExecAuthRef` removed; `projectUsage` aggregates the owner's usage with a
+project-id SQL filter; `conversationAttachments` returns deduplicated attachment
+metadata and upload IDs from the authorized conversation history. Core currently
+pins the vendor `make-contracts` 1.8.18 archive, so `makeBridge/coreRpc.ts`
+validates and dispatches these method names locally until that archive is updated.
+This compatibility branch is covered by the internal `/internal/make/core` route
+table in `coreRpc.test.ts`; otherwise the older dispatcher would answer
+`400 unknown method` even though `LocalMakeCore` implements the methods.
+
 Git-операции project mode используют тот же `GitWorkspaceService`, что REST
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
@@ -1073,7 +1084,7 @@ component sources (`*.tsx`, `*.jsx`, `*.component.ts`) last, smallest first,
 with the remaining budget. A design over the budget is returned partially
 instead of `413 project_byte_limit_exceeded`.
 
-The Core RPC compatibility adapter dispatches all six project-mode methods,
+The Core RPC compatibility adapter dispatches the project-mode methods required by the pinned and current Make contracts,
 preserves adapter HTTP errors, accepts `live_on`/`live_off` and retains transfer
 branch/task/design URLs. The installed make-contracts 1.4 schemas only describe
 start/status/url and the minimal transfer result; Make clients must adopt the

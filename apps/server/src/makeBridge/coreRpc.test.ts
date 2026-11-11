@@ -17,6 +17,18 @@ describe('/internal/make/core project methods', () => {
     ['makeStand', ['alice', 'conversation', { op: 'git', component: 'core', operation: { op: 'compare', base: 'origin/dev', head: 'make/test' } }], { ...componentState, git: { op: 'compare', ahead: 1, behind: 2, mergeBase: 'a'.repeat(40), contained: false } }],
     ['projectGit', ['alice', 'p', { op: 'compare', base: 'origin/dev', head: 'HEAD', fetch: true }], { op: 'compare', ahead: 0, behind: 1, mergeBase: 'a'.repeat(40), contained: true }],
     ['listProjects', ['alice'], []],
+    ['currentContext', ['alice', 'conversation'], {
+      conversation: { id: 'conversation', title: 'Make project', projectId: 'p' },
+      project: { id: 'p', name: 'Product', role: 'owner' },
+      capabilities: { projectSettings: true, projectUsage: true, attachments: true, stands: true, standCopy: true, uiActions: true },
+    }],
+    ['projectUsage', ['alice', 'conversation', 'day'], {
+      projectId: 'p', unit: 'day', report: { totals: { inputTokens: 12, outputTokens: 4, costUsd: 0.01 } },
+    }],
+    ['conversationAttachments', ['alice', 'conversation'], {
+      conversationId: 'conversation', projectId: 'p',
+      attachments: [{ uploadId: 'upload-1', name: 'brief.pdf', mimeType: 'application/pdf', size: 128, conversationId: 'conversation' }],
+    }],
     ['userStand', ['alice', { op: 'status', machineId: 'm1', folder: '/work/stand', command: 'npm run dev', port: 5173 }], { status: 'running' }],
     ['projectStructure', ['alice', 'p'], []],
     ['projectDesign', ['alice', 'p', '.'], { tokens: [], themes: [], components: [] }],
