@@ -21,6 +21,31 @@ const transferResult = transferTaskResultSchema.extend({
   branchUrl: z.string().min(1).optional(), designUrl: z.string().min(1).optional()
 })
 
+// Compatibility with the Make project-context tools introduced after the pinned
+// make-contracts 1.8.18 bundle. Keep these local until Core updates its vendor archive.
+const rpcId = z.string().trim().min(1).max(256)
+const currentContextArgs = z.tuple([rpcId, rpcId])
+const currentContextResult = z.object({
+  conversation: z.object({ id: rpcId, title: z.string(), projectId: rpcId.nullable() }).strict(),
+  project: z.record(z.string(), z.unknown()).nullable(),
+  capabilities: z.object({
+    projectSettings: z.boolean(), projectUsage: z.boolean(), attachments: z.boolean(),
+    stands: z.boolean(), standCopy: z.boolean(), uiActions: z.boolean(),
+  }).strict(),
+}).strict()
+const projectUsageArgs = z.tuple([rpcId, rpcId, z.enum(['hour', 'day', 'week'])])
+const projectUsageResult = z.object({
+  projectId: rpcId, unit: z.enum(['hour', 'day', 'week']), report: z.unknown(),
+}).strict()
+const conversationAttachmentsArgs = z.tuple([rpcId, rpcId])
+const conversationAttachmentsResult = z.object({
+  conversationId: rpcId, projectId: rpcId.nullable(),
+  attachments: z.array(z.object({
+    uploadId: z.string().min(1), name: z.string().min(1), mimeType: z.string().min(1),
+    size: z.number().int().nonnegative(), conversationId: rpcId,
+  }).strict()),
+}).strict()
+
 const standResult = makeStandResultSchema.extend({
   git: z.union([makeStandResultSchema.shape.git.unwrap(), compareResultSchema]).optional(),
   components: z.array(z.object({ component: z.enum(['core', 'core-ui', 'make']), branch: z.string().nullable(), workingCopyPath: z.string().min(1), phase: makeStandResultSchema.shape.phase })).optional(),
@@ -56,6 +81,27 @@ export function createMakeCoreDispatcher(core: MakeCore) {
         try { validateMakeStandResult(operation, result as z.infer<typeof makeStandResultSchema>) }
         catch { throw new RpcError(502, 'Mismatched Make stand result') }
         return result
+      }
+      if (request.method === 'currentContext') {
+        const parsed = currentContextArgs.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        const fn = (core as MakeCore & { currentContext?: (userId: string, conversationId: string) => Promise<unknown> }).currentContext
+        if (typeof fn !== 'function') throw new RpcError(409, 'Project mode is unavailable on this Core')
+        return currentContextResult.parse(await fn.call(core, ...parsed.data))
+      }
+      if (request.method === 'projectUsage') {
+        const parsed = projectUsageArgs.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        const fn = (core as MakeCore & { projectUsage?: (userId: string, conversationId: string, unit: 'hour' | 'day' | 'week') => Promise<unknown> }).projectUsage
+        if (typeof fn !== 'function') throw new RpcError(409, 'Project mode is unavailable on this Core')
+        return projectUsageResult.parse(await fn.call(core, ...parsed.data))
+      }
+      if (request.method === 'conversationAttachments') {
+        const parsed = conversationAttachmentsArgs.safeParse(request.args)
+        if (!parsed.success) throw new RpcError(400, 'Invalid project mode arguments')
+        const fn = (core as MakeCore & { conversationAttachments?: (userId: string, conversationId: string) => Promise<unknown> }).conversationAttachments
+        if (typeof fn !== 'function') throw new RpcError(409, 'Project mode is unavailable on this Core')
+        return conversationAttachmentsResult.parse(await fn.call(core, ...parsed.data))
       }
       // make-contracts 1.8.15 does not list `userStand` yet; validate it locally until Core pins 1.8.16.
       if (request.method === 'userStand') {
