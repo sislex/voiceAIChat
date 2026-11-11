@@ -136,4 +136,40 @@ describe('MakeCore project mode', () => {
     expect(await core.projectDesign('ann', 'p1', '.')).toEqual({ tokens: [], themes: [], components: [] })
     expect(read).not.toHaveBeenCalled()
   })
+
+  it('returns safe current-project context, aggregate usage and deduplicated attachments', async () => {
+    const usageReport = vi.fn(async () => ({ total: { tokens: 42, costUsd: 0.12 } }))
+    const db = {
+      projects: {
+        getProject: vi.fn(async () => ({ id: 'p1', name: 'Product', role: 'owner', ciExecAuthRef: 'secret-ref' })),
+      },
+      chat: {
+        getConversation: vi.fn(async () => ({ id: 'c1', title: 'Make Product', projectId: 'p1' })),
+        usageReport,
+        historyFiles: vi.fn(async () => [
+          { attachments: [{ path: 'upload-1', name: 'brief.pdf', mimeType: 'application/pdf', size: 128 }] },
+          { attachments: [{ path: 'upload-1', name: 'brief.pdf', mimeType: 'application/pdf', size: 128 }] },
+        ]),
+      },
+    } as unknown as VoiceChatDb
+    const core = new LocalMakeCore({ db })
+
+    const context = await core.currentContext('ann', 'c1')
+    expect(context).toEqual(expect.objectContaining({
+      conversation: { id: 'c1', title: 'Make Product', projectId: 'p1' },
+      project: expect.objectContaining({ id: 'p1', name: 'Product' }),
+      capabilities: expect.objectContaining({ projectUsage: true, attachments: true, uiActions: true }),
+    }))
+    expect(context.project).not.toHaveProperty('ciExecAuthRef')
+
+    expect(await core.projectUsage('ann', 'c1', 'day')).toEqual({
+      projectId: 'p1', unit: 'day', report: { total: { tokens: 42, costUsd: 0.12 } },
+    })
+    expect(usageReport).toHaveBeenCalledWith('ann', 'day', undefined, undefined, undefined, 'p1')
+
+    expect(await core.conversationAttachments('ann', 'c1')).toEqual({
+      conversationId: 'c1', projectId: 'p1',
+      attachments: [{ uploadId: 'upload-1', name: 'brief.pdf', mimeType: 'application/pdf', size: 128, conversationId: 'c1' }],
+    })
+  })
 })
