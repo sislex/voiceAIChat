@@ -14,7 +14,7 @@ const freePort = () => new Promise<number>(resolve => {
 let home = ''
 afterEach(() => { if (home) rmSync(home, { recursive: true, force: true }) })
 
-function stands(access: Array<{ agentId: string; name: string; access: 'owner' | 'full' | 'read' }> = [{ agentId: 'm1', name: 'Mac', access: 'owner' }], extra: { gate?: (input: { command: string }) => Promise<{ allowed: boolean }>; releaseAccess?: (user: string, stand: string) => Promise<void> } = {}) {
+function stands(access: Array<{ agentId: string; name: string; access: 'owner' | 'full' | 'read' }> = [{ agentId: 'm1', name: 'Mac', access: 'owner' }], extra: { gate?: (input: { command: string }) => Promise<{ allowed: boolean }>; releaseAccess?: (user: string, stand: string) => Promise<void>; previewAccess?: (user: string, stand: string) => Promise<{ url: string }> } = {}) {
   home = mkdtempSync(path.join(tmpdir(), 'us-'))
   const folder = path.join(home, 'stand')
   mkdirSync(folder, { recursive: true })
@@ -74,6 +74,25 @@ describe('UserStands', () => {
     await expect(s.userStand('alice', { op: 'start', machineId: 'm1', folder, command: 'npm start', port: 4200 })).rejects.toThrow('machine_forbidden')
     await expect(s.userStand('alice', { op: 'files', machineId: 'm2', folder, action: 'list', dir: '.' })).rejects.toThrow('machine_forbidden')
   }, 20_000)
+
+  it('registers validated proxy routes on a local preview lease and clears them on release', async () => {
+    const released: string[] = []
+    const { stands: s } = stands(undefined, {
+      previewAccess: async () => ({ url: 'http://core.example:24001/' }),
+      releaseAccess: async (_user: string, standId: string) => { released.push(standId) },
+    })
+    const route = { path: '/api', port: 8080, targetHost: 'localhost:8080', origin: 'http://localhost:4200', stripPrefix: true }
+    expect(await s.userStand('alice', { op: 'preview', machineId: 'm1', port: 4200, routes: [route] }))
+      .toEqual({ url: 'http://core.example:24001/', interactive: true })
+    const id = userStandId('m1', 4200)
+    expect(await s.target('alice', id)).toMatchObject({
+      machineId: 'm1', gatewayPort: 4200,
+      routes: [{ path: '/api', target: { machineId: 'm1', gatewayPort: 8080 }, targetHost: 'localhost:8080', origin: 'http://localhost:4200', stripPrefix: true }],
+    })
+    expect(await s.userStand('alice', { op: 'release', machineId: 'm1', port: 4200 })).toEqual({ ok: true })
+    expect(released).toEqual([id])
+    expect(await s.target('alice', id)).not.toHaveProperty('routes')
+  })
 
   it('resolves us- stand ids in StandProxy only for machines the user may use', async () => {
     let access: Array<{ agentId: string; name: string; access: 'owner' }> = [{ agentId: 'm1', name: 'Mac', access: 'owner' }]

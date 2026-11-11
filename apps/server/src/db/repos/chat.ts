@@ -1772,7 +1772,7 @@ export class ChatRepo extends BaseRepo {
    * моделям + итог. Считается из meta ai-сообщений (JSON1 json_extract). Бакеты
    * времени — в UTC (created_at хранится в мс).
    */
-  async usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<UsageReport> {
+  async usageReport(userId: string, unit: UsageUnit, from?: number, to?: number, conversationId?: string, projectId?: string): Promise<UsageReport> {
     const j = this.j
     // Два независимых числа: CLI сообщает фактическую цену не для всех движков,
     // а редактируемый прайс пересчитывает все ответы с известной строкой.
@@ -1798,8 +1798,9 @@ export class ChatRepo extends BaseRepo {
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const where = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}
-      ${conversationId ? 'AND c.id = @conversationId' : ''}`
-    const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}) }
+      ${conversationId ? 'AND c.id = @conversationId' : ''}
+      ${projectId ? 'AND c.project_id = @projectId' : ''}`
+    const bind = { userId, ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}), ...(conversationId ? { conversationId } : {}), ...(projectId ? { projectId } : {}) }
     // Materialize only this user's period before the price join. PostgreSQL can
     // otherwise repeatedly decode large text metadata while joining prices, even
     // for an empty account, monopolizing the shared database request lane.
@@ -1821,7 +1822,7 @@ export class ChatRepo extends BaseRepo {
       ${joins} WHERE ${where} GROUP BY COALESCE(${j.text('m.meta', 'model')}, c.llm_model, '?') ORDER BY outputTokens DESC`, [bind])) as SqlUsage<UsageByModel>[]).map((row) => complete<UsageByModel>(row))
     // Фильтр разговоров всегда строится для всего выбранного периода, чтобы после
     // выбора одного разговора остальные варианты не исчезали из селекта.
-    const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere}`
+    const conversationWhere = `c.user_id = @userId AND m.role = 'ai' AND m.meta IS NOT NULL ${dateWhere} ${projectId ? 'AND c.project_id = @projectId' : ''}`
     const byConversation = ((await this.sql.all(`${source} SELECT c.id AS conversationId, c.title, ${sums}
       ${joins} WHERE ${conversationWhere} GROUP BY c.id, c.title ORDER BY costUsd DESC, c.updated_at DESC`, [bind])) as SqlUsage<UsageByConversation>[]).map((row) => complete<UsageByConversation>(row))
     return { unit, conversationId: conversationId ?? null, totals, byBucket, byModel, byConversation }

@@ -56,6 +56,48 @@ export interface LocalMakeCoreDeps {
 }
 
 export class LocalMakeCore implements MakeCore {
+  async currentContext(userId: string, conversationId: string) {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation) fail(404, 'conversation_not_found')
+    const projectId = conversation.projectId ?? null
+    const detail = projectId ? await this.deps.db.projects.getProject(userId, projectId) : null
+    const project = detail ? (() => {
+      const { ciExecAuthRef: _secret, ...safe } = detail
+      return safe
+    })() : null
+    return {
+      conversation: { id: conversation.id, title: conversation.title, projectId },
+      project,
+      capabilities: {
+        projectSettings: Boolean(project), projectUsage: Boolean(project), attachments: true,
+        stands: true, standCopy: true, uiActions: true,
+      },
+    }
+  }
+
+  async projectUsage(userId: string, conversationId: string, unit: 'hour' | 'day' | 'week') {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation?.projectId) fail(404, 'project_not_found')
+    const project = await this.deps.db.projects.getProject(userId, conversation.projectId)
+    if (!project) fail(404, 'project_not_found')
+    const report = await this.deps.db.chat.usageReport(userId, unit, undefined, undefined, undefined, conversation.projectId)
+    return { projectId: conversation.projectId, unit, report }
+  }
+
+  async conversationAttachments(userId: string, conversationId: string) {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation) fail(404, 'conversation_not_found')
+    const history = await this.deps.db.chat.historyFiles(userId, conversationId)
+    const seen = new Set<string>()
+    const attachments = history.flatMap(entry => entry.attachments ?? []).flatMap(attachment => {
+      if (seen.has(attachment.path)) return []
+      seen.add(attachment.path)
+      return [{ uploadId: attachment.path, name: attachment.name, mimeType: attachment.mimeType,
+        size: attachment.size, conversationId }]
+    })
+    return { conversationId, projectId: conversation.projectId ?? null, attachments }
+  }
+
   async listProjects(userId: string) {
     return Promise.all((await this.deps.db.projects.listProjects(userId)).map(async project => {
       const detail = await this.deps.db.projects.getProject(userId, project.id)

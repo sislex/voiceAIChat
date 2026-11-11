@@ -19,8 +19,8 @@ export function proxyPorts(value = ''): number[] {
   if (start < 1 || end > 65535 || end < start || end - start > 1000) throw new Error('Invalid VC_STAND_PROXY_PORTS')
   return Array.from({ length: end - start + 1 }, (_, i) => start + i)
 }
-export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: string, port: number): IncomingHttpHeaders {
-  const result: IncomingHttpHeaders = { ...headers, host: '127.0.0.1:' + port }
+export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: string, port: number, upstream?: { host: string; origin: string }): IncomingHttpHeaders {
+  const result: IncomingHttpHeaders = { ...headers, host: upstream?.host ?? '127.0.0.1:' + port }
   delete result.authorization
   for (const name of Object.keys(result)) if (name.startsWith('x-vc-') || name.startsWith('x-sislexa-') || name.startsWith('x-forwarded-')) delete result[name]
   delete result.cookie
@@ -33,7 +33,9 @@ export function standHeaders(headers: IncomingHttpHeaders, key: string, origin: 
     const csrf = ['__Secure-vc_csrf=', 'vc_csrf='].map(name => cookies.find(c => c.startsWith(name))).find(Boolean)
     if (csrf) result['x-vc-csrf'] = csrf.slice(csrf.indexOf('=') + 1)
   }
-  if (result.origin === origin) result.origin = 'http://127.0.0.1:' + port
+  if (result.origin === origin) result.origin = upstream?.origin ?? 'http://127.0.0.1:' + port
+  const referer = result.referer
+  if (upstream && typeof referer === 'string' && (referer === origin || referer.startsWith(origin + '/'))) result.referer = upstream.origin + referer.slice(origin.length)
   return result
 }
 export function standCookies(cookies: string[] | undefined, key: string): string[] | undefined {
@@ -104,12 +106,38 @@ export function externalStandResponseHeaders(headers: IncomingHttpHeaders, key: 
   if (cookies) result['set-cookie'] = standCookies(cookies, key)
   return rewriteOriginHeaders(result, upstream, origin)
 }
-type MachineTarget = { machineId: string; gatewayPort: number }
+type MachineEndpoint = { machineId: string; gatewayPort: number }
+export type MachineProxyRoute = { path: string; target: MachineEndpoint; targetHost: string; origin: string; stripPrefix: boolean }
+type MachineTarget = MachineEndpoint & { routes?: MachineProxyRoute[] }
 type Target = MachineTarget | ExternalStandTarget
 function isExternal(target: Target): target is ExternalStandTarget { return 'kind' in target && target.kind === 'external' }
 function sameTarget(a: Target, b: Target): boolean {
   return isExternal(a) || isExternal(b) ? isExternal(a) && isExternal(b) && a.origin === b.origin
-    : a.machineId === b.machineId && a.gatewayPort === b.gatewayPort
+    : a.machineId === b.machineId && a.gatewayPort === b.gatewayPort && JSON.stringify(a.routes ?? []) === JSON.stringify(b.routes ?? [])
+}
+function routeMatches(path: string, route: MachineProxyRoute): boolean { return path === route.path || path.startsWith(route.path + '/') }
+function proxyRoute(target: MachineTarget, path: string): MachineProxyRoute | undefined {
+  return target.routes?.filter(route => routeMatches(path, route)).sort((a, b) => b.path.length - a.path.length)[0]
+}
+function proxyRoutePath(url: string | undefined, route: MachineProxyRoute): string | undefined {
+  if (!url || !route.stripPrefix) return url
+  const query = url.indexOf('?')
+  const pathname = query < 0 ? url : url.slice(0, query)
+  const suffix = query < 0 ? '' : url.slice(query)
+  const rest = pathname.slice(route.path.length)
+  return (rest || '/') + suffix
+}
+function proxyRouteResponseHeaders(headers: IncomingHttpHeaders, route: MachineProxyRoute, leaseOrigin: string): IncomingHttpHeaders {
+  const result = { ...headers }
+  const targetOrigin = 'http://' + route.targetHost
+  if (result['access-control-allow-origin'] === route.origin) result['access-control-allow-origin'] = leaseOrigin
+  if (typeof result.location === 'string') {
+    try {
+      const location = new URL(result.location, targetOrigin + '/')
+      if (location.origin === targetOrigin && /^(https?:)?\/\//i.test(result.location)) result.location = leaseOrigin + (route.stripPrefix ? route.path : '') + location.pathname + location.search + location.hash
+    } catch {}
+  }
+  return result
 }
 export type StandProxyAccessOptions = { inject?: 'make-inspector' }
 type Lease = StandProxyAccessOptions & { target: Target; user: string; projectId: string; standId: string; key: string; port: number; expiresAt: number; origin: string; parentOrigin: string; server: Server; sockets: Set<Duplex> }
@@ -198,7 +226,7 @@ export class StandProxy {
     const deny = (code: number) => { if (res) { res.writeHead(code); res.end() } else socket?.end('HTTP/1.1 ' + code + ' Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n') }
     const path = (req.url ?? '').split('?')[0]!
     // External leases always re-resolve and pin the upstream address, so nothing bypasses the session check.
-    const publicArtifact = !!res && !isExternal(lease.target) && (req.method === 'GET' || req.method === 'HEAD') &&
+    const publicArtifact = !!res && !isExternal(lease.target) && !proxyRoute(lease.target, path) && (req.method === 'GET' || req.method === 'HEAD') &&
       /^\/applications\/[a-z][a-z0-9-]+\/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$/.test(path) &&
       !path.split('/').some(part => part === '.' || part === '..')
     if (this.closed || lease.expiresAt <= this.now()) return deny(401)
@@ -232,6 +260,9 @@ export class StandProxy {
       res.end(req.method === 'HEAD' ? undefined : script.body)
       return
     }
+    const route = !isExternal(target) ? proxyRoute(target, path) : undefined
+    if (route) target = route.target
+    const upstreamPath = route ? proxyRoutePath(req.url, route) : req.url
     const touch = () => { lease.expiresAt = this.now() + IDLE_MS }
     let upstream: ClientRequest
     let tunnel: Duplex | undefined
@@ -255,10 +286,11 @@ export class StandProxy {
       const pipe = tunnel
       lease.sockets.add(pipe); pipe.once('close', () => lease.sockets.delete(pipe))
       const requestHeaders = publicArtifact ? { ...req.headers, cookie: undefined } : req.headers
-      upstream = request({ hostname: '127.0.0.1', port: machine.gatewayPort, method: req.method, path: req.url, headers: standHeaders(requestHeaders, lease.key, lease.origin, machine.gatewayPort), createConnection: () => pipe })
+      upstream = request({ hostname: '127.0.0.1', port: machine.gatewayPort, method: req.method, path: upstreamPath, headers: standHeaders(requestHeaders, lease.key, lease.origin, machine.gatewayPort, route ? { host: route.targetHost, origin: route.origin } : undefined), createConnection: () => pipe })
       pipe.on('data', touch)
       responseHeaders = headers => {
-        const result = standFrameHeaders(headers, lease.parentOrigin, lease.origin)
+        let result = standFrameHeaders(headers, lease.parentOrigin, lease.origin)
+        if (route) result = proxyRouteResponseHeaders(result, route, lease.origin)
         if (result['set-cookie']) result['set-cookie'] = standCookies(result['set-cookie'], lease.key)
         return result
       }

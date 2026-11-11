@@ -1425,7 +1425,7 @@ make-contracts 1.8.15, and the shared-service authority table grants it per user
 where the user is an active member, `db.machines.listUserMachineAccess`),
 `start|status|stop` (same fixed program via `ProjectPreviews.runAt` with root =
 the absolute stand folder, state id `sha256(user, machine, folder, port)`, command
-gate with `projectId: null` and machine policy), `preview` (inspector lease) and
+gate with `projectId: null` and machine policy), `preview` (inspector lease; local stands may include up to 20 validated same-machine proxy routes `{path, port, targetHost, origin, stripPrefix}`) and
 `files` list/read/write (folder-relative paths, containment through the program's
 `check` action, 2 MiB limit, read returns `utf8` or `base64`). Start/stop/write need
 owner or `full` share access; `read` shares allow status, preview, list and read.
@@ -1456,7 +1456,7 @@ instead of after the one-hour idle timeout; Make sends it when a stand is delete
 moves to another address or leaves its preview frames. Leases of other users stay.
 StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
 (no project membership; port override rejected) and machine usability is
-re-checked on every proxied request.
+re-checked on every proxied request. `UserStands` keeps the active route set per user and `us-` stand id; `release` clears it. Each route can target only another validated, non-reserved port of that same machine.
 
 External stands: `{ op: 'preview', url }` (http/https, no machine) opens an
 inspector lease with id `ue-<sha256(origin)[:32]>`; `UserStands` keeps the
@@ -1648,7 +1648,7 @@ and Domain attributes are removed. Core authorization and internal forwarding
 headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
 to the leased proxy origin becomes the gateway origin, while foreign origins
 remain unchanged. SSE responses stream without buffering and WebSocket upgrades
-retain their initial bytes in both directions.
+retain their initial bytes in both directions. A local user-stand lease may also carry same-origin path routes. The longest segment-boundary match wins; HTTP and WebSocket use its target port, and `stripPrefix` optionally removes the matched prefix while preserving the query. Host becomes the configured localhost target, and Origin/Referer are rewritten to the stand's original origin. The inspector script paths are handled before route selection. Response ACAO for that original origin is rewritten to the lease origin, and absolute redirects from the routed target return through the lease path.
 
 Each lease remembers the Core parent origin at creation: the lease scheme plus
 the request Host passed to `access()`, including its port. Reusing a lease keeps
