@@ -341,6 +341,34 @@ describe('stand proxy listeners', () => {
     expect(d.connect).not.toHaveBeenCalled()
   })
 
+  it('forwards the longest same-origin path route to another machine port and can strip its prefix', async () => {
+    const main = createServer((req, res) => res.end('main:' + req.url))
+    const api = createServer((req, res) => {
+      res.setHeader('access-control-allow-origin', 'http://localhost:4200')
+      res.end(JSON.stringify({ url: req.url, host: req.headers.host, origin: req.headers.origin }))
+    })
+    for (const [server, port] of [[main, ports[2]!], [api, ports[3]!]] as const)
+      await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve) })
+    cleanup.push(() => { main.closeAllConnections(); api.closeAllConnections(); return Promise.all([
+      new Promise<void>(resolve => main.close(() => resolve())),
+      new Promise<void>(resolve => api.close(() => resolve())),
+    ]) })
+    const proxy = new StandProxy({
+      ...deps(),
+      userStand: async () => ({
+        machineId: 'm', gatewayPort: ports[2]!,
+        routes: [{ path: '/api', target: { machineId: 'm', gatewayPort: ports[3]! }, targetHost: 'localhost:' + ports[3], origin: 'http://localhost:4200', stripPrefix: true }],
+      }),
+      connect: (_machine, port) => connect(port, '127.0.0.1'),
+    })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', '', 'us-m-4200', '127.0.0.1:25273')
+    expect(await (await fetch(lease.url + 'page', { headers: { cookie: 'vc_session=alice' } })).text()).toBe('main:/page')
+    const response = await fetch(lease.url + 'api/users?active=1', { headers: { cookie: 'vc_session=alice', origin: lease.url.slice(0, -1) } })
+    expect(await response.json()).toEqual({ url: '/users?active=1', host: 'localhost:' + ports[3], origin: 'http://localhost:4200' })
+    expect(response.headers.get('access-control-allow-origin')).toBe(lease.url.slice(0, -1))
+  })
+
   it('keys leases by requested port and forwards to that port', async () => {
     const d = deps(); d.ports = ports.slice(0, 3)
     const proxy = new StandProxy(d); cleanup.push(() => proxy.close())

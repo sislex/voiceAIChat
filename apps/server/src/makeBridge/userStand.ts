@@ -25,6 +25,20 @@ const folder = z.string().min(1).max(1000).refine(value => /^\/./.test(value) ||
   .refine(value => !/[\0\r\n]/.test(value), 'folder')
 const command = z.string().min(1).max(2000).refine(value => !/[\0\r\n]/.test(value), 'command')
 const port = z.number().int().min(1).max(65535)
+const proxyRoute = z.object({
+  path: z.string().min(2).max(200).regex(/^\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%-]+)*$/)
+    .refine(value => !value.split('/').some(part => part === '.' || part === '..'), 'path'),
+  port,
+  targetHost: z.string().regex(/^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/),
+  origin: z.string().url().max(2000).refine(value => { const url = new URL(value); return (url.protocol === 'http:' || url.protocol === 'https:') && (url.hostname === 'localhost' || url.hostname === '127.0.0.1') }, 'origin'),
+  stripPrefix: z.boolean(),
+}).strict().superRefine((route, context) => {
+  try {
+    const target = new URL('http://' + route.targetHost)
+    if ((target.port ? Number(target.port) : 80) !== route.port) context.addIssue({ code: 'custom', path: ['targetHost'], message: 'port' })
+  } catch { context.addIssue({ code: 'custom', path: ['targetHost'], message: 'port' }) }
+})
+export interface UserStandProxyRoute { path: string; port: number; targetHost: string; origin: string; stripPrefix: boolean }
 const relative = z.string().min(1).max(1000).refine(value => value === '.' || (isSafeRepoRelativePath(value) && !value.split('/').some(part => part.toLowerCase() === '.git')), 'path')
 const filePath = relative.refine(value => value !== '.', 'path')
 const branch = z.string().refine(isValidGitBranchName, 'branch')
@@ -43,7 +57,7 @@ export const USER_STAND_GIT_OUTPUT_MAX = 200_000
 export const userStandOperationSchema = z.union([
   z.object({ op: z.literal('machines') }).strict(),
   z.object({ op: z.enum(['start', 'status', 'stop']), machineId, folder, command, port }).strict(),
-  z.object({ op: z.literal('preview'), machineId, port }).strict(),
+  z.object({ op: z.literal('preview'), machineId, port, routes: z.array(proxyRoute).max(20).optional() }).strict(),
   // External http(s) stand (no machine): proxied through a `ue-` lease after the SSRF guard.
   z.object({ op: z.literal('preview'), url: z.string().min(1).max(4000) }).strict(),
   z.object({ op: z.literal('files'), machineId, folder, action: z.literal('list'), dir: relative }).strict(),
@@ -78,7 +92,7 @@ export type UserStandStatus = 'stopped' | 'starting' | 'running' | 'failed'
 export type UserStandOperation =
   | { op: 'machines' }
   | { op: 'start' | 'status' | 'stop'; machineId: string; folder: string; command: string; port: number }
-  | { op: 'preview'; machineId: string; port: number }
+  | { op: 'preview'; machineId: string; port: number; routes?: UserStandProxyRoute[] }
   | { op: 'preview'; url: string }
   | { op: 'files'; machineId: string; folder: string; action: 'list'; dir: string }
   | { op: 'files'; machineId: string; folder: string; action: 'read'; path: string }
@@ -153,6 +167,8 @@ interface Deps {
 export class UserStands {
   /** `ue-` id -> upstream origin, registered by `preview {url}`; bounded, oldest entries drop first. */
   private readonly external = new Map<string, string>()
+  /** Per-user route configuration of active local stand leases. */
+  private readonly routes = new Map<string, UserStandProxyRoute[]>()
   constructor(private readonly deps: Deps) {}
 
   /** Usable machine of the user or `machine_forbidden`; `write` requires owner or full share access. */
@@ -168,8 +184,10 @@ export class UserStands {
     return value
   }
 
+  private routeKey(user: string, standId: string): string { return `${user}\0${standId}` }
+
   /** StandProxy resolver for `us-` ids; re-run on every proxied request. */
-  async target(user: string, standId: string): Promise<{ machineId: string; gatewayPort: number } | ExternalStandTarget> {
+  async target(user: string, standId: string): Promise<({ machineId: string; gatewayPort: number; routes?: Array<{ path: string; target: { machineId: string; gatewayPort: number }; targetHost: string; origin: string; stripPrefix: boolean }> }) | ExternalStandTarget> {
     if (standId.startsWith('ue-')) {
       const origin = this.external.get(standId)
       if (!origin) throw Object.assign(new Error('stand_not_found'), { statusCode: 404 })
@@ -178,7 +196,15 @@ export class UserStands {
     const parsed = parseUserStandId(standId)
     if (!parsed) throw Object.assign(new Error('stand_not_found'), { statusCode: 404 })
     await this.machine(user, parsed.machineId, false)
-    return { machineId: parsed.machineId, gatewayPort: this.port(parsed.port) }
+    const routes = this.routes.get(this.routeKey(user, standId))
+    return {
+      machineId: parsed.machineId,
+      gatewayPort: this.port(parsed.port),
+      ...(routes?.length ? { routes: routes.map(route => ({
+        path: route.path, target: { machineId: parsed.machineId, gatewayPort: this.port(route.port) },
+        targetHost: route.targetHost, origin: route.origin, stripPrefix: route.stripPrefix,
+      })) } : {}),
+    }
   }
 
   async userStand(user: string, operation: UserStandOperation): Promise<UserStandResult> {
@@ -205,8 +231,16 @@ export class UserStands {
     if (op.op === 'preview') {
       await this.machine(user, op.machineId, false)
       this.port(op.port)
+      for (const route of op.routes ?? []) this.port(route.port)
       if (!this.deps.previewAccess) userStandError('stand_proxy_unavailable')
-      const lease = await this.deps.previewAccess(user, userStandId(op.machineId, op.port)).catch((error: { statusCode?: number }) => {
+      const standId = userStandId(op.machineId, op.port)
+      const routeKey = this.routeKey(user, standId)
+      const previousRoutes = this.routes.get(routeKey)
+      this.routes.delete(routeKey); this.routes.set(routeKey, op.routes ?? [])
+      if (this.routes.size > 1000) this.routes.delete(this.routes.keys().next().value!)
+      const lease = await this.deps.previewAccess(user, standId).catch((error: { statusCode?: number }) => {
+        this.routes.delete(routeKey)
+        if (previousRoutes) this.routes.set(routeKey, previousRoutes)
         if (error?.statusCode === 403) userStandError('machine_forbidden')
         userStandError('stand_proxy_unavailable')
       })
@@ -219,6 +253,7 @@ export class UserStands {
       if ('url' in op) {
         try { standId = externalUserStandId(new URL(op.url).origin) } catch { userStandError('invalid_user_stand') }
       } else standId = userStandId(op.machineId, op.port)
+      this.routes.delete(this.routeKey(user, standId))
       await this.deps.releaseAccess?.(user, standId)
       return { ok: true }
     }
