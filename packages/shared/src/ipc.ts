@@ -262,7 +262,7 @@ export interface IpcInvokeMap {
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
   /** With `limit` (1..200) returns the latest page older than `before` plus `history`; without it, the full history. */
   'conversations:get': { arg: { id: string; scope?: ConversationScope; projectId?: string; limit?: number; before?: string }; result: ConversationWithMessages | null }
-  'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
+  'conversations:contextSnapshot': { arg: { id: string; assistantMode?: import('./types').ConversationAssistantMode; disabledContext?: string[] }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
   /** Чем контекст этого разговора отличается от другого (только чтение). */
   'conversations:contextDiff': { arg: { id: string; otherId: string }; result: import('./types').ContextDiff | null }

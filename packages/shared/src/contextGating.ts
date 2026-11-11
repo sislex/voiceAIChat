@@ -20,12 +20,24 @@ export const INFO_CONTEXT_IDS = [
 ] as const
 
 /**
- * Инструменты, которые подключает сам вид чата: браузерные (`mcp__browser__*`)
- * в чатах с превью, консольные в «Консоли с ассистентом», make-инструменты в
- * Make и канбан-инструменты в ходах панели ассистента. Выключить их тумблером
- * нельзя — они приходят вместе с видом чата, а не из настроек разговора.
+ * Инструменты вида чата всё ещё подключаются только подходящей поверхностью,
+ * но пользователь может исключить их из конкретного мода или разговора.
+ * Карта ниже превращает стабильный id снимка в wildcard для deny-list CLI.
  */
-const KIND_TOOL_PREFIXES = ['mcp-browser-', 'mcp-console-', 'mcp-make-', 'mcp-kanban-'] as const
+const CONTEXT_TOOL_NAMES: Readonly<Record<string, string>> = {
+  'mcp-browser-preview': 'mcp__browser__*',
+  'mcp-console-pty': 'mcp__console__*',
+  'mcp-make-files': 'mcp__make__*',
+  'mcp-make-design': 'mcp__make_design_*__*',
+  'mcp-kanban-board': 'mcp__kanban__*'
+}
+
+/** Все MCP-источники снимка, которые базовый Required может исключить. */
+export const CONTEXT_MCP_ITEM_IDS = [
+  'mcp-remote-machines', 'mcp-remote-read', 'mcp-remote-edit', 'mcp-remote-bash',
+  'mcp-browser-preview', 'mcp-console-pty', 'mcp-make-files', 'mcp-make-design', 'mcp-kanban-board',
+  'mcp-kb-search', 'mcp-kb-document', 'mcp-kb-topics', 'mcp-history'
+] as const
 
 /**
  * Почему пункт нельзя выключить. UI показывает замок с пояснением, поэтому
@@ -35,7 +47,6 @@ const KIND_TOOL_PREFIXES = ['mcp-browser-', 'mcp-console-', 'mcp-make-', 'mcp-ka
 export function contextLockReason(id: string): 'safety' | 'info' | 'kind' | null {
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return 'safety'
   if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return 'info'
-  if (KIND_TOOL_PREFIXES.some((prefix) => id.startsWith(prefix))) return 'kind'
   return null
 }
 
@@ -52,11 +63,10 @@ export function isContextToggleable(id: string): boolean {
   if (id === REQUIRED_ONLY_CONTEXT_ID) return true // служебный выключатель всех необязательных источников
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return false
   if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return false
-  if (KIND_TOOL_PREFIXES.some((prefix) => id.startsWith(prefix))) return false
-  return true // personalization, project-binding, skill-*, mcp-remote-*, mcp-kb-*, knowledge-mode
+  return true // context blocks, skills and every MCP family can be configured by mode
 }
 
-/** Учитывает отдельный тумблер, базовый Required и обязательные унаследованные источники. */
+/** Учитывает тумблер мода и Required, который наследует каждый другой мод. */
 export function isContextDisabled(disabledContext: Iterable<string>, id: string, requiredContext: Iterable<string> = []): boolean {
   const disabled = disabledContext instanceof Set ? disabledContext : new Set(disabledContext)
   const required = requiredContext instanceof Set ? requiredContext : new Set(requiredContext)
@@ -76,6 +86,7 @@ export function effectiveDisabledContext(disabledContext: Iterable<string>, requ
  * The server-level `mcp-history` toggle disables both history tools with a wildcard.
  */
 export function toolNameForContextId(id: string): string | null {
+  if (CONTEXT_TOOL_NAMES[id]) return CONTEXT_TOOL_NAMES[id]!
   if (id === 'mcp-history') return 'mcp__history__*'
   const remote = /^mcp-remote-(.+)$/.exec(id)
   if (remote) return `mcp__remote__${remote[1]}`

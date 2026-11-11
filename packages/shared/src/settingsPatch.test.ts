@@ -115,6 +115,9 @@ describe('sanitizeSettingsPatch', () => {
         disabled: []
       }
     ])
+    expect(sanitizeSettingsPatch({
+      contextPresets: [{ id: 'console-tools', name: 'Console tools', assistantMode: 'console', disabled: [] }]
+    }).contextPresets?.[0]?.assistantMode).toBe('console')
   })
 
   it('не считает патчем не-объект', () => {

@@ -108,6 +108,25 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(body.result.tools.map((t) => t.name).sort()).toEqual(['deploy_prod', 'document', 'machines', 'projects', 'runtime_context', 'search', 'topics', 'usage', 'user_settings'])
   })
 
+  it('отклоняет отдельный KB-инструмент, выключенный конфигурацией разговора', async () => {
+    kbToolBroker.register(TURN, {
+      userId: U,
+      conversationId: convId,
+      projectId: null,
+      turnId: 't1',
+      disabledTools: ['topics']
+    })
+    await makeApp()
+
+    const disabled = await call('topics')
+    expect(disabled.isError).toBe(true)
+    expect(disabled.text).toContain('kb:topics отключён конфигурацией')
+
+    const enabled = await call('search', { query: 'WebSocket' })
+    expect(enabled.isError).not.toBe(true)
+    expect(enabled.text).toContain('protocol#websocket')
+  })
+
   it('deploy_prod запускает host-side DeployTrigger для актуального admin и возвращает accepted', async () => {
     await makeApp()
     const result = await call('deploy_prod')

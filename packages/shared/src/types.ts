@@ -928,7 +928,7 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
-  /** Chat — только сообщения; Workspace — рабочий контекст; Make — рабочий контекст Make-разговора. */
+  /** Chat — только сообщения; Workspace — рабочий контекст; Make/Console — специализированный рабочий контекст соответствующего разговора. */
   assistantMode?: ConversationAssistantMode
   /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
   disabledContext?: string[]
@@ -1133,14 +1133,15 @@ export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan'
 
 /**
  * Режим наполнения хода. Chat отправляет только историю/сообщение и инструкции;
- * Workspace подключает общий рабочий контекст, а Make — тот же рабочий контекст
- * со специализацией Make-разговора (проект, превью и mcp__make__*).
+ * Workspace подключает общий рабочий контекст, Make — тот же контекст со
+ * специализацией Make-разговора, а Console — со специализацией живой консоли.
  */
-export type ConversationAssistantMode = 'chat' | 'workspace' | 'make'
+export type ConversationAssistantMode = 'chat' | 'workspace' | 'make' | 'console'
 
 export const CONVERSATION_ASSISTANT_MODES: Array<{ id: ConversationAssistantMode; label: string; description: string }> = [
   { id: 'workspace', label: 'Workspace', description: 'Контекст проекта, БЗ, навыки, машины, MCP и инструменты доступны модели.' },
   { id: 'make', label: 'Make', description: 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' },
+  { id: 'console', label: 'Console', description: 'Полный Workspace-контекст и специализированные инструкции для работы в видимой консоли через mcp__console__*.' },
   { id: 'chat', label: 'Chat', description: 'Только история, текущее сообщение и инструкции — без инструментов и дополнительного контекста.' }
 ]
 
@@ -1680,8 +1681,8 @@ export interface Settings {
    */
   contextPresets: ContextPreset[]
   /**
-   * Источники базового мода Required. Они принудительно включены во всех
-   * наследниках и редактируются только в самом Required.
+   * Источники базового мода Required. Их наследуют все остальные встроенные
+   * и пользовательские моды; выключить их можно только в самом Required.
    */
   requiredContextItems?: string[]
   /**
@@ -2132,7 +2133,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
         id: item.id,
         name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
         description: String(item.description ?? '').trim().slice(0, 240),
-        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make'
+        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make' || item.assistantMode === 'console'
           ? item.assistantMode
           : 'workspace' as const,
         disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []
