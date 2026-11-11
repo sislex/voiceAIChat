@@ -1247,8 +1247,8 @@ export async function registerRest(
     if (accountAccess && opts.deployment) {
       accountAccess.capabilities = effectiveCapabilities(accountAccess.capabilities, opts.deployment)
     }
-    const previewMode = req.query.assistantMode === 'workspace' || req.query.assistantMode === 'chat' || req.query.assistantMode === 'make' || req.query.assistantMode === 'console'
-      ? req.query.assistantMode
+    const previewMode: ConversationAssistantMode | null = req.query.assistantMode === 'workspace' || req.query.assistantMode === 'chat' || req.query.assistantMode === 'make' || req.query.assistantMode === 'console'
+      ? req.query.assistantMode as ConversationAssistantMode
       : null
     const preview = previewMode
       ? {

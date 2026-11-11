@@ -1714,14 +1714,14 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     expect(rec.last()?.makeMcpUrl).toBeUndefined()
     expect(rec.last()?.prompt).not.toContain('## Превью Make')
     expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['mcp__browser__*', 'mcp__make__*']))
+    // Neither disabled browser issued a preview token.
+    expect(tool.entries).toEqual([])
 
     const console = await db.chat.createConversation(U, 'Консоль без инструментов', 'console-reader')
     await db.chat.setConversationContextEnabled(U, console.id, 'mcp-console-pty', false)
     await turns.start({ userId: U, conversationId: console.id, segments: [{ speakerId: 1, text: 'прочитай терминал' }] })
     expect(rec.last()?.consoleMcpUrl).toBeUndefined()
     expect(rec.last()?.disallowedTools).toContain('mcp__console__*')
-
-    expect(tool.entries).toEqual([])
     await turns.idle()
     db.close()
   })

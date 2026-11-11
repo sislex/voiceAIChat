@@ -804,7 +804,8 @@ describe('VoiceChatDb — настройки', () => {
       chatInstructions: DEFAULT_SETTINGS.chatInstructions,
       loginNewDeviceEmails: true,
       contextPresets: [],
-      defaultContextPresetId: null
+      defaultContextPresetId: null,
+      requiredContextItems: []
     })
   })
 

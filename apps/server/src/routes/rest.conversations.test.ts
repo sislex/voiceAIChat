@@ -992,7 +992,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(before.promptPreview.text).toContain('## Персонализация пользователя')
     expect(before.promptPreview.chars).toBe(before.promptPreview.text.length)
     expect(before.promptPreview.approxTokens).toBe(Math.ceil(before.promptPreview.text.length / 4))
-    expect(before.promptPreview.omitted.join(' ')).toContain('Правила платформы')
+    // Platform rules are now visible in the snapshot; only provider-side rules stay outside Core.
+    expect(before.promptPreview.omitted.join(' ')).toContain('Дополнительные системные правила провайдера')
     // Размер вклада виден и на самом пункте — иначе непонятно, кто занял место.
     const item = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization')
     expect(item?.size).toEqual({ chars: personalization?.chars, approxTokens: personalization?.approxTokens })
@@ -1408,10 +1409,11 @@ describe('REST: conversations/messages/settings', () => {
     }
     const design = await item('mcp-make-design')
     expect(design?.available).toBe(true)
-    // Тумблера нет: источник даёт привязка задачи, ход disabledContext не читает.
-    expect(design?.toggleable).toBe(false)
-    expect(design?.lockReason).toBe('kind')
-    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(400)
+    // The task binding makes the source available; a mode or conversation may still exclude it
+    // (the turn denies mcp__make_design_*__*).
+    expect(design?.toggleable).toBe(true)
+    expect(design?.lockReason ?? null).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/conversations/${chat.id}/context/mcp-make-design`, payload: { enabled: false } })).statusCode).toBe(200)
 
     // Обычный чат без задачи честно говорит, что источник появится в чате задачи.
     const plain = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Обычный' } })).json()
@@ -1642,9 +1644,13 @@ describe('REST: conversations/messages/settings', () => {
     expect(ids).toEqual([
       'instruction-console', 'instruction-explorer', 'instruction-git', 'instruction-image', 'instruction-questions', 'instruction-taskLaunch',
       'knowledge-mode',
+      // Surface tools: turns.ts skips the server and denies the wildcard (browserToolsEnabled & co.).
+      'mcp-browser-preview', 'mcp-console-pty',
       // mcp-history: turns.ts reads it (historyEnabled), see turns.test «honours the mcp-history context toggle».
       'mcp-history',
+      'mcp-kanban-board',
       'mcp-kb-document', 'mcp-kb-search', 'mcp-kb-topics',
+      'mcp-make-design', 'mcp-make-files',
       'mcp-remote-bash', 'mcp-remote-edit', 'mcp-remote-machines', 'mcp-remote-read',
       'personalization', 'project-binding', 'task-context'
     ])
@@ -1798,9 +1804,9 @@ describe('REST: conversations/messages/settings', () => {
     expect(plainTools['mcp-console-pty']?.available).toBe(false)
 
     const makeTools = await tools(make.id)
-    // В Make наоборот: файлы проекта — да, браузер превью — нет.
+    // В Make: файлы проекта — да; браузер доступен через окно стенда, привязанное к Chromium.
     expect(makeTools['mcp-make-files']?.available).toBe(true)
-    expect(makeTools['mcp-browser-preview']?.available).toBe(false)
+    expect(makeTools['mcp-browser-preview']?.available).toBe(true)
 
     // Вид чата определяет доступность, а мод/разговор — включён ли
     // доступный инструмент. Это обычный источник, пока его явно не добавили
