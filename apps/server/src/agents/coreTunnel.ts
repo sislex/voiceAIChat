@@ -9,6 +9,8 @@ export class CoreTunnel extends Duplex {
   private deadline: NodeJS.Timeout
   constructor(private sendFrame: (frame: Record<string, unknown>) => void, private buffered: () => number, private cleanup: () => void) {
     super()
+    // Keep errors handled before a consumer attaches and after it detaches.
+    this.on('error', error => console.error('[core-tunnel] stream failed:', error))
     this.poll = setInterval(() => this.flush(), 10)
     this.poll.unref()
     this.deadline = setTimeout(() => this.destroy(new Error('Tunnel connection timed out')), 15_000)

@@ -48,6 +48,55 @@ describe('Core-terminated tunnel', () => {
     expect((await error)[0].message).toBe('Machine disconnected')
     expect(stream.destroyed).toBe(true)
   })
+  describe.each(['absent', 'subscribed', 'detached'] as const)('consumer error listener: %s', listenerState => {
+    it.each([
+      ['disconnect', 'Machine disconnected'],
+      ['timeout', 'Tunnel connection timed out'],
+      ['tunnel.error', 'Peer tunnel failed'],
+      ['tunnel.connectionError', 'Peer connection failed'],
+    ] as const)('contains %s to the affected tunnel', async (failure, message) => {
+      vi.useFakeTimers()
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const registry = new AgentRegistry()
+      const frames: Array<Record<string, string>> = []
+      registry.register('m', 'machine', { send: raw => frames.push(JSON.parse(raw)), close() {} }, undefined, AGENT_VERSION)
+      registry.register('other', 'other machine', { send() {}, close() {} }, undefined, AGENT_VERSION)
+      const stream = registry.connectCoreTunnel('m', 24019)
+      const id = frames[0]!.tunnelId!
+      const healthy = registry.connectCoreTunnel('other', 24019)
+      healthy.frame({ t: 'tunnel.connected' })
+      const consumer = vi.fn()
+      if (listenerState !== 'absent') stream.on('error', consumer)
+      if (listenerState === 'detached') stream.off('error', consumer)
+      // events.once(stream, 'close') adds an error listener and masks this regression.
+      const closed = new Promise<void>(resolve => stream.once('close', resolve))
+      try {
+        if (failure === 'disconnect') registry.unregister('m')
+        else if (failure === 'timeout') await vi.advanceTimersByTimeAsync(15_000)
+        else await registry.handleMessage('m', { t: failure, tunnelId: id, connectionId: id, message })
+        await closed
+        expect(stream.destroyed).toBe(true)
+        expect(stream.errored?.message).toBe(message)
+        expect(log).toHaveBeenCalledOnce()
+        expect(log).toHaveBeenCalledWith('[core-tunnel] stream failed:', expect.objectContaining({ message }))
+        if (listenerState === 'subscribed') {
+          expect(consumer).toHaveBeenCalledOnce()
+          expect(consumer).toHaveBeenCalledWith(expect.objectContaining({ message }))
+        } else expect(consumer).not.toHaveBeenCalled()
+        expect(healthy.destroyed).toBe(false)
+        expect(frames.filter(frame => frame.t === 'tunnel.close' && frame.tunnelId === id)).toHaveLength(1)
+        await vi.advanceTimersByTimeAsync(15_000)
+        expect(log).toHaveBeenCalledTimes(1)
+      } finally {
+        stream.destroy()
+        healthy.destroy()
+        registry.unregister('m')
+        registry.unregister('other')
+        vi.useRealTimers()
+        log.mockRestore()
+      }
+    })
+  })
   it('serves HTTP streaming and raw upgrade over a Duplex with no local TCP fallback', async () => {
     for (const upgrade of [false, true]) {
       let input = ''
