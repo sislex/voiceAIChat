@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-12
+checked: 5592d5709
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -88,6 +88,18 @@ folders are never an installer discovery dependency.
 терминал и телеметрию.
 
 ## Подключение и жизненный цикл
+
+Core-terminated TCP streams (`agents/coreTunnel.ts`) install a permanent
+`error` listener in their constructor and log failures with the
+`[core-tunnel] stream failed:` prefix. `AgentRegistry.unregister` destroys
+only that machine's streams with `Machine disconnected`; the same listener
+handles the 15-second connection deadline and peer `tunnel.error` /
+`tunnel.connectionError` frames. It remains present before a consumer attaches
+and after the consumer removes its own listener, while subscribed consumers
+still receive the original error. Destruction clears the deadline and flow
+control poll, removes the registry entry and sends tunnel end/close frames.
+`coreTunnel.test.ts` covers all four failures with absent, subscribed and
+detached consumer listeners, and verifies another machine's tunnel stays open.
 
 Agent messages are serialized in `agents/wsAgent.ts`. An Identity audit RPC
 failure during registration, rejection or an update offer is logged and closes
@@ -705,6 +717,23 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 плана, и в fix-loop, потому что живёт в самом инструменте `bash`.
 
 ## Выбор машины для чата
+
+Assistant configuration is applied before machine resolution in `turns.ts`.
+Chat mode disables execution and does not resolve a machine. Workspace-family
+modes retain the rules below; required context and disabled MCP items determine
+which tools and instructions reach the runner. Changing assistant mode or an
+effective context toggle clears the saved engine session and context usage in
+`db/repos/chat.ts`, preventing resume with stale tools. REST rejects Make and
+Console modes on conversations of another kind and rejects disabling inherited
+Required items. Context snapshot IPC accepts mode and disabled-context previews.
+
+The area review since `f82b55f09` also covers removal of Kanban workflow
+mutators from Core repositories and migration of fixture writers into
+`apps/server/src/test/seed.ts` (including environment link fixtures).
+These removals do not change the machine registry protocol. The chat usage
+query now accepts an optional project filter while retaining its user filter.
+Make browser routing in `turns.ts` prefers the selected embedded stand;
+a separate stand window retains its bound Reader session.
 
 Make conversations are an explicit exception to default-machine inheritance:
 only a saved `execTarget` grants machine access, and only its saved `workdir`

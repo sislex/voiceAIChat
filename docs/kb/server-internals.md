@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-11
-checked: 92494505
+updated: 2026-11-12
+checked: 5592d5709
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -739,6 +739,13 @@ Web Reader требует API ядра >=1.1.0; старое ядро без `co
 
 ## Машины: модуль `machines/module.ts` и порт `MachinesService` (2026-09-07)
 
+`CoreTunnel` owns a permanent logging `error` listener, so machine disconnect,
+connection timeout and peer tunnel errors remain confined to the stream even
+without a consumer error listener. Consumers still receive the same error;
+cleanup clears timers and removes the tunnel from the registry. See
+[machine lifecycle](machines.md#подключение-и-жизненный-цикл) and the regression
+matrix in `agents/coreTunnel.test.ts`.
+
 Реестр онлайн-подключений (`agents/registry.ts`), WebSocket компаньон-агентов `/agent`, REST машин и
 установщиков (`routes/agents.ts`), политика команд, каталог ChatAI по умолчанию, журнал команд, watchdog и
 перенос хранилищ собираются одной функцией `createMachinesModule(deps)` (`apps/server/src/machines/module.ts`);
@@ -920,6 +927,14 @@ values, allowing the shared LLM-runner attachment preparer to replace them with
 temporary readable files for both embedded and HTTP CLI execution.
 
 ## Make ↔ ядро: порты `MakeCore` и `MakeService` (2026-09-07)
+
+`makeBridge/coreRpc.ts` explicitly dispatches `currentContext`,
+`projectUsage` and `conversationAttachments` with local compatibility schemas
+for the pinned contract. Invalid arguments return 400; a missing Core method
+returns 409. Results are validated before returning, and
+`makeBridge/coreRpc.test.ts` covers all three calls. The area review since
+`92494505` includes this dispatch fix and the CoreTunnel error boundary above;
+the `openStandWindow` argument type uses `z.infer<typeof standWindowArgs>`.
 
 Make stand working copies resolve through `stand:<conversationId>/<hostProjectId>/<standId>`
 (two UUIDs and a Kanban stand id such as `dev-5b9d0ce6-61b`). The Git workspace resolver requires the conversation owner and
