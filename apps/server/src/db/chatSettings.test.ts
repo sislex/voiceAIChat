@@ -157,5 +157,6 @@ describe('canonical persisted chat settings', () => {
     await first.close(); databases.splice(databases.indexOf(first), 1)
     await second.close(); databases.splice(databases.indexOf(second), 1)
     expect(await open(file).settings.getChatSettings('alice', c.id)).toEqual(saved)
-  })
+    // Three full SQLite opens (each runs every migration) exceed the 5 s default on a loaded machine.
+  }, 30_000)
 })
