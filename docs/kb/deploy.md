@@ -1,8 +1,10 @@
 ---
-updated: 2026-11-09
-checked: 694e6cbdf
+updated: 2026-11-13
+checked: dec40f6b5
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
+  - scripts/stand.mjs
+  - scripts/stand.test.mjs
   - scripts/dev-stand-local.mjs
   - scripts/dev-stand-local.test.mjs
   - scripts/application-frontend-server.mjs
@@ -46,6 +48,50 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## Стенд за 3 шага
+
+1. Install Node 22+, Git, GitHub CLI and PostgreSQL client tools on macOS,
+   Linux or WSL. Run `gh auth login && gh auth setup-git` for private repositories.
+2. Run `npm run stand:create` once to generate `.stand/.env` (mode 600).
+   Fill/review that file: PostgreSQL server URL without a database, UI/service
+   ports, and optional model credentials. Leave `SISLEXA_STAND_PG` empty to use
+   Docker `postgres:17`, bound to loopback at port base + 899. An unreachable
+   configured server also falls back to Docker; its private connection is then
+   remembered in `.stand/private/postgres.json` until destruction.
+3. Run `npm run stand:create` again. It installs Core dependencies and clones
+   missing owner repositories from `dev` into `.stand/repos` using GitHub CLI,
+   installs their locked dependencies and Playwright Chromium, and starts services.
+   Core runs directly from the current checkout. No `~/sislexa-dev` is needed.
+
+The default profile runs Identity, Core, Core UI, Kanban, Make and its frontend,
+plus Billing and Analytics (managed component dependencies). `--full` or
+`SISLEXA_STAND_FULL=1` adds the remaining `dev:stand` services. The profile and
+database name are remembered in `.stand/settings.json`; explicit
+`SISLEXA_STAND_FULL=0` selects the basic profile again. The default database name
+includes a hash of the checkout path to keep separate checkouts isolated.
+
+`stand:start` prepares/reuses the stand, `stand:status` reports its processes,
+and `stand:stop` stops its processes and managed Postgres container.
+`stand:update` stops services, fast-forwards every checkout from `origin/dev`
+(refusing checkouts on another branch), refreshes changed dependencies and starts
+again. `stand:destroy -- --yes` stops services, drops only this stand's database,
+removes its Docker container and deletes `.stand/` contents except `.env`.
+Without `--yes`, it fails before reading configuration or changing files.
+
+The optional `fixtures/stand/seed.sql` is restored using `psql` with error-stop
+and a transaction. Without it, services migrate an empty database. Identity
+bootstraps `admin`; stand users receive `SISLEXA_STAND_USERS_PASSWORD` (default
+`123`). Generated credentials, logs, data and process records stay in `.stand/`.
+Do not reuse production credentials or a production database.
+
+`SISLEXA_MODEL_API_URL` and `SISLEXA_MODEL_API_TOKEN` are read and format-checked
+for the future workspace model API. Temporary runner URLs/token can be supplied
+in the same file. Without runner endpoints, startup and status report
+“модели не настроены”; other services can still run.
+Existing `dev:stand` shared mode, source overrides and foreground `run`
+retain their existing behavior. `.stand/` is excluded from Git, test selection,
+TypeScript, Core's watcher and KB traversal.
 
 ## File storage node example
 

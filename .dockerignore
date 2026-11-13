@@ -4,6 +4,7 @@ node_modules
 **/dist
 
 # Локальные окружения/сборки.
+**/.stand
 .venv-piper
 **/release
 **/*.dmg

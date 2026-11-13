@@ -1,4 +1,5 @@
 {
   "compilerOptions": { "incremental": true, "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "lib": ["ES2022"], "strict": true, "noEmit": true, "esModuleInterop": true, "resolveJsonModule": true, "skipLibCheck": true, "types": ["node"] },
+  "exclude": ["node_modules", "**/.stand/**", "../../.stand/**"],
   "include": ["src"]
 }
