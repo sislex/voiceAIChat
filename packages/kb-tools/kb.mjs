@@ -82,6 +82,7 @@ function topicFiles() {
   const paths = []
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.stand') continue
       const path = join(dir, entry.name)
       if (entry.isDirectory() && path !== LOG_DIR) walk(path)
       else if (entry.isFile() && entry.name.endsWith('.md') && path !== INDEX_FILE && (config.custom || entry.name !== 'README.md')) paths.push(path)

@@ -22,6 +22,8 @@ artifacts/
 # Окружение
 .env
 .env.*
+!.env.stand.example
+.stand/
 
 # Python-венв Piper
 .venv-piper/

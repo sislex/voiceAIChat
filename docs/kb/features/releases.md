@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
 updated: 2026-11-13
-checked: 059901fdf
+checked: e8f70a79e
 areas:
   - packages/shared/src/applicationCatalog.ts
   - packages/shared/src/applicationRelease.ts
@@ -42,6 +42,15 @@ include those suites and complete tooling; `gate:release:full` passes
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths
 are owner migration references, not local Core implementations.
+
+## Portable development stands
+
+`stand:create` and `stand:update` operate on local `dev` checkouts; they do not
+publish owner archives or deploy a release. `.stand/repos` stays outside Core's
+workspace and artifact ownership. The application planner and Core change summary
+ignore `.stand` path components; the compatibility affected-package planner ignores
+root `.stand/` paths. Release verification continues to use pinned artifacts and
+the release-mode checks described in [release gate selection](release-gate-plan.md).
 
 ## Source-owned tool releases
 

@@ -7,6 +7,7 @@ import { loadConfig } from './config.mjs'
 const config = loadConfig()
 const ROOT = config.root, KB = join(ROOT, config.kbDir), OUT = join(ROOT, config.generatedIndexPath)
 const files = dir => existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+  if (e.name === '.stand') return []
   const path = join(dir, e.name)
   if (path === join(ROOT, config.logDir) || path === join(ROOT, config.indexPath) || path === OUT) return []
   return e.isDirectory() ? files(path) : e.isFile() && e.name.endsWith('.md') && (config.custom || e.name !== 'README.md') ? [path] : []

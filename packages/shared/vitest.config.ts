@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config'
 // дефолтный include vitest и так исключает node_modules и находит те же
 // 780 тестов, чередующийся A/B дал 6,2/6,9 с против 6,7/5,7 с).
 export default defineConfig({
-  test: {
+  test: { exclude: ['**/node_modules/**', '**/.stand/**'],
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
     coverage: {

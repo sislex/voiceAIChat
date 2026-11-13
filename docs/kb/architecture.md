@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-13
-checked: 059901fdf
+checked: e8f70a79e
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -31,6 +31,22 @@ Module details: `voice:README.md`
 
 Module details: `playwright-reader:README.md`
 Module details: `core-ui:README.md`
+
+## Portable development checkout
+
+`npm run stand:create` uses the current Core checkout and keeps independent
+owner repositories on `dev` under `.stand/repos`. Billing and Analytics support
+the basic Identity/Core/Core UI/Kanban/Make profile; `--full` adds the other local
+services. These clones are runtime development state, not Core workspaces or
+release artifacts. The affected-package planner ignores `.stand/` paths. See
+[stand setup](deploy.md#стенд-за-3-шага) for configuration and lifecycle commands.
+
+Core's `turns.ts` applies effective conversation context settings before connecting
+browser, console, Make and Kanban MCP surfaces; individual disabled KB tools are
+passed to the KB broker. Required context items remain enabled. `server.ts` also
+publishes `chat.history` when the active message branch changes. Make's selected
+embedded stand takes precedence over its bound Reader session; opening a separate
+stand window checks the user's Reader capability and binds a Reader conversation.
 
 ## Core frontend ownership
 

@@ -1,7 +1,7 @@
 ---
-title: "Проверки по замене закреплённых архивов"
 updated: 2026-11-13
-checked: 059901fdf
+checked: e8f70a79e
+title: "Проверки по замене закреплённых архивов"
 areas:
   - scripts/owner-pins.mjs
   - scripts/application-gate.mjs
@@ -37,6 +37,16 @@ immutable vendor-release URLs (and legacy `file:vendor/...` references) в `pack
 - `build:frontends` и `verify:core-ui`, браузерные наборы приложения, для панелей
   владельцев — `toolIntegration`, для core-ui и Desktop — бюджеты маршрутов.
 
+## Local stand state and development/release selection
+
+`planApplicationChecks` removes paths containing a `.stand` component before
+classification, and contract-test discovery skips `.stand`, `node_modules` and
+`.git`. Owner clones under `.stand/repos` therefore do not become Core changes.
+Development plans retain deferred browser suites in `releaseE2eFiles` and select
+`test:tooling:dev` plus related changed-script tests. Release execution sets
+`release: true`, includes those deferred suites and selects complete tooling;
+its full command is `npm run gate:all -- --release`.
+
 ## Release base and independent checks
 
 Development planning separates Kanban stand browser suites into
@@ -48,7 +58,7 @@ result alone does not cover the deferred release suites.
 `gate:release` runs `scripts/release-gate.mjs`. The release center supplies
 `VOICECHAT_RELEASE_BASE_SHA`, or the caller passes `--base`: a full 40-character
 production commit available in the checkout. If it is absent or invalid, the
-script runs all three gates: `gate:all`, `gate:performance`, `gate:system`.
+script runs all three gates: `gate:all -- --release`, `gate:performance`, `gate:system`.
 
 With a valid production commit, the script first fetches
 `refs/tags/verified/full-gate/*` from origin. A replacement base must be an
@@ -59,7 +69,7 @@ trusting stale local attestations.
 
 The application plan runs relative to this base. Proven pin-only changes use
 the narrowed plan, excluding frontend E2E files already covered by owner checks.
-A full plan or a non-pin-only plan runs `gate:all`. Performance and owner-system
+A full plan or a non-pin-only plan runs `gate:all -- --release`. Performance and owner-system
 checks are selected independently even when the application plan is full:
 
 - Performance runs for a Core UI pin change or rendering, measurement or route

@@ -81,7 +81,7 @@ export function reportFailure(error) {
 export function walkFiles(path) {
   if (!existsSync(path)) return []
   if (statSync(path).isFile()) return [path]
-  return readdirSync(path).filter(name => !['node_modules', 'dist', '.git'].includes(name))
+  return readdirSync(path).filter(name => !['node_modules', 'dist', '.git', '.stand'].includes(name))
     .flatMap(name => walkFiles(resolve(path, name)))
 }
 export function relatedTooling(files, repository = root) {

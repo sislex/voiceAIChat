@@ -6,7 +6,7 @@ import { isTest, root, workspaceEntries } from './test-files.mjs'
 function walk(directory) {
   if (!existsSync(directory)) return []
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    if (['node_modules', 'dist', '.git'].includes(entry.name)) return []
+    if (['node_modules', 'dist', '.git', '.stand'].includes(entry.name)) return []
     const path = resolve(directory, entry.name)
     return entry.isDirectory() ? walk(path) : entry.isFile() ? [path] : []
   })

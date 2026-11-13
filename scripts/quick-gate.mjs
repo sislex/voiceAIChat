@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process'
 
 export { relatedTooling }
 export function quickPlanCommands(plan, files, repository = root, { task = false } = {}) {
+  files = files.filter(file => !file.split('/').includes('.stand'))
   // Configuration cannot be narrowed by the source import graph.
   // A root package.json proven to change only npm scripts carries rootScriptPaths instead.
   const configuration = file => /(^|\/)(package(?:-lock)?\.json|tsconfig[^/]*\.json|vitest[^/]*\.[cm]?[jt]s|vite\.config\.[cm]?[jt]s)$/.test(file) &&

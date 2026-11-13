@@ -10,7 +10,7 @@ export default defineConfig({
       if (id === '\0native-node-sqlite') return "const sqlite = process.getBuiltinModule('node:sqlite'); export const DatabaseSync = sqlite.DatabaseSync; export const StatementSync = sqlite.StatementSync; export const constants = sqlite.constants; export default sqlite;"
     }
   }],
-  test: {
+  test: { exclude: ['**/node_modules/**', '**/.stand/**'],
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
