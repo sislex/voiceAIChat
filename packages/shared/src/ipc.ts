@@ -336,6 +336,7 @@ export interface IpcInvokeMap {
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }
+  'messages:branch': { arg: { conversationId: string; messageId: string; action: 'edit' | 'retry' | 'select'; text?: string }; result: Message[] }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string; conversationId?: string }; result: UploadInfo }
   'images:retouch': { arg: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRequest; result: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchResult }
@@ -1445,6 +1446,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:delete',
   'messages:add',
   'messages:updateMeta',
+  'messages:branch',
   'messages:delete',
   'uploads:add',
   'settings:get',

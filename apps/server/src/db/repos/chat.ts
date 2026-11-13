@@ -91,6 +91,8 @@ interface MessageRow {
   attachments: string | null
   state: string
   history_position: number | null
+  parent_message_id: string | null
+  branch_selected: number | boolean
 }
 
 /**
@@ -225,7 +227,7 @@ export class ChatRepo extends BaseRepo {
     const light = this.sql.engine === 'postgres'
       ? `CASE WHEN jsonb_exists(${m}::jsonb, 'activity') OR jsonb_exists(${m}::jsonb, 'request') THEN ((${m}::jsonb - 'activity' - 'request') || jsonb_strip_nulls(jsonb_build_object('model', COALESCE(${m}::jsonb->'model', ${m}::jsonb#>'{request,model}'), 'permissionMode', COALESCE(${m}::jsonb->'permissionMode', ${m}::jsonb#>'{request,permissionMode}'))) || jsonb_build_object('serviceData', COALESCE(${m}::jsonb->'serviceData', ${marker})))::text ELSE ${m} END`
       : `CASE WHEN json_valid(${m}) AND (json_type(${m}, '$.activity') IS NOT NULL OR json_type(${m}, '$.request') IS NOT NULL) THEN json_set(json_patch(json_remove(${m}, '$.activity', '$.request'), json_object('model', COALESCE(json_extract(${m}, '$.model'), json_extract(${m}, '$.request.model')), 'permissionMode', COALESCE(json_extract(${m}, '$.permissionMode'), json_extract(${m}, '$.request.permissionMode')))), '$.serviceData', json(COALESCE(json_extract(${m}, '$.serviceData'), ${marker}))) ELSE ${m} END`
-    return ['id','conversation_id','role','text','time','created_at','engine','exec_target','attachments','state','history_position'].map(k => p + k).join(', ') + ', ' + light + ' AS meta'
+    return ['id','conversation_id','role','text','time','created_at','engine','exec_target','attachments','state','history_position','parent_message_id','branch_selected'].map(k => p + k).join(', ') + ', ' + light + ' AS meta'
   }
 
   private async storeServiceData(id: string, conversationId: string, meta: TurnMeta): Promise<TurnMeta> {
@@ -1227,6 +1229,134 @@ export class ChatRepo extends BaseRepo {
     await this.sql.run(`UPDATE conversation_turn_queue SET status = 'queued', updated_at = ? WHERE id = ? AND user_id = ? AND conversation_id = ? AND status = 'failed'`, [this.now(), id, userId, conversationId])
   }
 
+  /** One-time linear parent links for conversations created before message branches. */
+  async backfillMessageBranches(): Promise<void> {
+    const conversations = await this.sql.all<{ conversation_id: string }>(
+      `SELECT DISTINCT conversation_id FROM messages WHERE state IN ('published','branched') ORDER BY conversation_id`
+    )
+    for (const { conversation_id } of conversations) {
+      const rows = await this.sql.all<{ id: string; parent_message_id: string | null }>(
+        `SELECT id, parent_message_id FROM messages WHERE conversation_id = ? AND state IN ('published','branched') ORDER BY history_position ASC, id ASC`,
+        [conversation_id]
+      )
+      let parent: string | null = null
+      for (const row of rows) {
+        if (row.parent_message_id === null) {
+          await this.sql.run(`UPDATE messages SET parent_message_id = ?, branch_selected = 1 WHERE id = ?`, [parent, row.id])
+        }
+        parent = row.id
+      }
+    }
+  }
+
+  private async recomputeActiveBranch(conversationId: string): Promise<void> {
+    const rows = await this.sql.all<{ id: string; parent_message_id: string | null; branch_selected: number | boolean; history_position: number | null }>(
+      `SELECT id, parent_message_id, branch_selected, history_position FROM messages
+       WHERE conversation_id = ? AND state IN ('published','branched')
+       ORDER BY history_position ASC, id ASC`,
+      [conversationId]
+    )
+    const byParent = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const key = row.parent_message_id ?? ''
+      const group = byParent.get(key) ?? []
+      group.push(row)
+      byParent.set(key, group)
+    }
+    const active: string[] = []
+    let parent = ''
+    const seen = new Set<string>()
+    while (!seen.has(parent)) {
+      seen.add(parent)
+      const selected = (byParent.get(parent) ?? []).find(row => row.branch_selected === true || row.branch_selected === 1)
+      if (!selected) break
+      active.push(selected.id)
+      parent = selected.id
+    }
+    await this.sql.run(`UPDATE messages SET state = 'branched' WHERE conversation_id = ? AND state IN ('published','branched')`, [conversationId])
+    if (active.length) {
+      await this.sql.run(`UPDATE messages SET state = 'published' WHERE conversation_id = ? AND id IN (${active.map(() => '?').join(',')})`, [conversationId, ...active])
+    }
+  }
+
+  private async withMessageBranches(conversationId: string, messages: Message[]): Promise<Message[]> {
+    if (!messages.length) return messages
+    const rows = await this.sql.all<{ id: string; parent_message_id: string | null; role: string; history_position: number | null }>(
+      `SELECT id, parent_message_id, role, history_position FROM messages
+       WHERE conversation_id = ? AND state IN ('published','branched')
+       ORDER BY history_position ASC, id ASC`,
+      [conversationId]
+    )
+    const groups = new Map<string, typeof rows>()
+    for (const row of rows) {
+      const key = `${row.parent_message_id ?? ''}\n${row.role}`
+      const group = groups.get(key) ?? []
+      group.push(row)
+      groups.set(key, group)
+    }
+    const rowById = new Map(rows.map(row => [row.id, row]))
+    return messages.map(message => {
+      const row = rowById.get(message.id)
+      if (!row) return message
+      const group = groups.get(`${row.parent_message_id ?? ''}\n${row.role}`) ?? []
+      if (group.length < 2) return message
+      const index = group.findIndex(item => item.id === message.id)
+      return {
+        ...message,
+        branch: {
+          index: index + 1,
+          count: group.length,
+          previousId: index > 0 ? group[index - 1].id : null,
+          nextId: index + 1 < group.length ? group[index + 1].id : null
+        }
+      }
+    })
+  }
+
+  async branchMessage(
+    userId: string,
+    conversationId: string,
+    messageId: string,
+    action: 'edit' | 'retry' | 'select',
+    text?: string
+  ): Promise<Message[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) throw new Error('message not found')
+    await this.sql.transaction(async () => {
+      const source = await this.sql.get<MessageRow>(
+        `SELECT ${this.messageColumns()} FROM messages WHERE id = ? AND conversation_id = ? AND state IN ('published','branched')`,
+        [messageId, conversationId]
+      )
+      if (!source) throw new Error('message not found')
+      const siblingWhere = `conversation_id = ? AND role = ? AND (parent_message_id = ? OR (parent_message_id IS NULL AND ? IS NULL)) AND state IN ('published','branched')`
+      if (action === 'select') {
+        await this.sql.run(`UPDATE messages SET branch_selected = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE ${siblingWhere}`,
+          [source.id, conversationId, source.role, source.parent_message_id, source.parent_message_id])
+      } else if (action === 'retry') {
+        if (source.role !== 'ai') throw new Error('only ai replies can be retried')
+        await this.sql.run(`UPDATE messages SET branch_selected = 0 WHERE ${siblingWhere}`,
+          [conversationId, source.role, source.parent_message_id, source.parent_message_id])
+      } else {
+        const edited = text?.trim()
+        if (source.role === 'ai' || !edited) throw new Error('invalid edit branch')
+        await this.sql.run(`UPDATE messages SET branch_selected = 0 WHERE ${siblingWhere}`,
+          [conversationId, source.role, source.parent_message_id, source.parent_message_id])
+        const id = this.newId()
+        const createdAt = this.now()
+        const position = ((await this.sql.get<{ position: number }>(
+          `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ?`, [conversationId]
+        ))!).position
+        await this.sql.run(
+          `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position, parent_message_id, branch_selected)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'branched', ?, ?, 1)`,
+          [id, conversationId, source.role, edited, source.time, createdAt, source.engine, source.meta, source.exec_target, source.attachments, position, source.parent_message_id]
+        )
+      }
+      await this.recomputeActiveBranch(conversationId)
+      await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ?`, [this.now(), conversationId])
+    })
+    return this.listMessages(userId, conversationId)
+  }
+
   async addMessage(
     userId: string,
     conversationId: string,
@@ -1263,21 +1393,33 @@ export class ChatRepo extends BaseRepo {
     }
     const createdAt = this.now()
     const insert = this.sql.prepare(
-      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
+      `INSERT INTO messages (id, conversation_id, role, text, time, created_at, engine, meta, exec_target, attachments, state, history_position, parent_message_id, branch_selected)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, 1)`
     )
     const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ?, context_usage_json = COALESCE(?, context_usage_json) WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(stripServiceData(meta)) : null
     await this.sql.transaction(async () => {
-      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
-      await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position)
+      const parent = await this.sql.get<{ id: string }>(
+        `SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1`,
+        [conversationId]
+      )
+      const parentId = parent?.id ?? null
+      const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ?`, [conversationId])) as { position: number }).position
+      await this.sql.run(
+        `UPDATE messages SET branch_selected = 0, state = 'branched'
+         WHERE conversation_id = ? AND role = ? AND (parent_message_id = ? OR (parent_message_id IS NULL AND ? IS NULL))
+           AND state IN ('published','branched')`,
+        [conversationId, role, parentId, parentId]
+      )
+      await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position, parentId)
       if (meta) {
         meta = await this.storeServiceData(id, conversationId, meta)
         await this.sql.run('UPDATE messages SET meta = ? WHERE id = ?', [JSON.stringify(meta), id])
       }
+      await this.recomputeActiveBranch(conversationId)
       await touch.run(createdAt, contextUsage ? JSON.stringify(contextUsage) : null, conversationId)
     })
-    return {
+    const created: Message = {
       id,
       conversationId,
       role,
@@ -1289,6 +1431,7 @@ export class ChatRepo extends BaseRepo {
       ...(execTarget !== undefined ? { execTarget } : {}),
       ...(attachments?.length ? { attachments } : {})
     }
+    return (await this.withMessageBranches(conversationId, [created]))[0]
   }
 
   /**
@@ -1434,7 +1577,7 @@ export class ChatRepo extends BaseRepo {
   async listMessages(userId: string, conversationId: string): Promise<Message[]> {
     if (!(await this.ownsConversation(userId, conversationId))) return []
     const rows = (await this.sql.all(`SELECT ${this.messageColumns()} FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC`, [conversationId])) as MessageRow[]
-    return this.messageRows(rows)
+    return this.withMessageBranches(conversationId, this.messageRows(rows))
   }
 
   /** MCP history is deliberately scoped to one owned conversation. */
@@ -1505,7 +1648,7 @@ export class ChatRepo extends BaseRepo {
     const hasMore = rows.length > limit
     if (hasMore) rows.pop()
     rows.reverse()
-    return { messages: this.messageRows(rows), history: { hasMore, oldestId: rows[0]?.id ?? null, total: Number(total!.total) } }
+    return { messages: await this.withMessageBranches(conversationId, this.messageRows(rows)), history: { hasMore, oldestId: rows[0]?.id ?? null, total: Number(total!.total) } }
   }
 
   private messageRows(rows: MessageRow[]): Message[] {

@@ -215,12 +215,16 @@ export class VoiceChatDb {
       await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history_page ON messages(conversation_id, state, history_position, id)`)
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
+    await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_branch ON messages(conversation_id, parent_message_id, role, history_position, id)`)
     await this.sql.exec("UPDATE environment_links SET address = 'host.docker.internal:' || listener_port WHERE address = ''")
     await this.migrateIntegrationTokenProjectIds()
     const personalTenant = async (userName: string): Promise<string | null> =>
       (await this.ctx.repos.identity.getAccountAccess(userName))?.tenant.id ?? null
     await this.ctx.repos.projects.backfillTenantIds(personalTenant)
     await this.ctx.repos.chat.backfillTenantIds(personalTenant)
+    await this.runOnce('message_branches_v1', async () => {
+      await this.ctx.repos.chat.backfillMessageBranches()
+    })
     // Legacy Codex replies stored cumulative thread totals as per-message spend;
     // rewrite them once, on both backends (see migrateCodexThreadUsage). The
     // key is `v2`: `v1` was marked done by hand on production to stop the boot
@@ -289,6 +293,13 @@ export class VoiceChatDb {
   }
 
   private async migrate(): Promise<void> {
+    const messageColumns = await this.sql.all<{ name: string }>(`PRAGMA table_info(messages)`)
+    if (messageColumns.length && !messageColumns.some(column => column.name === 'parent_message_id')) {
+      await this.sql.exec(`ALTER TABLE messages ADD COLUMN parent_message_id TEXT`)
+    }
+    if (messageColumns.length && !messageColumns.some(column => column.name === 'branch_selected')) {
+      await this.sql.exec(`ALTER TABLE messages ADD COLUMN branch_selected INTEGER NOT NULL DEFAULT 1`)
+    }
     const integrationTokenColumns = await this.sql.all<{ name: string }>(`PRAGMA table_info(integration_tokens)`)
     if (integrationTokenColumns.length && !integrationTokenColumns.some(column => column.name === 'project_ids')) {
       await this.sql.exec(`ALTER TABLE integration_tokens ADD COLUMN project_ids TEXT NOT NULL DEFAULT '[]'`)

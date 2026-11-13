@@ -1437,3 +1437,12 @@ to the space owner), spaces (`personal`, `chat`, `make-project`) and shares with
 history references stored files through `MessageAttachment.storage` /
 `UploadInfo.storage`. The rollout plan and task split are in
 [file-storage-service](../plans/file-storage-service.md).
+
+## Conversation message branches
+
+Messages form a server-side tree through messages.parent_message_id. Siblings with the same parent and role are alternatives; branch_selected records the selected child. Only the selected root-to-leaf path has state = published, so all existing history/context queries continue to send only the active path to the model. Other variants use state = branched and remain stored. Startup migration message_branches_v1 links legacy linear histories without changing their visible order.
+
+POST /api/conversations/:id/messages/:messageId/branch accepts { action: edit | retry | select, text? } and returns the complete active message path. edit is allowed for a user message and creates a sibling with copied attachments, metadata and execution target; retry is allowed for an AI message and temporarily ends the active path at its parent; the next saved AI reply becomes the selected sibling. select selects an existing sibling and restores its previously selected descendants. Every mutation clears the resumable model session.
+
+Active messages with alternatives carry Message.branch { index, count, previousId, nextId }. Core emits chat.history { conversationId, messages } to all authenticated connections of the owner after a mutation; service-only message metadata is stripped from this frame like chat.message.
+

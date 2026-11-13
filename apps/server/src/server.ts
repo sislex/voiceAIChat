@@ -839,6 +839,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     publishChatMessage: async (userId, conversationId, message) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
     },
+    publishChatHistory: async (userId, conversationId, messages) => {
+      frames.publish(await clientEvent(db, userId, { t: 'chat.history', conversationId, messages }), userId)
+    },
     conversationSummary: () => conversationSummary,
     resetThread: (userId, conversationId, summarize) => turnManager.resetThread(userId, conversationId, summarize),
     delegatedAssistantKind: grant => {

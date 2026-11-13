@@ -15,8 +15,9 @@ export async function clientMessages(db: VoiceChatDb, userId: string, conversati
 }
 
 export async function clientEvent(_db: VoiceChatDb, _userId: string, event: ServerMessage): Promise<ServerMessage> {
-  if (event.t !== 'claude.done' && event.t !== 'chat.message') return event
+  if (event.t !== 'claude.done' && event.t !== 'chat.message' && event.t !== 'chat.history') return event
   if (event.t === 'chat.message') return { ...event, message: clientMessage(event.message, false) }
+  if (event.t === 'chat.history') return { ...event, messages: event.messages.map(message => clientMessage(message, false)) }
   return { ...event,
     ...(event.meta ? { meta: stripServiceData(event.meta) } : {}),
     ...(event.message ? { message: clientMessage(event.message, false) } : {})
