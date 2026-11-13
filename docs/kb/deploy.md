@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-13
-checked: dec40f6b5
+checked: 5b4b7837
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/stand.mjs
@@ -63,6 +63,12 @@ areas:
    missing owner repositories from `dev` into `.stand/repos` using GitHub CLI,
    installs their locked dependencies and Playwright Chromium, and starts services.
    Core runs directly from the current checkout. No `~/sislexa-dev` is needed.
+
+Repeated `stand:create` runs reuse existing `dev` clones and reinstall a repository
+only when its `package-lock.json` digest changed or `node_modules` is absent. The
+current Core checkout is never cloned; its own dependency stamp follows the same
+rule. Thus the second and later runs are the normal idempotent start path, while
+`stand:update` is the explicit fast-forward-and-restart operation.
 
 The default profile runs Identity, Core, Core UI, Kanban, Make and its frontend,
 plus Billing and Analytics (managed component dependencies). `--full` or

@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
 updated: 2026-11-13
-checked: e8f70a79e
+checked: 5b4b7837
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -232,10 +232,12 @@ the merge-workflow section above refer to the extracted Kanban owner.
 ## Portable stand directories
 
 Both CLI topic discovery (`packages/kb-tools/kb.mjs`) and lexical search/index
-preparation (`packages/kb-tools/search.mjs`) skip entries named `.stand`. Local
-owner clones must not contribute duplicate topics when the configured KB root
-includes them. The exclusion does not bypass checked-SHA freshness, package
-instructions or link validation for actual topics.
+preparation (`packages/kb-tools/search.mjs`) skip entries named `.stand`. The
+check happens at every recursive directory entry, before descending, so it also
+covers a `.stand` below a custom KB root rather than only Core's root directory.
+Local owner clones therefore cannot contribute duplicate topics or lexical chunks.
+The exclusion does not bypass checked-SHA freshness, package instructions or link
+validation for actual topics outside that subtree.
 
 A stand change can touch several topics through shared planner, config and CLI
 areas even when its main instructions live in `deploy.md`. Review and reconcile
