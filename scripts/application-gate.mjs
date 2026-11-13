@@ -146,6 +146,7 @@ export function lockChangedApplications(
 export function coreCodeSummary(files) {
   const areas = new Map()
   for (const file of files) {
+    if (file.split('/').includes('.stand')) continue
     if (docs(file) || isOwnerPinFile(file) || file === 'package-lock.json') continue
     const parts = file.split('/')
     const area = parts.length > 2 && ['apps', 'packages', 'scripts', 'deploy'].includes(parts[0]) ? `${parts[0]}/${parts[1]}` : parts.length > 1 ? parts[0] : file
@@ -174,6 +175,7 @@ export function splitReleaseSuites(plan, files = []) {
   return { ...plan, e2eFiles, releaseE2eFiles: (plan.e2eFiles ?? []).filter(file => !e2eFiles.includes(file)) }
 }
 export function planApplicationChecks(files, options = {}) {
+  files = files.filter(file => !file.split('/').includes('.stand'))
   return splitReleaseSuites(planAllApplicationChecks(files, options), files)
 }
 function planAllApplicationChecks(
@@ -271,6 +273,7 @@ function planAllApplicationChecks(
     }
   }
   for (const file of files) {
+    if (file.split('/').includes('.stand')) continue
     if (docs(file)) continue
     if (file !== 'package-lock.json' && pinFiles.includes(file)) continue
     if (browserSuites.has(file)) {
@@ -341,7 +344,7 @@ function planAllApplicationChecks(
 }
 function hasContractTests(path) {
   if (statSync(path).isFile()) return /\.test\.tsx?$/.test(path)
-  return readdirSync(path).some((name) => hasContractTests(resolve(path, name)))
+  return readdirSync(path).filter(name => !['.stand', 'node_modules', '.git'].includes(name)).some((name) => hasContractTests(resolve(path, name)))
 }
 function run(command, args, env = {}) {
   console.log(`[gate:app] ${command} ${args.join(' ')}`)

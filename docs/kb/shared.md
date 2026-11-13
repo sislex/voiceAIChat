@@ -1,12 +1,25 @@
 ---
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
 ---
 
 # Общий пакет: типы, контракты и чистая логика
+
+## Public model API prefix
+
+`protocol.ts` exports `MODEL_RUNNER_API_PREFIX` for Core's user-authenticated
+runner subset. The existing `llm.ts` declares Core's runner wire types and parser;
+the new prefix does not alter their frame shapes. See
+[public transport](protocol.md#model-runner-api).
+
+Current context contracts include `ConversationAssistantMode`,
+`requiredContextItems`, configurable snapshot items and the `required` lock
+reason. `contextGating.ts` applies Required inheritance before tool exclusions;
+Chat mode omits workspace context. Message branch operations use
+`REST.messageBranch`; branch metadata accompanies projected messages.
 
 `packages/shared` defines Core contracts and pure logic consumed by the server and clients. It declares explicit owner-contract dependencies in `package.json` and exports TypeScript through `src/index.ts`. Its own logic does not access DOM, network, filesystem or processes. Changes to Core public behavior start here and are implemented on both sides of the transport; extracted protocols remain owned by their published packages.
 

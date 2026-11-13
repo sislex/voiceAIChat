@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -22,6 +22,19 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+## Current Core consumer contracts
+
+Core now exposes the [model API](llm.md#api-моделей), but token creation UI is
+owned by Identity/Core UI. This backend change does not publish a new UI artifact.
+The personal usage response includes a per-token settlement breakdown; models
+tokens themselves cannot access that endpoint.
+
+The chat REST branch action returns the active message history and broadcasts
+`chat.history`. Core projects each message through `clientMessage` before
+delivery. Assistant configuration includes Required inheritance and Chat versus
+Workspace/Make/Console modes; disabled MCP families are omitted from turn
+assembly, and individual KB tools are checked at invocation.
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`

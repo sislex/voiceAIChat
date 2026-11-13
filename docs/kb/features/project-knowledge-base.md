@@ -1,9 +1,9 @@
 ---
+updated: 2026-11-13
+checked: e8f70a79e
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-11-05
-checked: 97cadc810
 areas:
   - packages/knowledge/src
   - packages/kb-tools
@@ -75,6 +75,18 @@ commits still invalidate the topic. `packages/kb-tools/cli.test.mjs` commits
 reconciliation separately before its stale-source fixture and checks the
 `после проверенного SHA:` row delimiter. See
 [the maintenance workflow](../kb-workflow.md#scoped-owner-gate-diagnostics-sk-115).
+
+## Portable stand exclusion and per-turn tools
+
+The maintenance CLI topic walk (`packages/kb-tools/kb.mjs`) and search/preparation
+walk (`packages/kb-tools/search.mjs`) skip entries named `.stand`, including when
+a custom KB root contains local development clones. This applies to the CLI;
+it does not change runtime module registration or document visibility rules.
+
+`packages/knowledge/src/mcp.ts` accepts `KbToolEntry.disabledTools` for `search`,
+`document` and `topics`. Each handler rejects its disabled operation with an MCP
+error before querying the KB; enabled tools keep the same scoped view. The Core
+broker regression covers a disabled `topics` call alongside an enabled `search`.
 
 ## Repository modules
 
@@ -177,6 +189,12 @@ from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voi
 (before 0.1.413 only the `kanban` service received it, so private modules such as Make failed).
 
 ## Implementation ownership and freshness
+
+The effective conversation configuration can disable search, document and
+topics individually. `KbToolEntry.disabledTools` is enforced by
+`packages/knowledge/src/mcp.ts` before lookup or usage tracking. Core computes
+this list after Required inheritance in `turns.ts`; it also disables automatic
+KB context and tools in Chat mode.
 
 `packages/knowledge/src` owns indexing, scoped visibility, source snapshots,
 auto-context and read-only MCP definitions. Core's `kb/` files provide host

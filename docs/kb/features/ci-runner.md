@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-11-09
-checked: bc7d4930c
+updated: 2026-11-14
+checked: ad7d876b
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -99,6 +99,34 @@ run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths
 are owner migration references, not local Core implementations.
+
+## Remote task-runtime mirror diagnostics
+
+Kanban's `apps/server/src/ci/remoteRuntime.ts` bundles the pinned
+`@sislexa/task-runtime` 0.1.1 and supplies `checkoutWithMirror` with a process
+runner. For Git children the runner streams stderr, retains its last 16,000
+characters, and rejects on `close` with both `exitCode` and `gitOutput`.
+`networkGit` classifies retryable clone/fetch failures from that `gitOutput`;
+an error containing only `command_exit_<code>` loses the diagnostic phrase and
+therefore cannot trigger the bounded network retry.
+
+The package emits `mirror_lock_wait` once after lock acquisition finds an existing
+mirror lock and begins waiting. The marker establishes contention only: owner
+liveness/staleness checks, eventual acquisition, timeout fallback and release are
+separate outcomes, so the marker alone is not evidence of a leaked lock. The
+owner regression injects one Git disconnect, then delegates the successful attempt
+to a real local Git clone and verifies the checkout and released lock. A former
+fake-success fixture created no checkout, so the following `git remote set-url`
+ran with a nonexistent working directory and failed with `ENOENT`. Owner details
+live in `kanban:ci-qa-merge.md`; Core retains only this integration boundary.
+
+## Portable stand and Core check selection
+
+The Core compatibility planner in `scripts/affected-check.mjs` treats `.stand/`
+paths as local state with no affected packages. The portable stand lifecycle is
+implemented by `scripts/stand.mjs`; it is separate from Kanban's task workspace
+preparation and workflow execution. Core keeps the existing CI readers and ports;
+this exclusion does not change stage selection or retry policy in Kanban.
 
 ## Development preview (CHAT-447)
 

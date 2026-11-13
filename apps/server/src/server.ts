@@ -29,6 +29,8 @@ import { registerAnalyticsProxy } from './analyticsBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
 import { BillingSessions } from './billing/sessions.js'
 import { ChatAccounting } from './billing/chatAccounting.js'
+import { modelTokenAuthority } from './auth/modelTokens.js'
+import { registerModelRunner } from './routes/modelRunner.js'
 import { hasProductCapability } from '@sislexa/identity/contracts/accountAccess'
 import {createIdentityStoreClient} from '@sislexa/identity/client/rpc'
 import {registerRemoteIdentity} from '@sislexa/identity/client/server'
@@ -639,8 +641,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return { ok: true, user }
     } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
   }
+  const modelTokens = modelTokenAuthority(authenticateRaw, async req => {
+    const parsed = verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)
+    if (!parsed?.sid) return undefined
+    const session = await db.identity.getSession(parsed.sid)
+    return { sid: parsed.sid, ...(session ? { access: session.access,
+      tenantId: (session as typeof session & { tenantId?: string }).tenantId } : {}) }
+  }, async (user, tenantId) => {
+    const access = await db.identity.getAccountAccess(user.name, tenantId)
+    return access && access.tenant.id === tenantId ? { ...user, role: access.systemRole, account: accountContext(access) } : undefined
+  })
+  modelTokens.register(app)
   const authenticate: AuthenticateFn = async req => {
-    const verdict = await authenticateRaw(req)
+    const verdict = await modelTokens.authenticate(req)
     return verdict.ok ? { ...verdict, user: effectiveUser(verdict.user, deployment) } : verdict
   }
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
@@ -809,6 +822,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
   registerFileStorageRoutes(app, fileStorage)
   await registerRest(app, db, opts.config.dataDir, {
+    modelTokenUsage: (login, from, to) => accountingStore?.modelUsage(login, from, to) ?? [],
     fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
@@ -1641,6 +1655,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingTimer.unref()
     void reconcile()
   }
+  registerModelRunner(app, { db, token: modelTokens.token, accounting, store: accountingStore, sessions: billingSessions,
+    claude, codex, chatModels: opts.config.chatModels,
+    concurrency: opts.config.modelApiConcurrency,
+    requestsPerMinute: opts.config.modelApiRequestsPerMinute })
   const turnManager = createTurnManager({
     chatTextOnly: opts.config.chatTextOnly,
     chatModels: opts.config.chatModels,

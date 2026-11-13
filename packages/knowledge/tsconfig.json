@@ -18,6 +18,7 @@
       "node"
     ]
   },
+  "exclude": ["node_modules", "**/.stand/**", "../../.stand/**"],
   "include": [
     "src"
   ]

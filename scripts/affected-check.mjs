@@ -85,7 +85,7 @@ export function dependenciesOf(id) {
 }
 
 const fullGate = (reason) => ({ full: true, reason, packages: workspacePackages })
-const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^plans\//, /^artifacts\//, /^(README|LICENSE)(\.md)?$/]
+const harmlessPaths = [/^\.stand\//, /^docs\//, /^generated\/kb\//, /^plans\//, /^artifacts\//, /^(README|LICENSE)(\.md)?$/]
 // У этих путей свой гейт, к пакетным тестам они не относятся: e2e гоняют скрипты
 // `e2e:*`, базовую линию бандла — `frontend:static`, настройки агентов вообще
 // не код продукта. Раньше любой из них молча включал полный гейт репозитория.

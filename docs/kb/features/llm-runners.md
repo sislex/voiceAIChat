@@ -2,8 +2,8 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
@@ -30,6 +30,16 @@ aliases:
 ---
 
 # Исполнители LLM: контейнеры с claude/codex CLI
+
+## Public Core adapter
+
+A second Core can use another Core's `/api/model-runner` URL with a user API
+token through the existing RemoteLlmClient. The public adapter preserves raw
+runner frames while deriving the user and tenant from authentication, performing
+Billing admission, and forcing tool-free execution. It exposes no runner
+filesystem, administration or receipt endpoint. The health response deliberately
+does not advertise the private accounting protocol. See
+[API models](../llm.md#api-моделей).
 
 ## Storage-backed uploads in Core
 

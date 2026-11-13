@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-14
+checked: ad7d876b
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -33,6 +33,73 @@ areas:
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
+
+## API моделей
+
+Core exposes only the chat subset of the runner protocol at
+`/api/model-runner/v1/`: POST `run`, DELETE `run/:id`, GET `health` and
+GET `models`. Filesystem, lifecycle/admin, preview grants, MCP inventory and
+executor accounting receipts remain private (404). To publish models, the
+provider Core must have Billing and a private remote runner configured; a
+consumer points `VC_LLM_RUNNER_CLAUDE_URL` and `VC_LLM_RUNNER_CODEX_URL` at
+`<provider-core>/api/model-runner` and supplies the user's API token through
+`VC_LLM_RUNNER_TOKEN`.
+
+The canonical private wire contract is documented in
+`llm-runner:docs/kb/http-api.md` and typed in
+`llm-runner:packages/contracts/src/llm.ts`. `POST /v1/run` has a flat body
+with `kind`, prompt, model and an optional caller-selected `runId`; the
+response carries `x-run-id` and line-delimited raw CLI frames
+`{t:'out'|'err',s}` followed by `{t:'exit',code}`. Blank heartbeat lines are
+not output. Supplying the run ID lets the caller address
+`DELETE /v1/run/:id` before response headers arrive. Core's public adapter
+preserves these frames and the public run ID for `RemoteLlmClient`, while
+using a separate internal operation ID for Billing, receipts and private runner
+cancellation.
+
+`routes/modelRunner.ts` selects the authenticated login's CLI profile and
+Identity tenant; request `userId`, accounting context, cwd, permission overrides
+and all caller MCP URLs are discarded. An allowlist forwards prompt, model,
+session ID and reasoning preferences. Every request enforces `textOnly` and
+`executionDisabled`; caller tools and attachments are not forwarded in v1.
+The catalog applies the same user/deployment model restrictions and engine role
+rules as chat, without exposing engine URLs or credentials.
+
+Admission requires `chat.use`, a non-observer role and configured ChatAccounting.
+Billing reserves and starts before streaming begins. Exhausted monetary policy
+returns 402 `insufficient_balance`; missing accounting fails closed with 503.
+Like ordinary chat, these CLI executors cannot guarantee a finite monetary
+bound: finite legacy limits and Billing's unbounded-execution rejection deny
+admission rather than bypassing the policy. This API does not introduce a
+separate balance ledger or payment collection.
+
+`routes/modelRunner.ts` registers the authenticated token session and wraps the
+remote client with `billing/chatAccounting.ts`: Billing admission and reservation
+complete before dispatch. The durable outbox in `billing/accountingStore.ts`
+stores the token sid, tenant, start timestamp and immutable settlement. Billing
+and runner context additionally carry `application.tokenId=sid`, with Core as
+origin/executor application. Thus spend belongs to the user and workspace selected
+from verified token authority, never to a `userId` supplied in the request body.
+
+Cancellation and socket disconnect send the internal runner DELETE;
+`ChatAccounting` then reconciles the authoritative execution receipt and settles
+the actual usage. Uncertain work retains its reservation, and pending receipts
+continue to occupy the token's concurrency allowance. `GET /api/me/usage`,
+called with an ordinary session or full token, adds `tokens` grouped by sid and
+tenant from completed model-API settlements; reporting can lag the last output
+frame until settlement. A models-scoped token cannot call that reporting route.
+
+`VC_MODEL_API_CONCURRENCY` defaults to 2 and
+`VC_MODEL_API_REQUESTS_PER_MINUTE` to 60 POST run attempts per token in a
+60-second window. Excess requests return 429. Rate windows and active public
+run IDs belong to one Core process; durable pending accounting survives restart.
+Tests in `routes/modelRunner.test.ts` exercise another Core's RemoteLlmClient
+over real HTTP, a fake executor and the published Billing server. A second
+buildServer instance also completes a WebSocket chat using only the runner URL
+and full-token configuration (upstream Core owns Billing in this composition).
+Coverage includes
+profile spoofing, 402/403/429, cancellation, disconnect and sid attribution.
+
 
 ## Storage-backed chat attachments
 

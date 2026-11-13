@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -32,6 +32,22 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Model API authority and spend
+
+`auth/modelTokens.ts` consumes verified Identity metadata (`access`, `sid`,
+`tenantId`) or the verified legacy session row. Missing access means `full`.
+The global scope hook rejects `models` outside `/api/model-runner/v1/` with
+403 `token_scope_denied`, including otherwise public routes. Model API
+authentication ignores the caller's tenant header and requires a Bearer token;
+the request body cannot select the CLI user or payer.
+
+`routes/modelRunner.ts` reuses ChatAccounting admission and durable settlement.
+The outbox stores the session's token SID and tenant plus `modelApi` and
+`createdAt`; completed settlements feed the personal usage token breakdown.
+Cancellation and disconnect cancel the underlying operation, whose actual usage
+is reconciled through the existing receipt path. Billing remains the monetary
+authority. See [API models](agent-api-access.md#api-моделей).
 
 ## File storage metadata and quotas
 

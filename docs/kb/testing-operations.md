@@ -1,7 +1,7 @@
 ---
-title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-11-13
-checked: 4ffb793da
+checked: e8f70a79e
+title: Разработка, тестирование, диагностика и эксплуатация
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -141,6 +141,21 @@ An Identity task-gate failure can print `tests=0` even after Vitest executed
 tests: the counter is updated only after a successful Vitest exit, and the
 temporary JSON report is removed in `finally`. Inspect the preceding test
 output; zero in that summary does not establish that discovery found no tests.
+
+## Portable stand focused checks
+
+`node --test scripts/stand.test.mjs scripts/dev-stand-local.test.mjs` covers the
+portable CLI and the existing shared/source/run launcher behavior. The CLI tests
+inject process and port probes: they exercise actionable doctor failures, dotenv
+parsing, model format checks, service profiles, clone planning, repeated creation,
+updates and the `destroy --yes` guard without GitHub or a real Postgres service.
+The tree-walk regression creates `.stand/repos/x/a.test.ts` in a temporary root
+and verifies that discovery and affected-package selection omit it.
+
+Core TypeScript/Vitest configs, application/quick planners and test/task tree
+walks exclude `.stand`; Core's watcher ignores `**/.stand/**`. These checks do not
+prove live multi-repository startup or browser login. Commissioning requires
+separate ports and a database; preserve existing user stands during validation.
 
 ## Dev stand focused checks (C02)
 

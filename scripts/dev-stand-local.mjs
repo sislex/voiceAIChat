@@ -37,13 +37,17 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { STAND_BASE_PORT_OFFSETS, STAND_PROXY_PORT_OFFSETS } from './dev-stand-local-ports.mjs'
 
+import { basicRepos, fullRepos, modelConfig, selectServices, hashStandPassword } from './stand.mjs'
+
 const env = process.env
+const PORTABLE = env.SISLEXA_STAND_PORTABLE === '1'
+const FULL = !PORTABLE || env.SISLEXA_STAND_FULL === '1'
 const NAME = env.SISLEXA_STAND_NAME || 'local'
 if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(NAME)) fail('SISLEXA_STAND_NAME must be lowercase letters, digits and dashes')
 const HOME = resolve(env.SISLEXA_STAND_HOME || join(homedir(), '.sislexa', 'stands', NAME))
 const SOURCE_KEYS = { voiceAIChat: 'SISLEXA_STAND_CORE_SOURCE', 'sislexa-core-ui': 'SISLEXA_STAND_CORE_UI_SOURCE', make: 'SISLEXA_STAND_MAKE_SOURCE' }
 const preparedSource = repo => env[SOURCE_KEYS[repo]] ? resolve(env[SOURCE_KEYS[repo]]) : null
-const sourceRoot = repo => preparedSource(repo) || join(dirs.src, repo)
+const sourceRoot = repo => preparedSource(repo) || join(PORTABLE ? join(HOME, 'repos') : dirs.src, repo)
 const REF = env.SISLEXA_STAND_REF || 'origin/dev'
 const BASE = Number(env.SISLEXA_STAND_PORT_BASE || 31000)
 const UI_PORT = Number(env.SISLEXA_STAND_UI_PORT || 35273)
@@ -75,7 +79,7 @@ const VERSIONS = {
   'web-reader-ui': ['1.0.0', '1.0.0'], 'playwright-reader-ui': ['1.0.0', '1.0.0'], 'image-studio-ui': ['1.0.0', '1.0.0']
 }
 
-const REPOS = SHARE ? ['voiceAIChat', 'sislexa-core-ui', 'make']
+const REPOS = PORTABLE ? ['voiceAIChat', ...(FULL ? fullRepos : basicRepos)] : SHARE ? ['voiceAIChat', 'sislexa-core-ui', 'make']
   : ['voiceAIChat', 'sislexa-core-ui', 'sislexa-kanban', 'make', 'identity', 'billing', 'analytics', 'webreader', 'playwrightreader', 'image-studio', 'voice']
 
 function services(secrets, runner) {
@@ -83,9 +87,10 @@ function services(secrets, runner) {
   const C = id => join(dirs.components, id, 'config.json')
   const tsx = file => ['npx', 'tsx', 'watch', file]
   const common = { NODE_ENV: 'development', VC_INTERNAL_TOKEN: secrets.internal, VC_MCP_SECRET: secrets.mcp }
-  return [
+  return selectServices([
     { id: 'identity', repo: 'identity', cmd: tsx('apps/server/src/index.ts'), port: P.identity, health: '/v1/health',
       env: { PORT: P.identity, SISLEXA_COMPONENT_CONFIG: C('identity'), IDENTITY_DATA_DIR: D('identity'), IDENTITY_DATABASE_URL: DB_URL,
+        ...(PORTABLE ? { IDENTITY_ADMIN_PASSWORD: env.SISLEXA_STAND_USERS_PASSWORD || '123' } : {}),
         IDENTITY_SESSION_SECRET_FILE: join(dirs.data, 'core', 'session.secret'), IDENTITY_PUBLIC_URL: url(P.ui), VC_HIBP_CHECK: '0' } },
     { id: 'billing', repo: 'billing', cmd: tsx('src/main.ts'), port: P.billing, version: 'billing', env: { PORT: P.billing, SISLEXA_COMPONENT_CONFIG: C('billing'), BILLING_DATA_DIR: D('billing') } },
     { id: 'analytics', repo: 'analytics', cmd: tsx('src/main.ts'), port: P.analytics, version: 'analytics', env: { PORT: P.analytics, SISLEXA_COMPONENT_CONFIG: C('analytics'), ANALYTICS_DATA_DIR: D('analytics') } },
@@ -104,6 +109,7 @@ function services(secrets, runner) {
         VC_VPN_SECRET_KEY: secrets.vpn, VC_AGENT_OFFLINE_ALERT_MIN: '0',
         VC_STAND_PROXY_PORTS: `${port(STAND_PROXY_PORT_OFFSETS[0])}-${port(STAND_PROXY_PORT_OFFSETS.at(-1))}`,
         VC_APPLICATION_FRONTENDS: JSON.stringify({ 'playwright-reader-ui': url(P.playwrightReaderUi), 'web-reader-ui': url(P.webReaderUi), 'image-studio-ui': url(P.imageStudioUi) }),
+        ...(PORTABLE ? { VC_APPLICATION_FRONTENDS: JSON.stringify({ ...(FULL ? { 'playwright-reader-ui': url(P.playwrightReaderUi), 'web-reader-ui': url(P.webReaderUi), 'image-studio-ui': url(P.imageStudioUi) } : {}), 'make-ui': url(port(O.makeUi)) }) } : {}),
         ...runner } },
     { id: 'kanban', repo: 'sislexa-kanban', cmd: tsx('apps/server/src/kanban/standalone/index.ts'), port: P.kanban, health: '/v1/health',
       env: { PORT: P.kanban, VC_DATA_DIR: D('kanban'), VC_DB_URL: DB_URL, VC_CORE_URL: url(P.core), VC_PUBLIC_URL: url(P.ui),
@@ -112,6 +118,11 @@ function services(secrets, runner) {
         VC_BROWSER_RUNNER_TOKEN: secrets.browser, VC_ENVIRONMENT_SECRET_KEY: secrets.environment, ...runner } },
     { id: 'make', repo: 'make', cmd: ['npx', 'tsx', 'watch', '--ignore', 'packages/make-app', 'apps/make/src/standalone/index.ts'], port: P.make, version: 'make',
       env: { PORT: P.make, SISLEXA_COMPONENT_CONFIG: C('make'), VC_DATA_DIR: D('make'), VC_CORE_URL: url(P.core) } },
+    ...(PORTABLE ? [
+      { id: 'make-ui-build', repo: 'make', cwd: 'packages/make-app', cmd: ['npm', 'run', 'dev'], frontend: 'make-ui', waitFor: 'packages/make-app/dist/manifest.json', env: {} },
+      { id: 'make-ui', repo: 'make', cmd: ['node', 'scripts/application-frontend-server.mjs'], frontend: 'make-ui', port: port(O.makeUi),
+        env: { PORT: port(O.makeUi), VC_APPLICATION_ID: 'make-ui', VC_APPLICATION_DEV: '1', VC_DATA_DIR: null } }
+    ] : []),
     { id: 'web-recorder-build', repo: 'webreader', cwd: 'apps/web-recorder', cmd: ['npx', 'vite', 'build', '--watch'] },
     { id: 'reader', repo: 'webreader', cmd: tsx('apps/web-reader/src/standalone/index.ts'), port: P.reader, version: 'reader',
       env: { PORT: P.reader, SISLEXA_COMPONENT_CONFIG: C('web-reader'), VC_DATA_DIR: D('reader'), VC_CORE_URL: url(P.core), VC_PLAYWRIGHT_READER_MODE: 'remote', VC_PLAYWRIGHT_READER_URL: url(P.playwrightReader) } },
@@ -135,7 +146,14 @@ function services(secrets, runner) {
         env: { PORT: p, VC_DATA_DIR: D(id), VC_APPLICATION_ID: id } }
     ]),
     { id: 'core-ui', repo: 'sislexa-core-ui', cmd: ['npm', 'run', 'dev'], port: P.ui, health: '/', env: coreUiEnv() }
-  ].map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env } }))
+  ], FULL)
+    .map(s => ({ ...s, env: { ...common, HOST: '127.0.0.1', ...s.env,
+      ...(PORTABLE && s.id === 'core' && !FULL ? {
+        VC_APPLICATIONS: 'chat,make,projects,identity', VC_CHAT_TEXT_ONLY: 'true',
+        VC_READER_MODE: 'off', VC_PLAYWRIGHT_READER_MODE: 'off', VC_IMAGE_STUDIO_MODE: 'off',
+        VC_APPLICATION_FRONTENDS: JSON.stringify({ 'make-ui': url(port(O.makeUi)) }), VC_TTS_RUNNER_URL: '', VC_STT_RUNNER_URL: '', VC_BROWSER_RUNNER_URL: ''
+      } : {})
+    } }))
 }
 
 // Shared mode: Core, Make and Core UI of the stand on the shared instance's database and services.
@@ -255,6 +273,11 @@ function prepareSharedComponents(shared) {
 }
 
 function loadRunner() {
+  if (PORTABLE) {
+    const values = modelConfig(env)
+    if (!values.VC_LLM_RUNNER_CLAUDE_URL && !values.VC_LLM_RUNNER_CODEX_URL) console.warn('модели не настроены')
+    return values
+  }
   if (!existsSync(RUNNER_FILE)) fail(`LLM Runner configuration not found: ${RUNNER_FILE}\n  Create it (mode 600) with VC_LLM_RUNNER_CLAUDE_URL, VC_LLM_RUNNER_CODEX_URL and VC_LLM_RUNNER_TOKEN.`)
   if ((statSync(RUNNER_FILE).mode & 0o077) !== 0) fail(`${RUNNER_FILE} must not be readable by group or others (chmod 600)`)
   const values = readEnvFile(RUNNER_FILE)
@@ -278,6 +301,10 @@ function nodeModuleDirs(root, rel = '') {
 }
 
 function prepareSources() {
+  if (PORTABLE) {
+    for (const repo of REPOS) if (!existsSync(join(sourceRoot(repo), 'node_modules'))) fail(`Run npm run stand:create to prepare ${repo}`)
+    return
+  }
   for (const repo of REPOS) {
     // Kanban has already prepared this conversation's checkout and dependencies.
     const prepared = preparedSource(repo)
@@ -328,13 +355,16 @@ function prepareComponents() {
 function psql(sql, db = DB_NAME) { return sh('psql', ['-X', '-q', '-At', '-v', 'ON_ERROR_STOP=1', `${PG}/${db}`, '-c', sql]).stdout.trim() }
 function prepareDatabase() {
   const exists = psql(`select 1 from pg_database where datname='${DB_NAME}'`, 'postgres') === '1'
-  if (exists) return
-  sh('createdb', ['--maintenance-db', `${PG}/postgres`, DB_NAME])
+  const pending = join(HOME, 'database.pending')
+  if (exists && !(PORTABLE && existsSync(pending))) return
+  if (PORTABLE) writeFileSync(pending, DB_NAME, { mode: 0o600 })
+  if (!exists) sh('createdb', ['--maintenance-db', `${PG}/postgres`, DB_NAME])
   const seed = env.SISLEXA_STAND_SEED
   if (seed) {
     if (!existsSync(seed)) fail(`SISLEXA_STAND_SEED not found: ${seed}`)
     console.log(`  database ${DB_NAME}: restoring seed`)
-    sh('pg_restore', ['--no-owner', '--no-privileges', '-j', '4', '-d', DB_URL, seed], { allowFail: true })
+    if (PORTABLE) sh('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '-d', DB_URL, '-f', seed])
+    else sh('pg_restore', ['--no-owner', '--no-privileges', '-j', '4', '-d', DB_URL, seed], { allowFail: true })
     // A copy never resumes production sessions, queued turns or remote machines' presence.
     psql(`do $$ begin
       if to_regclass('public.sessions') is not null then delete from sessions; end if;
@@ -349,12 +379,13 @@ function prepareDatabase() {
       if to_regclass('public.conversations') is not null then delete from conversations; end if;
     end $$`)
     const password = env.SISLEXA_STAND_USERS_PASSWORD
-    if (password) {
+    if (password && !PORTABLE) {
       const salt = randomBytes(16)
       const hash = `scrypt$${salt.toString('hex')}$${scryptSync(password, salt, 32).toString('hex')}`
       psql(`update users set password_hash='${hash}', totp_secret=null, must_change_password=0, failed_logins=0, locked_until=null, lock_reason=null, blocked=0`)
     }
   } else console.log(`  database ${DB_NAME}: empty (set SISLEXA_STAND_SEED to start from a copy)`)
+  if (PORTABLE) rmSync(pending, { force: true })
 }
 
 function logTail(id) {
@@ -454,8 +485,15 @@ async function start() {
   prepareComponents()
   prepareDatabase()
   prepareSessionSecret()
-  for (const s of services(secrets, runner)) console.log(`  ${s.id.padEnd(26)} ${await startService(s)}${s.port ? '  ' + url(s.port) : ''}`)
-  console.log(`\nUI: ${url(P.ui)}   Core: ${url(P.core)}   database: ${DB_NAME}\nStatus: npm run dev:stand:status   Stop: npm run dev:stand:stop`)
+  const list = services(secrets, runner)
+  if (PORTABLE) for (const file of readdirSync(dirs.run).filter(f => f.endsWith('.pid')))
+    if (!list.some(s => file === s.id + '.pid')) await stopService(file.slice(0, -4))
+  for (const s of list) console.log(`  ${s.id.padEnd(26)} ${await startService(s)}${s.port ? '  ' + url(s.port) : ''}`)
+  if (PORTABLE) {
+    const hash = hashStandPassword(env.SISLEXA_STAND_USERS_PASSWORD || '123')
+    psql(`update users set password_hash='${hash}', totp_secret=null, must_change_password=0, failed_logins=0, locked_until=null, lock_reason=null, blocked=0`)
+  }
+  console.log(`\nUI: ${url(P.ui)}   Core: ${url(P.core)}   database: ${DB_NAME}\nStatus: npm run ${PORTABLE ? 'stand:status' : 'dev:stand:status'}   Stop: npm run ${PORTABLE ? 'stand:stop' : 'dev:stand:stop'}`)
 }
 
 async function startShared() {

@@ -1,7 +1,7 @@
 ---
 title: Группы и архив бесед
-updated: 2026-11-05
-checked: 29ee2a0e8
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - packages/shared/src/types.ts
   - packages/shared/src/protocol.ts
@@ -30,6 +30,11 @@ SQLite-схема в `apps/server/src/db/schema.ts` хранит группы о
 Архивирование и очистка всех membership выполняются одной транзакцией с блокировкой строки разговора. Архивную беседу нельзя добавить в группу. Unarchiving sets `archivedAt` to null and installs exactly the submitted `groupIds` in the same transaction; it does not restore previous memberships. Thus `{ archived: false, groupIds: [] }` restores an ungrouped conversation, while a nonempty valid list restores it into those groups. `{ archived: true, groupIds: [...] }` is rejected before any mutation. Membership updates also refresh the conversation's `updatedAt`.
 
 ## REST и выборки
+
+These routes require ordinary session/API authority. The global models-token
+guard returns 403 `token_scope_denied` before conversation/group handlers.
+The model API does not create conversation-group memberships; see
+[token scope](agent-api-access.md#api-моделей).
 
 Маршруты в `apps/server/src/routes/rest.ts` предоставляют `GET/POST /api/conversation-groups`, `PATCH/DELETE /api/conversation-groups/:id` и `PUT /api/conversations/:id/membership`. PATCH меняет имя, позицию и при передаче `conversationIds` полностью заменяет состав группы. PUT всегда принимает полный `groupIds` и boolean `archived`. Пустые имена и неверные формы дают 400, конфликт архивного членства — 409, отсутствующая или чужая сущность — 404.
 

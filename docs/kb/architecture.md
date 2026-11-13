@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: 4ffb793da
+updated: 2026-11-14
+checked: ad7d876b
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -19,6 +19,14 @@ areas:
 
 # Архитектура: кто с кем разговаривает
 
+## Public model execution boundary
+
+Core exposes the authenticated, billed runner subset at `/api/model-runner/v1/`.
+`server.ts` registers its scope guard before the generic Identity guard and wires
+the routes to the existing remote LLM clients and ChatAccounting. The private
+runner remains behind Core; callers cannot supply machine or MCP authority.
+See [model API](llm.md#api-моделей) and [token authority](agent-api-access.md#api-моделей).
+
 Module details: `voice:README.md`
 
 Module details: `playwright-reader:README.md`
@@ -33,6 +41,15 @@ It does not copy production data or initialize separate owner-service databases.
 Identity creates the required personal tenants; the fixture adds one team space.
 The launcher consumes plain SQL at this path and is maintained separately.
 See [refresh and restore instructions](deploy.md#clean-stand-database-fixture).
+
+## Portable development checkout
+
+`npm run stand:create` uses the current Core checkout and keeps independent
+owner repositories on `dev` under `.stand/repos`. Billing and Analytics support
+the basic Identity/Core/Core UI/Kanban/Make profile; `--full` adds the other local
+services. These clones are runtime development state, not Core workspaces or
+release artifacts. The affected-package planner ignores `.stand/` paths. See
+[stand setup](deploy.md#стенд-за-3-шага) for configuration and lifecycle commands.
 
 ## Turn context and Make browser composition
 
