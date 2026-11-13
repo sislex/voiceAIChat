@@ -36,8 +36,8 @@ for (const provider of ['cc', 'cx'] as const) {
         expect(response.statusCode).toBe(200)
         const result = response.json()
         expect(result.messages.length).toBeGreaterThan(0)
-        for (const message of result.messages) expect(message.meta).toEqual(enabled ? meta : stripServiceData(meta))
-        expect((await db.chat.listMessages('alice', result.conversation.id))[0].meta).toEqual(meta)
+        for (const message of result.messages) expect(message.meta).toEqual(stripServiceData(meta))
+        expect((await db.chat.listMessages('alice', result.conversation.id))[0].meta).toEqual(stripServiceData(meta))
       } finally { await app.close(); await db.close() }
     })
   }

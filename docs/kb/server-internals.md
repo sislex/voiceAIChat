@@ -1,7 +1,6 @@
 ---
-title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-10-26
-checked: 7ad8ad53
+updated: 2026-11-11
+checked: 92494505
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -9,6 +8,19 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Operator handoff integration (SK-115)
+
+`kanbanBridge/proxy.ts` includes `/api/kanban/handoff` in the existing proxy
+prefixes. Export/import and continuation execute in Kanban. Core's
+`routes/agents.ts` validates and authorizes the machine switch, then waits for
+AgentRegistry's correlated result; see [protocol](protocol.md#operator-handoff).
+This adds no Core deployment or database migration.
+
+Review since `7ad8ad53` also confirms `local-stand` in EnvironmentMode and
+`readyStandEnvironment`: the base must be ready and its first machine must match.
+The existing Make stand section below documents the live working-copy flow;
+these changes do not alter KB host ports.
 
 Module details: `voice:README.md`
 
@@ -22,6 +34,255 @@ bounded counters by Fastify route template and emits structured slow/5xx events
 with that correlation ID. Admin-only status and Prometheus routes are registered
 after authentication in `server.ts`. Service proxies replace any raw forwarded
 request ID with the validated Core value.
+
+## Admin storage integration
+
+`buildServer` passes the storage service into `registerAdminRoutes`.
+`buildAdminServer` creates its own storage runtime in embedded storage mode,
+passes the service to the same routes and closes it on Fastify shutdown.
+User responses call `usage(name)` when the service exists. Quota mutation is
+an admin-only Identity operation, including null reset; missing FS-3 setters
+return 503. Validation and authorization coverage lives in `rest.auth.test.ts`.
+See [metadata and quotas](data-auth.md#file-storage-metadata-and-quotas).
+
+## Core file storage
+
+`authenticateRaw` admits Make owner MCP authority on `/api/storage/*` before
+session authentication. It verifies the service credential, MCP signature,
+expiry, application/Core ID, current conversation owner and account/tenant.
+Mixed cookies or ticket delegation and scoped task-source tokens are rejected.
+Missing account access, required password changes and tenant mismatches also
+fail admission with `403 delegation_denied`; successful admission reconstructs
+the current Identity account context. The legacy internal-token fallback is
+available only without a component runtime; managed calls need `make.core`.
+The file routes still enforce Storage ACLs. See [the authority contract](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+Core can use the standalone coordinator with `VC_FILE_STORAGE_MODE=remote`.
+`fileStorage/remote.ts` implements the same `FileStorageService` port as the
+embedded coordinator over `STORAGE_REST`, so chat attachments, `storage:` reads,
+admin usage and the existing `/api/storage/*` surface share one integration.
+Every upstream request uses the service credential loaded from
+`VC_FILE_STORAGE_SERVICE_TOKEN_FILE` and asserts `x-sislexa-user`; authenticated
+REST requests also forward the account tenant as `x-sislexa-tenant`. File PUT
+and GET bodies use Node/Web streams and the process fetch pool, preserving
+backpressure and connection reuse. Upstream contract errors retain their storage
+code; transport failures become `storage_unavailable` (503). Direct node URLs
+returned by Storage are passed through unchanged.
+
+Remote `statFile` lists the parent directory and matches the exact entry path.
+For root files such as `.stand.json`, it omits `prefix`; nested files use their
+parent directory as the prefix. Storage's `normalizeStoragePrefix` appends `/`,
+so passing the full file path would exclude the file itself. An absent exact
+match still raises `not_found` (404). `fileStorage/remote.test.ts` uses the shared
+prefix normalizer and covers stat/read of root and nested files, missing files,
+and conditional GET without opening the upstream body.
+
+Chat uploads register `uploadBody.ts` parsers in a Fastify scope used only by
+`POST /api/uploads`. Raw/multipart bytes pass as an async iterable directly to
+`writeFile`; Core does not assemble the whole file for the storage backend.
+The coordinator uses the HTTP node client's optional `putStream` method, which
+sends the iterable with fetch `duplex: 'half'`. Clients may alternatively accept streams through `put`; byte-array writes remain
+compatible. The node writes blob PUT streams through an atomic temporary file. Machine storage and the Core-local fallback consume the bounded iterable into a
+buffer; only the machine leg encodes it as base64 at `AgentRegistry.fsWrite`.
+Legacy JSON parsing remains buffered. This route adds no environment variable or
+schema migration and continues to use the configured storage node URL/token.
+Multipart parsing must finish before metadata commits, so truncated or extra
+parts cannot produce a successful file record. `fileStorage/chat.test.ts` covers
+both backends, metadata, byte preservation, limits, authentication and CSRF.
+See [request forms](protocol.md#core-file-storage-and-chat-settings).
+Direct transfer uses `packages/file-storage/src/direct.ts` for HMAC-SHA256
+capabilities and `/v1/direct/:blobId?sig=...` on the node. Core loads per-node
+signing configuration at startup. A direct PUT writes one atomic staged part;
+Core's authenticated file/commit assembles it on the node and publishes metadata.
+The existing SQL and memory upload adapters persist the pending revision and
+five-minute deadline without a schema change. Node manifests survive restart.
+Completed/aborted sessions reject further signed PUTs, so URL replay cannot
+alter published bytes. Direct writes share the multipart capacity reservation
+of twice the declared size (staging plus assembly); quota reserves it once.
+Core carries only metadata for these transfers. The node still buffers each direct PUT
+up to 64 MiB and streams GET/Range from disk. Client switching is separate work.
+
+Batch transport is implemented in `fileStorage/batch.ts`; the coordinator
+provides quota preflight and copy. NDJSON input is bounded to 64 MiB and buffered;
+multipart output executes and emits one operation at a time under backpressure.
+Ordinary file downloads use a metadata-only authorization/stat lookup before
+opening the node response stream. This lets Core answer cache validators without
+node I/O and lets byte ranges stream node → Core → browser without buffering the
+file. The node parses one RFC-style byte range and streams it with a bounded
+filesystem read stream. Internal consumers and batch/small-content reads still
+explicitly collect the streamed client body with `storageBytes`. Small-content
+listing reads under the metadata transaction to keep content and revision paired.
+Core streams eligible full downloads through Brotli/gzip above 1 KiB and
+compresses eligible batch bodies before base64 or multipart emission. Range,
+media and archive responses remain identity. Raw PUT parsers optionally stream
+gzip/Brotli decompression. File PUTs enforce the configured file limit on decoded
+bytes; parts and batch requests retain their 64 MiB bound.
+Node POST `/v1/blobs/:blobId/copy` accepts `{targetId}`, uses the existing
+bearer scope, validates both IDs, serializes capacity checks and copies through
+a temporary file plus rename. No file bytes pass through Core for copy.
+A missing node copy capability fails explicitly; there is no transfer fallback.
+No new environment variables or schema migrations are required.
+
+Core exposes resumable upload routes through the storage coordinator.
+Part transfers release the metadata transaction after authorization, allowing
+concurrent node writes. The node persists a private manifest and temporary parts,
+atomically replaces individual parts, and assembles one part at a time into a
+new blob before atomic rename. Core then commits the visible entry, preserving
+the old file until commit. Completion retries after a metadata rollback reuse
+the composed blob. Core and node run expiry sweeps at startup and every minute;
+Core also cleans sessions whose space was deleted. Node expiry removes temporary
+parts, retaining composed blobs because only Core knows whether they committed.
+As with ordinary writes, a crash after metadata commit can leave an orphan blob
+requiring host reconciliation. No fsync durability guarantee is introduced.
+
+
+Legacy duplicate spaces remain visible, but metadata adapters list the registered
+`storage_space_refs` canonical identity first for each owner/kind/ref. Without a
+registered identity, the oldest creation time then space ID determines the
+fallback, matching create-space adoption. The memory adapter retains identities
+too, so later legacy inserts cannot change a registered choice.
+
+`POST /api/storage/spaces/:id/merge-duplicates` previews with `{}` or
+`{"dryRun":true}`; apply the returned snapshot with `{"previewToken":"…"}`.
+Explicit `dryRun:true` always previews, and `dryRun:false` still requires the
+matching token. Stale tokens fail atomically with 409. The survivor is chosen by
+file count descending, creation time ascending, then ID. For each shared path,
+newest `updatedAt` wins, then highest revision, then survivor preference and
+space ID. Revisions are local to a space, so timestamps take precedence.
+Older entries move to `.duplicates/<sourceSpaceId>/<path>`; occupied archive
+paths receive a numeric directory below the source ID. Paths too long for the
+archive prefix use a SHA-256 filename, retaining the original path in the preview.
+Preview `moves` and
+`conflicts` expose `toPath` for archives. Even equal-content entries are preserved.
+Applying moves metadata and retains blob IDs, byte counts and entry revisions,
+revokes deleted spaces' shares, and rebinds the canonical identity atomically.
+Memory and SQL adapter contract tests cover conflicts and canonical ordering.
+
+`apps/server/src/fileStorage/` embeds the FS-1 coordinator when
+`VC_FILE_STORAGE_MODE=embedded`; the default is `off`.
+`routes.ts` registers all `STORAGE_REST` operations after Core session auth,
+rejects anonymous link access and restricts cluster information to admins.
+The adjacent thumbnail route delegates ACL and revision lookup to the coordinator.
+`thumbnail.ts` bounds concurrent Sharp jobs, applies EXIF rotation, uses the first
+animated frame and emits WebP with JPEG fallback. Cached derived blobs live on
+the source node and are probed before the source bytes are read.
+PUT file bodies bypass all content parsers as raw streams; GET uses
+`openFile` and Fastify `reply.send(stream)`. Both directions apply backpressure
+through the HTTP node client. Revision and create-only preconditions remain
+transactional. The configurable file limit defaults to 1 GiB. Legacy `readFile`
+collects bytes only for existing chat consumers; chat JSON/base64 upload is unchanged. Errors use `STORAGE_ERROR_STATUS`.
+`PATCH /api/storage/spaces/:id` accepts a nonempty `title` and returns the updated
+space. The coordinator checks ownership inside the metadata transaction; write
+collaborators cannot rename spaces. IDs, refs, files and shares are preserved.
+This is the Core endpoint for Make project-title synchronization: send
+`{ "title": "Project title" }` using the space owner's authenticated identity.
+The route forwards only `title`; extra `ownerId`, `kind` or `ref` fields cannot
+change space identity. Whitespace is trimmed and `updatedAt` advances. Blank or
+non-string titles return 400 (`invalid_path`); a non-owner with a valid title
+receives 403. The response is the updated `StorageSpace`, including access and
+file usage. See `packages/shared/src/fileStorage.ts`,
+`packages/file-storage/src/service.ts` and the rename regression in
+`apps/server/src/fileStorage/routes.test.ts`.
+
+Make owns obtaining the project title and deciding when to synchronize it; Core
+does not resolve a Make conversation through its chat UI. Consumer title hooks
+and local-project import belong to the Make owner (`make:README.md`), while
+Core owns this authenticated space mutation. See the owner implementation for
+import availability and synchronization triggers.
+
+`runtime.ts` loads node tokens from configured files and polls health at startup
+and every 15 seconds, without overlapping polls. Two consecutive failures mark a
+node offline; a successful poll restores it. Shutdown clears and drains polling.
+`BuildOptions.storageNodes` supplies fake clients for host integration tests.
+Make consumers use these same authenticated REST paths with the user's context.
+
+`server.ts` enables ticket delegation for enabled local Make when paired
+application credentials are configured. `registerMakeProxy.prepareHeaders`
+replaces browser credentials and identity headers after Core authentication,
+sets the Core-to-Make bearer and Core ID, and issues a five-minute user grant.
+`authenticateRaw` accepts Make ticket grants for storage and Make/preview paths;
+`registerChatDelegation` admits storage only for Make ticket references. Storage
+routes retain their per-user space ACLs. Shared `/internal/whoami` uses the outer
+application delegation and rejects callers without a delegated user; forwarded
+body headers cannot replace that identity. See
+[Make authorization](data-auth.md#make-service-storage-authorization).
+
+When the account setting `chatFilesBackend` is `storage` and the service is
+enabled, uploads require a conversation owned by the caller. Core calls
+`fileStorage.createSpace` for its owner's `chat` space with `ref=conversationId`,
+then writes the file and returns `UploadInfo.storage`. Space creation is
+idempotent across coordinators; the subsequent file write has its own metadata
+transaction. Chat and Make project identities use the same uniquely indexed
+SQL mapping, while legacy duplicate spaces remain listable. See
+[idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
+The default backend remains `machine`.
+Image uploads additionally expose `thumbnailAvailable`; consumers construct the
+preview URL from the storage reference rather than routing preview bytes through
+the transient upload map.
+Upload resolution, retouch sources and attachment reads use coordinator access
+checks. History JSON preserves `MessageAttachment.storage`; persistent reads
+do not depend on the transient UploadStore map. Display paths use
+`storage:<spaceId>/<path>`; file bytes remain on the configured nodes.
+
+## Make file transport admission
+
+Make turns use explicit conversation machine/workdir settings and scoped MCP
+file access; `db/chat` no longer clears these fields on write or restart.
+`mcp/makeFiles.ts` validates machine paths and 10 MiB transfers.
+`server.ts` supplies transfers through authenticated owner `/api/make/:id/files/raw`
+routes. Embedded availability requires both GET and PUT registrations; remote
+availability probes an existing file through the authenticated Core proxy.
+Older owner packages without these routes do not advertise transfers.
+
+## Kanban access to machine files and uploads
+
+`KanbanCore` gives the trusted Kanban service a narrow machine facade that
+includes `fsRead`, `fsWrite`, `fsMkdir`, rename and delete operations
+(`apps/server/src/kanban/core.ts`). The internal RPC dispatcher forwards those
+calls to that facade, and the in-process adapter supplies the existing
+`MachinesService` directly. These are transport primitives: Core does not use
+them to select, sanitize, register or bind an operator-owned input bundle to a
+task or run.
+
+The upload port is similarly limited to metadata and bytes for an upload that
+Core already knows. `kanbanBridge/localCore.ts` reads a local Core upload and
+returns `null` when it is missing or stored on a user machine. It is not an
+operator-state importer. Task preparation, orchestration and input
+materialization belong to the external Kanban owner; the exclusion is enforced
+by `apps/server/src/kanban/boundary.test.ts`, which asserts that preparation and
+cluster implementations are absent from Core.
+
+Android release endpoints are registered by the Machines module; the Machines
+proxy allows only exact GET/HEAD public download paths before forwarded auth.
+See [Android distribution](clients.md#android-apk-distribution).
+
+## Application frontend registration
+
+`buildServer` passes the complete `applicationFrontends` map and deployment to
+`registerApplicationFrontends`. Registration rejects unknown frontend IDs before
+filtering sources, then accepts an enabled local frontend ID or an enabled local
+owner from its catalog runtime dependencies. The gateway still validates paths,
+manifest IDs and source URLs, and uses the installed owner artifact when there
+is no selected override. See [product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
+
+## Standalone browser chat integration
+
+The canonical integration note is `docs/browser-chat-integration.md`. Core
+allows exact external origins through `VC_CORS_ORIGINS` and exchanges an
+existing Identity authority at `POST /api/chat/session` for a short-lived,
+in-memory browser-chat handle. The handle is restricted to chat REST/uploads
+and the `/ws` session flow; Core rechecks the original authority and tenant or
+delegated resource binding. Origin admission is not authorization, and the
+text-only standalone socket does not expose the Sislexa shell or voice.
+
+Delegated public clients additionally require
+`VC_DELEGATED_CHAT_ENABLED=true` and managed Identity introspection. The flow
+stays scoped to the selected conversation and paid text execution still
+requires Billing admission. `scripts/external-chat-sample.mjs` is the pinned
+external-host fixture; its browser and server tests verify integration code,
+while deployed HTTPS/cookie behavior, Billing/runner execution and reconnect
+after rollout remain operator acceptance rather than facts established by the
+fixture.
 
 ## Запуск и dependency injection
 
@@ -90,6 +351,25 @@ responses under `/api` and `/internal`, strictly above 1024 bytes. Existing
 route hooks still run; `compress: false` remains an explicit route opt-out.
 Request decompression is disabled.
 
+Static responses use a separate `staticCompression.ts` hook for JS, CSS, HTML,
+JSON, SVG and source maps under `/assets/`, `/applications/:id/` and
+`/ui/releases/`. It negotiates br/gzip (including quality weights), adds
+`Vary: Accept-Encoding` for identity and compressed responses, and sets the
+compressed `Content-Length`. Range, partial, already encoded and SSE responses
+are excluded; HEAD remains identity. Only these static routes may have their
+file streams consumed, with a known length capped at 32 MiB; buffered files
+have the same size cap. API streams are never consumed by this hook.
+
+Each server owns a 64 MiB LRU of compressed buffers keyed by SHA-256 of source
+bytes and encoding. Repeated and concurrent requests reuse compression work;
+changed source bytes cannot reuse stale output. Files are still read on cache
+hits. At four pending compression jobs, additional requests fall back to
+identity. Brotli uses quality 5. Strong ETags become weak for compressed bodies
+and compressed responses omit `Accept-Ranges`. Application frontend MIME types
+also include HTML and source maps. `staticCompression.test.ts` exercises real
+frontend/file routes, decoding, identity lengths, cache reuse/invalidation,
+cache budget, negotiation, Range and conditional responses.
+
 Compression skips WebSocket upgrades, Range requests and partial responses,
 already encoded responses, media and archive MIME types, SSE, and all Node/Web
 stream payloads. Exec-stream, tunnel, preview and recorder paths and logs with
@@ -136,22 +416,68 @@ Operators must quiesce those writers before the final migration snapshot.
 
 ## HTTP-поверхность
 
+### Identity OAuth session bootstrap
+
+`server.ts` calls `registerCoreOAuth` before registering the global auth guard.
+In OAuth mode the encapsulated Identity registration sets `sessionAuthenticate`
+to `oauth.authenticate` and returns without calling legacy `registerAuth`.
+Therefore `auth/oauth.ts` owns the compatibility session bootstrap routes;
+registering them only through `registerAuth` would leave Core UI's
+`GET /api/session/me` unregistered and cause repeated sign-in redirects.
+
+The session routes explicitly call the OAuth adapter because `/api/session/*`
+is excluded from the global guard. The adapter verifies credentials with the
+pinned auth client, then checks the current Identity user and claimed tenant
+through `db.identity`. It preserves the account-derived role/context and the
+optional `mustChangePassword` flag. The me handler returns the current user's
+notices and the cookie session's CSRF token without exposing access tokens.
+See [REST bootstrap responses and explicit rejections](protocol.md#rest).
+
+`auth/oauth.integration.test.ts` exercises login and callback with the issued
+cookie, compares the user to legacy `resolveUser`, and covers missing/invalid
+sessions, CSRF, blocked users and absent account access. Legacy REST integration
+coverage remains in `routes/rest.auth.test.ts`.
+
+`auth/oauth.test.ts` also advances the clock before the code callback and
+requires five authenticated cookie/CSRF Storage probes to return 200. Its signed
+JWT fixtures retain a fixed expiration so the exchange stub's subject-token
+lookup survives second boundaries; see [OAuth fixtures](data-auth.md#identity-oauth-mode).
+
 ### Chat message service data
 
-Conversation setting `loadServiceData` defaults to false and is persisted in
-canonical chat settings. `serviceData.ts` applies the shared `stripServiceData`
-helper at REST and event boundaries: conversation and kanban-assistant history,
-draft creation/replay, CC/Codex resume, admin message inspection, message writes,
-`chat.message`, and both metadata fields of `claude.done` (completion, cancellation,
-and shutdown recovery). Enabling the setting returns full metadata. Live active
-turn activity, database readers, context snapshots, and prompt construction retain
-their full data regardless of the setting.
+Completed response diagnostics live in `message_service_data` (message primary
+key with cascading deletion, conversation id, activity, request and creation time).
+Both SQLite and generated PostgreSQL schema create the table at startup.
+ChatRepo writes diagnostics and lightweight message metadata in one transaction,
+including partial/interrupted turns and Desktop imports. Each serialized activity
+entry is capped at 64 KiB; oversized fields carry a truncation marker.
+Requests retain the actual prompt plus messageCount/lastMessageId, never a copy
+of conversation texts. Legacy request.messages is discarded during migration.
+
+Startup schedules batches of at most 50 message ids with a 100 ms pause; it does
+not await the backfill before serving. A keyset cursor avoids rescanning previous
+ids. Each batch reads one legacy meta at a time under message row locks, writes
+diagnostics, then removes the old keys in the same transaction. Restarting is
+idempotent; shutdown cancels the timer and waits for the in-flight batch.
+SQLite batches share the public repository serialization lane with requests.
+
+History queries project legacy activity/request out in SQL even before backfill.
+REST history, writes and both metadata fields of chat.message/claude.done always
+exclude activity and request, regardless of loadServiceData. Lightweight metadata
+retains model, permissionMode, token counts, duration and serviceData byte counts.
+Live activity remains available. Turn startup uses a point query for the latest
+user message, role/text-only cold-start history and a count/id summary. Attachment
+checks read text/attachments only; context inspection loads only the last reply's
+request rather than diagnostics for the entire conversation. Context growth uses a
+bounded SQL projection of model/provider/promptChars/resumed for ten replies; it
+never transfers their prompts or activity.
 
 `GET /api/conversations/:id/messages/:messageId/service-data` returns the stored
 `activity` and `request` for one published message. It applies the same owner and
 scope/project checks as the conversation GET; disabled loading returns 409,
 inaccessible conversations and missing messages return 404. The repository reads
-only that message's metadata rather than loading the complete conversation.
+the separate row with a legacy metadata fallback before migration. The setting
+continues to gate this explicit diagnostic endpoint, not history projection.
 Metadata PATCH merges top-level fields under a database row lock, preserving
 stored activity/request when a client updates only `taskLaunches`. An echoed
 projection's `serviceData` marker and reduced request never replace stored diagnostics.
@@ -174,11 +500,36 @@ projection's `serviceData` marker and reduced request never replace stored diagn
 
 ### Серверный снимок контекста разговора
 
+`conversations.assistant_mode` defaults to `workspace`, including migrated rows.
+The Shared modes are `chat`, `workspace` and `make`. Both the context snapshot
+and `turns.ts` use `isWorkspaceAssistantMode`: Chat excludes workspace context,
+KB, skills, machine execution and MCP tools and sends `textOnly: true` to the
+runner. Workspace and Make retain extended context with the existing authority
+checks. The built-in `mode:required` configuration uses Chat plus the
+`required-only` disabled-context marker, while its editable base set lives in
+`Settings.requiredContextItems`. Workspace, Chat and user presets inherit that
+set. `isContextDisabled` gives inherited Required items precedence over both the
+marker and per-conversation disables, the context mutation route rejects attempts
+to disable them, and `turns.ts` computes the same effective set for the actual
+run. Changing Required therefore affects existing inheriting conversations without
+rewriting their rows. When Required itself is active, the marker disables every
+other configurable source dynamically; non-toggleable platform/application
+instructions, history and the current message remain. Settings presets may carry
+a mode and description; Make conversation creation selects Make mode independently
+of the ordinary-chat default and does not inherit the required-only marker.
+
 Защищённый `GET /api/conversations/:id/context-snapshot` в `apps/server/src/routes/rest.ts` формирует preview сохранённого контекста следующего хода. Effective LLM разрешается атомарно по цепочке: явные provider/model разговора → собственная `ci_llm_config` привязанного проекта → пользовательские настройки. Проектная конфигурация читается только при отсутствии override provider разговора; если выбранный уровень не задаёт модель, fallback берётся из пользовательской модели соответствующего provider.
 
 Одна вычисленная пара попадает и в `summary`, и в элемент `llm` группы `conversation`. Для элемента сервер ставит `source` соответственно «Разговор», «Проект» или «Настройки пользователя», а `explanation` различает явное переопределение и наследование с конкретного уровня. Контрактные сценарии приоритета и наследования закреплены в `apps/server/src/routes/rest.test.ts`.
 
 ## WebSocket `/ws`
+
+The transport `open` event precedes authenticated session setup. `claude.active`
+confirms the turn subscription, but Kanban notification subscriptions are added
+only after `resumeQueues` and the agents-list await. `eventsDelivery.test.ts`
+waits for the `agents` snapshot, whose synchronous continuation installs the
+remaining subscriptions, before publishing a Kanban event. Expected notification
+frames are awaited with `vi.waitFor`; teardown awaits `db.close()`.
 
 `attachWs` installs message and close listeners before awaiting asynchronous
 `onOpen`. A single initialization barrier keeps commands queued until session
@@ -238,6 +589,13 @@ uncertain-usage behavior and compatibility with hard cancellation elsewhere.
 Пользовательские CLI-профили изолированы в `dataDir/cli-users/<base64url(логин)>/...`; `cliProfiles.ts` (переехал в `apps/llm-runner/src/cli/`) создаёт HOME/config и environment. Это не контейнерный root profile. Login status читается отдельно для каждого профиля.
 
 ## SQLite и репозитории данных
+
+Core repositories expose only operations still consumed by Core. Kanban-only
+workflow methods were removed from CI, QA, tasks, environments and releases;
+`QaRepo` is now an empty domain class retaining table ownership. Test-only
+writers moved to `test/seed.ts`, whose `withCtx` awaits `db.ready` and uses the
+port lane. These helpers seed the same SQLite/Postgres tables without exposing
+unused workflow writers on production ports.
 
 `VoiceChatDb` — синхронный адаптер `better-sqlite3`: ядро (`db/database.ts`) при создании выполняет идемпотентную DDL и миграции старых колонок и раздаёт доменные репозитории `db.chat`, `db.tasks`, `db.ci`, `db.machines`, `db.identity` и т.д. (`db/repos/<домен>.ts`, по одному владельцу на таблицу — `db/ownership.ts`). Маршруты и сервисы зовут методы адресно и асинхронно (`await db.projects.getProject(...)` — поля `db.<домен>` это `AsyncPort<Repo>`), а зависимости-интерфейсы в тестах описываются той же формой `{ projects: { getProject: async () => … } }`. Сообщения одного WS-сокета обрабатываются строго по очереди (`ws.ts`): обработчики асинхронны, а порядок `audio.start → чанки → audio.stop` — часть контракта. WAL разрешает читателям не блокировать обычную запись; foreign keys обеспечивают cascade для conversation/project children. Подробнее — [data-auth.md](data-auth.md#схема).
 
@@ -606,17 +964,63 @@ exit codes. A successful start clears `errorCode`.
 
 ### Project mode в Core (2026-10-07)
 
+### Comparing conversation branches with dev
+
+Stand Git accepts `compare {base, head, fetch?}`. For each component, compare
+its conversation branch (or commit SHA) as `head` against `base: origin/dev`,
+with `fetch: true` for current remote evidence. `ahead` counts commits exclusive
+to head, `behind` counts commits exclusive to base, `mergeBase` is the common
+ancestor SHA (null for unrelated histories), and `contained` is true exactly
+when ahead is zero. Upstream status alone does not prove delivery to dev.
+
+`GitWorkspaceService.compare` validates both refs, optionally fetches origin,
+resolves both to commits and runs rev-list/merge-base under the existing
+workspace lock and command policy. A failed fetch or unresolved ref fails the
+operation; it never falls back to stale success. It requires read access and
+does not checkout, merge, or edit the worktree. Component routing uses the same
+conversation worktree and authorization as other stand Git reads.
+Core's RPC adapter validates compare inputs/results locally for compatibility
+with the pinned pre-compare Make contract; the owner contract exposes the same
+operation to Make clients.
+
+
+See [conversation stand worktrees](#make-conversation-stand-worktrees) for local
+multi-repository bindings and component routing.
+
+
+
 `LocalMakeCore` получает список доступных проектов из `db.projects`, сохраняя роль
 текущего участника. Структуру и дизайн рабочей копии он читает только через
-read-only `machineFs`: обход исключает каталоги сборки и VCS, ограничен 2000
-элементами, 256 КиБ на файл и 4 МиБ суммарно. Инвентарь включает package roots,
-stories, style files, CSS custom properties из `:root` и `data-theme`, простые
-JSON/TypeScript token maps и экспортированные компоненты.
+read-only `machineFs`: обход исключает каталоги сборки, VCS и кэши (`.nx`,
+`.angular`, `.turbo`, `out-tsc`), ограничен 50 000 просмотренными записями и 2000
+включёнными в результат файлами, 256 КиБ на прочитанный файл и 4 МиБ суммарно для
+прочитанного содержимого. Структурный скан читает только
+`package.json`, а stories и style files считает по именам, поэтому размер исходников
+монорепозитория не расходует байтовый лимит. Отдельный дизайн-скан выбранного
+подпроекта читает style/JSON/TypeScript-файлы и извлекает CSS custom properties из
+`:root` и `data-theme`, простые token maps и экспортированные компоненты.
+
+Make project-context tools call three additional Core ports: `currentContext`
+returns the current conversation and linked-project settings with
+`ciExecAuthRef` removed; `projectUsage` aggregates the owner's usage with a
+project-id SQL filter; `conversationAttachments` returns deduplicated attachment
+metadata and upload IDs from the authorized conversation history. Core currently
+pins the vendor `make-contracts` 1.8.18 archive, so `makeBridge/coreRpc.ts`
+validates and dispatches these method names locally until that archive is updated.
+This compatibility branch is covered by the internal `/internal/make/core` route
+table in `coreRpc.test.ts`; otherwise the older dispatcher would answer
+`400 unknown method` even though `LocalMakeCore` implements the methods.
 
 Git-операции project mode используют тот же `GitWorkspaceService`, что REST
 `/api/projects/:id/git/*`. Поэтому членство, доступ к машине, право записи,
 занятость workspace и запрет push в protected branches проверяются в одном месте.
 Те же методы проходят через schema-validated `/internal/make/core` RPC.
+Контракт Make 1.8.13 также проводит через этот сервис `branch {name, from?}`,
+`checkout {name}` и `merge {from}`. Все три операции требуют чистого рабочего
+дерева и существующей ветки; checkout создаёт локальную tracking-ветку из
+`origin`, когда локальной ещё нет. Merge выполняется с `--no-edit`, а при
+конфликте собирает имена конфликтующих файлов, делает `merge --abort` и
+возвращает штатный результат `conflict`, не оставляя stand в незавершённом merge.
 
 `makeBridge/projectAdapters.ts` accepts ready `managed`, `thin-client` and
 `local-stand` base environments only when `machines[0]` matches the selected
@@ -633,8 +1037,14 @@ via `SISLEXA_STAND_CORE_SOURCE`; see [local stand setup](deploy.md#isolated-loca
 `server.ts` wires both project adapters in `makeBridge/projectAdapters.ts`.
 Stand preview calls the Kanban HTTP API at `kanbanUrl` when Kanban mode is
 remote. Start reuses a stand on the selected project machine or creates one
-from an environment assigned to that machine. Status and URL use the stand's
-gateway URLs. `live_on` and `live_off` address a component of a specified stand;
+from an environment assigned to that machine. Status and URL resolve the stand's
+gateway, then exchange it for an owner-checked inspector lease when `previewAccess`
+is available. Make uses that lease for donor previews and browser actions. Donor file access is a
+separate, explicit read-only Core port: list/read resolve the current member's project
+machine, scope every relative path below the subproject saved in the conversation pair,
+reject text files above 2 MiB and binary files, and expose no write method. The Make MCP
+does not accept a donor project ID from the model and calls this port only for a saved
+project reference with `access: files`; `preview` remains the default. `live_on` and `live_off` address a component of a specified stand;
 live writes use that stand machine's configured project working-copy path,
 never a caller-supplied absolute path. Project access and write roles are
 checked before mutation; Kanban remains responsible for allocation, durable
@@ -644,9 +1054,11 @@ client errors retain their HTTP status.
 
 `MakeRequestAuthority` creates an in-memory, random capability for each outbound
 request, bound to the user, exact method and URL, with a 30-second lifetime and
-immediate revocation on completion. The ordinary Core authenticator recognizes
-these capabilities, including through Kanban/Make's authenticated whoami
-callback. No user session or persistent credential is created. Design file
+immediate revocation on completion. The ordinary Core authenticator recognizes the forwarded original request from
+the remote service's authenticated `POST /internal/whoami` callback. Relative and
+absolute URL representations are canonicalized to the same path plus query before
+the exact comparison; method, query and path changes remain denied. No user session
+or persistent credential is created. Design file
 reads use the authenticated Make file API through Fastify injection, so the
 same adapter works with embedded Make and the remote Make proxy.
 
@@ -664,7 +1076,15 @@ workspace guard prevents overlapping Make transfers. Transfers are bounded to
 transfer option on `linkTaskDesign` permits an owned design from another
 project; ordinary link requests retain the same-project rule.
 
-The Core RPC compatibility adapter dispatches all six project-mode methods,
+Project-mode scans of the machine working copy (`LocalMakeCore`) count the
+4 MiB budget only for files they read. `projectStructure` reads only
+`package.json`; `projectDesign` reads style files, `package.json`,
+tailwind/postcss configs and token/theme files, lists stories by name and reads
+component sources (`*.tsx`, `*.jsx`, `*.component.ts`) last, smallest first,
+with the remaining budget. A design over the budget is returned partially
+instead of `413 project_byte_limit_exceeded`.
+
+The Core RPC compatibility adapter dispatches the project-mode methods required by the pinned and current Make contracts,
 preserves adapter HTTP errors, accepts `live_on`/`live_off` and retains transfer
 branch/task/design URLs. The installed make-contracts 1.4 schemas only describe
 start/status/url and the minimal transfer result; Make clients must adopt the
@@ -756,13 +1176,25 @@ expose the same bounded prompt and its size; stored messages remain unchanged.
 
 `conversationSummary.ts` supplies the rolling summary consumed by that cold
 start. After 40 published messages beyond the stored boundary it starts a
-deduplicated background run with the cheapest configured runner model. The run
+deduplicated background run with the cheapest configured runner model. Each call
 has a fresh session, plan permission, disabled execution and no tools. It folds
-the previous summary together with only the messages after the boundary, caps
-the saved result at 1,500 words, persists all three summary fields atomically,
-and emits `chat.conversation`. Runner failures are logged, never fail the chat
-turn, and move the next automatic attempt to the following 40-message boundary.
-The summary REST refresh uses the same service but bypasses the threshold.
+messages oldest first in 20,000-character batches, truncating each message text
+to 2,000 characters. Prior and generated summaries are capped at 8,000 characters;
+generated summaries also retain the 1,500-word limit. The full prompt is capped
+at 32,000 characters. Each failed or empty response retries once through the
+other configured runner (Codex Luna primary, Claude Haiku secondary when both
+exist). Each attempt times out after 30 seconds and cancels its runner handle.
+Successful completion persists the final boundary atomically and emits
+`chat.conversation`. Per-attempt failures emit structured JSON directly to stdout:
+`conversation_summary_failed`, conversation id, model, error class/message,
+batch message count and prompt characters, without attaching history or prompts.
+Fastify is created with `logger: false`; the previous `app.log.warn` wiring therefore
+dropped these errors entirely. Direct stdout logging keeps them on the same container
+log channel as `api_request_problem`. Failed background runs keep the prior
+summary and move the next automatic attempt to the following 40-message boundary.
+The summary REST refresh bypasses the threshold. Thread reset adds a persisted,
+bounded deterministic fallback if refresh leaves uncovered messages; see
+[Session cost and summary reset](llm.md#session-cost-and-summary-reset).
 
 ## Account profile query path
 
@@ -851,6 +1283,38 @@ RPC event client is required to keep a link alive.
 
 ## Make conversation stand worktrees
 
+Local stands accept `makeStand {op:'component', action:'attach'|'detach', component}`
+for core, core-ui and make. Optional `component` on files/git selects the attached
+repository; omission selects the conversation's primary repository. The primary
+binding remains the top-level stand result even after an operation against a
+secondary checkout, while `components` reports every matching live checkout with
+its component, branch, path and phase. Files/Git fail with
+`component_not_in_stand` when the selected component has no conversation-owned
+live entry. Core validates this extension locally in
+`makeBridge/coreRpc.ts` and `makeBridge/projectAdapters.ts`, so the pinned
+make-contracts archive does not need to publish the extension first.
+
+Secondary worktrees use `<reposRoot>/make-worktrees/<conversationId>-<component>`;
+the primary retains its existing path. Local preparation in
+`makeBridge/standWorkspace.ts` seeds repository clones from the host environment's
+`SISLEXA_STAND_SHARE/<repository>` (or explicit `SISLEXA_STAND_SOURCES`).
+Core passes this root in the agent payload; the agent can also use those environment
+variables, but never derives the seed from its HOME. A missing/non-absolute root
+or missing seed fails before cloning. Preparation rewrites origin to the registry URL, restricts fetch
+to `dev` and `make/*`, and defaults new branches to
+`make/conversation-<id8>`. Non-local stands reject secondary components. Attaching
+passes the selected live path to Kanban; detaching one secondary component removes
+only that component's live binding and leaves the other attached repositories
+addressable.
+
+The local launcher in `scripts/dev-stand-local.mjs` accepts prepared Core, Core UI
+and Make checkouts through `SISLEXA_STAND_CORE_SOURCE`,
+`SISLEXA_STAND_CORE_UI_SOURCE` and `SISLEXA_STAND_MAKE_SOURCE`. Each override must
+already contain `.git` and `node_modules`; the launcher skips its own worktree and
+install for that repository. Core keeps `tsx` development execution, Core UI keeps
+Vite HMR, and an external Make checkout runs both its watched API and frontend
+build/server so visible Make UI changes come from the conversation checkout.
+
 `MakeProjectAdapters.makeStand` implements the make-contracts 1.7.0 port in
 embedded and remote Make. Core checks the conversation owner and resolves its
 project through `db.chat.makeConversationProject`; project viewers cannot use
@@ -901,8 +1365,17 @@ machine's `path` or `reposRoot`. The component repository is cloned once into
 fetched, and the conversation worktree is `<reposRoot>/make-worktrees/<conversationId>`.
 The fixed agent-side Node program launches Git with argv and `shell: false`;
 user values travel as base64 JSON. A registered conversation worktree can be
-reused only on its existing branch. A taken new branch name fails with
-`branch_exists`. New branches start from the requested remote base, otherwise
+reused only on its existing branch. Local preparation with no explicit branch or
+new-branch request reuses the default conversation branch when it exists locally
+or on origin (local takes precedence); only an absent branch is created from `dev`.
+For a component attachment, Core sends the same conversation default
+`make/conversation-<conversationId[:8]>` while keeping a component-specific
+worktree path, so an earlier stand's branch history is retained instead of being
+recreated. Explicit new-branch requests and non-local defaults still fail with
+`branch_exists` when taken. If the selected branch is checked out in another registered worktree,
+attachment fails with `branch_checked_out: <absolute path>`; Core preserves this
+message for the caller and does not start component live mode. It does not move
+or force-checkout that other working copy. New branches start from the requested remote base, otherwise
 the project's `ciBaseBranch`. Kanban receives the resulting `workingCopyPath`
 for component live mode. Status reads Kanban details; detach disables live
 without deleting the worktree or branch and refuses to disable another
@@ -925,11 +1398,136 @@ failures become the contract's failed state/error codes; authorization failures
 remain HTTP/RPC denials. Deployment and opening proxy ports are subsequent
 operator commissioning, not part of worktree attachment.
 
+## Project preview stands
+
+An ordinary web project (for example an Angular app without a Sislexa component)
+can show a Make stand through an owner-configured dev command. Config lives in the
+Core-only table `project_stand_previews` (no Kanban or snapshot change):
+`GET /api/projects/:id/stand-preview` (member) and `PUT` with
+`{ command, port, workdir?, readinessPath? }` or `null` (project owner only;
+`parseProjectStandPreview` in `packages/shared`, port 1024..65535 outside
+`VC_STAND_PROXY_PORTS`, `workdir` relative without `..`/`.git`).
+
+`makeBridge/projectPreview.ts` (`ProjectPreviews`) runs a fixed `node -e` program
+through the agent exec bridge: realpath containment of `root/workdir` (root =
+`projectWorkdir` directory or machine path), state/log in
+`~/.voicechat/project-previews/<projectId>.{json,log}` (0700/0600), detached
+`shell: true` spawn with `PORT`, adoption of a foreign listener on the port (never
+killed), status = own pid alive + HTTP probe (1 s), stop kills only its own
+process group. The command passes Core's command gate and the machine policy
+before start; command and log contents are never returned. Stand id is
+`pp-<agentId>`; the StandProxy `stand` resolver routes `pp-` ids to
+`ProjectPreviews.target` (port from config) and everything else to Kanban.
+`MakeProjectAdapters.standPreview` and `makeStand` (when the project has no
+component and has a config) bypass Kanban dev-stands: options/create/status/attach
+start or probe the command and return the inspector lease URL; files/git act on
+the machine root; detach only unbinds. Without a config, options report
+`preview_command_missing`; `preview_*` error codes pass through to Make.
+
+### User stands (Make stands library)
+
+Make conversations without a project use user-scoped stands (name, URL, optional
+folder/command/machine stored by Make). Core implements
+`MakeProjectCore.userStand(userId, operation)` (make-contracts 1.8.16) in
+`makeBridge/userStand.ts` (`UserStands`), wired through `LocalMakeCore.userStand`;
+`coreRpc.ts` dispatches `userStand` with a local zod schema while Core still pins
+make-contracts 1.8.15, and the shared-service authority table grants it per user
+(`u0`). Operations: `machines` (own machines plus machines shared with any project
+where the user is an active member, `db.machines.listUserMachineAccess`),
+`start|status|stop` (same fixed program via `ProjectPreviews.runAt` with root =
+the absolute stand folder, state id `sha256(user, machine, folder, port)`, command
+gate with `projectId: null` and machine policy), `preview` (inspector lease; local stands may include up to 20 validated same-machine proxy routes `{path, port, targetHost, origin, stripPrefix}`) and
+`files` list/read/write (folder-relative paths, containment through the program's
+`check` action, 2 MiB limit, read returns `utf8` or `base64`). Start/stop/write need
+owner or `full` share access; `read` shares allow status, preview, list and read.
+Errors are `Error(code)` with an HTTP `statusCode`: `machine_unavailable`,
+`machine_forbidden`, `path_outside_stand`, `stand_command_forbidden`,
+`stand_proxy_unavailable`, `file_too_large`, `invalid_user_stand`, `stand_url_forbidden`,
+`not_a_repository`.
+
+`{ op: 'git', machineId, folder, operation }` runs Git for the Make `stand_git`
+tool (make-contracts `userStandGitOperationSchema`): `status`, `branches`,
+`checkout {name}`, `create_branch {name, from?}`, `commit {message, files?}` (no
+files = `add -A`), `diff {path?}`. The folder is resolved to its realpath by the
+program's `check` action and must be the repository root (`rev-parse
+--show-toplevel` equals it, else exit 64 → `not_a_repository`), so `add -A` and
+checkout never reach outside the stand. Paths reuse the folder-relative schema
+(no `..`, no `.git`), branch names `isValidGitBranchName`; scripts come from
+`userStandGitScript` (status/branches/diff) and `git/scripts.ts`
+(checkout/create_branch/commit), user data only in `VC_GIT_*` variables. Every
+script goes through the command gate (`projectId: null`) and the per-folder
+`acquireGitWorkspaceLock` shared with project Git; mutations need owner or `full`
+access. A failing git command answers `{ git: { op, ok: false, output } }`
+(last 20 lines), success carries `branch`, `files`, `branches`, `commit` or `diff`
+(capped at 200 000 characters, `truncated`).
+
+`{ op: 'release', machineId, port }` / `{ op: 'release', url }` closes the
+caller's StandProxy leases of that `us-`/`ue-` id at once (`StandProxy.release`)
+instead of after the one-hour idle timeout; Make sends it when a stand is deleted,
+moves to another address or leaves its preview frames. Leases of other users stay.
+StandProxy stand id `us-<machineId>-<port>` is resolved by the `userStand` dep
+(no project membership; port override rejected) and machine usability is
+re-checked on every proxied request. `UserStands` keeps the active route set per user and `us-` stand id; `release` clears it. Each route can target only another validated, non-reserved port of that same machine.
+
+External stands: `{ op: 'preview', url }` (http/https, no machine) opens an
+inspector lease with id `ue-<sha256(origin)[:32]>`; `UserStands` keeps the
+id -> origin map in memory (bounded to 1000, lost on restart: Make asks again).
+The result is `{ url: <lease origin> + stand path/query, interactive: true }`, so
+apps with absolute paths (`/webapp/main.js`) work at the root of the lease origin.
+`standExternal.ts` is the SSRF guard: credentials and non-http(s) schemes are
+refused, every DNS answer must be public (loopback, 10/8, 172.16/12, 192.168/16,
+100.64/10, 169.254/16, 0/8, multicast, `::`, `::1`, fe80::/10, fc00::/7, NAT64 and
+`metadata`/`localhost` names are refused) and the first address is pinned for
+the connection via a fixed `lookup` (no DNS rebinding). The guard runs again on
+every proxied request; `VC_STAND_PROXY_ALLOW_PRIVATE=1` (never set by default,
+read from the process env) allows private targets for tests and local runs.
+External leases have no public-artifact bypass. Request headers drop Core
+cookies, Authorization, `x-vc-*`/`x-forwarded-*`; Host is the upstream host and
+Origin/Referer of the lease origin are rewritten to the upstream origin. Response
+headers: absolute `Location` on the upstream origin moves to the lease origin;
+`Set-Cookie` loses Domain, SameSite (forced to `Lax`) and Secure on an http
+lease, then gets the `sxs_<key>_` prefix; `X-Frame-Options`, CSP
+`frame-ancestors`, HSTS and Alt-Svc are removed and `frame-ancestors 'self'
+<Core origin> <lease origin>` is added. HTTPS upstreams use SNI and certificate
+verification of the upstream hostname; WebSocket upgrades use the same path.
+Apps embed their own absolute origin (an Angular `assets/config.json` with
+`https://<stand>/meridian/api`), which would send API calls cross-origin and fail
+CORS, so `standRewrite.ts` rewrites the upstream origin to the lease origin in
+textual bodies of external leases only: `text/*`, `application/json`,
+`*/*+json`, JavaScript, XHTML. Absolute, protocol-relative (`//host`),
+JSON-escaped (`https:\/\/host`) and `ws`/`wss` forms are matched for the exact
+host (a default port also matches its explicit `:443`/`:80`; other ports and
+longer hostnames are left alone). Accept-Encoding sent upstream keeps only
+gzip/deflate/br/identity; encoded bodies are decoded, sent as identity with an
+exact Content-Length, and a strong ETag becomes weak. Bodies over 10 MiB, ranges
+and binary types stream untouched. `Access-Control-Allow-Origin` equal to the
+upstream origin and CSP sources naming it are rewritten too. Machine-tunnel
+leases are unchanged.
+
+Stand research: `{ op: 'research', conversationId, stand, url, navigate?, reload?, action }`
+(`makeBridge/standResearch.ts`, `StandResearch`) runs one read-only browser-runner
+`research` command (`tree`, `styles`, `screenshot`, `network`, `resource`; wire
+shape in Playwright Reader `browser-contracts/browserResearch`) and returns
+`{ research: <runner result> }`. The session is headless and ephemeral, id
+`make-research-<sha256(user, conversation)>`, one tab per `stand` key, kept in
+Core memory with the runner incarnation; a stale incarnation or closed tab is
+reopened once. The tab opens the stand `url` when it is new or with `reload`;
+`navigate` opens another page of the stand now; otherwise the current page
+(after the assistant's own clicks) is kept. Every navigation URL and
+resource URL (relative ones resolve against the tab page) passes
+`resolveExternalStand`; loopback is allowed only with
+`VC_STAND_RESEARCH_ALLOW_LOOPBACK=1` (Core and runner on the user's machine; the
+runner then also needs `VC_BROWSER_ALLOW_LOOPBACK=1`). Calls of one session are
+serialized. Without a runner the op answers `stand_proxy_unavailable`. The Make
+core RPC route accepts 4 MiB bodies so 2 MiB stand files fit base64.
+
 ## Stand delivery to dev
 
 Core owns the concrete routes registered by `routes/standDeliveries.ts`:
 `POST /api/projects/:id/dev-stands/:standId/deliveries` accepts only
-`{branch, title}` and returns the coordinator's `{runId, taskId}`;
+`{branch, title, component?}` and returns the coordinator's `{runId, taskId}`;
+`component` selects core, core-ui or make. List, sync and sync status accept the
+same optional query parameter.
 `GET` on the same route returns up to 20 `StandDelivery` entries, newest first;
 `POST .../sync-dev` returns `StandSyncResult`.
 `GET .../sync-dev/status` returns `StandSyncStatus` (`{ behind }`) after
@@ -944,10 +1542,17 @@ are exported from Shared. These exact routes take precedence over the Kanban pro
 
 `makeBridge/standDeliveries.ts` checks project access, repository write permission
 for mutations, the stand's machine and the Git workspace write policy. The working
-copy comes only from the authorized Kanban manifest's live entries. It selects
-the entry matching the project repository, or a single live entry on a host
-project; ambiguous multi-component bindings fail closed. History is filtered by
-that repository and live branch, and access is rechecked even on cache hits.
+copy comes only from the authorized Kanban manifest's live entries. The optional
+body `component` on submission and query `component` on history/sync select exactly
+that live entry. Without it Core prefers the entry whose repository matches the
+project and falls back only when the stand has one live entry; missing or ambiguous
+selection fails closed with `stand_working_copy_ambiguous`. Submission resolves the
+selected component's repository and branch, verifies the requested branch against
+the live branch and sends only that repository to the existing coordinator, so a
+multi-repository delivery is represented by one request/task per selected
+repository. History and both sync operations reuse the same repository+branch
+selection, while the busy lock is scoped to the selected machine and working-copy
+root. Access is rechecked even on cache hits.
 
 `standDeliveryAgent.ts` executes a fixed Node program through the stand machine's
 agent. Real paths, Git common directory and origin are checked against the
@@ -1013,20 +1618,60 @@ and validated `gateway.port` select the upstream; clients cannot supply a
 target machine or TCP port. The shared response is `{url, expiresAt}`, with
 `expiresAt` expressed as Unix milliseconds.
 
-Allocation is serialized. A user/project/stand tuple reuses its lease; target
-changes replace it. The disabled or exhausted pool returns HTTP 503 with
+Allocation is serialized. Leases are keyed by user, project, stand, requested
+port, injection mode and effective hostname; target changes replace the matching
+lease. Without `VC_STAND_PROXY_PUBLIC_HOST`, the effective hostname comes from
+the request Host (normalized by URL parsing, without its port). Different page
+hostnames, such as `localhost` and `127.0.0.1`, receive separate listeners and
+matching origins so the browser sends its host-scoped Core session cookie.
+With `VC_STAND_PROXY_PUBLIC_HOST` configured, its hostname is used for both the
+origin and reuse key, so different request hosts still share the same lease.
+Each hostname-specific lease consumes a pool port. The disabled or exhausted pool returns HTTP 503 with
 `stand_proxy_unavailable`. Requests and stream traffic renew the one-hour idle
 deadline; expiry and Core shutdown close listeners and all their connections.
-Every HTTP request and WebSocket upgrade checks the current cookie session
-against the lease owner and rechecks project membership before opening a tunnel.
+HTTP GET/HEAD requests for public application frontend artifacts bypass session
+and membership checks, but still require a live, unexpired lease. The raw path
+without its query must match the following expression and contain no `.` or `..`
+segments:
 
-Only cookies beginning with that lease's random `sxs_<leaseKey>_` prefix pass
+```regex
+^/applications/[a-z][a-z0-9-]+/[a-zA-Z0-9_-][a-zA-Z0-9_./-]*$
+```
+
+These requests forward no cookies, including lease-prefixed stand cookies.
+This supports credential-free manifest and SRI asset loading inside stand previews.
+Every other HTTP request and every WebSocket upgrade checks the current cookie
+session against the lease owner and rechecks project membership before opening a tunnel.
+
+Lease cookie keys are the first 32 hex characters of HMAC-SHA256 using Core's
+persistent session signing secret and
+`JSON.stringify([user, projectId, standId, port ?? null, inject ?? null, hostname])`,
+where hostname is the effective hostname described above. Recreating a lease
+after Core restarts preserves its `sxs_<leaseKey>_` cookie prefix, even if the
+allocated listener port changes. User, project, stand, requested target port,
+injection mode, hostname and secret isolate cookie namespaces; rotating the
+secret changes the prefix. Core passes its existing session secret to
+`StandProxy`; no additional secret is generated for leases.
+
+Only cookies beginning with that lease's `sxs_<leaseKey>_` prefix pass
 upstream, with the prefix removed. Response Set-Cookie names receive the prefix
 and Domain attributes are removed. Core authorization and internal forwarding
 headers are stripped. Host becomes `127.0.0.1:<gatewayPort>`; an Origin equal
 to the leased proxy origin becomes the gateway origin, while foreign origins
 remain unchanged. SSE responses stream without buffering and WebSocket upgrades
-retain their initial bytes in both directions.
+retain their initial bytes in both directions. A local user-stand lease may also carry same-origin path routes. The longest segment-boundary match wins; HTTP and WebSocket use its target port, and `stripPrefix` optionally removes the matched prefix while preserving the query. Host becomes the configured localhost target, and Origin/Referer are rewritten to the stand's original origin. The inspector script paths are handled before route selection. Response ACAO for that original origin is rewritten to the lease origin, and absolute redirects from the routed target return through the lease path.
+
+Each lease remembers the Core parent origin at creation: the lease scheme plus
+the request Host passed to `access()`, including its port. Reusing a lease keeps
+that original parent. Forwarded enforced CSP `frame-ancestors` directives gain
+the parent and lease origins, including every policy in multiple or comma-joined
+headers. This permits nested Make previews when the outer Core page and the stand
+use different ports; browsers check every ancestor, not just the immediate frame.
+Directives containing `'none'` stay unchanged. `X-Frame-Options: SAMEORIGIN`
+is removed when enforced CSP already has `frame-ancestors`; otherwise it is
+replaced by an additional CSP policy `frame-ancestors 'self' <parent> <lease>`.
+Other directives, report-only CSP and other X-Frame-Options values are preserved.
+Responses without framing headers receive no new policy.
 
 Internal callers can opt in with
 `standProxy.access(user, project, stand, host, port?, { inject: 'make-inspector' })`.
@@ -1034,11 +1679,24 @@ The injection mode is stored on the lease and included in its reuse key, so
 ordinary callers retain separate, unmodified leases. The public access route
 does not accept this option. `htmlInject.ts` buffers eligible UTF-8 `text/html`
 responses, decodes gzip/Brotli/deflate, and inserts the external inspector before
-`</head>` (or after the opening `<body>`). Its URL uses the incoming request's
-Host and socket scheme: `/api/make/inspector.js`. On injected leases the proxy answers
+`</head>` (or after the opening `<body>`). Its URL uses the lease's configured origin and the path
+`/api/make/inspector.js`, including behind TLS termination. On injected leases the proxy answers
 `GET /api/make/inspector.js` itself through `deps.inspectorScript` (Core injects its own
 route with the caller's cookie), so the stand's Core version never has to serve it;
-ordinary leases forward that path to the stand. Rewritten responses receive a
+ordinary leases forward that path to the stand. Inspector-enabled leases also
+inject `<script src="<lease origin>/__sislexa/preview-inspector.js"></script>`.
+Core serves that path through its Reader proxy at
+`/api/preview/inspector.js?parentOrigin=<encoded lease parent origin>` and forces
+`Cache-Control: no-store`. After authenticating the lease owner, the proxy passes
+both the saved parent origin and the request cookie to `previewInspectorScript`.
+Core forwards that cookie to `app.inject`, because its `/api/preview*` routes
+require a session even when Web Reader serves the script publicly. Non-2xx
+script responses and retrieval exceptions become an empty HTTP 502 response,
+so upstream authorization errors are never served as JavaScript.
+The saved parent origin, including its port, is used
+instead of the script request Host or query parameters. Both scripts must pass
+the HTML helper's CSP checks before the response is rewritten.
+Rewritten responses receive a
 byte-accurate Content-Length; Content-Encoding and stale entity validators are
 removed. Enforced CSP must allow the script; restrictive or unrecognized source
 policies and documents with CSP meta tags are left untouched. Non-HTML bodies,
@@ -1071,3 +1729,29 @@ observes agent pause/resume and WebSocket bufferedAmount, and pauses remote
 reads when the Duplex fills. Agent disconnect/error closes the stream. The
 MachinesService port also supports remote Machines through the authenticated
 `/internal/machines/core-tunnel` WebSocket byte stream.
+
+## Automatic agent bundle offers
+
+`agents/wsAgent.ts` catches message and pong dependency failures, logs them and
+closes the affected socket with retryable code 1013. This includes a failed
+Identity `agent_update_sent` audit after the update offer was sent. Close cleanup
+runs before the asynchronous last-seen write; its rejection is logged. Queued
+messages and in-flight registration cannot revive a closed connection.
+`agents/wsAgent.test.ts` verifies Identity RPC failure and recovery in a separate
+Node process with `--unhandled-rejections=strict`. Registry change notifications
+also catch rejected async subscriber promises (`agents/registry.test.ts`).
+
+After a successful `agent.register`, `apps/server/src/agents/wsAgent.ts` treats
+`systemd`, `launchd`, and `android` as supervised runtimes. When the bundle returned
+by `servedAgent()` is strictly newer than the reported agent version, Core sends
+`agent.update { version, sha256 }` once for that WebSocket connection and records
+`agent_update_sent`. Equal or newer agents are never offered a downgrade. Missing
+or unknown supervisors retain the registry's version-gated `agent.updateAvailable`
+hint instead of receiving the automatic update command. A repeated registration
+frame on the same connection is ignored.
+
+The local compatibility contract in `packages/shared/src/agentProtocol.ts` widens
+only the registration message's optional `supervisor` to include `android`, because
+the pinned `@sislexa/agent-contracts` archive predates that owner-side extension.
+The server consumes this widened `AgentToServer` type; the remaining owner protocol
+and the dev-process extensions keep their existing sources.

@@ -4,19 +4,41 @@
 
 import type { VoiceChatDb } from '../db/database.js'
 import { buildGitWorkspaceId } from '@voicechat/shared'
-import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult } from '@voicechat/make-contracts'
+import type { CreateTransferTaskArgs, MakeCore, MakeMachineFs, MakeStandOperation, MakeStandResult, MakeStandWindow, MakeTaskDesignArgs, ProjectDesign, ProjectGitOperation, ProjectGitResult, ProjectSubproject, StandPreviewResult, ProjectReferenceList, ProjectReferenceFile } from '@voicechat/make-contracts'
 import type { GitWorkspaceService } from '../git/workspaceService.js'
 import type { MakeProjectAdapters, PreviewOperation } from './projectAdapters.js'
+import type { UserStandOperation, UserStandResult } from './userStand.js'
 
 const MAX_FILES = 2_000
+const MAX_TRAVERSAL_ENTRIES = 50_000
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next'])
+
+// Design inventory reads only style, token/theme and styling-config files; stories are listed by name.
+function isDesignFile(name: string): boolean {
+  return /\.(?:css|scss|sass|less)$/i.test(name)
+    || name === 'package.json'
+    || /^(?:tailwind|postcss)\.config\.[cm]?[jt]s$/i.test(name)
+    || /\.stories\.[jt]sx?$/i.test(name)
+    || (/\.(?:json|[cm]?[jt]sx?)$/i.test(name) && /token|theme/i.test(name))
+    || isComponentFile(name)
+}
+
+function isComponentFile(name: string): boolean {
+  return !/\.(?:stories|test|spec)\./i.test(name) && !/token|theme/i.test(name) && (/\.[jt]sx$/i.test(name) || /\.component\.ts$/i.test(name))
+}
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.nx', '.angular', '.turbo', 'out-tsc'])
 
 type ProjectMachine = { agentId: string; path: string; name?: string; online?: boolean; canUse?: boolean }
 type ScannedFile = { path: string; content: string }
 
 function join(root: string, relative: string): string { return relative === '.' ? root : `${root.replace(/\/$/, '')}/${relative}` }
+function scopedPath(subprojectPath: string, relativePath: string): string {
+  return relativePath === '.' ? subprojectPath : subprojectPath === '.' ? relativePath : `${subprojectPath}/${relativePath}`
+}
+function safeEntryName(name: string): boolean {
+  return Boolean(name) && name !== '.' && name !== '..' && !/[\\/\x00-\x1f]/.test(name)
+}
 function fail(statusCode: number, message: string): never { throw Object.assign(new Error(message), { statusCode }) }
 
 export interface LocalMakeCoreDeps {
@@ -28,9 +50,54 @@ export interface LocalMakeCoreDeps {
   standPreview?: (userId: string, projectId: string, operation: PreviewOperation) => Promise<StandPreviewResult>
   transferTask?: MakeProjectAdapters['createTransferTask']
   makeStand?: (userId: string, conversationId: string, operation: MakeStandOperation) => Promise<MakeStandResult>
+  /** User-scoped Make stands library (make-contracts 1.8.16 `MakeProjectCore.userStand`). */
+  userStand?: (userId: string, operation: UserStandOperation) => Promise<UserStandResult>
+  openStandWindow?: (userId: string, conversationId: string, standId: string, url: string, current?: MakeStandWindow | null) => Promise<MakeStandWindow>
 }
 
 export class LocalMakeCore implements MakeCore {
+  async currentContext(userId: string, conversationId: string) {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation) fail(404, 'conversation_not_found')
+    const projectId = conversation.projectId ?? null
+    const detail = projectId ? await this.deps.db.projects.getProject(userId, projectId) : null
+    const project = detail ? (() => {
+      const { ciExecAuthRef: _secret, ...safe } = detail
+      return safe
+    })() : null
+    return {
+      conversation: { id: conversation.id, title: conversation.title, projectId },
+      project,
+      capabilities: {
+        projectSettings: Boolean(project), projectUsage: Boolean(project), attachments: true,
+        stands: true, standCopy: true, uiActions: true,
+      },
+    }
+  }
+
+  async projectUsage(userId: string, conversationId: string, unit: 'hour' | 'day' | 'week') {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation?.projectId) fail(404, 'project_not_found')
+    const project = await this.deps.db.projects.getProject(userId, conversation.projectId)
+    if (!project) fail(404, 'project_not_found')
+    const report = await this.deps.db.chat.usageReport(userId, unit, undefined, undefined, undefined, conversation.projectId)
+    return { projectId: conversation.projectId, unit, report }
+  }
+
+  async conversationAttachments(userId: string, conversationId: string) {
+    const conversation = await this.deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation) fail(404, 'conversation_not_found')
+    const history = await this.deps.db.chat.historyFiles(userId, conversationId)
+    const seen = new Set<string>()
+    const attachments = history.flatMap(entry => entry.attachments ?? []).flatMap(attachment => {
+      if (seen.has(attachment.path)) return []
+      seen.add(attachment.path)
+      return [{ uploadId: attachment.path, name: attachment.name, mimeType: attachment.mimeType,
+        size: attachment.size, conversationId }]
+    })
+    return { conversationId, projectId: conversation.projectId ?? null, attachments }
+  }
+
   async listProjects(userId: string) {
     return Promise.all((await this.deps.db.projects.listProjects(userId)).map(async project => {
       const detail = await this.deps.db.projects.getProject(userId, project.id)
@@ -54,35 +121,66 @@ export class LocalMakeCore implements MakeCore {
       path: machine.directories?.projectWorkdir.path || machine.path }
   }
 
-  private async scan(userId: string, projectId: string, subproject = '.'): Promise<ScannedFile[]> {
+  private async scan(
+    userId: string,
+    projectId: string,
+    subproject = '.',
+    options: { include(name: string): boolean; read(name: string): boolean; partial?: boolean; deferred?(name: string): boolean },
+  ): Promise<ScannedFile[]> {
     const machine = await this.projectMachine(userId, projectId)
     const fs = this.machineFs!
     const root = join(machine.path, subproject)
     const pending = [{ absolute: root, relative: '.' }]
     const files: ScannedFile[] = []
     let total = 0
+    let entries = 0
+    const deferred: Array<{ relative: string; size: number }> = []
+    const readFile = async (relative: string, size: number | undefined): Promise<boolean> => {
+      if ((size ?? 0) > MAX_FILE_BYTES) return true
+      const read = await fs.read(machine.agentId, join(root, relative))
+      const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
+      if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) return true
+      if (total + bytes.byteLength > MAX_TOTAL_BYTES) {
+        // Partial scans keep what fits instead of failing the whole request.
+        if (options.partial) return true
+        fail(413, 'project_byte_limit_exceeded')
+      }
+      total += bytes.byteLength
+      if (files.length >= MAX_FILES) { if (options.partial) return false; fail(413, 'project_file_limit_exceeded') }
+      files.push({ path: relative, content: bytes.toString('utf8') })
+      return true
+    }
     while (pending.length) {
       const current = pending.shift()!
       const result = await fs.list(machine.agentId, current.absolute)
       for (const entry of result.entries ?? []) {
-        if (files.length + pending.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
+        entries += 1
+        if (entries > MAX_TRAVERSAL_ENTRIES) fail(413, 'project_file_limit_exceeded')
         const relative = current.relative === '.' ? entry.name : `${current.relative}/${entry.name}`
         if (entry.kind === 'dir') { if (!SKIP_DIRS.has(entry.name)) pending.push({ absolute: join(root, relative), relative }); continue }
-        if (entry.kind !== 'file' || (entry.size ?? 0) > MAX_FILE_BYTES) continue
-        if (!/\.(?:json|css|scss|sass|less|ts|tsx|js|jsx)$/i.test(entry.name)) continue
-        const read = await fs.read(machine.agentId, join(root, relative))
-        const bytes = Buffer.from(read.dataBase64 ?? '', 'base64')
-        if (read.truncated || bytes.byteLength > MAX_FILE_BYTES) continue
-        total += bytes.byteLength
-        if (total > MAX_TOTAL_BYTES) fail(413, 'project_byte_limit_exceeded')
-        files.push({ path: relative, content: bytes.toString('utf8') })
+        if (entry.kind !== 'file' || !options.include(entry.name)) continue
+        if (!options.read(entry.name)) {
+          if (files.length >= MAX_FILES) fail(413, 'project_file_limit_exceeded')
+          files.push({ path: relative, content: '' })
+          continue
+        }
+        if (options.deferred?.(entry.name)) { deferred.push({ relative, size: entry.size ?? 0 }); continue }
+        if (!await readFile(relative, entry.size)) return files
       }
+    }
+    // Deferred files (component sources) use only the budget left after design files, smallest first.
+    for (const item of deferred.sort((left, right) => left.size - right.size)) {
+      if (total + item.size > MAX_TOTAL_BYTES) break
+      if (!await readFile(item.relative, item.size)) break
     }
     return files
   }
 
   async projectStructure(userId: string, projectId: string): Promise<ProjectSubproject[]> {
-    const files = await this.scan(userId, projectId)
+    const files = await this.scan(userId, projectId, '.', {
+      include: name => name === 'package.json' || /\.stories\.[jt]sx?$/i.test(name) || /\.(?:css|scss|sass|less)$/i.test(name),
+      read: name => name === 'package.json',
+    })
     const packages = files.filter(file => /(^|\/)package\.json$/.test(file.path))
     const result: ProjectSubproject[] = []
     for (const file of packages) {
@@ -98,8 +196,40 @@ export class LocalMakeCore implements MakeCore {
     return result.length ? result : [{ path: '.', name: 'root', kind: 'other', stories: 0, styleFiles: [] }]
   }
 
+  async projectReferenceList(userId: string, projectId: string, subprojectPath: string, dir: string): Promise<ProjectReferenceList> {
+    const machine = await this.projectMachine(userId, projectId)
+    const relative = scopedPath(subprojectPath, dir)
+    const result = await this.machineFs!.list(machine.agentId, join(machine.path, relative))
+    return {
+      path: dir,
+      entries: (result.entries ?? []).filter(entry => safeEntryName(entry.name) && (entry.kind === 'file' || entry.kind === 'dir')).map(entry => ({
+        path: dir === '.' ? entry.name : `${dir}/${entry.name}`,
+        kind: entry.kind === 'dir' ? 'directory' as const : 'file' as const,
+        ...(entry.size === undefined ? {} : { size: entry.size }),
+      })),
+    }
+  }
+
+  async projectReferenceRead(userId: string, projectId: string, subprojectPath: string, path: string): Promise<ProjectReferenceFile> {
+    const machine = await this.projectMachine(userId, projectId)
+    const relative = scopedPath(subprojectPath, path)
+    const result = await this.machineFs!.read(machine.agentId, join(machine.path, relative))
+    const bytes = Buffer.from(result.dataBase64 ?? '', 'base64')
+    if (bytes.byteLength > 2 * 1024 * 1024) fail(413, 'reference_file_too_large')
+    if (bytes.includes(0)) fail(415, 'reference_file_binary')
+    let content: string
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+    catch { fail(415, 'reference_file_binary') }
+    return { path, content, size: bytes.byteLength }
+  }
+
   async projectDesign(userId: string, projectId: string, subprojectPath: string): Promise<ProjectDesign> {
-    const files = await this.scan(userId, projectId, subprojectPath)
+    const files = await this.scan(userId, projectId, subprojectPath, {
+      include: isDesignFile,
+      read: name => !/\.stories\.[jt]sx?$/i.test(name),
+      deferred: isComponentFile,
+      partial: true,
+    })
     const tokens: ProjectDesign['tokens'] = []; const themes = new Set<string>(); const components: ProjectDesign['components'] = []
     for (const file of files) {
       if (/\.(?:css|scss|sass|less)$/i.test(file.path)) {
@@ -123,7 +253,7 @@ export class LocalMakeCore implements MakeCore {
     return { tokens, themes: [...themes].sort(), components }
   }
 
-  async projectGit(userId: string, projectId: string, operation: ProjectGitOperation): Promise<ProjectGitResult> {
+  async projectGit(userId: string, projectId: string, operation: ProjectGitOperation | { op: 'compare'; base: string; head: string; fetch?: boolean }): Promise<ProjectGitResult> {
     if (!this.deps.git) fail(501, 'project_git_unavailable')
     const machine = await this.projectMachine(userId, projectId)
     const workspace = buildGitWorkspaceId({ kind: 'project-machine', agentId: machine.agentId })
@@ -132,6 +262,10 @@ export class LocalMakeCore implements MakeCore {
   standPreview(userId: string, projectId: string, operation: PreviewOperation) { return this.deps.standPreview ? this.deps.standPreview(userId, projectId, operation) : fail(503, 'stand_preview_unavailable') }
   createTransferTask(userId: string, args: CreateTransferTaskArgs) { return this.deps.transferTask ? this.deps.transferTask(userId, args) : fail(501, 'transfer_task_unavailable') }
   makeStand(userId: string, conversationId: string, operation: MakeStandOperation) { return this.deps.makeStand ? this.deps.makeStand(userId, conversationId, operation) : fail(501, 'make_stand_unavailable') }
+  userStand(userId: string, operation: UserStandOperation): Promise<UserStandResult> { return this.deps.userStand ? this.deps.userStand(userId, operation) : fail(503, 'stand_proxy_unavailable') }
+  openStandWindow(userId: string, conversationId: string, standId: string, url: string, current?: MakeStandWindow | null): Promise<MakeStandWindow> {
+    return this.deps.openStandWindow ? this.deps.openStandWindow(userId, conversationId, standId, url, current) : fail(503, 'stand_window_unavailable')
+  }
   // Project notes are not hosted by Core yet; Make reports the 501 to the assistant.
   projectNotesRead(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
   projectNotesUpdate(): Promise<{ content: string }> { return fail(501, 'project_notes_unavailable') }
@@ -170,11 +304,21 @@ export class LocalMakeCore implements MakeCore {
   boardChanged(projectId: string): void { this.deps.boardChanged?.(projectId) }
 }
 
-export async function runProjectGit(git: GitWorkspaceService, userId: string, projectId: string, workspace: string, operation: ProjectGitOperation): Promise<ProjectGitResult> {
+export async function runProjectGit(git: GitWorkspaceService, userId: string, projectId: string, workspace: string, operation: ProjectGitOperation | { op: 'compare'; base: string; head: string; fetch?: boolean }): Promise<ProjectGitResult> {
     if (operation.op === 'status') { const value = await git.status(userId, projectId, workspace); return { op: 'status', branch: value.branch, ahead: value.ahead, behind: value.behind, files: value.changes.map(item => ({ path: item.path, index: item.staged ? 'M' : ' ', workingTree: item.staged ? ' ' : 'M' })) } }
     if (operation.op === 'branches') { const value = await git.branches(userId, projectId, workspace, false); return { op: 'branches', branches: value.branches.map(item => ({ name: item.name, current: item.name === value.current, remote: item.remote })) } }
+    // The RPC compatibility schema validates this result until the owner contract is pinned.
+    if (operation.op === 'compare') return { op: 'compare', ...await git.compare(userId, projectId, workspace, operation.base, operation.head, operation.fetch) } as unknown as ProjectGitResult
     if (operation.op === 'pull') { const value = await git.pull(userId, projectId, workspace); return { op: 'pull', output: `pulled ${value.pulled}` } }
     if (operation.op === 'commit') { const value = await git.commit(userId, projectId, workspace, { message: operation.message, paths: operation.files }); return { op: 'commit', commit: value.sha } }
     if (operation.op === 'push') { const value = await git.push(userId, projectId, workspace); return { op: 'push', output: `${value.branch} ${value.sha}` } }
-    await git.createBranch(userId, projectId, workspace, operation.name); return { op: 'branch', name: operation.name }
+    if (operation.op === 'branch') { await git.createBranch(userId, projectId, workspace, operation.name, operation.from); return { op: 'branch', name: operation.name } }
+    if (operation.op === 'checkout') { await git.checkout(userId, projectId, workspace, operation.name, false); return { op: 'checkout', name: operation.name } }
+    if (operation.op === 'merge') {
+      const value = await git.merge(userId, projectId, workspace, operation.from)
+      return value.conflicts.length
+        ? { op: 'merge', status: 'conflict', conflicts: value.conflicts }
+        : { op: 'merge', status: 'ok', head: value.head ?? value.status.head ?? 'HEAD' }
+    }
+    throw new Error('git_operation_unsupported')
 }

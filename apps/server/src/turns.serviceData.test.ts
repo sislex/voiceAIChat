@@ -31,12 +31,17 @@ for (const enabled of [false, true]) {
         else await turns.flushInterrupted()
         await turns.idle()
         const persisted = (await db.chat.listMessages('admin', c.id)).find(message => message.role === 'ai')!
-        expect(persisted.meta?.activity?.[0].raw).toBe('private trace')
-        expect(persisted.meta?.request?.prompt).toBeTruthy()
+        const service = await db.chat.messageServiceData('admin', c.id, persisted.id)
+        expect(service?.activity?.[0].raw).toBe('private trace')
+        expect(service?.request?.prompt).toBeTruthy()
+        expect(service?.request?.messages).toBeUndefined()
+        expect(service?.request?.messageCount).toBe(1)
+        expect(persisted.meta?.activity).toBeUndefined()
+        expect(persisted.meta?.request).toBeUndefined()
         const done = events.find(event => event.t === 'claude.done')
-        const expected = enabled ? persisted.meta : stripServiceData(persisted.meta!)
+        const expected = stripServiceData(persisted.meta!)
         expect(done).toMatchObject({ t: 'claude.done', meta: expected, message: { meta: expected } })
-        if (done?.t === 'claude.done' && !enabled) {
+        if (done?.t === 'claude.done') {
           expect(done.meta?.activity).toBeUndefined()
           expect(done.message?.meta?.request?.prompt).toBeUndefined()
         }

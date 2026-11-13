@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { makeStandResultSchema, validateMakeStandResult, type MakeStandOperation } from '@voicechat/make-contracts'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
-import { MakeProjectAdapters } from './projectAdapters.js'
+import { extendedStandOperationSchema, MakeProjectAdapters } from './projectAdapters.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 import { makeStandPreviewAccess } from './previewAccess.js'
 import type { StandMachines } from './standWorkspace.js'
@@ -27,7 +27,7 @@ function fixture(component = 'core-ui') {
     identity: { getUser: vi.fn(async () => user) },
     chat: { conversationOwner: vi.fn(async () => 'alice'), getConversation: vi.fn(async () => ({ assistantKind: 'make', title: 'New UI' })), makeConversationProject: vi.fn(async () => 'project') },
     projects: { listProjects: vi.fn(async () => projects), getProject: vi.fn(async (_u, id) => projects.find(p => p.id === id) ?? null) },
-    environments: { listEnvironments: vi.fn(async (_u, id) => id === 'host' ? [base] : []) }
+    environments: { listEnvironments: vi.fn(async (_u, id) => id === 'host' ? [base] : []), listSettings: vi.fn(async () => [{ key: 'SISLEXA_STAND_SHARE', secret: false, value: '/stand/shared' }]) }
   }
   const git = {
     resolve: vi.fn(async () => ({ agentId: 'agent', path: '/work/ui' })),
@@ -35,6 +35,7 @@ function fixture(component = 'core-ui') {
     branches: vi.fn(async () => ({ current: 'make/test', branches: [{ name: 'make/test', remote: false }] })),
     pull: vi.fn(async () => ({ pulled: 1 })), commit: vi.fn(async () => ({ sha: 'sha' })),
     push: vi.fn(async () => ({ branch: 'make/test', sha: 'sha' })), createBranch: vi.fn(async () => ({})),
+    compare: vi.fn(async () => ({ ahead: 0, behind: 2, mergeBase: 'a'.repeat(40), contained: true })),
     atWorkingCopy: vi.fn()
   }
   git.atWorkingCopy.mockReturnValue(git)
@@ -76,6 +77,85 @@ function fixture(component = 'core-ui') {
 }
 
 describe('makeStand concrete Kanban and agent adapters', () => {
+  it.each([true, false])('compares the conversation worktree read-only (contained=%s)', async contained => {
+    const f = fixture()
+    f.bind()
+    f.git.compare.mockResolvedValue({ ahead: contained ? 0 : 1, behind: 2, mergeBase: 'a'.repeat(40), contained })
+    const result = await f.adapter.makeStand('alice', 'conversation', extendedStandOperationSchema.parse({
+      op: 'git', operation: { op: 'compare', base: 'origin/dev', head: 'make/test', fetch: true }
+    }))
+    expect(result.git).toMatchObject({ op: 'compare', contained, ahead: contained ? 0 : 1, behind: 2 })
+    expect(f.git.compare).toHaveBeenCalledWith('alice', 'project', expect.any(String), 'origin/dev', 'make/test', true)
+    expect(f.git.resolve.mock.calls.every(call => (call as unknown[])[3] && ((call as unknown[])[3] as { write: boolean }).write === false)).toBe(true)
+    expect(f.git.atWorkingCopy).toHaveBeenCalledWith('alice', 'project', expect.any(String), root)
+    expect(f.machines.fsWrite).not.toHaveBeenCalled()
+  })
+
+  it('passes the host environment shared root to local clone preparation', async () => {
+    const f = fixture('core')
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    await f.call({ op: 'attach', ...identity })
+    expect(f.db.environments.listSettings).toHaveBeenCalledWith('alice', 'host', 'base')
+    const command = f.machines.exec.mock.calls[0]![1]
+    const payload = command.match(/'([A-Za-z0-9+/=]+)'$/)![1]!
+    expect(JSON.parse(Buffer.from(payload, 'base64').toString())).toMatchObject({ local: true, seedRoot: '/stand/shared' })
+  })
+  it('preserves the occupied worktree path in a component attachment error', async () => {
+    const f = fixture('core')
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components['core-ui'] = { repository: 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' }
+    const error = 'branch_checked_out: /work/old-ui/make-worktrees/conversation'
+    f.machines.exec.mockResolvedValue({ exitCode: 1, timedOut: false, output: JSON.stringify({ error }) })
+    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'component', action: 'attach', component: 'core-ui', ...identity })
+    expect(result).toMatchObject({ phase: 'failed', error })
+    makeStandResultSchema.parse(result)
+    const payload = f.machines.exec.mock.calls[0]![1].match(/'([A-Za-z0-9+/=]+)'$/)![1]!
+    expect(JSON.parse(Buffer.from(payload, 'base64').toString())).toMatchObject({ local: true, defaultBranch: 'make/conversation-conversa', conversation: 'conversation-core-ui', baseBranch: 'dev' })
+    expect(f.fetchImpl.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
+  it('routes a secondary component to its own checkout and retains the primary binding', async () => {
+    const f = fixture('core'); f.bind()
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components.make = { repository: 'sislex/make', source: 'base', sha: 'abc' }
+    f.stand.live.push({ component: 'make', workingCopyPath: root + '-make', branch: 'make/conversation-conversa', head: 'sha' })
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: root + '-make', target: root + '-make/a.ts', directory: false }) })
+    const result = await f.adapter.makeStand('alice', 'conversation', { op: 'files', action: 'write', component: 'make', path: 'a.ts', content: 'updated' })
+    expect(result.phase).toBe('ready')
+    expect(result.component).toBe('core')
+    expect(result.workingCopyPath).toBe(root)
+    expect(f.machines.fsWrite).toHaveBeenCalledWith('agent', root + '-make/a.ts', Buffer.from('updated').toString('base64'))
+    expect(result.components?.map(c => c.component)).toEqual(['core', 'make'])
+    f.base.mode = 'managed'
+    expect((await f.adapter.makeStand('alice', 'conversation', { op: 'git', component: 'make', operation: { op: 'status' } })).phase).toBe('failed')
+  })
+
+  it.each(['make', 'core-ui'] as const)('runs status, commit and push in the attached %s repository', async component => {
+    const f = fixture('core'); f.bind()
+    f.base.mode = 'local-stand'
+    Object.assign(f.stand, { baseEnvironmentId: 'base' })
+    f.stand.components[component] = { repository: component === 'make' ? 'sislex/make' : 'sislex/sislexa-core-ui', source: 'base', sha: 'abc' }
+    const secondaryRoot = root + '-' + component
+    f.stand.live.push({ component, workingCopyPath: secondaryRoot, branch: 'make/conversation-conversa', head: 'sha' })
+    f.machines.exec.mockResolvedValue({ exitCode: 0, timedOut: false, output: JSON.stringify({ root: secondaryRoot, target: secondaryRoot, directory: true }) })
+    const operations: Array<Extract<MakeStandOperation, { op: 'git' }>['operation']> = [
+      { op: 'status' }, { op: 'commit', message: 'Update component', files: ['a.ts'] }, { op: 'push' }
+    ]
+    for (const operation of operations) {
+      const result = await f.adapter.makeStand('alice', 'conversation', { op: 'git', component, operation })
+      expect(result.phase).toBe('ready')
+      expect(result.git?.op).toBe(operation.op)
+      expect(result).toMatchObject({ component: 'core', workingCopyPath: root, branch: 'make/test' })
+    }
+    expect(f.git.atWorkingCopy).toHaveBeenCalledTimes(3)
+    expect(f.git.atWorkingCopy).toHaveBeenLastCalledWith('alice', 'project', expect.any(String), secondaryRoot)
+    expect(f.git.commit).toHaveBeenCalled()
+    expect(f.git.push).toHaveBeenCalled()
+  })
+
   it('keeps a missing manifest creating for a running create job', async () => {
     const f = fixture()
     f.jobs.push({ kind: 'create', component: null, status: 'running', error: null })
@@ -386,4 +466,42 @@ it('exposes inspected conversation worktrees independently of the live stand bra
   f.machines.isOnline.mockReturnValue(false); f.machines.exec.mockClear()
   expect((await f.call({ op: 'options' })).options?.stands[0]).not.toHaveProperty('conversationWorktree')
   expect(f.machines.exec).not.toHaveBeenCalled()
+})
+
+describe('makeStand project preview stands', () => {
+  function previewFixture(config: unknown = { command: 'npm start', port: 4200 }) {
+    const f = fixture()
+    f.project.gitUrl = 'git@github.com:acme/piara.git'
+    let status = 'starting'
+    const previews = {
+      previewStandId: (agent: string) => 'pp-' + agent,
+      config: vi.fn(async () => config),
+      start: vi.fn(async (_u: string, _p: string, agent: string) => ({ standId: 'pp-' + agent, status, root: '/work/ui' })),
+      status: vi.fn(async (_u: string, _p: string, agent: string) => ({ standId: 'pp-' + agent, status, root: '/work/ui' })),
+      machine: vi.fn(async () => ({ root: '/work/ui' })), check: vi.fn()
+    }
+    Object.assign(f.deps, { previews, previewAccess: f.previewAccess })
+    return { ...f, previews, setStatus: (value: string) => { status = value } }
+  }
+
+  it('offers machines, starts the command and reports the proxied preview when running', async () => {
+    const f = previewFixture()
+    const options = await f.call({ op: 'options' })
+    expect(options.options?.machines).toEqual([{ agentId: 'agent', name: 'Live Mac', online: true, canCreate: true }])
+    const created = await f.call({ op: 'create', agentId: 'agent' })
+    expect(created).toMatchObject({ standId: 'pp-agent', hostProjectId: 'project', machineId: 'agent', phase: 'creating', component: null })
+    expect(f.previews.start).toHaveBeenCalledWith('alice', 'project', 'agent')
+    expect(await f.call({ op: 'status', standId: 'pp-agent', hostProjectId: 'project' })).toMatchObject({ phase: 'creating' })
+    f.setStatus('running')
+    expect(await f.call({ op: 'status', standId: 'pp-agent', hostProjectId: 'project' }))
+      .toMatchObject({ phase: 'ready', previewUrl: 'http://core.test:24032/', workingCopyPath: '/work/ui', branch: null })
+    expect(f.previewAccess).toHaveBeenCalledWith('alice', 'project', 'pp-agent')
+    expect(f.fetchImpl).not.toHaveBeenCalledWith(expect.stringContaining('/dev-stands'), expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('explains a missing preview command for projects without a component', async () => {
+    const f = previewFixture(null)
+    const options = await f.call({ op: 'options' })
+    expect(options.options?.machines[0]).toMatchObject({ canCreate: false, reason: 'preview_command_missing' })
+  })
 })

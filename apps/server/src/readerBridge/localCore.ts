@@ -56,7 +56,15 @@ export function createLocalReaderCore(deps: LocalReaderCoreDeps): ReaderCore {
     projectResource: (request) => readerProjectResource(deps.app, request),
     async previewAction(userId, conversationId, action, timeoutMs) {
       if (!await userHasCapability(deps.db, userId, 'web-reader.use')) throw new RpcError(403, TARIFF_DENIED)
-      return deps.relay.request(userId, conversationId, action, timeoutMs)
+      const outcome = await deps.relay.request(userId, conversationId, action, timeoutMs)
+      if (!outcome.ok && /^Панель Web Reader (не подключена:|не ответила:)/.test(outcome.error ?? '')) {
+        const conversation = await deps.db.chat.getConversation(userId, conversationId)
+        if (conversation?.assistantKind === 'make') return {
+          ok: false,
+          error: 'make_preview_closed: превью Make не подключено или не ответило вовремя; откройте превью Make и повторите действие.'
+        }
+      }
+      return outcome
     },
     issuePreviewRunKey: (userId) => deps.runKeys.issue(userId),
     listPreviews: () => deps.previews(),

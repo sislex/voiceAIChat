@@ -1,3 +1,4 @@
+import { registerCoreOAuth } from "./auth/oauth.js"
 import { effectiveUser, enabledMcp, localApplication, registerDeploymentApplications } from './deploymentApplications.js'
 import { disabledMake, disabledImageStudio, disabledPlaywrightReader } from './disabledApplications.js'
 import { standProxyKanban } from './standProxyKanban.js'
@@ -8,6 +9,10 @@ import { registerHttpCompression } from './httpCompression.js'
 import { BrowserChatSessions, browserOriginAllowed } from './auth/browserChat.js'
 import { integrationBearer, registerIntegrationTokenGuard } from './auth/integrationTokens.js'
 import { registerIntegrationTokenRoutes } from './routes/integrationTokens.js'
+import { registerProjectStandPreviewRoutes } from './routes/projectStandPreview.js'
+import { ProjectPreviews } from './makeBridge/projectPreview.js'
+import { UserStands } from './makeBridge/userStand.js'
+import { StandResearch, type StandResearchRunner } from './makeBridge/standResearch.js'
 import { ApplicationTickets, applicationTicketOptions, registerApplicationTickets, type ApplicationTicketOptions } from './routes/applicationTickets.js'
 import { registerIntegrationIngress } from './routes/integrationIngress.js'
 import { createVerifiedChatApplicationContext, CHAT_PERMISSIONS, APPLICATION_ASSISTANT_KIND, isTicketDelegationToken, type ApplicationId } from '@voicechat/shared'
@@ -16,9 +21,9 @@ import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
 import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
-import { registerAccountAccess, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
+import { registerAccountAccess, commandAccessError, TARIFF_DENIED, userHasCapability } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
-import { sameAccountContext } from '@sislexa/identity/server/users/productPolicy'
+import { sameAccountContext, accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
 import { registerAnalyticsProxy } from './analyticsBridge.js'
 import { AccountingStore } from './billing/accountingStore.js'
@@ -30,7 +35,7 @@ import {registerRemoteIdentity} from '@sislexa/identity/client/server'
 import { IMAGE_STUDIO_GENERATION_TIMEOUT_MS } from '@voicechat/image-studio-contracts/imageStudioInternal'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { createComponentRuntime } from '@sislexa/component-runtime'
+import { createComponentRuntime, verifyCoreMcpTokenWithSecret } from '@sislexa/component-runtime'
 import { registerApplicationFrontends } from './routes/applicationFrontends.js'
 // Сборка Fastify-приложения (HTTP + WebSocket). Экспортируется отдельно от запуска,
 // чтобы тестировать через fastify.inject / ws-клиент.
@@ -40,7 +45,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { join, extname, dirname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { SlidingWindowLimiter, applicationRuntimeMetadata, ciToolOutputLimits, REST, imageBlock, parseImages, type MessageAttachment, type HealthResponse, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import { type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult } from '@voicechat/image-studio-contracts/imageRetouch'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -180,7 +185,7 @@ import { createReaderModule } from '@sislexa/web-reader'
 import { previewMcpBaseUrlOf } from './reader/mcpBase.js'
 import { createLocalReaderCore } from './readerBridge/localCore.js'
 import { registerMakePreviewInspector, registerReaderProxy } from './readerBridge/proxy.js'
-import { makeStandPreviewAccess } from './makeBridge/previewAccess.js'
+import { makeStandPreviewAccess, makeUserStandPreviewAccess } from './makeBridge/previewAccess.js'
 import { registerBrowserShotRoutes } from './routes/browserShots.js'
 import { createPlaywrightReaderModule, createRemotePlaywrightReader, type PlaywrightReaderService } from '@sislexa/playwright-reader'
 import { createLocalPlaywrightReaderCore } from './playwrightReaderBridge/localCore.js'
@@ -200,7 +205,14 @@ const RELEASE_TASK = process.env.VC_RELEASE_TASK?.trim() || null
 
 import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historicalEvidence.js'
 
+import { createStorageRuntime } from './fileStorage/runtime.js'
+import { createRemoteStorageRuntime } from './fileStorage/remote.js'
+import { registerUploadParsers, readUpload, bufferUpload } from './uploadBody.js'
+import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
+import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
+
 export interface BuildOptions {
+  storageNodes?: StorageNodeClient[]
   /** Trusted existing-run authority and commissioned journal source; absent means fail closed. */
   historicalEvidence?: HistoricalEvidencePort
   applicationTickets?: ApplicationTicketOptions
@@ -393,7 +405,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerIntegrationTokenGuard(app)
   const corsOrigins = opts.config.corsOrigins
   const corsMethods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-  const corsHeaders = 'Content-Type, Authorization, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id'
+  const corsHeaders = 'Content-Type, Authorization, x-csrf-token, x-vc-csrf, x-vc-client-version, x-sislexa-tenant-id, x-sislexa-delegation, x-request-id, name, conversationid, agentid, mimetype'
   app.decorateRequest('corsAllowed', false)
   // CORS обязан отработать до auth: preflight не несёт ни body, ни credentials.
   app.addHook('onRequest', async (req, reply) => {
@@ -485,7 +497,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   // Preview may request migrations without the default test account.
-  if (!(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
+  // Managed Identity owns account bootstrap; its availability must not gate Core startup.
+  if (!managedIdentity && !(process.env.VC_DEVELOPMENT_PREVIEW === 'true' && process.env.VC_PREVIEW_SEED === 'none')) {
     await db.identity.ensureAdmin(opts.config.adminPassword)
   }
   // Мейлер один на приложение: им пользуются и подтверждение регистрации, и
@@ -513,7 +526,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }) : undefined) : undefined
   // External applications with a service credential receive Core-issued delegations from redeemed tickets.
   const ticketStore = ticketOptions.tickets ?? new ApplicationTickets()
-  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'external')
+  const ticketApplications = (id: ApplicationId) => deployment.applications.some(a => a.id === id && a.enabled
+    && (a.location === 'external' || id === 'make' && !!ticketOptions.serviceTokens?.make))
     && !!ticketOptions.credentials[id]
   const ticketDelegation = deployment.applications.some(a => ticketApplications(a.id))
     ? { delegations: ticketStore.delegations, enabled: ticketApplications } : undefined
@@ -540,6 +554,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const delegation = delegationClient || ticketDelegation ? new ChatDelegation(delegationClient, db, Date.now,
     component?.config.environmentId ?? opts.billingTransport?.environmentId ?? 'legacy', ticketDelegation) : undefined
   // Keep Identity session routes encapsulated; Core composes resource admission.
+  let oauth: Awaited<ReturnType<typeof registerCoreOAuth>> | undefined
+  if (opts.config.oauth) {
+    // Reuse the Identity port without exposing legacy login routes in OAuth mode.
+    // This host never listens; its lifecycle follows Core.
+    const bearerHost = Fastify()
+    app.addHook('onClose', async () => { await bearerHost.close() })
+    const identity = managedIdentity
+      ? await registerRemoteIdentity(bearerHost, db, managedIdentity, sessionSecret, authOptions)
+      : await registerAuth(bearerHost, db, sessionSecret, authOptions)
+    oauth = await registerCoreOAuth(app, db, opts.config.oauth, identity.authenticate)
+  }
   let sessionAuthenticate: AuthenticateFn
   const makeRequests = new MakeRequestAuthority(async userId => {
     const user = await db.identity.getUser(userId)
@@ -548,10 +573,36 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const authenticateRaw: AuthenticateFn = async req => {
     const makeRequest = await makeRequests.authenticate(req)
     if (makeRequest) return makeRequest
+    // MCP has no browser session. Storage admits its verified user with Make's service credential.
+    const storageMcp = req.headers['x-sislexa-mcp-token']
+    if (storageMcp !== undefined && req.url.split('?')[0]!.startsWith('/api/storage/')) {
+      try {
+        if (typeof storageMcp !== 'string' || req.headers.cookie || req.headers[DELEGATION_HEADER] !== undefined) throw new DelegationDenied()
+        const shared = !!ticketOptions.credentials.make && ticketApplications('make')
+          && sameSecret(req.headers.authorization, 'Bearer ' + ticketOptions.credentials.make)
+        const service = shared || (component ? component.authorize(req.headers.authorization, 'make.core').ok
+          : !!opts.config.internalToken && sameSecret(req.headers.authorization, 'Bearer ' + opts.config.internalToken))
+        if (!service) throw new DelegationDenied()
+        const claims = verifyCoreMcpTokenWithSecret((shared ? ticketOptions.mcpSecrets?.make : opts.config.mcpSecret) ?? '', storageMcp)
+        if (claims.application !== 'make' || claims.coreId !== (shared ? deployment.coreId : 'legacy')) throw new DelegationDenied()
+        const owner = await makeCore.conversationOwner(claims.conversationId)
+        if (!owner) throw new DelegationDenied()
+        // A task source capability cannot become user-wide Storage access.
+        if (claims.scope || owner !== claims.userId) throw new DelegationDenied()
+        const conversation = await db.chat.getConversation(owner, claims.conversationId)
+        const row = await db.identity.getUser(claims.userId)
+        const access = await db.identity.getAccountAccess(claims.userId, conversation?.tenantId ?? undefined)
+        if (!conversation || !row || row.blocked || row.mustChangePassword || !access
+          || (conversation.tenantId && access.tenant.id !== conversation.tenantId)) throw new DelegationDenied()
+        const tenant = req.headers['x-sislexa-tenant-id']
+        if (tenant !== undefined && tenant !== access.tenant.id) throw new DelegationDenied()
+        return { ok: true, user: { name: claims.userId, role: access.systemRole, account: accountContext(access) } }
+      } catch { return { ok: false, status: 403, error: 'delegation_denied' } }
+    }
     if (integrationBearer(req.headers.authorization)) return { ok: false, status: 403, error: 'integration_access_denied' }
     let grant = req.headers[DELEGATION_HEADER]
     if (grant === undefined) {
-      if (req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
+      if (!oauth && req.url.split('?')[0] === '/api/chat/session' && req.method === 'POST'
         && req.headers.origin && req.headers.authorization === undefined) {
         // Issuance is read-only; the onRequest origin guard protects this cookie exchange.
         return sessionAuthenticate({ method: 'GET', url: req.url, headers: req.headers })
@@ -569,7 +620,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!delegation || typeof grant !== 'string') throw new DelegationDenied()
       // Ticket delegations may also create a conversation of their application's kind (checked by the route).
       const createsConversation = req.method === 'POST' && req.url.split('?')[0] === '/api/conversations' && isTicketDelegationToken(grant)
-      if (!createsConversation && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
+      const makeApi = isTicketDelegationToken(grant) && delegation.ticketGrant(grant)?.applicationId === 'make'
+        && /^\/api\/(?:storage(?:\/|$)|make(?:\/|$)|preview\/make(?:-shared)?(?:\/|$))/.test(req.url)
+      if (!createsConversation && !makeApi && !/^\/(?:ws$|api\/chat\/(?:context|session)(?:\?|$)|api\/conversations\/)/.test(req.url)) throw new DelegationDenied()
       if (isTicketDelegationToken(grant)) {
         // Ticket delegations are bearer-bound to the issuing application's own service credential.
         const ticket = delegation.ticketGrant(grant)
@@ -593,6 +646,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerAuthGuard(app, db, authenticate, req => req.headers[DELEGATION_HEADER] === undefined
     ? verifyToken(req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie), sessionSecret)?.sid ?? null : null)
   await app.register(async identityApp => {
+    if (oauth) { sessionAuthenticate = oauth.authenticate; return }
     const identity = managedIdentity
       ? await registerRemoteIdentity(identityApp, db, managedIdentity, sessionSecret, authOptions)
       : await registerAuth(identityApp, db, sessionSecret, authOptions)
@@ -689,7 +743,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const verdict = await sessionAuthenticate({ method: 'GET', url: '/api/dev-stand-access', headers: { cookie } })
     return verdict.ok && !verdict.user.mustChangePassword ? verdict.user.name : null
   }
-  const standProxy = new StandProxy({
+  const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
+  const projectPreviews = new ProjectPreviews({ db, machines: agentRegistry, gate: commandGate, reservedPorts: proxyPorts(opts.config.standProxyPorts) })
+  // User-scoped Make stands (stands library); the preview lease closes over `standProxy` lazily.
+  const userStands: UserStands = new UserStands({
+    db, machines: agentRegistry, previews: projectPreviews, reservedPorts: proxyPorts(opts.config.standProxyPorts), gate: commandGate,
+    releaseAccess: async (user: string, stand: string) => { await standProxy.release(user, stand) },
+    previewAccess: proxyPorts(opts.config.standProxyPorts).length ? (user: string, stand: string): Promise<{ url: string }> => makeUserStandPreviewAccess(
+      standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost'))(user, stand) : undefined,
+    // The runner client is created further down; resolve it per call.
+    research: new StandResearch({ runner: () => browserRunner as StandResearchRunner | undefined })
+  })
+  const kanbanStand = standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+  const standProxy: StandProxy = new StandProxy({
+    secret: sessionSecret,
     ports: proxyPorts(opts.config.standProxyPorts), publicHost: opts.config.standProxyPublicHost,
     publicScheme: opts.config.standProxyPublicScheme,
     session: standSession, member: (user, project) => db.projects.isProjectMember(user, project),
@@ -699,10 +766,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const header = (name: string, fallback: string) => { const value = reply.headers[name]; return typeof value === 'string' ? value : Array.isArray(value) ? value[0] ?? fallback : fallback }
       return { statusCode: reply.statusCode, headers: { 'content-type': header('content-type', 'application/javascript; charset=utf-8'), 'cache-control': header('cache-control', 'no-store') }, body: Buffer.from(reply.rawPayload) }
     },
-    stand: standProxyKanban(opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined, makeRequests, opts.makeKanbanFetch)
+    previewInspectorScript: async (parentOrigin, cookie) => {
+      const reply = await app.inject({ method: 'GET', url: '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin), headers: { cookie } })
+      return { statusCode: reply.statusCode, headers: { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' }, body: Buffer.from(reply.rawPayload) }
+    },
+    stand: (user, project, stand) => ProjectPreviews.agentOf(stand) ? projectPreviews.target(user, project, stand) : kanbanStand(user, project, stand),
+    userStand: (user, stand) => userStands.target(user, stand)
   })
   registerStandProxy(app, standProxy, standSession)
-  const commandGate = machinesModule?.commandGate ?? createDbCommandGate(db)
   // Во встроенном режиме ядро само отдаёт машины соседям (админке) тем же внутренним API, что и процесс машин.
   if (machinesModule && opts.config.internalToken) registerMachinesInternalApi(app, { registry: machinesModule.registry, token: opts.config.internalToken })
   if (remoteMachines) {
@@ -731,9 +802,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return operation
   }
   let conversationSummary: ConversationSummaryService | undefined
+  const storageRuntime = opts.config.fileStorage?.mode === 'embedded'
+    ? await createStorageRuntime(db, opts.config.fileStorage, opts.storageNodes)
+    : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage, oauth?.storageToken) : undefined
+  const fileStorage = storageRuntime?.service
+  if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
+  registerFileStorageRoutes(app, fileStorage)
   await registerRest(app, db, opts.config.dataDir, {
+    fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
+    deployment,
+    browserMcpEnabled: opts.config.readerMode !== 'off',
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
@@ -759,7 +839,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     publishChatMessage: async (userId, conversationId, message) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.message', conversationId, message }), userId)
     },
+    publishChatHistory: async (userId, conversationId, messages) => {
+      frames.publish(await clientEvent(db, userId, { t: 'chat.history', conversationId, messages }), userId)
+    },
     conversationSummary: () => conversationSummary,
+    resetThread: (userId, conversationId, summarize) => turnManager.resetThread(userId, conversationId, summarize),
     delegatedAssistantKind: grant => {
       const ticket = delegation?.ticketGrant(grant)
       return ticket ? APPLICATION_ASSISTANT_KIND[ticket.applicationId] : undefined
@@ -801,14 +885,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Auxiliary model calls have no Billing admission; public chat keeps only accounted turns.
   conversationSummary = opts.config.chatTextOnly === true ? undefined : createConversationSummaryService({
     db,
-    // Prefer the cheapest configured Codex model; Claude Haiku is the fallback
-    // when this installation only has a Claude runner.
+    // Prefer Codex; retry failed chunks once through the other configured runner.
     client: opts.codex || opts.config.llmRunnerCodexUrl ? codex : claude,
     model: opts.codex || opts.config.llmRunnerCodexUrl ? 'gpt-5.6-luna' : 'haiku',
+    fallback: (opts.codex || opts.config.llmRunnerCodexUrl) && (opts.claude || opts.config.llmRunnerClaudeUrl)
+      ? { client: claude, model: 'haiku' } : undefined,
     publish: async (userId, conversation) => {
       frames.publish(await clientEvent(db, userId, { t: 'chat.conversation', conversation }), userId)
-    },
-    logError: (error) => app.log.warn({ event: 'conversation_summary_failed', error: error instanceof Error ? error.message : String(error) })
+    }
   })
   const reranker = opts.config.chatTextOnly === true || opts.config.kbRerankProvider === 'disabled'
     ? undefined
@@ -873,7 +957,45 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (token) => remoteFileBroker.get(token),
     commandGate,
     opts.historicalEvidence ? new HistoricalEvidence(opts.historicalEvidence,
-      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined
+      async (userId, projectId) => (await db.projects.getProject(userId, projectId)) !== null) : undefined,
+    {
+      // Raw routes are supplied by the Make owner package. Older packages expose no transfers.
+      available: async (conversationId) => {
+        if (app.hasRoute({ method: 'GET', url: '/api/make/:id/files/raw' }) &&
+          app.hasRoute({ method: 'PUT', url: '/api/make/:id/files/raw' })) return true
+        // A remote Make uses a wildcard proxy, so probe an existing file through the same authority.
+        if (!makeRemote) return false
+        try {
+          const userId = await db.chat.conversationOwner(conversationId)
+          const file = (await make.service.listFiles(conversationId))[0]
+          if (!userId || !file) return false
+          const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(file.path)
+          return makeRequests.run(userId, 'GET', url, async authorization =>
+            (await app.inject({ method: 'GET', url, headers: { authorization } })).statusCode === 200)
+        } catch { return false }
+      },
+      read: async (conversationId, path) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path)
+        return makeRequests.run(userId, 'GET', url, async authorization => {
+          const response = await app.inject({ method: 'GET', url, headers: { authorization } })
+          if (response.statusCode !== 200) throw new Error('Make raw read failed: ' + response.statusCode)
+          return response.rawPayload.toString('base64')
+        })
+      },
+      write: async (conversationId, path, dataBase64, turn) => {
+        const userId = await db.chat.conversationOwner(conversationId)
+        if (!userId) throw new Error('Conversation unavailable')
+        const url = '/api/make/' + encodeURIComponent(conversationId) + '/files/raw?path=' + encodeURIComponent(path) +
+          (turn ? '&turn=' + encodeURIComponent(turn) : '')
+        await makeRequests.run(userId, 'PUT', url, async authorization => {
+          const response = await app.inject({ method: 'PUT', url, headers: { authorization, 'content-type': 'application/octet-stream' },
+            payload: Buffer.from(dataBase64, 'base64') })
+          if (response.statusCode < 200 || response.statusCode >= 300) throw new Error('Make raw write failed: ' + response.statusCode)
+        })
+      }
+    }
   )
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
@@ -898,7 +1020,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // точка, где Make получает доступ к данным чата, канбана и машин.
   const makeProjectAdapters = new MakeProjectAdapters({
     db, git: gitWorkspaces, kanbanUrl: opts.config.kanbanMode === 'remote' ? opts.config.kanbanUrl : undefined,
-    machines: agentRegistry,
+    machines: agentRegistry, previews: projectPreviews,
     previewAccess: proxyPorts(opts.config.standProxyPorts).length ? makeStandPreviewAccess(
       standProxy, opts.config.standProxyPublicHost || (opts.config.publicUrl ? new URL(opts.config.publicUrl).host : 'localhost')) : undefined,
     authority: makeRequests, fetchImpl: opts.makeKanbanFetch,
@@ -924,6 +1046,37 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     git: gitWorkspaces,
     standPreview: (user, project, operation) => makeProjectAdapters.standPreview(user, project, operation),
     makeStand: (user, conversation, operation) => makeProjectAdapters.makeStand(user, conversation, operation),
+    userStand: (user, operation) => userStands.userStand(user, operation),
+    openStandWindow: async (user, conversationId, standId, url, current) => {
+      if (!await userHasCapability(db, user, 'playwright-reader.use'))
+        throw Object.assign(new Error('playwright_reader_forbidden'), { statusCode: 403 })
+      const makeConversation = await db.chat.getConversation(user, conversationId)
+      if (!makeConversation || makeConversation.assistantKind !== 'make')
+        throw Object.assign(new Error('conversation_not_found'), { statusCode: 404 })
+      const title = `Make window · ${conversationId.slice(0, 8)}`
+      let reader = current?.sessionId ? await db.chat.getConversation(user, current.sessionId) : null
+      if (reader?.assistantKind !== 'playwright-reader') reader = null
+      if (!reader && makeConversation.makeBrowserSessionId) {
+        const bound = await db.chat.getConversation(user, makeConversation.makeBrowserSessionId)
+        if (bound?.assistantKind === 'playwright-reader') reader = bound
+      }
+      if (!reader) {
+        reader = (await db.chat.listConversations(user, {
+          scope: 'playwright-reader', ...(makeConversation.tenantId ? { tenantId: makeConversation.tenantId } : {}), limit: 50
+        })).find(item => item.assistantKind === 'playwright-reader' && item.title === title) ?? null
+      }
+      if (!reader) {
+        reader = await db.chat.createConversation(user, title, 'playwright-reader', null, 'playwright-reader', makeConversation.tenantId)
+      }
+      if (!reader || !browserRunner)
+        throw Object.assign(new Error('playwright_reader_unavailable'), { statusCode: 503 })
+      await browserRunner.start({ sessionId: reader.id, userKey: user, conversationKey: reader.id, window: { url } })
+      await db.chat.setConversationMakeBrowserSession(user, conversationId, reader.id)
+      return {
+        standId, url, sessionId: reader.id,
+        previousSessionId: current ? current.previousSessionId : makeConversation.makeBrowserSessionId ?? null,
+      }
+    },
     transferTask: (user, args) => makeProjectAdapters.createTransferTask(user, args),
     // boardChanged — ленивая ссылка: канбан собирается ниже, а зовут её уже в запросе.
     boardChanged: (projectId) => kanban.service.board.changed(projectId),
@@ -955,7 +1108,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : createMakeModule({ dataDir: opts.config.dataDir, mcpSecret, mcpBaseUrl: makeMcpBaseUrl, core: makeCore })
   make.register?.(app)
   // Стенд доступен и напрямую портом ядра, минуя Caddy, — пути Make ядро переправляет в его процесс само.
-  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl })
+  if (makeRemote) registerMakeProxy(app, { makeUrl: opts.config.makeUrl!, fetchImpl: managedMake?.publicFetchImpl,
+    ...(ticketApplications('make') && ticketOptions.serviceTokens?.make ? {
+      prepareHeaders: (req, headers) => {
+        // Only Core's authenticated request user can mint an application delegation.
+        for (const name of ['authorization', 'cookie', 'x-vc-csrf', 'x-sislexa-core-id', 'x-sislexa-delegation', 'x-sislexa-mcp-token', 'x-sislexa-tenant-id']) headers.delete(name)
+        if (!req.user) return
+        headers.set('authorization', `Bearer ${ticketOptions.serviceTokens!.make}`)
+        headers.set('x-sislexa-core-id', deployment.coreId)
+        headers.set('x-sislexa-delegation', ticketStore.delegations.issue({
+          applicationId: 'make', coreId: deployment.coreId, userId: req.user.name,
+          tenantId: req.user.account?.tenantId ?? null, sid: null, expiresAt: Date.now() + 5 * 60_000,
+        }).token)
+      },
+    } : {}),
+  })
   // Канбан отдельным процессом: общая база (Postgres), пути канбана ядро переправляет туда, состояние
   // машин/KB/виджета отдаёт по `/internal/*`, ленты событий принимает обратно (docs/plans/kanban-service.md).
   const kanbanRemote = opts.config.kanbanMode === 'remote'
@@ -1063,8 +1230,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уведомления об отзыве сессий отдаёт по `/internal/admin/rpc`.
   const adminRemote = opts.config.adminMode === 'remote'
   if (adminRemote && !(opts.config.adminUrl && opts.config.internalToken && opts.config.mcpSecret)) throw new Error('VC_ADMIN_MODE=remote требует VC_ADMIN_URL, VC_INTERNAL_TOKEN и VC_MCP_SECRET')
-  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'] })
-  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub)
+  if (adminRemote) registerServiceProxy(app, { name: 'admin', baseUrl: opts.config.adminUrl!, prefixes: ['/api/admin'],
+    ...(oauth ? { prepareHeaders: (req, headers) => {
+      if (!req.authUser) throw new Error('Identity authentication required')
+      headers.set('authorization', `Bearer ${req.authUser.accessToken}`)
+      headers.delete('cookie')
+    } } : {}) })
+  else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage, opts.config.oauth ? opts.config.fileStorage?.url : undefined)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -1184,11 +1356,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     queueMicrotask(() => { void generatedCleanup.run() })
   }
 
-  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
+  // Process-wide admission also bounds the number of user keys admitted per window.
+  const uploadTotal = new SlidingWindowLimiter(300, 60_000, () => Date.now())
+  const uploadByUser = new SlidingWindowLimiter(20, 60_000, () => Date.now())
+  app.register(async uploadScope => {
+  await registerUploadParsers(uploadScope)
+  uploadScope.post(
     REST.uploads,
-    { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
+    { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
+      // The auth guard runs first; sessions and IP changes share the same user budget.
+      const total = uploadTotal.hit('uploads')
+      const verdict = total.ok ? uploadByUser.hit(uid(req)) : total
+      if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec))
+        .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
+    } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
+      const upload = await readUpload(req)
+      const { name, agentId: requestedAgentId, conversationId, mimeType } = upload.metadata
       const userId = uid(req)
       if (browserSessions.requests.has(req) && !conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
       if (conversationId) {
@@ -1201,11 +1385,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         ? await db.chat.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
         : null
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
-      if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
-      const bytes = Buffer.from(dataBase64, 'base64')
-      if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
+      if (fileStorage && (oauth || (await db.settings.getSettings(userId)).chatFilesBackend === 'storage')) {
+        if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
+        try {
+          const space = await fileStorage.createSpace(userId, {
+            kind: 'chat', title: 'Chat files', ref: conversationId,
+          })
+          const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
+          const entry = await fileStorage.writeFile(userId, space.id, path, upload.bytes, { mimeType: safeMime, createOnly: true })
+          const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
+          const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)
+          rec.tenantId = req.user?.account?.tenantId
+          return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }
+        } catch (error) { return storageError(reply, error) as never }
+      }
+      const bytes = await bufferUpload(upload.bytes)
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
       if (conversationId) {
         try {
@@ -1229,7 +1425,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             ? machineManagedFilePath(directory, randomBytes(16).toString('hex'), uploadName)
             : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
           await agentRegistry.fsMkdir(writeAgentId, directory)
-          await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
+          await agentRegistry.fsWrite(writeAgentId, target, bytes.toString('base64'))
           const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
           rec.tenantId = req.user?.account?.tenantId
           rec.conversationId = conversationId
@@ -1244,6 +1440,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
+  })
 
   app.post<{ Body: ImageRetouchRequest }>(
     REST.imageRetouch,
@@ -1257,15 +1454,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const body = req.body
       if (!body || !await db.chat.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
       if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
-      const historyFiles = (await db.chat.listMessages(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
+      const historyFiles = (await db.chat.historyFiles(userId, body.conversationId)).flatMap((message) => message.attachments ?? [])
       const allowed = (file: MessageAttachment): boolean => {
-        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
+        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId && known.storage?.spaceId === file.storage?.spaceId && known.storage?.path === file.storage?.path)) return true
         const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
-        return Boolean(upload && upload.path === file.path && upload.agentId === file.agentId)
+        return Boolean(upload && upload.ownerId === userId && upload.conversationId === body.conversationId && upload.path === file.path && upload.agentId === file.agentId && upload.storage?.spaceId === file.storage?.spaceId && upload.storage?.path === file.storage?.path)
       }
       if (!allowed(body.source) || (body.references ?? []).some((file) => !allowed(file))) return reply.code(403).send({ error: 'Изображение не принадлежит этому разговору' }) as never
 
       const readAttachment = async (file: MessageAttachment): Promise<Buffer> => {
+        if (file.storage) {
+          if (!fileStorage) throw new Error('File storage is disabled')
+          return Buffer.from((await fileStorage.readFile(userId, file.storage.spaceId, file.storage.path)).bytes)
+        }
         if (file.agentId) {
           if (!(await db.machines.listAgents(userId)).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
           const result = await agentRegistry.fsRead(file.agentId, file.path)
@@ -1353,7 +1554,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const separator = managed.generated.includes('\\') && !managed.generated.includes('/') ? '\\' : '/'
         const sourceParent = body.source.path.slice(0, Math.max(body.source.path.lastIndexOf('/'), body.source.path.lastIndexOf('\\')))
         if (sourceParent !== managed.generated) return reply.code(403).send({ error: 'Публиковать можно только непосредственный файл из .generated этого разговора' }) as never
-        const known = (await db.chat.listMessages(userId, body.conversationId)).some((message) =>
+        const known = (await db.chat.historyFiles(userId, body.conversationId)).some((message) =>
           (message.attachments ?? []).some((file) => file.path === body.source.path && file.agentId === body.source.agentId)
           || parseImages(message.text).images.some((image) => image.path === body.source.path && image.agentId === body.source.agentId)
         )
@@ -1456,9 +1657,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbToolEnabled: opts.config.kbToolEnabled,
     kbTool: kbToolBroker,
     historyTool: historyTurnBroker,
-    resolveUpload: async (id) => {
+    resolveUpload: async (id, userId) => {
       const upload = uploads.get(id)
-      if (!upload) return null
+      if (!upload || upload.ownerId && upload.ownerId !== userId) return null
+      if (upload.storage && fileStorage && upload.ownerId) {
+        const file = await fileStorage.readFile(upload.ownerId, upload.storage.spaceId, upload.storage.path)
+        return { serverPath: upload.path, runnerName: upload.name, dataBase64: Buffer.from(file.bytes).toString('base64'), preserveServerPath: true }
+      }
       if (!upload.agentId) return upload.path
       try {
         const file = await agentRegistry.fsRead(upload.agentId, upload.path)
@@ -1483,6 +1688,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     studioContext: (conversationId) => imageStudio.service.promptContext(conversationId),
     captureStudioImages: (userId, conversationId, finalText) => imageStudio.service.captureImages(userId, conversationId, finalText),
     readServerFile: async (userId, path) => {
+      if (path.startsWith('storage:')) {
+        const match = /^storage:([^/]+)\/(.+)$/.exec(path)
+        if (!match || !fileStorage) return null
+        const file = await fileStorage.readFile(userId, decodeURIComponent(match[1]), match[2])
+        return {path, name: match[2].split('/').pop() ?? 'file', mimeType: file.entry.mimeType, size: file.entry.size, dataBase64: Buffer.from(file.bytes).toString('base64')}
+      }
       if (runnerFs) {
         const remote = await runnerFs.readFile(userId, path)
         if (remote) return remote
@@ -1591,7 +1802,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
   // всё через тот же exec/fs машины-агента, что у CI и проводника.
   registerIntegrationTokenRoutes(app, db)
-  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, issuer: req => {
+  registerProjectStandPreviewRoutes(app, db, projectPreviews)
+  registerApplicationTickets(app, { ...ticketOptions, manifest: deployment, tickets: ticketStore, authenticate, issuer: req => {
     const token = req.headers.authorization?.replace(/^Bearer /, '') ?? cookieToken(req.headers.cookie)
     const sid = verifyToken(token, sessionSecret)?.sid ?? null
     const billingSession = token && req.user ? billingSessions.register(req.user, sid, token) : undefined
@@ -1706,7 +1918,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       authStatus,
       preview: {
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
-        resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
+        resolve: (userId, requestId, outcome, conversationId) => previewRelay.resolve(userId, requestId, outcome, conversationId)
       },
       make: { subscribe: (userId, sink) => make.service.subscribe(userId, sink) },
       widgetUi: {
@@ -1732,7 +1944,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const wsQuery = request.query as { token?: string; tenantId?: string } | undefined
       if (rejectsAttribution(request.query)) { socket.close(4003, 'Untrusted attribution'); return }
       const browserSession = browserSessions.requests.get(request)
-      const token = browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
+      const token = oauth ? request.headers.authorization?.replace(/^Bearer /, '') : browserSession ? request.headers.authorization?.replace(/^Bearer /, '')
         : wsQuery?.token ?? cookieToken(request.headers.cookie)
       // Кадры, пришедшие пока идёт проверка сессии (запросы к базе), нельзя терять: клиент шлёт
       // первое сообщение сразу после open, а слушатель появится только в attachWs. С SQLite проверка
@@ -1742,10 +1954,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       socket.on('message', buffer)
       const verifySocket = async () => {
         if (browserSession && !browserSessions.current(browserSession)) return null
-        if (!token && request.headers[DELEGATION_HEADER] === undefined) return null
+        if (!token && !(oauth && request.headers.cookie) && request.headers[DELEGATION_HEADER] === undefined) return null
         try {
           const tenantId = wsQuery?.tenantId ?? request.headers['x-sislexa-tenant-id']
-          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
+          const verdict = await authenticate({method:'GET',url:'/ws',headers:{...(token ? {authorization:'Bearer '+token} : {}), ...(oauth ? {cookie: request.headers.cookie} : {}), [DELEGATION_HEADER]: request.headers[DELEGATION_HEADER], ...(tenantId ? {'x-sislexa-tenant-id':tenantId} : {})}})
           return verdict.ok ? verdict.user : null
         } catch { return null }
       }
@@ -1901,7 +2113,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       app.get(prefix,proxy);app.get(prefix+'*',proxy)
     }
   }
-  registerApplicationFrontends(app, Object.fromEntries(Object.entries(opts.config.applicationFrontends ?? {}).filter(([id]) => deployment.applications.some(a => a.id === id && a.enabled && a.location === 'local'))))
+  registerApplicationFrontends(app, opts.config.applicationFrontends, undefined, deployment, opts.config.applicationFrontendsOverride)
 
   // The recorder is an owner-built artifact, also available when the host runs in Vite.
   if (opts.config.readerMode === 'embedded') {

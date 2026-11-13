@@ -138,6 +138,30 @@ const expectGitError = async (promise: Promise<unknown>, code: string, status?: 
   return gitError
 }
 
+describe('compare references', () => {
+  it.each([
+    [0, 3, true], [2, 3, false], [0, 0, true]
+  ])('returns ahead=%s behind=%s contained=%s on read-only workspaces', async (ahead, behind, contained) => {
+    const { service, exec, fsWrite } = setup({ canWrite: false, allowWrite: false,
+      outputs: [`==VC:counts==\n${ahead}\t${behind}\n==VC:mergebase==\n${SHA}\n==VC:done==`] })
+    expect(await service.compare('bob', 'p1', 'ws:ws-1', 'origin/dev', 'feature/x')).toEqual({ ahead, behind, contained, mergeBase: SHA })
+    expect(exec.mock.calls[0][1]).not.toMatch(/git (checkout|merge |fetch)/)
+    expect(fsWrite).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when fetching fails', async () => {
+    const { service, exec } = setup({ outputs: [{ output: 'fetch failed', exitCode: 128 }] })
+    await expect(service.compare('bob', 'p1', 'ws:ws-1', 'origin/dev', 'HEAD', true)).rejects.toMatchObject({ code: 'git_failed' })
+    expect(exec.mock.calls[0][1]).toContain('git fetch --quiet origin')
+  })
+
+  it('rejects invalid references without executing commands', async () => {
+    const { service, exec } = setup()
+    await expect(service.compare('bob', 'p1', 'ws:ws-1', '--all', 'HEAD')).rejects.toMatchObject({ code: 'invalid_ref' })
+    expect(exec).not.toHaveBeenCalled()
+  })
+})
+
 describe('резолвер рабочих копий', () => {
   it('список собирается из БД без единого обращения к машине', async () => {
     const { service, exec } = setup()
@@ -729,5 +753,32 @@ describe('лимит списка изменений', () => {
     const full = await big.service.status('bob', 'p1', 'ws:ws-1', 100)
     expect(full.changes).toHaveLength(12)
     expect(full.changesTruncated).toBe(false)
+  })
+})
+
+describe('операции Make со сменой HEAD', () => {
+  const clean = () => statusOutput({ porcelain: '## feature/x\0', track: '0\t0' })
+
+  it('сливает существующую ветку и возвращает новый HEAD', async () => {
+    const merged = 'b'.repeat(40)
+    const { service } = setup({ outputs: [clean(), ['==VC:merge==', 'ok', '==VC:head==', merged, '==VC:done=='].join('\n'), statusOutput({ head: merged, porcelain: '## feature/x\0' })] })
+    await expect(service.merge('bob', 'p1', 'ws:ws-1', 'feature/source')).resolves.toMatchObject({ head: merged, conflicts: [] })
+  })
+
+  it('при конфликте возвращает файлы и после abort читает чистое состояние', async () => {
+    const conflicts = b64('src/a.ts\0file with spaces.ts\0')
+    const { service } = setup({ outputs: [clean(), { output: ['==VC:merge==', '==VC:conflicts_b64==', conflicts, '==VC:abort=='].join('\n'), exitCode: 65 }, clean()] })
+    await expect(service.merge('bob', 'p1', 'ws:ws-1', 'feature/source')).resolves.toMatchObject({ conflicts: ['src/a.ts', 'file with spaces.ts'] })
+  })
+
+  it('не меняет HEAD в грязной рабочей копии', async () => {
+    const { service, exec } = setup({ outputs: [statusOutput()] })
+    await expectGitError(service.merge('bob', 'p1', 'ws:ws-1', 'feature/source'), 'dirty_worktree', 409)
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('отличает отсутствующую ветку от прочего сбоя git', async () => {
+    const { service } = setup({ outputs: [clean(), { output: 'branch_not_found', exitCode: 66 }] })
+    await expectGitError(service.merge('bob', 'p1', 'ws:ws-1', 'missing'), 'branch_not_found', 404)
   })
 })

@@ -141,7 +141,7 @@ export class SettingsRepo extends BaseRepo {
       const generatedFilesTtlDays = Number.isInteger(parsed.generatedFilesTtlDays) && parsed.generatedFilesTtlDays! >= 1 && parsed.generatedFilesTtlDays! <= 3650
         ? parsed.generatedFilesTtlDays!
         : DEFAULT_SETTINGS.generatedFilesTtlDays
-      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization }, chatInstructions: normalizeChatInstructions(parsed.chatInstructions) }
+      return { ...DEFAULT_SETTINGS, ...parsed, chatFilesBackend: parsed.chatFilesBackend === 'storage' ? 'storage' : 'machine', generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization }, chatInstructions: normalizeChatInstructions(parsed.chatInstructions) }
     } catch {
       return { ...DEFAULT_SETTINGS }
     }

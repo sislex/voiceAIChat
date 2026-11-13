@@ -52,6 +52,10 @@ export interface MessageAttachment {
   size: number
   /** Машина-источник; отсутствие означает сервер. */
   agentId?: string
+  /** File in the storage service; when set, `path` is display-only and `agentId` is absent. */
+  storage?: import('./fileStorage').StorageFileRef
+  /** True when the storage-backed image can be read through STORAGE_REST.thumbnail. */
+  thumbnailAvailable?: boolean
   caption?: string
   /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
   retouch?: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRecord
@@ -81,6 +85,13 @@ export interface Message {
   execTarget?: string | null
   /** Метаданные файлов, приложенных к этой реплике; без байтов. */
   attachments?: MessageAttachment[]
+  /** Серверная группа альтернатив этой реплики. Отсутствует, пока вариант один. */
+  branch?: {
+    index: number
+    count: number
+    previousId: string | null
+    nextId: string | null
+  }
 }
 
 /** Сегмент распознанной речи после диаризации. */
@@ -870,6 +881,8 @@ export interface ConversationMembershipMutation {
 }
 
 export interface ConversationSummary {
+  /** Absent for model summaries written by older servers. */
+  source?: 'model' | 'fallback'
   text: string
   coversUntilMessageId: string
   updatedAt: number
@@ -922,6 +935,8 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
+  /** Chat — только сообщения; Workspace — рабочий контекст; Make/Console — специализированный рабочий контекст соответствующего разговора. */
+  assistantMode?: ConversationAssistantMode
   /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
   disabledContext?: string[]
   /** Обязательная область происхождения и авторизации разговора. */
@@ -1123,6 +1138,25 @@ export const SESSION_SHORT_TTL_MS = 12 * 60 * 60_000
  */
 export type PermissionMode = 'bypassPermissions' | 'acceptEdits' | 'plan'
 
+/**
+ * Режим наполнения хода. Chat отправляет только историю/сообщение и инструкции;
+ * Workspace подключает общий рабочий контекст, Make — тот же контекст со
+ * специализацией Make-разговора, а Console — со специализацией живой консоли.
+ */
+export type ConversationAssistantMode = 'chat' | 'workspace' | 'make' | 'console'
+
+export const CONVERSATION_ASSISTANT_MODES: Array<{ id: ConversationAssistantMode; label: string; description: string }> = [
+  { id: 'workspace', label: 'Workspace', description: 'Контекст проекта, БЗ, навыки, машины, MCP и инструменты доступны модели.' },
+  { id: 'make', label: 'Make', description: 'Полный Workspace-контекст и специализированные инструкции, проект, превью и MCP-инструменты Make.' },
+  { id: 'console', label: 'Console', description: 'Полный Workspace-контекст и специализированные инструкции для работы в видимой консоли через mcp__console__*.' },
+  { id: 'chat', label: 'Chat', description: 'Только история, текущее сообщение и инструкции — без инструментов и дополнительного контекста.' }
+]
+
+/** Legacy-разговоры работают как раньше: полный Workspace-контекст. */
+export function isWorkspaceAssistantMode(mode: ConversationAssistantMode | null | undefined): boolean {
+  return mode !== 'chat'
+}
+
 /** Режим прав для меню настроек. */
 export interface PermissionModeInfo {
   id: PermissionMode
@@ -1250,6 +1284,8 @@ export interface SessionUsage extends TurnUsage {
 
 /** Метаданные завершённого хода Claude (из result-события stream-json). */
 export interface TurnMeta extends TurnUsage {
+  /** Provider session id (without the provider prefix), shared by Claude and Codex. */
+  sessionId?: string
   /** Size summary for service data omitted from a client-facing message. */
   serviceData?: {
     activityEntries: number
@@ -1278,14 +1314,16 @@ export interface TurnMeta extends TurnUsage {
   codexThreadUsage?: CodexThreadUsage
   /** Что именно ушло модели этим ходом — для панели «Подробнее». */
   request?: TurnRequestInfo
+  /** Lightweight action state, available without fetching diagnostics. */
+  permissionMode?: string
   /** Legacy-предложение одной задачи; читается UI для обратной совместимости. */
   taskLaunch?: TaskLaunchRequest
   /** Независимые предложения задач и их персистентное состояние. */
   taskLaunches?: TaskLaunchProposal[]
   /**
    * Активность хода (команды/thinking/результаты) для подробного вида сообщения.
-   * Собирается всегда и персистится в составе `meta` (JSON-колонка), поэтому
-   * подробный вид доступен и после перезагрузки/переоткрытия разговора.
+   * Persisted separately in message_service_data; loaded explicitly for details.
+   * History and completion frames never contain this field.
    */
   activity?: ClaudeLogEntry[]
   /**
@@ -1360,12 +1398,10 @@ export interface TurnRequestInfo {
   slashCommands?: string[]
   /** MCP-серверы хода (из system/init CLI). */
   mcpServers?: string[]
-  /**
-   * Полный контекст разговора на момент хода: все сообщения (история + текущая
-   * реплика), как они лежали в БД при отправке. При --resume история хранится в
-   * сессии CLI и повторно не пересылается, но показывается здесь для наглядности.
-   */
+  /** @deprecated Legacy records only; new writes retain counts, never a history copy. */
   messages?: TurnContextMessage[]
+  messageCount?: number
+  lastMessageId?: string
 }
 
 /** Одно сообщение контекста хода (роль + текст). */
@@ -1586,6 +1622,7 @@ export function onboardingTransition(state: OnboardingState, step: OnboardingSte
 }
 
 export interface Settings {
+  chatFilesBackend?: 'machine' | 'storage'
   onboarding?: OnboardingState | null
   model: ClaudeModel
   whisperModel: WhisperModel
@@ -1651,9 +1688,14 @@ export interface Settings {
    */
   contextPresets: ContextPreset[]
   /**
-   * Пресет, который применяется к **новым** разговорам. Настроил «минимальный
-   * контекст» один раз — и он действует сразу, а не после того как человек
-   * вспомнит про кнопку. null — новые чаты начинают с полным контекстом.
+   * Источники базового мода Required. Их наследуют все остальные встроенные
+   * и пользовательские моды; выключить их можно только в самом Required.
+   */
+  requiredContextItems?: string[]
+  /**
+   * Мод, который применяется к **новым обычным** разговорам: id пользовательского
+   * мода либо mode:chat/mode:required. null и mode:workspace означают встроенный Workspace.
+   * Make-разговоры всегда создаются во встроенном mode:make.
    */
   defaultContextPresetId: string | null
 }
@@ -1685,7 +1727,9 @@ export interface ContextSnapshotItem {
   configured: boolean
   available: boolean
   includedInNextTurn: boolean
-  /** Можно ли выключить пункт (безопасность и чистая информация — нельзя). */
+  /** Доступен ли источник в редакторе конфигураций, даже если унаследован и заблокирован в разговоре. */
+  configurable?: boolean
+  /** Можно ли выключить пункт в текущем разговоре (безопасность, информация и Required-наследование — нельзя). */
   toggleable: boolean
   /**
    * На что влияет тумблер: `prompt-block` — исчезает блок промпта, `tool` —
@@ -1701,10 +1745,11 @@ export interface ContextSnapshotItem {
   /**
    * Почему пункт нельзя выключить: `safety` — правила платформы и приложения,
    * `info` — чистая информация без вклада в промпт, `kind` — инструмент даёт
-   * сам вид чата (превью, консоль, Make, панель ассистента). У выключаемого — null.
+   * сам вид чата (превью, консоль, Make, панель ассистента), `required` — источник
+   * унаследован из базового мода Required. У выключаемого — null.
    * UI объясняет замок словами, а не догадкой по id.
    */
-  lockReason?: 'safety' | 'info' | 'kind' | null
+  lockReason?: 'safety' | 'info' | 'kind' | 'required' | null
   /** Размер вклада пункта в промпт: символы и грубая оценка токенов (chars/4). */
   size?: { chars: number; approxTokens: number } | null
   /**
@@ -1929,10 +1974,17 @@ export interface ContextDiff {
   settings: Array<{ label: string; here: string; there: string }>
 }
 
-/** Именованный набор выключенных источников контекста. */
+/**
+ * Пользовательская конфигурация ассистента. Старое имя ContextPreset оставлено
+ * в контракте для совместимости с уже сохранёнными настройками.
+ */
 export interface ContextPreset {
   id: string
   name: string
+  /** Коротко объясняет назначение конфигурации в селекторе и каталоге. */
+  description?: string
+  /** Базовый режим определяет, подключать ли расширенный контекст и инструменты. */
+  assistantMode?: ConversationAssistantMode
   /** id выключенных пунктов; остальные считаются включёнными. */
   disabled: string[]
 }
@@ -1992,6 +2044,7 @@ export const CODEX_MODELS: CodexModelInfo[] = [
 export const DEFAULT_CODEX_MODEL = CODEX_MODELS[0].id
 
 export const DEFAULT_SETTINGS: Settings = {
+  chatFilesBackend: 'machine',
   model: 'default',
   whisperModel: 'large-v3-turbo',
   diarization: true,
@@ -2023,6 +2076,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
   loginNewDeviceEmails: true,
   contextPresets: [],
+  requiredContextItems: [],
   defaultContextPresetId: null
 }
 
@@ -2052,6 +2106,7 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
     if (onboarding) patch.onboarding = onboarding
   }
   if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
+  oneOf('chatFilesBackend', ['machine', 'storage'] as const)
   oneOf('whisperModel', WHISPER_MODELS)
   oneOf('theme', ['light', 'dark', 'green', 'system'] as const)
   oneOf('machineCommandNotices', ['all', 'failures', 'off'] as const)
@@ -2075,12 +2130,19 @@ export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
   if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
   // Пресеты контекста: имя и список id. Приводим к контракту здесь, иначе мусор
   // осядет в записи настроек навсегда (она мержится, а не заменяется).
+  if (Array.isArray(input.requiredContextItems)) {
+    patch.requiredContextItems = [...new Set(input.requiredContextItems.filter((entry): entry is string => typeof entry === 'string'))].slice(0, 200)
+  }
   if (Array.isArray(input.contextPresets)) {
     patch.contextPresets = (input.contextPresets as unknown[])
       .filter((item): item is ContextPreset => typeof item === 'object' && item !== null && typeof (item as ContextPreset).id === 'string')
       .map((item) => ({
         id: item.id,
         name: String(item.name ?? '').trim().slice(0, 60) || 'Без названия',
+        description: String(item.description ?? '').trim().slice(0, 240),
+        assistantMode: item.assistantMode === 'chat' || item.assistantMode === 'make' || item.assistantMode === 'console'
+          ? item.assistantMode
+          : 'workspace' as const,
         disabled: Array.isArray(item.disabled) ? item.disabled.filter((entry): entry is string => typeof entry === 'string') : []
       }))
       .slice(0, 20)

@@ -25,7 +25,13 @@ const account = z.object({
   personalization,
   chatInstructions: z.array(z.object({ id: text, title: text, description: text, enabled: z.boolean(),
     kind: z.enum(CHAT_INSTRUCTION_KINDS).optional(), text: text.optional() }).strict()),
-  contextPresets: z.array(z.object({ id: text, name: text.max(60), disabled: strings }).strict()).max(20),
+  contextPresets: z.array(z.object({
+    id: text,
+    name: text.max(60),
+    description: text.max(240).optional(),
+    assistantMode: z.enum(['chat', 'workspace', 'make']).optional(),
+    disabled: strings
+  }).strict()).max(20),
   defaultContextPresetId: nullableText, whisperModel: z.enum(WHISPER_MODELS),
   diarization: z.boolean(), voice: text, autoSpeak: z.boolean(), bargeIn: z.boolean(),
   handsFree: z.boolean(), theme: z.enum(['light', 'dark', 'green', 'system']), showConsole: z.boolean()
@@ -35,7 +41,7 @@ const conversation = z.object({
   permissionMode: permission.nullable(), title: text, projectId: nullableText, skills: strings,
   contextPresetId: nullableText, kbMode: z.enum(['auto', 'manual', 'off']), disabledContext: strings,
   previewUrl: text.refine(value => { try { return ['http:', 'https:'].includes(new URL(value).protocol) } catch { return false } }).nullable(),
-  previewEngine: z.enum(['proxy', 'chromium']), loadServiceData: z.boolean()
+  previewEngine: z.enum(['proxy', 'chromium']), loadServiceData: z.boolean(), threadReset: z.enum(['off', 'hint', 'auto'])
 }).partial().strict()
 const envelope = { version: z.literal(1), expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER) }
 const patch = z.discriminatedUnion('owner', [

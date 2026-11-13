@@ -2,14 +2,15 @@
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
-updated: 2026-10-20
-checked: 592879f34
+updated: 2026-11-05
+checked: 97cadc810
 areas:
-  - docs/kb
+  - packages/knowledge/src
+  - packages/kb-tools
+  - docs/kb/modules.md
   - scripts/kb-search.mjs
   - apps/server/src/kb
   - packages/shared/src/kb.ts
-  - packages/ui/src/components/KnowledgeBase.tsx
 symbols:
   - FileKnowledgeBaseService
   - ScopedKnowledgeBase
@@ -50,6 +51,30 @@ related:
 ---
 
 # База знаний проекта
+
+## Source ownership and freshness
+
+The indexing/search implementation lives in `packages/knowledge/src`; Core's
+`apps/server/src/kb` supplies filesystem, Git, persistence and authorization
+adapters. The local maintenance/search CLI lives in `packages/kb-tools`.
+This topic tracks those implementations and the module-source configuration map.
+The Markdown corpus is input data, not the implementation area: including all
+of `docs/kb` also included this topic's own checked marker, so each verification
+commit immediately made it stale again.
+
+Review since `592879f34` found one runtime change in the KB area:
+`registerKbResearchRoutes` accepts an absent research manager. POST then returns
+503 `auxiliary_model_disabled`; authorized GET returns null. When research is
+available, project-membership checks and the existing start flow remain in force.
+Operator handoff only adds knowledge documents; it does not change KB search,
+module fetch or visibility behavior.
+
+The maintenance CLI's same-commit freshness rule excludes area commits that
+also modify the topic being checked. `touch` records HEAD; later source-only
+commits still invalidate the topic. `packages/kb-tools/cli.test.mjs` commits
+reconciliation separately before its stale-source fixture and checks the
+`после проверенного SHA:` row delimiter. See
+[the maintenance workflow](../kb-workflow.md#scoped-owner-gate-diagnostics-sk-115).
 
 ## Repository modules
 
@@ -117,14 +142,19 @@ File IDs are `<module>:<relative-path.md>`; `sourcePath` is relative to the
 source repository. Old unprefixed Core IDs, including frontmatter IDs and
 extensionless paths, continue to resolve. Database document IDs stay unchanged.
 Topics, search and context REST queries accept `module`; MCP `topics`, `search`
-and `document` accept the same optional filter. No filter searches all visible
-modules; an unknown module produces an empty result. File modules have the same
-public `usage` visibility as Core's existing files; `access.ts` is unchanged.
-The module filter narrows results and excludes unassociated database articles.
+and `document` accept the same optional filter. MCP `document` also accepts a
+non-negative `offset`: when a section is longer than 8000 characters, the response
+contains the next offset and the caller can retrieve the remainder without losing the
+tail of a long single section. No filter searches all visible modules; an unknown
+module produces an empty result. File modules have the same public `usage` visibility
+as Core's existing files; `access.ts` is unchanged. The module filter narrows results
+and excludes unassociated database articles.
 
-Auto-context first tries the module matching the authorized current project's
+Auto-context first puts the module matching the authorized current project's
 Git repository (or the repository explicitly supplied in the internal KB view).
-If it cannot produce useful context, it falls back to the normal visible search.
+It reserves part of the character budget and, when the main module produced useful
+context, adds compact links to relevant sections from other modules. If the main module
+has no useful context, the normal visible search still supplies the result.
 SSH-style and HTTPS project URLs match the same configured repository.
 
 Implementation and operator commissioning are separate: deploying the code
@@ -146,9 +176,42 @@ without it a module stays `failed` with `KB source fetch failed`. In production 
 from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voicechat` service
 (before 0.1.413 only the `kanban` service received it, so private modules such as Make failed).
 
+## Implementation ownership and freshness
+
+`packages/knowledge/src` owns indexing, scoped visibility, source snapshots,
+auto-context and read-only MCP definitions. Core's `kb/` files provide host
+adapters, HTTP transport, usage persistence and research. The `kbRpc` decorator
+uses the Shared RPC registry with live host identity; request filters cannot
+supply a different viewer. UI implementation belongs to `sislexa-core-ui`.
+
+Runtime indexing does not infer `freshness: current` from frontmatter `updated`:
+a timestamp alone does not prove that the checked Git SHA and declared areas still
+match. File documents therefore report `unknown` until a verified freshness signal
+is supplied; the maintenance CLI remains responsible for checked SHA and area
+validation.
+
+Freshness tracks the executable package and host adapters plus `docs/kb/modules.md`,
+which is parsed as runtime registration input. It does not track all of `docs/kb`:
+a content edit or freshness/log commit is not a change to the KB implementation,
+and that self-reference would make this topic stale immediately after its own
+reconciliation commit. The index is already excluded by the checker itself.
+
+The 0.1.1 maintenance CLI excludes area commits that also update the same topic.
+A later code-only commit still makes it stale, even if another topic was updated
+in that commit. `touch` records the current HEAD; this permits a combined
+code/topic commit without immediately invalidating that topic. See
+[maintenance workflow](../kb-workflow.md#reconciliation-after-repository-extraction).
+
+Module registration does not prove content availability. If an owner document is
+missing from search, inspect `/api/kb/modules` for its indexed SHA/status before
+assuming that its topic was removed; refresh failures preserve the last successful
+snapshot. Keep Core migration notes until the owner KB actually covers them.
+
 ## Назначение
 
-База знаний быстро отвечает, как реализованы фичи voiceAIChat, где находятся ключевые символы и какие протоколы используются. Markdown в `docs/kb` остаётся единственным источником истины и проходит обычный Git review. UI работает только на чтение.
+База знаний быстро отвечает, как реализованы фичи voiceAIChat, где находятся ключевые символы и какие протоколы используются. Repository Markdown is versioned through Git review. Personal and project articles
+also live in `kb_documents`; authenticated write/delete APIs enforce their scopes.
+Code remains authoritative when documentation disagrees with implementation.
 
 Генерируемый `docs/kb/README.md` исключён из Git pathspec расчёта свежести тем. Иначе тема с широкой областью `docs/kb` считала commit самого индекса новым изменением, следующий `kb:index` снова переписывал индекс, а release-ворота БЗ образовывали бесконечную петлю.
 
@@ -174,9 +237,17 @@ from `/etc/voicechat/production.env`; `docker-compose.yml` passes it to the `voi
 `mcp__kb__*` (`kbMcp.ts`, `viewOf`): модель видит общий раздел, персональные знания
 владельца чата и знания проекта этого чата — не больше.
 
-Индекс один на оба источника: BM25 из разных индексов несравним, поэтому статьи из БД
-разбираются тем же кодом, что и файлы (`kb/engine.ts`), а кэш пересобирается по версии
-набора (`db.kbDocumentsVersion()` — количество + максимум `updated_at`).
+Статьи из БД разбираются тем же кодом, что и файлы (`packages/knowledge/src/engine.ts`),
+а кэш пересобирается по версии набора (`db.kbDocumentsVersion()` — количество + максимум
+`updated_at`). BM25 внутри файлового и хранимого корпусов считается отдельно; итоговую
+выдачу `ScopedKnowledgeBase` объединяет Reciprocal Rank Fusion по позициям, сохраняя
+порядок reranker каждого источника, и при наличии reranker делает общий финальный проход.
+Численные BM25 score разных корпусов напрямую не сравниваются.
+
+Точное совпадение пути, символа, протокола или alias назначается одному наиболее
+релевантному разделу документа, а не всем его chunks. Markdown-заголовки внутри fenced
+code не индексируются; повторные заголовки получают уникальные anchors с числовым
+суффиксом. Поиск и MCP-чтение используют один парсер anchors.
 
 ## Скелет раздела при создании проекта
 
@@ -239,4 +310,4 @@ UI опрашивает `GET` того же маршрута раз в три с
 
 ## Тесты
 
-`apps/server/src/kb/service.test.ts` проверяет точный символ, русский lexical-поиск, budget и reranking. `kb/taskQuery.test.ts` — разбор описания на прозу и код (шум вроде `read`, `cat -n`, `${режим}` в символы не попадает). `kb/autoContext.test.ts` — бюджет, обрезка первого блока, кодовая дорожка и причина пустой выдачи. `kb/taskInjection.test.ts` — регрессия на дословных описаниях CHAT-54/68/70 по настоящей `docs/kb`: на кодовых описаниях инъекция обязана быть непустой. `kb/access.test.ts` — контроль доступа: не-участник не достаёт знания чужого проекта ни фильтром, ни по id, ни широким поиском; персональные видит только владелец; скелет появляется у нового проекта. `kb/research.test.ts` — разбор ответа модели и запись статей (CLI мокается). `KnowledgeBase.dom.test.tsx` проверяет три раздела, выбор проекта, запуск исследования и запись своей статьи.
+`apps/server/src/kb/service.test.ts` проверяет точный символ, русский lexical-поиск, budget и reranking. `packages/knowledge/src/taskQuery.test.ts` — разбор описания на прозу и код (шум вроде `read`, `cat -n`, `${режим}` в символы не попадает). `packages/knowledge/src/autoContext.test.ts` — бюджет, обрезка первого блока, кодовая дорожка и причина пустой выдачи. `kb/taskInjection.test.ts` — регрессия на дословных описаниях CHAT-54/68/70 по настоящей `docs/kb`: на кодовых описаниях инъекция обязана быть непустой. `kb/access.test.ts` — контроль доступа: не-участник не достаёт знания чужого проекта ни фильтром, ни по id, ни широким поиском; персональные видит только владелец; скелет появляется у нового проекта. `kb/research.test.ts` — разбор ответа модели и запись статей (CLI мокается). `KnowledgeBase.dom.test.tsx` проверяет три раздела, выбор проекта, запуск исследования и запись своей статьи.

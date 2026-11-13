@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 // превью идут через прокси ядра с его авторизацией и перепроверкой whoami у ридера; dev-сервер машины
 // открывается через мост машин ридера; MCP «browser» принимает подписанный токен хода из любого процесса;
 // действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии ядра; внутренние пути без токена закрыты.
-import { createServer } from 'node:net'
+import { deferredCoreFetch } from '../test/deferredCoreFetch.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,19 +24,36 @@ import { createPreviewTurnTokens } from '@voicechat/web-reader-contracts'
 import { INTERNAL_READER_CORE_PATH, READER_HEALTH_PATH } from '@voicechat/web-reader-contracts'
 import { buildReaderServer, type ReaderServer } from '@sislexa/web-reader/standalone'
 
+const standProxyDeps = vi.hoisted(() => ({ current: undefined as ConstructorParameters<typeof import('../standProxy.js').StandProxy>[0] | undefined }))
+vi.mock('../standProxy.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../standProxy.js')>()
+  return {
+    ...original,
+    StandProxy: class extends original.StandProxy {
+      constructor(deps: ConstructorParameters<typeof original.StandProxy>[0]) {
+        super(deps)
+        standProxyDeps.current = deps
+      }
+    }
+  }
+})
+
+const inspectorFetch = vi.hoisted(() => vi.fn<typeof fetch>())
+vi.mock('./proxy.js', async importOriginal => {
+  const original = await importOriginal<typeof import('./proxy.js')>()
+  return {
+    ...original,
+    registerReaderProxy: (app: FastifyInstance, opts: Parameters<typeof original.registerReaderProxy>[1]) =>
+      original.registerReaderProxy(app, { ...opts, fetchImpl: (url, init) =>
+        String(url).includes('/api/preview/inspector.js?') ? inspectorFetch(url, init) : fetch(url, init) })
+  }
+})
+
 const SECRET = 'session-secret'
 const INTERNAL = 'internal-token'
 const MCP = 'mcp-secret'
 const fakeLlm: LlmClient = { send: (_req, handlers) => { queueMicrotask(() => { void handlers.onDone('ок') }); return { cancel: () => {} } } }
 const MCP_HEADERS = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer()
-    srv.once('error', reject)
-    srv.listen(0, '127.0.0.1', () => { const port = (srv.address() as { port: number }).port; srv.close(() => resolve(port)) })
-  })
-}
 
 let dataDir: string
 let db: VoiceChatDb
@@ -53,17 +70,16 @@ const json = { 'content-type': 'application/json' }
 
 beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), 'vc-reader-remote-'))
-  const [corePort, readerPort] = [await freePort(), await freePort()]
-  coreUrl = `http://127.0.0.1:${corePort}`
-  readerUrl = `http://127.0.0.1:${readerPort}`
   db = new VoiceChatDb(':memory:')
   await db.ready
   await db.identity.createUser('ann', 'password-1', 'developer')
   agentId = (await db.machines.createAgent('ann', 'Dev machine')).id
   conversationId = (await db.chat.createConversation('ann', 'Reader')).id
+  reader = await buildReaderServer({ fetchImpl: deferredCoreFetch(() => coreUrl), config: loadWebReaderConfig({ PORT: '0', VC_CORE_URL: 'http://core.test', VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_RELEASE_VERSION: 'test' }) })
+  readerUrl = await reader.app.listen({ host: '127.0.0.1', port: 0 })
   core = await buildServer({
     config: loadConfig({
-      PORT: String(corePort), VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
+      PORT: '0', VC_DATA_DIR: dataDir, VC_MODELS_DIR: join(dataDir, 'models'), VC_PIPER_VOICES_DIR: join(dataDir, 'voices'),
       VC_READER_MODE: 'remote', VC_READER_URL: readerUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP
     }),
     db, sessionSecret: SECRET, claude: fakeLlm, codex: fakeLlm, agentRegistry: (() => {
@@ -76,9 +92,7 @@ beforeAll(async () => {
       return registry
     })()
   })
-  await core.listen({ host: '127.0.0.1', port: corePort })
-  reader = await buildReaderServer({ config: loadWebReaderConfig({ PORT: String(readerPort), VC_CORE_URL: coreUrl, VC_INTERNAL_TOKEN: INTERNAL, VC_MCP_SECRET: MCP, VC_RELEASE_VERSION: 'test' }) })
-  await reader.app.listen({ host: '127.0.0.1', port: readerPort })
+  coreUrl = await core.listen({ host: '127.0.0.1', port: 0 })
 }, 60_000)
 
 afterAll(async () => {
@@ -104,6 +118,25 @@ async function callTool(base: string, turn: string, name: string, args: Record<s
 }
 
 describe('ядро (reader remote) + отдельный процесс Web Reader', () => {
+  it('forwards the lease cookie through Core when fetching the preview inspector from Web Reader', async () => {
+    const script = standProxyDeps.current!.previewInspectorScript!
+    const parentOrigin = 'http://127.0.0.1:25273'
+    const javascript = 'window.previewInspectorReady = true;'
+    inspectorFetch.mockResolvedValue(new Response(javascript, { status: 200, headers: { 'content-type': 'text/javascript' } }))
+    expect((await script(parentOrigin, '')).statusCode).toBe(401)
+    expect(inspectorFetch).not.toHaveBeenCalled()
+    const cookie = 'vc_session=' + annToken
+    const response = await script(parentOrigin, cookie)
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('javascript')
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.body.toString()).toBe(javascript)
+    expect(inspectorFetch).toHaveBeenCalledTimes(1)
+    const [url, init] = inspectorFetch.mock.calls[0]!
+    expect(url).toBe(readerUrl + '/api/preview/inspector.js?parentOrigin=' + encodeURIComponent(parentOrigin))
+    expect(new Headers(init!.headers).get('cookie')).toBe(cookie)
+  })
+
   it('app.internal возвращает ресурсы ядра через RPC, сохраняя отдельную авторизацию страницы', async () => {
     const preview = (path: string) => fetch(`${coreUrl}/api/preview?url=${encodeURIComponent('https://app.internal' + path)}`, { headers: annAuth })
     const health = await preview('/api/health')
@@ -144,19 +177,32 @@ describe('ядро (reader remote) + отдельный процесс Web Reade
     expect(machineRequests.length).toBe(count)
   })
 
-  it('MCP «browser»: подписанный токен из другого процесса принят; действие в панель уходит по RPC в relay ядра и доезжает до WS-сессии', async () => {
-    // Токен выдан «в процессе канбана» — другой экземпляр с тем же секретом.
-    const turn = createPreviewTurnTokens(MCP).issue({ userId: 'ann', conversationId })
+  it.each(['chat', 'make'] as const)('MCP browser routes %s conversation actions through Core sockets', async kind => {
+    const targetId = kind === 'make' ? (await db.chat.createConversation('ann', 'Make preview', 'make')).id : conversationId
+    const turn = createPreviewTurnTokens(MCP).issue({ userId: 'ann', conversationId: targetId })
     // Без подключённого клиента relay ядра отвечает отказом — ответ пришёл из ядра по RPC.
     const offline = await callTool(readerUrl, turn, 'read')
     expect(offline.isError).toBe(true)
-    expect(offline.text).toContain('не подключена')
+    expect(offline.text).toContain(kind === 'make' ? 'make_preview_closed' : 'не подключена')
     // Клиент ядра онлайн: отвечает на preview.action — результат возвращается модели через ридер.
     const ws = await connect(coreUrl, annToken)
     try {
+      if (kind === 'make') {
+        // A connected client with no handler must not leave the model waiting indefinitely.
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        const response = await fetch(coreUrl + INTERNAL_READER_CORE_PATH, {
+          method: 'POST', headers: { ...json, authorization: `Bearer ${INTERNAL}` },
+          body: JSON.stringify({ method: 'previewAction', args: ['ann', targetId, { kind: 'read' }, 20] })
+        })
+        expect(response.status).toBe(200)
+        expect(await response.json()).toMatchObject({ result: { ok: false, error: expect.stringContaining('make_preview_closed') } })
+      }
       ws.on('message', (data: Buffer) => {
         const m = JSON.parse(data.toString()) as ServerMessage
-        if (m.t === 'preview.action') ws.send(JSON.stringify({ t: 'preview.result', conversationId: m.conversationId, requestId: m.requestId, ok: true, result: { url: 'https://a.b/', title: 'Панель' } }))
+        if (m.t === 'preview.action') {
+          expect(m.conversationId).toBe(targetId)
+          ws.send(JSON.stringify({ t: 'preview.result', conversationId: m.conversationId, requestId: m.requestId, ok: true, result: { url: 'https://a.b/', title: 'Панель' } }))
+        }
       })
       await new Promise((r) => setTimeout(r, 100))
       const viaCore = await callTool(coreUrl, turn, 'read')

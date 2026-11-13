@@ -3,26 +3,12 @@ import { integrationBearer, type IntegrationPrincipal } from '../../auth/integra
 // Домен «projects»: таблицы projects, project_members, project_member_role_audit, project_invitations, project_types, project_type_review_audit, kanban_columns, board_views.
 // Файл получен разрезанием бывшего VoiceChatDb (apps/server/src/db/database.ts) по владению таблицами;
 // карта владения — ./ownership.ts, правила — docs/plans/db-repositories.md.
-import type { ProjectCommandPolicy, AutomatedQaMode, AutomatedQaScenario, ProjectInvitation, ProjectInvitationForUser, ProjectInvitationPreview, ProjectInvitationStatus, ProjectRole } from '@voicechat/shared'
+import type { ProjectCommandPolicy } from '@voicechat/shared'
 import type { MachineShareAccess } from '@sislexa/agent-contracts'
-import { parseProjectCommandPolicy, parseAutomatedQaScenarios, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView, BUILTIN_PROJECT_TYPES, DEFAULT_PROJECT_TYPE_ID, MAX_PROJECT_TYPE_DEPTH, canPublishProjectType, isProjectTypeVisible, projectTypeChainLabel, resolveProjectTypeDefaults, resolveProjectTypeFeatures, type ProjectFeatureOverride, type ProjectFeatureSet, type ProjectTypeChain, type ProjectTypeDefaults, type ProjectTypeNode, type ProjectTypeStatus, type KanbanColumn, type ProjectDetail, type ProjectMember, type ProjectSummary, type WorkItemType, type WorkItemDefaultSkills, type KanbanColumnSemanticType, type ProjectMachineDirectoryAssignments, recommendedProjectMachineDirectories, type KbContextMode, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS, validateReleaseTimeouts } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseAutomatedQaScenarios, BUILTIN_PROJECT_TYPES, DEFAULT_PROJECT_TYPE_ID, isProjectTypeVisible, projectTypeChainLabel, resolveProjectTypeDefaults, resolveProjectTypeFeatures, type ProjectFeatureOverride, type ProjectFeatureSet, type ProjectTypeChain, type ProjectTypeDefaults, type ProjectTypeNode, type ProjectTypeStatus, type ProjectDetail, type ProjectMember, type ProjectSummary, type WorkItemType, type WorkItemDefaultSkills, type ProjectMachineDirectoryAssignments, recommendedProjectMachineDirectories, type ReleaseTimeouts, DEFAULT_RELEASE_TIMEOUTS } from '@voicechat/shared'
 import { createHash, randomBytes } from 'node:crypto'
 import { BaseRepo } from './base.js'
-import { normalizeAutomatedQaScenario, RANK_STEP, parseStringArray, mapColumn, normKbContextMode, parseJsonValue } from './support.js'
-
-interface ProjectInvitationRow {
-  id: string
-  project_id: string
-  email: string | null
-  invited_username: string | null
-  role: string
-  token_hash: string
-  status: string
-  invited_by: string
-  created_at: number
-  expires_at: number
-  responded_at: number | null
-}
+import { RANK_STEP, parseStringArray, normKbContextMode, parseJsonValue } from './support.js'
 
 interface ProjectTypeRow {
   id: string
@@ -141,29 +127,25 @@ export class ProjectsRepo extends BaseRepo {
       [this.now(), createHash('sha256').update(token).digest('hex')])
     return row ? { kind: 'integration', projectId: String(row.project_id), projectIds: JSON.parse(String(row.project_ids)) as string[], scopes: JSON.parse(String(row.scopes)) as IntegrationTokenScope[] } : null
   }
-  /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
-  async getBoardView(userId: string, projectId: string): Promise<BoardView> {
-    const row = (await this.sql.get(`SELECT value FROM board_views WHERE username = ? AND project_id = ?`, [userId, projectId])) as { value: string } | undefined
-    if (!row) return { ...DEFAULT_BOARD_VIEW }
-    try {
-      return { ...DEFAULT_BOARD_VIEW, ...sanitizeBoardView(JSON.parse(row.value)) }
-    } catch {
-      return { ...DEFAULT_BOARD_VIEW }
-    }
-  }
-
-  /** Патч вида: как у настроек — присланные поля поверх сохранённых. */
-  async saveBoardView(userId: string, projectId: string, patch: Partial<BoardView>): Promise<BoardView> {
-    const next = { ...await this.getBoardView(userId, projectId), ...sanitizeBoardView(patch) }
-    await this.sql.run(`INSERT INTO board_views (username, project_id, value, updated_at) VALUES (?,?,?,?)
-       ON CONFLICT(username, project_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`, [userId, projectId, JSON.stringify(next), this.now()])
-    return next
-  }
 
   /** Политика команд проекта (п.10); null — проекта нет. */
   async getProjectCommandPolicy(projectId: string): Promise<ProjectCommandPolicy | null> {
     const r = (await this.sql.get(`SELECT command_policy FROM projects WHERE id = ?`, [projectId])) as { command_policy?: string | null } | undefined
     return r ? parseProjectCommandPolicy(r.command_policy) : null
+  }
+
+  /** Raw preview stand config of a project (validated by the caller); null when absent. */
+  async getProjectStandPreview(projectId: string): Promise<unknown> {
+    const row = await this.sql.get<{ config_json: string }>(`SELECT config_json FROM project_stand_previews WHERE project_id = ?`, [projectId])
+    if (!row) return null
+    try { return JSON.parse(row.config_json) } catch { return null }
+  }
+
+  async setProjectStandPreview(projectId: string, config: object | null, userId: string): Promise<void> {
+    if (!config) { await this.sql.run(`DELETE FROM project_stand_previews WHERE project_id = ?`, [projectId]); return }
+    await this.sql.run(`INSERT INTO project_stand_previews (project_id, config_json, updated_by, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(project_id) DO UPDATE SET config_json = excluded.config_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [projectId, JSON.stringify(config), userId, this.now()])
   }
 
   async isProjectMember(userId: string, projectId: string): Promise<boolean> {
@@ -215,190 +197,6 @@ export class ProjectsRepo extends BaseRepo {
     return (
       await this.sql.get(`SELECT 1 FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId]) !== undefined
     )
-  }
-
-  //
-  // Токен живёт только в письме: в БД — sha256, в API его нет вовсе. Принять
-  // приглашение может ТОЛЬКО адресат (по логину или по совпадению users.email),
-  // иначе утёкшая ссылка пускала бы в проект кого угодно.
-
-  private mapInvitation(r: ProjectInvitationRow): ProjectInvitation {
-    return {
-      id: r.id,
-      projectId: r.project_id,
-      email: r.email,
-      invitedUsername: r.invited_username,
-      role: r.role === 'owner' ? 'owner' : 'member',
-      status: (['pending', 'accepted', 'declined', 'revoked'] as const).includes(r.status as ProjectInvitationStatus)
-        ? (r.status as ProjectInvitationStatus)
-        : 'revoked',
-      invitedBy: r.invited_by,
-      createdAt: r.created_at,
-      expiresAt: r.expires_at,
-      respondedAt: r.responded_at
-    }
-  }
-
-  private invitationTokenHash(token: string): string {
-    return createHash('sha256').update(token).digest('hex')
-  }
-
-  /**
-   * Создать приглашение. `invitee` — логин или email; если такой пользователь
-   * известен, приглашение адресуется ему поимённо (и письмо уйдёт на его адрес).
-   * Возвращает приглашение и токен — токен нужен ровно один раз, для письма.
-   */
-  async createProjectInvitation(
-    userId: string,
-    projectId: string,
-    invitee: string,
-    opts: { role?: ProjectRole; ttlMs?: number } = {}
-  ): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    const raw = invitee.trim()
-    if (!raw) throw new Error('Укажите логин или email')
-    const looksLikeEmail = raw.includes('@')
-    const email = looksLikeEmail ? raw.toLowerCase() : null
-    if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254)) throw new Error('Некорректный email')
-
-    const user = looksLikeEmail ? await this.repos.identity.getUserByEmail(email!) : await this.repos.identity.getUser(raw)
-    if (!looksLikeEmail && !user) throw new Error(`Пользователь ${raw} не найден`)
-    const invitedUsername = user?.name ?? null
-    if (invitedUsername) {
-      const already = await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`, [projectId, invitedUsername])
-      if (already) throw new Error('Этот пользователь уже участник проекта')
-    }
-    // Письмо уходит на явный адрес приглашения либо на подтверждённый адрес
-    // найденного пользователя; звали по логину без email — письма не будет.
-    const deliverTo = email ?? user?.email ?? null
-
-    const token = randomBytes(24).toString('base64url')
-    const id = this.newId()
-    const ts = this.now()
-    const expiresAt = ts + (opts.ttlMs ?? 7 * 24 * 60 * 60_000)
-    // Повторное приглашение того же адресата заменяет прежнее живое: два
-    // действующих токена на одного человека — лишняя поверхность.
-    await this.sql.transaction(async () => {
-      if (invitedUsername) {
-        await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND invited_username=? AND status='pending'`, [ts, projectId, invitedUsername])
-      }
-      if (email) {
-        await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND email=? AND status='pending'`, [ts, projectId, email])
-      }
-      await this.sql.run(`INSERT INTO project_invitations (id, project_id, email, invited_username, role, token_hash, status, invited_by, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`, [id, projectId, email, invitedUsername, opts.role === 'owner' ? 'owner' : 'member', this.invitationTokenHash(token), userId, ts, expiresAt])
-    })
-    return { invitation: this.mapInvitation((await this.invitationRow(id))!), token, email: deliverTo }
-  }
-
-  private async invitationRow(id: string): Promise<ProjectInvitationRow | null> {
-    return ((await this.sql.get(`SELECT * FROM project_invitations WHERE id = ?`, [id])) as ProjectInvitationRow | undefined) ?? null
-  }
-
-  /** Живые приглашения проекта (для владельца). */
-  async listProjectInvitations(userId: string, projectId: string): Promise<ProjectInvitation[] | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    const rows = (await this.sql.all(`SELECT * FROM project_invitations WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`, [projectId])) as ProjectInvitationRow[]
-    return rows.map((r) => this.mapInvitation(r))
-  }
-
-  async revokeProjectInvitation(userId: string, projectId: string, invitationId: string): Promise<boolean> {
-    if (!(await this.isProjectOwner(userId, projectId))) return false
-    const changed = await this.sql.run(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE id=? AND project_id=? AND status='pending'`, [this.now(), invitationId, projectId])
-    return changed.changes > 0
-  }
-
-  /** Перевыпуск токена для повторной отправки письма: срок считается заново. */
-  async refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs?: number): Promise<{ invitation: ProjectInvitation; token: string; email: string | null } | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    const row = await this.invitationRow(invitationId)
-    if (!row || row.project_id !== projectId || row.status !== 'pending') return null
-    const token = randomBytes(24).toString('base64url')
-    const ts = this.now()
-    await this.sql.run(`UPDATE project_invitations SET token_hash=?, expires_at=?, created_at=? WHERE id=?`, [this.invitationTokenHash(token), ts + (ttlMs ?? Math.max(24 * 60 * 60_000, row.expires_at - row.created_at)), ts, invitationId])
-    const user = row.invited_username ? await this.repos.identity.getUser(row.invited_username) : null
-    return { invitation: this.mapInvitation((await this.invitationRow(invitationId))!), token, email: row.email ?? user?.email ?? null }
-  }
-
-  /** Живые приглашения пользователя — по логину и по подтверждённому адресу. */
-  async listInvitationsForUser(username: string): Promise<ProjectInvitationForUser[]> {
-    const user = await this.repos.identity.getUser(username)
-    const rows = (await this.sql.all(`SELECT i.*, p.name AS project_name FROM project_invitations i
-       JOIN projects p ON p.id = i.project_id
-       WHERE i.status = 'pending' AND i.expires_at > ?
-         AND (i.invited_username = ? OR (i.email IS NOT NULL AND i.email = ?))
-       ORDER BY i.created_at DESC`, [this.now(), username, (user?.email ?? '').toLowerCase()])) as Array<ProjectInvitationRow & { project_name: string }>
-    return rows.map((r) => ({ ...this.mapInvitation(r), projectName: r.project_name }))
-  }
-
-  /** Публичный превью по токену: только имя проекта, кто позвал и срок. */
-  async projectInvitationPreview(token: string): Promise<ProjectInvitationPreview | null> {
-    const row = (await this.sql.get(`SELECT i.*, p.name AS project_name FROM project_invitations i
-       JOIN projects p ON p.id = i.project_id
-       WHERE i.token_hash = ? AND i.status = 'pending' AND i.expires_at > ?`, [this.invitationTokenHash(token), this.now()])) as (ProjectInvitationRow & { project_name: string }) | undefined
-    if (!row) return null
-    return {
-      projectId: row.project_id,
-      projectName: row.project_name,
-      invitedBy: row.invited_by,
-      role: row.role === 'owner' ? 'owner' : 'member',
-      expiresAt: row.expires_at
-    }
-  }
-
-  /**
-   * Приглашение адресовано этому пользователю? Единственное место, где решается
-   * «чья это ссылка»: по логину либо по совпадению подтверждённого адреса.
-   */
-  private async invitationAddressedTo(row: ProjectInvitationRow, username: string): Promise<boolean> {
-    if (row.invited_username) return row.invited_username === username
-    if (!row.email) return false
-    const email = ((await this.repos.identity.getUser(username))?.email ?? '').toLowerCase()
-    return Boolean(email) && email === row.email.toLowerCase()
-  }
-
-  /**
-   * Приглашение по токену (ссылка из письма) либо по id (список в интерфейсе).
-   * Id не секрет: доступ всё равно решает проверка адресата ниже, а приглашённому
-   * по логину токен не приходит вовсе — иначе он не смог бы принять приглашение.
-   */
-  private async invitationByTokenOrId(tokenOrId: string): Promise<ProjectInvitationRow | undefined> {
-    const byToken = (await this.sql.get(`SELECT * FROM project_invitations WHERE token_hash = ?`, [this.invitationTokenHash(tokenOrId)])) as ProjectInvitationRow | undefined
-    return byToken ?? ((await this.sql.get(`SELECT * FROM project_invitations WHERE id = ?`, [tokenOrId])) as ProjectInvitationRow | undefined)
-  }
-
-  /** Принять приглашение по токену или id. Возвращает id проекта. */
-  async acceptProjectInvitation(username: string, tokenOrId: string): Promise<{ projectId: string }> {
-    const ts = this.now()
-    return await this.sql.transaction(async () => {
-      const row = await this.invitationByTokenOrId(tokenOrId)
-      if (!row) throw new Error('Приглашение недействительно')
-      // Повторный переход по той же ссылке — обычное дело: письмо остаётся в
-      // почте, а вкладок может быть две. Если это приглашение уже принял тот же
-      // человек и он в проекте, отвечаем как на успех: новых прав это не даёт,
-      // зато он попадает в проект вместо отказа «Приглашение недействительно».
-      if (row.status === 'accepted' && await this.invitationAddressedTo(row, username) && await this.isProjectMember(username, row.project_id)) {
-        return { projectId: row.project_id }
-      }
-      if (row.status !== 'pending') throw new Error('Приглашение недействительно')
-      if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
-      if (!(await this.invitationAddressedTo(row, username))) throw new Error('Это приглашение адресовано другому пользователю')
-      const user = await this.repos.identity.getUser(username)
-      if (!user || user.blocked) throw new Error('Учётная запись недоступна')
-
-      await this.sql.run(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, ?, ?)`, [row.project_id, username, row.role === 'owner' ? 'owner' : 'member', ts])
-      await this.auditProjectMemberRole(row.project_id, row.invited_by, username, null, row.role === 'owner' ? 'owner' : 'member', 'add', ts)
-      await this.sql.run(`UPDATE project_invitations SET status='accepted', responded_at=?, invited_username=? WHERE id=?`, [ts, username, row.id])
-      return { projectId: row.project_id }
-    })
-  }
-
-  async declineProjectInvitation(username: string, tokenOrId: string): Promise<boolean> {
-    const row = await this.invitationByTokenOrId(tokenOrId)
-    if (!row || row.status !== 'pending') return false
-    if (!(await this.invitationAddressedTo(row, username))) throw new Error('Это приглашение адресовано другому пользователю')
-    await this.sql.run(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`, [this.now(), row.id])
-    return true
   }
 
   /**
@@ -490,11 +288,6 @@ export class ProjectsRepo extends BaseRepo {
       .map((node) => ({ ...node, usageCount: counts.get(node.id) ?? 0 }))
   }
 
-  /** Все узлы, ожидающие решения администратора. */
-  async listPendingProjectTypes(): Promise<ProjectTypeNode[]> {
-    return (await this.allProjectTypes()).filter((node) => node.status === 'pending')
-  }
-
   /** Путь от корня к узлу. Пустой массив — узла нет или цепочка разорвана. */
   async projectTypeAncestry(id: string): Promise<ProjectTypeNode[]> {
     const chain: ProjectTypeNode[] = []
@@ -536,144 +329,6 @@ export class ProjectsRepo extends BaseRepo {
   /** Заготовки типа, слитые от корня к листу. */
   async projectTypeDefaults(id: string): Promise<ProjectTypeDefaults> {
     return resolveProjectTypeDefaults((await this.projectTypeChain(id)).nodes)
-  }
-
-  /** Есть ли у узла дети — нужно и для отказа при удалении, и для UI. */
-  async projectTypeHasChildren(id: string): Promise<boolean> {
-    const row = await this.sql.get(`SELECT 1 FROM project_types WHERE parent_id = ? LIMIT 1`, [id])
-    return Boolean(row)
-  }
-
-  async projectTypeUsageCount(id: string): Promise<number> {
-    const row = (await this.sql.get(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ?`, [id])) as { n: number }
-    return row.n
-  }
-
-  private async assertProjectTypeParent(parentId: string | null, selfId?: string): Promise<void> {
-    if (!parentId) return
-    const parent = await this.getProjectType(parentId)
-    if (!parent) throw new Error('Родительский тип не найден')
-    const ancestry = await this.projectTypeAncestry(parentId)
-    if (selfId && ancestry.some((node) => node.id === selfId)) throw new Error('Тип не может быть потомком самого себя')
-    if (ancestry.length + 1 > MAX_PROJECT_TYPE_DEPTH) throw new Error(`Слишком глубокая вложенность типов (максимум ${MAX_PROJECT_TYPE_DEPTH})`)
-  }
-
-  async createProjectType(userId: string, args: { parentId: string | null; name: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): Promise<ProjectTypeNode> {
-    const name = args.name.trim()
-    if (!name) throw new Error('Название типа обязательно')
-    await this.assertProjectTypeParent(args.parentId)
-    const id = this.newId()
-    const ts = this.now()
-    await this.sql.run(`
-      INSERT INTO project_types (id, parent_id, name, description, features_json, defaults_json, builtin, owner_id, status, review_note, created_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'private', '', ?, ?, ?)
-    `, [id, args.parentId, name, args.description ?? '', JSON.stringify(args.features ?? {}), JSON.stringify(args.defaults ?? {}), userId, userId, ts, ts])
-    this.invalidateProjectTypeCache()
-    return (await this.getProjectType(id))!
-  }
-
-  async updateProjectType(id: string, fields: { parentId?: string | null; name?: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): Promise<ProjectTypeNode | null> {
-    const current = await this.getProjectType(id)
-    if (!current) return null
-    if (current.builtin) throw new Error('Встроенный тип нельзя изменить')
-    if (fields.parentId !== undefined) await this.assertProjectTypeParent(fields.parentId, id)
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (fields.parentId !== undefined) { set.push('parent_id = ?'); vals.push(fields.parentId) }
-    if (fields.name !== undefined) {
-      const name = fields.name.trim()
-      if (!name) throw new Error('Название типа обязательно')
-      set.push('name = ?'); vals.push(name)
-    }
-    if (fields.description !== undefined) { set.push('description = ?'); vals.push(fields.description) }
-    if (fields.features !== undefined) { set.push('features_json = ?'); vals.push(JSON.stringify(fields.features)) }
-    if (fields.defaults !== undefined) { set.push('defaults_json = ?'); vals.push(JSON.stringify(fields.defaults)) }
-    if (!set.length) return current
-    set.push('updated_at = ?'); vals.push(this.now())
-    await this.sql.run(`UPDATE project_types SET ${set.join(', ')} WHERE id = ?`, [...vals, id])
-    this.invalidateProjectTypeCache()
-    return await this.getProjectType(id)
-  }
-
-  async deleteProjectType(id: string): Promise<boolean> {
-    const current = await this.getProjectType(id)
-    if (!current) return false
-    if (current.builtin) throw new Error('Встроенный тип нельзя удалить')
-    // Отказ вместо каскада: иначе удаление узла тихо осиротило бы чужие проекты.
-    if (await this.projectTypeHasChildren(id)) throw new Error('У типа есть подтипы — сначала удалите или перенесите их')
-    const used = await this.projectTypeUsageCount(id)
-    if (used > 0) throw new Error(`Тип используют проекты (${used}) — сначала переведите их на другой тип`)
-    await this.sql.run(`DELETE FROM project_types WHERE id = ?`, [id])
-    this.invalidateProjectTypeCache()
-    return true
-  }
-
-  /**
-   * Смена статуса публикации с записью в аудит. Проверку прав делает роут;
-   * здесь — инварианты самой модели.
-   */
-  async setProjectTypeStatus(actor: string, id: string, status: ProjectTypeStatus, note = ''): Promise<ProjectTypeNode | null> {
-    const current = await this.getProjectType(id)
-    if (!current) return null
-    if (current.builtin) throw new Error('Встроенный тип не участвует в публикации')
-    if (status === 'pending' || status === 'published') {
-      if (!canPublishProjectType(await this.projectTypeAncestry(id))) {
-        throw new Error('Сначала опубликуйте родительские типы — иначе общий тип повиснет на личном')
-      }
-    }
-    if (status === 'private' && current.status === 'published') {
-      const used = await this.projectTypeUsageCount(id)
-      const foreign = (await this.sql.get(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ? AND created_by <> ?`, [id, current.ownerId ?? ''])) as { n: number }
-      if (foreign.n > 0) throw new Error(`Тип используют чужие проекты (${foreign.n} из ${used}) — отозвать публикацию нельзя`)
-    }
-    const ts = this.now()
-    await this.sql.transaction(async () => {
-      await this.sql.run(`UPDATE project_types SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`, [status, note, actor, ts, ts, id])
-      await this.sql.run(`INSERT INTO project_type_review_audit (type_id, actor, old_status, new_status, note, at) VALUES (?, ?, ?, ?, ?, ?)`, [id, actor, current.status, status, note, ts])
-    })
-    this.invalidateProjectTypeCache()
-    return await this.getProjectType(id)
-  }
-
-  /**
-   * Узел из текущего состояния проекта: «сохранить настроенный проект как подтип».
-   *
-   * Возможности снимаются ЭФФЕКТИВНЫЕ и записываются явными переопределениями —
-   * иначе новый узел зависел бы от того, что потом сделают с родителем. Заготовки
-   * берутся из самого проекта: видимые колонки доски, теги, навыки по типам
-   * элементов и git/CI-настройки. Родитель — текущий тип проекта, поэтому узел
-   * встаёт ровно на следующий уровень дерева.
-   */
-  async deriveProjectType(userId: string, projectId: string, name: string): Promise<ProjectTypeNode | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    const project = await this.getProject(userId, projectId)
-    if (!project) return null
-    const trimmed = name.trim()
-    if (!trimmed) throw new Error('Название типа обязательно')
-
-    const features: ProjectFeatureOverride = { ...(await this.projectTypeChain(project.typeId)).features }
-    const columns = (await this.sql.all(`SELECT name, semantic_type FROM kanban_columns WHERE project_id = ? AND hidden = 0 ORDER BY position, created_at, id`, [projectId])) as Array<{ name: string; semantic_type: string }>
-
-    const defaults: ProjectTypeDefaults = {
-      columns: columns.map((column) => ({ name: column.name, semanticType: column.semantic_type as ProjectTypeDefaults['columns'] extends Array<infer T> ? T extends { semanticType: infer S } ? S : never : never })),
-      technologies: project.technologies,
-      skills: project.skills,
-      defaultSkills: project.defaultSkills,
-      commitPolicy: project.commitPolicy,
-      mergeTransport: project.mergeTransport,
-      agentPlanApprovalMode: project.agentPlanApprovalMode,
-      ...(project.ciBaseBranch ? { ciBaseBranch: project.ciBaseBranch } : {}),
-      ...(project.ciBranchTemplate ? { ciBranchTemplate: project.ciBranchTemplate } : {}),
-      ...(project.ciReuseStrategy ? { ciReuseStrategy: project.ciReuseStrategy } : {}),
-      ...(project.testCommand ? { testCommand: project.testCommand } : {}),
-      ...(project.doneRetentionDays !== undefined ? { doneRetentionDays: project.doneRetentionDays } : {})
-    }
-    return await this.createProjectType(userId, { parentId: project.typeId, name: trimmed, description: `Из проекта «${project.name}»`, features, defaults })
-  }
-
-  async projectTypeReviewAudit(id: string): Promise<Array<{ actor: string; oldStatus: string; newStatus: string; note: string; at: number }>> {
-    const rows = (await this.sql.all(`SELECT actor, old_status, new_status, note, at FROM project_type_review_audit WHERE type_id = ? ORDER BY at, id`, [id])) as Array<{ actor: string; old_status: string; new_status: string; note: string; at: number }>
-    return rows.map((r) => ({ actor: r.actor, oldStatus: r.old_status, newStatus: r.new_status, note: r.note, at: r.at }))
   }
 
   private async mapProjectSummary(r: ProjectRow, myRole: string): Promise<ProjectSummary> {
@@ -783,22 +438,11 @@ export class ProjectsRepo extends BaseRepo {
     return (await this.getProject(userId, id)) as ProjectDetail
   }
 
-  async countOwnedProjects(userId: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<number> {
-    const row = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members m JOIN projects p ON p.id = m.project_id
-      WHERE m.username = ? AND m.role = 'owner' AND (? IS NULL OR p.tenant_id = ? OR (? = 'personal' AND p.tenant_kind = 'personal'))`, [userId, tenantId ?? null, tenantId ?? null, tenantKind ?? null])) as { count: number }
-    return row.count
-  }
-
   async listProjects(userId: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<ProjectSummary[]> {
     const rows = (await this.sql.all(`SELECT p.*, m.role AS my_role FROM projects p
          JOIN project_members m ON m.project_id = p.id
          WHERE m.username = ? AND (? IS NULL OR p.tenant_id = ? OR (? = 'personal' AND p.tenant_kind = 'personal')) ORDER BY p.updated_at DESC`, [userId, tenantId ?? null, tenantId ?? null, tenantKind ?? null])) as Array<ProjectRow & { my_role: string }>
     return await Promise.all(rows.map(async (r) => await this.mapProjectSummary(r, r.my_role)))
-  }
-
-  async activeProjectMemberNames(projectId: string): Promise<string[]> {
-    const rows = await this.sql.all<{ username: string }>(`SELECT pm.username FROM project_members pm JOIN users u ON u.name=pm.username WHERE pm.project_id=? AND u.blocked=0`, [projectId])
-    return rows.map(row => row.username)
   }
 
   async getProject(userId: string, id: string, tenantId?: string, tenantKind?: 'personal' | 'team'): Promise<ProjectDetail | null> {
@@ -907,156 +551,6 @@ export class ProjectsRepo extends BaseRepo {
     }
   }
 
-  async transferTenant(userId: string, projectId: string, currentTenantId: string, targetTenantId: string, targetTenantKind: 'personal' | 'team'): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, projectId))) return null
-    return this.sql.transaction(async () => {
-      const changed = await this.sql.run('UPDATE projects SET tenant_id = ?, tenant_kind = ?, updated_at = ? WHERE id = ? AND tenant_id = ?', [targetTenantId, targetTenantKind, this.now(), projectId, currentTenantId])
-      if (changed.changes !== 1) return null
-      await this.repos.chat.moveProjectToTenant(projectId, targetTenantId)
-      return this.getProject(userId, projectId, targetTenantId, targetTenantKind)
-    })
-  }
-
-  async updateProject(
-    userId: string,
-    id: string,
-    fields: {
-      name?: string
-      description?: string
-      gitUrl?: string | null
-      previewUrl?: string | null
-      testUsers?: import('@voicechat/shared').ProjectTestUser[]
-      technologies?: string[]
-      skills?: string[]
-      defaultSkills?: Partial<WorkItemDefaultSkills>
-      commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
-      mergeTransport?: 'local' | 'github_pull_request'
-      agentPlanApprovalMode?: 'manual' | 'automatic'
-      testCommand?: string
-      mergeTestCommand?: string
-      componentQaCommand?: string
-      integrationTestCommand?: string
-      automatedQaCommand?: string
-      automatedQaMode?: AutomatedQaMode
-      automatedQaScenarios?: AutomatedQaScenario[]
-      autoPilotDefault?: boolean
-      autoPilotRequiresManualQa?: boolean
-      autoPilotFixLimit?: number
-      commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
-      productionDeployCommand?: string
-      productionAgentId?: string | null
-      productionEnvironmentMode?: 'legacy' | 'managed'
-      productionCheckoutPath?: string
-      productionHealthCheckCommand?: string
-      releaseTimeouts?: ReleaseTimeouts
-      ciBaseBranch?: string
-      ciBranchTemplate?: string
-      ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
-      ciExecAuthRef?: string
-      ciKbContextMode?: KbContextMode
-      ciTestFixCycleLimit?: number
-      doneRetentionDays?: number | null
-      typeId?: string
-    }
-  ): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (fields.typeId !== undefined) {
-      // Меняются только ЖИВЫЕ возможности: доска, теги и CI-настройки проекта
-      // остаются как есть — они были снимком заготовок на момент создания.
-      if (!(await this.getProjectType(fields.typeId))) throw new Error('Тип проекта не найден')
-      set.push('project_type_id = ?')
-      vals.push(fields.typeId)
-    }
-    if (fields.name !== undefined) {
-      set.push('name = ?')
-      vals.push(fields.name)
-    }
-    if (fields.description !== undefined) {
-      set.push('description = ?')
-      vals.push(fields.description)
-    }
-    if (fields.gitUrl !== undefined) {
-      set.push('git_url = ?')
-      vals.push(fields.gitUrl)
-    }
-    if (fields.previewUrl !== undefined) {
-      set.push('preview_url = ?')
-      vals.push(fields.previewUrl)
-    }
-    if (fields.testUsers !== undefined) {
-      set.push('test_users_json = ?')
-      vals.push(JSON.stringify(fields.testUsers))
-    }
-    if (fields.technologies !== undefined) {
-      set.push('technologies = ?')
-      vals.push(JSON.stringify(fields.technologies))
-    }
-    if (fields.skills !== undefined) {
-      set.push('skills = ?')
-      vals.push(JSON.stringify(fields.skills))
-    }
-    if (fields.commitPolicy !== undefined) {
-      set.push('commit_policy = ?')
-      vals.push(fields.commitPolicy)
-    }
-    if (fields.mergeTransport !== undefined) {
-      set.push('merge_transport = ?')
-      vals.push(fields.mergeTransport)
-    }
-    if (fields.agentPlanApprovalMode !== undefined) {
-      set.push('agent_plan_approval_mode = ?')
-      vals.push(fields.agentPlanApprovalMode)
-    }
-    if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
-    if (fields.mergeTestCommand !== undefined) { set.push('merge_test_command = ?'); vals.push(fields.mergeTestCommand) }
-    if (fields.componentQaCommand !== undefined) { set.push('component_qa_command = ?'); vals.push(fields.componentQaCommand) }
-    if (fields.integrationTestCommand !== undefined) { set.push('integration_test_command = ?'); vals.push(fields.integrationTestCommand) }
-    if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
-    if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
-    if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
-    if (fields.autoPilotDefault !== undefined) { set.push('autopilot_default = ?'); vals.push(fields.autoPilotDefault ? 1 : 0) }
-    if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
-    if (fields.autoPilotFixLimit !== undefined) {
-      if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
-      set.push('autopilot_fix_limit = ?'); vals.push(fields.autoPilotFixLimit)
-    }
-    if (fields.commandPolicy !== undefined) { set.push('command_policy = ?'); vals.push(JSON.stringify(fields.commandPolicy)) }
-    if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
-    if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
-    if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }
-    if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
-    if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
-    if (fields.releaseTimeouts !== undefined) { set.push('release_timeouts_json = ?'); vals.push(JSON.stringify(validateReleaseTimeouts(fields.releaseTimeouts))) }
-    if (fields.ciBaseBranch !== undefined) { set.push('ci_base_branch = ?'); vals.push(fields.ciBaseBranch) }
-    if (fields.ciBranchTemplate !== undefined) { set.push('ci_branch_template = ?'); vals.push(fields.ciBranchTemplate) }
-    if (fields.ciReuseStrategy !== undefined) { set.push('ci_reuse_strategy = ?'); vals.push(fields.ciReuseStrategy) }
-    if (fields.ciExecAuthRef !== undefined) { set.push('ci_exec_auth_ref = ?'); vals.push(fields.ciExecAuthRef) }
-    if (fields.ciKbContextMode !== undefined) { set.push('ci_kb_context_mode = ?'); vals.push(normKbContextMode(fields.ciKbContextMode)) }
-    if (fields.ciTestFixCycleLimit !== undefined) {
-      if (!Number.isInteger(fields.ciTestFixCycleLimit) || fields.ciTestFixCycleLimit < 0) throw new Error('ciTestFixCycleLimit must be a non-negative integer')
-      set.push('ci_test_fix_cycle_limit = ?'); vals.push(fields.ciTestFixCycleLimit)
-    }
-    if (fields.doneRetentionDays !== undefined) { set.push('done_retention_days = ?'); vals.push(fields.doneRetentionDays) }
-    if (fields.defaultSkills?.epic !== undefined) { set.push('default_skills_epic = ?'); vals.push(JSON.stringify(fields.defaultSkills.epic)) }
-    if (fields.defaultSkills?.story !== undefined) { set.push('default_skills_story = ?'); vals.push(JSON.stringify(fields.defaultSkills.story)) }
-    if (fields.defaultSkills?.task !== undefined) { set.push('default_skills_task = ?'); vals.push(JSON.stringify(fields.defaultSkills.task)) }
-
-    const ts = this.now()
-    set.push('updated_at = ?')
-    vals.push(ts)
-    await this.sql.run(`UPDATE projects SET ${set.join(', ')} WHERE id = ?`, [...vals, id])
-    return await this.getProject(userId, id)
-  }
-
-  async deleteProject(userId: string, id: string): Promise<boolean> {
-    if (!(await this.isProjectOwner(userId, id))) return false
-    // CASCADE удалит members/machines/columns/tasks.
-    await this.sql.run(`DELETE FROM projects WHERE id = ?`, [id])
-    return true
-  }
-
   private async auditProjectMemberRole(
     projectId: string,
     actor: string,
@@ -1069,46 +563,6 @@ export class ProjectsRepo extends BaseRepo {
     await this.sql.run(`INSERT INTO project_member_role_audit
        (id, project_id, target_user, actor, old_role, new_role, action, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [this.newId(), projectId, targetUser, actor, oldRole, newRole, action, createdAt])
-  }
-
-  async addMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    if (!(await this.sql.get(`SELECT 1 FROM users WHERE name = ?`, [username]))) {
-      throw new Error(`Пользователь ${username} не найден`)
-    }
-    const ts = this.now()
-    const inserted = await this.sql.run(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'member', ?)`, [id, username, ts])
-    if (inserted.changes) await this.auditProjectMemberRole(id, userId, username, null, 'member', 'add', ts)
-    return await this.getProject(userId, id)
-  }
-
-  async updateMemberRole(
-    userId: string,
-    id: string,
-    username: string,
-    role: 'owner' | 'member'
-  ): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const change = () => this.sql.transaction(async () => {
-      const row = (await this.sql.get(`SELECT role FROM project_members WHERE project_id = ? AND username = ?`, [id, username])) as { role: string } | undefined
-      if (!row) throw new Error('Сначала добавьте пользователя в участники проекта')
-      const oldRole = row.role === 'owner' ? 'owner' : 'member'
-      if (oldRole === role) return
-      if (oldRole === 'owner') {
-        const owners = (await this.sql.get(`SELECT COUNT(*) AS count FROM project_members WHERE project_id = ? AND role = 'owner'`, [id])) as { count: number }
-        if (owners.count <= 1) {
-          throw new Error('Нельзя понизить последнего владельца. Сначала назначьте другого владельца')
-        }
-      }
-      const ts = this.now()
-      await this.sql.run(`UPDATE project_members SET role = ? WHERE project_id = ? AND username = ?`, [role, id, username])
-      await this.auditProjectMemberRole(id, userId, username, oldRole, role, 'role_change', ts)
-      await this.touchProject(id, ts)
-    })
-    // Транзакции адаптера выполняются по одной: два параллельных понижения не могут
-    // оба увидеть устаревший count (раньше это обеспечивал BEGIN IMMEDIATE).
-    await change()
-    return await this.getProject(userId, id)
   }
 
   async removeMember(userId: string, id: string, username: string): Promise<ProjectDetail | null> {
@@ -1133,111 +587,6 @@ export class ProjectsRepo extends BaseRepo {
     return await this.getProject(userId, id)
   }
 
-  async listProjectMemberRoleAudit(projectId: string): Promise<Array<{
-    targetUser: string
-    actor: string
-    oldRole: 'owner' | 'member' | null
-    newRole: 'owner' | 'member' | null
-    action: 'add' | 'role_change' | 'remove'
-    createdAt: number
-  }>> {
-    return ((await this.sql.all(`SELECT target_user, actor, old_role, new_role, action, created_at
-       FROM project_member_role_audit WHERE project_id = ? ORDER BY created_at, rowid`, [projectId])) as Array<Record<string, unknown>>).map((row) => ({
-      targetUser: String(row.target_user),
-      actor: String(row.actor),
-      oldRole: row.old_role === 'owner' ? 'owner' : row.old_role === 'member' ? 'member' : null,
-      newRole: row.new_role === 'owner' ? 'owner' : row.new_role === 'member' ? 'member' : null,
-      action: row.action as 'add' | 'role_change' | 'remove',
-      createdAt: Number(row.created_at)
-    }))
-  }
-
-  async unlinkMachine(userId: string, id: string, agentId: string): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectMember(userId, id))) return null
-    await this.repos.machines.setMachineSharedWithProject(userId, id, agentId, false)
-    await this.sql.run(`UPDATE projects SET default_agent_id=NULL WHERE id=? AND default_agent_id=?`, [id, agentId])
-    return await this.getProject(userId, id)
-  }
-
-  /** Назначить машину проекта по умолчанию (только владелец; машина должна быть в проекте). */
-  async setProjectDefaultMachine(userId: string, id: string, agentId: string): Promise<ProjectDetail | null> {
-    if (!(await this.isProjectOwner(userId, id))) return null
-    const inProject = await this.sql.get(`SELECT 1 FROM project_machines WHERE project_id = ? AND agent_id = ?`, [id, agentId])
-    if (!inProject) throw new Error('Машина не привязана к проекту')
-    await this.sql.run(`UPDATE projects SET default_agent_id = ? WHERE id = ?`, [agentId, id])
-    await this.touchProject(id)
-    return await this.getProject(userId, id)
-  }
-
-  async createColumn(userId: string, projectId: string, name: string): Promise<KanbanColumn | null> {
-    if (!(await this.isProjectMember(userId, projectId))) return null
-    const id = this.newId()
-    const ts = this.now()
-    const max = (
-      (await this.sql.get(`SELECT MAX(position) AS m FROM kanban_columns WHERE project_id = ?`, [projectId])) as {
-        m: number | null
-      }
-    ).m
-    const position = (max ?? 0) + RANK_STEP
-    await this.sql.run(`INSERT INTO kanban_columns (id, project_id, name, position, hidden, created_at) VALUES (?, ?, ?, ?, 0, ?)`, [id, projectId, name, position, ts])
-    await this.touchProject(projectId, ts)
-    return mapColumn({ id, project_id: projectId, name, semantic_type: 'custom', position, hidden: 0, wip_limit: null, created_at: ts })
-  }
-
-  async renameColumn(userId: string, projectId: string, columnId: string, name: string): Promise<boolean> {
-    return await this.updateColumn(userId, projectId, columnId, { name })
-  }
-
-  async updateColumn(userId: string, projectId: string, columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<boolean> {
-    if (!(await this.isProjectMember(userId, projectId)) || !(await this.columnInProject(projectId, columnId))) return false
-    const set: string[] = []
-    const vals: unknown[] = []
-    if (fields.name !== undefined) {
-      set.push('name = ?')
-      vals.push(fields.name)
-    }
-    if (fields.wipLimit !== undefined) {
-      set.push('wip_limit = ?')
-      vals.push(fields.wipLimit != null && fields.wipLimit > 0 ? Math.floor(fields.wipLimit) : null)
-    }
-    if (!set.length) return true
-    await this.sql.run(`UPDATE kanban_columns SET ${set.join(', ')} WHERE id = ? AND project_id = ?`, [...vals, columnId, projectId])
-    await this.touchProject(projectId)
-    return true
-  }
-
-  async setColumnHidden(userId: string, projectId: string, columnId: string, hidden: boolean): Promise<boolean> {
-    if (!(await this.isProjectMember(userId, projectId)) || !(await this.columnInProject(projectId, columnId))) return false
-    await this.sql.run(`UPDATE kanban_columns SET hidden = ? WHERE id = ? AND project_id = ?`, [hidden ? 1 : 0, columnId, projectId])
-    await this.touchProject(projectId)
-    return true
-  }
-
-  async reorderColumns(userId: string, projectId: string, order: string[]): Promise<boolean> {
-    if (!(await this.isProjectMember(userId, projectId))) return false
-    const ids = (
-      (await this.sql.all(`SELECT id FROM kanban_columns WHERE project_id = ?`, [projectId])) as Array<{ id: string }>
-    ).map((x) => x.id)
-    const known = new Set(ids)
-    if (order.length !== ids.length || !order.every((o) => known.has(o))) return false
-    const upd = this.sql.prepare(`UPDATE kanban_columns SET position = ? WHERE id = ? AND project_id = ?`)
-    await this.sql.transaction(async () => {
-      for (const [i, cid] of order.entries()) await upd.run((i + 1) * RANK_STEP, cid, projectId)
-    })
-    await this.touchProject(projectId)
-    return true
-  }
-
-  async deleteColumn(userId: string, projectId: string, columnId: string): Promise<boolean> {
-    if (!(await this.isProjectMember(userId, projectId))) return false
-    const semantic = (await this.sql.get(`SELECT semantic_type FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId])) as { semantic_type: string } | undefined
-    if (!semantic || semantic.semantic_type !== 'custom') return false
-    // CASCADE удалит задачи пользовательской колонки.
-    const info = await this.sql.run(`DELETE FROM kanban_columns WHERE id = ? AND project_id = ?`, [columnId, projectId])
-    if (info.changes) await this.touchProject(projectId)
-    return info.changes > 0
-  }
-
   /** Навыки по умолчанию проекта для типа элемента (из настроек проекта). */
   async projectDefaultSkills(projectId: string, type: WorkItemType): Promise<string[]> {
     const row = (await this.sql.get(`SELECT default_skills_epic, default_skills_story, default_skills_task FROM projects WHERE id = ?`, [projectId])) as
@@ -1246,26 +595,6 @@ export class ProjectsRepo extends BaseRepo {
     if (!row) return []
     const raw = type === 'epic' ? row.default_skills_epic : type === 'story' ? row.default_skills_story : row.default_skills_task
     return parseStringArray(raw)
-  }
-
-  /** Право редактировать чужую запись: автор, владелец проекта или админ. */
-  async canModerateTaskEntry(userId: string, projectId: string, author: string): Promise<boolean> {
-    if (userId === author) return true
-    if ((await this.repos.identity.getUser(userId))?.role === 'admin') return true
-    const owner = await this.sql.get(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ? AND role = 'owner'`, [projectId, userId])
-    return Boolean(owner)
-  }
-
-  /** Найти системную колонку проекта для автоматического перехода CI. */
-  async getColumnIdBySemantic(projectId: string, semanticType: KanbanColumnSemanticType): Promise<string | null> {
-    const row = (await this.sql.get(`SELECT id FROM kanban_columns WHERE project_id = ? AND semantic_type = ? ORDER BY position LIMIT 1`, [projectId, semanticType])) as { id: string } | undefined
-    return row?.id ?? null
-  }
-
-  // ============== Структурированное ручное QA =================
-  async canQa(userId: string, projectId: string): Promise<boolean> {
-    const row = (await this.sql.get(`SELECT role, qa_permission FROM project_members WHERE project_id = ? AND username = ?`, [projectId, userId])) as { role: string; qa_permission: number } | undefined
-    return !!row && (row.role === 'owner' || !!row.qa_permission)
   }
 
   /** Следующий номер задачи проекта (CHAT-N): счётчик живёт в projects, выдаёт его владелец. */

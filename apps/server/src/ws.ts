@@ -3,6 +3,7 @@ import { READ_ONLY_WS_COMMANDS, type Maintenance } from './maintenance.js'
 // Обработчики по типам сообщений подключают фазы STT/Claude/TTS (Ф4–Ф6).
 
 import type { WebSocket } from 'ws'
+import { AsyncResource } from 'node:async_hooks'
 import type { ClientMessage, ServerMessage } from '@voicechat/shared'
 
 /** Обработчик одного WS-соединения (per-connection состояние). */
@@ -116,7 +117,8 @@ export async function attachWs(socket: WebSocket, handlers: WsHandlers, options:
       })
       .catch((err) => console.error('[ws] обработчик сообщения упал:', err instanceof Error ? err.message : err))
   }
-  socket.on('message', receive)
+  // Preserve the authenticated connection context for attachment reads during turns.
+  socket.on('message', AsyncResource.bind(receive))
   for (const [data, isBinary] of options.initialFrames ?? []) receive(data, isBinary)
   socket.on('close', () => {
     void initialization.then(() => handlers.onClose?.(ctx))

@@ -1,3 +1,5 @@
+import type { ThreadResetMode } from './threadCost'
+
 /** Opaque server-issued reference; contains no bearer credential. */
 export interface ChatDelegationReference {
   readonly id: string
@@ -181,7 +183,7 @@ export interface ChatSettingsSnapshot {
   version: 1
   revision: number
   account: Readonly<Record<string, ChatSettingValue>>
-  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
   /** Device values are echoed by a local adapter and are never persisted by Core. */
   device: Readonly<Record<string, ChatSettingValue>>
 }
@@ -195,7 +197,7 @@ export type ChatSettingsPatch = {
   version: 1
   expectedRevision: number
   owner: 'conversation'
-  values: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
+  values: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
 }
 
 export interface ChatSettingsConflict {
@@ -213,7 +215,7 @@ export const CHAT_SETTING_OWNERS = immutable({
   conversation: [
     'title', 'projectId', 'execTarget', 'workdir', 'skills', 'llmEngineId', 'llmProvider',
     'model', 'codexModel', 'permissionMode', 'contextPresetId', 'kbMode', 'disabledContext',
-    'previewUrl', 'previewEngine', 'loadServiceData'
+    'previewUrl', 'previewEngine', 'loadServiceData', 'threadReset'
   ],
   device: ['micDeviceId', 'outputDeviceId', 'compactView', 'panelWidth', 'mobileTab']
 } as const)
@@ -224,6 +226,7 @@ function validateSettingValues(owner: ChatSettingOwner, values: Readonly<Record<
   const allowed = CHAT_SETTING_OWNERS[owner] as readonly string[]
   for (const [key, value] of Object.entries(values)) {
     if (!allowed.includes(key)) throw Error(`Setting ${key} does not belong to ${owner}`)
+    if (key === 'threadReset' && (typeof value !== 'string' || !['off', 'hint', 'auto'].includes(value))) throw Error('Invalid threadReset mode')
     if (key === 'loadServiceData' && typeof value !== 'boolean') throw Error('Setting loadServiceData must be boolean')
     if (!validSettingValue(value)) throw Error(`Invalid setting ${key}`)
   }
@@ -253,14 +256,14 @@ function cloneSettingRecord(values: Readonly<Record<string, ChatSettingValue>>):
 
 /** Concrete adapter that combines persisted account/conversation state with local device state. */
 export function createChatSettingsSnapshot(input: Omit<ChatSettingsSnapshot, 'conversation'> & {
-  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean }
+  conversation: Readonly<Record<string, ChatSettingValue>> & { readonly loadServiceData?: boolean; readonly threadReset?: ThreadResetMode }
 }): ChatSettingsSnapshot {
   if (input.version !== 1 || !Number.isSafeInteger(input.revision) || input.revision < 0) throw Error('Invalid settings revision')
   validateSettingValues('account', input.account)
   validateSettingValues('conversation', input.conversation)
   validateSettingValues('device', input.device)
   return immutable({ version: 1, revision: input.revision, account: cloneSettingRecord(input.account),
-    conversation: { loadServiceData: false, ...cloneSettingRecord(input.conversation) },
+    conversation: { threadReset: 'hint', loadServiceData: false, ...cloneSettingRecord(input.conversation) },
     device: cloneSettingRecord(input.device) })
 }
 
@@ -307,14 +310,16 @@ export function resolveChatReconnect(input: {
 const artifactPayload = {
   artifactVersion: 1,
   contract: 'sislexa.core.chat',
-  contractVersion: '1.1.0',
+  contractVersion: '1.2.0',
   rest: {
     context: '/api/chat/context',
     settings: '/api/chat/settings',
     conversationSettings: '/api/conversations/:conversationId/settings',
     conversationGroups: '/api/conversation-groups',
     conversationGroup: '/api/conversation-groups/:groupId',
-    conversationMembership: '/api/conversations/:conversationId/membership'
+    conversationMembership: '/api/conversations/:conversationId/membership',
+    conversationThreadCost: '/api/conversations/:conversationId/thread-cost',
+    conversationThreadReset: '/api/conversations/:conversationId/thread-reset'
   },
   websocket: {
     client: ['chat.connect'],
@@ -331,7 +336,7 @@ const artifactPayload = {
 
 /** Canonical, deeply frozen handoff artifact. Its canonical JSON has the exported SHA-256. */
 export const CHAT_CONTRACT_ARTIFACT = immutable(artifactPayload)
-export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'a7b143b2a7c28506857a2b1f52d6937a1ae148de32883d76a3ccb0056c4defd9'
+export const CHAT_CONTRACT_ARTIFACT_SHA256 = 'c1090b38cdb4f60af4e0692b6d0de20fb58bda92391aa3707d4e1ed844022f99'
 
 export function canonicalChatContractArtifact(): string {
   return JSON.stringify(CHAT_CONTRACT_ARTIFACT)

@@ -34,27 +34,50 @@ let db: VoiceChatDb
 let port: number
 let authStatus: AuthStatusState
 let sentMail: { to: string; text: string }[]
+let sharedStarted = false
 
-beforeEach(async () => {
+// Suites that build their own servers skip the shared one; suites that need extra build options
+// start the shared server themselves. Either way every test builds exactly one listening server.
+const OWN_SERVER_SUITES = new Set([
+  'WS: роль user не выполняет на сервере (форс plan)',
+  'WS: блок STT/TTS при нехватке ресурсов контейнера',
+  'WS: выбор движка Codex',
+  'WS: ходы переживают обрыв соединения (TurnManager)'
+])
+const CUSTOM_SERVER_SUITES = new Set(['WS: relay действий веб-превью', 'WS: кадры использования базы знаний'])
+
+type ServerOptions = Parameters<typeof buildServer>[0]
+async function startShared(extra: (database: VoiceChatDb) => Partial<ServerOptions> = () => ({})): Promise<number> {
   db = new VoiceChatDb(':memory:')
   sentMail = []
   authStatus = new AuthStatusState(async () => ({
     claude: { provider: 'claude', loggedIn: true, detail: 'подтверждено' },
     codex: { provider: 'codex', loggedIn: false, detail: 'вход не выполнен' }
   }))
+  sharedStarted = true
   app = await buildServer({
     config: loadConfig({ PORT: '0' }),
     db,
     claude: mockClaude,
     authStatus,
     sessionSecret: SECRET,
-    mailer: { configured: true, send: async (message) => { sentMail.push({ to: message.to, text: message.text }) } }
+    mailer: { configured: true, send: async (message) => { sentMail.push({ to: message.to, text: message.text }) } },
+    ...extra(db)
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
+  return port
+}
+
+beforeEach(async (context) => {
+  const suite = context.task.suite?.name ?? ''
+  if (OWN_SERVER_SUITES.has(suite) || CUSTOM_SERVER_SUITES.has(suite)) return
+  await startShared()
 })
 afterEach(async () => {
-  await app.close()
+  if (!sharedStarted) return
+  sharedStarted = false
+  await app?.close()
   db.close()
 })
 
@@ -172,7 +195,8 @@ describe('WS: синхронизация сохранённых сообщени
     expect(firstFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
     expect(secondFrames.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
     const persisted = response.json()
-    expect(firstFrames.find(frame => frame.t === 'chat.message')).toMatchObject({ t: 'chat.message', conversationId: conversation.id, message: { id: persisted.id, text: payload.text } })
+    for (const frames of [firstFrames, secondFrames])
+      expect(frames.find(frame => frame.t === 'chat.message')).toMatchObject({ t: 'chat.message', conversationId: conversation.id, message: { id: persisted.id, role: 'u1', text: payload.text } })
     expect(firstFrames.some(frame => frame.t === 'claude.start' || frame.t === 'claude.token')).toBe(false)
 
     const replayed = waitForFrame(second, isChatMessage)
@@ -233,6 +257,7 @@ describe('WS: синхронизация сохранённых сообщени
       payload: { messageId: 'owner-only-1', role: 'u1', text: 'owner secret', time: '10:00' }
     })
     await delivered
+    expect(framesA.filter(frame => frame.t === 'chat.message')).toHaveLength(1)
     expect(framesB).toEqual([expect.objectContaining({ t: 'chat.message', conversationId: target.id })])
     expect(framesA.some(frame => frame.conversationId === unrelated.id)).toBe(false)
     await chatBarrier(outsider, outsiderConversation.id, otherToken, 'outsider-barrier-1')
@@ -289,100 +314,6 @@ describe('WS: аутентификация соединения', () => {
   })
 })
 
-describe('chat message synchronization', () => {
-  const collectChatMessages = (ws: WebSocket): Array<Record<string, unknown>> => {
-    const frames: Array<Record<string, unknown>> = []
-    ws.on('message', (data) => {
-      const frame = JSON.parse(data.toString()) as Record<string, unknown>
-      if (frame.t === 'chat.message') frames.push(frame)
-    })
-    return frames
-  }
-
-  // @testCase TC-API-01
-  it('publishes a persisted user message to both owner sessions before generation starts', async () => {
-    const conversation = await db.chat.createConversation(U, 'Synced chat')
-    const first = await connectReady()
-    const second = await connectReady()
-    const firstFrames = collectChatMessages(first)
-    const secondFrames = collectChatMessages(second)
-    const delivered = Promise.all([waitForFrame(first, isChatMessage), waitForFrame(second, isChatMessage)])
-
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/conversations/${conversation.id}/messages`,
-      headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { messageId: 'sync-user-1', role: 'u1', text: 'Synchronized', time: '10:00' }
-    })
-
-    expect(response.statusCode).toBe(200)
-    await delivered
-    expect(firstFrames).toHaveLength(1)
-    expect(secondFrames).toHaveLength(1)
-    for (const frame of [...firstFrames, ...secondFrames]) {
-      expect(frame).toMatchObject({
-        t: 'chat.message',
-        conversationId: conversation.id,
-        message: { id: 'sync-user-1', role: 'u1', text: 'Synchronized' }
-      })
-    }
-    first.close()
-    second.close()
-  })
-
-  // @testCase TC-API-02
-  it('does not publish a chat message when persistence fails', async () => {
-    const conversation = await db.chat.createConversation(U, 'Failed persistence')
-    const socket = await connectReady()
-    const frames = collectChatMessages(socket)
-    const failure = vi.spyOn(db.chat, 'addMessage').mockRejectedValueOnce(new Error('storage unavailable'))
-
-    const response = await app.inject({
-      method: 'POST',
-      url: `/api/conversations/${conversation.id}/messages`,
-      headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { messageId: 'sync-failed-1', role: 'u1', text: 'Never published', time: '10:00' }
-    })
-
-    expect(response.statusCode).toBe(500)
-    failure.mockRestore()
-    await chatBarrier(socket, conversation.id, TOKEN, 'sync-failed-barrier')
-    expect(frames.map(frame => (frame.message as { id: string }).id)).toEqual(['sync-failed-barrier'])
-    socket.close()
-  })
-
-  // @testCase TC-SEC-01
-  it('routes chat messages to every owner connection and never to another user', async () => {
-    await db.identity.createUser('bob', '', 'developer')
-    const bobToken = signToken({ name: 'bob', role: 'developer' }, SECRET)
-    const conversation = await db.chat.createConversation(U, 'Private chat')
-    const ownerA = await connectReady()
-    const ownerB = await connectReady()
-    const foreign = await connectReady(port, bobToken)
-    const ownerAFrames = collectChatMessages(ownerA)
-    const ownerBFrames = collectChatMessages(ownerB)
-    const foreignFrames = collectChatMessages(foreign)
-    const foreignConversation = await db.chat.createConversation('bob', 'Bob chat')
-    const delivered = Promise.all([waitForFrame(ownerA, isChatMessage), waitForFrame(ownerB, isChatMessage)])
-
-    await app.inject({
-      method: 'POST',
-      url: `/api/conversations/${conversation.id}/messages`,
-      headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { messageId: 'owner-only-1', role: 'u1', text: 'owner secret', time: '10:00' }
-    })
-
-    await delivered
-    expect(ownerAFrames).toHaveLength(1)
-    expect(ownerBFrames).toHaveLength(1)
-    await chatBarrier(foreign, foreignConversation.id, bobToken, 'foreign-barrier-1')
-    expect(foreignFrames).toEqual([expect.objectContaining({ conversationId: foreignConversation.id })])
-    ownerA.close()
-    ownerB.close()
-    foreign.close()
-  })
-})
-
 describe('WS: живые изменения списка сессий', () => {
   /** Собирает кадры сессий, пришедшие на соединение. */
   const collect = (ws: WebSocket): Array<Record<string, unknown>> => {
@@ -393,7 +324,6 @@ describe('WS: живые изменения списка сессий', () => {
     })
     return frames
   }
-  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50))
 
   // @testCase TC-08
   it('отзыв своей Bearer-сессии доезжает по WebSocket, соседняя получает только инвалидацию', async () => {
@@ -402,8 +332,8 @@ describe('WS: живые изменения списка сессий', () => {
       (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'wsuser', password: 'ws-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
     const victimToken = await login('Phone/1.0')
     const observerToken = await login('Laptop/2.0')
-    const victim = await connect(port, victimToken)
-    const observer = await connect(port, observerToken)
+    const victim = await connectReady(port, victimToken)
+    const observer = await connectReady(port, observerToken)
     const victimFrames = collect(victim)
     const observerFrames = collect(observer)
 
@@ -425,8 +355,8 @@ describe('WS: живые изменения списка сессий', () => {
       (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'bulk', password: 'bulk-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
     const phoneToken = await login('Phone/1.0')
     const laptopToken = await login('Laptop/2.0')
-    const phone = await connect(port, phoneToken)
-    const laptop = await connect(port, laptopToken)
+    const phone = await connectReady(port, phoneToken)
+    const laptop = await connectReady(port, laptopToken)
     const phoneFrames = collect(phone)
     const laptopFrames = collect(laptop)
     const phoneSid = (await db.identity.listSessions('bulk')).find((s) => s.userAgent === 'Phone/1.0')!.sid
@@ -448,11 +378,15 @@ describe('WS: живые изменения списка сессий', () => {
     await db.identity.createUser('other', 'other-user-pass-2026', 'developer')
     const mineToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'mine', password: 'mine-user-pass-2026' } })).json().token as string
     const otherToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other', password: 'other-user-pass-2026' } })).json().token as string
-    const otherWs = await connect(port, otherToken)
+    const otherWs = await connectReady(port, otherToken)
     const otherFrames = collect(otherWs)
     await app.inject({ method: 'POST', url: '/api/session/logout-all', payload: { includeCurrent: true }, headers: { authorization: `Bearer ${mineToken}` } })
-    await settle()
-    expect(otherFrames).toEqual([])
+    // Barrier instead of a pause: frames reach one socket in publish order, so once other's own
+    // rename update arrives, a frame leaked from mine's logout would have arrived before it.
+    const otherSid = (await db.identity.listSessions('other'))[0]!.sid
+    await app.inject({ method: 'PATCH', url: `/api/session/${otherSid}`, payload: { label: 'barrier' }, headers: { authorization: `Bearer ${otherToken}` } })
+    await vi.waitFor(() => expect(otherFrames).toHaveLength(1), { timeout: 30_000 })
+    expect(otherFrames).toEqual([{ t: 'sessions.update', v: 1 }])
     otherWs.close()
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
@@ -460,7 +394,7 @@ describe('WS: живые изменения списка сессий', () => {
   it('переименование и админский отзыв тоже обновляют список живьём', async () => {
     await db.identity.createUser('renamer', 'renamer-pass-2026-ok', 'developer')
     const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'renamer', password: 'renamer-pass-2026-ok' } })).json().token as string
-    const ws = await connect(port, token)
+    const ws = await connectReady(port, token)
     const frames = collect(ws)
     const sid = (await db.identity.listSessions('renamer'))[0]!.sid
     await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}` } })
@@ -535,7 +469,7 @@ describe('WS: Claude-стрим', () => {
     expect(doneMsg.message).toBeDefined()
     expect(doneMsg.message?.meta?.activity).toBeUndefined()
     const persisted = (await db.chat.listMessages(U, conv.id)).find((message) => message.role === 'ai')
-    expect(persisted?.meta?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
+    expect((await db.chat.messageServiceData(U, conv.id, persisted!.id))?.activity?.map((a) => a.summary)).toEqual(['Bash: npm test'])
   })
 
   it('claude.send с verbose → приходит claude.log', async () => {
@@ -589,11 +523,8 @@ describe('WS /agent: смена политики с машины', () => {
         }
       })
     )
-    // Ждём применения (сообщение обрабатывается асинхронно).
-    for (let i = 0; i < 20 && (await db.machines.listAgents('admin'))[0]?.policy.allowWrite !== false; i++) {
-      await new Promise((r) => setTimeout(r, 25))
-    }
-    expect((await db.machines.listAgents('admin'))[0].policy.allowWrite).toBe(false)
+    // The frame is applied asynchronously; poll the stored policy instead of a fixed 500 ms budget.
+    await vi.waitFor(async () => expect((await db.machines.listAgents('admin'))[0]?.policy.allowWrite).toBe(false), { timeout: 10_000, interval: 25 })
     ws.close()
   })
 })
@@ -820,8 +751,6 @@ describe('WS: ходы переживают обрыв соединения (Tur
     })
   }
 
-  const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-
   /** close() только начинает handshake; session cleanup выполняется на событии close. */
   function closeWs(ws: WebSocket): Promise<void> {
     if (ws.readyState === WebSocket.CLOSED) return Promise.resolve()
@@ -865,7 +794,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
     }, { timeout: 30_000 })
     expect(saved[0].text).toBe('Часть ответа')
     expect(saved[0].engine).toBe('claude')
-    expect(saved[0].meta?.request?.provider).toBe('claude')
+    expect((await sdb.chat.messageServiceData(U, conv.id, saved[0].id))?.request?.provider).toBe('claude')
     await cleanupSlow(sapp, sdb, [ws])
   })
 
@@ -956,7 +885,7 @@ describe('WS: ходы переживают обрыв соединения (Tur
   // @testCase TC-WS-02
   it('claude.cancel с conversationId снимает ход: partial сохраняется как interrupted и поздний done игнорируется', async () => {
     // The late done is fired by the test after the cancel, so a loaded machine cannot finish the turn first.
-    let finishLate: (() => void) | undefined
+    let finishLate: (() => unknown) | undefined
     const controlledClaude: LlmClient = {
       send(_req, h) {
         void h.onSession('sess-cancel')
@@ -989,8 +918,9 @@ describe('WS: ходы переживают обрыв соединения (Tur
     await firstToken
     ws.send(JSON.stringify({ t: 'claude.cancel', conversationId: conv.id }))
     await cancelledDone
-    finishLate?.() // поздний финал мока уже не должен записать второе сообщение
-    await wait(80)
+    // The late done must not write a second message. The handler is async at runtime: awaiting it
+    // covers any save it would start, so no fixed pause is needed.
+    await finishLate?.()
     const saved = (await sdb.chat.listMessages(U, conv.id)).filter((m) => m.role === 'ai')
     expect(saved).toHaveLength(1)
     expect(saved[0]).toMatchObject({ text: 'Ча', meta: { interrupted: true } })
@@ -1001,11 +931,8 @@ describe('WS: ходы переживают обрыв соединения (Tur
 
 describe('WS: relay действий веб-превью', () => {
   it('preview.action доходит только своему пользователю, preview.result закрывает запрос', async () => {
-    await app.close()
     const relay = new PreviewActionRelay()
-    app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, previewRelay: relay })
-    await app.listen({ port: 0, host: '127.0.0.1' })
-    const p2 = (app.server.address() as AddressInfo).port
+    const p2 = await startShared(() => ({ previewRelay: relay }))
     await db.identity.createUser('bob', '', 'developer')
 
     const mine = await connectReady(p2)
@@ -1021,7 +948,10 @@ describe('WS: relay действий веб-превью', () => {
 
     const outcome = await relay.request(U, 'conv-1', { kind: 'open', url: 'https://shop.example' }, 3_000)
     expect(outcome).toEqual({ ok: true, result: { url: 'https://shop.example' } })
-    await new Promise((r) => setTimeout(r, 100))
+    // Barrier instead of a pause: bob's own persisted message arrives after any earlier frame to his socket.
+    const bobToken = signToken({ name: 'bob', role: 'developer' }, SECRET)
+    const bobConversation = await db.chat.createConversation('bob', 'Barrier')
+    await chatBarrier(other, bobConversation.id, bobToken, 'preview-barrier-1')
     expect(otherFrames.some((f) => f.t === 'preview.action')).toBe(false)
     mine.close()
     other.close()
@@ -1032,11 +962,8 @@ describe('WS: кадры использования базы знаний', () =
   it('kb.usage доходит только своему пользователю', async () => {
     // Свой сервер с инжектированным трекером: обращения к БЗ в этом тесте
     // создаём напрямую, а проверяем именно маршрутизацию кадров по владельцу.
-    await app.close()
-    const tracker = createKbUsageTracker({ db })
-    app = await buildServer({ config: loadConfig({ PORT: '0' }), db, claude: mockClaude, sessionSecret: SECRET, kbUsage: tracker })
-    await app.listen({ port: 0, host: '127.0.0.1' })
-    const p2 = (app.server.address() as AddressInfo).port
+    let tracker!: ReturnType<typeof createKbUsageTracker>
+    const p2 = await startShared((database) => ({ kbUsage: (tracker = createKbUsageTracker({ db: database })) }))
     await db.identity.createUser('bob', '', 'developer')
     const conv = await db.chat.createConversation(U, 'Чат')
 

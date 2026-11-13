@@ -194,6 +194,7 @@ export const REST = {
   projectKbResearch: (id: string) => `/api/projects/${encodeURIComponent(id)}/kb/research`,
   /** Телеметрия обращений модели к БЗ: по одному чату и агрегат по проекту. */
   conversationKbUsage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage`,
+  conversationThreadCost: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-cost`,
   conversationSummary: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary`,
   conversationSummaryRefresh: (id: string) => `/api/conversations/${encodeURIComponent(id)}/summary/refresh`,
   conversationKbUsageViewed: (id: string) => `/api/conversations/${encodeURIComponent(id)}/kb-usage/viewed`,
@@ -306,7 +307,9 @@ export const REST = {
     if (query?.before !== undefined) params.push(`before=${encodeURIComponent(query.before)}`)
     return `/api/conversations/${id}${params.length ? `?${params.join('&')}` : ''}`
   },
-  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
+  conversationThreadReset: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread-reset`,
+  /** Compatibility route for published clients expecting a Conversation response. */
+  conversationThreadResetLegacy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/thread/reset`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
@@ -332,8 +335,10 @@ export const REST = {
   messages: (id: string) => `/api/conversations/${id}/messages`,
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
+  messageBranch: (id: string, messageId: string) => `/api/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/branch`,
   messageServiceData: (conversationId: string, messageId: string) =>
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/service-data`,
+  /** JSON base64, raw bytes or one multipart file; see ChatUploadMetadata in fileStorage.ts. Returns UploadInfo; auth/CSRF required. */
   uploads: '/api/uploads',
   /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
   imageRetouch: '/api/images/retouch',
@@ -395,6 +400,8 @@ export const REST = {
   loginEnrollmentRedeem: '/api/login-application/enrollments/redeem',
   loginEnrollmentStatus: (id: string) => `/api/login-application/enrollments/${encodeURIComponent(id)}`,
   desktopApp: '/api/app/desktop',
+  androidApp: '/api/app/android',
+  androidApk: '/api/app/android/apk',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
   agentStorages: (id: string) => `/api/agents/${encodeURIComponent(id)}/storages`,
   conversationStorage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/storage`,
@@ -426,6 +433,7 @@ export const REST = {
   cxResume: '/api/cx/resume',
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
+  adminStorage: '/api/admin/storage',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
   /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
   adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,
@@ -736,6 +744,10 @@ export interface UploadInfo {
   mimeType: string
   size: number
   agentId?: string
+  /** Set when the file was stored in the storage service instead of a machine. */
+  storage?: import('./fileStorage').StorageFileRef
+  /** Storage-backed image has a generated-on-demand preview endpoint. */
+  thumbnailAvailable?: boolean
 }
 
 /** Содержимое файла с диска сервера (ответ GET /api/files/read). */
@@ -959,6 +971,8 @@ export type ServerMessage =
    * чём — поэтому это не `claude.done`.
    */
   | { t: 'chat.message'; conversationId: string; message: Message }
+  /** Активная цепочка сменилась при редактировании, повторе или выборе ветки. */
+  | { t: 'chat.history'; conversationId: string; messages: Message[] }
   | { t: 'chat.conversation'; conversation: Conversation }
   /**
    * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
@@ -1077,6 +1091,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.interaction',
   'merge.snapshot',
   'chat.message',
+  'chat.history',
   'chat.conversation',
   'kb.usage',
   'preview.action',

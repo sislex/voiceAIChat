@@ -12,7 +12,6 @@ import { VoiceChatDb } from '../apps/server/src/db/database.js'
 // Consumer host serves only the pinned SDK and integration page, never Core UI.
 // @ts-expect-error JavaScript host is also an operator CLI.
 import { createExternalChatSampleServer } from '../scripts/external-chat-sample.mjs'
-import { freePort } from './free-port'
 
 let app: FastifyInstance, db: VoiceChatDb, host: Server, browser: BrowserContext, directory: string
 let core: string, external: string, first: string, second: string
@@ -20,9 +19,11 @@ const password = randomUUID()
 beforeAll(async () => {
   const assigned = process.env.DELIVERY_PORTS?.match(/\d+/g)?.map(Number)
   if (process.env.DELIVERY_ATTEMPT_ROOT && (!assigned || assigned.length < 2)) throw Error('Allocated ports required')
-  const corePort = assigned?.[0] ?? await freePort()
-  const hostPort = assigned?.[1] ?? await freePort()
-  core = 'http://127.0.0.1:' + corePort; external = 'http://127.0.0.1:' + hostPort
+  const corePort = assigned?.[0] ?? 0
+  const hostPort = assigned?.[1] ?? 0
+  host = await createExternalChatSampleServer()
+  await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(hostPort, '127.0.0.1', resolve) })
+  external = 'http://127.0.0.1:' + (host.address() as import('node:net').AddressInfo).port
   directory = await mkdtemp(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'external-chat-'))
   db = new VoiceChatDb(':memory:')
   app = await buildServer({ db, config: loadConfig({ VC_DATA_DIR: directory, PORT: String(corePort), VC_CORS_ORIGINS: external, VC_DELEGATED_CHAT_ENABLED: 'true' }),
@@ -35,9 +36,7 @@ beforeAll(async () => {
   second = (await db.chat.createConversation('browser-sample', 'Widget')).id
   await db.chat.addMessage('browser-sample', first, 'u0', 'Persisted page history', '12:00')
   await db.chat.addMessage('browser-sample', second, 'u0', 'Persisted widget history', '12:00')
-  await app.listen({ port: corePort, host: '127.0.0.1' })
-  host = await createExternalChatSampleServer()
-  await new Promise<void>((resolve, reject) => { host.once('error', reject); host.listen(hostPort, '127.0.0.1', resolve) })
+  core = await app.listen({ port: corePort, host: '127.0.0.1' })
   browser = await chromium.launchPersistentContext(process.env.BROWSER_PROFILE_DIR ?? join(directory, 'browser'), { headless: true })
 })
 afterAll(async () => {

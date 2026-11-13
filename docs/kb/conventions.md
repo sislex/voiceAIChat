@@ -1,13 +1,14 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-10-20
-checked: 55bbb8649
+updated: 2026-11-09
+checked: 2d771f92
 areas:
   - package.json
-  - packages/ui/vitest.config.ts
   - packages/shared/tsconfig.json
   - apps/server/tsconfig.json
-  - apps/llm-runner/tsconfig.json
+  - scripts/application-gate.mjs
+  - scripts/quick-gate.mjs
+  - scripts/task-gate.mjs
 ---
 
 # Конвенции: код, тесты, гейты, коммиты
@@ -39,7 +40,7 @@ step through promotion or a pull request.
   follow the surrounding comment density. Effective 2026-09-11, Make maintains
   English comments and Markdown in `apps/make`, `packages/make-app`, and
   `packages/make-contracts`, including generated comments, exported Markdown,
-  and its dedicated plans. The user also requests English communication.
+  and its dedicated plans. Communicate in Russian unless the user requests otherwise.
 - TypeScript strict везде; в `packages/ui` дополнительно `noUnusedLocals`,
   `noUnusedParameters`, `noImplicitOverride`.
 - **Импорты**: в `apps/server` и `apps/llm-runner` — с расширением `.js`
@@ -50,16 +51,16 @@ step through promotion or a pull request.
   моков; всё внешнее (spawn, fetch, сокет, БД) **инъектируется параметром** —
   отсюда `SpawnFn`, `BuildOptions`, `AgentSocket` и т.п. Новый модуль,
   дёргающий процесс или сеть напрямую без возможности подмены, — против конвенции.
-- Никаких новых зависимостей без нужды: `packages/shared` вообще без `dependencies`,
-  монорепо на голых npm workspaces (без turbo/nx/lerna).
+- Keep dependencies explicit and justified. Shared declares published owner-contract
+  packages; its logic remains free of DOM/network/filesystem/process access.
+  Core uses npm workspaces without turbo/nx/lerna.
 
 ## Тесты
 
-`vitest run` в каждом воркспейсе. Файлы — рядом с исходником: `*.test.ts` для
-логики, `*.dom.test.tsx` для компонентов (jsdom + Testing Library, setup —
-`packages/ui/src/test/setup.ts`, фейковые мосты — `src/test/fakeApi.ts`). Сейчас в
-репозитории ~465 тестовых файлов, из них 76% в трёх пакетах: `packages/ui` (149),
-`apps/server` (130), `packages/shared` (78). Тест пишется в том же шаге, что и код.
+Core unit tests live beside source as `*.test.ts` and use Vitest. Renderer DOM
+tests, Storybook and Electron implementation tests belong to their owners.
+Historical `packages/ui` and Electron paths below describe the former monorepo;
+use the owner package instructions for those commands.
 
 Что принято покрывать: чистые функции (`shared`) — таблицей случаев; сервер —
 через `fastify.inject()` и ws-клиент с моками движков; UI — поведением
@@ -69,8 +70,15 @@ step through promotion or a pull request.
 (на Postgres — реально), поэтому `await new Promise(r => setTimeout(r, 0))` или «два тика» после события
 (onDone хода, cancel рана, статус в базе) ничего не гарантируют: утверждение должно ждать наблюдаемое
 следствие — `await turns.idle()`, `vi.waitFor(async () => expect(await db….).toBe(…))`, пустой
-`activeRunIds()`, терминальный статус релиза. Тест WS-сессии ждёт первый кадр `claude.active`
-(готовность сессии), а не `open` клиента: сервер ещё проверяет сессию в базе. То же правило и для
+`activeRunIds()`, терминальный статус релиза. Transport `open` does not mean
+that server subscriptions are ready. `claude.active` confirms only the turn
+feed and is sent before `resumeQueues` and the awaited agents snapshot. In
+`eventsDelivery.test.ts`, `connect` waits for the `agents` frame before
+publishing a Kanban notification: `session.ts` sends that snapshot after the
+last awaited setup step, then installs notification and board listeners in the
+same synchronous continuation. Expected notification frames are also awaited
+with `vi.waitFor`; this readiness barrier, rather than a transport event or a
+fixed delay, is what makes the test portable between SQLite and Postgres. То же правило и для
 тестов межпроцессных мостов: RPC зеркала (`machinesBridge/httpMachines.test.ts`) — настоящий HTTP-запрос к
 фейковому соседу, события — кадр WebSocket, и фиксированная пауза здесь такой же таймер. Пауза в 30 мс
 проходила на свободной машине и разваливалась в полном прогоне: под параллельной нагрузкой тест падал
@@ -80,23 +88,23 @@ release/0.1.265, 2026-09-08). Тесты, которым нужен сам
 Postgres по таймингу» больше не заводим — так был пойден двойной development-ран.
 
 ```bash
-npm run gate:fast                      # гейт приложений по рабочему диффу от HEAD
-npm run -w @voicechat/ui test          # один пакет
-npm run -w @voicechat/server test
-npm run test:desktop                   # desktop — свой node_modules
-npm run test                           # все воркспейсы
+npm run gate:fast                      # application checks for the working diff
+npm run gate:quick -- --base <sha>      # task typecheck/build and affected tests
+npm run test:files -- <files>           # focused failure rerun
+npm run kb:check -- --strict           # stale topics, package coverage and links
 ```
 
-Полный гейт репозитория — `npm run verify`: typecheck + test всех воркспейсов,
-сборка, плюс desktop и agent-tray (у них свой `node_modules`). Перед пушем удобнее
-гонять его, чем собирать команды руками.
-
-A fresh worktree needs separate installs for all three non-workspace Electron
-apps before a gate that selects them: `npm ci --prefix apps/desktop`,
-`npm ci --prefix apps/agent-tray`, and `npm ci --prefix apps/login-application`.
-The root `npm ci` does not install their Electron or electron-vite dependencies.
-Use `gate:fast -- --dry-run` and the application catalog to check the full selected
-set; shared-code changes can select these consumers even during Make work.
+`gate:all` is the complete Core gate; promotion and release run full validation.
+Development uses the task's required quick gate. Core's local workspaces are
+Shared, Knowledge, component-runtime, Automation Runner and Server. Agent and
+Desktop are pinned owner artifacts, not extra installs under `apps/`.
+`gate:fast -- --dry-run` previews application selection. A root `package.json`
+change limited to npm scripts selects referenced tooling tests; it does not
+force the full application gate. Other unknown/config changes retain fallback.
+Development tooling uses `test:tooling:dev` plus related changed-script tests;
+release plans select complete tooling. Kanban stand browser suites are retained
+in `releaseE2eFiles` and run in development only when explicitly changed.
+`gate:release:full` passes `--release` to the full gate.
 
 ## Покрытие: пороги по каталогам, когда пакет считать целиком бессмысленно
 
@@ -160,6 +168,26 @@ set; shared-code changes can select these consumers even during Make work.
 замок на выборе рана из очереди (`takeNextWaiter`), `TurnManager.idle()` для хвостов хода.
 В тестах: `expect(() => f()).toThrow` → `await expect(async () => f()).rejects.toThrow`,
 после события дожидайся хвоста (`await turns.idle()`), не закрывай БД раньше.
+
+Agent WebSocket listeners in `apps/server/src/agents/wsAgent.ts` own their
+promise rejections: messages are serialized, failures are logged and close only
+that connection with code 1013 (retry later). This includes Identity audit RPC
+failures during registration, denial and update offers. Pong failures use the
+same boundary; close clears the ping timer and unregisters before awaiting the
+last-seen write, whose failure is logged. Registration cannot resume after close.
+`wsAgent.test.ts` runs real WebSocket connections in child Node processes with
+`--unhandled-rejections=strict`, injects `DependencyUnavailable('identity')`
+through the Identity RPC transport, and verifies that another connection can
+register after recovery. It also covers pong/close persistence failures and an
+audit failure after an update offer.
+
+The event-handler audit found the other message boundary in `ws.ts` already
+catches its queue and close-handler rejections. In `server.ts`, Identity session
+verification and delegation checks catch their dependency failures, and the
+account sweep has a try/catch. The machine WebSocket bus/proxy listeners perform
+synchronous parsing or forwarding rather than Identity RPC calls. AgentRegistry's
+change notifications accept async subscribers and log their rejected promises;
+a synchronous try/catch alone does not protect the async agents-feed subscriber.
 
 
 ## Поток вывода команд пишется в базу через сток с обратным давлением (2026-09-08)

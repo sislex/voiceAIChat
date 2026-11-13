@@ -1,9 +1,10 @@
 ---
 title: TTS Runner: ресурсный API, движки и жизненный цикл WAV
-updated: 2026-10-07
+updated: 2026-11-09
+checked: c5fd9ebe4
 areas:
   - apps/server/src/tts
-  - packages/shared/src/tts.ts
+  - apps/server/src/tts/client/types.ts
   - apps/server/src/session.ts
   - apps/server/src/server.ts
   - apps/server/src/config.ts
@@ -15,9 +16,16 @@ areas:
 
 Module details: `voice:README.md`
 
+## Core image build boundary
+
+Core's Dockerfile retries transient npm archive downloads three times with
+10–60 second backoff. It does not build the extracted Voice runner. The reviewed
+`server.ts` changes wire Make user stands; the voice clients, session protocol,
+runner URLs/tokens and Compose wiring are unchanged.
+
 ## Граница подсистемы
 
-Основной сервер не импортирует реализации движков: production использует `RemoteTtsClient`, а тесты инъектируют `FakeTtsClient`. Общий versioned-контракт запросов, ресурсов, health и стабильных кодов ошибок находится в `packages/shared/src/tts.ts`.
+Основной сервер не импортирует реализации движков: production использует `RemoteTtsClient`, а тесты инъектируют `FakeTtsClient`. The versioned request, resource, health and error contracts come from `@voicechat/voice-contracts/tts`, owned by `sislex/voice`.
 
 ## Движки и голоса
 

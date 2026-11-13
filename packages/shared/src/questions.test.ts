@@ -80,8 +80,10 @@ describe('appendQuestionsHint', () => {
     expect(appendQuestionsHint('  ')).toBe('  ')
   })
 
-  it('хинт содержит пример блока', () => {
+  it('хинт содержит пример блока и требует форму по явному запросу пользователя', () => {
     expect(QUESTIONS_HINT).toContain('```questions')
+    expect(QUESTIONS_HINT).toContain('прямо просит задать вопрос с вариантами')
+    expect(QUESTIONS_HINT).toContain('не утверждай, что формат недоступен')
   })
 })
 

@@ -1,8 +1,11 @@
 ---
+updated: 2026-11-09
+checked: 694e6cbdf
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-10-27
-checked: 3bef4da01
 areas:
+  - scripts/dev-stand-local.mjs
+  - scripts/dev-stand-local.test.mjs
+  - scripts/application-frontend-server.mjs
   - scripts/prod/test_environment_stands.py
   - scripts/prod/test_environment_scripts.py
   - scripts/prod/test_compose_env.py
@@ -43,6 +46,95 @@ areas:
   - apps/server/src/routes/admin.ts
   - packages/shared/src/kb.ts
 ---
+
+## File storage node example
+
+To enable direct transfer, add optional `publicUrl` and `directSecretFile` to
+each applicable `VC_FILE_STORAGE_NODES` entry. Nodes without publicUrl retain
+Core proxy transfer. The public URL must be reachable by browsers through a TLS
+proxy, routing `/v1/direct/*` to that node. On the node set
+`VC_FILE_STORAGE_DIRECT_SECRET_FILE` to the same per-node HMAC secret file
+(minimum 32 characters; use an independently generated random secret), and
+`VC_FILE_STORAGE_UI_ORIGINS` to a JSON array of exact Core UI origins, for example
+`["https://core.example"]`. Wildcards and credentialed CORS are not supported.
+Preflight permits GET/PUT with Content-Type and Range, exposing range/length
+response headers. Signing secrets are loaded at process startup; coordinate
+Core/node restarts on rotation, which invalidates outstanding URLs.
+Bearer authorization remains required for ordinary node APIs.
+Configure TLS, public reachability and origin/secret files during operator
+commissioning; this code change does not provision them. Allow up to five
+minutes for issued read URLs to expire after revoking a share.
+
+Core accepts `VC_FILE_STORAGE_PART_SIZE_BYTES` (default 8 MiB; integer
+1..64 MiB). Existing sessions keep their original part size.
+Allow a 24-hour upload window and retain the node's `.uploads/` directory
+across restarts. Placement reserves twice the declared size on a single node
+for parts plus atomic assembly; after completion only the final blob remains
+charged. Core quota reserves the declared size once. Node health includes
+active capacity reservations, so free space can be lower than published data
+usage. Multipart endpoints use the same node bearer scope as blob operations.
+Storage transfer compression introduces no environment variable. Proxies must
+preserve `Accept-Encoding`, `Content-Encoding` and `Vary` and must not
+recompress Range responses.
+
+`VC_FILE_STORAGE_MAX_FILE_BYTES` configures Core and blob-node single-file limits
+(default 1073741824 bytes, 1 GiB; positive safe integer). Set it consistently on
+both services. Owner quota is independent and still defaults to 100 MiB.
+The HTTP node client shares an undici Agent with keep-alive and HTTP/2 negotiation
+for HTTPS nodes (HTTP/1.1 fallback); request deadlines remain 60 seconds.
+
+The Docker target `file-storage-node` starts
+`packages/file-storage/src/node/main.ts` on port 8795 with `/data/blobs` as
+its default blob directory. `deploy/compose.file-storage.example.yml` defines
+two nodes with decimal capacities of 10 GB and 60 GB, separate `/data` volumes,
+and separate token files under `deploy/secrets/`. Host ports 8795 and 8796 bind
+to loopback. Create the private token files before starting this example.
+
+Configure each node with `VC_FILE_STORAGE_NODE_ID`, `VC_FILE_STORAGE_DIR`,
+`VC_FILE_STORAGE_CAPACITY_BYTES` and `VC_FILE_STORAGE_TOKEN_FILE`. Managed mode
+uses `SISLEXA_COMPONENT_CONFIG` and component-runtime instead of the static token.
+The example does not add nodes to production. Enable the Core coordinator with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`) and configure
+`VC_FILE_STORAGE_NODES='[{"id":"node-a","url":"http://node-a:8795","tokenFile":"/run/secrets/storage-a"}]'`.
+IDs must be unique; HTTP(S) URLs cannot contain credentials, query or fragment.
+Mount the token files into Core as well as the corresponding nodes. Core loads
+tokens at startup. `VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES` is a nonnegative safe
+integer, defaults to 104857600 bytes, and is overridden by Identity's explicit
+per-user quota when available. Node health is polled every 15 seconds; two
+failed polls remove a node's capacity from the online pool.
+Thumbnail generation needs no new environment variable or volume. Core uses its
+existing Sharp dependency with a fixed concurrency bound; derived preview bytes
+consume node capacity but are excluded from user quota accounting and are
+removed with their source file.
+
+Core metadata lives in its existing SQLite/Postgres database and migrates
+additively on startup. Back up both metadata and node volumes. Selecting
+`chatFilesBackend=storage` in account settings opts chat uploads into the
+service; machine storage remains the default.
+Raw/multipart chat uploads require no new environment variables or schema
+migration. Core adds `@fastify/multipart` for its scoped upload parser and uses
+the existing storage node URL/token configuration for streaming HTTP writes.
+The legacy JSON form remains available to already deployed clients.
+
+Shared Make with `VC_MAKE_FILE_STORAGE=service` also needs the paired service
+credentials used by Core's application ticket configuration. Core enables
+Make delegation for a local deployment when both directions are configured,
+and converts authenticated browser proxy requests to short-lived user grants.
+Deploy compatible Core and Make versions together: service credentials identify
+the application, while the delegation supplies the user for Core storage ACLs.
+See [Make authorization](data-auth.md#make-service-storage-authorization).
+
+SM-47 also requires paired Core and Make versions for sessionless owner MCP
+calls. Make retains the service bearer and supplies short-lived signed authority;
+Core accepts legacy/managed `coreId: legacy` tokens with `VC_MCP_SECRET`, or the
+shared application's configured MCP secret and Core ID. No new environment
+variable is required. See [MCP Storage admission](data-auth.md#shared-service-rpc-and-mcp-deployment-profiles-b17).
+
+Admin quota writes require an FS-3-capable Identity exposing
+`setUserStorageQuota`; the pinned Identity 1.5.2 lacks that method and Core
+returns 503 instead of claiming success. The standalone admin process creates
+its storage runtime when configured with embedded file storage and closes it
+on shutdown. See [quota management](data-auth.md#file-storage-metadata-and-quotas).
 
 ## Public chat deployment isolation
 
@@ -109,9 +201,24 @@ personal account UI while other product applications remain disabled. Candidate 
 recorded in `docs/plans/public-chat-v1.md`; run the audit against final owner
 pins and distinguish installed packages from reachable runtime services. Other examples are
 `chat,make`, `chat,make=https://make.example.org`, and
-`chat,web-reader,projects`. `VC_CORE_ID` identifies the issuing Core in application
-tickets. External URLs must be HTTPS without credentials, query or fragment.
+`chat,web-reader,projects`. Standalone Storage is selected with
+`storage=https://storage.example.org` and authenticates ticket redemption with the
+per-application `VC_APPLICATION_STORAGE_TOKEN`, following the same secret placement
+rules as other external applications. `VC_CORE_ID` identifies the issuing Core in application
+tickets. External URLs must be HTTPS without credentials, query or fragment; plain HTTP is accepted only for loopback hosts (`127.0.0.1`, `localhost`, `[::1]`) on local stands.
 No selector preserves legacy Core modes.
+
+`VC_APPLICATION_FRONTENDS` uses frontend catalog IDs (for example `make-ui`),
+while `VC_APPLICATIONS` uses owner IDs (`make`). Core validates the frontend map
+before retaining overrides for enabled local owners through catalog runtime
+dependencies. Disabled and external owners do not activate those overrides.
+With `NODE_ENV=production`, pinned owner frontend archives take priority even
+for local owners. Set `VC_APPLICATION_FRONTENDS_OVERRIDE=1` to opt in to their
+configured sources; development and frontends without a pinned owner package
+retain overrides. Missing or invalid pinned artifacts do not silently fall back
+to containers. Startup logs report the selected source and manifest version/commit.
+Unselected sources retain the installed artifact fallback. See
+[product panel artifacts](ui.md#независимые-артефакты-продуктовых-панелей).
 
 `VC_CHAT_MODELS` optionally narrows the chat catalog to comma-separated
 `provider:model-id` entries from the shared model catalog. For the first public
@@ -216,6 +323,22 @@ applications use `voicechat:8787`, so both public and internal Caddy HTTPS sites
 return Core's `404 application_disabled` instead of proxying to absent services.
 Without a selector, the original direct Caddy upstream defaults are preserved.
 
+Both public and internal HTTPS sites apply `encode zstd gzip` before all
+`handle` branches, including direct Make, Image Studio and Playwright Reader
+upstreams. The response MIME allowlist covers JSON (including +json), JavaScript,
+Wasm, HTML, plain text, CSS and SVG; SSE is deliberately excluded. Requests
+with Range or WebSocket Upgrade and paths ending in `/exec-stream` (or its
+children) bypass encode. Core's existing br/gzip responses are not recompressed.
+The stand lease port block is unchanged.
+
+Validate with `VC_PUBLIC_HOST=localhost caddy validate --config Caddyfile`.
+The live proxy regression test uses the actual public site's configuration,
+temporary loopback ports and a mock upstream:
+`CADDY_BIN=/path/to/caddy npm run test:files -- apps/server/src/infra.caddyCompression.test.ts`.
+It verifies gzip JSON through all four upstream branches, first SSE/exec chunks
+before completion, and a WebSocket `/ws` round-trip. It is skipped without
+`CADDY_BIN`; Caddy 2.10.2 was used for task validation.
+
 Operator verification on 2026-10-19 used a separate Docker project and disposable
 Postgres/data volumes on the M2 host: chat-only with voice off ran exactly Core,
 Postgres and Caddy, accepted an administrator login, exposed the chat-only
@@ -259,6 +382,15 @@ a snapshot completes before the container memory limit is reached.
 
 ## Contract pin release
 
+The npm subprocess helper in `scripts/contracts-release.mjs` sets the global
+`--loglevel=error` option before the subcommand and captures stdout and stderr.
+An inherited `npm_config_loglevel=silent` would otherwise suppress npm's peer
+conflict diagnostics even though stderr is piped. Consumer failure reports retain
+both streams. The regression in `contracts-release.test.mjs` deliberately enables
+`silent`, builds the conflicting peer from local tarballs with a `file:` peer
+reference, and uses an isolated cache in offline mode. It checks the ERESOLVE
+chain and successful installation in the subsequent consumer.
+
 `node scripts/contracts-release.mjs <package> --version x.y.z --source <owner-path>
 --commit <full-sha> [--consumers name=/assigned/checkout,...]` prepares a local
 contract release. See [Shared](shared.md#one-command-contract-release) for owner
@@ -300,14 +432,21 @@ Owner branch heads are resolved through the GitHub REST API before paginated
 comparison. The planner checks the published `v<pinned-version>` release against
 the actual tag commit, not its potentially moving `target_commitish`. Missing
 releases, draft releases and mismatched commits are distinguished in JSON.
+When the proposed next patch is already published, the planner resolves its actual
+tag commit and compares it with dev. Identical dev or a fast-forward whose complete
+file diff stays within `docs/kb/` reuses that release at the tag commit: the journal
+skips prepare, gate, push and publication, but still verifies provenance and images
+before pinning Core. Renames from outside KB, diverged history, code changes and
+GitHub's saturated 300-file comparison block reuse and require a new version.
 Core commits come from local `origin/main..origin/dev`; refresh these refs before
 planning. The planner never fetches, clones, creates directories, writes Git
 state, logs into Docker, publishes, or deploys.
 
 Prerequisites are a reachable Docker daemon (`docker info`), nonempty `GH_TOKEN`
 or `GITHUB_TOKEN` (never printed), and an existing `~/sislexa-worktrees` root.
-The root must not be a symlink and may contain only clean Git worktrees, with
-no untracked files or dirty submodules; an empty existing root is valid. Missing,
+The root must be a directory and must not be a symlink. Its unrelated development
+copies and other entries do not block planning: execution uses private journal
+clones and checks the owner checkout before its gate. An empty root is valid. Missing,
 unreadable or unsafe roots block planning; the planner never repairs them.
 API failures, diverged owner branches, mismatched published tags and missing
 Core refs also block readiness. JSON uses schema version 1 and `ready`; blocked
@@ -322,28 +461,89 @@ test these adapters without contacting real owners.
 
 ## Release train execution (C01)
 
-`node scripts/release-train.mjs run [--apps a,b] [--deploy]` executes the plan.
+`node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
+
+Selected owner repositories release concurrently in separate checkouts; applications
+sharing a repository use one owner release. Commands run asynchronously, with isolated
+verification deadlines and Docker credentials. Desktop remains frozen and excluded.
+Before preparing a version bump and before each owner gate (including after rebase),
+the train runs the owner's `kb:check`. Stale-topic diagnostic lines from the KB CLI
+select existing topics for `touch`; the train records full checked SHAs, regenerates
+the index when supported, checks KB again and creates a separate `docs(kb): reconcile`
+commit. Other checker failures still block release. The journal records the reconciled
+HEAD so publication uses the exact gated commit; repeated gates do not add duplicate commits.
+The journal checkpoints each owner's steps independently. On failure, no new owner
+step starts, in-flight operations finish and save their results, and Core pinning is
+blocked. Resume skips completed steps and reconciles interrupted steps, including
+checkpoints from older sequential journals. Once every owner is verified, the train
+writes all pins in one Core commit, checks Core once and promotes once (a concurrent
+Core dev push can still require a rebase and another check).
+
+`plan --from-dev [--json]` previews the fast path. `run --from-dev` bumps
+changed owners from their planned dev commit and runs `gate:quick -- --base <pinned commit>`,
+falling back to `affected-check`, then `gate` only when the preceding scripts
+are absent. It pushes the gated commit to dev without force and publishes and
+verifies that exact commit. On a concurrent dev push, it fetches, rebases only
+the train's version/KB commits, invalidates the old gate and gates again before
+retrying. A failed rebase gate remains required on resume.
+
+Core pins on dev, runs `gate:quick -- --base origin/main`, and pushes dev
+without force (including rebase and recheck on a concurrent push). No owner
+release PR or Core dev → main PR is created. After preflight the train checks
+that origin/dev still equals the pin commit and requests
+`POST /releases/branches {branch, baseBranch: 'dev', fast: true}`.
+The Release Center must support fast releases and have fastReleaseTestCommand
+configured; rejection (including fast_release_disabled), or a response without
+`fast: true`, stops the train without falling back to the full path.
+Existing branches are reconciled only when their SHA and fast mode match.
+Publication, verification, preflight, and optional deploy/health remain in place.
+The journal preserves from-dev mode on `run --resume <id>`; do not repeat mode,
+selection or deploy flags when resuming. The planner text and CLI parsing live in
+`scripts/release-train.mjs`; journal step selection, gate fallback, dev-push
+reconciliation and the Release Center request live in `scripts/release-train-run.mjs`.
+
+Without `--from-dev`, the full-gate/main path described below is unchanged.
+After a fast release, main catches up through a normal dev → main PR only
+on the owner's instruction; the train does not perform that promotion.
 With `--apps`, only the environment prerequisites, Core refs and the selected owners must be ready; blockers of owners that are not released (for example a stale pin) are reported by `plan` but do not stop the train. Without `--apps` the whole plan must be ready. Application names are tools-lock keys. Selecting one alias selects its entire
 owner repository (including both voice services). An unchanged owner with a
 missing release publishes the exact existing pin without a version bump.
 
 The version bump writes the root and application manifests and refreshes the lock.
+Prepare reconciles KB topics only when it actually created a bump commit; an
+already matching version does not create a standalone KB reconciliation commit.
 An owner whose root `package.json` defines a `set-version` script (Make keeps
 `apps/make`, `packages/make-app` and `packages/make-contracts` in lockstep) bumps
 itself instead: the runner installs dependencies and runs
 `npm run set-version -- <version>`, then commits every manifest it changed.
 
-The runner creates private clones below
+The runner creates private partial clones (`--filter=blob:none`: history and trees, file contents on checkout) below
 `~/.local/state/sislexa/release-train/<id>/` and an atomic, mode-0600 journal at
 `~/.local/state/sislexa/release-train/<id>.json`. `run --resume <id>` retains the
-original owner selection, commits, versions and deploy intent; it skips completed
-steps. Do not edit journals or run the same journal concurrently. A `.json.lock`
+original owner selection, versions and deploy intent; it skips completed
+steps. For a retried incomplete owner prepare in from-dev mode, the runner fetches
+origin/dev and accepts only a fast-forward from the saved owner source. It resets
+partial version/KB edits in its private clone (including ignored output, preserving
+node_modules), checks out the source, records the new source and its
+from/to history in the journal, and prints `owner X: source advanced A → B`.
+Rewritten dev history requires a new plan. Completed prepare and published
+owners keep their recorded commits. The read-only planner also reports a missing
+`node_modules/.bin/tsx` as a blocked dependencies prerequisite. Do not edit journals or run the same journal concurrently. A `.json.lock`
 file excludes competing runners; after a hard process/host crash, confirm the
 runner is no longer active before removing its stale lock and resuming. Clone
 directories remain available for diagnosis. Failures identify the journal and failed
 step and exit nonzero. The error and journal include the failed command, exit code,
 and last 40 output lines, with environment credentials, bearer tokens and recognized
 token formats redacted. Successful resume clears the saved error.
+
+Immediately before every Core gate, including a resumed gate after the pin step was
+already journaled, the runner fetches current `origin/dev` and rebases the train's
+single pin commit onto it. A package manifest or lockfile change in the refreshed
+dev history is reported as requiring dependency reinstallation; the gate's `npm ci`
+then installs that exact tree. The refresh also removes untracked `vendor/*.tgz`
+archives only when the shared reachability analysis finds no manifest, inventory or
+script reference. Its log reports the dev SHA, old/new pin SHA, dependency decision
+and removed archive paths, so an operator can see exactly what resume refreshed.
 
 The launching Core checkout must already have `node_modules/.bin/tsx`; otherwise
 the runner stops before planning or resuming with an installation hint. GitHub API
@@ -395,10 +595,19 @@ step, record the current project setting, temporarily select `main`, resume the
 same journal, and restore the previous setting after branch creation is accepted
 (or if creation fails). The accepted preparation retains its resolved target;
 restoring the development setting does not change its source. Do not alter the
-journal or substitute an ungated development commit. With `--deploy`, POST
-`/releases/deploy` starts deployment and the
+journal or substitute an ungated development commit. With `--deploy`, the runner first polls the
+branch's own preparation record (`preparing` -> `ready`; branch creation itself adds it, so it is never
+mistaken for a deployment — until 2026-10-27 it was, and 0.1.495 waited for a deployment that was never
+started), then POST `/releases/deploy` starts deployment and the
 runner polls release failure status and `${RELEASE_HEALTH_URL}/api/health` for
-the new version for up to ten minutes. Without that flag it stops after branch
+the new version for up to five minutes. Connection failures and HTTP 502/503
+from either endpoint retry with 1/2/4/8-second backoff capped at 10 seconds;
+requests and sleeps are bounded by the remaining time. Each retry logs its
+reason and the last observed version with secrets redacted. A successful health
+response with a different version, or a reported commit different from the release
+branch SHA, fails immediately. Failed/cancelled deployments and other HTTP errors
+also fail immediately. Timeout diagnostics retain the last observed version
+(`unavailable` if no successful health response arrived). Without that flag it stops after branch
 creation. Real publication/deployment and token commissioning are operator
 actions, separate from fixture verification of the implementation.
 
@@ -442,6 +651,38 @@ Kanban owns dev-stand allocation, data copies and the schema-1 manifest defined 
 Kanban remains responsible for project access checks, request validation and
 the lifecycle; Core does not allocate environments or write manifests.
 
+### Make frontend artifacts: preview-build and deploy-configuration
+
+In `scripts/dev-stand-local.mjs`, shared mode with a prepared Make source starts
+`make-ui-build` (`npm run dev` in `packages/make-app`) and `make-ui` (the Make
+checkout's `scripts/application-frontend-server.mjs`) as separate child processes.
+Core routes `make-ui` to that server through `VC_APPLICATION_FRONTENDS`.
+Setting an environment variable inside the watcher cannot configure its sibling
+server: `sharedServices` explicitly sets `VC_APPLICATION_DEV=1` on `make-ui`.
+This change applies to the shared stand with a prepared Make checkout.
+
+On a new build-process launch, `startService` removes the previous
+`packages/make-app/dist/manifest.json` and waits for its replacement before
+starting the frontend server. It initially derives metadata from repository HEAD,
+but for the frontend server it replaces `VC_APPLICATION_COMMIT`,
+`VC_APPLICATION_VERSION`, `VC_APPLICATION_API_VERSION` and release metadata with
+values from that manifest. The three manifest fields must be nonempty strings;
+the generated metadata overrides inherited environment values. The process fixture
+in `scripts/dev-stand-local.test.mjs` verifies manifest metadata and the dev flag
+received by the server; it substitutes the Make implementation and does not test
+Git-triggered rebuilds or mismatch handling.
+
+The Make watcher and its server implementation belong to the Make repository
+([ownership map](modules.md), `make:README.md`). This Core checkout has neither
+`application-frontend-dev.mjs` nor the owner topics `preview-build` and
+`deploy-configuration`. Git HEAD/ref/packed-refs watching, worktree path resolution,
+builder commit overrides and Make's dev-mode health/mismatch semantics therefore
+require verification in that owner checkout; this Core merge does not establish
+them. Core's own `scripts/application-frontend-server.mjs` is a different server:
+it has no `VC_APPLICATION_DEV` exception, rejects any version/commit/apiVersion
+mismatch and returns startup runtime metadata from `/v1/health`. Do not infer Make
+behavior from this same-named Core file.
+
 ### Isolated local stand without Docker (`npm run dev:stand`)
 
 `npm run dev:stand` (`scripts/dev-stand-local.mjs`) starts a complete Sislexa copy on
@@ -451,7 +692,21 @@ Studio, TTS, STT, automation runner, the three application frontends and Core UI
 Servers run with `tsx watch`, Core UI with Vite HMR. Only the LLM Runner is
 external. `npm run dev:stand:status` lists this stand's processes and ports;
 `npm run dev:stand:stop` stops only them and keeps the data. A repeated start
-reuses running processes (pid files) and refuses ports held by other processes.
+reuses running processes only when their source root and launch configuration match
+the hashed record in `run/<service>.source.json`; missing or changed records restart
+the service process group. Detaching Make also stops its frontend and watcher,
+and changing frontend routing restarts Core. Ports held by other processes are refused.
+Frontend servers take version, commit and apiVersion from the freshly built
+`dist/manifest.json`, rather than the launcher's static API defaults.
+The shared stand's Make frontend server also receives `VC_APPLICATION_DEV=1`;
+see the frontend configuration and build boundary below.
+Readiness failures include the last 4 KiB / 20 lines of the failing service log.
+In supervised `run` mode this diagnostic is written to stderr before rollback stops
+the service groups, so an operation runner can retain the bounded cause instead of
+only the readiness error code. The `run` supervisor checks logs every five seconds:
+files over 8 MiB retain a
+4 KiB tail in `.log.1` and are truncated in place so open append descriptors
+continue writing to the same file. Startup also checks this limit.
 
 Everything belongs to the stand directory `SISLEXA_STAND_HOME` (default
 `~/.sislexa/stands/<SISLEXA_STAND_NAME>`, name `local`): `src/<repo>` git
@@ -503,11 +758,19 @@ through Core's stand proxy; editor and git operations use that same checkout.
 stand and remains in the foreground for the agent's process supervisor.
 SIGTERM/SIGINT stops the stand's service groups and exits 0; loss of Core or
 Core UI stops the remaining services and exits 1. Startup failures also stop
-the services. `SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
+the services. `SISLEXA_STAND_CORE_SOURCE`, `SISLEXA_STAND_CORE_UI_SOURCE` and
+`SISLEXA_STAND_MAKE_SOURCE` select prepared checkouts for Core, Core UI and Make.
+Each supplied path must contain `.git` and `node_modules`; preparation skips worktree
+creation and dependency installation for that repository. In shared mode an external
+Make source also starts its frontend build watcher and frontend server on port base +
+802, and routes `make-ui` through that server. Core UI retains Vite HMR and Make API
+retains `tsx watch`.
+
+`SISLEXA_STAND_CORE_SOURCE` selects a prepared Core checkout:
 no voiceAIChat worktree is created and its dependencies are not installed again.
 Other repositories keep the normal source/dependency preparation, defaulting to
 owner clones in the shared root (overridable with `SISLEXA_STAND_SOURCES`).
-Kanban supplies the stand name, shared root, Core checkout, UI/gateway port and
+Kanban supplies the stand name, shared root, every attached component checkout, UI/gateway port and
 reserved `SISLEXA_STAND_PORT_BASE`; Core and Make use base + 787 and base + 788.
 
 **Shared mode.** `SISLEXA_STAND_SHARE=<root>` (for example `~/sislexa-dev`, a
@@ -705,7 +968,13 @@ refuses restoration unless its public schema is empty, restores with `pg_restore
 its stderr tail goes to the private `restore.log` next to `VC_ENVIRONMENT_OVERRIDES`), and applies
 `environment-sanitize.sql`. Sanitization replaces user email addresses, clears credentials,
 sets the first account as administrator with `VC_ADMIN_PASSWORD`, and disables stored SMTP and
-external-integration settings. Snapshot archives are transport artifacts: the caller owns their
+external-integration settings. The Python interpreter used by the stand scripts must provide
+`hashlib.scrypt` for Identity-compatible password hashes. Apple's Command Line
+Tools Python may omit it, causing snapshot restoration to fail during password
+sanitization. For local scripts and gates, put a Python build with scrypt support
+first in PATH so subprocesses and shell scripts use the same `python3` (verify
+with `python3 -c 'import hashlib; assert hasattr(hashlib, "scrypt")'`).
+Snapshot archives are transport artifacts: the caller owns their
 one-time transfer and deletion; these scripts never inspect or modify any other checkout or
 directory.
 
@@ -784,9 +1053,23 @@ cannot clear its journal. Plain manual invocations retain the existing behavior.
 `--reconcile-operation <id>` acquires the same host lock and observes health and
 readiness without deploying. After confirmed Compose completion it can record the
 exact intended runtime as succeeded, or the exact previous runtime as recovered.
-Recovery is not successful release acceptance. If command completion is unknown
-(including SIGKILL during Compose), observation alone cannot clear the barrier;
-operator recovery is required. Pending/uncertain records block new controlled
+Recovery is not successful release acceptance. A known nonzero Compose exit is
+persisted before observation. If health reports the exact previous commit and
+component readiness passes, the launcher automatically records `recovered`,
+preserving the failed exit code and leaving `composeCompleted` unset. The next
+controlled deployment can then start. Reconcile also closes historical failed
+operations with a nonzero `exitCode` and the exact previous runtime without
+requiring `composeCompleted`; it cannot accept the intended commit without
+successful Compose completion. If command completion is unknown (including
+SIGKILL during Compose), observation alone cannot clear the barrier.
+
+The Dockerfile configures npm fetch retries (three retries, 10–60 second backoff)
+for transient download errors, including vendor archives. The Release Center
+entrypoint `scripts/prod/release-manager-deploy.sh` builds Core synchronously
+after owner-image pinning, with the selected release's application metadata.
+Docker output and a nonzero build exit return directly to the build step, before
+the detached deployment or health polling starts. The detached launcher retains
+its host lock and reuses the build cache during Compose up. Pending/uncertain records block new controlled
 operations and must not be deleted to retry. Normal legacy invocations remain
 available for existing callers; delivery-control must use the controlled form.
 
@@ -1055,6 +1338,16 @@ Production-хост имеет 2 CPU, поэтому лимит `cpus` любо�
 
 ## Переменные окружения
 
+Standalone file storage is enabled in Core with
+`VC_FILE_STORAGE_MODE=remote`, `VC_FILE_STORAGE_URL=https://storage.example.org`
+and `VC_FILE_STORAGE_SERVICE_TOKEN_FILE=/run/secrets/file-storage-service`.
+The URL must be an HTTP(S) origin without credentials, path, query or fragment.
+The token file must contain the Core-to-Storage service credential; its contents
+are read at startup and are never logged. `embedded` continues to use
+`VC_FILE_STORAGE_NODES`; `off` remains the default. The standalone Storage URL
+is independent of the `VC_APPLICATIONS` browser-entry URL, although deployments
+normally point both at the same service origin.
+
 **Playwright Reader отдельным сервисом (2026-09-09).** В compose приложение
 `playwright-reader` включено по умолчанию, как Make: образ `voicechat-playwright-reader`,
 стадия `playwright-reader-runtime`, порт 8797. У ядра уже заданы
@@ -1153,8 +1446,14 @@ The only GitHub adapter (`ghVendorPublisher`) refuses to run under a test runner
 `JEST_WORKER_ID`, `NODE_ENV=test`), and tests inject fake publishers: on 2026-10-18 a test run of the first version
 uploaded fixture archives to the real release (removed by the coordinator).
 Legacy `file:vendor/` specs remain accepted by the pin tools. `vendor:check` (in `test:tooling` via
-`vendor-store.test.mjs`) fails if an archive is tracked. History still contains the old archives until it
-is rewritten.
+`vendor-store.test.mjs`) fails if an archive is tracked. History was rewritten on 2026-10-18 and every
+branch force-pushed, but the stale task branch `SK-19` (main of 2026-10-16) was pushed again from a
+pre-rewrite clone and kept the old 3640-commit history, so every clone still downloaded ~750 MB. It was
+deleted on 2026-10-27 (bundle backup `~/.local/state/sislexa/history-rewrite/SK-19-backup-20261027.bundle`
+on the operator Mac); a fresh clone is ~29 MB. `vendor-archives.test.mjs` TC-04 fails when any archive is
+tracked or any commit in the history of `HEAD` adds `*.tgz`, so a branch built on the old history cannot
+pass the gate (rebase it onto `origin/dev`). GitHub push rulesets are unavailable for this user-owned public
+repository.
 
 **Publishing owner releases with archives (verified 2026-10-03).**
 `scripts/owner-release-publish.mjs --source` reads `artifacts/integrity.json` as
@@ -1889,11 +2188,53 @@ Initialization now creates fifteen distinct credentials across nine providers,
 including Identity verification for Billing and Billing reserve/execute grants for
 Core. Each consumer receives only its declared provider scopes. Existing installation directories are rejected. The default credential
 lifetime is 30 days (`--ttl` is bounded by each provider's configured policy).
-Track the returned expiry metadata and rotate before expiry. The CLI never prints
-secrets. Provider-local `components:token`/tool `token` commands issue, list and
-revoke credentials; transfer a newly issued private file to the consumer, replace
-its outgoing file atomically, then revoke the old token ID. Grant-policy edits
-require a provider restart; revocation takes effect immediately for RPC requests.
+Renew installed credentials before expiry with `npm run components:rotate --
+--directory /private/sislexa-components --days 7`. Dry-run is the default;
+add `--apply` to publish replacements. Run as the common registry/file owner
+(UID 1000 in the production installation), with Node 22 and the checkout's
+installed dependencies. The command opens each installed provider registry,
+matches the outgoing credential by digest (including expired, never revoked
+credentials), retains its scopes and issues the maximum TTL allowed by the
+current grant. It verifies authorization before and after an atomic rename,
+preserves UID/GID/mode, syncs the file and directory, and only then revokes the
+old grant. A failed pre-publication check revokes the unused replacement; a
+post-publication failure retains both grants for recovery. Revoked or mismatched
+credentials fail closed and require operator investigation, not automatic renewal.
+The private `.rotation-lock` directory excludes concurrent rotations. After a
+killed process, verify no rotation is running before removing a stale lock.
+The CLI prints only provider/consumer IDs, expiry and actions; never secrets.
+
+`deploy/voicechat-component-rotation.timer` runs hourly with up to five minutes
+of jitter and catches missed runs after boot. Its service reads
+`VC_REPO_DIR` and `SISLEXA_COMPONENTS_DIR` from
+`/etc/voicechat/production.env` before switching to UID 1000. The host must expose
+Node 22 on systemd's PATH, and that UID must be able to read the checkout and own
+the private installation. A successful `voicechat-deploy` installs/enables the
+timer when `SISLEXA_COMPONENTS_DIR` is configured. For an existing installation,
+root can run `bash scripts/prod/component-rotation.sh --install` from the verified
+release checkout; this preserves the operator environment and does not rerun the
+production installer. Inspect `systemctl status voicechat-component-rotation.timer`
+and `journalctl -u voicechat-component-rotation.service`.
+
+`GET /v1/ready` reports `nearestExpiresAt` and each dependency's
+`expiresAt` plus `warning: "component_token_expiring"` at seven days or less.
+Monitor this warning and failed rotation service runs. Rotation JSON also emits
+that warning for credentials found inside the seven-day window. Readiness stays
+200 for valid expiring grants and becomes 503 on dependency failure. Expiry is
+learned from successful authorize responses; a cold start with an already expired
+grant reports a failed dependency with null expiry. A known expiry is retained
+during a failure only while the credential digest is unchanged.
+Core skips local administrator bootstrap when managed Identity is configured:
+an expired Identity grant leaves the process and liveness endpoint running,
+while readiness and Identity-dependent requests return 503. Replacing the outgoing
+file restores readiness without restarting Core.
+
+Provider-local `components:token`/tool `token` commands remain available for
+manual issue/list/revoke. Grant-policy edits require a provider restart;
+revocation takes effect immediately for RPC requests. The former manual-only
+procedure in historical deployment reports is superseded by this timer workflow;
+the tests cover all 18 grants, including Core→Identity and Billing→Identity,
+and expired-token recovery.
 
 Billing 1.0.0 is an independently pinned service in `deploy/tools.lock.json` and
 the application catalog. Append `deploy/compose.billing.yml` after the Identity
@@ -3148,10 +3489,23 @@ browser WebSocket/HMR verification.
 
 Core's `POST /api/dev-stand-access` leases a same-host public port to the current
 session user for a Kanban dev stand. Set `VC_STAND_PROXY_PORTS=8790-8794` to
-enable the pool; an empty value disables it. `VC_STAND_PROXY_PUBLIC_HOST` is an
+enable the pool; an empty value disables it. Every shown Make stand (bound,
+library, local or external) holds one port per lease for up to an hour of
+idleness; Make releases leases of deleted or hidden stands (`userStand {op:'release'}`),
+but conversations with several numbered stands still need more ports than five.
+For development stands use a 40-port range that no other local service listens on
+(for example `VC_STAND_PROXY_PORTS=28850-28889`; Core reserves the whole range, so a
+stand can never target a port inside it, and a busy port is skipped). The range may
+span at most 1001 ports; published ports and firewall rules must cover it. `VC_STAND_PROXY_PUBLIC_HOST` is an
 optional hostname override, otherwise Core uses the access request's Host
 (without its original port). Keep this hostname equal to the browser's Core
 hostname so its session cookie reaches the listener.
+
+Stand cookie prefixes survive Core restarts when the existing session signing
+secret and lease identity are preserved. Core uses its persistent session secret
+for the lease-key HMAC; no additional environment secret is required. Listener
+port reassignment does not change the cookie namespace. Secret rotation does.
+See [stand proxy cookie identity](server-internals.md#dev-stand-access-proxy).
 
 `VC_STAND_PROXY_PUBLIC_SCHEME` accepts `http` or `https`; by default it follows
 the protocol of `VC_PUBLIC_URL`, falling back to `http` when that URL is absent.
@@ -3191,13 +3545,13 @@ production host (private link `10.77.0.2:8798`).
 
 ## Published Make 1.8.1 pin (2026-10-19)
 
-Core pins Make 1.8.1 at `b04733783732b654ba02ee090f63dec564eada56` in the tools lock and
+Core pins Make 1.8.1 at `4a76ceb026842e4d654d0172b14b649e44a4434d` in the tools lock and
 Compose image. This owner release completed in the interrupted release train;
 its GitHub release and image provenance were verified before updating the pin.
 The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-pin:playwright-reader-1.2.6 -->
-- Playwright Reader 1.2.6: verified API and browser images at `386b14a004ceb4cac02023984e841897b85ed26c`.
+- Playwright Reader 1.2.6: verified API and browser images at `c5642e5ffb708e71da63dc9132c8313e249cd069`.
 
 <!-- release-train:f94b5d1f-cba0-40c8-a46d-905613411854 -->
 - sislex/webreader: 1.3.2
@@ -3206,3 +3560,96 @@ The subsequent train releases the remaining owners without republishing Make.
 - sislex/sislexa-kanban: 0.2.42
 
 <!-- release-train:0e091d1f-17fa-431c-9aad-2af913d0d697 -->
+
+<!-- release-train:f778e0ae-afbb-414b-8fd5-c91272d54d23 -->
+- sislex/sislexa-kanban: 0.2.43
+
+<!-- release-train:eb1a80aa-d8cd-45ca-bfee-ae55a0b3ee76 -->
+- sislex/sislexa-kanban: 0.2.44
+
+<!-- release-train:0e3c61c0-0ec7-4479-afb8-1f2cef3e3a5c -->
+- sislex/make: 1.8.2
+- sislex/sislexa-kanban: 0.2.45
+
+<!-- release-train:6b611f55-d658-468c-9238-725e430804a4 -->
+- sislex/sislexa-kanban: 0.2.46
+
+<!-- release-train:3f7314f6-67ef-4810-a2da-99473f62f3d7 -->
+- sislex/sislexa-kanban: 0.2.47
+
+<!-- release-train:65446cd4-9c6d-417f-a3c9-88a0ab94b700 -->
+- sislex/make: 1.8.3
+- sislex/image-studio: 1.1.4
+- sislex/voice: 1.1.1
+- sislex/sislexa-kanban: 0.2.48
+
+<!-- release-train:c6077abb-5f8d-404f-b078-6c33ffa974df -->
+- sislex/sislexa-kanban: 0.2.49
+
+<!-- release-train:0348163b-5198-438a-8f44-1ba988e89941 -->
+- sislex/sislexa-kanban: 0.2.50
+
+<!-- release-train:26e9a829-e0ac-4eb2-966b-8502b3e339cd -->
+- sislex/sislexa-kanban: 0.2.51
+
+<!-- release-train:9368cd51-13a3-49cc-b9b4-70d50694bdd8 -->
+- sislex/sislexa-kanban: 0.2.52
+
+<!-- release-train:8247f9e7-3198-40e6-92df-94caa6365e7c -->
+- sislex/make: 1.8.4
+- sislex/sislexa-kanban: 0.2.54
+
+<!-- release-train:d66a749b-74f2-47a9-b11d-b2de98e84523 -->
+- sislex/sislexa-kanban: 0.2.55
+
+<!-- release-train:32212279-576e-468f-8fe5-48ccbe0bc7ab -->
+- sislex/webreader: 1.3.5
+
+<!-- release-train:e0dce216-35c4-4bbc-a8ff-5eb263aae7a7 -->
+- sislex/make: 1.8.5
+- sislex/playwrightreader: 1.2.7
+- sislex/webreader: 1.3.6
+- sislex/image-studio: 1.1.5
+- sislex/voice: 1.1.2
+- sislex/sislexa-kanban: 0.2.56
+
+<!-- release-train:6a4f9587-adf7-4c41-bcbe-977f1b58a654 -->
+- sislex/make: 1.8.6
+
+<!-- release-train:0a23378c-2a9c-479f-bf55-87b7f59f3d2f -->
+- sislex/sislexa-kanban: 0.2.57
+
+<!-- release-train:d6553d43-8e3a-4ece-886b-49ada2097bcc -->
+- sislex/sislexa-kanban: 0.2.58
+
+<!-- release-train:c239220b-3cd3-47c8-90a8-729dbc5f52a9 -->
+- sislex/sislexa-kanban: 0.2.59
+
+<!-- release-train:c54cf5b6-560c-431a-b53a-24ab53cda839 -->
+- sislex/make: 1.8.7
+
+<!-- release-train:140173b4-5e11-4436-99b9-3f9f8cd6697d -->
+- sislex/sislexa-kanban: 0.2.60
+
+<!-- release-train:e3e06576-37db-473b-8af6-cb573bb0a4e4 -->
+- sislex/make: 1.8.8
+- sislex/sislexa-kanban: 0.2.61
+
+<!-- release-train:707d5c7b-14f8-44d8-b6dc-dd2f25950309 -->
+- sislex/sislexa-kanban: 0.2.62
+
+<!-- release-train:df16a8b0-ccbb-41b2-b4c6-19a2d531c60a -->
+- sislex/make: 1.8.9
+- sislex/sislexa-kanban: 0.2.63
+
+<!-- release-train:5e11a4ef-fa41-4f4a-b932-3221178708ee -->
+- sislex/make: 1.8.10
+
+<!-- release-train:d2736740-699f-436e-869f-a2b9ac2f38ed -->
+- sislex/make: 1.8.12
+
+<!-- release-train:0c9ee327-ed7c-4056-9c5c-63426f7117f4 -->
+- sislex/sislexa-kanban: 0.2.64
+
+<!-- release-train:88f3b8d7-adad-496a-8bf0-aa4eb0cad550 -->
+- sislex/make: 1.8.13

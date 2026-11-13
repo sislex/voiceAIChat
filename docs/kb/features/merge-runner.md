@@ -1,28 +1,33 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-10-24
-checked: 1aa1240a8
+updated: 2026-11-09
+checked: 5ceebde17
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
-  - apps/server/src/merge
-  - apps/server/src/cleanup
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - packages/shared/src/temporaryResources.ts
-  - packages/ui/src/components/ci/TemporaryResources.tsx
-  - apps/server/src/ci/testStages.ts
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
-  - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
   - apps/server/src/turns.ts
-  - packages/ui/src/components/ci/MergePanel.tsx
-  - packages/ui/src/components/ci/MergeRunFeed.tsx
-  - packages/ui/src/components/kanban/TaskModal.tsx
-  - packages/ui/src/remote
 ---
 
 # Merge-ран задачи: безопасное слияние в main
+
+## Current Core boundary
+
+Core retains `merge.ts` contracts and the merge tables. Workflow methods such
+as `claimQueuedMergeRun` have been removed from `db/repos/ci.ts`; queued
+assignment and merge execution belong to Kanban. `MergeRunManager` and its
+gate/KB worktrees execute there. Core proxies `/api/merge` and delivers run
+frames through `KanbanRunFeed`.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Автоисправление: маркеры проверяются только в правках модели
 

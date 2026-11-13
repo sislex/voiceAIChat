@@ -1,11 +1,10 @@
-// E2E модуля «Сессии и устройства» в реальном Chromium. Проверяет то, чего не
-// видят jsdom-тесты: живое обновление списка по WS (вход с другого устройства
-// появляется без перезагрузки) и мгновенный уход на экран входа, когда текущую
-// сессию завершают со стороны.
+// E2E модуля «Сессии и устройства» в реальном Chromium: один сквозной UI-случай —
+// живое обновление списка по WS (вход с другого устройства появляется без
+// перезагрузки). Отзыв сессий и отказ в доступе проверяет серверный session.test.ts.
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { createServer } from 'node:net'
+import { childAddress, loopbackRelay } from './listening-server'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -13,11 +12,8 @@ import { chromium, type Browser, type Page } from 'playwright'
 
 const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
-// Порт спрашиваем у системы, а не берём случайный из диапазона: не добитый
-// прошлым прогоном сервер иначе перехватывает подключение вместе со своими
-// старыми данными, и тест падает с загадочными «лишними» сессиями.
-let PORT = 0
 let BASE = ''
+let relay: Awaited<ReturnType<typeof loopbackRelay>>
 const PASSWORD = 'e2e-sessions-pass'
 const PHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1'
 
@@ -26,17 +22,6 @@ let dataDir = ''
 let browser: Browser
 let page: Page
 let token = ''
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address() as { port: number }
-      probe.close(() => resolve(port))
-    })
-  })
-}
 
 async function waitHealth(): Promise<void> {
   for (let i = 0; i < 60; i++) {
@@ -59,14 +44,15 @@ async function loginAs(userAgent: string): Promise<string> {
 describe('Сессии и устройства E2E', () => {
   beforeAll(async () => {
     if (!existsSync(WEB_DIST)) throw new Error('Build apps/web before session integration tests')
-    PORT = await freePort()
-    BASE = `http://127.0.0.1:${PORT}`
+    relay = await loopbackRelay()
+    BASE = relay.url
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-sessions-'))
-    server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
+    server = spawn(process.execPath, ['--import', 'tsx', '--import', join(ROOT, 'e2e/listening-address.mjs'), 'src/index.ts'], {
       cwd: join(ROOT, 'apps/server'),
-      env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD, VC_PUBLIC_URL: BASE },
-      stdio: 'ignore'
+      env: { ...process.env, PORT: '0', HOST: '127.0.0.1', VC_DATA_DIR: dataDir, VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD, VC_PUBLIC_URL: BASE },
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc']
     })
+    relay.forwardTo(await childAddress(server))
     await waitHealth()
     token = await loginAs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36')
 
@@ -87,6 +73,7 @@ describe('Сессии и устройства E2E', () => {
 
   afterAll(async () => {
     await browser?.close()
+    await relay?.close()
     if (server) {
       const stopped = new Promise<void>((done) => server!.once('exit', () => done()))
       server.kill('SIGTERM')
@@ -105,33 +92,5 @@ describe('Сессии и устройства E2E', () => {
     // Список обновляет WS-кадр sessions.update — страницу не трогаем.
     await expect.poll(() => page.getByText('Safari 17 · iOS').count(), { timeout: 30_000 }).toBe(1)
     await expect.poll(() => page.getByRole('button', { name: /Выйти на других устройствах/ }).count()).toBe(1)
-  })
-
-  it('завершение чужой сессии убирает карточку и отбирает доступ у того устройства', async () => {
-    // A distinct device and its exact session ID prevent revoking a stale row
-    // while the realtime list is still receiving the new login.
-    const phoneToken = await loginAs('Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0.0.0 Mobile Safari/537.36')
-    const list = await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${phoneToken}` } })
-    expect(list.ok).toBe(true)
-    const sessions = (await list.json()) as { sessions: Array<{ sid: string; current?: boolean }> }
-    const own = sessions.sessions.find(session => session.current)
-    expect(own).toBeDefined()
-    await page.getByTestId(`session-${own!.sid}`).getByRole('button', { name: 'Завершить', exact: true }).click()
-    await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Продолжить' }).click()
-
-    await expect.poll(async () => {
-      const res = await fetch(`${BASE}/api/conversations`, { headers: { authorization: `Bearer ${phoneToken}` } })
-      return res.status
-    }, { timeout: 30_000 }).toBe(401)
-  })
-
-  it('когда завершают текущую сессию, вкладка сама уходит на экран входа', async () => {
-    const sessions = (await (await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${token}` } })).json()) as { sessions: Array<{ sid: string; current?: boolean }> }
-    // Именно та сессия, которой живёт вкладка: по User-Agent её не отличить —
-    // Electron-вход тоже представляется Chrome.
-    const current = sessions.sessions.find((s) => s.current)!
-    // Отзыв «со стороны» — как из админки или с другого устройства.
-    await fetch(`${BASE}/api/admin/sessions/${current.sid}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } })
-    await expect.poll(() => page.getByTestId('login-form').count(), { timeout: 30_000 }).toBe(1)
   })
 })

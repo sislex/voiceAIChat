@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
-import { FRONTEND_E2E_FILES, FULL_GATE_STAGES, collectTestReports, main, reportFullGateFailure, runReportedTask, remainingBrowserFiles, runStages, runTestTasks, testConcurrency, testTasks, toolingCommand } from './full-gate.mjs'
+import { FRONTEND_E2E_FILES, FULL_GATE_STAGES, changedSinceBase, collectTestReports, fullGateStages, main, relatedToolingTests, reportFullGateFailure, runReportedTask, remainingBrowserFiles, runStages, runTestTasks, testConcurrency, testTasks, toolingCommand } from './full-gate.mjs'
 import { browserArgs } from './browser-gate.mjs'
 
 function fixture(t) {
@@ -14,6 +14,7 @@ function fixture(t) {
   mkdirSync(resolve(root, 'packages/example'), { recursive: true })
   writeFileSync(resolve(root, 'package.json'), JSON.stringify({ workspaces: ['packages/example'], scripts: {
     'test:tooling': 'npm test --prefix packages/example && node --import tsx --test scripts/a.test.mjs && node --test scripts/b.test.mjs && npm run gate:a07 && npm run other-check',
+    'test:tooling:dev': 'npm test --prefix packages/example && node --test scripts/b.test.mjs',
     'gate:a07': 'node --import tsx --test scripts/a07-acceptance.test.mjs',
     'other-check': 'python3 check.py'
   } }))
@@ -45,6 +46,37 @@ test('tooling instruments every node runner including prefixed tests without dro
   assert.ok(command.endsWith('&& npm run other-check'))
 })
 
+test('development tooling runs its own chain plus suites of changed scripts; release runs everything', t => {
+  const root = fixture(t), report = resolve(root, 'report.json')
+  const command = toolingCommand(root, report, 'test:tooling:dev', ['scripts/c.test.mjs'])
+  assert.ok(!command.includes('a07-acceptance'))
+  assert.equal(command.match(/--test-reporter /g).length, 3)
+  assert.match(command, /node --import tsx --test --test-reporter '[^']+' 'scripts\/c\.test\.mjs'$/)
+  mkdirSync(resolve(root, 'scripts'))
+  for (const name of ['b', 'c', 'd']) writeFileSync(resolve(root, `scripts/${name}.mjs`), '')
+  writeFileSync(resolve(root, 'scripts/b.test.mjs'), "import './b.mjs'")
+  writeFileSync(resolve(root, 'scripts/c.test.mjs'), "import './c.mjs'")
+  writeFileSync(resolve(root, 'scripts/d.test.mjs'), '')
+  const dev = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).scripts['test:tooling:dev']
+  assert.deepEqual(relatedToolingTests(root, ['scripts/b.mjs', 'scripts/c.mjs', 'scripts/d.mjs', 'apps/x.ts'], dev), ['scripts/c.test.mjs', 'scripts/d.test.mjs'])
+  assert.deepEqual(testTasks(root)[0].args, ['run', 'test:tooling:dev'])
+  assert.deepEqual(testTasks(root, { release: true })[0].args, ['run', 'test:tooling'])
+  assert.deepEqual(fullGateStages(true).at(-1), ['browser-integration', ['run', 'test:browser:release']])
+})
+
+test('an unproven development diff falls back to the complete tooling chain', async t => {
+  const root = fixture(t), scripts = []
+  t.mock.method(console, 'log', () => {})
+  for (const [options, expected] of [[{ changed: [] }, 'test:tooling:dev'], [{ changed: null }, 'test:tooling'], [{ release: true }, 'test:tooling']]) {
+    await main({ root, routes: false, ...options, execute: (command, args) => {
+      if (command === 'sh') scripts.push(args[1].includes('a07-acceptance') ? 'test:tooling' : 'test:tooling:dev')
+      return { status: 0 }
+    } })
+    assert.equal(scripts.at(-1), expected)
+  }
+  assert.equal(changedSinceBase(root, () => { throw Error('no git') }), null)
+})
+
 test('workspace runner passes reporter options and cleans its report on signals and thrown spawn errors', async t => {
   const root = fixture(t)
   for (const throws of [false, true]) {
@@ -67,7 +99,7 @@ test('workspace runner passes reporter options and cleans its report on signals 
 test('full gate aggregates parallel failures and ends with exactly the two failure markers', async t => {
   const root = fixture(t), logs = [], reports = new Set()
   t.mock.method(console, 'log', line => logs.push(line))
-  await assert.rejects(main({ root, routes: false, execute: async (command, args, { env }) => {
+  await assert.rejects(main({ root, routes: false, changed: [], execute: async (command, args, { env }) => {
     reports.add(env.GATE_TEST_REPORT)
     if (args.includes('typecheck')) return { status: 0 }
     if (command === 'sh') {
@@ -93,7 +125,7 @@ test('non-test failures have an empty array; successful gates emit no failure ma
   const root = fixture(t), logs = []
   t.mock.method(console, 'log', line => logs.push(line))
   for (const stage of ['typecheck', 'build:frontends', 'verify:core-ui']) {
-    await assert.rejects(main({ root, routes: false, execute: (_command, args) => ({ status: args.includes(stage) ? 3 : 0 }) }), error => {
+    await assert.rejects(main({ root, routes: false, changed: [], execute: (_command, args) => ({ status: args.includes(stage) ? 3 : 0 }) }), error => {
       assert.deepEqual(error.failedTests, [])
       reportFullGateFailure(error)
       assert.deepEqual(logs.slice(-2), [`GATE-FAILED-STAGE: ${stage === 'build:frontends' ? 'frontends' : stage === 'verify:core-ui' ? 'core-ui-artifact' : stage}`, 'GATE-FAILED-TESTS: []'])
@@ -101,7 +133,7 @@ test('non-test failures have an empty array; successful gates emit no failure ma
     })
   }
   logs.length = 0
-  await main({ root, routes: false, execute: () => ({ status: 0 }) })
+  await main({ root, routes: false, changed: [], execute: () => ({ status: 0 }) })
   assert.equal(logs.some(line => line.startsWith('GATE-FAILED-')), false)
 })
 
@@ -109,7 +141,7 @@ test('browser and route stage reports reach the final failure markers', async t 
   const root = fixture(t)
   t.mock.method(console, 'log', () => {})
   for (const routes of [false, true]) {
-    await assert.rejects(main({ root, routes, execute: (_command, args, { env }) => {
+    await assert.rejects(main({ root, routes, changed: [], execute: (_command, args, { env }) => {
       if (!routes && !args.includes('test:browser')) return { status: 0 }
       if (routes) assert.ok(args.includes(`--outputFile.json=${env.GATE_TEST_REPORT}`))
       writeFileSync(env.GATE_TEST_REPORT, JSON.stringify({ testResults: [{ status: 'failed', name: resolve(root, 'e2e/example.e2e.test.ts') }] }))
@@ -187,10 +219,27 @@ test('parallel test runner respects its concurrency bound', async () => {
   assert.equal(maximum, 2)
 })
 
-test('test concurrency defaults to three and rejects invalid overrides', () => {
+test('test concurrency defaults to three and rejects invalid overrides', t => {
+  const previous = process.env.VC_GATE_TEST_CONCURRENCY
+  t.after(() => {
+    if (previous === undefined) delete process.env.VC_GATE_TEST_CONCURRENCY
+    else process.env.VC_GATE_TEST_CONCURRENCY = previous
+  })
+  delete process.env.VC_GATE_TEST_CONCURRENCY
+  assert.equal(testConcurrency(), 3)
   assert.equal(testConcurrency(undefined), 3)
+  assert.equal(testConcurrency(''), 3)
   assert.equal(testConcurrency('4'), 4)
   for (const value of ['0', '-1', '1.5', 'many']) assert.throws(() => testConcurrency(value), /positive integer/)
+
+  // Environment defaults and explicit arguments are separate inputs.
+  process.env.VC_GATE_TEST_CONCURRENCY = '1'
+  assert.equal(testConcurrency(), 1)
+  assert.equal(testConcurrency(undefined), 1)
+  assert.equal(testConcurrency('4'), 4)
+  process.env.VC_GATE_TEST_CONCURRENCY = 'many'
+  assert.throws(() => testConcurrency(), /positive integer/)
+  assert.equal(testConcurrency('4'), 4)
 })
 
 test('full gate creates one process per test-bearing workspace without changing local npm test', () => {
@@ -200,6 +249,7 @@ test('full gate creates one process per test-bearing workspace without changing 
     '@voicechat/shared',
     '@voicechat/knowledge',
     '@sislexa/component-runtime',
+    '@sislexa/file-storage',
     '@voicechat/automation-runner',
     '@voicechat/server'
   ])
@@ -211,7 +261,14 @@ test('release command retains performance and owner system acceptance outside th
   const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts
   // gate:release narrows proven owner-archive replacements; its fallback stays the full chain.
   assert.equal(scripts['gate:release'], 'node --import tsx scripts/release-gate.mjs')
-  assert.equal(scripts['gate:release:full'], 'npm run gate:all && npm run gate:performance && npm run gate:system')
+  assert.equal(scripts['gate:release:full'], 'npm run gate:all -- --release && npm run gate:performance && npm run gate:system')
+  assert.equal(scripts['test:browser:release'], 'node scripts/browser-gate.mjs --integration --release')
+  // Development keeps knowledge tools and gate planners; release-only tooling stays in test:tooling.
+  for (const kept of ['npm test --prefix packages/kb-tools', 'scripts/quick-gate.test.mjs', 'scripts/application-gate.test.mjs', 'scripts/full-gate.test.mjs', 'scripts/test-files.test.mjs'])
+    assert.ok(scripts['test:tooling:dev'].includes(kept), kept)
+  for (const deferred of ['dev-stand.test.mjs', 'release-train.test.mjs', 'system-gate.test.mjs', 'vendor-store.test.mjs', 'gate:a07'])
+    assert.ok(!scripts['test:tooling:dev'].includes(deferred) && scripts['test:tooling'].includes(deferred), deferred)
+  for (const file of scripts['test:tooling:dev'].match(/scripts\/[\w./-]+\.test\.mjs/g)) assert.ok(scripts['test:tooling'].includes(file), file)
   assert.equal(scripts['gate:performance'], 'npm run frontend:route-gates')
   assert.equal(scripts['gate:system'], 'node scripts/system-gate.mjs')
   assert.ok(!FULL_GATE_STAGES.some(([, args]) => args.includes('frontend:route-gates') || args.includes('gate:system')))

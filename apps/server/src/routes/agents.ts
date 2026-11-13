@@ -1,3 +1,4 @@
+import { registerAndroidAppRoutes } from './androidApp.js'
 import { vpnMachineView } from '../machines/vpn/telemetry.js'
 // REST для машин-агентов: список (с онлайн-статусом), создание (одноразовый
 // токен), удаление (отзыв токена + разрыв соединения).
@@ -33,6 +34,8 @@ export interface AppArtifacts {
   agentApp?: string
   desktopApp?: string
   loginApplication?: string
+  androidManifest?: string
+  githubToken?: string
 }
 
 /** Отдаёт .dmg на скачивание или 404 с подсказкой, как собрать. */
@@ -139,6 +142,19 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
+  app.post<{Params:{id:string};Body:{serverUrl?:string;token?:string;timeoutMs?:number}}>('/api/agents/:id/switch-operator',async(req,reply)=>{
+    if(req.user?.role!=='admin' || !(await db.machines.listAgents(uid(req))).some(a=>a.id===req.params.id)) return reply.code(403).send({error:'Machine owner and administrator required'})
+    const body=req.body ?? {}
+    let url:URL
+    try {url=new URL(body.serverUrl ?? '')}catch{return reply.code(400).send({error:'Invalid target URL'})}
+    if(!['wss:','ws:'].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
+      typeof body.token!=='string' || !body.token || body.token.length>4096) return reply.code(400).send({error:'Invalid switch request'})
+    const timeoutMs=body.timeoutMs ?? 30000
+    if(!Number.isInteger(timeoutMs) || timeoutMs<1000 || timeoutMs>120000) return reply.code(400).send({error:'Invalid timeout'})
+    const status=await registry.switchOperator(req.params.id,{serverUrl:url.href,token:body.token,timeoutMs})
+    app.log.info({user:uid(req),agentId:req.params.id,status},'Operator switch')
+    return {agentId:req.params.id,status}
+  })
   registry.vpnService = new VpnService(db.machines, registry, () => process.env.VC_VPN_SECRET_KEY)
   registerVpnRoutes(app, registry.vpnService)
   const withLiveStatus = async (agents: Awaited<ReturnType<VoiceChatDb['machines']['listAgents']>>, userId?: string, projectId?: string | null): Promise<AgentListItem[]> => {
@@ -333,8 +349,10 @@ export async function registerAgentRoutes(
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
     const userId = uid(req)
+    const conversation = await db.chat.getConversation(userId, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
     const binding = await db.machines.getChatStorageBinding(userId, req.params.id)
-    if (!binding) return reply.code(404).send({ error: 'not found' })
+    if (!binding) return reply.send(null)
     // Карточке чата нужны абсолютные каталоги и состояние хранилища, а не только id.
     const storage = (await db.machines.listMachineStorages(userId, binding.machineId)).find((item) => item.id === binding.storageId)
     if (!storage) return binding satisfies ChatStorageView
@@ -415,6 +433,8 @@ export async function registerAgentRoutes(
     reply.header('Cache-Control', 'no-store')
     try { return { version: servedAgent().version } } catch { return { version: AGENT_VERSION } }
   })
+
+  registerAndroidAppRoutes(app, { manifestPath: artifacts.androidManifest, githubToken: artifacts.githubToken })
 
   // Собранные .dmg. Собираются заранее (npm --prefix … run dist).
   app.get(REST.agentApp, async (_req, reply) =>
@@ -524,6 +544,14 @@ export async function registerAgentRoutes(
     const name = req.body?.name?.trim()
     if (!name) return reply.code(400).send({ error: 'name required' })
     return await db.machines.createAgent(uid(req), name)
+  })
+
+  app.patch<{ Params: { id: string }; Body: { name?: unknown } }>('/api/agents/:id', async (req, reply) => {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : ''
+    if (!name || name.length > 120) return reply.code(400).send({ error: 'Название должно содержать от 1 до 120 символов' })
+    if (!await db.machines.renameAgent(uid(req), req.params.id, name)) return reply.code(404).send({ error: 'not found' })
+    registry.rename(req.params.id, name)
+    return { id: req.params.id, name }
   })
 
   app.delete<{ Params: { id: string } }>('/api/agents/:id', async (req, reply) => {

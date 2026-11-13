@@ -62,6 +62,11 @@ export class ComponentTokenRegistry {
     if (!grant || row.expires - row.issued > grant.maxTtlSeconds * 1000 || scopes.some(scope => !grant.scopes.includes(scope)) || required.some(scope => !scopes.includes(scope))) return { ok: false, status: 403 }
     return { ok: true, principal: { tokenId: row.id, consumerId: row.consumer, providerId: this.contract.applicationId, environmentId: this.config.environmentId, scopes, expiresAt: row.expires } }
   }
+  /** Resolve an installed credential by digest, including expired but never revoked tokens. */
+  installed(token: string): Omit<import('@voicechat/shared').ComponentPrincipal, 'providerId' | 'environmentId'> | undefined {
+    const row = this.db.prepare('SELECT * FROM tokens WHERE digest=? AND revoked IS NULL').get(digest(token)) as unknown as TokenRow | undefined
+    return row ? { tokenId: row.id, consumerId: row.consumer, scopes: JSON.parse(row.scopes) as string[], expiresAt: row.expires } : undefined
+  }
   revoke(tokenId: string): boolean {
     return Number(this.db.prepare('UPDATE tokens SET revoked=? WHERE id=? AND revoked IS NULL').run(this.now(), tokenId).changes) > 0
   }

@@ -11,6 +11,7 @@ import { LinkManager } from './linkManager.js'
 import type { EnvironmentLinkInput } from '../db/repos/environments.js'
 import { registerMachinesInternalApi } from '../machines/internalApi.js'
 import { HttpMachines } from '../machinesBridge/httpMachines.js'
+import * as dbSeed from '../test/seed.js'
 
 describe('persistent environment links', () => {
   let db: VoiceChatDb
@@ -39,7 +40,7 @@ describe('persistent environment links', () => {
     await db.ready
     await db.identity.createUser('owner', randomUUID(), 'developer')
     const project = await db.projects.createProject('owner', { name: 'Links' })
-    await db.environments.upsertEnvironment('owner', project.id, { id: 'stage', name: 'Stage', machines: ['server'], checkoutPath: '/stage' })
+    await dbSeed.upsertEnvironment(db, 'owner', project.id, { id: 'stage', name: 'Stage', machines: ['server'], checkoutPath: '/stage' })
     input = { projectId: project.id, environmentId: 'stage', clientMachineId: 'client', serverMachineId: 'server', servicePort: 5432, listenerPort: 17001 }
     sent.client = []; sent.server = []; buffered.client = 0; buffered.server = 0
     agents = new AgentRegistry()
@@ -90,7 +91,7 @@ describe('persistent environment links', () => {
     const link = await manager.ensureLink(input)
     expect(link).toMatchObject({ transport: 'vpn', address: '100.64.0.2:5432', state: 'open' })
     expect(sent.client.some(m => m.t === 'tunnel.listen')).toBe(false)
-    await db.environments.setEnvironmentState(input.projectId, input.environmentId, { state: 'removed' })
+    await dbSeed.setEnvironmentState(db, input.projectId, input.environmentId, { state: 'removed' })
     await manager.reconcile()
     expect((await manager.listLinks(input.projectId, input.environmentId))[0]?.state).toBe('down')
     await manager.deleteLink(input.projectId, input.environmentId, link.id)
@@ -264,7 +265,7 @@ describe('persistent environment links', () => {
 
   it('denies traffic after the environment is removed', async () => {
     const link = await manager.ensureLink(input)
-    await db.environments.setEnvironmentState(input.projectId, input.environmentId, { state: 'removed' })
+    await dbSeed.setEnvironmentState(db, input.projectId, input.environmentId, { state: 'removed' })
     await agents.handleMessage('client', { t: 'tunnel.open', tunnelId: link.id, connectionId: 'denied' })
     await manager.reconcile()
     expect(agents.tunnelPort(link.id)).toBeNull()

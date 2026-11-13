@@ -63,4 +63,14 @@ assert "build" in s["voicechat"], "Core must build from the selected checkout"
 assert all("build" not in v and v.get("pull_policy")=="never" for k,v in s.items() if k!="voicechat"), "A dependent service would build or pull"
 '
 echo "Release source verified: $VC_RELEASE_VERSION ${VC_RELEASE_EXPECTED_COMMIT:0:12}; owner images pinned locally, release-moved images: $(python3 -c 'import json,sys; print(", ".join(json.load(open(sys.argv[1]))) or "none")' "$switches")"
+# Keep the build attached to the Release Center build step: its stderr (including
+# the Docker build log tail) and nonzero exit must arrive before health polling.
+# Building images does not replace running containers. The detached launcher's
+# --build reuses these layers while retaining its host lock and normal checks.
+export VC_APPLICATION_VERSION=$VC_RELEASE_VERSION
+export VC_APPLICATION_COMMIT=$VC_RELEASE_EXPECTED_COMMIT
+VC_APPLICATION_API_VERSION=$(python3 -c 'import json; print(json.load(open("apps/server/release.json"))["apiVersion"])')
+VC_APPLICATION_DATA_VERSION=$(python3 -c 'import json; print(json.load(open("apps/server/release.json"))["dataVersion"])')
+export VC_APPLICATION_API_VERSION VC_APPLICATION_DATA_VERSION
+docker compose build voicechat
 /usr/local/bin/voicechat-deploy --operation-id "$operation" --expected-commit "$VC_RELEASE_EXPECTED_COMMIT" --release-version "$VC_RELEASE_VERSION" --release-version-source release-manager

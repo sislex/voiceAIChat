@@ -2,19 +2,17 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-10-24
-checked: 8c8ce466
+updated: 2026-11-09
+checked: bc7d4930c
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
-  - apps/server/src/ci
-  - apps/server/src/cleanup
-  - apps/agent/src/connection.ts
-  - apps/agent/src/exec.ts
+  - apps/server/src/kanban
+  - apps/server/src/kanbanBridge
   - packages/shared/src/temporaryResources.ts
-  - packages/ui/src/components/ci/TemporaryResources.tsx
+  - apps/server/src/mcp/runProcesses.ts
   - apps/server/src/automationClient.ts
   - apps/automation-runner/src
   - packages/shared/src/automation.ts
@@ -26,29 +24,13 @@ areas:
   - apps/server/src/kb/autoContext.ts
   - apps/server/src/kb/kbMcp.ts
   - packages/shared/src/kbGaps.ts
-  - apps/server/src/routes/ci.ts
-  - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
   - apps/server/src/mcp/remoteBashMcp.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
-  - apps/agent/src/exec.ts
-  - apps/agent/src/gitAccess.ts
-  - packages/shared/src/gitAccess.ts
   - packages/shared/src/agentProtocol.ts
-  - packages/ui/src/App.tsx
-  - packages/ui/src/components/ProjectMachineGitAccess.tsx
-  - packages/ui/src/components/ci
-  - packages/ui/src/components/kanban/KanbanBoard.tsx
-  - packages/ui/src/components/kanban/TaskCard.tsx
-  - packages/ui/src/components/kanban/TaskModal.tsx
-  - packages/ui/src/components/kanban/TaskPreparationTab.tsx
-  - packages/ui/src/components/ProjectBoard.tsx
-  - packages/ui/src/styles/app.css
-  - packages/ui/src/remote/ciBridge.ts
-  - packages/ui/src/remote/httpApi.ts
-  - packages/ui/src/store/domains/projectsStore.ts
+  - apps/server/src/db/repos/ci.ts
 symbols:
   - createCiRunManager
   - clarifyBudget
@@ -83,6 +65,40 @@ packages:
 ---
 
 # CI-раннер канбана
+
+## Operator handoff boundary (SK-115)
+
+Core's AgentRegistry dispatches and correlates operator switches; task export,
+import, pausing and continuation belong to the Kanban owner. The Core switch
+route does not create a new model run. See [the wire boundary](../protocol.md#operator-handoff).
+
+Area review since `8c8ce466` found three earlier net changes: model-price seed
+rows, the pinned Kanban Compose image, and the additive widget-confirmation
+expiry message/type registry. These do not change Core CI stage selection.
+The shared protocol sends optional `expiresAt` on confirmation requests and
+`widget.action.expired` on timeout; a timeout is not user rejection.
+
+## Current Core boundary
+
+Core's shared `AgentRegistry.onChange` boundary logs both synchronous subscriber
+exceptions and rejected promises. A failing async machine-list subscriber no
+longer escapes as an unhandled rejection. This change does not modify CI stage
+selection or Kanban orchestration; see [agent lifecycle](../machines.md#подключение-и-жизненный-цикл).
+
+Core retains `packages/shared/src/ci.ts`, SQL tables, CI readers and workspace /
+log support in `db/repos/ci.ts`, Automation Runner and the machine/MCP/KB ports.
+Workflow mutation methods were removed; fixture-only writers now live in
+`apps/server/src/test/seed.ts`, which awaits database readiness and enters the
+same port lane on SQLite and Postgres. `getCiRunLog` is no longer a Core
+repository method.
+The Core Docker build retries transient npm archive downloads three times with
+10–60 second backoff. This changes image preparation, not CI stage selection.
+Execution hooks and cleanup managers
+run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
+
+The [ownership map](../projects.md#kanban-implementation-ownership) explains
+extracted paths in the retained detailed sections below. Manager and UI paths
+are owner migration references, not local Core implementations.
 
 ## Development preview (CHAT-447)
 
@@ -229,6 +245,45 @@ viewport, сборщик запрашивает состояние довере�
 не считается браузерным свидетельством.
 
 ## Защита диска и очистка development-рана
+
+### temporary-cleanup: process registry (SK-93)
+
+Core's `apps/server/src/mcp/runProcesses.ts` stores
+`<task>/.process-<runId>` as a versioned JSON process registry, not a TMPDIR.
+It groups command scopes with stage, cwd and deadline, recording process
+PID/PGID, parent PID, start identity, working directory and listening TCP ports.
+The helper refreshes snapshots while supervising a command; a retained registry
+is evidence to validate against live processes, not proof that they still run.
+The file uses locking and refuses symlink opens. Its format and sweep options
+are defined in that source rather than by the temporary-resource directory
+registry described below.
+
+Cleanup verifies PID, start time and PGID before signalling. It sends SIGTERM,
+waits up to ten seconds, then sends SIGKILL to survivors. A whole group is
+signalled only when all its members are owned; shared groups use individual
+PIDs. A sweep without a run filter also discovers unregistered processes by cwd
+inside the canonical task root. With `expiredOnly`, unexpired registrations
+are protected and unregistered processes must exceed `maxAgeMs` (30 minutes by
+default). The helper excludes itself and its ancestors, and can check root
+device/inode identity. It does not query task status or active runs: the caller
+must establish that cleanup is allowed. Sweep records go to the task-local
+`.process-cleanup.log`; this alone is not a machine-journal integration.
+
+Gradle uses the isolated `<task>/.gradle-<runId>` home. Environment defaults disable
+the Gradle daemon and select in-process Kotlin compilation; the helper does not
+rewrite commands to append a literal `--no-daemon`. Cleanup finds task-local
+`gradlew` wrappers and invokes `--stop` only with existing isolated homes.
+Recorded ports support ownership diagnostics; this Core helper does not allocate
+ports or independently stop foreign port owners.
+
+The [LLM execution section](../llm.md#kanban-run-process-ownership-sk-93) describes
+the Core MCP boundary and retention between model commands. Real process
+fixtures in `apps/server/src/mcp/runProcesses.test.ts` cover command completion,
+retention followed by sweep, cancellation, cwd orphan discovery, age filtering,
+PID identity, Gradle defaults and ten-second escalation. Automatic stage/card
+lifecycle admission belongs to the external `sislexa-kanban` repository.
+
+### Temporary directory resource lifecycle
 
 Перед системным bootstrap нового development-рана `CiRunManager` проверяет свободное
 место рабочей файловой системы через `df -Pk .`. По умолчанию требуется не меньше

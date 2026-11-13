@@ -17,9 +17,9 @@ import { buildShellCommand } from '../util/shell.js'
 import type { CommandGate } from '../agents/commandGate.js'
 import { hasProjectPermission } from "@sislexa/identity/server/users/auth"
 import {
-  branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
+  branchChangesScript, branchesScript, checkoutScript, compareScript, commitDetailScript, commitScript,
   conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,
-  grepScript, logScript, pullScript, pushScript, resolveConflictScript, stageScript, storyFilesScript,
+  grepScript, logScript, mergeScript, pullScript, pushScript, resolveConflictScript, stageScript, storyFilesScript,
   statusScript, treeScript, type GitScript
 } from './scripts.js'
 
@@ -236,6 +236,22 @@ export class GitWorkspaceService {
     }
   }
 
+  /** Ahead counts commits exclusive to head; contained means head is an ancestor of base. */
+  async compare(userId: string, projectId: string, workspaceId: string, base: string, head: string, fetch = false) {
+    if (!isValidGitRef(base) || !isValidGitRef(head))
+      throw new GitError(400, 'invalid_ref', 'Invalid comparison reference')
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
+    const result = await this.run(userId, projectId, ref, compareScript(base, head, fetch), fetch ? NETWORK_TIMEOUT_MS : READ_TIMEOUT_MS)
+    if (result.exitCode !== 0) throw new GitError(409, 'git_failed', lastLine(result.output) || 'Git comparison failed')
+    const sections = splitGitSections(result.output)
+    const counts = /^(\d+)\s+(\d+)$/.exec((sections.counts ?? '').trim())
+    const mergeBase = (sections.mergebase ?? '').trim() || null
+    if (!counts || (mergeBase !== null && !/^[a-f0-9]{40,64}$/.test(mergeBase)))
+      throw new GitError(409, 'git_failed', 'Invalid Git comparison output')
+    const ahead = Number(counts[1])
+    return { ahead, behind: Number(counts[2]), mergeBase, contained: ahead === 0 }
+  }
+
   /** Один уровень дерева файлов ревизии. */
   async tree(userId: string, projectId: string, workspaceId: string, dir: string, refName?: string): Promise<GitTreeListing> {
     const ref = await this.resolve(userId, projectId, workspaceId, { write: false })
@@ -341,9 +357,35 @@ export class GitWorkspaceService {
     if (!isValidGitBranchName(name)) throw new GitError(400, 'invalid_branch', 'Недопустимое имя ветки')
     const point = from ?? 'HEAD'
     if (!isValidGitRef(point)) throw new GitError(400, 'invalid_ref', 'Недопустимая точка ветвления')
+    const before = await this.status(userId, projectId, workspaceId)
+    if (before.changes.length > 0) {
+      throw new GitError(409, 'dirty_worktree', `Сначала закоммитьте или отбросьте изменения (${before.changes.length})`)
+    }
     await this.runMutation(userId, projectId, ref, createBranchScript(name, point), MUTATE_TIMEOUT_MS, 'Не удалось создать ветку')
     await this.audit(userId, projectId, ref, 'git.branch', { branch: name, from: point })
     return { status: await this.status(userId, projectId, workspaceId), createdLocal: true }
+  }
+
+  /** Влить локальную ветку, не оставляя рабочую копию в состоянии конфликта. */
+  async merge(userId: string, projectId: string, workspaceId: string, from: string): Promise<{ status: GitWorkspaceStatus; head: string | null; conflicts: string[] }> {
+    const ref = await this.resolve(userId, projectId, workspaceId, { write: true })
+    if (!isValidGitBranchName(from)) throw new GitError(400, 'invalid_branch', 'Недопустимое имя ветки')
+    const before = await this.status(userId, projectId, workspaceId)
+    if (before.changes.length > 0) {
+      throw new GitError(409, 'dirty_worktree', `Сначала закоммитьте или отбросьте изменения (${before.changes.length})`)
+    }
+    const result = await this.run(userId, projectId, ref, mergeScript(from), MUTATE_TIMEOUT_MS)
+    const sections = splitGitSections(result.output)
+    const conflicts = decodeBase64Section(sections.conflicts_b64).split('\0').filter(Boolean)
+    if (result.exitCode !== 0 && conflicts.length === 0) {
+      const message = lastLine(result.output) || 'Не удалось выполнить слияние'
+      if (/branch_not_found/.test(result.output)) throw new GitError(404, 'branch_not_found', `Ветка ${from} не найдена`)
+      throw new GitError(409, 'git_failed', message)
+    }
+    const status = await this.status(userId, projectId, workspaceId)
+    const head = /^[0-9a-f]{7,40}$/.exec(lastLine(sections.head ?? ''))?.[0] ?? status.head
+    await this.audit(userId, projectId, ref, 'git.merge', { from, head, conflicts: conflicts.length })
+    return { status, head, conflicts }
   }
 
   /**
@@ -663,6 +705,7 @@ export class GitWorkspaceService {
     }
     if (/index\.lock/i.test(result.output)) throw new GitError(409, 'git_locked', message)
     if (/nothing to commit/i.test(result.output)) throw new GitError(409, 'nothing_to_commit', message)
+    if (/branch_not_found/i.test(result.output)) throw new GitError(404, 'branch_not_found', 'Ветка не найдена')
     throw new GitError(409, 'git_failed', message)
   }
 

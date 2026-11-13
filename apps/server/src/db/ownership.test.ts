@@ -15,7 +15,7 @@ for (const d of domains) for (const t of TABLE_OWNER[d]) ownerOf.set(t, d)
 const tableAlt = [...ownerOf.keys()].join('|')
 const writeRe = new RegExp(`\\b(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|UPDATE|DELETE\\s+FROM|REPLACE\\s+INTO)\\s+(${tableAlt})\\b`, 'gi')
 const readRe = new RegExp(`\\b(?:FROM|JOIN)\\s+(${tableAlt})\\b`, 'gi')
-const repoSource = (d: RepoDomain) => readFileSync(join(reposDir, `${d}.ts`), 'utf8')
+const repoSource = (d: RepoDomain) => readFileSync(d === 'storage' ? join(dbDir, '../fileStorage/metadata.ts') : join(reposDir, `${d}.ts`), 'utf8')
 
 function tablesFromSchema(): Set<string> {
   const sql = SCHEMA_SQL + MESSAGES_FTS_SQL + readFileSync(join(dbDir, 'database.ts'), 'utf8')
@@ -44,7 +44,7 @@ describe('владение таблицами (db/ownership.ts)', () => {
 
   it('у каждого домена есть файл репозитория, и репозитории не импортируют друг друга', () => {
     const files = readdirSync(reposDir).filter((f) => f.endsWith('.ts'))
-    for (const d of localDomains) expect(files, `нет repos/${d}.ts`).toContain(`${d}.ts`)
+    for (const d of localDomains.filter(d => d !== 'storage')) expect(files, `нет repos/${d}.ts`).toContain(`${d}.ts`)
     // base.ts — единственное место, которому положено знать все репозитории (тип Repos).
     for (const f of files.filter((f) => f !== 'base.ts')) {
       const src = readFileSync(join(reposDir, f), 'utf8')

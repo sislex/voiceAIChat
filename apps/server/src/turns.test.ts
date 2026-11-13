@@ -16,6 +16,7 @@ import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import type { ChatAccounting } from './billing/chatAccounting.js'
 import { ACCOUNTING_PENDING_MESSAGE } from './billing/chatAccounting.js'
+import * as dbSeed from './test/seed.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
 
@@ -490,7 +491,7 @@ describe('turns: актуальная main проекта', () => {
     const agent = await db.machines.createAgent(U, 'Mac')
     await db.machines.linkMachine(U, project.id, agent.id)
     await db.machines.setProjectMachinePath(U, project.id, agent.id, '/srv/project')
-    await db.projects.setProjectDefaultMachine(U, project.id, agent.id)
+    await dbSeed.setProjectDefaultMachine(db, U, project.id, agent.id)
     const conv = await db.chat.createConversation(U, 'Проектный чат')
     await db.chat.setConversationProject(U, conv.id, project.id)
     await db.chat.addMessage(U, conv.id, 'u0', 'проверь код', '10:00')
@@ -732,14 +733,13 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
-  it('Make с назначенной машиной всё равно не получает remote-мост и встроенные инструменты', async () => {
+  it('Make does not inherit the project default machine', async () => {
     const db = await freshDb() // владелец — admin: раньше именно у него Make получал Bash и файлы
     const project = await db.projects.createProject(U, { name: 'Проект' })
     const agent = await db.machines.createAgent(U, 'Ноутбук')
     await db.machines.linkMachine(U, project.id, agent.id)
     await db.machines.setProjectMachinePath(U, project.id, agent.id, '/repo')
-    // Машина проекта по умолчанию — то есть чат её наследует (прямую привязку
-    // Make-чату БД теперь не даёт записать, см. database.test.ts).
+    // A project default does not grant Make access to its working copy.
     await db.machines.setUserProjectDefaultMachine(U, project.id, agent.id)
     const conv = (await db.chat.createConversation(U, 'Витрина', 'make', project.id))!
     await db.chat.addMessage(U, conv.id, 'u0', 'поправь кнопку', '10:00')
@@ -757,6 +757,31 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.makeMcpUrl).not.toContain('ro=1')
     await turns.idle()
     db.close()
+  })
+
+  it.each(['claude', 'codex'] as const)('Make exposes attachments and the explicit machine to %s', async provider => {
+    const db = await freshDb()
+    const agent = await db.machines.createAgent(U, 'Laptop')
+    const conv = await db.chat.createConversation(U, 'Make', 'make')
+    await db.chat.setConversationExecTarget(U, conv.id, agent.id, '/assets', undefined, provider, null, 'plan')
+    const rec = recorder()
+    const broker = { register: vi.fn(), unregister: vi.fn() }
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, agents: onlineAgents,
+      mcpBaseUrl: 'http://localhost/mcp/remote-bash?k=secret', remoteFileTool: broker,
+      resolveUpload: () => ({ serverPath: '/runner/private.png', runnerName: 'photo.png', dataBase64: 'aGVsbG8=' }) })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'inspect' }], attachments: ['upload-1'] })
+    await turns.idle()
+    expect(rec.last()?.toolOnly).toBe(true)
+    expect(rec.last()?.remote?.mcpUrl).toContain('&make=1')
+    expect(rec.last()?.remote?.mcpUrl).toContain('&agent=' + agent.id)
+    expect(rec.last()?.remote?.mcpUrl).toContain('&cwd=%2Fassets')
+    expect(new URL(rec.last()!.remote!.mcpUrl).searchParams.getAll('ro')).toEqual(['1'])
+    expect(rec.last()?.prompt).toContain('"uploadId":"upload-1"')
+    expect(rec.last()?.prompt).toContain('photo.png')
+    expect(rec.last()?.prompt).not.toContain('/runner/private.png')
+    expect(broker.register).toHaveBeenCalledWith(expect.any(String), [expect.objectContaining({ uploadId: 'upload-1' })])
+    expect(broker.unregister).toHaveBeenCalled()
+    await db.close()
   })
 
   // @testCase TC-SRV-02
@@ -1327,7 +1352,7 @@ describe('turns: остановка сервера (flushInterrupted)', () => {
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Начало отве')
     expect(ai?.meta?.interrupted).toBe(true)
-    expect(ai?.meta?.activity).toHaveLength(1)
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity).toHaveLength(1)
     await turns.idle()
     db.close()
   })
@@ -1511,6 +1536,36 @@ describe('turns: conversation history MCP', () => {
   })
 })
 
+describe('turns: режим Chat', () => {
+  it('оставляет только диалог и инструкции без MCP, навыков и машины', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'Chat mode')
+    await db.chat.setConversationAssistantMode(U, conversation.id, 'chat')
+    // A cold start rebuilds the prompt from stored history; the WS handler stores the reply first.
+    await db.chat.addMessage(U, conversation.id, 'u1', 'Только диалог', '10:00')
+    const rec = recorder()
+    const tool = { register: vi.fn(), unregister: vi.fn() }
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      historyMcpBaseUrl: 'http://127.0.0.1:8787/mcp/history?k=secret',
+      historyTool: tool
+    })
+
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Только диалог' }] })
+    await turns.idle()
+
+    expect(rec.last()).toMatchObject({ textOnly: true })
+    expect(rec.last()?.prompt).toContain('Только диалог')
+    expect(rec.last()?.historyMcpUrl).toBeUndefined()
+    expect(rec.last()?.kbMcpUrl).toBeUndefined()
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.remote).toBeUndefined()
+    expect(tool.register).not.toHaveBeenCalled()
+    await db.close()
+  })
+})
+
 describe('turns: MCP-инструменты базы знаний и режимы kbContextMode', () => {
   const bundle = {
     query: 'как устроены ходы', confidence: 'high' as const, autoInjectAllowed: true,
@@ -1632,13 +1687,58 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
+  it('не подключает выключенные browser, Make и Console MCP и не рекламирует их модели', async () => {
+    const db = await freshDb()
+    const rec = recorder()
+    const tool = tokens()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      previewMcpBaseUrl: PREVIEW_MCP,
+      previewTurns: tool,
+      makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret',
+      consoleMcpBaseUrl: 'http://127.0.0.1:8787/mcp/console?k=secret'
+    })
+
+    const chat = await db.chat.createConversation(U, 'Без браузера')
+    await db.chat.setConversationContextEnabled(U, chat.id, 'mcp-browser-preview', false)
+    await turns.start({ userId: U, conversationId: chat.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toContain('mcp__browser__*')
+
+    const make = await db.chat.createConversation(U, 'Make без инструментов', 'make')
+    await db.chat.setConversationContextEnabled(U, make.id, 'mcp-browser-preview', false)
+    await db.chat.setConversationContextEnabled(U, make.id, 'mcp-make-files', false)
+    await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'прочитай проект' }] })
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    expect(rec.last()?.makeMcpUrl).toBeUndefined()
+    expect(rec.last()?.prompt).not.toContain('## Превью Make')
+    expect(rec.last()?.disallowedTools).toEqual(expect.arrayContaining(['mcp__browser__*', 'mcp__make__*']))
+    // Neither disabled browser issued a preview token.
+    expect(tool.entries).toEqual([])
+
+    const console = await db.chat.createConversation(U, 'Консоль без инструментов', 'console-reader')
+    await db.chat.setConversationContextEnabled(U, console.id, 'mcp-console-pty', false)
+    await turns.start({ userId: U, conversationId: console.id, segments: [{ speakerId: 1, text: 'прочитай терминал' }] })
+    expect(rec.last()?.consoleMcpUrl).toBeUndefined()
+    expect(rec.last()?.disallowedTools).toContain('mcp__console__*')
+    await turns.idle()
+    db.close()
+  })
+
   it('Make-чат действует в браузере привязанного Web Reader-чата того же пользователя', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make')
     const reader = await db.chat.createConversation(U, 'Сайт клиента', 'web-recorder')
     await db.chat.setConversationPreviewUrl(U, reader.id, 'https://example.com/', 'chromium')
     await db.chat.setConversationMakeBrowserSession(U, make.id, reader.id)
     const rec = recorder(); const tool = tokens()
-    const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool, makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    const makeService = {
+      browserTarget: async () => null,
+      promptContext: async () => '',
+      turnSnapshot: () => undefined,
+      taskSources: () => [],
+    } as never
+    const turns = createTurnManager({ db: await db, claude: rec.client, make: makeService, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool, makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
     await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'прочитай сайт' }] })
     expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${reader.id}`)}`)
     expect(rec.last()?.previewSurface).toBe('chromium')
@@ -1680,12 +1780,42 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     db.close()
   })
 
-  it('без Make-сессии браузер в ход Make не подключается', async () => {
+  it('Make without a bound browser gets tools for its own visible preview', async () => {
     const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make'); const rec = recorder()
     const turns = createTurnManager({ db: await db, claude: rec.client, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tokens() })
     await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'открой сайт' }] })
-    expect(rec.last()?.previewMcpUrl).toBeUndefined()
-    expect(rec.last()?.prompt).not.toContain('## Браузер Make')
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${make.id}`)}`)
+    expect(rec.last()?.previewSurface).toBe('make-preview')
+    expect(rec.last()?.prompt).toContain('## Превью Make (make-preview)')
+    expect(rec.last()?.prompt).toContain('Пользователь видит каждое действие')
+    expect(rec.last()?.prompt).toContain('browser_capabilities')
+    expect(rec.last()?.prompt).toContain('make_preview_closed')
+    expect(rec.last()?.prompt).toContain('screenshot')
+    expect(rec.last()?.prompt).toContain('иначе read')
+    await turns.idle()
+    db.close()
+  })
+
+  it('выбранный встроенный стенд Make имеет приоритет над прежней привязкой Reader', async () => {
+    const db = await freshDb(); const make = await db.chat.createConversation(U, 'Витрина', 'make')
+    const reader = await db.chat.createConversation(U, 'Старый Reader', 'web-recorder')
+    await db.chat.setConversationPreviewUrl(U, reader.id, 'https://old-reader.example/', 'chromium')
+    await db.chat.setConversationMakeBrowserSession(U, make.id, reader.id)
+    const rec = recorder(); const tool = tokens()
+    const makeService = {
+      browserTarget: async () => ({ standId: 'stand-piara', name: 'Piara', url: 'http://localhost:4200/' }),
+      promptContext: async () => '',
+      turnSnapshot: () => undefined,
+      taskSources: () => [],
+    } as never
+    const turns = createTurnManager({ db: await db, claude: rec.client, make: makeService, previewMcpBaseUrl: PREVIEW_MCP, previewTurns: tool })
+    await turns.start({ userId: U, conversationId: make.id, segments: [{ speakerId: 1, text: 'проверь стенд' }] })
+    expect(rec.last()?.previewMcpUrl).toBe(`${PREVIEW_MCP}&turn=${encodeURIComponent(`signed:${U}:${make.id}`)}`)
+    expect(rec.last()?.previewSurface).toBe('make-preview')
+    expect(rec.last()?.prompt).toContain('Текущий тестовый стенд: «Piara» (http://localhost:4200/)')
+    expect(rec.last()?.prompt).toContain('stand_roles переключает следующие браузерные действия')
+    expect(rec.last()?.prompt).not.toContain('https://old-reader.example/')
+    expect(tool.entries).toEqual([{ userId: U, conversationId: make.id }])
     await turns.idle()
     db.close()
   })
@@ -1760,8 +1890,8 @@ describe('turns: чередование действий (смещение at)',
     await run(streamer(''), db, conv.id)
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Привет мир')
-    expect(ai?.meta?.activity?.[0]?.at).toBe('Привет '.length)
-    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.at).toBe('Привет '.length)
+    expect(typeof (await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 
@@ -1772,9 +1902,9 @@ describe('turns: чередование действий (смещение at)',
     await run(streamer('Совсем другой итоговый текст'), db, conv.id)
     const ai = (await db.chat.listMessages(U, conv.id)).find((m) => m.role === 'ai')
     expect(ai?.text).toBe('Совсем другой итоговый текст')
-    expect(ai?.meta?.activity?.[0]?.at).toBeUndefined()
+    expect((await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.at).toBeUndefined()
     // ts не привязан к тексту и остаётся (для длительностей в кратком виде).
-    expect(typeof ai?.meta?.activity?.[0]?.ts).toBe('number')
+    expect(typeof (await db.chat.messageServiceData(U, conv.id, ai!.id))?.activity?.[0]?.ts).toBe('number')
     db.close()
   })
 })
@@ -2186,6 +2316,29 @@ describe('turns: управляемая персистентная очеред�
     expect(await db.chat.listMessages(U, conversation.id)).toEqual([
       expect.objectContaining({ id: queued.id, text: 'Ожидающий вопрос' })
     ])
+    await turns.idle()
+    db.close()
+  })
+
+  it('Отправить сейчас повторяет упавший элемент очереди', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'queue')
+    const failed = await db.chat.addMessage(U, conversation.id, 'u1', 'Упавший вопрос', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db: await db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: failed.id, segments: [{ speakerId: 1, text: failed.text }] })
+    await llm.handlers[0]!.onError('stream disconnected before completion')
+    await turns.idle()
+    const item = (await db.chat.listQueuedTurns(U, conversation.id))[0]!
+    expect(item).toMatchObject({ messageId: failed.id, status: 'failed' })
+
+    await turns.sendQueuedNow(U, conversation.id, item.id)
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.prompt).toContain('Упавший вопрос')
+    expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+    await llm.handlers[1]!.onDone('Ответ')
     await turns.idle()
     db.close()
   })

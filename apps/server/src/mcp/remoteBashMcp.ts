@@ -6,6 +6,7 @@
 // эндпоинт выполняет команды и не должен быть открыт даже на LAN.
 
 import { z } from 'zod'
+import { checkedBytes, confinedPath, makeFilePath, type MakeFileTransfer } from './makeFiles.js'
 import type { HistoricalEvidence } from './historicalEvidence.js'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -16,6 +17,7 @@ import { AgentFsError } from '../agents/registry.js'
 import type { MachinesService } from '../machines/service.js'
 import { evaluatePlanModeCommand } from './planMode.js'
 import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
+import { processCommand, processTaskRoot } from './runProcesses.js'
 
 export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
@@ -201,6 +203,7 @@ export interface RemoteMcpMachine {
 export interface RemoteImageAttachment {
   path: string
   name: string
+  uploadId?: string
   dataBase64: string
 }
 
@@ -234,7 +237,8 @@ export function registerRemoteBashMcp(
   projectMachines?: (projectId: string) => Promise<RemoteMcpMachine[]>,
   fileContexts?: (token: string) => RemoteImageAttachment[] | undefined,
   commandGate?: CommandGate,
-  historicalEvidence?: HistoricalEvidence
+  historicalEvidence?: HistoricalEvidence,
+  makeFiles?: MakeFileTransfer
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -250,11 +254,16 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; root?: string | string[]; ro?: string; project?: string; files?: string; conv?: string; evidence?: string; run?: string; stage?: string; make?: string; turn?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const agentId = req.query.agent ?? ''
+        const makeScoped = req.query.make === '1'
+        const machineTools = !makeScoped || Boolean(agentId && req.query.cwd)
+        const safePath = async (target: { agentId: string; cwd?: string }, path: string) => makeScoped
+          ? confinedPath(registry, target.agentId, target.cwd, remotePath(target.cwd, path))
+          : remotePath(target.cwd, path, rootsFor(target))
         const roots = req.query.root === undefined ? [] : [req.query.root].flat()
         try {
           validateRoots(roots)
@@ -270,7 +279,7 @@ export function registerRemoteBashMcp(
         // хода, связанного с проектом). Сломанный резолвер не роняет ход: без
         // списка мост работает по-старому — только выбранная машина.
         let machines: RemoteMcpMachine[] = []
-        if (req.query.project && projectMachines) {
+        if (!makeScoped && req.query.project && projectMachines) {
           try {
             machines = await projectMachines(req.query.project)
           } catch {
@@ -360,7 +369,7 @@ export function registerRemoteBashMcp(
             }
           }
         )
-        server.registerTool(
+        if (machineTools) server.registerTool(
           'bash',
           {
             description:
@@ -391,6 +400,15 @@ export function registerRemoteBashMcp(
             // виден типу шейпа) — достаём через сужение.
             const machine = (args as { machine?: string }).machine
             try {
+              if (makeScoped) {
+                // Arbitrary shell cannot be confined by cd. Only directory inspection is exposed.
+                if (command.trim() === 'pwd') return { content: [{ type: 'text' as const, text: await safePath(resolveMachine(machine), '.') }] }
+                const match = /^ls(?:\s+(-[la]+))?(?:\s+([a-zA-Z0-9_./-]+))?\s*$/.exec(command)
+                if (!match) throw new Error('Make bash supports only pwd and ls [path]; use read/grep/edit and transfer tools')
+                const target = resolveMachine(machine)
+                const listing = await registry.fsList(target.agentId, await safePath(target, match[2] ?? '.'))
+                return { content: [{ type: 'text' as const, text: trimToolOutput(JSON.stringify(listing), toolLimits.bashChars).text }] }
+              }
               if (readOnly) {
                 const verdict = evaluatePlanModeCommand(command)
                 if (!verdict.allowed) {
@@ -420,10 +438,12 @@ export function registerRemoteBashMcp(
                 }
               }
               const timeoutMs = Math.min(timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS)
-              const shellCommand = cwd
-                ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}`
-                : command
-              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
+              // Kanban supplies ownership; policy/file-read checks above still inspect the original command.
+              const processRoot = cwd && req.query.run && target.agentId === agentId ? processTaskRoot(cwd) : null
+              const shellCommand = processRoot
+                ? processCommand(command, cwd!, {}, timeoutMs, { root: processRoot, runId: req.query.run!, stage: req.query.stage ?? 'model', retain: true })
+                : cwd ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}` : command
+              const res = await registry.exec(target.agentId, shellCommand, timeoutMs + (processRoot ? 15_000 : 0), abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
               // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
               // самое ценное для fix-loop, и терять их из-за обрезки нельзя.
@@ -443,7 +463,7 @@ export function registerRemoteBashMcp(
           }
         )
 
-        server.registerTool(
+        if (machineTools) server.registerTool(
           'read',
           {
             description:
@@ -463,7 +483,7 @@ export function registerRemoteBashMcp(
             const machine = (args as { machine?: string }).machine
             try {
               const target = resolveMachine(machine)
-              const result = await registry.fsRead(target.agentId, remotePath(target.cwd, path, rootsFor(target)))
+              const result = await registry.fsRead(target.agentId, await safePath(target, path))
               const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
               return {
                 content: [{
@@ -495,12 +515,12 @@ export function registerRemoteBashMcp(
               const target = resolveMachine(machine)
               const attachments = req.query.files && fileContexts ? fileContexts(req.query.files) ?? [] : []
               const attachment = attachments.find((item) =>
-                item.path === requested || item.name === requested || imageName(item.path) === requested
+                item.uploadId === requested || item.path === requested || item.name === requested || imageName(item.path) === requested
               )
               let dataBase64: string
               let resolvedPath: string
               if (attachment) {
-                dataBase64 = attachment.dataBase64
+                dataBase64 = makeScoped ? checkedBytes(attachment.dataBase64) : attachment.dataBase64
                 resolvedPath = attachment.path
               } else {
                 const absolute = /^(?:[A-Za-z]:[\\/]|[\\/])/.test(requested)
@@ -515,7 +535,7 @@ export function registerRemoteBashMcp(
                 let lastError: unknown
                 for (const candidate of candidates) {
                   try {
-                    found = await registry.fsRead(target.agentId, candidate)
+                    found = await registry.fsRead(target.agentId, makeScoped ? await safePath(target, candidate) : candidate)
                     resolvedPath = candidate
                     break
                   } catch (err) {
@@ -531,7 +551,7 @@ export function registerRemoteBashMcp(
                 if (found.dataBase64 === undefined) {
                   throw new Error(`Агент вернул неполный ответ при чтении файла «${resolvedPath!}»: содержимое отсутствует`)
                 }
-                dataBase64 = found.dataBase64
+                dataBase64 = makeScoped ? checkedBytes(found.dataBase64, found.truncated) : found.dataBase64
                 resolvedPath = resolvedPath!
               }
               const mimeType = detectedImageMime(dataBase64)
@@ -550,7 +570,7 @@ export function registerRemoteBashMcp(
           }
         )
 
-        server.registerTool(
+        if (machineTools) server.registerTool(
           'grep',
           {
             description:
@@ -569,7 +589,13 @@ export function registerRemoteBashMcp(
             const machine = (args as { machine?: string }).machine
             try {
               const machineTarget = resolveMachine(machine)
-              const target = remotePath(machineTarget.cwd, path ?? '.', rootsFor(machineTarget))
+              const target = await safePath(machineTarget, path ?? '.')
+              if (makeScoped) {
+                const file = await registry.fsRead(machineTarget.agentId, target)
+                const lines = fileText(checkedBytes(file.dataBase64, file.truncated)).split('\n')
+                const matches = lines.flatMap((line, i) => line.includes(pattern) ? [String(i + 1) + ':' + line] : [])
+                return { content: [{ type: 'text' as const, text: trimToolOutput(matches.slice(0, maxMatches ?? toolLimits.grepMatches).join('\n'), toolLimits.grepChars).text }] }
+              }
               const include = glob ? ` --include=${quoteShell(glob)}` : ''
               const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
               const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
@@ -605,7 +631,7 @@ export function registerRemoteBashMcp(
           }
         )
 
-        server.registerTool(
+        if (machineTools) server.registerTool(
           'edit',
           {
             description: 'Точно заменяет строку в текстовом файле внутри рабочей директории рана.',
@@ -623,7 +649,7 @@ export function registerRemoteBashMcp(
             try {
               if (readOnly) throw new Error('Отклонено: режим «План» — правки файлов запрещены')
               const target = resolveMachine(machine)
-              const absolutePath = remotePath(target.cwd, path, rootsFor(target))
+              const absolutePath = await safePath(target, path)
               const current = fileText((await registry.fsRead(target.agentId, absolutePath)).dataBase64)
               const count = current.split(oldString).length - 1
               if (count === 0) throw new Error('Текст oldString не найден')
@@ -671,6 +697,50 @@ export function registerRemoteBashMcp(
               }
             }
           )
+        }
+
+        if (makeScoped && req.query.conv && makeFiles && await makeFiles.available(req.query.conv)) {
+          const conversation = req.query.conv
+          const writeAllowed = () => { if (readOnly) throw new Error('Read-only plan: file transfers are forbidden') }
+          const success = () => ({ content: [{ type: 'text' as const, text: 'File transferred' }] })
+          server.registerTool('attachment_to_make', {
+            description: 'Copy a chat attachment into the open Make project without exposing bytes.',
+            inputSchema: { uploadId: z.string(), path: z.string() }
+          }, async ({ uploadId, path }) => {
+            try {
+              writeAllowed()
+              const attachment = (req.query.files && fileContexts ? fileContexts(req.query.files) : [])?.find(a => a.uploadId === uploadId)
+              if (!attachment) throw new Error('Attachment not available in this turn')
+              await makeFiles.write(conversation, makeFilePath(path), checkedBytes(attachment.dataBase64), req.query.turn)
+              return success()
+            } catch (err) { return toolError(err) }
+          })
+          if (machineTools) {
+            server.registerTool('machine_to_make', {
+              description: 'Copy a file from the configured machine folder into the Make project.',
+              inputSchema: { machinePath: z.string(), path: z.string() }
+            }, async ({ machinePath, path }) => {
+              try {
+                writeAllowed()
+                const destination = makeFilePath(path)
+                const file = await registry.fsRead(agentId, await safePath(resolveMachine(), machinePath))
+                await makeFiles.write(conversation, destination, checkedBytes(file.dataBase64, file.truncated), req.query.turn)
+                return success()
+              } catch (err) { return toolError(err) }
+            })
+            server.registerTool('make_to_machine', {
+              description: 'Copy a Make project file into the configured machine folder.',
+              inputSchema: { path: z.string(), machinePath: z.string() }
+            }, async ({ path, machinePath }) => {
+              try {
+                writeAllowed()
+                const destination = await safePath(resolveMachine(), machinePath)
+                const data = checkedBytes(await makeFiles.read(conversation, makeFilePath(path)))
+                await registry.fsWrite(agentId, destination, data)
+                return success()
+              } catch (err) { return toolError(err) }
+            })
+          }
         }
 
         const transport = new StreamableHTTPServerTransport({

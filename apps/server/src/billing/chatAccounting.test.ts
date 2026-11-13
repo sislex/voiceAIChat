@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { connect } from 'node:net'
+import { once } from 'node:events'
 import { afterEach, expect, it, vi } from 'vitest'
 import Fastify from 'fastify'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -55,7 +57,8 @@ async function fixture(dailyLimit?: number, backgroundStop = false) {
   let runs = 0, deletes = 0, disconnected = false, lastRequest: LlmRunBody | undefined
   let runGate: ReturnType<typeof gate> | undefined, startGate: ReturnType<typeof gate> | undefined, settlementGate: ReturnType<typeof gate> | undefined
   let finalUsage = true, runFailure = false
-  const runner = Fastify()
+  // Abort may leave a requestless replacement socket; idle-only close does not reap it.
+  const runner = Fastify({ forceCloseConnections: true })
   runner.get('/v1/health', async () => ({ accountingVersion: 1, application: { version: '0.2.1' } }))
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
     receipts.get(req.params.id) ?? reply.code(404).send({ error: 'execution_not_found' }))
@@ -112,7 +115,7 @@ async function fixture(dailyLimit?: number, backgroundStop = false) {
   const accounting = new ChatAccounting(options)
   cleanup.push(() => accounting.shutdown())
   cleanup.push(() => { runGate?.release(); startGate?.release(); settlementGate?.release() })
-  return { billingUrl, authority, delegation, delegatedHeaders, revokeAfterStart: () => { revokeAfterStart = true }, revokeAfterReserve: () => { revokeAfterReserve = true },
+  return { runnerUrl, runnerServer: runner.server, closeRunner: () => runner.close(), billingUrl, authority, delegation, delegatedHeaders, revokeAfterStart: () => { revokeAfterStart = true }, revokeAfterReserve: () => { revokeAfterReserve = true },
     foreignAccount: () => { foreignAccount = true }, ledger, outbox, sessions, session, client, options, accounting, receipts,
     holdRunner: () => { runGate = gate(); return runGate }, holdStart: () => { startGate = gate(); return startGate },
     holdSettlement: () => { settlementGate = gate(); return settlementGate }, failRun: () => { runFailure = true },
@@ -327,6 +330,23 @@ it.each(['default', 'delegated', 'internal'] as const)('preserves hard cancellat
   await vi.waitFor(() => expect(f.deletes()).toBe(1))
   await vi.waitFor(() => expect(f.disconnected()).toBe(true))
   held.release()
+})
+
+it('closes the runner with a connected socket that has not sent HTTP headers', async () => {
+  const f = await fixture()
+  // An aborted fetch can leave a replacement connection with no HTTP request.
+  // Synchronize with the server accepting it, rather than relying on load/timing.
+  const accepted = once(f.runnerServer, 'connection')
+  const socket = connect(Number(new URL(f.runnerUrl).port), '127.0.0.1')
+  await Promise.all([accepted, once(socket, 'connect')])
+  let closed = false
+  const closing = f.closeRunner().then(() => { closed = true })
+  try {
+    await vi.waitFor(() => expect(closed).toBe(true), { timeout: 1000 })
+  } finally {
+    socket.destroy()
+    await closing
+  }
 })
 
 it('retains the stable user hold when a stopped executor finishes without authoritative usage', async () => {

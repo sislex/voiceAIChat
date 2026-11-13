@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { AgentRegistry } from '../agents/registry.js'
 import { setupRestHarness, type InjOpts } from './restHarness.js'
 import { servedAgent } from '../agents/agentScript.js'
+import * as dbSeed from '../test/seed.js'
 
 // Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
 // Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
@@ -18,7 +19,53 @@ let agentRegistry: AgentRegistry
 beforeEach(() => { ({ app, db, agentRegistry } = harness) })
 
 
+describe('REST: machine rename', () => {
+  it('persists a trimmed name and updates the live registry without disconnecting', async () => {
+    const machine = await db.machines.createAgent(U, 'Before')
+    const record = (await db.machines.listAgents(U)).find(a => a.id === machine.id)!
+    const socket = { close: vi.fn(), send: vi.fn() }
+    agentRegistry.register(machine.id, record.name, socket, record.policy, '0.11.0')
+    const response = await inj({ method: 'PATCH', url: `/api/agents/${machine.id}`, payload: { name: '  After  ' } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ id: machine.id, name: 'After' })
+    expect((await db.machines.listAgents(U)).find(a => a.id === machine.id)?.name).toBe('After')
+    expect(agentRegistry.nameOf(machine.id)).toBe('After')
+    expect(agentRegistry.isOnline(machine.id)).toBe(true)
+    expect(socket.close).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid names and prevents renaming another owner’s machine', async () => {
+    const machine = await db.machines.createAgent(U, 'Original')
+    for (const name of ['', '   ', 'x'.repeat(121), 42, null]) {
+      expect((await inj({ method: 'PATCH', url: `/api/agents/${machine.id}`, payload: { name } })).statusCode).toBe(400)
+    }
+    expect((await db.machines.listAgents(U)).find(a => a.id === machine.id)?.name).toBe('Original')
+    await db.identity.createUser('rename-other', '', 'developer')
+    const other = await db.machines.createAgent('rename-other', 'Private')
+    for (const id of [other.id, 'missing-machine']) {
+      expect((await inj({ method: 'PATCH', url: `/api/agents/${id}`, payload: { name: 'Changed' } })).statusCode).toBe(404)
+    }
+    expect((await db.machines.listAgents('rename-other'))[0].name).toBe('Private')
+  })
+})
+
 describe('REST: хранилище машины', () => {
+  it('returns null for an owned chat without storage and keeps other chats private', async () => {
+    const own = await db.chat.createConversation(U, 'No storage')
+    const response = await inj({ method: 'GET', url: `/api/conversations/${own.id}/storage` })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toBeNull()
+    expect(await db.machines.getChatStorageBinding(U, own.id)).toBeNull()
+
+    await db.identity.createUser('storage-other', '', 'developer')
+    const other = await db.chat.createConversation('storage-other', 'Private')
+    for (const id of [other.id, 'missing-conversation']) {
+      const denied = await inj({ method: 'GET', url: `/api/conversations/${id}/storage` })
+      expect(denied.statusCode).toBe(404)
+      expect(denied.json()).toEqual({ error: 'not found' })
+    }
+  })
+
   // @testCase T5
   // @testCase T6
   it('authorizes and forwards preview without a full read, and validates the path', async () => {
@@ -154,7 +201,9 @@ describe('REST: хранилище машины', () => {
     await connectFs(machine.id)
     const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
     const conv = await db.chat.createConversation(U, 'C')
-    expect((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).statusCode).toBe(404)
+    const unbound = await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })
+    expect(unbound.statusCode).toBe(200)
+    expect(unbound.json()).toBeNull()
     await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
     const view = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).json()
     expect(view).toMatchObject({ machineId: machine.id, storageId: storage.id, rootPath: '/Users/me/ChatAI', status: 'ready' })
@@ -211,7 +260,7 @@ describe('REST: доступ участников к машине проекта
     agentRegistry.register(machine.id, 'Общая', socket, (await db.machines.listAgents(U)).find((a) => a.id === machine.id)!.policy, '0.15.0')
     const project = await db.projects.createProject(U, { name: 'Shared' })
     await db.identity.createUser('dev2', '', 'developer')
-    await db.projects.addMember(U, project.id, 'dev2')
+    await dbSeed.addMember(db, U, project.id, 'dev2')
     const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
     const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
 
@@ -270,7 +319,7 @@ describe('REST: групповая команда (п.15)', () => {
     // пустое тело и политика
     expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
     const project = await db.projects.createProject(U, { name: 'PB' })
-    await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } })
+    await dbSeed.updateProject(db, U, project.id, { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } })
     const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
     expect(denied.statusCode).toBe(403)
   })
@@ -283,7 +332,7 @@ describe('REST: политика команд проекта и роли (п.10)
     agentRegistry.register(created.id, 'M', socket, (await db.machines.listAgents(U)).find((a) => a.id === created.id)!.policy, '0.15.0')
     const project = await db.projects.createProject(U, { name: 'P' })
     // Политику проекта сохраняет канбан (PATCH проекта); ядро применяет её к консоли.
-    expect((await db.projects.updateProject(U, project.id, { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } }))?.commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
+    expect((await dbSeed.updateProject(db, U, project.id, { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } }))?.commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
     const denied = await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'docker ps' } })
     expect(denied.statusCode).toBe(403)
     expect(denied.json().error).toContain('политикой проекта')

@@ -2,23 +2,30 @@
 // машине, поэтому тесты здесь про безопасность, а не про удобство: инъекция,
 // запрещённые политикой конструкции и опасные формы git.
 import { describe, expect, it } from 'vitest'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { isDangerousCommand } from '@voicechat/shared'
 import { evaluateAgentCommand, DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import { buildShellCommand } from '../util/shell.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
-  fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript
+  branchesScript, compareScript, checkoutScript, commitScript, createBranchScript, discardScript,
+  fileAtRefScript, gitBaseEnv, mergeScript, pullScript, pushScript, statusScript, treeScript
 } from './scripts.js'
 
 const ALL = () => [
   statusScript('main'),
   branchesScript(false),
   branchesScript(true),
+  compareScript('origin/dev', 'feature/x', false),
+  compareScript('origin/dev', 'feature/x', true),
   treeScript('HEAD', ''),
   treeScript('HEAD', 'apps/server'),
   fileAtRefScript('HEAD', 'a.txt'),
   checkoutScript('feature/x'),
   createBranchScript('feature/y', 'HEAD'),
+  mergeScript('feature/y'),
   commitScript({ message: 'fix', paths: ['a.txt'], all: false, user: 'bob', email: 'bob@x' }),
   commitScript({ message: 'fix', paths: [], all: true, user: 'bob', email: 'bob@x' }),
   pushScript('feature/x'),
@@ -28,6 +35,36 @@ const ALL = () => [
 
 const command = (script: { script: string; env: Record<string, string> }): string =>
   buildShellCommand(script.script, '/repo', { ...gitBaseEnv(), ...script.env })
+
+describe('comparison against a real Git history', () => {
+  it('distinguishes merged, unmerged and unrelated branches without changing HEAD', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'git-compare-'))
+    const git = (...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+    const compare = (head: string) => {
+      const script = compareScript('dev', head, false)
+      return execFileSync('bash', ['-c', script.script], { cwd, env: { ...process.env, ...script.env }, encoding: 'utf8' })
+    }
+    try {
+      git('init', '-b', 'dev')
+      git('config', 'user.name', 'Test')
+      git('config', 'user.email', 'test@example.com')
+      git('commit', '--allow-empty', '-m', 'base')
+      git('branch', 'merged')
+      git('commit', '--allow-empty', '-m', 'dev')
+      git('checkout', '-b', 'unmerged', 'merged')
+      git('commit', '--allow-empty', '-m', 'feature')
+      const head = git('rev-parse', 'HEAD')
+      expect(compare('merged')).toContain('0\t1')
+      expect(compare('unmerged')).toContain('1\t1')
+      expect(compare(head)).toContain('1\t1')
+      expect(() => compare('missing')).toThrow()
+      expect(git('rev-parse', 'HEAD')).toBe(head)
+      git('checkout', '--orphan', 'unrelated')
+      git('commit', '--allow-empty', '-m', 'unrelated')
+      expect(compare('unrelated')).toContain('==VC:mergebase==\n==VC:done==')
+    } finally { rmSync(cwd, { recursive: true, force: true }) }
+  })
+})
 
 describe('безопасность скриптов', () => {
   it('в тексте скрипта нет перенаправлений и запрещённых политикой слов', () => {
@@ -39,9 +76,15 @@ describe('безопасность скриптов', () => {
     }
   })
 
+  it('переменная перед двоеточием в фигурных скобках: zsh не читает `:r` как модификатор', () => {
+    // macOS-агент исполняет скрипты в zsh: "$VC_GIT_BRANCH:refs/…" там
+    // превращался в "devefs/…", и checkout удалённой ветки падал.
+    for (const { script } of ALL()) expect(script, script).not.toMatch(/\$[A-Za-z_][A-Za-z0-9_]*:/)
+  })
+
   it('читающие скрипты проходят политику машины без allowWrite и без сети', () => {
     const readOnly = { ...DEFAULT_AGENT_POLICY, allowWrite: false, allowNetwork: false }
-    for (const script of [statusScript('main'), branchesScript(false), treeScript('HEAD', ''), fileAtRefScript('HEAD', 'a.txt')]) {
+    for (const script of [compareScript('origin/dev', 'HEAD', false), statusScript('main'), branchesScript(false), treeScript('HEAD', ''), fileAtRefScript('HEAD', 'a.txt')]) {
       const verdict = evaluateAgentCommand(readOnly, command(script))
       expect(verdict.allowed, verdict.reason ?? '').toBe(true)
     }
@@ -125,9 +168,9 @@ describe('состав скриптов', () => {
 
   it('checkout идёт без -f, а отсутствующая локально ветка берётся из origin с отслеживанием', () => {
     const { script } = checkoutScript('feature/x')
-    expect(script).toContain('git checkout "$VC_GIT_BRANCH"')
-    expect(script).not.toMatch(/checkout\s+-f/)
-    expect(script).toContain('git checkout -b "$VC_GIT_BRANCH" --track "origin/$VC_GIT_BRANCH"')
+    expect(script).toContain('git switch "$VC_GIT_BRANCH"')
+    expect(script).not.toMatch(/switch\s+-f/)
+    expect(script).toContain('git switch --track -c "$VC_GIT_BRANCH" "origin/$VC_GIT_BRANCH"')
   })
 
   it('push отправляет ветку и обязательно сверяет SHA в origin', () => {
@@ -138,7 +181,7 @@ describe('состав скриптов', () => {
   })
 
   it('мутации идут под set -e, чтение — нет', () => {
-    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD'), pullScript('b', 'rebase'), discardScript(['a'])]) {
+    for (const script of [commitScript({ message: 'm', paths: ['a'], all: false, user: 'u', email: 'e' }), pushScript('b'), checkoutScript('b'), createBranchScript('b', 'HEAD'), mergeScript('b'), pullScript('b', 'rebase'), discardScript(['a'])]) {
       expect(script.script.startsWith('set -e'), script.script).toBe(true)
     }
     // У чтения `set -e` был бы вреден: у свежей ветки нет upstream, и статус

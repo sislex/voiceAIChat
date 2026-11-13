@@ -1,12 +1,21 @@
 import { spawnSync } from 'node:child_process'
-import { availableParallelism } from 'node:os'
-import { existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { availableParallelism, tmpdir } from 'node:os'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { prepareKanbanStand } from './kanban-stand-prepare.mjs'
 
 /** Suites that need the Core + Kanban stand (e2e/kanbanStand.ts). */
 export const KANBAN_STAND_FILES = Object.freeze(['e2e/projects.e2e.test.ts', 'e2e/gitPane.e2e.test.ts'])
+// Kanban-owned pages need Postgres-in-Docker + Core + Kanban + Chromium. They run in the release
+// regression (`gate:release`, `gate:all -- --release`); development gates run them only when the
+// suite file itself changed.
+export const RELEASE_ONLY_BROWSER_FILES = KANBAN_STAND_FILES
+
+/** Development selection: release-only suites stay only when the diff edits them. */
+export function developmentBrowserFiles(files, changed = []) {
+  return [...new Set(files)].filter(file => !RELEASE_ONLY_BROWSER_FILES.includes(file) || changed.includes(file))
+}
 // These suites use separate ephemeral ports, databases and browser contexts.
 // New suites stay serial until their isolation has been reviewed.
 const parallelFiles = new Set([
@@ -14,8 +23,9 @@ const parallelFiles = new Set([
   'webReaderOwnProject', 'webReaderProject', 'toolIntegration'
 ].map(name => `e2e/${name}.e2e.test.ts`))
 
-export function integrationBrowserFiles(root = resolve(import.meta.dirname, '..')) {
+export function integrationBrowserFiles(root = resolve(import.meta.dirname, '..'), { release = false } = {}) {
   return readdirSync(resolve(root, 'e2e')).filter(file => file.endsWith('.e2e.test.ts') && file !== 'routeBudgets.e2e.test.ts').sort().map(file => 'e2e/' + file)
+    .filter(file => release || !RELEASE_ONLY_BROWSER_FILES.includes(file))
 }
 
 export function browserWorkers(value, cpus = availableParallelism()) {
@@ -56,11 +66,20 @@ export function runBrowserBatches(batches, execute, record = (_results) => {}) {
   return results
 }
 
+// tsx children open an IPC socket at $TMPDIR/tsx-<uid>/<pid>.pipe. macOS limits socket paths to
+// 104 bytes, and merge runs set TMPDIR deep inside the merge clone: truncated paths collide and the
+// second Core/Kanban stand process dies with EADDRINUSE. Long temp roots are swapped for /tmp.
+export const MAX_TMPDIR_LENGTH = 40
+export function shortTmpdir(current = process.env.TMPDIR || tmpdir(), make = () => mkdtempSync('/tmp/vc-e2e-')) {
+  return current.replace(/\/+$/, '').length > MAX_TMPDIR_LENGTH ? make() : null
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const root = resolve(import.meta.dirname, '..')
     const args = process.argv.slice(2)
-    const files = args.length === 1 && args[0] === '--integration' ? integrationBrowserFiles(root) : args
+    const integration = args[0] === '--integration' && (args.length === 1 || (args.length === 2 && args[1] === '--release'))
+    const files = integration ? integrationBrowserFiles(root, { release: args[1] === '--release' }) : args
     const batches = browserBatches(files)
     for (const file of files) if (!existsSync(resolve(root, file))) throw Error(`Missing browser suite: ${file}`)
     // Сьюты страниц проекта идут на стенде «ядро + канбан»: чекаут закреплённого канбана готовится
@@ -70,8 +89,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     }
     const directory = resolve(root, 'artifacts/gate-timings'); mkdirSync(directory, { recursive: true })
     const startedAt = new Date().toISOString()
-    runBrowserBatches(batches, (command, args) => spawnSync(command, args, { cwd: root, stdio: 'inherit' }), results => {
-      writeFileSync(resolve(directory, 'browser.json'), JSON.stringify({ startedAt, results }, null, 2))
-    })
+    const shortTemp = shortTmpdir()
+    const env = shortTemp ? { ...process.env, TMPDIR: shortTemp } : process.env
+    try {
+      runBrowserBatches(batches, (command, args) => spawnSync(command, args, { cwd: root, stdio: 'inherit', env }), results => {
+        writeFileSync(resolve(directory, 'browser.json'), JSON.stringify({ startedAt, results }, null, 2))
+      })
+    } finally { if (shortTemp) rmSync(shortTemp, { recursive: true, force: true }) }
   } catch (error) { console.error(error.message); process.exitCode = error.exitCode || 1 }
 }

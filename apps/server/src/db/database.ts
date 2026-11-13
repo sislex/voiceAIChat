@@ -38,11 +38,21 @@ export { PROD_REBUILD_TASK_TITLE, PROD_REBUILD_TASK_INTRO } from './repos/tasks.
 export type { MessageSearchOptions } from './repos/chat.js'
 export type { KbChatUsage, KbProjectUsage, KbStoredDocument } from './repos/kb.js'
 export { projectKbSkeleton } from './repos/kb.js'
-export type { CiStageExecutionContext } from './repos/ci.js'
-export type { AutomatedQaExecutionContext } from './repos/qa.js'
 export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repos/base.js'
 
+import { createSqlMetadataStore } from '../fileStorage/metadata.js'
+import type { StorageMetadataStore } from '../../../../packages/file-storage/src/metadata.js'
+
 export class VoiceChatDb {
+  /** Enter the reentrant domain lane before SQL, so Identity quota reads cannot deadlock behind it. */
+  storageMetadata(): StorageMetadataStore {
+    const store = createSqlMetadataStore(this.sql)
+    return { transaction: async <T>(fn: Parameters<typeof store.transaction<T>>[0]): Promise<T> => {
+      await this.ready
+      if (this.lane) return this.lane.run(async () => await store.transaction(fn))
+      return store.transaction(fn)
+    } }
+  }
   /** Адаптер базы; репозитории пишут SQL в диалекте SQLite, различия движков закрывает адаптер. */
   private readonly sql: Sql
   readonly engine: 'sqlite' | 'postgres'
@@ -205,12 +215,16 @@ export class VoiceChatDb {
       await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history_page ON messages(conversation_id, state, history_position, id)`)
       await initializePersonalTenants(this.sql, this.now, this.newId)
     }
+    await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_branch ON messages(conversation_id, parent_message_id, role, history_position, id)`)
     await this.sql.exec("UPDATE environment_links SET address = 'host.docker.internal:' || listener_port WHERE address = ''")
     await this.migrateIntegrationTokenProjectIds()
     const personalTenant = async (userName: string): Promise<string | null> =>
       (await this.ctx.repos.identity.getAccountAccess(userName))?.tenant.id ?? null
     await this.ctx.repos.projects.backfillTenantIds(personalTenant)
     await this.ctx.repos.chat.backfillTenantIds(personalTenant)
+    await this.runOnce('message_branches_v1', async () => {
+      await this.ctx.repos.chat.backfillMessageBranches()
+    })
     // Legacy Codex replies stored cumulative thread totals as per-message spend;
     // rewrite them once, on both backends (see migrateCodexThreadUsage). The
     // key is `v2`: `v1` was marked done by hand on production to stop the boot
@@ -222,6 +236,28 @@ export class VoiceChatDb {
     await this.ctx.repos.ci.ensureKbUpdateCommand()
     await this.ctx.repos.ci.pruneDevelopmentAfterModelCommands()
     await this.ctx.repos.chat.setupMessagesFts()
+    this.scheduleServiceDataMigration()
+  }
+
+  private serviceDataTimer: ReturnType<typeof setTimeout> | null = null
+  private serviceDataBatch: Promise<unknown> | null = null
+
+  private scheduleServiceDataMigration(): void {
+    if (this.closed) return
+    this.serviceDataTimer = setTimeout(() => {
+      this.serviceDataTimer = null
+      if (this.closed) return
+      // Use the public port so SQLite migration shares the request serialization lane.
+      this.serviceDataBatch = this.chat.migrateMessageServiceDataBatch().then(count => {
+        if (count) this.scheduleServiceDataMigration()
+      }).catch(error => {
+        if (!this.closed) {
+          console.error('message service data migration failed', error)
+          this.scheduleServiceDataMigration()
+        }
+      })
+    }, 100)
+    this.serviceDataTimer.unref()
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
@@ -257,6 +293,13 @@ export class VoiceChatDb {
   }
 
   private async migrate(): Promise<void> {
+    const messageColumns = await this.sql.all<{ name: string }>(`PRAGMA table_info(messages)`)
+    if (messageColumns.length && !messageColumns.some(column => column.name === 'parent_message_id')) {
+      await this.sql.exec(`ALTER TABLE messages ADD COLUMN parent_message_id TEXT`)
+    }
+    if (messageColumns.length && !messageColumns.some(column => column.name === 'branch_selected')) {
+      await this.sql.exec(`ALTER TABLE messages ADD COLUMN branch_selected INTEGER NOT NULL DEFAULT 1`)
+    }
     const integrationTokenColumns = await this.sql.all<{ name: string }>(`PRAGMA table_info(integration_tokens)`)
     if (integrationTokenColumns.length && !integrationTokenColumns.some(column => column.name === 'project_ids')) {
       await this.sql.exec(`ALTER TABLE integration_tokens ADD COLUMN project_ids TEXT NOT NULL DEFAULT '[]'`)
@@ -421,6 +464,7 @@ export class VoiceChatDb {
       ['summary_text', 'TEXT'],
       ['summary_covers_message_id', 'TEXT'],
       ['summary_updated_at', 'INTEGER'],
+      ['summary_source', 'TEXT'],
       ['context_usage_json', 'TEXT'],
       ['cost_dirty', 'INTEGER NOT NULL DEFAULT 1']
     ] as const) {
@@ -455,6 +499,9 @@ export class VoiceChatDb {
     }
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
+    }
+    if (!convCols.some((c) => c.name === 'assistant_mode')) {
+      await this.sql.exec(`ALTER TABLE conversations ADD COLUMN assistant_mode TEXT NOT NULL DEFAULT 'workspace'`)
     }
     if (!convCols.some((c) => c.name === 'disabled_context_json')) {
       await this.sql.exec(`ALTER TABLE conversations ADD COLUMN disabled_context_json TEXT NOT NULL DEFAULT '[]'`)
@@ -536,20 +583,7 @@ export class VoiceChatDb {
       CREATE TRIGGER IF NOT EXISTS trg_messages_cost_dirty_del AFTER DELETE ON messages
       BEGIN UPDATE conversations SET cost_dirty = 1 WHERE id = OLD.conversation_id; END;
     `)
-    // Make-чат к машине не ходит (`turns.ts`: makeChat), поэтому оставшиеся с
-    // прежних времён привязки — мусор, который вводит в заблуждение: панель
-    // показывала машину и каталог, которых ход не использует. Явное «без машины»
-    // (`none`) сохраняем: это осознанный выбор пользователя, совпадающий с новым
-    // поведением. Идемпотентно — второй запуск не находит строк.
-    if (convCols.some((c) => c.name === 'assistant_kind')) {
-      await this.sql.exec(`
-        UPDATE conversations
-        SET exec_target = CASE WHEN exec_target = 'none' THEN exec_target ELSE NULL END,
-            workdir = NULL
-        WHERE assistant_kind = 'make'
-          AND ((exec_target IS NOT NULL AND exec_target <> 'none') OR workdir IS NOT NULL)
-      `)
-    }
+    // Make conversations retain their explicit machine and folder across restarts.
     // Проекты (итерация 2): папка на машину + машина по умолчанию.
     const projCols = (await this.sql.all(`PRAGMA table_info(projects)`)) as Array<{ name: string }>
     if (projCols.length && !projCols.some((c) => c.name === 'tenant_id')) {
@@ -1081,6 +1115,8 @@ export class VoiceChatDb {
     await this.lane?.idle()
     if (this.closed) return
     this.closed = true
+    if (this.serviceDataTimer) clearTimeout(this.serviceDataTimer)
+    await this.serviceDataBatch
     if (this.ctx.repos.chat.ftsTimer) clearTimeout(this.ctx.repos.chat.ftsTimer)
     this.ctx.repos.chat.ftsTimer = null
     if (this.dropSchemaOnClose) await this.sql.exec(`DROP SCHEMA IF EXISTS ${this.dropSchemaOnClose} CASCADE`).catch(() => {})

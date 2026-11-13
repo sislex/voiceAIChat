@@ -10,6 +10,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
+import * as dbSeed from '../test/seed.js'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -96,7 +97,7 @@ describe('REST компонентов проекта', () => {
 
   it('тестировщик может читать список, но не запускать Storybook и не заводить тикет', async () => {
     const project = await createProject()
-    await db.projects.addMember('admin', project.id, 'tess')
+    await dbSeed.addMember(db, 'admin', project.id, 'tess')
     const read = await inj(testerTok, { method: 'GET', url: `/api/projects/${project.id}/components?workspace=ws:x` })
     expect(read.statusCode).toBe(404) // проект виден, а копии нет — резолвер отвечает после гейта права
 

@@ -262,7 +262,7 @@ export interface IpcInvokeMap {
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
   /** With `limit` (1..200) returns the latest page older than `before` plus `history`; without it, the full history. */
   'conversations:get': { arg: { id: string; scope?: ConversationScope; projectId?: string; limit?: number; before?: string }; result: ConversationWithMessages | null }
-  'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
+  'conversations:contextSnapshot': { arg: { id: string; assistantMode?: import('./types').ConversationAssistantMode; disabledContext?: string[] }; result: import('./types').ConversationContextSnapshot | null }
   'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
   /** Чем контекст этого разговора отличается от другого (только чтение). */
   'conversations:contextDiff': { arg: { id: string; otherId: string }; result: import('./types').ContextDiff | null }
@@ -326,6 +326,8 @@ export interface IpcInvokeMap {
       permissionMode?: PermissionMode | null
       /** Режим автоматического KB-контекста. */
       kbContextMode?: KbContextMode
+      /** Chat — только сообщения; Workspace — рабочий контекст; Make — рабочий контекст Make-разговора. */
+      assistantMode?: import('./types').ConversationAssistantMode
     }
     result: Conversation
   }
@@ -334,6 +336,7 @@ export interface IpcInvokeMap {
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }
+  'messages:branch': { arg: { conversationId: string; messageId: string; action: 'edit' | 'retry' | 'select'; text?: string }; result: Message[] }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string; conversationId?: string }; result: UploadInfo }
   'images:retouch': { arg: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchRequest; result: import('@voicechat/image-studio-contracts/imageRetouch').ImageRetouchResult }
@@ -454,6 +457,7 @@ export interface IpcInvokeMap {
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
   /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
   'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
+  'admin:setUserStorageQuota': { arg: { name: string; storageQuotaBytes: number | null }; result: AdminUserInfo }
   /** Открытая регистрация: настройка. */
   'admin:signupConfig': { arg: void; result: SignupConfig }
   'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }; result: SignupConfig }
@@ -1442,6 +1446,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:delete',
   'messages:add',
   'messages:updateMeta',
+  'messages:branch',
   'messages:delete',
   'uploads:add',
   'settings:get',
@@ -1488,6 +1493,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:inviteDelete',
   'admin:resetCode',
   'admin:setUserLlmLimit',
+  'admin:setUserStorageQuota',
   'admin:signupConfig',
   'admin:setSignupConfig',
   'admin:makeStats',

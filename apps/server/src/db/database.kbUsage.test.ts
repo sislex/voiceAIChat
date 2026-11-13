@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VoiceChatDb } from './database'
+import * as dbSeed from '../test/seed.js'
 
 const U = 'admin'
 
@@ -162,7 +163,7 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
     const task = (await db.tasks.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id }))!
     const other = (await db.tasks.createTask('alice', project.id, { title: 'T2', columnId: board.columns[0].id }))!
     const conv = await db.chat.createConversation('alice', 'Чат задачи')
-    const mk = async (taskId: string) => await db.ci.createCiRun({
+    const mk = async (taskId: string) => await dbSeed.createCiRun(db, {
       projectId: project.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: null,
       conversationId: conv.id, slotProgress: { done: 0, total: 2, phase: 'В очереди' }
     })
@@ -181,17 +182,17 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
 
   it('режим БЗ рана — снимок настройки проекта на старте', async () => {
     const project = await db.projects.createProject('alice', { name: 'P' })
-    await db.projects.updateProject('alice', project.id, { ciKbContextMode: 'manual' })
+    await dbSeed.updateProject(db, 'alice', project.id, { ciKbContextMode: 'manual' })
     expect((await db.projects.getProject('alice', project.id))!.ciKbContextMode).toBe('manual')
     const board = (await db.tasks.getBoard('alice', project.id))!
     const task = (await db.tasks.createTask('alice', project.id, { title: 'T', columnId: board.columns[0].id }))!
-    const run = await db.ci.createCiRun({
+    const run = await dbSeed.createCiRun(db, {
       projectId: project.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null,
       kbContextMode: 'manual', slotProgress: { done: 0, total: 2, phase: 'В очереди' }
     })
     expect(run.kbContextMode).toBe('manual')
     // Смена настройки не переписывает уже созданный ран.
-    await db.projects.updateProject('alice', project.id, { ciKbContextMode: 'off' })
+    await dbSeed.updateProject(db, 'alice', project.id, { ciKbContextMode: 'off' })
     expect((await db.ci.getCiRunRaw(run.id))!.kbContextMode).toBe('manual')
   })
 
@@ -247,23 +248,6 @@ describe('VoiceChatDb — обращения к БЗ внутри CI-рана', 
     // Причина пишется всегда: пустая строка в БД не должна давать пустой пункт.
     await db.kb.addKbUsage({ userId: 'alice', conversationId: conv.id, projectId: project.id, ciRunId: (await second).id, source: 'auto', query: 'без причины', status: 'empty', chars: 0 })
     expect((await db.kb.kbUsageRunGaps((await second).id)).find((g) => g.query === 'без причины')!.reason).toBe('база знаний не ответила')
-  })
-
-  it('названный моделью пробел хранится один раз, повтор берёт более полный ответ', async () => {
-    const { first } = await runs()
-    await db.ci.addCiRunKbGaps((await first).id, 'step-1', [
-      { question: 'где живёт fix-loop', answer: 'в ci/modelHooks.ts', topic: 'ci-runner' },
-      { question: 'кто снимает токен', answer: 'withKbTools' }
-    ])
-    // Fix-loop называет тот же пробел снова — дубля быть не должно.
-    await db.ci.addCiRunKbGaps((await first).id, 'step-2', [{ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI' }])
-    const gaps = await db.ci.ciRunKbGaps((await first).id)
-    expect(gaps).toHaveLength(2)
-    expect(gaps[0]).toEqual({ question: 'где живёт fix-loop', answer: 'хук attemptFix в ci/modelHooks.ts, лимиты в настройках CI', topic: 'ci-runner' })
-    expect(gaps[1].topic).toBeUndefined()
-    // Короткий повтор не затирает более полный ответ.
-    await db.ci.addCiRunKbGaps((await first).id, 'step-3', [{ question: 'где живёт fix-loop', answer: 'там же' }])
-    expect((await db.ci.ciRunKbGaps((await first).id))[0].answer).toContain('лимиты в настройках CI')
   })
 
   it('чужому пользователю отчёты по ране и задаче недоступны (404 у роута)', async () => {

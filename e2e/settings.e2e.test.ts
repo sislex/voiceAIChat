@@ -5,7 +5,7 @@
 // связка целиком на живом сервере: настройка сохраняется, падение сервера не
 // превращает её в дефолт, а вернувшийся сервер подхватывается сам, без
 // перезагрузки страницы.
-import { freePort } from './free-port'
+import { childAddress, loopbackRelay } from './listening-server'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -20,7 +20,7 @@ const ROOT = resolve(__dirname, '..')
 const WEB_DIST = join(ROOT, 'node_modules/@sislexa/core-ui/web')
 const VISUAL_ARTIFACTS = process.env.VC_VISUAL_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_ARTIFACTS) : null
 const FAILURE_ARTIFACTS = process.env.VC_VISUAL_FAILURE_ARTIFACTS ? resolve(ROOT, process.env.VC_VISUAL_FAILURE_ARTIFACTS) : null
-let PORT = 0
+let relay: Awaited<ReturnType<typeof loopbackRelay>>
 let BASE = ''
 const PASSWORD = 'e2e-settings-pass'
 
@@ -33,11 +33,11 @@ let voiceFixture: Server
 let voiceFixtureUrl = ''
 let voiceConfigured = true
 
-function startServer(): ChildProcess {
-  return spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
+async function startServer(): Promise<ChildProcess> {
+  const child = spawn(process.execPath, ['--import', 'tsx', '--import', join(ROOT, 'e2e/listening-address.mjs'), 'src/index.ts'], {
     cwd: join(ROOT, 'apps/server'),
     env: {
-      ...process.env, PORT: String(PORT), HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
+      ...process.env, PORT: '0', HOST: '127.0.0.1', VC_DATA_DIR: dataDir,
       VC_WEB_DIR: WEB_DIST, VC_ADMIN_PASSWORD: PASSWORD,
       // STT reports the fixture outage. TTS availability uses resource thresholds,
       // so exceed host memory to exercise its real configured-but-blocked contract.
@@ -47,8 +47,10 @@ function startServer(): ChildProcess {
       VC_TTS_RUNNER_TOKEN: voiceConfigured ? 'settings-voice-fixture' : '',
       VC_MIN_MEM_TTS: String(totalmem() * 2)
     },
-    stdio: 'ignore'
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc']
   })
+  try { relay.forwardTo(await childAddress(child)); return child }
+  catch (error) { child.kill('SIGTERM'); throw error }
 }
 
 async function waitHealth(): Promise<void> {
@@ -73,27 +75,29 @@ const api = async (path: string, init: RequestInit = {}): Promise<Response> =>
 
 const savedTheme = async (): Promise<string> => ((await (await api('/api/settings')).json()) as { theme: string }).theme
 
-/** Меню аккаунта → «Настройки» → раздел «Интерфейс». */
+/** Account menu → «Настройки» page → «Интерфейс» section. */
 async function openInterfaceSettings(): Promise<void> {
-  // The URL survives reload before React restores the lazy settings dialog.
-  // An immediate visibility check can click the account button underneath it.
-  if (/^#\/settings(?:\/|$)/.test(new URL(page.url()).hash)) {
-    await page.getByTestId('overlay').waitFor({ state: 'visible', timeout: 30_000 })
-  } else {
-    // Кнопка меню подписана ролью пользователя; ждём её появления — сразу
-    // после загрузки страница ещё проверяет сессию.
-    const account = page.getByRole('button', { name: new RegExp('admin') })
+  // Settings is a page (region «Настройки»), not a dialog. The URL survives
+  // reload before React restores the lazy settings page; an immediate
+  // visibility check could click the account button underneath it.
+  const settings = page.getByRole('region', { name: 'Настройки', exact: true })
+  if (!/^#\/settings(?:\/|$)/.test(new URL(page.url()).hash)) {
+    // The compact account trigger is labelled «Аккаунт»; wait for it — right
+    // after load the page is still checking the session.
+    const account = page.getByRole('button', { name: 'Аккаунт', exact: true })
     await account.waitFor({ state: 'visible', timeout: 30_000 })
     await account.click()
     await page.getByRole('menuitem', { name: 'Настройки' }).click()
   }
-  await page.getByRole('button', { name: 'Интерфейс' }).click()
+  await settings.waitFor({ state: 'visible', timeout: 30_000 })
+  // Section navigation lives in the app sidebar («Разделы настроек»).
+  await page.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Интерфейс', exact: true }).click()
 }
 
 describe('Настройки E2E: релиз не сбрасывает выбор', () => {
   beforeAll(async () => {
-    PORT = await freePort()
-    BASE = `http://127.0.0.1:${PORT}`
+    relay = await loopbackRelay()
+    BASE = relay.url
     if (!existsSync(WEB_DIST)) throw new Error('Build apps/web before running required settings/onboarding E2E')
     dataDir = await mkdtemp(join(tmpdir(), 'vc-e2e-settings-'))
     voiceFixture = createServer((_request, response) => {
@@ -104,7 +108,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     const address = voiceFixture.address()
     if (!address || typeof address === 'string') throw new Error('Voice fixture has no loopback address')
     voiceFixtureUrl = `http://127.0.0.1:${address.port}`
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     const login = await fetch(`${BASE}/api/session/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'admin', password: PASSWORD }) })
     token = ((await login.json()) as { token: string }).token
@@ -125,6 +129,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   afterAll(async () => {
     await browser?.close()
     server?.kill('SIGTERM')
+    await relay?.close()
     await new Promise<void>(done => voiceFixture?.close(() => done()) ?? done())
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
@@ -150,7 +155,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     await page.getByLabel('Тема интерфейса').selectOption('green').catch(() => {})
     await expect.poll(() => page.locator('html').getAttribute('data-theme'), { timeout: 10_000 }).toBe('dark')
 
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     expect(await savedTheme()).toBe('dark') // запись на сервере цела
 
@@ -162,56 +167,45 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
   }, 180_000)
 
   // @testCase TC-UI-1
-  it('keeps onboarding navigation and actions reachable across themes, touch and keyboard', async () => {
+  // Theme/viewport/safe-area geometry of the wizard is owned by Core UI. Core proves
+  // the served Settings section reaches the wizard by touch and completes it from the keyboard.
+  it('keeps onboarding navigation and completion reachable by touch and keyboard', async () => {
     if (VISUAL_ARTIFACTS) await mkdir(VISUAL_ARTIFACTS, { recursive: true })
     if (FAILURE_ARTIFACTS) await mkdir(FAILURE_ARTIFACTS, { recursive: true })
-    const sizes = [[1440, 900], [1280, 720], [768, 1024], [390, 844], [320, 700]]
-    for (const theme of ['light', 'dark']) for (const [width, height] of sizes) {
-      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ theme, onboarded: true }) })
-      const context = await browser.newContext({ viewport: { width, height }, hasTouch: true })
-      const screen = await context.newPage()
-      try {
-        await screen.addInitScript((sessionToken) => {
-          localStorage.setItem('vc.session.token', sessionToken)
-          localStorage.setItem('vc:shell:admin:tour', 'true')
-          navigator.mediaDevices.getUserMedia = async () => { throw new Error('Unexpected permission request') }
-        }, token)
-        const cdp = await context.newCDPSession(screen)
-        await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 24, bottom: 34, left: 0, right: 0 } })
-        await screen.goto(BASE + '/#/settings/ui')
-        await screen.getByRole('button', { name: 'Мастер первого запуска' }).click()
-        const dialog = screen.getByRole('dialog', { name: 'Добро пожаловать', exact: true })
-        await dialog.waitFor()
-        if (width <= 720) expect((await dialog.getByRole('button', { name: 'Закрыть', exact: true }).boundingBox())!.y).toBeGreaterThanOrEqual(24)
-        await screen.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
-        await screen.getByRole('button', { name: 'Пропустить шаг' }).click()
-        await screen.keyboard.press('Tab')
-        expect(await dialog.evaluate(el => el.contains(document.activeElement))).toBe(true)
-        expect(await screen.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-        const exit = screen.getByRole('button', { name: 'Продолжить в чате' })
-        await exit.scrollIntoViewIfNeeded()
-        expect(await exit.evaluate(el => Number.parseFloat(getComputedStyle(el.parentElement!).paddingBottom))).toBe(34)
-        const box = await exit.boundingBox()
-        expect(box).not.toBeNull()
-        expect(box!.y + box!.height).toBeLessThanOrEqual(height)
-        if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + 'x' + height + '.png') })
-        // Reduced visual viewport models keyboard occlusion; this is not a physical OS keyboard test.
-        if (width <= 390) {
-          await screen.setViewportSize({ width, height: Math.floor(height * 0.6) })
-          await exit.scrollIntoViewIfNeeded()
-          const reduced = await exit.boundingBox()
-          expect(reduced!.y + reduced!.height).toBeLessThanOrEqual(Math.floor(height * 0.6))
-          if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, theme + '-' + width + '-reduced-viewport.png') })
-        }
-        await exit.focus()
-        await screen.keyboard.press('Escape')
-        await dialog.waitFor({ state: 'hidden' })
-      } catch (error) {
-        if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, theme + '-' + width + '-failure.png') })
-        throw error
-      } finally { await context.close() }
-    }
-  }, 180_000)
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify({ theme: 'light', onboarded: true }) })
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, hasTouch: true })
+    const screen = await context.newPage()
+    try {
+      await screen.addInitScript((sessionToken) => {
+        localStorage.setItem('vc.session.token', sessionToken)
+        localStorage.setItem('vc:shell:admin:tour', 'true')
+        navigator.mediaDevices.getUserMedia = async () => { throw new Error('Unexpected permission request') }
+      }, token)
+      await screen.goto(BASE + '/#/settings/ui')
+      await screen.getByRole('region', { name: 'Настройки', exact: true }).waitFor()
+      // The wizard is an ordinary Settings section embedded in the page.
+      await screen.getByRole('navigation', { name: 'Разделы настроек' }).getByRole('button', { name: 'Мастер первого запуска', exact: true }).tap()
+      await expect.poll(() => new URL(screen.url()).hash).toBe('#/settings/onboarding')
+      const wizard = screen.getByTestId('onboarding-page')
+      await wizard.waitFor()
+      await wizard.getByRole('button', { name: /2\. Озвучка TTS/ }).tap()
+      await wizard.getByRole('button', { name: 'Пропустить шаг' }).click()
+      await screen.keyboard.press('Tab')
+      expect(await wizard.evaluate(el => el.contains(document.activeElement))).toBe(true)
+      const exit = wizard.getByRole('button', { name: 'Завершить настройку' })
+      await exit.scrollIntoViewIfNeeded()
+      if (VISUAL_ARTIFACTS) await screen.screenshot({ path: join(VISUAL_ARTIFACTS, 'onboarding.png') })
+      // The embedded section has nothing to dismiss with Escape; its exit action
+      // must instead be operable from the keyboard and complete onboarding.
+      const completed = screen.waitForRequest(request => request.url() === BASE + '/api/settings' && request.method() === 'PUT' && request.postDataJSON()?.onboarded === true)
+      await exit.focus()
+      await screen.keyboard.press('Enter')
+      await completed
+    } catch (error) {
+      if (FAILURE_ARTIFACTS) await screen.screenshot({ path: join(FAILURE_ARTIFACTS, 'onboarding-failure.png') })
+      throw error
+    } finally { await context.close() }
+  }, 60_000)
 
   // @testCase TC-HOST-1
   it.skipIf(process.env.VC_ELECTRON_TESTS !== '1')('runs the shared renderer in Electron with persisted progress and an explicit voice check', async () => {
@@ -274,20 +268,23 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     expect((await api('/api/settings', { method: 'PUT', body: JSON.stringify({ onboarding: progress }) })).ok).toBe(true)
     server?.kill('SIGTERM')
     await waitDown()
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     expect((await (await api('/api/settings')).json()).onboarding).toEqual(progress)
     await page.reload()
-    await page.goto(BASE + '/#/settings/ui')
-    await page.getByRole('button', { name: 'Мастер первого запуска' }).click()
-    await page.getByText(/Проверка прервана/).waitFor()
-    await page.getByRole('button', { name: 'Сбросить только прогресс' }).click()
+    // The wizard is the Settings section #/settings/onboarding, embedded in the page.
+    await page.goto(BASE + '/#/settings/onboarding')
+    const wizard = page.getByTestId('onboarding-page')
+    await wizard.getByText(/Проверка прервана/).waitFor()
+    await wizard.getByRole('button', { name: 'Сбросить только прогресс' }).click()
     await expect.poll(async () => (await (await api('/api/settings')).json()).onboarding.results.tts.status).toBe('idle')
     const after = await (await api('/api/settings')).json()
     expect(after.theme).toBe(before.theme)
     expect(after.voice).toBe(before.voice)
     expect(after.llmProvider).toBe(before.llmProvider)
-    await page.getByRole('button', { name: 'Продолжить в чате' }).click()
+    // The embedded exit action replaces the dialog's «Продолжить в чате».
+    await wizard.getByRole('button', { name: 'Завершить настройку' }).click()
+    await expect.poll(async () => (await (await api('/api/settings')).json()).onboarded).toBe(true)
   }, 120_000)
 
   it('keeps configured but unavailable TTS diagnostics and disabled controls reachable', async () => {
@@ -333,7 +330,7 @@ describe('Настройки E2E: релиз не сбрасывает выбо�
     server?.kill('SIGTERM')
     await waitDown()
     voiceConfigured = false
-    server = startServer()
+    server = await startServer()
     await waitHealth()
     const context = await browser.newContext()
     const screen = await context.newPage()

@@ -103,10 +103,11 @@ export interface LlmRequest {
   /**
    * Где живёт страница этих инструментов: `panel` — открытая панель превью
    * пользователя (по умолчанию), `chromium` — изолированный браузер сервера.
+   * `make-preview` is the user's open Make iframe for this conversation.
    * Различие не косметическое: в ходе рана панели нет вовсе, и хинт про
    * «панель рядом с чатом» уводил бы модель к несуществующему экрану.
    */
-  previewSurface?: 'panel' | 'chromium'
+  previewSurface?: 'panel' | 'chromium' | 'make-preview'
   /**
    * URL MCP-эндпоинта консоли (инструменты mcp__console__*) с секретом и `conv`.
    * Есть только у хода разговора «Консоль с ассистентом»: инструменты пишут и

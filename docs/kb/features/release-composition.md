@@ -1,9 +1,11 @@
 ---
 title: Состав релиза из опубликованных выпусков приложений
-updated: 2026-10-01
+updated: 2026-11-02
+checked: f89e2e742
 areas:
   - scripts/release-composition.mjs
   - scripts/owner-release-publish.mjs
+  - scripts/vendor-store.mjs
   - packages/shared/src/releaseComposition.ts
 ---
 
@@ -44,7 +46,39 @@ Playwright Reader, llm-runner, core-ui, Desktop и других владельц
   выпуск берёт коммит инструмента (`tools.lock`), остальные пакеты в него не входят. Образ входит,
   только если compose закрепил его на том же коммите.
 
+## Archive storage and publication
+
+Pinned archives are no longer committed to Git. Dependency specs and lockfile
+entries use the Core GitHub `vendor` release URLs; local `vendor/*.tgz` files are
+a verified cache used by pin/provenance tools. `npm run vendor:fetch` restores
+referenced bytes. `owner-release-publish --from-core` fetches these archives before
+reading them. Composition updates preserve URL references as well as legacy
+`file:` specs.
+
+`apply --dir <directory>` changes local pins but does not upload archives unless
+`--publish` is explicit. Otherwise run `npm run vendor:publish` as the separate
+publication step before consumers install the new pins. Replaced archives are
+removed locally only after their last reference disappears. These operations
+are implemented in `release-composition.mjs` and `vendor-store.mjs`.
+
 ## Закрепление
+
+### Pin-only bundle gate
+
+`gate:quick -- --base <sha>` recognizes a strictly pin-only diff before the
+normal Core planner. Core UI and catalog frontend owner archives use
+`scripts/owner-pin-check.mjs`: verified archive checksums, consistent inventory
+and lock identities, clean source provenance, exact installed bytes, and the
+existing production bundle/API manifest validators. Owner-built assets are
+validated as published; Core does not compile the owner's source again.
+The check has a 115-second execution limit and fails on missing or invalid
+evidence. Archive downloads must be available or prewarmed with `vendor:fetch`.
+
+Source, documentation, root script edits and unrelated lock changes retain
+the original quick gate. Image/tool-only pins and packages without a frontend
+compatibility adapter also retain that gate; the fast path currently does not
+cover those owners. Cold-download timing and registry image acceptance remain
+unverified in the restricted delivery environment.
 
 `node --import tsx scripts/release-composition.mjs apply --dir <каталог>` — по подкаталогу на
 выпуск с манифестом и архивами. Сначала всё проверяется (байты и хэши, имя, версия и коммит внутри
@@ -57,7 +91,14 @@ Playwright Reader, llm-runner, core-ui, Desktop и других владельц
 Проверено на истории: закрепление Make 1.3.0 поверх Make 1.3.1 дало те же строки манифестов и
 `tools.lock`, что ручной PR #272, а планировщик регрессии — `onlyPins`.
 
-## Выпуски, замороженные приёмкой shared-chat-v1
+## Historical shared-chat-v1 acceptance pins (2026-10-01)
+
+The versions below record that acceptance baseline, not today's installed
+versions or a current selection ban. Current package versions and source
+identities are in `package.json`, the artifact manifests and
+`deploy/s3-provider-artifacts.json`; compatibility evidence must be updated
+with a pin change.
+
 
 identity 1.4.2, billing 1.2.2 и llm-runner 0.3.5 (с `runner-contracts`) не выбираются на вкладке:
 их архивы закреплены приёмкой A07/S3 (`scripts/a07-composition.mjs#requiredSources`,

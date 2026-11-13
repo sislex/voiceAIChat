@@ -15,6 +15,8 @@ export const MAKE_PROXY_PREFIXES = ['/api/make', '/api/preview/make', '/api/prev
 
 export interface MakeProxyOptions {
   makeUrl: string
+  /** Runs after Core's authentication guard; replaces browser credentials for shared Make. */
+  prepareHeaders?: (req: FastifyRequest, headers: Headers) => void
   fetchImpl?: typeof fetch
   /** Импорт ZIP шлёт base64 до 12 МБ; запас — на JSON-обёртку. */
   bodyLimit?: number
@@ -25,8 +27,11 @@ export interface MakeProxyOptions {
 export interface ServiceProxyOptions {
   /** Имя сервиса — для лога и кода ошибки `<name>_unavailable`. */
   name: string
+  prepareHeaders?: (req: FastifyRequest, headers: Headers) => void
   baseUrl: string
   prefixes: readonly string[]
+  /** Explicit public downloads complete before API authentication. */
+  publicGetPaths?: readonly string[]
   fetchImpl?: typeof fetch
   bodyLimit?: number
   timeoutMs?: number
@@ -37,8 +42,11 @@ const SKIP_REQUEST = new Set(['host', 'connection', 'content-length', 'transfer-
 // `set-cookie` fetch склеивает в одну строку — переносим отдельно через getSetCookie().
 const SKIP_RESPONSE = new Set(['connection', 'content-length', 'transfer-encoding', 'content-encoding', 'keep-alive', 'set-cookie'])
 
+export const MAKE_PROXY_BODY_LIMIT = 56 * 1024 * 1024
+
 export function registerMakeProxy(app: FastifyInstance, opts: MakeProxyOptions): void {
-  registerServiceProxy(app, { name: 'make', baseUrl: opts.makeUrl, prefixes: MAKE_PROXY_PREFIXES, ...opts })
+  // Make accepts ZIP imports up to ~40 MiB sent as base64 (56 MiB body); the proxy must not cut them earlier.
+  registerServiceProxy(app, { name: 'make', baseUrl: opts.makeUrl, prefixes: MAKE_PROXY_PREFIXES, bodyLimit: MAKE_PROXY_BODY_LIMIT, ...opts })
 }
 
 export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOptions): void {
@@ -54,6 +62,7 @@ export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOpt
     headers.set('x-forwarded-host', String(req.headers.host ?? ''))
     headers.set('x-forwarded-proto', String(req.headers['x-forwarded-proto'] ?? req.protocol))
     headers.set(REQUEST_ID_HEADER, req.id)
+    opts.prepareHeaders?.(req, headers)
     const body = req.body as Buffer | undefined
     const hasBody = Boolean(body && body.length) && !['GET', 'HEAD'].includes(req.method)
     // DELETE без тела браузер шлёт с `content-type: application/json` и `content-length: 0`; fetch
@@ -84,8 +93,13 @@ export function registerServiceProxy(app: FastifyInstance, opts: ServiceProxyOpt
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: opts.bodyLimit ?? 16 * 1024 * 1024 }, (_req, body, done) => done(null, body))
     for (const prefix of opts.prefixes) {
-      scope.all(prefix, forward)
-      scope.all(`${prefix}/*`, forward)
+      const onRequest = async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
+        if (['GET', 'HEAD'].includes(req.method) && opts.publicGetPaths?.includes(req.url.split('?')[0]!)) {
+          await forward(req, reply)
+        }
+      }
+      scope.all(prefix, { onRequest }, forward)
+      scope.all(`${prefix}/*`, { onRequest }, forward)
     }
   })
 }

@@ -1,12 +1,13 @@
 ---
 title: STT Runner: внутренний протокол, ресурсы и lifecycle
-updated: 2026-10-07
+updated: 2026-11-09
+checked: c5fd9ebe4
 areas:
   - apps/server/src/stt
   - apps/server/src/session.ts
   - apps/server/src/server.ts
   - apps/server/src/config.ts
-  - packages/shared/src/stt.ts
+  - apps/server/src/stt/client.ts
   - Dockerfile
   - docker-compose.yml
 ---
@@ -14,6 +15,13 @@ areas:
 # STT Runner: внутренний протокол, ресурсы и lifecycle
 
 Module details: `voice:README.md`
+
+## Core image build boundary
+
+Core's Dockerfile retries transient npm archive downloads three times with
+10–60 second backoff. It does not build the extracted Voice runner. The reviewed
+`server.ts` changes wire Make user stands; the voice clients, session protocol,
+runner URLs/tokens and Compose wiring are unchanged.
 
 ## Граница подсистемы
 
@@ -23,7 +31,7 @@ Module details: `voice:README.md`
 
 ## Протокол v1
 
-Источник форм и runtime-валидации — `packages/shared/src/stt.ts`.
+The versioned wire types and validators are owned by `@voicechat/voice-contracts/stt` in `sislex/voice`. Core's `stt/client.ts` defines its consumer port; `stt/remoteClient.ts` imports the owner protocol.
 
 Клиент открывает WS `/v1/transcribe`, первым текстовым кадром отправляет `start` со `schemaVersion=1`, runId, моделью, языком и фиксированным форматом mono PCM16 16 kHz; затем идут бинарные PCM-кадры и текстовый `end` или `cancel`.
 

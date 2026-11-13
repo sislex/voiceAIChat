@@ -10,6 +10,7 @@ import { VoiceChatDb } from './db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
 import { billingOriginForConversation, commandAccessError, TARIFF_DENIED } from './accountAccess.js'
 import { createTurnManager } from './turns.js'
+import * as dbSeed from './test/seed.js'
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -66,7 +67,7 @@ it('isolates conversations by the selected team tenant and moves project chats w
   expect(projectChat.statusCode).toBe(200)
   const team = await db.identity.createTeamTenant('alice', 'Product')
   const teamHeaders = { ...headers, 'x-sislexa-tenant-id': team.tenant.id }
-  expect(await db.projects.transferTenant('alice', personalProject.id, personalTenantId, team.tenant.id, 'team')).toMatchObject({ tenantId: team.tenant.id })
+  expect(await dbSeed.transferTenant(db, 'alice', personalProject.id, personalTenantId, team.tenant.id, 'team')).toMatchObject({ tenantId: team.tenant.id })
   expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers })).statusCode).toBe(404)
   expect((await app.inject({ url: `/api/conversations/${projectChat.json().id}`, headers: teamHeaders })).statusCode).toBe(200)
 
@@ -199,7 +200,7 @@ it('checks each Reader capability independently at the model callback boundary',
   const { db, app } = await fixture()
   const { createLocalPlaywrightReaderCore } = await import('./playwrightReaderBridge/localCore.js')
   const { createLocalReaderCore } = await import('./readerBridge/localCore.js')
-  const relay = { request: vi.fn() }
+  const relay = { request: vi.fn().mockResolvedValue({ ok: true }) }
   const chromium = createLocalPlaywrightReaderCore({ db, issuePreviewRunKey: async () => '', logBrowserShot: async () => {} })
   const reader = createLocalReaderCore({ app, db, relay, machines: { isOnline: () => false, http: vi.fn() }, runKeys: { issue: () => '' }, previews: async () => [], shotsRoot: '/unused', publish: () => {} })
   const conversation = await db.chat.createConversation('alice', 'Reader', 'web-recorder', null, 'web-reader')

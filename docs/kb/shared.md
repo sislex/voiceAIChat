@@ -1,20 +1,122 @@
 ---
+updated: 2026-11-05
+checked: f82b55f09
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-10-20
-checked: a19140220
 areas:
   - packages/shared/src
 ---
 
 # Общий пакет: типы, контракты и чистая логика
 
-`packages/shared` — единственный источник истины для данных, которыми обмениваются UI, сервер, desktop и компаньон-агент. Пакет не имеет runtime-зависимостей, не обращается к DOM, сети, файловой системе или процессам и экспортирует исходный TypeScript через `src/index.ts`. Изменение публичного поведения начинается здесь, затем реализуется на обеих сторонах транспорта.
+`packages/shared` defines Core contracts and pure logic consumed by the server and clients. It declares explicit owner-contract dependencies in `package.json` and exports TypeScript through `src/index.ts`. Its own logic does not access DOM, network, filesystem or processes. Changes to Core public behavior start here and are implemented on both sides of the transport; extracted protocols remain owned by their published packages.
 
 `llm.ts` — контракт LLM: `LlmRequest`/`LlmClient` (их собирает сервер) плюс
 протокол исполнителя v1: тело `LlmRunBody`, кадры `LlmRunFrame`,
 `parseLlmRunFrame`, `LlmRunnerHealth`, пути `LLM_RUNNER`. Он здесь именно потому,
 что берегов два: промпт собирает сервер, argv по нему — `apps/llm-runner`. Рядом
 `kbToolHint` в `kb.ts` — системный хинт про `mcp__kb__*` попадает в argv CLI.
+
+## Admin storage quota fields
+
+`AdminUserInfo` adds optional `storageQuotaBytes: number | null` and
+`storageUsage: StorageUsage`. The former is the Identity override; the latter
+contains current usage and effective quota when storage is enabled.
+`IpcInvokeMap` and `IPC_CHANNELS` both declare `admin:setUserStorageQuota`
+with `{ name, storageQuotaBytes }` and an `AdminUserInfo` result.
+See [the admin API](protocol.md#admin-storage-quota-contract).
+
+## fileStorage contract
+
+`ChatUploadMetadata`, `ChatUploadJsonRequest`, `CHAT_UPLOAD_METADATA_HEADERS`
+and `MAX_CHAT_UPLOAD_BYTES` extend `src/fileStorage.ts` for chat upload request
+forms. Chat attachments retain a 32 MiB decoded limit, distinct from the general
+storage service's configurable file limit (1 GiB by default). `REST.uploads` documents JSON/base64, raw
+bytes and one multipart file; `UploadInfo` is unchanged. Query/header precedence,
+MIME inference and raw JSON disambiguation are described in
+[the upload protocol](protocol.md#core-file-storage-and-chat-settings).
+
+`MergeStorageSpacesRequest` carries optional `dryRun` and `previewToken` for
+`POST STORAGE_REST.mergeDuplicates(spaceId)`. Send `{}` to preview and
+`{"previewToken":"<returned token>"}` to apply; explicit `dryRun:true` always
+previews. Applying without a matching token returns 409.
+`MergeStorageSpacesResult` exposes `keepSpaceId`, `deleteSpaceIds`, `moves`,
+`conflicts`, `revokedShareIds`, `dryRun` and `previewToken`. Move/conflict items
+identify the source space and path; optional `toPath` identifies the archive
+destination of an older conflicting version in the survivor. Deleted spaces'
+shares are revoked, not transferred. Resolution and canonical lookup behavior
+belong to the coordinator and metadata adapters; see
+[Core storage](server-internals.md#core-file-storage).
+
+`src/fileStorage.ts`, re-exported from `src/index.ts`, owns storage spaces,
+entries, revisions, shares, owner usage, node health, error codes and both
+`STORAGE_REST` and `FILE_STORAGE_NODE_PATHS`. The default quota is 100 MiB;
+the default maximum file size is 1 GiB, configurable by hosts with
+`storageMaxFileBytes` and `VC_FILE_STORAGE_MAX_FILE_BYTES`. Pure helpers normalize paths, resolve the
+strongest access, check replacement-aware quotas, sum online node capacity
+and select the online node with the most free space that can fit a file.
+
+`UpdateStorageSpaceRequest` contains `title: string` for
+`PATCH STORAGE_REST.space(spaceId)`. Core returns the updated `StorageSpace`.
+The coordinator validates a nonblank title and checks ownership in the metadata
+transaction; read/write grants do not authorize renaming. The request cannot
+change the owner, kind or conversation ref. Files and shares remain attached
+to the same space. See [Core storage routes](server-internals.md#core-file-storage)
+and [the coordinator](architecture.md#file-storage-service).
+
+`MessageAttachment` and `UploadInfo` have an optional `storage: StorageFileRef`
+(`spaceId`, `path`). For such an attachment the machine `path` is display-only
+and `agentId` is absent. Core installs the authenticated `STORAGE_REST` routes
+through `apps/server/src/fileStorage/routes.ts`; the service is enabled with
+`VC_FILE_STORAGE_MODE=embedded` (default `off`). `Settings.chatFilesBackend`
+accepts `machine | storage`, defaults to `machine`, and is validated by
+`sanitizeSettingsPatch`, REST and settings persistence. See
+[server internals](server-internals.md) for the runtime and chat integration.
+The node/client/coordinator implementation is in `packages/file-storage`;
+see [architecture](architecture.md). The application catalog registers it as
+`file-storage`, with Shared and component-runtime build dependencies, node
+entrypoint and `/v1/health`; only test isolation is enabled in the catalog.
+The contract does not declare lifecycle event names or payloads:
+`storage.file.created` and `storage.file.deleted` are neither protocol constants
+nor emitted strings in the current repository. Consumers use the documented REST
+surface rather than assume those event topics exist.
+
+## Contract release diagnostics
+
+`scripts/contracts-release.mjs` overrides an inherited
+`npm_config_loglevel=silent` with npm's global `--loglevel=error`; piping stderr
+alone cannot recover diagnostics npm has suppressed. Failed consumer reports
+include captured stdout and stderr. Its regression builds both sides of a peer
+conflict from local `file:` tarballs with an isolated empty cache in offline mode,
+asserts the ERESOLVE chain, and proves processing continues by installing the
+next consumer. Operational usage is in [Deploy](deploy.md#contract-pin-release).
+
+## Current additive contracts
+
+`LlmRequest.previewSurface` accepts `panel | chromium | make-preview`.
+The additive `make-preview` value identifies the user's open Make iframe;
+its `previewMcpUrl` token addresses the Make conversation. A bound browser
+continues to use the Reader conversation and `panel` or `chromium`.
+
+`ConversationSummary.source` is optional (`model | fallback`). Thread reset
+persists `fallback` when model summarization is unavailable or leaves uncovered
+messages; successful model summaries may omit the field. Consumers must accept
+older summaries without it. See [summary reset](llm.md#session-cost-and-summary-reset).
+
+- `threadCost.ts` owns provider-session cost estimates and `ThreadResetMode`
+  (`off | hint | auto`). Conversation settings default to `hint`; the canonical
+  chat handoff artifact is version 1.2.0 and includes thread-cost/reset routes.
+- `stripServiceData` removes `activity` and `request` even when a size summary is
+  already present. Lightweight `model`, `permissionMode` and `sessionId` remain
+  available; new request metadata stores message counts/last ID rather than a
+  duplicate history. Diagnostic payloads are loaded separately.
+- `androidRelease.ts` validates the pinned APK manifest; `agentProtocol.ts`
+  extends the owner's register frame with `supervisor: 'android'` while retaining
+  the dev-process response extension.
+- `RendererWidgetUiBridge.onAction` carries optional `expiresAt`, and optional
+  `onExpired` supports older hosts. `EnvironmentMode` also includes `thin-client`
+  and `local-stand`; this is a type contract, not proof of owner commissioning.
+- Model catalog additions and fallback estimates live in `types.ts` and
+  `pricing.ts`; deployed Billing prices remain independently configured.
 
 ## Карта модулей
 
@@ -72,7 +174,16 @@ consumer's pass/fail and retain npm's conflicting peer chain. Failure does not
 prevent checking subsequent consumers; the overall exit status is nonzero.
 See [deployment](deploy.md#contract-pin-release) for review and retry semantics.
 
-### sislexa operation and consumption contracts
+### Operation and consumption ownership
+
+Operation, usage and billing contracts have moved to `@sislexa/sdk`.
+The historical `platformOperation.ts`, `platformUsage.ts` and `billing.ts`
+implementations described below are no longer Core Shared source files.
+Use explicit owner exports instead of adding local copies or runtime barrel
+re-exports. Identity owns stable account subjects; Core owns admission and
+transport integration with those public contracts.
+
+### Historical sislexa operation and consumption contracts
 
 `platformOperation.ts` defines version 1 accounting context with immutable user ID,
 identity issuer, calling client, payer, environment, initiating module, project,

@@ -11,7 +11,8 @@ import { StandDeliveryCoordinator } from './standDeliveryCoordinator.js'
 
 export const standDeliveryBody = z.object({
   branch: z.string().min(1).max(240).refine(value => !value.startsWith('-') && !/[\s\x00-\x1f~^:?*\[\\]/.test(value) && !value.includes('..') && !value.includes('@{')),
-  title: z.string().trim().min(1).max(1000)
+  title: z.string().trim().min(1).max(1000),
+  component: z.enum(['core', 'core-ui', 'make']).optional()
 }).strict()
 
 interface Deps {
@@ -26,7 +27,7 @@ export class StandDeliveries {
   private busy = new Set<string>()
   constructor(private readonly deps: Deps) {}
 
-  private async workspace(userId: string, projectId: string, standId: string, write: boolean) {
+  private async workspace(userId: string, projectId: string, standId: string, write: boolean, component?: string) {
     const project = await this.deps.db.projects.getProject(userId, projectId)
     if (!project) projectModeError(404, 'project_not_found')
     const user = await this.deps.db.identity.getUser(userId)
@@ -36,7 +37,7 @@ export class StandDeliveries {
     const machine = project.machines.find(machine => machine.agentId === stand.machineId && machine.canUse)
     if (!machine) projectModeError(403, 'stand_machine_forbidden')
     const matching = stand.live?.filter(live => repositoryId(stand.components?.[live.component]?.repository) === repositoryId(project.gitUrl)) ?? []
-    const lives = matching.length ? matching : stand.live ?? []
+    const lives = component ? stand.live?.filter(live => live.component === component) ?? [] : matching.length ? matching : stand.live ?? []
     if (lives.length !== 1) projectModeError(409, 'stand_working_copy_ambiguous')
     const live = lives[0]!
     const repository = repositoryId(stand.components?.[live.component]?.repository)
@@ -53,13 +54,13 @@ export class StandDeliveries {
     return { agentId: machine.agentId, root, allowedRoot, repository, branch: live.branch }
   }
 
-  async list(user: string, project: string, stand: string) {
-    const workspace = await this.workspace(user, project, stand, false)
+  async list(user: string, project: string, stand: string, component?: string) {
+    const workspace = await this.workspace(user, project, stand, false, component)
     return this.deps.coordinator.list(project, workspace.repository, workspace.branch)
   }
 
-  private async locked<T>(user: string, project: string, stand: string, work: (workspace: Awaited<ReturnType<StandDeliveries['workspace']>>) => Promise<T>, write = true) {
-    const workspace = await this.workspace(user, project, stand, write)
+  private async locked<T>(user: string, project: string, stand: string, work: (workspace: Awaited<ReturnType<StandDeliveries['workspace']>>) => Promise<T>, write = true, component?: string) {
+    const workspace = await this.workspace(user, project, stand, write, component)
     if (!this.deps.machines.isOnline(workspace.agentId)) projectModeError(409, 'machine_unavailable')
     const key = workspace.agentId + ':' + workspace.root
     if (this.busy.has(key)) projectModeError(409, 'stand_workspace_busy')
@@ -75,24 +76,24 @@ export class StandDeliveries {
       const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'head', branch: parsed.data.branch })
       if (!('headSha' in result)) projectModeError(502, 'invalid_stand_agent_response')
       return this.deps.coordinator.submit(project, {
-        repository: workspace.repository, ...parsed.data, targetBranch: 'dev', headSha: result.headSha, author: user
+        repository: workspace.repository, branch: parsed.data.branch, title: parsed.data.title, targetBranch: 'dev', headSha: result.headSha, author: user
       })
-    })
+    }, true, parsed.data.component)
   }
 
-  async behind(user: string, project: string, stand: string): Promise<StandSyncStatus> {
+  async behind(user: string, project: string, stand: string, component?: string): Promise<StandSyncStatus> {
     return this.locked(user, project, stand, async workspace => {
       const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'behind' })
       if (!('behind' in result)) projectModeError(502, 'invalid_stand_agent_response')
       return { behind: result.behind }
-    }, false)
+    }, false, component)
   }
 
-  async sync(user: string, project: string, stand: string): Promise<StandSyncResult> {
+  async sync(user: string, project: string, stand: string, component?: string): Promise<StandSyncResult> {
     return this.locked(user, project, stand, async workspace => {
       const result = await standDeliveryCommand(this.deps.machines, user, workspace, { action: 'sync' })
       if (!('merged' in result)) projectModeError(502, 'invalid_stand_agent_response')
       return result
-    })
+    }, true, component)
   }
 }

@@ -15,11 +15,12 @@ describe('chat settings HTTP adapter', () => {
       const foreign = await db.chat.createConversation('bob', 'Private')
       const url = `/api/conversations/${c.id}/settings`
       const initial = (await app.inject({ method: 'GET', url })).json()
-      const payload = { version: 1, expectedRevision: initial.revision, owner: 'conversation', values: { title: 'Changed' } }
+      expect(initial.conversation.threadReset).toBe('hint')
+      const payload = { version: 1, expectedRevision: initial.revision, owner: 'conversation', values: { title: 'Changed', threadReset: 'auto' } }
       expect((await app.inject({ method: 'PATCH', url, payload })).statusCode).toBe(200)
       const conflict = await app.inject({ method: 'PUT', url, payload })
       expect(conflict.statusCode).toBe(409)
-      expect(conflict.json()).toMatchObject({ code: 'settings_revision_conflict', current: { conversation: { title: 'Changed' }, device: {} } })
+      expect(conflict.json()).toMatchObject({ code: 'settings_revision_conflict', current: { conversation: { title: 'Changed', threadReset: 'auto' }, device: {} } })
       expect((await app.inject({ method: 'PATCH', url: '/api/chat/settings', payload })).statusCode).toBe(400)
       expect((await app.inject({ method: 'PATCH', url, payload: { ...payload, owner: 'device', values: { micDeviceId: 'x' } } })).statusCode).toBe(400)
       expect((await app.inject({ method: 'GET', url: `/api/conversations/${foreign.id}/settings` })).statusCode).toBe(404)

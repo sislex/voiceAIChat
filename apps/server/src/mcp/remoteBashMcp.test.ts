@@ -1,10 +1,95 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ciToolOutputLimits, isTrimmedToolOutput, trimmedToolOutputOriginalChars } from '@voicechat/shared'
 import { registerRemoteBashMcp, quoteCwd, remotePath } from './remoteBashMcp'
 import type { AgentRegistry, ExecResult } from '../agents/registry'
 
 const SECRET = 'test-secret'
+
+describe('Make scoped files', () => {
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64')
+  async function fixture(query = '', available = true) {
+    const registry = {
+      exec: vi.fn(async () => ({ exitCode: 0, output: '/assets/file.png' })),
+      fsList: vi.fn(async () => ({ entries: [{ name: 'file.png' }] })),
+      fsRead: vi.fn(async () => ({ dataBase64: png })),
+      fsWrite: vi.fn(async () => ({}))
+    }
+    const files = { available: async () => available, read: vi.fn(async () => png), write: vi.fn(async () => {}) }
+    const app = Fastify()
+    registerRemoteBashMcp(app, registry as unknown as AgentRegistry, SECRET, undefined, undefined,
+      token => token === 'live' ? [{ uploadId: 'upload', path: '/runner/a.png', name: 'a.png', dataBase64: png }] : undefined,
+      undefined, undefined, files)
+    await app.ready()
+    const call = async (name: string, args: object) => (await rpc(app,
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
+      '?k=' + SECRET + '&make=1&conv=c&turn=t&files=live' + query)).json() as { result: { isError?: boolean; content: Array<{ type: string; data?: string; text?: string }> } }
+    return { app, call, registry, files }
+  }
+  it('returns an image by upload id and imports it without a machine', async () => {
+    const f = await fixture()
+    try {
+      expect((await f.call('image', { path: 'upload' })).result.content[0]).toMatchObject({ type: 'image', data: png })
+      expect((await f.call('attachment_to_make', { uploadId: 'upload', path: 'img/a.png' })).result.isError).not.toBe(true)
+      expect(f.files.write).toHaveBeenCalledWith('c', 'img/a.png', png, 't')
+      expect((await f.call('attachment_to_make', { uploadId: 'foreign', path: 'img/a.png' })).result.isError).toBe(true)
+      expect(f.registry.exec).not.toHaveBeenCalled()
+    } finally { await f.app.close() }
+  })
+  it('copies binary files both ways through the configured folder', async () => {
+    const f = await fixture('&agent=a&cwd=%2Fassets')
+    try {
+      expect((await f.call('machine_to_make', { machinePath: 'file.png', path: 'img/a.png' })).result.isError).not.toBe(true)
+      expect(f.files.write).toHaveBeenCalledWith('c', 'img/a.png', png, 't')
+      expect((await f.call('make_to_machine', { machinePath: 'file.png', path: 'img/a.png' })).result.isError).not.toBe(true)
+      expect(f.registry.fsWrite).toHaveBeenCalledWith('a', '/assets/file.png', png)
+      expect((await f.call('bash', { command: 'ls' })).result.isError).not.toBe(true)
+    } finally { await f.app.close() }
+  })
+  it('rejects shell escapes, outside paths, traversal and metadata before file operations', async () => {
+    const f = await fixture('&agent=a&cwd=%2Fassets')
+    try {
+      for (const command of ['cd /; ls', 'ls /etc', 'node -e evil', 'ls $(pwd)', 'ls ../']) {
+        expect((await f.call('bash', { command })).result.isError).toBe(true)
+      }
+      for (const machinePath of ['/etc/passwd', '../secret']) {
+        expect((await f.call('machine_to_make', { machinePath, path: 'a' })).result.isError).toBe(true)
+        expect((await f.call('image', { path: machinePath })).result.isError).toBe(true)
+      }
+      expect((await f.call('attachment_to_make', { uploadId: 'upload', path: '../a' })).result.isError).toBe(true)
+      expect(f.registry.fsRead).not.toHaveBeenCalled()
+      expect(f.files.write).not.toHaveBeenCalled()
+    } finally { await f.app.close() }
+  })
+  it('rejects every transfer and edit in plan mode before side effects', async () => {
+    const f = await fixture('&agent=a&cwd=%2Fassets&ro=1')
+    try {
+      for (const name of ['attachment_to_make', 'machine_to_make', 'make_to_machine', 'edit']) {
+        expect((await f.call(name, { uploadId: 'upload', path: 'a', machinePath: 'a', oldString: 'a', newString: 'b' })).result.isError).toBe(true)
+      }
+      expect(f.files.read).not.toHaveBeenCalled()
+      expect(f.files.write).not.toHaveBeenCalled()
+      expect(f.registry.exec).not.toHaveBeenCalled()
+      expect((await f.call('image', { path: 'upload' })).result.content[0].type).toBe('image')
+    } finally { await f.app.close() }
+  })
+  it('hides transfers when the Make raw API is absent', async () => {
+    const f = await fixture('', false)
+    try {
+      const response = await f.call('attachment_to_make', { uploadId: 'upload', path: 'a' })
+      expect(JSON.stringify(response)).toContain('not found')
+      expect(f.files.write).not.toHaveBeenCalled()
+    } finally { await f.app.close() }
+  })
+  it('rejects incomplete machine reads', async () => {
+    const f = await fixture('&agent=a&cwd=%2Fassets')
+    f.registry.fsRead.mockResolvedValue({ dataBase64: png, truncated: true } as never)
+    try {
+      expect((await f.call('machine_to_make', { machinePath: 'a', path: 'a' })).result.isError).toBe(true)
+      expect(f.files.write).not.toHaveBeenCalled()
+    } finally { await f.app.close() }
+  })
+})
 
 /** Заглушка реестра: возвращает заранее заданный результат exec. */
 function stubRegistry(result: ExecResult | Error): AgentRegistry {
@@ -43,6 +128,30 @@ async function rpc(
   })
   return { statusCode: res.statusCode, json: () => res.json() }
 }
+
+it('wraps Kanban task commands with persisted process ownership after the command policy check', async () => {
+  let dispatched = ''
+  const inspected: string[] = []
+  const registry = { exec: async (_id: string, command: string) => {
+    dispatched = command; return { exitCode: 0, timedOut: false, output: '' }
+  }, platformOf: () => 'darwin' } as unknown as AgentRegistry
+  const app = Fastify()
+  registerRemoteBashMcp(app, registry, SECRET, undefined, undefined, undefined, async input => {
+    inspected.push(input.command)
+    return { allowed: true } as never
+  })
+  await app.ready()
+  try {
+    await rpc(app, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } })
+    const query = '?k=' + SECRET + '&agent=a1&cwd=' + encodeURIComponent('/storage/projects/p/tasks/t/repository') + '&run=run-1&stage=component-qa'
+    await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'bash', arguments: { command: 'npm run storybook --ci', timeout_ms: 120000 } } }, query)
+    expect(inspected).toEqual(['npm run storybook --ci'])
+    expect(dispatched).toContain('start_new_session=True')
+    expect(dispatched).toContain('"runId":"run-1"')
+    expect(dispatched).toContain('"stage":"component-qa"')
+    expect(dispatched).toContain('"retain":true')
+  } finally { await app.close() }
+})
 
 describe('remotePath', () => {
   const cwd = '/repos/task'

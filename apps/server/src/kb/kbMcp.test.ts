@@ -108,6 +108,25 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(body.result.tools.map((t) => t.name).sort()).toEqual(['deploy_prod', 'document', 'machines', 'projects', 'runtime_context', 'search', 'topics', 'usage', 'user_settings'])
   })
 
+  it('отклоняет отдельный KB-инструмент, выключенный конфигурацией разговора', async () => {
+    kbToolBroker.register(TURN, {
+      userId: U,
+      conversationId: convId,
+      projectId: null,
+      turnId: 't1',
+      disabledTools: ['topics']
+    })
+    await makeApp()
+
+    const disabled = await call('topics')
+    expect(disabled.isError).toBe(true)
+    expect(disabled.text).toContain('kb:topics отключён конфигурацией')
+
+    const enabled = await call('search', { query: 'WebSocket' })
+    expect(enabled.isError).not.toBe(true)
+    expect(enabled.text).toContain('protocol#websocket')
+  })
+
   it('deploy_prod запускает host-side DeployTrigger для актуального admin и возвращает accepted', async () => {
     await makeApp()
     const result = await call('deploy_prod')
@@ -195,6 +214,20 @@ describe('kbMcp — инструменты базы знаний', () => {
     expect(text.length).toBeLessThan(KB_DOCUMENT_CHAR_CAP + 300)
   })
 
+  it('document дочитывает длинный раздел по offset из предыдущего ответа', async () => {
+    const long = { ...doc, body: `# Протокол\n\n## WebSocket\n\n${'я'.repeat(KB_DOCUMENT_CHAR_CAP)}ХВОСТ\n` }
+    await makeApp(stubKb({ document: async () => long }))
+    const first = await call('document', { documentId: 'protocol', anchor: 'websocket' })
+    expect(first.text).toContain(`offset ${KB_DOCUMENT_CHAR_CAP}`)
+    const second = await call('document', {
+      documentId: 'protocol',
+      anchor: 'websocket',
+      offset: KB_DOCUMENT_CHAR_CAP
+    })
+    expect(second.text).toContain('ХВОСТ')
+    expect(second.text).not.toContain('раздел обрезан')
+  })
+
   it('неизвестный раздел → isError и обращение со статусом empty', async () => {
     await makeApp()
     const { isError } = await call('document', { documentId: 'protocol', anchor: 'нет-такого' })
@@ -264,10 +297,24 @@ describe('sectionOf', () => {
     expect(sectionOf(doc, 'нет')).toBeNull()
   })
 
-  it('кап обрезает текст и поднимает флаг', () => {
-    const slice = sectionOf({ ...doc, body: '# T\n\n## A\n\n' + 'x'.repeat(50) }, 'a', 10)
-    expect(slice?.truncated).toBe(true)
-    expect(slice?.text).toContain('раздел обрезан')
+  it('кап обрезает текст и отдаёт offset продолжения', () => {
+    const long = { ...doc, body: '# T\n\n## A\n\n' + '0123456789abcdefghij' }
+    const first = sectionOf(long, 'a', 10)
+    expect(first).toMatchObject({ truncated: true, offset: 0, nextOffset: 10 })
+    expect(first?.text).toContain('offset 10')
+    const second = sectionOf(long, 'a', 10, first?.nextOffset)
+    expect(second).toMatchObject({ truncated: false, offset: 10 })
+    expect(second?.text).toBe('abcdefghij')
+  })
+
+  it('использует уникальные anchors и не считает fenced code разделом', () => {
+    const repeated = {
+      ...doc,
+      body: '# T\n\n```md\n## Fake\n```\n\n## Same\n\none\n\n## Same\n\ntwo'
+    }
+    expect(sectionOf(repeated, 'fake')).toBeNull()
+    expect(sectionOf(repeated, 'same')?.text).toBe('one')
+    expect(sectionOf(repeated, 'same-2')?.text).toBe('two')
   })
 })
 

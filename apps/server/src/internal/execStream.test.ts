@@ -3,7 +3,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import Fastify from 'fastify'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execOverHttp, serveExecStream, type ExecStreamRequest } from './execStream.js'
 
 const PATH = '/internal/exec-stream'
@@ -28,7 +28,11 @@ async function serve(handler: (req: IncomingMessage, res: ServerResponse, body: 
   return `http://127.0.0.1:${(server!.address() as AddressInfo).port}`
 }
 
-afterEach(async () => { await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve()); server = null })
+afterEach(async () => {
+  vi.useRealTimers()
+  await new Promise<void>((resolve) => server ? server.close(() => resolve()) : resolve())
+  server = null
+})
 
 describe('execOverHttp', () => {
   it('собирает чанки и результат из NDJSON, передаёт Bearer и тело запроса', async () => {
@@ -74,19 +78,44 @@ describe('execOverHttp', () => {
 
 describe('serveExecStream', () => {
   it('keeps a silent command alive with blank lines that both clients skip', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const executions = Array.from({ length: 2 }, () => {
+      let started!: () => void
+      let finish!: () => void
+      return {
+        started: new Promise<void>((resolve) => { started = resolve }),
+        finish: new Promise<void>((resolve) => { finish = resolve }),
+        markStarted: started,
+        markFinished: finish,
+      }
+    })
+    let execution = 0
     const app = Fastify()
     const machines = {
-      exec: async () => { await new Promise((r) => setTimeout(r, 120)); return { exitCode: 0, output: 'done', timedOut: false } },
+      exec: async () => {
+        const current = executions[execution++]!
+        current.markStarted()
+        await current.finish
+        return { exitCode: 0, output: 'done', timedOut: false }
+      },
       execStream: async () => ({ exitCode: 0, output: '', timedOut: false }),
     }
     app.post(PATH, async (req, reply) => serveExecStream(reply, req.body as ExecStreamRequest, machines as never, 20))
     const coreUrl = await app.listen({ port: 0, host: '127.0.0.1' })
     try {
       const body: ExecStreamRequest = { agentId: 'm', command: 'pg_dump', timeoutMs: 1000, stream: false }
-      const text = await (await fetch(coreUrl + PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })).text()
-      expect(text.match(/^\n/gm)?.length ?? 0).toBeGreaterThanOrEqual(2)
+      const rawResponse = fetch(coreUrl + PATH, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      await executions[0]!.started
+      await vi.advanceTimersByTimeAsync(40)
+      executions[0]!.markFinished()
+      const text = await (await rawResponse).text()
+      expect(text.match(/^\n/gm)?.length ?? 0).toBe(2)
       expect(text.trim()).toBe(JSON.stringify({ result: { exitCode: 0, output: 'done', timedOut: false } }))
-      await expect(execOverHttp({ baseUrl: coreUrl, token: 't', path: PATH }, body)).resolves.toEqual({ exitCode: 0, output: 'done', timedOut: false })
+      const clientResult = execOverHttp({ baseUrl: coreUrl, token: 't', path: PATH }, body)
+      await executions[1]!.started
+      await vi.advanceTimersByTimeAsync(40)
+      executions[1]!.markFinished()
+      await expect(clientResult).resolves.toEqual({ exitCode: 0, output: 'done', timedOut: false })
     } finally {
       await app.close()
     }

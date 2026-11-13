@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { browserWorkers, browserBatches, browserArgs, runBrowserBatches } from './browser-gate.mjs'
+import { browserWorkers, browserBatches, browserArgs, developmentBrowserFiles, integrationBrowserFiles, runBrowserBatches, shortTmpdir, RELEASE_ONLY_BROWSER_FILES } from './browser-gate.mjs'
 
 test('performance and native input stay isolated while reviewed functional suites share two workers', () => {
   const files = ['e2e/sessions.e2e.test.ts', 'e2e/routeResources.e2e.test.ts', 'e2e/settings.e2e.test.ts', 'e2e/routeBudgets.e2e.test.ts', 'e2e/toolIntegration.e2e.test.ts']
@@ -30,4 +30,22 @@ test('a failed or signalled browser batch stops the gate and preserves its evide
     assert.equal(calls.length, 1)
     assert.equal(records[0][0].exitCode, failure.status ?? 1)
   }
+})
+
+test('a deep temp root is replaced so tsx IPC socket paths stay under the macOS limit', () => {
+  const deep = '/Users/me/ChatAI/projects/e3dea006-b6f7-45ea-8fa3-97502501456d/merge-clones/repository-runs/99f1b333/.merge-process-99f1b333'
+  assert.equal(shortTmpdir(deep, () => '/tmp/vc-e2e-x'), '/tmp/vc-e2e-x')
+  assert.equal(shortTmpdir('/var/folders/ll/9h3pq9tn/T/', () => assert.fail('short root kept')), null)
+})
+
+test('Kanban-stand suites run in release integration and in development only when edited', () => {
+  assert.deepEqual([...RELEASE_ONLY_BROWSER_FILES].sort(), ['e2e/gitPane.e2e.test.ts', 'e2e/projects.e2e.test.ts'])
+  const all = integrationBrowserFiles(undefined, { release: true })
+  for (const file of RELEASE_ONLY_BROWSER_FILES) {
+    assert.ok(all.includes(file))
+    assert.ok(!integrationBrowserFiles().includes(file))
+  }
+  const files = ['e2e/settings.e2e.test.ts', ...RELEASE_ONLY_BROWSER_FILES]
+  assert.deepEqual(developmentBrowserFiles(files), ['e2e/settings.e2e.test.ts'])
+  assert.deepEqual(developmentBrowserFiles(files, ['e2e/gitPane.e2e.test.ts']), ['e2e/settings.e2e.test.ts', 'e2e/gitPane.e2e.test.ts'])
 })

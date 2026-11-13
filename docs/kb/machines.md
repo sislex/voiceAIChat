@@ -1,7 +1,7 @@
 ---
+updated: 2026-11-05
+checked: f82b55f09
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-10-20
-checked: 592879f34
 areas:
   - apps/server/src/agents
   - apps/server/src/db/database.ts
@@ -28,8 +28,34 @@ areas:
 
 # Машины: компаньон-агент, политика, PTY, проводник
 
+## Operator handoff (SK-115)
+
+Core exposes the administrator-and-machine-owner route described in
+[the handoff contract](protocol.md#operator-handoff). AgentRegistry keeps pending
+switches in memory, correlates replies by request ID and agent ID, and resolves
+an unanswered request as failed after the requested timeout plus five seconds.
+An offline agent rejects dispatch. The target token is sent to the agent but is
+omitted from the response and the route's audit fields.
+
+Review since `592879f34` also covers shared MCP areas: explicit absolute owner
+roots extend file read/grep/edit only on the URL-selected machine; relative paths
+remain cwd-relative and traversal/root-directory grants are rejected.
+`HistoricalEvidence` verifies an authorized immutable journal through injected
+ports, with an 8 MiB cap and authorization checks before and after streaming;
+results disclose hashes and sizes, not journal bytes. Widget confirmations now
+expire with an explicit event and reject late replies. Model-price seed additions
+do not change machine credential storage or access checks.
+
 Module details: `agent:README.md`
 Module details: `core-ui:README.md`
+
+## Выбор backend для файлов чата
+
+`Settings.chatFilesBackend` по умолчанию равен `machine`. При значении `storage`
+и включённом Core file storage загрузки идут в `chat`-пространство разговора и
+возвращают storage-ссылку без `agentId`. Чтение выполняет Core через сервис с
+правами пользователя; существующие machine/workspace bindings этим не меняются.
+См. [server-internals](server-internals.md) и [shared](shared.md#filestorage-contract).
 
 ## Agent artifact ownership
 
@@ -49,7 +75,7 @@ Desktop installer lookup uses configured `VC_AGENT_APP`, `VC_DESKTOP_APP` and
 folders are never an installer discovery dependency.
 
 
-**Консоль с ассистентом (`assistantKind: 'console-reader'`) — правила хода.** Терминал
+**Консоль с ассистентом (`assistantKind: 'console-reader'`) — правила хода.** Каждый новый разговор консоли автоматически получает встроенный `assistantMode: 'console'`, независимо от общего default-пресета. По наполнению этот режим совместим с Workspace, но сервер разрешает назначать его только `console-reader`; старые консольные разговоры в Workspace продолжают работать без миграции. Терминал
 уже открыт справа, поэтому сервер убирает из промпта инструкцию чата «Открывать терминал»
 (`turns.ts`, фильтр по `kind === 'console'`) и вырезает tool-блок console из ответа, а стор
 не перехватывает фразу «открой консоль» (`maybeOpenUtility` пропускает console-reader).
@@ -62,6 +88,23 @@ folders are never an installer discovery dependency.
 терминал и телеметрию.
 
 ## Подключение и жизненный цикл
+
+Agent messages are serialized in `agents/wsAgent.ts`. An Identity audit RPC
+failure during registration, rejection or an update offer is logged and closes
+only that connection with WebSocket code 1013 (retry later), without a permanent
+`agent.denied` response. Pong persistence failures use the same boundary. Close
+clears the ping timer and unregisters before awaiting the last-seen write; a
+failed write is logged. In-flight registration cannot resume after close.
+`AgentRegistry.onChange` contains both synchronous exceptions and rejected
+subscriber promises, so an async machine-list refresh cannot crash Core.
+
+The owner can rename a machine with `PATCH /api/agents/:id` and `{ name }`.
+Names are trimmed and must contain 1–120 characters (otherwise 400).
+The ownership-scoped database update returns 404 for missing or foreign machines.
+Success returns `{ id, name }`, updates the live registry name and emits its
+change event without disconnecting the agent or rotating its token. The name is
+stored in `agents.name` and is available while the machine is offline.
+Route coverage is in `routes/rest.machines.test.ts`.
 
 Агент коннектится по WS на `/agent` и шлёт `agent.register{token, version}`.
 Сервер (`apps/server/src/agents/wsAgent.ts` + `registry.ts`) сверяет хеш токена с
@@ -663,6 +706,16 @@ Remote-MCP кроме `bash` предоставляет модели специ�
 
 ## Выбор машины для чата
 
+Make conversations are an explicit exception to default-machine inheritance:
+only a saved `execTarget` grants machine access, and only its saved `workdir`
+is exposed. The remote MCP `make=1` scope has no other-machine selector.
+Its bash tool supports only directory inspection (`pwd`, `ls`); file operations
+reject outside paths, symlinks and Git metadata through fixed agent-side
+validation. Make project writes use the raw Make API, never a machine checkout.
+Attachment images remain available by upload ID without any machine.
+See [Make tools](llm.md#make-инструменты-mcp-make) for transfer capability gating.
+
+
 Страница настроек разговора хранит отдельно для каждого чата цель
 `conversations.exec_target`, рабочий каталог `workdir` и JSON-список включённых
 навыков `skill_names`. Смена настроек одного чата не затрагивает остальные.
@@ -953,6 +1006,8 @@ MachineStorage полностью отсутствует. Неожиданные
 
 Файловая директория разговора хранится отдельно от `conversations.workdir` в
 `chat_storage_bindings`: `conversationId + machineId + storageId + relativePath`.
+GET `/api/conversations/:id/storage` first checks conversation ownership. An existing owned conversation without a machine storage binding returns HTTP 200 with JSON `null`, matching the nullable `conversations:getStorage` IPC result. Missing or inaccessible conversations return 404. A bound conversation returns its existing `ChatStorageView`; the read does not create a binding.
+
 Контракт доступен через `GET/PUT /api/conversations/:id/storage`; при пустом
 `relativePath` сервер выбирает изолированный путь обычного, проектного или task-чата.
 Абсолютные пути, пустые/небезопасные сегменты и `..` в относительной части отклоняются. Поэтому перенос корня не
@@ -1144,3 +1199,19 @@ RPC `machines.devProcess` (and the machines process RPC `devProcess` in remote m
 The registry expands the contract's `owner/name` repository shorthand (`DEV_COMPONENT_REGISTRY`) into
 `https://github.com/owner/name.git` before `devProcess.start`, because the agent passes the value to
 `git clone`; full URLs, scp-style remotes and local paths are unchanged.
+
+## Android supervisor and bundle persistence
+
+In the Agent owner repository at `origin/dev` commit `7d90ff4`, Android starts the
+runtime with `VC_AGENT_SUPERVISOR=android` in `AgentService.kt`. `SelfUpdater`
+receives that environment value, and `apps/agent/src/connection.ts` includes it as
+`supervisor` in `agent.register`; this is the signal Core uses for automatic bundle
+offers.
+
+`apps/android/app/src/main/java/com/sislexa/android/Runtime.kt` does not replace an
+existing `voicechat-agent.cjs` while unpacking APK assets, so a bundle installed by
+self-update survives an APK upgrade. The same runtime restores
+`voicechat-agent.cjs.prev` when a pending self-update has remained unconfirmed for
+90 seconds, then clears the pending marker. Consequently the self-updated JS bundle
+remains the delivery path for new Agent behavior on upgraded Android installs while
+APK bundle replacement is intentionally suppressed.

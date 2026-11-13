@@ -36,6 +36,17 @@ const definition = (id: string, name: string, paths: string[], options: Partial<
 });
 function createApplicationCatalog(): readonly ApplicationDefinition[] {
   return [
+  definition("file-storage", "File storage", ["packages/file-storage"], {
+    workspaces: ["@sislexa/file-storage"],
+    buildDependencies: ["shared", "component-runtime"],
+    kind: "service",
+    services: ["file-storage-node"],
+    entrypoint: "packages/file-storage/src/node/main.ts",
+    healthPath: "/v1/health",
+    dataPaths: ["blobs"],
+    configuration: ["VC_FILE_STORAGE_NODE_ID", "VC_FILE_STORAGE_DIR", "VC_FILE_STORAGE_CAPACITY_BYTES", "VC_FILE_STORAGE_TOKEN_FILE", "SISLEXA_COMPONENT_CONFIG"],
+    isolation: { tests: true, build: false, deploy: false },
+  }),
   definition("core", "Ядро", ["apps/server", "packages/knowledge"], {
     "workspaces": [
       "@voicechat/server",
@@ -257,6 +268,18 @@ function createApplicationCatalog(): readonly ApplicationDefinition[] {
       "repository": "https://github.com/sislex/make",
       "package": "@sislexa/make"
     }
+  }),
+  definition("storage", "Storage", [], {
+    workspaces: [],
+    buildDependencies: [],
+    runtimeDependencies: ["core", "identity"],
+    contractChecks: [{ workspace: "@voicechat/server", files: ["src/routes/applicationTickets.test.ts"] }],
+    services: ["storage"],
+    dataPaths: ["storage"],
+    configuration: ["VC_CORE_URL", "VC_APPLICATION_STORAGE_TOKEN"],
+    isolation: { tests: false, build: false, deploy: true },
+    healthPath: "/v1/health",
+    external: { repository: "https://github.com/sislex/storage", package: "@sislexa/storage" }
   }),
   definition("image-studio", "Студия картинок", [], {
     "workspaces": [],

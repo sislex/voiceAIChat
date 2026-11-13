@@ -1,15 +1,39 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { isTest, repositoryFile } from './test-files.mjs'
+import { isTest, relatedTooling, repositoryFile } from './test-files.mjs'
 
 const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'"
 
-export function toolingCommand(root, report) {
+// Development full gate: `test:tooling:dev` (knowledge tools, gate planners, pins) plus the
+// tooling suites related to changed scripts. Release (`--release`) runs the complete `test:tooling`.
+export const DEVELOPMENT_TOOLING_SCRIPT = 'test:tooling:dev'
+export const RELEASE_TOOLING_SCRIPT = 'test:tooling'
+
+/** Tooling suites owned by changed scripts; only changes under scripts/ select them. */
+export function relatedToolingTests(root, changed, developmentScript) {
+  const listed = new Set(developmentScript.match(/scripts\/[\w./-]+\.test\.mjs/g) ?? [])
+  return relatedTooling(changed.filter(file => file.startsWith('scripts/')), root).filter(file => !listed.has(file)).sort()
+}
+
+/** Files changed since the development base; null when the diff cannot be proven. */
+export function changedSinceBase(root, invoke = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })) {
+  for (const base of ['origin/dev', 'origin/main']) {
+    try {
+      const baseline = invoke('merge-base', 'HEAD', base).trim()
+      return [...new Set([...invoke('diff', '--name-only', '--no-renames', '-z', baseline, '--').split('\0'),
+        ...invoke('ls-files', '--others', '--exclude-standard', '-z').split('\0')].filter(Boolean))]
+    } catch { /* Try the next base. */ }
+  }
+  return null
+}
+
+export function toolingCommand(root, report, name = RELEASE_TOOLING_SCRIPT, extra = []) {
   const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+  const chain = manifest.scripts[name] + (extra.length ? ` && node --import tsx --test ${extra.map(shellQuote).join(' ')}` : '')
   // Preserve the manifest's command chain, including its short-circuit semantics.
-  let script = manifest.scripts['test:tooling'].replace(/npm test --prefix ([\w./-]+)/g, (_match, path) => {
+  let script = chain.replace(/npm test --prefix ([\w./-]+)/g, (_match, path) => {
     const child = JSON.parse(readFileSync(resolve(root, path, 'package.json'), 'utf8'))
     return `(cd ${shellQuote(path)} && ${child.scripts.test})`
   })
@@ -41,7 +65,7 @@ export function collectTestReports(directory, repository) {
   return [...failed]
 }
 
-export async function runReportedTask(name, args, { root = resolve(import.meta.dirname, '..'), execute = spawnBuffered } = {}) {
+export async function runReportedTask(name, args, { root = resolve(import.meta.dirname, '..'), execute = spawnBuffered, extraTooling = [] } = {}) {
   const directory = resolve(root, 'artifacts/gate-timings')
   mkdirSync(directory, { recursive: true })
   const temporary = mkdtempSync(resolve(directory, 'reports-'))
@@ -53,7 +77,7 @@ export async function runReportedTask(name, args, { root = resolve(import.meta.d
     let command = 'npm', commandArgs = args
     if (name === 'tooling') {
       command = 'sh'
-      commandArgs = ['-c', toolingCommand(root, report)]
+      commandArgs = ['-c', toolingCommand(root, report, args.find(arg => arg.startsWith('test:tooling')) ?? RELEASE_TOOLING_SCRIPT, extraTooling)]
     } else if (args.includes('-w') || name === 'frontend-browser') {
       commandArgs = [...args, ...(args.includes('-w') ? ['--'] : []), '--reporter=default', '--reporter=json', `--outputFile.json=${report}`]
     }
@@ -72,18 +96,23 @@ export function reportFullGateFailure(error, log = console.log) {
 export const FRONTEND_E2E_FILES = Object.freeze([
   'e2e/routeBudgets.e2e.test.ts'
 ])
-/** @type {ReadonlyArray<[string, string[]]>} */
-export const FULL_GATE_STAGES = Object.freeze([
-  ['typecheck', ['run', 'typecheck']],
-  ['tests', ['run', 'test']],
-  ['frontends', ['run', 'build:frontends']],
-  ['core-ui-artifact', ['run', 'verify:core-ui']],
-  ['browser-integration', ['run', 'test:browser']]
-])
-export function testTasks(root) {
+/** @returns {ReadonlyArray<[string, string[]]>} */
+export function fullGateStages(release = false) {
+  return Object.freeze([
+    ['typecheck', ['run', 'typecheck']],
+    ['tests', ['run', 'test']],
+    ['frontends', ['run', 'build:frontends']],
+    ['core-ui-artifact', ['run', 'verify:core-ui']],
+    // Release adds the Kanban-stand suites (browser-gate RELEASE_ONLY_BROWSER_FILES).
+    ['browser-integration', ['run', release ? 'test:browser:release' : 'test:browser']]
+  ])
+}
+/** Development stages; `gate:all -- --release` uses fullGateStages(true). */
+export const FULL_GATE_STAGES = fullGateStages(false)
+export function testTasks(root, { release = false } = {}) {
   const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
   return [
-    { name: 'tooling', args: ['run', 'test:tooling'] },
+    { name: 'tooling', args: ['run', release ? RELEASE_TOOLING_SCRIPT : DEVELOPMENT_TOOLING_SCRIPT] },
     ...manifest.workspaces.flatMap(path => {
       const workspace = JSON.parse(readFileSync(resolve(root, path, 'package.json'), 'utf8'))
       return workspace.scripts?.test ? [{ name: workspace.name, args: ['run', 'test', '-w', workspace.name] }] : []
@@ -156,12 +185,18 @@ export function runStages(stages, execute, record = (_results) => {}) {
   }
   return results
 }
-export async function main({ root = resolve(import.meta.dirname, '..'), routes = process.argv.includes('--routes'), execute = undefined } = {}) {
+export async function main({ root = resolve(import.meta.dirname, '..'), routes = process.argv.includes('--routes'), release = process.argv.includes('--release'), execute = undefined, changed = undefined } = {}) {
   let stage = 'setup'
   const failedTests = new Set()
   try {
+    // An unproven diff cannot narrow development tooling: run the complete release chain.
+    const changedFiles = release ? null : changed === undefined ? changedSinceBase(root) : changed
+    const releaseTooling = release || changedFiles === null
+    const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
+    const extraTooling = releaseTooling ? [] : relatedToolingTests(root, changedFiles, manifest.scripts[DEVELOPMENT_TOOLING_SCRIPT])
+    if (!routes) console.log(releaseTooling ? '[gate:tooling] complete test:tooling' : `[gate:tooling] ${DEVELOPMENT_TOOLING_SCRIPT}${extraTooling.length ? ` + ${extraTooling.join(' ')}` : ''}`)
     /** @type {ReadonlyArray<[string, string[]]>} */
-    const stages = routes ? [['frontend-browser', ['exec', '--', 'vitest', 'run', '--config', 'e2e/vitest.config.ts', '--no-file-parallelism', ...FRONTEND_E2E_FILES]]] : FULL_GATE_STAGES
+    const stages = routes ? [['frontend-browser', ['exec', '--', 'vitest', 'run', '--config', 'e2e/vitest.config.ts', '--no-file-parallelism', ...FRONTEND_E2E_FILES]]] : fullGateStages(release)
     const output = resolve(root, 'artifacts/gate-timings')
     mkdirSync(output, { recursive: true })
     const startedAt = new Date().toISOString()
@@ -172,7 +207,7 @@ export async function main({ root = resolve(import.meta.dirname, '..'), routes =
         const started = performance.now()
         let workspaceResults
         try {
-          workspaceResults = await runTestTasks(testTasks(root), (_command, taskArgs) => runReportedTask(taskArgs.includes('test:tooling') ? 'tooling' : 'workspace', taskArgs, { root, execute }), { concurrency: testConcurrency() })
+          workspaceResults = await runTestTasks(testTasks(root, { release: releaseTooling }), (_command, taskArgs) => runReportedTask(taskArgs.some(arg => arg.startsWith('test:tooling')) ? 'tooling' : 'workspace', taskArgs, { root, execute, extraTooling }), { concurrency: testConcurrency() })
         } catch (error) {
           workspaceResults = error.results ?? []
           results.push(...workspaceResults.map(row => ({ ...row, name: `tests/${row.name}`, output: undefined, error: undefined })))

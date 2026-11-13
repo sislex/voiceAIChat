@@ -23,16 +23,21 @@ describe('stripServiceData', () => {
     const stripped = stripServiceData({ activity, request })
 
     expect(stripped.activity).toBeUndefined()
-    expect(stripped.request).toEqual({
-      model: 'sonnet', permissionMode: 'default', promptChars: 14,
-      kbContext: { confidence: 'high', sections: [{ documentId: 'doc', title: 'Title', heading: 'Head',
-        sourcePath: 'kb.md', anchor: 'head', chars: 12 }] }
-    })
+    expect(stripped.request).toBeUndefined()
     expect(stripped.serviceData).toEqual({
       activityEntries: 1,
       activityBytes: bytes(activity),
       requestBytes: bytes(request)
     })
+  })
+
+  it('strips diagnostics even when metadata already has a service-data marker', () => {
+    const meta: TurnMeta = {
+      serviceData: { activityEntries: 1, activityBytes: 2, requestBytes: 3 },
+      activity: [{ kind: 'result', summary: 'done', raw: 'private' }],
+      request: { provider: 'claude', model: 'sonnet', prompt: 'private', promptChars: 7, resumed: false, permissionMode: 'plan' }
+    }
+    expect(stripServiceData(meta)).toEqual({ serviceData: meta.serviceData, model: 'sonnet', permissionMode: 'plan' })
   })
 
   it('is idempotent', () => {

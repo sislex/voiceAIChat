@@ -10,6 +10,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from "@sislexa/identity/server/users/accounts"
+import * as dbSeed from '../test/seed.js'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -87,7 +88,7 @@ describe('REST панели кода', () => {
 
   it('тестировщику запись запрещена глобальным гейтом права, чтение — нет', async () => {
     const project = await createProject()
-    await db.projects.addMember('admin', project.id, 'tess')
+    await dbSeed.addMember(db, 'admin', project.id, 'tess')
     const read = await inj(testerTok, { method: 'GET', url: `/api/projects/${project.id}/git/workspaces` })
     expect(read.statusCode).toBe(200)
     for (const url of ['git/commit', 'git/push', 'git/checkout', 'git/file', 'git/branch']) {

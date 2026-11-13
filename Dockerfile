@@ -9,7 +9,8 @@ RUN apt-get update \
 
 COPY . .
 # Electron is only a host integration test dependency; its binary is not used by Core services.
-RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
+# Retry interrupted archive downloads, including GitHub vendor tarballs.
+RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --fetch-retries=3 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=60000
 ARG VC_APPLICATION_COMMIT
 RUN VC_APPLICATION_COMMIT="$VC_APPLICATION_COMMIT" npm run build:frontends
 RUN npm run verify:core-ui
@@ -80,6 +81,14 @@ RUN npm run verify:core-ui
 FROM nginx:1.27-alpine AS storybook-runtime
 COPY --from=storybook-build /app/node_modules/@sislexa/core-ui/storybook /usr/share/nginx/html
 EXPOSE 80
+
+FROM runtime-base AS file-storage-node
+ENV PORT=8795 VC_FILE_STORAGE_DIR=/data/blobs
+RUN mkdir -p /data/blobs && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8795
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["node", "--import", "tsx", "packages/file-storage/src/node/main.ts"]
 
 FROM runtime-base AS automation-runner-runtime
 ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data

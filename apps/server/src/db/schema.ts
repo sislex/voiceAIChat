@@ -1,7 +1,9 @@
+import { STORAGE_SCHEMA } from '../fileStorage/metadata.js'
 import {IDENTITY_SCHEMA} from '@sislexa/identity/server/store/schema'
 /** DDL схемы БД. Идемпотентно: безопасно выполнять при каждом старте. */
 export const SCHEMA_SQL = `
 ${IDENTITY_SCHEMA}
+${STORAGE_SCHEMA}
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
@@ -22,6 +24,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   reasoning_effort  TEXT NOT NULL DEFAULT 'medium',
   deep_thinking     INTEGER NOT NULL DEFAULT 0,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
+  assistant_mode    TEXT NOT NULL DEFAULT 'workspace',
   disabled_context_json TEXT NOT NULL DEFAULT '[]',
   project_id        TEXT,
   preview_url       TEXT,
@@ -47,6 +50,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   summary_text TEXT,
   summary_covers_message_id TEXT,
   summary_updated_at INTEGER,
+  summary_source TEXT,
   context_usage_json TEXT
 );
 
@@ -100,8 +104,22 @@ CREATE TABLE IF NOT EXISTS messages (
   attachments     TEXT,
   state           TEXT NOT NULL DEFAULT 'published',
   history_position INTEGER,
+  parent_message_id TEXT,
+  branch_selected INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS message_service_data (
+  message_id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  activity TEXT,
+  request TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_message_service_data_conversation
+  ON message_service_data(conversation_id);
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
   ON messages(conversation_id, created_at);
@@ -2042,6 +2060,13 @@ CREATE TABLE IF NOT EXISTS environment_settings (
   updated_by TEXT NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (project_id, environment_id, key),
   FOREIGN KEY (project_id, environment_id) REFERENCES environments(project_id, id) ON DELETE CASCADE
+);
+-- Owner-configured preview stand of an ordinary web project (Core-only; see makeBridge/projectPreview.ts).
+CREATE TABLE IF NOT EXISTS project_stand_previews (
+  project_id  TEXT PRIMARY KEY,
+  config_json TEXT NOT NULL,
+  updated_by  TEXT,
+  updated_at  INTEGER
 );
 -- The compose-project index is installed after column migration on existing SQLite databases.
 CREATE INDEX IF NOT EXISTS idx_environment_operations ON environment_operations(project_id, environment_id, started_at DESC);

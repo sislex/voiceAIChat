@@ -1,7 +1,7 @@
 // Доставка событий канбана по WS-сессиям ядра: канбан шлёт `board` и `notification` на
 // `/internal/kanban/events`, а кому и каким кадром их показать, решает ядро — подписка на доску
 // только для участника и без снапшота, приглашение адресно, смена состава двумя кадрами.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import type { AddressInfo } from 'node:net'
 import type { FastifyInstance } from 'fastify'
@@ -14,6 +14,7 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { INTERNAL_KANBAN_EVENTS_PATH, type KanbanEvent } from '../kanban/internal.js'
+import * as dbSeed from '../test/seed.js'
 
 const SECRET = 'test-secret'
 const INTERNAL = 'internal-test'
@@ -38,7 +39,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await app.close()
-  db.close()
+  await db.close()
   rmSync(dataDir, { recursive: true, force: true })
 })
 
@@ -47,6 +48,10 @@ async function connect(name: string, role: 'admin' | 'developer' = 'developer'):
   const frames: ServerMessage[] = []
   ws.on('message', (data) => frames.push(JSON.parse(data.toString()) as ServerMessage))
   await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+  // `open` only confirms the transport. Even `claude.active` precedes resumeQueues.
+  // The agents snapshot is sent after the last awaited setup step; notification
+  // subscriptions are installed in the same synchronous continuation.
+  await vi.waitFor(() => expect(ofType(frames, 'agents')).toHaveLength(1))
   return { ws, frames }
 }
 
@@ -86,19 +91,21 @@ describe('состав проекта и приглашения', () => {
     const bob = await connect('bob')
     const carol = await connect('carol')
     await kanbanSends({ kind: 'notification', event: { projectId, userId: 'bob', kind: 'membership' } })
-    expect(ofType(bob.frames, 'invitations.invalidate')).toHaveLength(1)
+    await vi.waitFor(() => expect(ofType(bob.frames, 'invitations.invalidate')).toHaveLength(1))
     expect(ofType(carol.frames, 'invitations.invalidate')).toEqual([])
     bob.ws.close()
     carol.ws.close()
   })
 
   it('смена состава участнику приходит двумя кадрами: project.membership и инвалидация уведомлений', async () => {
-    await db.projects.addMember('admin', projectId, 'bob')
+    await dbSeed.addMember(db, 'admin', projectId, 'bob')
     const bob = await connect('bob')
     const carol = await connect('carol')
     await kanbanSends({ kind: 'notification', event: { projectId, kind: 'membership' } })
-    expect(ofType(bob.frames, 'project.membership')).toEqual([{ t: 'project.membership', v: 1, projectId }])
-    expect(ofType(bob.frames, 'task-preparation.notifications.invalidate')).toEqual([{ t: 'task-preparation.notifications.invalidate', v: 1, projectId }])
+    await vi.waitFor(() => {
+      expect(ofType(bob.frames, 'project.membership')).toEqual([{ t: 'project.membership', v: 1, projectId }])
+      expect(ofType(bob.frames, 'task-preparation.notifications.invalidate')).toEqual([{ t: 'task-preparation.notifications.invalidate', v: 1, projectId }])
+    })
     expect(ofType(carol.frames, 'project.membership')).toEqual([])
     bob.ws.close()
     carol.ws.close()

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand, recordFullKnowledgeCommit } from './release-train-run.mjs'
+import { executeAsync, execute, parseRunArgs, createJournal, executeJournal, concreteAdapter, topicsCoveringFiles, requireDependencies, ownerVersionCommand, recordFullKnowledgeCommit } from './release-train-run.mjs'
 
 const read = path => JSON.parse(readFileSync(path, 'utf8'))
 const put = (path, value) => writeFileSync(path, JSON.stringify(value))
@@ -104,6 +104,101 @@ for (const stage of ['release', 'manifest', 'docker']) {
   }
 }
 
+for (const endpoint of ['center', 'health']) for (const failure of ['network', 'body', 502, 503]) {
+  for (const permanent of [false, true]) test(`health retries ${endpoint} ${failure}: ${permanent ? 'bounded failure' : 'completed'}`, async t => {
+    const f = apiFixture(t)
+    const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+    journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+      branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+    const logs = [], waits = []
+    let failures = 0
+    const adapter = concreteAdapter({ ...f,
+      env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+      log: message => logs.push(message),
+      sleep: async ms => { waits.push(ms); await f.sleep(ms) },
+      fetcher: async (url, options) => {
+        assert.ok(options.signal instanceof AbortSignal)
+        if (url.includes(endpoint + '.test') && (++failures <= 2 || permanent)) {
+          if (failure === 'network') throw Error('fetch failed ' + f.env.GH_TOKEN)
+          if (failure === 'body') return { ok: true, status: 200, json: async () => { throw TypeError('terminated ' + f.env.GH_TOKEN) } }
+          // Gateway errors often have non-JSON bodies.
+          return new Response('temporarily unavailable', { status: failure })
+        }
+        return Response.json(url.includes('center.test') ? { status: 'succeeded' } :
+          { version: '1.0.1', application: { commit: 'expected' } })
+      }
+    })
+    if (permanent) {
+      await assert.rejects(executeJournal(journal, f.directory, adapter), /stopped at health.*\n.*timed out after 5 minutes; last observed version: unavailable/)
+      assert.equal(f.now(), 300000)
+      const saved = read(join(f.directory, journal.id + '.json'))
+      assert.equal(saved.pending, 'health')
+      assert.equal(saved.status, 'failed')
+      assert.match(saved.error, /last observed version: unavailable/)
+      assert.ok(!saved.error.includes(f.env.GH_TOKEN))
+    } else {
+      await executeJournal(journal, f.directory, adapter)
+      assert.equal(journal.status, 'completed')
+      assert.equal(failures, 3)
+      assert.deepEqual(waits, [1000, 2000])
+    }
+    assert.equal(logs.length, waits.length)
+    assert.match(logs[0], /Core health retry 1 in 1000ms/)
+    assert.ok(logs.every(line => !line.includes(f.env.GH_TOKEN)))
+  })
+}
+
+test('health stops with the last observed version after transient failures', async t => {
+  const f = apiFixture(t)
+  const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+  journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+    branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+  let attempts = 0
+  const logs = []
+  const adapter = concreteAdapter({ ...f,
+    env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+    log: message => logs.push(message),
+    fetcher: async url => {
+      if (url.includes('center.test')) return Response.json({ status: 'succeeded' })
+      if (++attempts <= 2) throw TypeError('fetch failed')
+      return Response.json({ version: '1.0.0' })
+    }
+  })
+  await assert.rejects(executeJournal(journal, f.directory, adapter),
+    /stopped at health.*\n.*expected 1.0.1; last observed version: 1.0.0/)
+  assert.equal(attempts, 3)
+  assert.equal(f.now(), 3000)
+  assert.equal(logs.length, 2)
+  const saved = read(join(f.directory, journal.id + '.json'))
+  assert.equal(saved.pending, 'health')
+  assert.equal(saved.status, 'failed')
+  assert.match(saved.error, /last observed version: 1.0.0/)
+})
+
+for (const outcome of ['version', 'commit', 'unauthorized', 'failed', 'cancelled']) {
+  test(`health fails fast on ${outcome} and retains diagnostics`, async t => {
+    const f = apiFixture(t)
+    const journal = createJournal({ ...f.plan, applications: [] }, { apps: [], deploy: true }, f.repository)
+    journal.results = { pin: 'pin', coreGate: null, coreMerge: 'pin', preflight: { version: '1.0.1' },
+      branch: { sha: 'expected' }, deploy: { id: 'deployment' } }
+    const adapter = concreteAdapter({ ...f,
+      env: { ...f.env, RELEASE_CENTER_URL: 'https://center.test', RELEASE_HEALTH_URL: 'https://health.test' },
+      fetcher: async url => {
+        if (url.includes('center.test')) return Response.json({ status: ['failed', 'cancelled'].includes(outcome) ? outcome : 'succeeded' })
+        if (outcome === 'unauthorized') return new Response('', { status: 401 })
+        return Response.json({ version: outcome === 'version' ? '1.0.0' : '1.0.1',
+          application: { commit: outcome === 'commit' ? 'wrong' : 'expected' } })
+      }
+    })
+    await assert.rejects(executeJournal(journal, f.directory, adapter), /stopped at health/)
+    assert.equal(f.now(), 0)
+    const saved = read(join(f.directory, journal.id + '.json'))
+    assert.equal(saved.pending, 'health')
+    if (outcome === 'version') assert.match(saved.error, /expected 1.0.1; last observed version: 1.0.0/)
+    if (outcome === 'commit') assert.match(saved.error, /commit mismatch: expected expected; observed wrong/)
+  })
+}
+
 test('child failure records command, exit code and redacted final 40 lines in journal', async t => {
   const token = randomUUID()
   const f = fixture(t, false), journal = createJournal(f.plan, { apps: [] }, f.repository)
@@ -122,9 +217,10 @@ test('child failure records command, exit code and redacted final 40 lines in jo
   assert.match(message, /\[redacted\]/)
 })
 
-for (const conflict of ['none', 'index', 'other', 'gate']) {
-  test(`concurrent dev push rebases pin with ${conflict} conflict`, async t => {
-    const f = fixture(t), journal = createJournal(f.plan, { apps: [] }, f.repository)
+for (const fromDev of [false, true]) for (const conflict of ['none', 'index', 'other', 'gate']) {
+  test(`concurrent dev push rebases pin with ${conflict} conflict (fromDev=${fromDev})`, async t => {
+    const f = fixture(t), journal = createJournal(f.plan, { apps: [], fromDev }, f.repository)
+    const gateCommand = fromDev ? 'run gate:quick -- --base origin/main' : 'run gate'
     if (conflict === 'index') {
       writeFileSync(join(f.repository, 'docs/kb/README.md'), 'base\n')
       f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'index base')
@@ -133,7 +229,7 @@ for (const conflict of ['none', 'index', 'other', 'gate']) {
     }
     let moved = false, regenerated = false, oldPin, concurrent, failGate = conflict === 'gate'
     const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
-      if (moved && failGate && binary === 'npm' && args.join(' ') === 'run gate') throw Error('Rebased gate failed')
+      if (moved && failGate && binary === 'npm' && args.join(' ') === gateCommand) throw Error('Rebased gate failed')
       if (binary === 'npm' && args.join(' ') === 'run kb:index' && conflict === 'index') {
         writeFileSync(join(cwd, 'docs/kb/README.md'), moved ? 'regenerated\n' : 'pin index\n')
         if (moved) regenerated = true
@@ -150,10 +246,10 @@ for (const conflict of ['none', 'index', 'other', 'gate']) {
       return f.run(binary, args, cwd, options)
     } })
     if (conflict === 'other') {
-      await assert.rejects(executeJournal(journal, f.directory, adapter), /coreMerge/)
+      await assert.rejects(executeJournal(journal, f.directory, adapter), fromDev ? /corePush/ : /coreMerge/)
       assert.equal(f.git(f.repository, 'rev-parse', 'dev'), concurrent)
       assert.equal(journal.results.pin, oldPin)
-      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === 'run gate').length, 1)
+      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === gateCommand).length, 1)
     } else {
       if (conflict === 'gate') {
         await assert.rejects(executeJournal(journal, f.directory, adapter), /Rebased gate failed/)
@@ -169,13 +265,14 @@ for (const conflict of ['none', 'index', 'other', 'gate']) {
       assert.notEqual(journal.results.pin, oldPin)
       assert.equal(f.git(f.repository, 'rev-parse', 'dev'), journal.results.pin)
       assert.equal(f.git(f.repository, 'merge-base', '--is-ancestor', concurrent, 'dev'), '')
-      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === 'run gate').length, 2)
+      assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.join(' ') === gateCommand).length, 2)
       assert.equal(regenerated, conflict === 'index')
     }
   })
 }
 
-function fixture(t, realGit = true) {
+function fixture(t, realGit = true, application = 'identity') {
+  const image = `ghcr.io/sislex/${application === 'make' ? 'make-api' : application}`
   const directory = mkdtempSync(join(process.env.DELIVERY_ATTEMPT_ROOT ? join(process.env.DELIVERY_ATTEMPT_ROOT, 'tmp') : tmpdir(), 'train-run-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   if (!realGit) return { directory, repository: directory, plan: { ready: true, core: { count: 1 }, applications: [{
@@ -194,15 +291,15 @@ function fixture(t, realGit = true) {
   git(owner, 'checkout', '-b', 'dev'); writeFileSync(join(owner, 'change'), 'owner'); git(owner, 'add', '.'); git(owner, 'commit', '-m', 'owner change')
   const source = git(owner, 'rev-parse', 'HEAD'); git(owner, 'checkout', '--detach')
   mkdirSync(join(repository, 'deploy')); mkdirSync(join(repository, 'docs/kb'), { recursive: true })
-  const pin = { repository: 'https://github.com/sislex/identity', workspace: 'apps/server', version: '1.0.0', commit: old }
-  put(join(repository, 'deploy/tools.lock.json'), { tools: { identity: pin } })
-  writeFileSync(join(repository, 'docker-compose.yml'), `image: ghcr.io/sislex/identity:${old}\n`)
+  const pin = { repository: `https://github.com/sislex/${application}`, workspace: 'apps/server', version: '1.0.0', commit: old }
+  put(join(repository, 'deploy/tools.lock.json'), { tools: { [application]: pin } })
+  writeFileSync(join(repository, 'docker-compose.yml'), `image: ${image}:${old}\n`)
   writeFileSync(join(repository, 'docs/kb/deploy.md'), `Identity ${old}\n`)
   git(repository, 'add', '.'); git(repository, 'commit', '-m', 'Core pins'); git(repository, 'branch', 'dev')
   git(repository, 'remote', 'add', 'origin', 'https://github.com/sislex/core.git')
   const core = { count: 1, dev: git(repository, 'rev-parse', 'HEAD') }
   git(repository, 'checkout', '--detach')
-  const plan = { ready: true, core, applications: [{ application: 'identity', repository: 'sislex/identity',
+  const plan = { ready: true, core, applications: [{ application, repository: `sislex/${application}`,
     proposedVersion: '1.0.1', pinnedVersion: '1.0.0', pinnedCommit: old, changes: { ahead: true, dev: source }, release: { matchesPinnedCommit: true } }] }
   const calls = [], prs = [], branches = [], releases = []
   let published, failPublish = false, failPreflight = false
@@ -211,12 +308,12 @@ function fixture(t, realGit = true) {
     calls.push({ binary, args, cwd, config: options.env?.DOCKER_CONFIG })
     if (binary === 'git') {
       if (args[0] === 'clone') {
-        const remote = args.at(-2), actual = remote.includes('identity') ? owner : repository
+        const remote = args.at(-2), actual = remote.includes(`/${application}.git`) ? owner : repository
         const result = git(cwd, ...args.slice(0, -2), actual, args.at(-1))
         git(args.at(-1), 'config', 'remote.origin.url', actual)
         return result
       }
-      if (args[0] === 'remote' && args[1] === 'get-url') return cwd.includes('owner-') || cwd.includes('publish-') ? 'https://github.com/sislex/identity.git' : 'https://github.com/sislex/core.git'
+      if (args[0] === 'remote' && args[1] === 'get-url') return cwd.includes('owner-') || cwd.includes('publish-') ? `https://github.com/sislex/${application}.git` : 'https://github.com/sislex/core.git'
       return git(cwd, ...args)
     }
     if (binary === 'npm') {
@@ -232,8 +329,8 @@ function fixture(t, realGit = true) {
       if (failPublish) throw Error(`fixture publication failed: ${env.GH_TOKEN}`)
       const sourceDir = args.at(-1)
       assert.equal(git(sourceDir, 'status', '--porcelain'), '')
-      published = { repository: 'https://github.com/sislex/identity', version: read(join(sourceDir, 'package.json')).version,
-        commit: git(sourceDir, 'rev-parse', 'HEAD'), images: [{ name: 'ghcr.io/sislex/identity' }] }
+      published = { repository: `https://github.com/sislex/${application}`, version: read(join(sourceDir, 'package.json')).version,
+        commit: git(sourceDir, 'rev-parse', 'HEAD'), images: [{ name: image }] }
       return ''
     }
     return '' // KB commands are recorded; no external package execution in fixtures.
@@ -247,20 +344,29 @@ function fixture(t, realGit = true) {
       assert.equal(init.headers.Authorization, `Bearer ${env.RELEASE_CENTER_TOKEN}`)
       if (path.endsWith('/preflight')) return reply({ ok: !failPreflight })
       if (path.endsWith('/branches')) {
-        if (method === 'POST') branches.push({ branch: body.branch, sha: git(repository, 'rev-parse', 'main'), version: '1.0.1' })
+        if (method === 'POST') {
+          // Like Release Center: creating a branch also creates its preparation release record.
+          branches.push({ id: 'preparation', branch: body.branch, sha: git(repository, 'rev-parse', body.baseBranch), fast: body.fast === true, version: '1.0.1' })
+          releases.push({ id: 'preparation', branch: body.branch, status: 'preparing', polls: 0 })
+        }
         return reply(method === 'POST' ? branches.at(-1) : branches)
       }
       if (path.endsWith('/deploy')) { releases.push({ id: 'deployment', branch: body.branch, status: 'succeeded' }); return reply(releases.at(-1)) }
       if (path.endsWith('/deployment')) return reply(releases.at(-1))
+      if (path.endsWith('/preparation')) {
+        const preparation = releases.find(row => row.id === 'preparation')
+        if (++preparation.polls > 1) preparation.status = 'ready'
+        return reply(preparation)
+      }
       return reply(releases)
     }
     assert.equal(init.headers.Authorization, `Bearer ${env.GH_TOKEN}`)
     if (path === '/user') return reply({ login: 'fixture' })
-    if (path.endsWith('/assets/1')) return reply(published)
-    if (path.includes('/releases/tags/')) return reply({ draft: false, published_at: 'today', assets: [{ name: 'sislexa-release.json', url: 'https://api.github.com/assets/1' }] })
+    if (path.endsWith(`/assets/${application}`)) return reply(published)
+    if (path.includes('/releases/tags/')) return reply({ draft: false, published_at: 'today', assets: [{ name: 'sislexa-release.json', url: `https://api.github.com/assets/${application}` }] })
     if (path.includes('/commits/v')) return reply({ sha: published.commit })
     if (path.endsWith('/commits/main')) return reply({ sha: git(repository, 'rev-parse', 'main') })
-    const remote = path.includes('/identity/') ? owner : repository
+    const remote = path.includes(`/${application}/`) ? owner : repository
     if (path.endsWith('/pulls')) {
       if (method === 'POST') prs.push({ number: prs.length + 1, remote, head: { sha: git(remote, 'rev-parse', body.head), ref: body.head }, base: { ref: 'main' }, merged: false })
       return reply(method === 'POST' ? prs.at(-1) : prs.filter(pr => pr.remote === remote))
@@ -275,9 +381,138 @@ function fixture(t, realGit = true) {
     if (pr) return reply(pr)
     throw Error(`Unexpected fixture request: ${path}`)
   }
-  return { directory, repository, plan, env, run, fetcher, calls, git, owner,
+  return { directory, repository, plan, env, run, fetcher, calls, git, owner, sleep: async () => {},
     failPublish: value => { failPublish = value }, failPreflight: value => { failPreflight = value } }
 }
+
+for (const mode of ['advance', 'rewritten', 'unrelated', 'unchanged', 'full']) {
+  test(`failed kb:check prepare resumes with ${mode} dev`, async t => {
+    const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+    pkg.scripts['kb:check'] = 'check'; pkg.scripts['gate:quick'] = 'quick'
+    put(join(f.owner, 'package.json'), pkg)
+    f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'KB contract')
+    const planned = f.git(f.owner, 'rev-parse', 'HEAD')
+    f.git(f.owner, 'branch', '-f', 'dev', planned)
+    f.plan.applications[0].changes.dev = planned
+    const journal = createJournal(f.plan, { apps: [], fromDev: mode !== 'full' }, f.repository)
+    const messages = []
+    t.mock.method(console, 'log', message => messages.push(message))
+    const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+      if (binary === 'npm' && args.join(' ') === 'run kb:check' && !existsSync(join(cwd, 'kb-fixed')))
+        throw Error('kb:check: architecture.md/tests.md stale')
+      return f.run(binary, args, cwd, options)
+    } })
+    await assert.rejects(executeJournal(journal, f.directory, adapter), /owner-0-prepare.*\n.*kb:check/)
+    assert.equal(journal.owners[0].source, planned)
+    const cwd = join(f.directory, journal.id, 'owner-0')
+    assert.notEqual(f.git(cwd, 'status', '--porcelain'), '')
+    writeFileSync(join(cwd, '.git/info/exclude'), 'stale-build\nnode_modules/\n')
+    writeFileSync(join(cwd, 'stale-build'), 'ignored partial output')
+    mkdirSync(join(cwd, 'node_modules'), { recursive: true })
+    writeFileSync(join(cwd, 'node_modules/keep'), 'installed')
+    f.git(f.owner, 'checkout', '--detach', mode === 'rewritten' ? f.plan.applications[0].pinnedCommit : planned)
+    if (mode === 'unrelated') f.git(f.owner, 'checkout', '--orphan', 'rewritten-dev')
+    writeFileSync(join(f.owner, 'kb-fixed'), 'reviewed')
+    f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Fix knowledge review')
+    const fixed = f.git(f.owner, 'rev-parse', 'HEAD')
+    if (mode !== 'unchanged') f.git(f.owner, 'branch', '-f', 'dev', fixed)
+    const resumed = read(join(f.directory, journal.id + '.json'))
+    if (mode !== 'advance') {
+      await assert.rejects(executeJournal(resumed, f.directory, adapter),
+        ['rewritten', 'unrelated'].includes(mode) ? /dev переписан, нужен новый план/ : /kb:check/)
+      assert.equal(resumed.owners[0].source, planned)
+      assert.equal(messages.length, 0)
+      return
+    }
+    await executeJournal(resumed, f.directory, adapter)
+    assert.equal(resumed.status, 'completed')
+    assert.equal(existsSync(join(cwd, 'stale-build')), false)
+    assert.equal(existsSync(join(cwd, 'node_modules/keep')), true)
+    assert.equal(resumed.owners[0].source, fixed)
+    assert.deepEqual(resumed.owners[0].sourceAdvances, [{ from: planned, to: fixed }])
+    assert.equal(messages[0], `owner sislex/identity: source advanced ${planned} → ${fixed}`)
+    assert.match(messages[1], /^Core refresh: dev [a-f0-9]{40}; pin already current; dependencies unchanged; vendor archives removed 0$/)
+    assert.equal(read(join(f.directory, journal.id + '.json')).owners[0].source, fixed)
+    assert.equal(f.git(cwd, 'merge-base', fixed, resumed.results['owner-0-prepare']), fixed)
+    assert.ok(f.calls.some(c => c.binary === 'npm' && c.cwd === cwd && c.args.join(' ') === `run gate:quick -- --base ${resumed.owners[0].pinnedCommit}`))
+    const calls = f.calls.length
+    await executeJournal(resumed, f.directory, adapter)
+    assert.equal(f.calls.length, calls)
+  })
+}
+
+test('reusing a published release verifies its exact SHA without prepare, push or publish', async t => {
+  const f = fixture(t, false)
+  f.plan.applications[0].reuseRelease = { version: '1.0.1', commit: 'b'.repeat(40) }
+  f.plan.applications[0].changes.ahead = false
+  f.plan.applications[0].release.matchesPinnedCommit = true
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  const actions = []
+  await executeJournal(journal, f.directory, (action, owner, saved) => {
+    actions.push(action)
+    if (action === 'verify') assert.equal(saved.results['owner-0-publish'], 'b'.repeat(40))
+  })
+  assert.equal(journal.owners[0].source, 'b'.repeat(40))
+  assert.equal(journal.owners[0].bump, false)
+  assert.deepEqual(actions, ['verify', 'pin', 'coreGate', 'corePush', 'preflight', 'branch'])
+})
+
+test('prepare without a bump commit does not reconcile knowledge topics', async t => {
+  const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+  pkg.version = '1.0.1'; pkg.scripts['kb:check'] = 'check'
+  put(join(f.owner, 'package.json'), pkg)
+  put(join(f.owner, 'apps/server/package.json'), { version: '1.0.1' })
+  // Match the runner's manifest serialization and the fixture lock refresh.
+  for (const file of ['package.json', 'apps/server/package.json'])
+    writeFileSync(join(f.owner, file), JSON.stringify(read(join(f.owner, file)), null, 2) + '\n')
+  put(join(f.owner, 'package-lock.json'), { version: '1.0.1' })
+  mkdirSync(join(f.owner, 'docs/kb'), { recursive: true })
+  writeFileSync(join(f.owner, 'docs/kb/tests.md'), '---\nchecked: aaaaaaa\nareas:\n  - package.json\n---\n')
+  f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Already bumped')
+  f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  const result = await concreteAdapter(f)('prepare', journal.owners[0], journal)
+  assert.equal(result, journal.owners[0].source)
+  assert.ok(!f.calls.some(call => call.args?.includes('touch')))
+  assert.ok(!f.calls.some(call => call.binary === 'git' && call.args[0] === 'commit'))
+})
+
+for (const phase of ['prepare', 'gate']) test(`owner ${phase} reconciles stale KB in a separate commit`, async t => {
+  const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+  pkg.scripts['kb:check'] = 'check'; pkg.scripts['kb:index'] = 'index'
+  put(join(f.owner, 'package.json'), pkg)
+  mkdirSync(join(f.owner, 'docs/kb'), { recursive: true })
+  const topic = `---\nchecked: ${'a'.repeat(40)}\nareas:\n  - src/\n---\n# Source behavior\n`
+  writeFileSync(join(f.owner, 'docs/kb/source.md'), topic)
+  f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'Owner fix with stale knowledge')
+  f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+  const journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  let enabled = phase === 'prepare', touches = 0
+  const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+    if (enabled && binary === 'npm' && args.join(' ') === 'run kb:check'
+      && readFileSync(join(cwd, 'docs/kb/source.md'), 'utf8').includes('a'.repeat(40)))
+      throw Error('KB stale:\n    source.md — 1 commit after checked SHA')
+    if (binary === 'npx' && args.includes('touch')) {
+      touches++
+      assert.equal(args.at(-1), 'source.md')
+      writeFileSync(join(cwd, 'docs/kb/source.md'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', '--short', 'HEAD')))
+      return ''
+    }
+    return f.run(binary, args, cwd, options)
+  } })
+  journal.results['owner-0-prepare'] = await adapter('prepare', journal.owners[0], journal)
+  enabled = true
+  await adapter('gate', journal.owners[0], journal)
+  await adapter('gate', journal.owners[0], journal)
+  const cwd = join(f.directory, journal.id, 'owner-0')
+  assert.equal(touches, 1)
+  const commit = f.git(cwd, 'log', '--format=%H', '--grep=reconcile topics before release', '-1')
+  assert.ok(commit)
+  assert.equal(f.git(cwd, 'show', '--format=', '--name-only', commit), 'docs/kb/source.md')
+  assert.equal(readFileSync(join(cwd, 'docs/kb/source.md'), 'utf8'), topic.replace('a'.repeat(40), f.git(cwd, 'rev-parse', `${commit}^`)))
+  assert.equal(journal.results['owner-0-prepare'], f.git(cwd, 'rev-parse', 'HEAD'))
+  assert.equal(f.git(cwd, 'status', '--porcelain'), '')
+})
 
 test('knowledge topics covering bumped manifests', t => {
   const dir = mkdtempSync(join(tmpdir(), 'kb-topics-')); t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -348,7 +583,7 @@ test('selected owners only need their own readiness', () => {
 })
 
 test('run arguments, owner selection, shared aliases and pinned-only publication', () => {
-  assert.deepEqual(parseRunArgs(['--apps', 'a,b', '--deploy']), { apps: ['a', 'b'], deploy: true, resume: undefined })
+  assert.deepEqual(parseRunArgs(['--apps', 'a,b', '--deploy']), { apps: ['a', 'b'], deploy: true, fromDev: false, resume: undefined })
   for (const args of [['--resume', '../escape'], ['--resume', 'x', '--deploy'], ['--unknown'], ['--apps']]) assert.throws(() => parseRunArgs(args))
   const row = { application: 'a', repository: 'acme/a', changes: { ahead: false }, release: { matchesPinnedCommit: false }, pinnedVersion: '1.0.0', pinnedCommit: 'a'.repeat(40) }
   const plan = { ready: true, core: { count: 0 }, applications: [row, { ...row, application: 'b' }] }
@@ -375,6 +610,8 @@ test('concrete adapters execute fixture owner and Core repositories, APIs, pins 
   assert.ok(f.calls.some(call => call.args?.includes('--package-lock-only')))
   assert.ok(!f.calls.some(call => call.args?.includes('--workspaces')))
   assert.ok(f.calls.some(call => call.args?.join(' ') === 'run gate'))
+  const clones = f.calls.filter(call => call.binary === 'git' && call.args[0] === 'clone')
+  assert.ok(clones.length && clones.every(call => call.args.includes('--filter=blob:none')))
   for (const call of f.calls.filter(call => call.config)) assert.equal(existsSync(call.config), false)
   assert.ok(!readFileSync(join(f.directory, journal.id + '.json'), 'utf8').includes('secret'))
   const count = f.calls.length
@@ -409,9 +646,40 @@ test('publication failure removes Docker credentials and resumes concrete execut
   assert.equal(f.calls.filter(call => call.url?.endsWith('/deploy')).length, 0)
 })
 
-test('lost responses after every concrete step reconcile without duplicate side effects', async t => {
-  const f = fixture(t), journal = createJournal(f.plan, { apps: [], deploy: true }, f.repository), adapter = concreteAdapter(f)
-  for (const failure of ['prepare', 'gate', 'merge', 'sync', 'publish', 'verify', 'pin', 'coreGate', 'coreMerge', 'preflight', 'branch', 'deploy', 'health']) {
+test('resume refreshes the Core pin onto current dev and removes unreferenced untracked vendor archives before the gate', async t => {
+  const f = fixture(t), journal = createJournal(f.plan, { apps: [], deploy: false, fromDev: true }, f.repository)
+  const logs = [], adapter = concreteAdapter({ ...f, log: message => logs.push(message) })
+  let interrupted = false
+  await assert.rejects(executeJournal(journal, f.directory, async (...args) => {
+    if (args[0] === 'coreGate' && !interrupted) { interrupted = true; throw Error('operator interruption') }
+    return adapter(...args)
+  }), /coreGate/)
+
+  const oldPin = journal.results.pin
+  f.git(f.repository, 'checkout', 'dev')
+  const pkg = read(join(f.repository, 'package.json'))
+  pkg.refreshed = true
+  put(join(f.repository, 'package.json'), pkg)
+  f.git(f.repository, 'add', 'package.json'); f.git(f.repository, 'commit', '-m', 'concurrent Core UI pin')
+  const currentDev = f.git(f.repository, 'rev-parse', 'HEAD')
+  f.git(f.repository, 'checkout', '--detach')
+
+  const core = join(f.directory, journal.id, 'core')
+  mkdirSync(join(core, 'vendor'), { recursive: true })
+  writeFileSync(join(core, 'vendor/obsolete.tgz'), 'old archive')
+  const resumed = read(join(f.directory, journal.id + '.json'))
+  await executeJournal(resumed, f.directory, adapter)
+
+  assert.notEqual(resumed.results.pin, oldPin)
+  assert.equal(f.git(core, 'merge-base', '--is-ancestor', currentDev, resumed.results.pin), '')
+  assert.equal(existsSync(join(core, 'vendor/obsolete.tgz')), false)
+  assert.ok(logs.some(message => message.includes('dependencies reinstall required') && message.includes('vendor archives removed 1')))
+  assert.ok(f.calls.some(call => call.binary === 'npm' && call.cwd === core && call.args.join(' ') === 'ci'))
+})
+
+for (const fromDev of [false, true]) test(`lost responses reconcile without duplicate side effects (fromDev=${fromDev})`, async t => {
+  const f = fixture(t), journal = createJournal(f.plan, { apps: [], deploy: true, fromDev }, f.repository), adapter = concreteAdapter(f)
+  for (const failure of ['prepare', 'gate', ...(fromDev ? ['push'] : ['merge', 'sync']), 'publish', 'verify', 'pin', 'coreGate', fromDev ? 'corePush' : 'coreMerge', 'preflight', 'branch', 'deploy', 'health']) {
     await assert.rejects(executeJournal(journal, f.directory, async (...args) => {
       const result = await adapter(...args)
       if (args[0] === failure) throw Error('connection lost after acceptance')
@@ -421,6 +689,8 @@ test('lost responses after every concrete step reconcile without duplicate side 
   await executeJournal(journal, f.directory, adapter)
   assert.equal(f.calls.filter(call => call.url?.endsWith('/branches') && call.method === 'POST').length, 1)
   assert.equal(f.calls.filter(call => call.url?.endsWith('/deploy') && call.method === 'POST').length, 1)
+  // The deployment waited for the preparation record instead of mistaking it for a deployment.
+  assert.ok(f.calls.filter(call => call.url?.endsWith('/preparation')).length >= 2)
 })
 
 test('preflight blocks branch creation, and an active journal lock blocks execution', async t => {
@@ -430,6 +700,224 @@ test('preflight blocks branch creation, and an active journal lock blocks execut
   assert.equal(f.calls.filter(call => call.url?.endsWith('/branches') && call.method === 'POST').length, 0)
   writeFileSync(join(f.directory, journal.id + '.json.lock'), '')
   await assert.rejects(executeJournal(journal, f.directory, () => assert.fail('locked')), /EEXIST/)
+})
+
+test('from-dev arguments and resume retain the mode at every boundary', async t => {
+  assert.equal(parseRunArgs(['--from-dev', '--apps', 'identity', '--deploy']).fromDev, true)
+  assert.throws(() => parseRunArgs(['--resume', 'id', '--from-dev']), /journal/)
+  const f = fixture(t, false), template = createJournal(f.plan, { apps: [], fromDev: true, deploy: true }, f.repository)
+  const names = ['prepare', 'gate', 'push', 'publish', 'verify', 'pin', 'coreGate', 'corePush', 'preflight', 'branch', 'deploy', 'health']
+  for (const [index, failure] of names.entries()) {
+    const journal = { ...structuredClone(template), id: `fast-resume-${index}` }, calls = []
+    await assert.rejects(executeJournal(journal, f.directory, action => {
+      calls.push(action); if (action === failure) throw Error('interrupted'); return action
+    }), /stopped/)
+    const disk = read(join(f.directory, journal.id + '.json'))
+    assert.equal(disk.fromDev, true)
+    await executeJournal(disk, f.directory, action => { calls.push(action); return action })
+    assert.deepEqual(calls, [...names.slice(0, index + 1), ...names.slice(index)])
+  }
+})
+
+for (const gate of ['gate:quick', 'affected-check', 'gate']) {
+  test(`from-dev publishes dev without main PRs using owner ${gate}`, async t => {
+    const f = fixture(t), pkg = read(join(f.owner, 'package.json'))
+    pkg.scripts = { [gate]: 'true' }
+    put(join(f.owner, 'package.json'), pkg)
+    f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '--allow-empty', '-m', 'gate setup')
+    f.git(f.owner, 'branch', '-f', 'dev', 'HEAD')
+    f.plan.applications[0].changes.dev = f.git(f.owner, 'rev-parse', 'HEAD')
+    const main = [f.owner, f.repository].map(dir => f.git(dir, 'rev-parse', 'main'))
+    const journal = createJournal(f.plan, { apps: ['identity'], fromDev: true, deploy: true }, f.repository)
+    await executeJournal(journal, f.directory, concreteAdapter(f))
+    assert.deepEqual([f.owner, f.repository].map(dir => f.git(dir, 'rev-parse', 'main')), main)
+    assert.equal(f.calls.some(call => call.url?.includes('/pulls')), false)
+    assert.equal(journal.results['owner-0-publish'], f.git(f.owner, 'rev-parse', 'dev'))
+    assert.equal(journal.results.pin, f.git(f.repository, 'rev-parse', 'dev'))
+    const command = ['run', gate, ...(gate === 'gate:quick' ? ['--', '--base', f.plan.applications[0].pinnedCommit] : [])].join(' ')
+    assert.ok(f.calls.some(call => call.cwd?.endsWith('/owner-0') && call.args?.join(' ') === command))
+    assert.ok(f.calls.some(call => call.cwd?.endsWith('/core') && call.args?.join(' ') === 'run gate:quick -- --base origin/main'))
+    assert.equal(f.calls.some(call => call.args?.includes('gate:release')), false)
+    if (gate !== 'gate') assert.equal(f.calls.some(call => call.args?.join(' ') === 'run gate'), false)
+    assert.deepEqual(f.calls.find(call => call.url?.endsWith('/branches') && call.method === 'POST').body,
+      { branch: 'release/1.0.1', baseBranch: 'dev', fast: true })
+  })
+}
+
+test('from-dev owner rebase rechecks the new commit and resumes a failed gate', async t => {
+  const f = fixture(t), journal = createJournal(f.plan, { apps: [], fromDev: true }, f.repository)
+  let moved = false, failGate = true, concurrent, original
+  const adapter = concreteAdapter({ ...f, run: (binary, args, cwd, options) => {
+    if (moved && failGate && binary === 'npm' && cwd.endsWith('/owner-0') && args.join(' ') === 'run gate') throw Error('owner rebase gate failed')
+    if (!moved && binary === 'git' && args[0] === 'push' && cwd.endsWith('/owner-0')) {
+      moved = true; original = journal.results['owner-0-prepare']
+      f.git(f.owner, 'checkout', 'dev')
+      writeFileSync(join(f.owner, 'concurrent'), 'concurrent owner change')
+      f.git(f.owner, 'add', '.'); f.git(f.owner, 'commit', '-m', 'concurrent owner')
+      concurrent = f.git(f.owner, 'rev-parse', 'HEAD')
+      f.git(f.owner, 'checkout', '--detach')
+    }
+    return f.run(binary, args, cwd, options)
+  } })
+  await assert.rejects(executeJournal(journal, f.directory, adapter), /owner rebase gate failed/)
+  const disk = read(join(f.directory, journal.id + '.json'))
+  assert.notEqual(disk.results['owner-0-prepare'], original)
+  assert.equal(Object.hasOwn(disk.results, 'owner-0-gate'), false)
+  assert.equal(f.git(f.owner, 'rev-parse', 'dev'), concurrent)
+  failGate = false
+  await executeJournal(disk, f.directory, adapter)
+  assert.equal(disk.results['owner-0-publish'], f.git(f.owner, 'rev-parse', 'dev'))
+  assert.equal(f.git(f.owner, 'merge-base', '--is-ancestor', concurrent, 'dev'), '')
+})
+
+for (const failure of ['disabled', 'unknown', 'ignored', 'moved']) {
+  test(`from-dev stops on Release Center ${failure} without deployment or full fallback`, async t => {
+    const f = fixture(t), journal = createJournal(f.plan, { apps: [], fromDev: true, deploy: true }, f.repository)
+    const adapter = concreteAdapter({ ...f, fetcher: async (url, init) => {
+      if (url.endsWith('/branches') && init.method === 'POST') {
+        if (failure === 'disabled') return Response.json({ error: 'fast_release_disabled' }, { status: 400 })
+        if (failure === 'unknown') return Response.json({ message: 'Unknown field fast' }, { status: 400 })
+        if (failure === 'ignored') return Response.json({ branch: 'release/1.0.1' })
+      }
+      return f.fetcher(url, init)
+    } })
+    await assert.rejects(executeJournal(journal, f.directory, async (...args) => {
+      if (failure === 'moved' && args[0] === 'branch') {
+        f.git(f.repository, 'checkout', 'dev')
+        writeFileSync(join(f.repository, 'late-change'), 'late')
+        f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'late dev change')
+        f.git(f.repository, 'checkout', '--detach')
+      }
+      return adapter(...args)
+    }), failure === 'disabled' ? /fast_release_disabled/ : failure === 'unknown' ? /Unknown field fast/ : failure === 'ignored' ? /did not confirm fast/ : /dev moved after gate/)
+    assert.equal(f.calls.some(call => call.url?.endsWith('/deploy')), false)
+    assert.equal(f.calls.some(call => call.url?.includes('/pulls')), false)
+  })
+}
+
+for (const fail of [false, true]) test(`parallel owner releases combine Core pins${fail ? ' after resume' : ''}`, async t => {
+  const f = fixture(t, true, 'core-ui'), other = fixture(t, true, 'make')
+  // Share credentials only inside the fixtures, just as the real adapter does.
+  other.env.GH_TOKEN = f.env.GH_TOKEN
+  const pins = read(join(f.repository, 'deploy/tools.lock.json'))
+  Object.assign(pins.tools, read(join(other.repository, 'deploy/tools.lock.json')).tools)
+  put(join(f.repository, 'deploy/tools.lock.json'), pins)
+  writeFileSync(join(f.repository, 'docker-compose.yml'), readFileSync(join(other.repository, 'docker-compose.yml')))
+  f.git(f.repository, 'add', '.'); f.git(f.repository, 'commit', '-m', 'Both owners')
+  f.plan.core.dev = f.git(f.repository, 'rev-parse', 'HEAD')
+  f.git(f.repository, 'branch', '-f', 'dev', f.plan.core.dev)
+  f.plan.applications.push(...other.plan.applications)
+  let journal = createJournal(f.plan, { apps: ['core-ui', 'make'], fromDev: true }, f.repository)
+  let failOnce = fail, arrivals = 0, release
+  const barrier = new Promise(resolve => { release = resolve })
+  const adapter = concreteAdapter({ ...f,
+    run: async (binary, args, cwd, options) => {
+      // Neither owner gate can finish before the other has started.
+      if (binary === 'npm' && args.join(' ') === 'run gate' && /owner-[01]$/.test(cwd)) {
+        if (++arrivals === 2) release()
+        await barrier
+      }
+      const target = /(?:owner|publish)-1$/.test(cwd) || /(?:owner|publish)-1$/.test(args.at(-1)) ? other : f
+      return target.run(binary, args, cwd, options)
+    },
+    fetcher: (url, init) => url.includes('/sislex/make/') || url.endsWith('/assets/make')
+      ? other.fetcher(url, init) : f.fetcher(url, init)
+  })
+  const calls = []
+  const checked = async (action, owner, state, context) => {
+    calls.push([action, owner?.repository, context.retry])
+    if (action === 'verify' && owner.repository === 'sislex/make' && failOnce) {
+      // Allow the other owner to finish verification before the failure.
+      while (!state.results['owner-0-verify']) await new Promise(resolve => setTimeout(resolve, 1))
+      failOnce = false
+      throw Error('make verification unavailable')
+    }
+    return adapter(action, owner, state, context)
+  }
+  if (fail) {
+    await assert.rejects(executeJournal(journal, f.directory, checked), /make verification unavailable/)
+    journal = read(join(f.directory, journal.id + '.json'))
+    assert.ok(journal.results['owner-0-verify'])
+    assert.equal(journal.ownerPending[1], 'owner-1-verify')
+    assert.equal(calls.some(([action]) => action === 'pin'), false)
+  }
+  await executeJournal(journal, f.directory, checked)
+  assert.equal(journal.status, 'completed')
+  for (const action of ['pin', 'coreGate', 'corePush', 'branch'])
+    assert.equal(calls.filter(([name]) => name === action).length, 1)
+  assert.equal(calls.filter(([action, owner]) => action === 'publish' && owner === 'sislex/core-ui').length, 1)
+  if (fail) assert.ok(calls.some(([action, owner, retry]) => action === 'verify' && owner === 'sislex/make' && retry))
+  const core = join(f.directory, journal.id, 'core')
+  const updated = read(join(core, 'deploy/tools.lock.json')).tools
+  assert.equal(updated['core-ui'].commit, journal.results['owner-0-publish'])
+  assert.equal(updated.make.commit, journal.results['owner-1-publish'])
+  assert.equal(f.git(core, 'rev-list', '--count', `${f.plan.core.dev}..HEAD`), '1')
+  assert.equal(f.calls.filter(c => c.binary === 'npm' && c.cwd.endsWith('/core') && c.args.includes('gate:quick')).length, 1)
+})
+
+test('owner failure drains in-flight work, retains its checkpoint and resumes legacy pending', async t => {
+  const f = fixture(t, false)
+  f.plan.applications.push({ ...f.plan.applications[0], application: 'make', repository: 'sislex/make' })
+  const journal = createJournal(f.plan, { apps: [] }, f.repository)
+  journal.pending = 'owner-0-prepare' // A journal written by the sequential runner.
+  let finish, started
+  const running = new Promise(resolve => { started = resolve })
+  const blocked = new Promise(resolve => { finish = resolve })
+  const seen = []
+  const result = executeJournal(journal, f.directory, async (action, owner, state, { retry }) => {
+    seen.push([action, owner.repository, retry])
+    if (owner === state.owners[0]) {
+      await running
+      throw Error('first owner failed')
+    }
+    started()
+    await blocked
+    return 'prepared'
+  })
+  const failed = assert.rejects(result, /first owner failed/)
+  await running
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(journal.status, 'failed')
+  assert.ok(existsSync(join(f.directory, journal.id + '.json.lock')))
+  const disk = read(join(f.directory, journal.id + '.json'))
+  assert.deepEqual(disk.ownerPending, { 0: 'owner-0-prepare', 1: 'owner-1-prepare' })
+  finish()
+  await failed
+  assert.equal(seen.length, 2)
+  assert.equal(seen[0][2], true)
+  assert.equal(journal.results['owner-1-prepare'], 'prepared')
+  assert.equal(existsSync(join(f.directory, journal.id + '.json.lock')), false)
+  const resumed = read(join(f.directory, journal.id + '.json'))
+  const retries = []
+  await executeJournal(resumed, f.directory, async (action, owner, state, { retry }) => {
+    if (action === 'prepare') retries.push([owner.repository, retry])
+  })
+  assert.deepEqual(retries, [['sislex/identity', true]])
+  assert.equal(resumed.status, 'completed')
+})
+
+test('async command execution overlaps child processes and redacts failures', async t => {
+  const f = fixture(t, false)
+  const script = `const fs = require('node:fs'); fs.writeFileSync(process.argv[1], 'ready');
+    const timer = setInterval(() => { if (fs.existsSync(process.argv[2])) { clearInterval(timer); console.log('done') } }, 10)`
+  const a = join(f.directory, 'a'), b = join(f.directory, 'b')
+  assert.deepEqual(await Promise.all([
+    executeAsync(process.execPath, ['-e', script, a, b], f.directory, { timeout: 5000 }),
+    executeAsync(process.execPath, ['-e', script, b, a], f.directory, { timeout: 5000 })
+  ]), ['done', 'done'])
+  const secret = randomUUID()
+  await assert.rejects(executeAsync(process.execPath, ['-e', 'console.error(process.env.GH_TOKEN); process.exit(7)'],
+    f.directory, { env: { GH_TOKEN: secret } }), error => /exit code 7/.test(error.message) && !error.message.includes(secret))
+})
+
+test('Desktop remains excluded, including resumed journals', async t => {
+  const f = fixture(t, false)
+  f.plan.applications.push({ ...f.plan.applications[0], application: 'desktop', repository: 'sislex/desktop' })
+  assert.throws(() => createJournal(f.plan, { apps: ['desktop'] }, f.repository), /frozen/)
+  const journal = createJournal(f.plan, { apps: [] }, f.repository)
+  assert.equal(journal.owners.length, 1)
+  journal.owners[0].applications.push('desktop')
+  await assert.rejects(executeJournal(journal, f.directory, () => assert.fail('must not execute')), /frozen/)
 })
 
 test('owners with a set-version script bump their own lockstep versions', () => {

@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { VoiceChatDb } from '../db/database.js'
 import { GitError, type GitWorkspaceService } from '../git/workspaceService.js'
 import { MakeProjectAdapters } from './projectAdapters.js'
+import { runProjectGit } from './localCore.js'
 import { MakeRequestAuthority } from './requestAuthority.js'
 
 const args = { targetProjectId: 'p', targetRepository: 'core-ui' as const, title: 'New button', files: ['src/Button.tsx'], designConversationId: 'design' }
-function fixture() {
+function fixture(previewAccess?: (user: string, project: string, stand: string) => Promise<{ url: string }>) {
   const user = { name: 'alice', role: 'developer' as const, blocked: false }
   const project = { id: 'p', gitUrl: 'git@github.com:sislex/sislexa-core-ui.git', defaultAgentId: 'agent',
     machines: [{ agentId: 'agent', canUse: true, path: '/old', directories: { projectWorkdir: { path: '/work/core-ui' } } }] }
@@ -31,7 +32,7 @@ function fixture() {
   const readDesignFile = vi.fn(async () => 'export const Button = () => null')
   const boardChanged = vi.fn()
   const adapter = new MakeProjectAdapters({ db: db as unknown as VoiceChatDb, git: git as unknown as GitWorkspaceService,
-    kanbanUrl: 'http://kanban.test', authority, fetchImpl, readDesignFile, boardChanged })
+    kanbanUrl: 'http://kanban.test', authority, fetchImpl, ...(previewAccess ? { previewAccess } : {}), readDesignFile, boardChanged })
   return { adapter, db, git, stand, project, user, authority, fetchImpl, readDesignFile, boardChanged }
 }
 
@@ -40,9 +41,18 @@ describe('Make stand adapter', () => {
     const f = fixture()
     f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
     expect(await f.adapter.standPreview('alice', 'p', { op: 'start', subprojectPath: '.' }))
-      .toEqual({ standId: 'stand', status: 'running', url: 'http://stand.test' })
+      .toEqual({ standId: 'stand', status: 'running', url: 'http://stand.test', interactive: false })
     expect(f.fetchImpl).toHaveBeenCalledTimes(2)
     expect(f.fetchImpl.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true)
+  })
+
+  it('returns an inspector lease for an authorized donor project preview', async () => {
+    const previewAccess = vi.fn(async () => ({ url: 'https://core.test/api/dev-stand-access/lease/' }))
+    const f = fixture(previewAccess)
+    f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
+    expect(await f.adapter.standPreview('alice', 'p', { op: 'status', subprojectPath: '.' }))
+      .toEqual({ standId: 'stand', status: 'running', url: 'https://core.test/api/dev-stand-access/lease/', interactive: true })
+    expect(previewAccess).toHaveBeenCalledWith('alice', 'p', 'stand')
   })
 
   it.each(['managed', 'thin-client', 'local-stand'])('creates a stand on a ready %s environment, on behalf of the user', async mode => {
@@ -60,7 +70,7 @@ describe('Make stand adapter', () => {
     f.stand.gateway.urls = ['http://127.0.0.1:5273']
     f.fetchImpl.mockResolvedValueOnce(Response.json([f.stand]))
     expect(await f.adapter.standPreview('alice', 'p', { op: 'url', subprojectPath: '.' }))
-      .toEqual({ standId: 'stand', status: 'running', url: 'http://127.0.0.1:5273' })
+      .toEqual({ standId: 'stand', status: 'running', url: 'http://127.0.0.1:5273', interactive: false })
   })
 
   it.each(['live_on', 'live_off'] as const)('%s uses the stand machine working copy', async op => {
@@ -168,6 +178,29 @@ describe('Make transfer adapter', () => {
     await expect(f.adapter.createTransferTask('alice', args)).rejects.toMatchObject({ statusCode: 409 })
     expect(f.git.checkout).not.toHaveBeenCalled(); expect(f.db.ci.createCiWorkspace).not.toHaveBeenCalled()
     expect(f.db.tasks.moveTask).not.toHaveBeenCalled()
+  })
+})
+
+describe('Make project git contract', () => {
+  it('maps branch-from, checkout and merge results to Make 1.8.13', async () => {
+    const git = {
+      createBranch: vi.fn(), checkout: vi.fn(),
+      merge: vi.fn(async () => ({ head: 'abc123', conflicts: [], status: { head: 'abc123' } }))
+    } as unknown as GitWorkspaceService
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'branch', name: 'feature/new', from: 'dev' }))
+      .resolves.toEqual({ op: 'branch', name: 'feature/new' })
+    expect(git.createBranch).toHaveBeenCalledWith('alice', 'p', 'ws', 'feature/new', 'dev')
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'checkout', name: 'dev' }))
+      .resolves.toEqual({ op: 'checkout', name: 'dev' })
+    expect(git.checkout).toHaveBeenCalledWith('alice', 'p', 'ws', 'dev', false)
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'merge', from: 'dev' }))
+      .resolves.toEqual({ op: 'merge', status: 'ok', head: 'abc123' })
+  })
+
+  it('maps an aborted merge conflict with its paths', async () => {
+    const git = { merge: vi.fn(async () => ({ head: null, status: { head: 'old' }, conflicts: ['src/a.ts'] })) } as unknown as GitWorkspaceService
+    await expect(runProjectGit(git, 'alice', 'p', 'ws', { op: 'merge', from: 'dev' }))
+      .resolves.toEqual({ op: 'merge', status: 'conflict', conflicts: ['src/a.ts'] })
   })
 })
 

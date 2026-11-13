@@ -35,12 +35,75 @@ export interface DocumentMeta {
   editable?: boolean
 }
 
+export interface MarkdownHeading {
+  line: number
+  level: number
+  title: string
+  anchor: string
+}
+
+/**
+ * Заголовки Markdown вне fenced code. Повторные заголовки получают числовые
+ * суффиксы, чтобы каждый chunk имел уникальный id.
+ */
+export function markdownHeadings(body: string): MarkdownHeading[] {
+  const result: MarkdownHeading[] = []
+  const counts = new Map<string, number>()
+  let fence: { kind: '`' | '~'; length: number } | null = null
+  for (const [line, value] of body.split(/\r?\n/).entries()) {
+    // CommonMark fence rules: a backtick fence's info string cannot contain
+    // backticks, so a line that starts with inline code (```` ```lang ````) is
+    // prose, not an opening fence. A closing fence is at least as long as the
+    // opening one and carries nothing but whitespace. Indentation stays lenient
+    // because fences nested in list items are common in the KB.
+    const fenceMatch = /^\s*(`{3,}|~{3,})(.*)$/.exec(value)
+    if (fenceMatch) {
+      const marker = fenceMatch[1]
+      const kind = marker[0] as '`' | '~'
+      const rest = fenceMatch[2]
+      if (!fence) {
+        if (!(kind === '`' && rest.includes('`'))) {
+          fence = { kind, length: marker.length }
+          continue
+        }
+      } else if (fence.kind === kind && marker.length >= fence.length && !rest.trim()) {
+        fence = null
+        continue
+      }
+    }
+    if (fence) continue
+    const match = /^(#{1,4})\s+(.+)$/.exec(value)
+    if (!match) continue
+    const title = match[2].trim()
+    const base = slug(title) || 'section'
+    const occurrence = (counts.get(base) ?? 0) + 1
+    counts.set(base, occurrence)
+    result.push({
+      line,
+      level: match[1].length,
+      title,
+      anchor: occurrence === 1 ? base : `${base}-${occurrence}`
+    })
+  }
+  return result
+}
+
 /** Разбор тела в разделы (chunks) + заголовки: один алгоритм на оба источника. */
 export function indexBody(meta: DocumentMeta, body: string): IndexedDocument {
   const headings: KbDocument['headings'] = []; const chunks: Chunk[] = []
   let heading = meta.title; let anchor = ''; let lines: string[] = []
+  const parsed = new Map(markdownHeadings(body).map((item) => [item.line, item]))
   const flush = (): void => { const text = lines.join('\n').trim(); if (text) chunks.push({ id: `${meta.id}#${anchor || 'overview'}`, documentId: meta.id, heading, anchor, text, tokens: tokenize(`${heading} ${text}`) }); lines = [] }
-  for (const line of body.split(/\r?\n/)) { const h = /^(#{1,4})\s+(.+)$/.exec(line); if (h) { flush(); heading = h[2].trim(); anchor = slug(heading); headings.push({ title: heading, anchor, level: h[1].length }) } else lines.push(line) } flush()
+  for (const [line, value] of body.split(/\r?\n/).entries()) {
+    const parsedHeading = parsed.get(line)
+    if (parsedHeading) {
+      flush()
+      heading = parsedHeading.title
+      anchor = parsedHeading.anchor
+      headings.push({ title: heading, anchor, level: parsedHeading.level })
+    } else lines.push(value)
+  }
+  flush()
   const document: KbDocument = {
     ...(meta.module ? { module: meta.module } : {}), id: meta.id, title: meta.title, kind: meta.kind, scope: meta.scope, projectId: meta.projectId ?? null,
     tags: meta.tags ?? [], packages: meta.packages ?? [], freshness: meta.freshness ?? (meta.updated ? 'current' : 'unknown'),
@@ -64,6 +127,7 @@ export function loadDocument(root: string, path: string, module = 'core', source
     id, module, title, kind, scope: 'usage', sourcePath, tags: array(data,'tags'), packages: array(data,'packages'),
     symbols: array(data,'symbols'), protocols: array(data,'protocols'), areas: array(data,'areas'),
     related: array(data,'related'), aliases: [legacyId, ...array(data,'aliases')],
+    freshness: 'unknown',
     ...(typeof data.updated === 'string' ? { updated: data.updated } : {})
   }, body)
 }
@@ -119,10 +183,99 @@ function exactBoost(item: IndexedDocument, query: string, queryTokens: string[])
  */
 export async function searchDocuments(documents: IndexedDocument[], request: KbSearchRequest, reranker?: KbSemanticReranker): Promise<KbSearchResult[]> {
   documents = documents.filter(item => !request.module || item.document.module === request.module)
-  const query=request.query.trim(); if(!query) return []; const queryTokens=[...new Set(tokenize(query))]; const all=documents.flatMap(item=>item.chunks.map(chunk=>({item,chunk}))); const df=new Map<string,number>(); for(const term of queryTokens) df.set(term,all.filter(({chunk})=>chunk.tokens.includes(term)).length); const avg=all.reduce((n,{chunk})=>n+chunk.tokens.length,0)/Math.max(1,all.length); const q=query.toLocaleLowerCase('ru'); const boosts=new Map<IndexedDocument,{score:number;matchTypes:KbMatchType[]}>(); const scored: KbSearchResult[]=[]
-  for(const {item,chunk} of all){ const d=item.document; if(request.kinds?.length&&!request.kinds.includes(d.kind))continue; if(request.tags?.length&&!request.tags.some(tag=>d.tags.includes(tag)))continue; let boost=boosts.get(item); if(!boost){boost=exactBoost(item,q,queryTokens);boosts.set(item,boost)} const matchTypes:KbMatchType[]=[...boost.matchTypes]; let score=boost.score; const counts=new Map<string,number>(); for(const token of chunk.tokens)counts.set(token,(counts.get(token)??0)+1); for(const term of queryTokens){const tf=counts.get(term)??0;if(!tf)continue;const freq=df.get(term)??0;const idf=Math.log(1+(all.length-freq+.5)/(freq+.5));score+=idf*(tf*2.2)/(tf+1.2*(.25+.75*chunk.tokens.length/Math.max(1,avg)))} if(score<=0)continue; if(!matchTypes.length)matchTypes.push('lexical'); const primary=matchTypes[0]; scored.push({...(d.module ? { module: d.module } : {}),documentId:d.id,chunkId:chunk.id,title:d.title,heading:chunk.heading,excerpt:excerpt(chunk.text,queryTokens),score:Number(score.toFixed(4)),matchTypes,explanation:primary==='symbol'?'Точное совпадение символа':primary==='path'?'Совпадение пути':primary==='protocol'?'Совпадение протокола':primary==='alias'?'Совпадение названия или псевдонима':'Полнотекстовое совпадение',freshness:d.freshness,sourcePath:d.sourcePath,anchor:chunk.anchor,symbols:d.symbols,relatedFiles:d.areas,scope:d.scope,projectId:d.projectId??null}) }
-  scored.sort((a,b)=>b.score-a.score||a.chunkId.localeCompare(b.chunkId)); const limit=Math.min(Math.max(request.limit??20,1),50); const candidates=scored.slice(0,Math.max(limit,15)); if(!reranker||candidates.length<2||candidates[0].score>=9)return candidates.slice(0,limit)
-  try { const ids=await reranker.rerank(query,candidates.slice(0,15).map(r=>({chunkId:r.chunkId,title:r.title,heading:r.heading,excerpt:r.excerpt})),limit); const rank=new Map(ids.map((id,i)=>[id,i])); return candidates.sort((a,b)=>(rank.get(a.chunkId)??999)-(rank.get(b.chunkId)??999)||b.score-a.score).slice(0,limit).map(result=>rank.has(result.chunkId)?{...result,matchTypes:[...result.matchTypes,'semantic'],explanation:`${result.explanation}; подтверждено LLM-reranking`}:result) } catch { return candidates.slice(0,limit) }
+  const query = request.query.trim()
+  if (!query) return []
+  const queryTokens = [...new Set(tokenize(query))]
+  const all = documents.flatMap(item => item.chunks.map(chunk => ({ item, chunk })))
+  const df = new Map<string, number>()
+  for (const term of queryTokens) df.set(term, all.filter(({ chunk }) => chunk.tokens.includes(term)).length)
+  const averageLength = all.reduce((sum, { chunk }) => sum + chunk.tokens.length, 0) / Math.max(1, all.length)
+  const loweredQuery = query.toLocaleLowerCase('ru')
+  const scored: KbSearchResult[] = []
+
+  for (const item of documents) {
+    const document = item.document
+    if (request.kinds?.length && !request.kinds.includes(document.kind)) continue
+    if (request.tags?.length && !request.tags.some(tag => document.tags.includes(tag))) continue
+    const boost = exactBoost(item, loweredQuery, queryTokens)
+    const lexical = item.chunks.map((chunk) => {
+      const counts = new Map<string, number>()
+      for (const token of chunk.tokens) counts.set(token, (counts.get(token) ?? 0) + 1)
+      let score = 0
+      for (const term of queryTokens) {
+        const tf = counts.get(term) ?? 0
+        if (!tf) continue
+        const frequency = df.get(term) ?? 0
+        const idf = Math.log(1 + (all.length - frequency + .5) / (frequency + .5))
+        score += idf * (tf * 2.2) / (tf + 1.2 * (.25 + .75 * chunk.tokens.length / Math.max(1, averageLength)))
+      }
+      return { chunk, score }
+    })
+    if (!lexical.length) continue
+    // Совпадение пути, символа или alias относится к документу. Назначаем его
+    // одному наиболее релевантному разделу, иначе нерелевантные chunks вытесняют
+    // реальные результаты только потому, что живут в том же файле.
+    const boostedChunk = lexical.reduce((best, current) =>
+      current.score > best.score ? current : best, lexical[0])
+
+    for (const entry of lexical) {
+      const receivesBoost = entry === boostedChunk
+      const score = entry.score + (receivesBoost ? boost.score : 0)
+      if (score <= 0) continue
+      const matchTypes: KbMatchType[] = receivesBoost ? [...boost.matchTypes] : []
+      if (entry.score > 0) matchTypes.push('lexical')
+      const uniqueTypes = [...new Set(matchTypes)]
+      const primary = uniqueTypes[0]
+      scored.push({
+        ...(document.module ? { module: document.module } : {}),
+        documentId: document.id,
+        chunkId: entry.chunk.id,
+        title: document.title,
+        heading: entry.chunk.heading,
+        excerpt: excerpt(entry.chunk.text, queryTokens),
+        score: Number(score.toFixed(4)),
+        matchTypes: uniqueTypes,
+        explanation: primary === 'symbol' ? 'Точное совпадение символа'
+          : primary === 'path' ? 'Совпадение пути'
+            : primary === 'protocol' ? 'Совпадение протокола'
+              : primary === 'alias' ? 'Совпадение названия или псевдонима'
+                : 'Полнотекстовое совпадение',
+        freshness: document.freshness,
+        sourcePath: document.sourcePath,
+        anchor: entry.chunk.anchor,
+        symbols: document.symbols,
+        relatedFiles: document.areas,
+        scope: document.scope,
+        projectId: document.projectId ?? null
+      })
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.chunkId.localeCompare(b.chunkId))
+  const limit = Math.min(Math.max(request.limit ?? 20, 1), 50)
+  const candidates = scored.slice(0, Math.max(limit, 15))
+  if (!reranker || candidates.length < 2 || candidates[0].score >= 9) return candidates.slice(0, limit)
+  try {
+    const ids = await reranker.rerank(
+      query,
+      candidates.slice(0, 15).map(result => ({
+        chunkId: result.chunkId,
+        title: result.title,
+        heading: result.heading,
+        excerpt: result.excerpt
+      })),
+      limit
+    )
+    const rank = new Map(ids.map((id, index) => [id, index]))
+    return candidates
+      .sort((a, b) => (rank.get(a.chunkId) ?? 999) - (rank.get(b.chunkId) ?? 999) || b.score - a.score)
+      .slice(0, limit)
+      .map(result => rank.has(result.chunkId)
+        ? { ...result, matchTypes: [...result.matchTypes, 'semantic'], explanation: `${result.explanation}; подтверждено LLM-reranking` }
+        : result)
+  } catch {
+    return candidates.slice(0, limit)
+  }
 }
 
 /** Бандл контекста из готовой выдачи: полный текст разделов и оценка уверенности. */
@@ -136,5 +289,23 @@ export async function buildContext(
     const text = await textOf(result)
     if (text !== undefined) sections.push({ ...result, text })
   }
-  const top=sections[0];const exact=top?.matchTypes.some(type=>['symbol','alias','path','protocol'].includes(type))??false;const gap=top&&sections[1]?top.score-sections[1].score:top?.score??0;const confidence:'high'|'medium'|'low'=!top?'low':exact||(top.score>=5&&gap>=1.5)?'high':top.score>=1?'medium':'low';return{query,confidence,autoInjectAllowed:confidence==='high',sections,relatedFiles:[...new Set(sections.flatMap(r=>r.relatedFiles))],relatedDocuments:[...new Set(sections.map(r=>r.documentId))],staleWarnings:sections.filter(r=>r.freshness==='stale').map(r=>`${r.title} требует сверки`),estimatedTokens:0}
+  const top = sections[0]
+  const exact = top?.matchTypes.some(type => ['symbol', 'alias', 'path', 'protocol'].includes(type)) ?? false
+  const semantic = top?.matchTypes.includes('semantic') ?? false
+  const gap = top && sections[1] ? top.score - sections[1].score : top?.score ?? 0
+  const confidence: 'high' | 'medium' | 'low' = !top
+    ? 'low'
+    : exact || semantic || (top.score >= 5 && gap >= 1.5)
+      ? 'high'
+      : top.score >= 1 ? 'medium' : 'low'
+  return {
+    query,
+    confidence,
+    autoInjectAllowed: confidence === 'high',
+    sections,
+    relatedFiles: [...new Set(sections.flatMap(result => result.relatedFiles))],
+    relatedDocuments: [...new Set(sections.map(result => result.documentId))],
+    staleWarnings: sections.filter(result => result.freshness === 'stale').map(result => `${result.title} требует сверки`),
+    estimatedTokens: 0
+  }
 }

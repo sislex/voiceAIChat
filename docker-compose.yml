@@ -97,6 +97,14 @@ services:
       # профиле `postgres` ниже) и перенеси данные: docs/kb/data-auth.md#схема.
       # Пусто — SQLite в /data/voicechat.db, как раньше.
       VC_DB_URL: ${VC_DB_URL:-}
+      # Sign-in through Identity (docs/plans/sso-auth-v1.md, A7). Empty AUTH_URL keeps
+      # the legacy Core login. Material: scripts/prod/identity-oauth-init.mjs.
+      AUTH_URL: ${AUTH_URL:-}
+      AUTH_CLIENT_ID: ${AUTH_CLIENT_ID:-core}
+      AUTH_CLIENT_SECRET_FILE: ${AUTH_CLIENT_SECRET_FILE:-}
+      PUBLIC_URL: ${VC_PUBLIC_URL:-}
+      # Core calls the public Identity origin, whose certificate comes from Caddy's local CA.
+      NODE_EXTRA_CA_CERTS: ${VC_NODE_EXTRA_CA_CERTS:-}
       VC_IMAGE_STUDIO_MODE: ${VC_IMAGE_STUDIO_MODE:-remote}
       VC_IMAGE_STUDIO_URL: ${VC_IMAGE_STUDIO_URL:-http://image-studio:8796}
       VC_MAKE_MODE: ${VC_MAKE_MODE:-remote}
@@ -180,6 +188,7 @@ services:
     volumes:
       - vc-data:/data
       - /run/voicechat:/run/voicechat
+      - vc-caddy:/caddy:ro
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
@@ -213,7 +222,7 @@ services:
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
     profiles: ["make"]
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:b04733783732b654ba02ee090f63dec564eada56}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:f48a6c6433820bcc6b6ac0e1355e69e020de7d2e}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -237,7 +246,7 @@ services:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
     profiles: ["playwright-reader"]
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:386b14a004ceb4cac02023984e841897b85ed26c}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:f70c70d5294bd09882867dcace00a756a85e405f}
     mem_limit: 256m
     depends_on:
       browser-runner: {condition: service_started, required: false}
@@ -261,7 +270,7 @@ services:
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
     profiles: ["image-studio"]
-    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:c3988f22015e2a21f6e2dc255b4966eae972fbf1}
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:9dca9c9357617d52754d32d480952f1ac9f3aa30}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -285,7 +294,7 @@ services:
   # (docs/plans/kanban-service.md). Профиль `kanban`: включается вместе с VC_KANBAN_MODE=remote
   # у ядра. Том данных общий — скриншоты QA и вложения читаются с /data напрямую, как у Make.
   kanban:
-    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:c186513906f98adc4a8db8f37e129fae45b2f9f8}
+    image: ${SISLEXA_KANBAN_IMAGE:-ghcr.io/sislex/sislexa-kanban:e096f39d4885b5eb074219cc9a8d6a246724bfee}
     profiles: ["kanban"]
     mem_limit: 1g
     depends_on:
@@ -352,6 +361,8 @@ services:
       HOST: 0.0.0.0
       PORT: "8793"
       VC_DATA_DIR: /data
+      # Fetch pinned private Android release assets in the standalone Machines service.
+      VC_GITHUB_TOKEN: ${VC_GITHUB_TOKEN:-}
       VC_CORE_URL: ${VC_CORE_URL:-http://voicechat:8787}
       # Без `:?`: compose подставляет переменные всех сервисов независимо от профилей; без базы процесс сам завершится с понятной ошибкой.
       VC_DB_URL: ${VC_DB_URL:-}
@@ -409,7 +420,7 @@ services:
   # VC_READER_MODE=remote. Машины берёт у процесса машин (VC_MACHINES_URL) или у ядра; relay в панель
   # пользователя, ключи Chromium, список превью и кадры проверок — RPC к ядру. Общий том не нужен.
   reader:
-    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:e0ff32cee8ee80da2953bbfe71c982ecec563cd5}
+    image: ${SISLEXA_READER_IMAGE:-ghcr.io/sislex/webreader-api:d3d7be5cf110f4557b322a26cc37c6f26a78982e}
     profiles: ["reader"]
     mem_limit: 512m
     depends_on:
@@ -437,7 +448,7 @@ services:
 
   stt-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
+    image: ${SISLEXA_STT_RUNNER_IMAGE:-ghcr.io/sislex/voice-stt:ecf2a5f1f1c6016799f28be497d255ae437d83f8}
     mem_limit: 6g
     cpus: 2
     environment:
@@ -461,7 +472,7 @@ services:
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
     profiles: ["browser-runner"]
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:386b14a004ceb4cac02023984e841897b85ed26c}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:f70c70d5294bd09882867dcace00a756a85e405f}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"
@@ -553,7 +564,7 @@ services:
 
   tts-runner:
     profiles: ["voice-runner"]
-    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:7e51e57ebf3b6b339227c788c7919e44d80b36e4}
+    image: ${SISLEXA_TTS_RUNNER_IMAGE:-ghcr.io/sislex/voice-tts:ecf2a5f1f1c6016799f28be497d255ae437d83f8}
     environment:
       HOST: 0.0.0.0
       PORT: "8791"
@@ -582,6 +593,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "8443:8443"
     environment:
       # Публичный адрес стенда: подставляется в Caddyfile. Без него Caddy
       # поднимется с пустым хостом и не ответит ни на один запрос.

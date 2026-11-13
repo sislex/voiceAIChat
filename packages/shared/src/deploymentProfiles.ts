@@ -1,8 +1,8 @@
 import type { SessionUser } from './types.js'
 
-export const APPLICATION_IDS = ['chat', 'make', 'projects', 'web-reader', 'playwright-reader', 'image-studio', 'identity'] as const
+export const APPLICATION_IDS = ['chat', 'make', 'projects', 'web-reader', 'playwright-reader', 'image-studio', 'identity', 'storage'] as const
 export type ApplicationId = typeof APPLICATION_IDS[number]
-export interface DeploymentApplication { id: ApplicationId; enabled: boolean; location: 'local' | 'external'; url?: string }
+export interface DeploymentApplication { id: ApplicationId; enabled: boolean; location: 'local' | 'external'; url?: string; openUrl?: string }
 export interface DeploymentManifest { coreId: string; applications: DeploymentApplication[] }
 export function isApplicationId(value: unknown): value is ApplicationId { return APPLICATION_IDS.includes(value as ApplicationId) }
 export function validateCoreId(value: string): string {
@@ -11,7 +11,9 @@ export function validateCoreId(value: string): string {
 }
 export function applicationUrl(value: string): string {
   const url = new URL(value)
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('invalid_application_url')
+  // Plain HTTP is accepted only for loopback hosts (local stands); real deployments use HTTPS.
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) throw new Error('invalid_application_url')
   return url.href.replace(/\/$/, '')
 }
 export function parseApplications(value?: string): DeploymentApplication[] {
@@ -22,7 +24,12 @@ export function parseApplications(value?: string): DeploymentApplication[] {
     if (!isApplicationId(id) || selected.has(id)) throw new Error('invalid_applications')
     selected.set(id, separator < 0 ? undefined : applicationUrl(item.slice(separator + 1).trim()))
   }
-  return APPLICATION_IDS.map(id => ({ id, enabled: selected.has(id), location: selected.get(id) ? 'external' : 'local', ...(selected.get(id) ? { url: selected.get(id) } : {}) }))
+  return APPLICATION_IDS.map(id => ({
+    id,
+    enabled: selected.has(id),
+    location: selected.get(id) ? 'external' : 'local',
+    ...(selected.get(id) ? { url: selected.get(id), openUrl: `/applications/${id}/open` } : {})
+  }))
 }
 export function serializeApplications(applications: DeploymentApplication[]): string {
   const value = applications.filter(a => a.enabled).map(a => a.location === 'external' ? `${a.id}=${applicationUrl(a.url ?? '')}` : a.id).join(',')
@@ -89,7 +96,7 @@ export const SHARED_SERVICE_RPC_ROUTES: Readonly<Record<string, SharedServiceRpc
   '/internal/make/core': { application: 'make', methods: {
     conversation: u0, isProjectViewer: u0, makeConversationIdsOf: u0, linkableTasks: u0, linkTaskDesign: u0, unlinkTaskDesign: u0,
     taskDesigns: u0, project: u0, listProjects: u0, projectStructure: u0, projectDesign: u0, projectNotesRead: u0,
-    projectNotesUpdate: u0, projectGit: u0, standPreview: u0, makeStand: u0, createTransferTask: u0,
+    projectNotesUpdate: u0, projectGit: u0, standPreview: u0, makeStand: u0, userStand: u0, createTransferTask: u0,
     conversationOwner: 'service', conversationProject: 'service', taskLinks: 'service', userExists: 'service', boardChanged: 'service'
   }, readMethods: ['conversation', 'isProjectViewer', 'makeConversationIdsOf', 'taskDesigns', 'project', 'listProjects', 'projectStructure',
     'projectDesign', 'projectNotesRead', 'conversationOwner', 'conversationProject', 'taskLinks', 'userExists'] },

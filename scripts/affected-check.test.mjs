@@ -81,6 +81,11 @@ function timedStart(events, { fail } = {}) {
 }
 
 test('selectAffected выбирает пакеты и безопасный fallback', async (t) => {
+  await t.test('file storage stays isolated and depends on shared/runtime', () => {
+    assert.deepEqual(ids(selectAffected(['packages/file-storage/src/service.ts'])), ['file-storage'])
+    assert.deepEqual([...dependenciesOf('file-storage')].sort(), ['component-runtime', 'shared'])
+  })
+
   await t.test('правка только server', () => {
     const decision = selectAffected(['apps/server/src/server.ts'])
     assert.equal(decision.full, false)
@@ -95,7 +100,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   await t.test('retired session source paths fail safely to the full consumer gate', () => {
@@ -105,14 +110,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('правка UI не затрагивает отделённый Web Recorder', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+      assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -126,7 +131,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
+    assert.deepEqual(ids(decision), ['file-storage', 'component-runtime', 'shared', 'knowledge', 'server', 'automation-runner'])
   })
 })
 
@@ -171,8 +176,21 @@ test('e2e, frontend-quality и настройки агентов не включ
   }
 })
 
-test('parseOptions разбирает базу диффа, режим и jobs', () => {
+test('parseOptions разбирает базу диффа, режим и jobs', (t) => {
+  // Kanban task runs export BASE_BRANCH=dev; isolate and restore it while
+  // checking the unset, empty and configured defaults.
+  const originalBaseBranch = process.env.BASE_BRANCH
+  t.after(() => {
+    if (originalBaseBranch === undefined) delete process.env.BASE_BRANCH
+    else process.env.BASE_BRANCH = originalBaseBranch
+  })
+  delete process.env.BASE_BRANCH
   assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  process.env.BASE_BRANCH = ''
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  process.env.BASE_BRANCH = 'dev'
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/dev', fast: false })
+  delete process.env.BASE_BRANCH
   assert.deepEqual(parseOptions(['--fast', '--worktree']), { jobs: 2, base: 'HEAD', fast: true })
   assert.deepEqual(parseOptions(['--base', 'origin/release/1.2.0', '--jobs', '4']), { jobs: 4, base: 'origin/release/1.2.0', fast: false })
   assert.throws(() => parseOptions(['--base']), /--base требует git-ref/)
@@ -689,7 +707,7 @@ test('production compose закрепляет каноническое имя se
 test('controlled deployment pins a commit, persists detached completion and never repeats an uncertain effect', async (t) => {
   const launcher = join(dirname(dirname(fileURLToPath(import.meta.url))), 'scripts/prod/deploy.sh')
   const head = 'a'.repeat(40), previous = 'b'.repeat(40)
-  async function scenario({ actual = head, failCompose = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, tagConflict = false, releaseVersion = '0.1.77', fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
+  async function scenario({ actual = head, failCompose = false, unchanged = false, wrongHealth = false, busy = false, killChild = false, dirty = false, statusFailure = false, tagConflict = false, releaseVersion = '0.1.77', fence = false, expectedPrevious = previous, rejectChild = false, revokeAfterDocker = false, changeEnvelope = false } = {}, check) {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'controlled-deploy-')))
     const bin = join(root, 'bin'), state = join(root, 'operations'), calls = join(root, 'calls')
     mkdirSync(bin); mkdirSync(state, { mode: 0o700 }); mkdirSync(join(root, 'apps/server'), { recursive: true })
@@ -708,7 +726,7 @@ test('controlled deployment pins a commit, persists detached completion and neve
     executable('curl', `if test -f "$FIXTURE_ROOT/up"; then commit=${wrongHealth ? previous : head}; else commit=${previous}; fi
       printf '{"ok":true,"application":{"applicationId":"core","commit":"%s"}}' "$commit"`)
     executable('docker', `printf '%s\n' "$*" >>"$FIXTURE_ROOT/calls"
-      if [[ "$*" == 'compose up -d --build' ]]; then touch "$FIXTURE_ROOT/up"; ${killChild ? 'kill -9 "$PPID"; touch "$FIXTURE_ROOT/killed";' : ''} exit ${failCompose ? 1 : 0}; fi
+      if [[ "$*" == 'compose up -d --build' ]]; then ${unchanged ? ':' : 'touch "$FIXTURE_ROOT/up"'}; ${killChild ? 'kill -9 "$PPID"; touch "$FIXTURE_ROOT/killed";' : ''} exit ${failCompose ? 1 : 0}; fi
       exit 0`)
     const env = { ...process.env, PATH: bin + ':' + process.env.PATH, VC_REPO_DIR: root,
       VC_DEPLOY_OPERATIONS: state, VC_DEPLOY_LOG: join(root, 'log'), VC_DEPLOY_LOCK: join(root, 'lock'),
@@ -781,6 +799,25 @@ test('controlled deployment pins a commit, persists detached completion and neve
     assert.notEqual(run('--operation-id', 'two', '--expected-commit', head).status, 0)
     assert.notEqual(run('--reconcile-operation', 'one').status, 0)
     assert.equal(calls().split('compose up -d --build').length - 1, 1)
+  }))
+  await t.test('failed build at the previous SHA recovers and permits the next deployment', () => scenario({ failCompose: true, unchanged: true }, async ({ record, run, state }) => {
+    assert.equal(record.state, 'recovered')
+    assert.equal(record.exitCode, 1)
+    assert.equal(record.composeCompleted, undefined)
+    assert.equal(record.observedCommit, previous)
+    // Historical failed attempts without composeCompleted can also reconcile.
+    writeFileSync(join(state, 'one.json'), JSON.stringify({ ...record, state: 'uncertain' }))
+    const reconciled = run('--reconcile-operation', 'one')
+    assert.equal(reconciled.status, 0, reconciled.stderr)
+    assert.equal(JSON.parse(reconciled.stdout).state, 'recovered')
+    // Redeploying the same commit must not turn a failed build into success.
+    writeFileSync(join(state, 'one.json'), JSON.stringify({ ...record, state: 'uncertain', request: { ...record.request, expectedCommit: previous } }))
+    const sameCommit = run('--reconcile-operation', 'one')
+    assert.equal(sameCommit.status, 0, sameCommit.stderr)
+    assert.equal(JSON.parse(sameCommit.stdout).state, 'recovered')
+    const next = run('--operation-id', 'two', '--expected-commit', head)
+    assert.equal(next.status, 0, next.stderr)
+    await waitUntil(() => JSON.parse(readFileSync(join(state, 'two.json'), 'utf8')).state === 'recovered', 'Next deployment did not finish')
   }))
   await t.test('SIGKILL leaves durable uncertainty and never launches a replacement', () => scenario({ killChild: true }, ({ record, run, calls }) => {
     assert.equal(record.state, 'running'); assert.equal(record.composeCompleted, undefined)

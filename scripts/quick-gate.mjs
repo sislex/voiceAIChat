@@ -1,37 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { resolve, dirname, relative } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { main as applicationMain, OWNER_PIN_TESTS } from './application-gate.mjs'
-import { root, workspaceEntries, isTest, mapTestFiles, runTests, reportFailure } from './test-files.mjs'
+import { root, workspaceEntries, isTest, mapTestFiles, runTests, reportFailure, relatedTooling, walkFiles as walk } from './test-files.mjs'
 import { taskTests } from './task-tests.mjs'
+import { pinOnlyPackages } from './owner-pins.mjs'
+import { bundlePackages } from './owner-pin-check.mjs'
+import { execFileSync } from 'node:child_process'
 
-function walk(path) {
-  if (!existsSync(path)) return []
-  if (statSync(path).isFile()) return [path]
-  return readdirSync(path).filter(name => !['node_modules', 'dist', '.git'].includes(name))
-    .flatMap(name => walk(resolve(path, name)))
-}
-export function relatedTooling(files, repository = root) {
-  const changed = new Set(files.map(file => resolve(repository, file)))
-  function touches(file, seen = new Set()) {
-    if (changed.has(file)) return true
-    if (seen.has(file) || !existsSync(file) || !statSync(file).isFile()) return false
-    seen.add(file)
-    const source = readFileSync(file, 'utf8')
-    return [...source.matchAll(/(?:from\s*|import\s*\(|import\s*|require\s*\()\s*['"]([^'"]+)['"]/g)]
-      .filter(match => match[1].startsWith('.'))
-      .some(match => {
-        const target = resolve(dirname(file), match[1])
-        return [target, target + '.mjs', target + '.ts', target.replace(/\.js$/, '.ts')]
-          .some(candidate => touches(candidate, seen))
-      })
-  }
-  // Scripts tested as child processes are not imported by their tests; the sibling test still owns them.
-  const sibling = file => changed.has(file.replace(/\.test(\.[cm]?js)$/, '$1'))
-  return walk(resolve(repository, 'scripts')).filter(file => isTest(file) && (touches(file) || sibling(file)))
-    .map(file => relative(repository, file))
-}
+export { relatedTooling }
 export function quickPlanCommands(plan, files, repository = root, { task = false } = {}) {
   // Configuration cannot be narrowed by the source import graph.
   // A root package.json proven to change only npm scripts carries rootScriptPaths instead.
@@ -87,7 +65,7 @@ export function executeQuickPlan(steps) {
     if (step.runner) runTests(step)
     else {
       console.log(`[gate:quick] ${step.command} ${step.args.join(' ')}`)
-      const result = spawnSync(step.command, step.args, { cwd: root, stdio: 'inherit' })
+      const result = spawnSync(step.command, step.args, { cwd: root, stdio: 'inherit', timeout: step.timeout })
       if (result.error || result.status !== 0)
         throw Object.assign(result.error ?? Error(`Check exited ${result.status ?? result.signal}`), { exitCode: result.status || 1 })
     }
@@ -103,6 +81,19 @@ export async function main(args = process.argv.slice(2)) {
   }
   if (!base) throw Error('Provide --base <sha>')
   const dry = args.includes('--dry-run')
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' })
+  const baseline = git('merge-base', 'HEAD', base).trim()
+  const files = [...new Set([...git('diff', '--name-only', '--no-renames', '-z', baseline, '--').split('\0'), ...git('ls-files', '--others', '--exclude-standard', '-z').split('\0')].filter(Boolean))]
+  const names = pinOnlyPackages(files,
+    file => { try { return git('show', `${baseline}:${file}`) } catch { return null } },
+    file => existsSync(resolve(root, file)) ? readFileSync(resolve(root, file), 'utf8') : null,
+    bundlePackages)
+  if (names) {
+    const steps = [{ command: process.execPath, args: ['--import', 'tsx', 'scripts/owner-pin-check.mjs', ...names], timeout: 115_000 }]
+    console.log(JSON.stringify(steps, null, 2))
+    if (!dry) executeQuickPlan(steps)
+    return steps
+  }
   return applicationMain(args.filter(arg => arg !== '--dry-run'), {
     execute(plan, files) {
       const steps = quickPlanCommands(plan, files)

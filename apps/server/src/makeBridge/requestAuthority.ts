@@ -1,6 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import type { AuthenticateFn } from '@sislexa/identity/server/users/auth'
 
+function canonicalRequestUrl(value: string): string {
+  try {
+    const url = new URL(value, 'http://make-request.local')
+    return url.pathname + url.search
+  } catch {
+    return value
+  }
+}
+
 /** Exact-request capabilities for Core-originated requests; never persisted as sessions. */
 export class MakeRequestAuthority {
   private grants = new Map<string, { userId: string; method: string; url: string; expires: number }>()
@@ -8,7 +17,7 @@ export class MakeRequestAuthority {
 
   async run<T>(userId: string, method: string, url: string, request: (authorization: string) => Promise<T>): Promise<T> {
     const token = 'make_request_' + randomBytes(32).toString('hex')
-    this.grants.set(token, { userId, method, url, expires: Date.now() + 30_000 })
+    this.grants.set(token, { userId, method, url: canonicalRequestUrl(url), expires: Date.now() + 30_000 })
     try { return await request('Bearer ' + token) } finally { this.grants.delete(token) }
   }
 
@@ -16,7 +25,7 @@ export class MakeRequestAuthority {
     const token = req.headers.authorization?.replace(/^Bearer /, '')
     if (!token?.startsWith('make_request_')) return undefined
     const grant = this.grants.get(token)
-    if (!grant || grant.expires <= Date.now() || grant.method !== req.method || grant.url !== req.url)
+    if (!grant || grant.expires <= Date.now() || grant.method !== req.method || grant.url !== canonicalRequestUrl(req.url))
       return { ok: false, status: 403, error: 'make_request_denied' }
     const user = await this.user(grant.userId)
     return user ? { ok: true, user } : { ok: false, status: 403, error: 'make_request_denied' }

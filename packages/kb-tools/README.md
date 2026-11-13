@@ -32,3 +32,14 @@ Without config, Core defaults remain docs/kb, apps/* and packages/*,
 "База знаний voiceAIChat", docs/kb/log, docs/kb/README.md and generated/kb.
 Release owner: `npm run pack:kb-tools -- <output-directory>` in Core produces
 an npm archive and integrity.json. Consumers pin that archive in vendor/.
+
+Freshness checks ignore area commits that also modify the topic file itself.
+Thus `touch` before a combined code/topic commit is sufficient; later code-only
+commits still make the topic stale. Touch-only commits do not make it stale.
+
+Owner repositories invoking `npx sislexa-kb` use the binary supplied by their
+installed `@sislexa/kb-tools` package. A Core source change alone does not update
+those installations: the release operator must pack/publish the fixed package,
+update consumer version/archive pins and lockfiles, and reinstall dependencies.
+Version pins and release publication are operator-owned; this fix does not
+publish a release or change consumer pins.

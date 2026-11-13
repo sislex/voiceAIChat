@@ -15,6 +15,24 @@
 
 https://{$VC_PUBLIC_HOST} {
 	tls internal
+	@compressible {
+		not path */exec-stream */exec-stream/*
+		not header Upgrade websocket
+		not header Range *
+	}
+	encode @compressible zstd gzip {
+		match {
+			header Content-Type application/json*
+			header Content-Type application/*+json*
+			header Content-Type application/javascript*
+			header Content-Type application/wasm*
+			header Content-Type text/html*
+			header Content-Type text/plain*
+			header Content-Type text/css*
+			header Content-Type text/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
 	# Local applications keep direct upstreams. Disabled/external applications
 	# use Core so its deployment policy applies. Internal APIs stay private.
 	handle /internal/* {
@@ -37,6 +55,12 @@ https://{$VC_PUBLIC_HOST} {
 	}
 }
 
+# Identity sign-in origin (profile `identity`). OAuth needs its own origin with path "/".
+https://{$VC_PUBLIC_HOST}:8443 {
+	tls internal
+	reverse_proxy identity:8798
+}
+
 # Обычный HTTP на 80 порту — редирект на HTTPS.
 http://{$VC_PUBLIC_HOST} {
 	redir https://{host}{uri} permanent
@@ -49,6 +73,24 @@ http://{$VC_PUBLIC_HOST} {
 # же локального CA, которому раннер уже доверяет.
 https://caddy {
 	tls internal
+	@compressible {
+		not path */exec-stream */exec-stream/*
+		not header Upgrade websocket
+		not header Range *
+	}
+	encode @compressible zstd gzip {
+		match {
+			header Content-Type application/json*
+			header Content-Type application/*+json*
+			header Content-Type application/javascript*
+			header Content-Type application/wasm*
+			header Content-Type text/html*
+			header Content-Type text/plain*
+			header Content-Type text/css*
+			header Content-Type text/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
 	# Local applications keep direct upstreams. Disabled/external applications
 	# use Core so its deployment policy applies. Internal APIs stay private.
 	handle /internal/* {

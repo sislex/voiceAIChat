@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import Database from 'better-sqlite3'
 import { VoiceChatDb } from './database.js'
+import type { Sql } from '@sislexa/identity/storage-sql/types'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_SETTINGS, taskReworkContext } from '@voicechat/shared'
+import * as dbSeed from '../test/seed.js'
+
+/** Kanban owns board/CI writes now; tests seed the shared tables directly. */
+const sqlOf = (d: VoiceChatDb): Sql => (d as unknown as { sql: Sql }).sql
 // Сырой драйвер SQLite и файловые базы: на Postgres (VC_TEST_DB_URL) этих тестов нет — там нет ни файла, ни драйвера.
 const ON_POSTGRES = Boolean(process.env.VC_TEST_DB_URL)
 
@@ -79,7 +84,7 @@ describe('projects: миграция владельцев', () => {
     await first.identity.createUser('alice', '', 'developer')
     await first.identity.createUser('bob', '', 'developer')
     const project = await first.projects.createProject('alice', { name: 'Legacy' })
-    await first.projects.addMember('alice', project.id, 'bob')
+    await dbSeed.addMember(first, 'alice', project.id, 'bob')
     await first.close()
     const raw = new Database(file)
     raw.prepare(`DELETE FROM project_members WHERE project_id = ? AND username = 'alice'`).run(project.id)
@@ -154,7 +159,7 @@ describe('projects: миграция канонического workflow', () =>
     const project = await first.projects.createProject('alice', { name: 'Legacy cancelled' })
     const board = (await first.tasks.getBoard('alice', project.id))!
     const canonical = board.columns.find((item) => item.semanticType === 'cancelled')!
-    const legacy = (await first.projects.createColumn('alice', project.id, 'Отменены'))!
+    const legacy = (await dbSeed.createColumn(first, 'alice', project.id, 'Отменены'))!
     const taskA = (await first.tasks.createTask('alice', project.id, { columnId: legacy.id, title: 'Первая' }))!
     const taskB = (await first.tasks.createTask('alice', project.id, { columnId: legacy.id, title: 'Вторая' }))!
     await first.close()
@@ -188,11 +193,11 @@ describe('projects: миграция канонического workflow', () =>
     const project = await first.projects.createProject('alice', { name: 'Legacy workflow' })
     const initial = (await first.tasks.getBoard('alice', project.id))!
     const column = (semantic: string) => initial.columns.find((item) => item.semanticType === semantic)!
-    const testing = (await first.projects.createColumn('alice', project.id, 'Старое тестирование'))!
-    const preparation = (await first.projects.createColumn('alice', project.id, 'Старые сценарии'))!
-    const readyDuplicate = (await first.projects.createColumn('alice', project.id, 'Дубликат Ready'))!
-    const custom = (await first.projects.createColumn('alice', project.id, 'Пользовательская'))!
-    await first.projects.setColumnHidden('alice', project.id, custom.id, true)
+    const testing = (await dbSeed.createColumn(first, 'alice', project.id, 'Старое тестирование'))!
+    const preparation = (await dbSeed.createColumn(first, 'alice', project.id, 'Старые сценарии'))!
+    const readyDuplicate = (await dbSeed.createColumn(first, 'alice', project.id, 'Дубликат Ready'))!
+    const custom = (await dbSeed.createColumn(first, 'alice', project.id, 'Пользовательская'))!
+    await sqlOf(first).run('UPDATE kanban_columns SET hidden = 1 WHERE id = ?', [custom.id])
     await first.tasks.createTask('alice', project.id, { columnId: column('automated_qa').id, title: 'Уже Automated' })
     await first.tasks.createTask('alice', project.id, { columnId: testing.id, title: 'Из Testing' })
     await first.tasks.createTask('alice', project.id, { columnId: column('component_qa').id, title: 'Уже Component' })
@@ -252,7 +257,7 @@ describe('projects: лёгкая доска и полная задача', () =>
     const p = await db.projects.createProject('alice', { name: 'Light board' })
     const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
     const task = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T' }))!
-    await db.tasks.updateTask('alice', p.id, task.id, { description: 'Длинное описание задачи', acceptanceCriteria: 'Критерии приёмки' })
+    await dbSeed.updateTask(db, 'alice', p.id, task.id, { description: 'Длинное описание задачи', acceptanceCriteria: 'Критерии приёмки' })
     const boardTask = (await db.tasks.getBoard('alice', p.id))!.tasks.find((t) => t.id === task.id)!
     // Лёгкая карточка: тяжёлые тексты пустые, но поля для превью на месте.
     expect(boardTask.description).toBe('')
@@ -317,7 +322,7 @@ describe('projects: две фазы доски', () => {
     const cols = (await d.tasks.getBoardSkeleton('alice', p.id))!.columns
     const done = cols.find((c) => c.semanticType === 'done')!
     const task = (await d.tasks.createTask('alice', p.id, { columnId: cols[0]!.id, title: 'T' }))!
-    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: 0 })
     await d.tasks.moveTask('alice', p.id, task.id, { columnId: done.id })
     const skeletonIds = async (opts?: { includeCompleted?: boolean }): Promise<string[]> => (await d.tasks.getBoardSkeleton('alice', p.id, opts))!.tasks.map((t) => t.id)
     const statusIds = async (opts?: { includeCompleted?: boolean }): Promise<string[]> => (await d.tasks.getBoardStatuses('alice', p.id, opts))!.tasks.map((t) => t.taskId)
@@ -341,15 +346,15 @@ describe('projects: две фазы доски', () => {
     const d = new VoiceChatDb(':memory:', { now: () => clock })
     await d.identity.createUser('alice', '', 'developer')
     const p = await d.projects.createProject('alice', { name: 'CI scope' })
-    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: 0 })
     const cols = (await d.tasks.getBoardSkeleton('alice', p.id))!.columns
     const dev = cols[0]!
     const done = cols.find((c) => c.semanticType === 'done')!
     const onBoard = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'На доске' }))!
     const archived = (await d.tasks.createTask('alice', p.id, { columnId: dev.id, title: 'Давно закрыта' }))!
     const run = async (taskId: string): Promise<void> => {
-      const created = await d.ci.createCiRun({ projectId: p.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: dev.id, runColumnId: dev.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
-      await d.ci.updateCiRun(created.id, { status: 'success', durationMs: 100 })
+      const created = await dbSeed.createCiRun(d, { projectId: p.id, taskId, agentId: null, triggeredBy: 'alice', prevColumnId: dev.id, runColumnId: dev.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
+      await sqlOf(d).run("UPDATE ci_runs SET status = 'success', duration_ms = 100 WHERE id = ?", [created.id])
     }
     await run(onBoard.id)
     await run(archived.id)
@@ -398,34 +403,15 @@ describe('projects: создание и членство', () => {
 
   it('addMember открывает доступ; роль участника = member', async () => {
     const p = await db.projects.createProject('alice', { name: 'P1' })
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
     const asBob = (await db.projects.getProject('bob', p.id))!
     expect(asBob.role).toBe('member')
     expect((await db.projects.listProjects('bob')).map((x) => x.id)).toContain(p.id)
   })
 
-  it('addMember только владельцем и только существующего пользователя', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P1' })
-    await db.projects.addMember('alice', p.id, 'bob')
-    expect(await db.projects.addMember('bob', p.id, 'carol')).toBeNull() // bob не владелец
-    await expect(async () => await db.projects.addMember('alice', p.id, 'nobody')).rejects.toThrow()
-  })
-
-  it('updateProject/deleteProject — только владелец', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P1' })
-    await db.projects.addMember('alice', p.id, 'bob')
-    expect(await db.projects.updateProject('bob', p.id, { name: 'X' })).toBeNull()
-    const upd = (await db.projects.updateProject('alice', p.id, { name: 'P1b', gitUrl: 'git@x' }))!
-    expect(upd.name).toBe('P1b')
-    expect(upd.gitUrl).toBe('git@x')
-    expect(await db.projects.deleteProject('bob', p.id)).toBe(false)
-    expect(await db.projects.deleteProject('alice', p.id)).toBe(true)
-    expect(await db.projects.getProject('alice', p.id)).toBeNull()
-  })
-
   it('removeMember снимает назначения и защищает последнего владельца', async () => {
     const p = await db.projects.createProject('alice', { name: 'P1' })
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
     const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
     const task = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T', assignee: 'bob' }))!
     expect(task.assignee).toBe('bob')
@@ -435,34 +421,20 @@ describe('projects: создание и членство', () => {
     await expect(async () => await db.projects.removeMember('alice', p.id, 'alice')).rejects.toThrow('последнего владельца')
   })
 
-  it('поддерживает нескольких равноправных владельцев, выход и аудит ролей', async () => {
+  it('поддерживает нескольких равноправных владельцев и выход', async () => {
     const p = await db.projects.createProject('alice', { name: 'P1' })
-    await db.projects.addMember('alice', p.id, 'bob')
-    await db.projects.updateMemberRole('alice', p.id, 'bob', 'owner')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
+    await dbSeed.updateMemberRole(db, 'alice', p.id, 'bob', 'owner')
     expect((await db.projects.getProject('bob', p.id))!.role).toBe('owner')
-    expect((await db.projects.updateProject('bob', p.id, { name: 'От Bob' }))!.name).toBe('От Bob')
+    expect((await dbSeed.updateProject(db, 'bob', p.id, { name: 'От Bob' }))!.name).toBe('От Bob')
 
     await db.projects.removeMember('bob', p.id, 'alice')
     expect(await db.projects.getProject('alice', p.id)).toBeNull()
     expect((await db.projects.getProject('bob', p.id))!.members).toEqual([
       expect.objectContaining({ username: 'bob', role: 'owner' })
     ])
-    expect(await db.projects.listProjectMemberRoleAudit(p.id)).toEqual([
-      expect.objectContaining({ actor: 'alice', targetUser: 'bob', oldRole: null, newRole: 'member', action: 'add' }),
-      expect.objectContaining({ actor: 'alice', targetUser: 'bob', oldRole: 'member', newRole: 'owner', action: 'role_change' }),
-      expect.objectContaining({ actor: 'bob', targetUser: 'alice', oldRole: 'owner', newRole: null, action: 'remove' })
-    ])
   })
 
-  it('не назначает владельцем не-участника и не позволяет двум владельцам убрать последнего', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P1' })
-    await expect(async () => await db.projects.updateMemberRole('alice', p.id, 'bob', 'owner')).rejects.toThrow('Сначала добавьте')
-    await db.projects.addMember('alice', p.id, 'bob')
-    await db.projects.updateMemberRole('alice', p.id, 'bob', 'owner')
-    await db.projects.updateMemberRole('alice', p.id, 'bob', 'member')
-    await expect(async () => await db.projects.updateMemberRole('alice', p.id, 'alice', 'member')).rejects.toThrow('последнего владельца')
-    expect((await db.projects.getProject('alice', p.id))!.members.filter((m) => m.role === 'owner')).toHaveLength(1)
-  })
 })
 
 describe('projects: машины', () => {
@@ -527,7 +499,7 @@ describe('projects: машины', () => {
 
   async function releaseFixture(access: 'full'|'read'='full') {
     const project=await db.projects.createProject('alice',{name:'Release',gitUrl:'git@example/repo.git'})
-    await db.projects.addMember('alice',project.id,'bob')
+    await dbSeed.addMember(db, 'alice',project.id,'bob')
     const personal=await db.machines.createAgent('alice','Alice Mac')
     const shared=await db.machines.createAgent('bob','Bob Mac')
     const foreign=await db.machines.createAgent('bob','Foreign Mac')
@@ -558,44 +530,16 @@ describe('projects: машины', () => {
   })
 })
 
-describe('board: колонки и порядок', () => {
-  it('createColumn добавляет в конец; reorderColumns переставляет', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P1' })
-    const c4 = (await db.projects.createColumn('alice', p.id, 'Review'))!
-    let cols = (await db.tasks.getBoard('alice', p.id))!.columns
-    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Отменено', 'Требуется решение', 'Review'])
-    const reversed = cols.map((c) => c.id).reverse()
-    expect(await db.projects.reorderColumns('alice', p.id, reversed)).toBe(true)
-    cols = (await db.tasks.getBoard('alice', p.id))!.columns
-    expect(cols.map((c) => c.id)).toEqual(reversed)
-    // неполный/чужой набор — отказ
-    expect(await db.projects.reorderColumns('alice', p.id, [c4.id])).toBe(false)
-  })
-
-  it('setColumnHidden и deleteColumn (каскад задач)', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P1' })
-    const col = (await db.projects.createColumn('alice', p.id, 'Custom'))!
-    await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T' })
-    expect(await db.projects.setColumnHidden('alice', p.id, col.id, true)).toBe(true)
-    expect((await db.tasks.getBoard('alice', p.id))!.columns.find((c) => c.id === col.id)!.hidden).toBe(true)
-    expect(await db.projects.deleteColumn('alice', p.id, col.id)).toBe(true)
-    const board = (await db.tasks.getBoard('alice', p.id))!
-    expect(board.columns.find((c) => c.id === col.id)).toBeUndefined()
-    expect(board.tasks).toEqual([]) // задача ушла по CASCADE
-  })
-})
-
 describe('board: задачи, приоритеты, assignee, перемещение', () => {
   it('assignee должен быть участником', async () => {
     const p = await db.projects.createProject('alice', { name: 'P1' })
     const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
     await expect(async () => await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T', assignee: 'bob' })).rejects.toThrow()
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
     const t = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T', assignee: 'bob', priority: 'high' }))!
     expect(t.assignee).toBe('bob')
     expect(t.priority).toBe('high')
     expect((await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Без исполнителя', assignee: null }))!.assignee).toBeNull()
-    await expect(async () => await db.tasks.updateTask('alice', p.id, t.id, { assignee: 'carol' })).rejects.toThrow()
     await db.identity.setUserBlocked('bob', true)
     expect((await db.projects.getProject('alice', p.id))!.members.find((member) => member.username === 'bob')?.active).toBe(false)
     await expect(async () => await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'Blocked', assignee: 'bob' })).rejects.toThrow()
@@ -611,8 +555,8 @@ describe('board: задачи, приоритеты, assignee, перемеще�
 
     const task = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T', agentId: personal.id }))!
     expect(task.agentId).toBe(personal.id)
-    expect((await db.tasks.updateTask('alice', p.id, task.id, { agentId: projectMachine.id }))!.agentId).toBe(projectMachine.id)
-    await expect(async () => await db.tasks.updateTask('alice', p.id, task.id, { agentId: foreign.id })).rejects.toThrow('Машина недоступна')
+    expect((await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'P', agentId: projectMachine.id }))!.agentId).toBe(projectMachine.id)
+    await expect(async () => await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'F', agentId: foreign.id })).rejects.toThrow('Машина недоступна')
   })
 
   it('moveTask: в середину, вниз, вверх, в пустую колонку', async () => {
@@ -661,7 +605,7 @@ describe('projects: deleteUserData', () => {
   it('снимает членства, удаляет осиротевшие проекты, чистит назначения', async () => {
     const solo = await db.projects.createProject('alice', { name: 'Solo' })
     const shared = await db.projects.createProject('alice', { name: 'Shared' })
-    await db.projects.addMember('alice', shared.id, 'bob')
+    await dbSeed.addMember(db, 'alice', shared.id, 'bob')
     const col = (await db.tasks.getBoard('alice', shared.id))!.columns[0]
     await db.tasks.createTask('alice', shared.id, { columnId: col.id, title: 'T', assignee: 'bob' })
     await db.identity.deleteUserData('bob')
@@ -687,23 +631,17 @@ describe('projects: папка машины, дефолт, привязка ча
     let d = (await db.machines.setProjectMachinePath('alice', p.id, a1.id, '/srv/proj'))!
     expect(d.machines.find((m) => m.agentId === a1.id)!.path).toBe('/srv/proj')
     // дефолт
-    d = (await db.projects.setProjectDefaultMachine('alice', p.id, a1.id))!
+    d = (await dbSeed.setProjectDefaultMachine(db, 'alice', p.id, a1.id))!
     expect(d.defaultAgentId).toBe(a1.id)
-    // дефолтом нельзя назначить машину не из проекта
-    const foreign = await db.machines.createAgent('alice', 'X')
-    await expect(async () => await db.projects.setProjectDefaultMachine('alice', p.id, foreign.id)).rejects.toThrow()
     // не-владелец не может
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
     expect(await db.machines.setProjectMachinePath('bob', p.id, a1.id, '/x')).toBeNull()
-    // снятие дефолтной машины сбрасывает дефолт
-    await db.projects.unlinkMachine('alice', p.id, a1.id)
-    expect((await db.projects.getProject('alice', p.id))!.defaultAgentId).toBeNull()
   })
 
   it('сохраняет конфигурацию собственной машины без предоставления проекту', async () => {
     const p = await db.projects.createProject('alice', { name: 'Private machine config' })
     const machine = await db.machines.createAgent('alice', 'Private Mac')
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
 
     await db.machines.setProjectMachinePath('alice', p.id, machine.id, '/work/project')
     await db.machines.setProjectMachineReposRoot('alice', p.id, machine.id, '/work/repos')
@@ -740,7 +678,7 @@ describe('projects: папка машины, дефолт, привязка ча
     const machine = await db.machines.createAgent('alice', 'Mac')
     const unsharedMachine = await db.machines.createAgent('alice', 'Personal Mac')
     await db.machines.linkMachine('alice', p.id, machine.id)
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
 
     expect(await db.machines.isMachineSharedWithProject(p.id, unsharedMachine.id)).toBe(false)
     expect(await db.machines.canUseAgent('alice', unsharedMachine.id, p.id)).toBe(true)
@@ -752,8 +690,8 @@ describe('projects: папка машины, дефолт, привязка ча
 
     await db.projects.removeMember('alice', p.id, 'bob')
     expect(await db.machines.canUseAgent('bob', machine.id, p.id)).toBe(false)
-    await db.projects.addMember('alice', p.id, 'bob')
-    await db.projects.unlinkMachine('alice', p.id, machine.id)
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
+    await db.machines.setMachineSharedWithProject('alice', p.id, machine.id, false)
     expect(await db.machines.canUseAgent('bob', machine.id, p.id)).toBe(false)
   })
 
@@ -762,7 +700,7 @@ describe('projects: папка машины, дефолт, привязка ча
     const a1 = await db.machines.createAgent('alice', 'M1')
     await db.machines.linkMachine('alice', p.id, a1.id)
     await db.machines.setProjectMachinePath('alice', p.id, a1.id, '/srv/proj')
-    await db.projects.setProjectDefaultMachine('alice', p.id, a1.id)
+    await dbSeed.setProjectDefaultMachine(db, 'alice', p.id, a1.id)
     const conv = await db.chat.createConversation('alice', 'Чат')
     const linked = (await db.chat.setConversationProject('alice', conv.id, p.id))!
     expect(linked.projectId).toBe(p.id)
@@ -780,8 +718,8 @@ describe('projects: папка машины, дефолт, привязка ча
   it('изолирует персональные defaults и аудит предоставления по проектам', async () => {
     const p1 = await db.projects.createProject('alice', { name: 'P1' })
     const p2 = await db.projects.createProject('alice', { name: 'P2' })
-    await db.projects.addMember('alice', p1.id, 'bob')
-    await db.projects.addMember('alice', p2.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p1.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p2.id, 'bob')
     const machine = await db.machines.createAgent('alice', 'Mac')
     await db.machines.linkMachine('alice', p1.id, machine.id)
     await db.machines.setProjectMachinePath('alice', p1.id, machine.id, '/work/project')
@@ -821,24 +759,14 @@ describe('work items', () => {
     expect(task.parentId).toBe(story.id)
     expect(task.acceptanceCriteria).toBe('ok')
     await expect(async () => await db.tasks.createTask('alice', p.id, { columnId: backlog.id, title: 'bad', type: 'epic', parentId: story.id })).rejects.toThrow()
-    await expect(async () => await db.tasks.updateTask('alice', p.id, epic.id, { parentId: task.id })).rejects.toThrow()
   })
 
-  it('deleteTask убирает задачу с доски', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P' })
-    const ready = (await db.tasks.getBoard('alice', p.id))!.columns.find((c) => c.semanticType === 'ready')!
-    const task = (await db.tasks.createTask('alice', p.id, { columnId: ready.id, title: 'T' }))!
-    expect(await db.tasks.deleteTask('alice', p.id, task.id)).toBe(true)
-    expect((await db.tasks.getBoard('alice', p.id))!.tasks.find((t) => t.id === task.id)).toBeUndefined()
-  })
 })
 
 describe('projects: навыки по умолчанию и связанный чат', () => {
-  it('createProject/updateProject хранят навыки по умолчанию по типам', async () => {
+  it('createProject хранит навыки по умолчанию по типам', async () => {
     const p = await db.projects.createProject('alice', { name: 'P', defaultSkills: { epic: ['arch'], story: ['ux'], task: ['ts'] } })
     expect(p.defaultSkills).toEqual({ epic: ['arch'], story: ['ux'], task: ['ts'] })
-    const upd = (await db.projects.updateProject('alice', p.id, { defaultSkills: { task: ['ts', 'sql'] } }))!
-    expect(upd.defaultSkills).toEqual({ epic: ['arch'], story: ['ux'], task: ['ts', 'sql'] })
   })
 
   it('createTask копирует навыки по умолчанию для своего типа; явные — перекрывают', async () => {
@@ -852,15 +780,6 @@ describe('projects: навыки по умолчанию и связанный �
     expect(task.skills).toEqual(['ts'])
     const custom = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'C', type: 'task', skills: ['redis'] }))!
     expect(custom.skills).toEqual(['redis'])
-  })
-
-  it('updateTask правит навыки карточки (удаление авто-добавленных + свои)', async () => {
-    const p = await db.projects.createProject('alice', { name: 'P', defaultSkills: { epic: [], story: [], task: ['ts', 'sql'] } })
-    const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
-    const t = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T' }))!
-    expect(t.skills).toEqual(['ts', 'sql'])
-    const upd = (await db.tasks.updateTask('alice', p.id, t.id, { skills: ['ts', 'redis'] }))!
-    expect(upd.skills).toEqual(['ts', 'redis'])
   })
 
   it('createTask сразу создаёт чат автору только для пользовательского таска', async () => {
@@ -932,7 +851,7 @@ describe('projects: навыки по умолчанию и связанный �
     const col = (await db.tasks.getBoard('alice', p.id))!.columns[0]
     const t = (await db.tasks.createTask('alice', p.id, { columnId: col.id, title: 'T' }))!
     expect(await db.chat.openOrCreateTaskChat('bob', p.id, t.id)).toBeNull() // не участник
-    await db.projects.addMember('alice', p.id, 'bob')
+    await dbSeed.addMember(db, 'alice', p.id, 'bob')
     const chatA = (await db.chat.openOrCreateTaskChat('alice', p.id, t.id))!
     const chatB = (await db.chat.openOrCreateTaskChat('bob', p.id, t.id))!
     expect(chatB.id).not.toBe(chatA.id) // у каждого свой связанный чат
@@ -980,7 +899,7 @@ describe('доска: завершённые задачи уходят с дос
   it('порог 0 — карточка держится до конца дня завершения', async () => {
     const { db: d, set } = withClock()
     const p = await d.projects.createProject('alice', { name: 'P' })
-    await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 })
+    await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: 0 })
     const cols = (await d.tasks.getBoard('alice', p.id))!.columns
     const done = cols.find((c) => c.semanticType === 'done')!
     const dev = cols.find((c) => c.semanticType === 'development')!
@@ -1027,12 +946,12 @@ describe('доска: завершённые задачи уходят с дос
     const p = await d.projects.createProject('alice', { name: 'P' })
     const done = (await d.tasks.getBoard('alice', p.id))!.columns.find((c) => c.semanticType === 'done')!
     const t = (await d.tasks.createTask('alice', p.id, { columnId: done.id, title: 'T' }))!
-    expect((await d.projects.updateProject('alice', p.id, { doneRetentionDays: 0 }))!.doneRetentionDays).toBe(0)
+    expect((await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: 0 }))!.doneRetentionDays).toBe(0)
     // День завершения карточка досиживает: перенос в «Готово» делает и CI-ран.
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((x) => x.id)).toContain(t.id)
     set(new Date(1_700_000_000_000).setHours(24, 0, 0, 0))
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((x) => x.id)).not.toContain(t.id)
-    expect((await d.projects.updateProject('alice', p.id, { doneRetentionDays: null }))!.doneRetentionDays).toBeNull()
+    expect((await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: null }))!.doneRetentionDays).toBeNull()
     set(1_700_000_000_000 + 999 * DAY)
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.map((x) => x.id)).toContain(t.id)
     await d.close()
@@ -1047,7 +966,7 @@ describe('доска: завершённые задачи уходят с дос
   it('сортирует «Готово» по последнему входу, а не по updatedAt', async () => {
     const { db: d, set } = withClock()
     const p = await d.projects.createProject('alice', { name: 'P' })
-    await d.projects.updateProject('alice', p.id, { doneRetentionDays: null })
+    await dbSeed.updateProject(d, 'alice', p.id, { doneRetentionDays: null })
     const columns = (await d.tasks.getBoard('alice', p.id))!.columns
     const done = columns.find((column) => column.semanticType === 'done')!
     const dev = columns.find((column) => column.semanticType === 'development')!
@@ -1059,7 +978,7 @@ describe('доска: завершённые задачи уходят с дос
     set(1_700_000_200_000)
     await d.tasks.moveTask('alice', p.id, second.id, { columnId: done.id })
     set(1_700_000_300_000)
-    await d.tasks.updateTask('alice', p.id, second.id, { title: 'Вторая (исправлена)' })
+    await dbSeed.updateTask(d, 'alice', p.id, second.id, { title: 'Вторая (исправлена)' })
     expect((await d.tasks.getBoard('alice', p.id))!.tasks.filter((task) => task.columnId === done.id).map((task) => task.id))
       .toEqual([second.id, first.id])
 
@@ -1080,7 +999,7 @@ describe('доска: завершённые задачи уходят с дос
     await firstDb.ready
     await firstDb.identity.createUser('alice', '', 'developer')
     const p = await firstDb.projects.createProject('alice', { name: 'P' })
-    await firstDb.projects.updateProject('alice', p.id, { doneRetentionDays: null })
+    await dbSeed.updateProject(firstDb, 'alice', p.id, { doneRetentionDays: null })
     const columns = (await firstDb.tasks.getBoard('alice', p.id))!.columns
     const dev = columns.find((column) => column.semanticType === 'development')!
     const done = columns.find((column) => column.semanticType === 'done')!
@@ -1173,8 +1092,7 @@ describe('projects: чаты завершённых задач в списке �
     const { pid, taskId, chatId } = await withTaskChat()
     const board = (await db.tasks.getBoard('alice', pid))!
     const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
-    expect(await db.projects.updateColumn('alice', pid, cancelled.id, { name: 'Никогда не делать' })).toBe(true)
-    expect(await db.projects.reorderColumns('alice', pid, [cancelled.id, ...board.columns.filter((c) => c.id !== cancelled.id).map((c) => c.id)])).toBe(true)
+    await sqlOf(db).run("UPDATE kanban_columns SET name = 'Никогда не делать', position = -1 WHERE id = ?", [cancelled.id])
     await db.tasks.moveTask('alice', pid, taskId, { columnId: cancelled.id })
     expect((await db.chat.listConversations('alice', { scope: 'kanban', projectId: pid })).map((c) => c.id)).not.toContain(chatId)
   })
@@ -1182,7 +1100,7 @@ describe('projects: чаты завершённых задач в списке �
   it('скрытие не зависит от порога дней: done — и чата в списке нет', async () => {
     const { pid, taskId, chatId, done } = await withTaskChat()
     // Порог «не скрывать никогда» держит карточку на доске, но не чат в списке.
-    await db.projects.updateProject('alice', pid, { doneRetentionDays: null })
+    await dbSeed.updateProject(db, 'alice', pid, { doneRetentionDays: null })
     await db.tasks.moveTask('alice', pid, taskId, { columnId: done })
     expect((await db.tasks.getBoard('alice', pid))!.tasks.map((t) => t.id)).toContain(taskId)
     expect((await db.chat.listConversations('alice', { scope: 'kanban', projectId: pid })).map((c) => c.id)).not.toContain(chatId)
@@ -1198,7 +1116,7 @@ describe('projects: чаты завершённых задач в списке �
 
   it('отмена отдельного CI-рана не скрывает чат активной задачи', async () => {
     const { pid, taskId, chatId, dev } = await withTaskChat()
-    const run = await db.ci.createCiRun({
+    const run = await dbSeed.createCiRun(db, {
       projectId: pid,
       taskId,
       agentId: null,
@@ -1207,7 +1125,7 @@ describe('projects: чаты завершённых задач в списке �
       runColumnId: dev,
       slotProgress: { done: 0, total: 1, phase: 'Отменён' }
     })
-    await db.ci.updateCiRun(run.id, { status: 'cancelled', terminalColumnId: dev })
+    await sqlOf(db).run("UPDATE ci_runs SET status = 'cancelled', terminal_column_id = ? WHERE id = ?", [dev, run.id])
 
     expect((await db.chat.listConversations('alice', { scope: 'kanban', projectId: pid })).map((c) => c.id)).toContain(chatId)
     expect((await db.tasks.getBoard('alice', pid))!.tasks.find((task) => task.id === taskId)!.columnId).toBe(dev)
@@ -1218,34 +1136,5 @@ describe('projects: чаты завершённых задач в списке �
     const plain = await db.chat.createConversation('alice', 'Просто чат')
     await db.tasks.moveTask('alice', pid, taskId, { columnId: done })
     expect((await db.chat.listConversations('alice', { scope: 'chat' })).map((c) => c.id)).toContain(plain.id)
-  })
-})
-
-describe('projects: пред-разработческая подготовка', () => {
-  it('атомарно создаёт отдельный ран и переводит TODO в preparation', async () => {
-    const project = await db.projects.createProject('alice', { name: 'Preparation' })
-    const board = (await db.tasks.getBoard('alice', project.id))!
-    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
-    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
-    const task = (await db.tasks.createTask('alice', project.id, { columnId: backlog.id, title: 'Уточнить workflow' }))!
-    const run = await db.tasks.startTaskPreparationRun('alice', project.id, task.id)
-    expect(run.status).toBe('running')
-    expect((await db.tasks.getBoard('alice', project.id))!.tasks.find((item) => item.id === task.id)!.columnId).toBe(preparation.id)
-    expect((await db.tasks.startTaskPreparationRun('alice', project.id, task.id)).id).toBe(run.id)
-  })
-
-  it('ошибка оставляет карточку в preparation и разрешает повтор', async () => {
-    const project = await db.projects.createProject('alice', { name: 'Preparation failure' })
-    const board = (await db.tasks.getBoard('alice', project.id))!
-    const backlog = board.columns.find((column) => column.semanticType === 'backlog')!
-    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
-    const task = (await db.tasks.createTask('alice', project.id, { columnId: backlog.id, title: 'Неполные требования' }))!
-    const run = await db.tasks.startTaskPreparationRun('alice', project.id, task.id)
-    await db.tasks.failTaskPreparationRun(run.id, 'Гейт не пройден', ['missing_acceptance_criteria'])
-    expect(await db.tasks.getTaskPreparationRun('alice', run.id)).toMatchObject({ status: 'failed', canRetry: true, gateReasons: ['missing_acceptance_criteria'] })
-    expect((await db.tasks.getBoard('alice', project.id))!.tasks.find((item) => item.id === task.id)!.columnId).toBe(preparation.id)
-    const retry = await db.tasks.startTaskPreparationRun('alice', project.id, task.id)
-    expect(retry).toMatchObject({ status: 'running', attempt: 2 })
-    expect((await db.tasks.listTaskPreparationRuns('alice', project.id, task.id)).map((item) => item.id)).toEqual([retry.id, run.id])
   })
 })

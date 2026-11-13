@@ -74,6 +74,29 @@ describe('canonical persisted chat settings', () => {
     expect((await db.settings.getChatSettings('alice', c.id))!.conversation.contextPresetId).toBeNull()
   })
 
+  it('applies the selected default mode to every new conversation', async () => {
+    const db = open()
+    await db.settings.saveSettings('alice', { ...DEFAULT_SETTINGS, defaultContextPresetId: 'mode:chat' })
+    const builtIn = await db.chat.createConversation('alice', 'Built-in default')
+    expect(builtIn).toMatchObject({ assistantMode: 'chat', disabledContext: [] })
+
+    await db.settings.saveSettings('alice', { ...DEFAULT_SETTINGS, defaultContextPresetId: 'mode:required' })
+    const required = await db.chat.createConversation('alice', 'Required-only default')
+    expect(required).toMatchObject({ assistantMode: 'chat', disabledContext: ['required-only'] })
+
+    await db.settings.saveSettings('alice', {
+      ...DEFAULT_SETTINGS,
+      contextPresets: [{ id: 'quiet', name: 'Quiet', assistantMode: 'workspace', disabled: ['personalization'] }],
+      defaultContextPresetId: 'quiet'
+    })
+    const custom = await db.chat.createConversation('alice', 'Custom default')
+    expect(custom).toMatchObject({ assistantMode: 'workspace', disabledContext: ['personalization'] })
+
+    const make = await db.chat.createConversation('alice', 'Make default', 'make')
+    expect(make).toMatchObject({ assistantKind: 'make', assistantMode: 'make', disabledContext: ['personalization'] })
+    expect(await db.chat.getConversation('alice', make.id)).toMatchObject({ assistantMode: 'make' })
+  })
+
   it('applies real conversation fields, restores provider models, and rolls back invalid domain changes', async () => {
     const db = open()
     const c = await db.chat.createConversation('alice', 'A')
@@ -134,5 +157,6 @@ describe('canonical persisted chat settings', () => {
     await first.close(); databases.splice(databases.indexOf(first), 1)
     await second.close(); databases.splice(databases.indexOf(second), 1)
     expect(await open(file).settings.getChatSettings('alice', c.id)).toEqual(saved)
-  })
+    // Three full SQLite opens (each runs every migration) exceed the 5 s default on a loaded machine.
+  }, 30_000)
 })
