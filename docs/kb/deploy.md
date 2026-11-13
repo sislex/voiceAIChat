@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 694e6cbdf
+updated: 2026-11-13
+checked: dec40f6b5
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -682,6 +682,39 @@ them. Core's own `scripts/application-frontend-server.mjs` is a different server
 it has no `VC_APPLICATION_DEV` exception, rejects any version/commit/apiVersion
 mismatch and returns startup runtime metadata from `/v1/health`. Do not infer Make
 behavior from this same-named Core file.
+
+### Clean stand database fixture
+
+`fixtures/stand/seed.sql` is a plain PostgreSQL dump built from a new empty
+database, never a copy of production or `sislexa_dev`. After changing Core
+migrations or seed defaults, run
+`SISLEXA_STAND_PG=postgres://USER@127.0.0.1:5432 npm run stand:seed:refresh`
+with PostgreSQL client tools on PATH and a role allowed to create databases.
+The generator connects to the maintenance database `postgres`, creates a
+random `stand_seed_*` database from `template0`, initializes `VoiceChatDb`,
+provisions users through Identity and removes only that temporary database in
+a finally block. The URL's database path is ignored. No existing application
+database is migrated. Use a pg_dump client compatible with the server.
+
+The fixture contains `admin/123` (admin) and `user/123` (developer), no 2FA
+or mandatory password change, onboarded default settings, the default tariff
+including `chat.use`, and one team space named `Stand` owned by admin.
+Identity also requires and automatically provisions one personal tenant per
+user; these must not be removed to force the total tenant count to one.
+All Core-created service tables are included, without conversations, agents,
+sessions or access tokens. The deliberately public test password uses fixed
+fixture-only scrypt salts. Fixed IDs/times, sorted COPY rows and stripped
+pg_dump version/timestamp/restrict headers make repeated refreshes byte-identical
+with the same code and PostgreSQL toolchain.
+
+Restore into an empty database with
+`psql -X -v ON_ERROR_STOP=1 -d "$STAND_DB_URL" -f fixtures/stand/seed.sql`.
+The launcher contract is this path and plain SQL; the launcher is maintained
+separately. Validate with
+`VC_TEST_DB_URL=postgres://USER@127.0.0.1:5432/postgres node --import tsx --test scripts/stand-seed.test.mjs`.
+Database tests create and remove their own temporary databases, check psql
+restore and Core reopening, roles, passwords, settings and reproducibility.
+Without `VC_TEST_DB_URL`, only the offline fixture checks run.
 
 ### Isolated local stand without Docker (`npm run dev:stand`)
 
