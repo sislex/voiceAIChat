@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-11-14
-checked: ad7d876b
+checked: 2267228d
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -110,15 +110,20 @@ characters, and rejects on `close` with both `exitCode` and `gitOutput`.
 an error containing only `command_exit_<code>` loses the diagnostic phrase and
 therefore cannot trigger the bounded network retry.
 
-The package emits `mirror_lock_wait` once after lock acquisition finds an existing
-mirror lock and begins waiting. The marker establishes contention only: owner
-liveness/staleness checks, eventual acquisition, timeout fallback and release are
-separate outcomes, so the marker alone is not evidence of a leaked lock. The
-owner regression injects one Git disconnect, then delegates the successful attempt
-to a real local Git clone and verifies the checkout and released lock. A former
-fake-success fixture created no checkout, so the following `git remote set-url`
-ran with a nonexistent working directory and failed with `ENOENT`. Owner details
-live in `kanban:ci-qa-merge.md`; Core retains only this integration boundary.
+The package emits `mirror_lock_wait` after lock acquisition finds an existing
+mirror lock. The shared `checkoutWithMirror` default can wait up to 15 minutes,
+but Kanban's `remoteRuntimeCommand('checkout')` adapter passes `waitMs: 0`.
+Therefore a live foreign lock is left intact and the checkout immediately falls
+back to a full-history clone from origin instead of holding the preparation step.
+The marker establishes contention only; it is not evidence of a leaked lock.
+
+The owner regression injects one Git disconnect, then delegates the successful
+attempt to a real local Git clone and verifies the checkout and released lock. A
+former fake-success fixture created no checkout, so the following
+`git remote set-url` ran with a nonexistent working directory and failed with
+`ENOENT`. The call chain is Kanban `ci/runManager.ts` → `ci/remoteRuntime.ts` →
+`@sislexa/task-runtime` `warm-workspace.ts`. Owner details live in
+`kanban:ci-qa-merge.md`; Core retains only this integration boundary.
 
 ## Portable stand and Core check selection
 

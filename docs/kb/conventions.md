@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: e8f70a79e
+updated: 2026-11-14
+checked: 2267228d
 title: Конвенции: код, тесты, гейты, коммиты
 areas:
   - package.json

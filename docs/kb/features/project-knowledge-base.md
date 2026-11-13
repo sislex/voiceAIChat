@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: e8f70a79e
+updated: 2026-11-14
+checked: 2267228d
 id: project-knowledge-base
 title: База знаний проекта
 kind: feature
@@ -108,8 +108,9 @@ not mean the remote repository has already been fetched. The strict parser
 accepts rows naming `<module>:README.md` at `docs/kb`, skips rows marked `нет`,
 and rejects malformed maps before changing registrations. Owner repositories
 use `https://github.com/<owner/repo>.git`, ref `main`, path `docs/kb`, and the
-first column's stable module ID. This registers `make`, `agent`,
-`playwright-reader`, `web-reader`, `kanban`, and `core-ui` without projects.
+first column's stable module ID. This registers every table row with an owner KB: `core-ui`, `make`, `agent`,
+`playwright-reader`, `web-reader`, `kanban`, `llm-runner`, `image-studio`, and
+`voice`, without projects. The `core` row resolves to the built-in module.
 Existing generated IDs for these same sources migrate to the owner ID;
 an occupied ID belonging to a different source fails reconciliation.
 

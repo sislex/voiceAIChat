@@ -1,7 +1,7 @@
 ---
 title: Module ownership map
-updated: 2026-11-13
-checked: 5b4b7837
+updated: 2026-11-14
+checked: 2267228d
 areas: []
 ---
 
@@ -53,11 +53,13 @@ document cannot be queried, Core source can establish only the shared contract
 and integration boundary, not Make's internal lookup, import or UI behavior.
 
 The same rule applies to the exact root identifiers `agent:README.md` and
-`kanban:README.md`. The former is the generated entry point for the Agent owner's
-runtime, connection, installation, Git-access and tunnel topics; the latter is
-the generated entry point for Kanban's board, task, CI/QA/merge, release and
-environment topics. Query a topic linked by that root for implementation detail,
-for example `kanban:ci-qa-merge.md`; absence of either root from a Core-local file
+`kanban:README.md`. `agent:README.md` resolves to the generated
+`sislex/agent` owner entry point at `docs/kb/README.md`; a literal file named
+`agent:README.md` is not expected in either checkout. It indexes the Agent
+runtime, connection, installation, Git-access and tunnel topics. The Kanban root
+indexes board, task, CI/QA/merge, release and environment topics. Query a topic
+linked by that root for implementation detail, for example
+`kanban:ci-qa-merge.md`; absence of either identifier from a Core-local file
 search does not mean the module has no KB. Registration and reconciliation derive
 both repositories and root documents from the table above.
 
