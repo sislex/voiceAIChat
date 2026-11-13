@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: aa423cd73 feat(chat): server-side message branches for edit, retry and select … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-09 | ⚠ 20 коммит(ов) в areas после проверенного SHA: 39eb24ad0 chore(ui): pin Core UI 1.5.50 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-13 | ✓ |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-05 | ⚠ 5 коммит(ов) в areas после проверенного SHA: aa423cd73 feat(chat): server-side message branches for edit, retry and select … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-09 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 39eb24ad0 chore(ui): pin Core UI 1.5.50 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-13 | ✓ |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-05 | ⚠ 9 коммит(ов) в areas после проверенного SHA: e9100623a fix(chat): keep active path intact for system notes, queued turns and deletions … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-05 | ⚠ 17 коммит(ов) в areas после проверенного SHA: e8ef17321 test(server): give the three-connection chat settings test a 30 s budget … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-13 | ✓ |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-05 | ⚠ 6 коммит(ов) в areas после проверенного SHA: aa423cd73 feat(chat): server-side message branches for edit, retry and select … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-09 | ⚠ 11 коммит(ов) в areas после проверенного SHA: d676c82ec Merge remote-tracking branch 'origin/dev' into make/conversation-cf2fda81 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-09 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 137af9214 chore: pin Make 1.8.19 and Playwright Reader 1.2.8 (fix openStandWindow rest type) … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-13 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-09 | ⚠ 11 коммит(ов) в areas после проверенного SHA: d676c82ec Merge remote-tracking branch 'origin/dev' into make/conversation-cf2fda81 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-05 | ⚠ 16 коммит(ов) в areas после проверенного SHA: e9100623a fix(chat): keep active path intact for system notes, queued turns and deletions … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |

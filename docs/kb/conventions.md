@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-11-09
-checked: 2d771f92
+updated: 2026-11-13
+checked: 4ffb793da
 areas:
   - package.json
   - packages/shared/tsconfig.json
@@ -54,6 +54,19 @@ step through promotion or a pull request.
 - Keep dependencies explicit and justified. Shared declares published owner-contract
   packages; its logic remains free of DOM/network/filesystem/process access.
   Core uses npm workspaces without turbo/nx/lerna.
+
+## Stand fixture conventions
+
+The stand seed is reviewable plain SQL at `fixtures/stand/seed.sql`.
+Regenerate it with `npm run stand:seed:refresh` after migrations or default-data
+changes. The script uses a new temporary database, fixed fixture IDs/times and
+public test-password salts, sorted COPY rows and normalized dump headers.
+Create users through Identity rather than hand-maintained INSERT statements;
+only the short deterministic fixture password is set with SQL.
+Never use production or an existing development database as the source.
+The Node test `scripts/stand-seed.test.mjs` is included in `test:tooling`;
+its PostgreSQL cases require `VC_TEST_DB_URL`. See
+[fixture operations](deploy.md#clean-stand-database-fixture).
 
 ## Тесты
 

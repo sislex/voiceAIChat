@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 5ceebde17
+updated: 2026-11-13
+checked: 4ffb793da
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -23,6 +23,29 @@ Module details: `voice:README.md`
 
 Module details: `playwright-reader:README.md`
 Module details: `core-ui:README.md`
+
+## Clean stand database ownership
+
+Core owns `fixtures/stand/seed.sql` and the `stand:seed:refresh` command.
+The generator initializes `VoiceChatDb` in a new temporary PostgreSQL database,
+including service tables created by Core, then provisions users through Identity.
+It does not copy production data or initialize separate owner-service databases.
+Identity creates the required personal tenants; the fixture adds one team space.
+The launcher consumes plain SQL at this path and is maintained separately.
+See [refresh and restore instructions](deploy.md#clean-stand-database-fixture).
+
+## Turn context and Make browser composition
+
+`turns.ts` applies required-only context selection to personalization,
+knowledge mode, MCP surfaces and custom instructions. Disabled browser, console,
+Make and Kanban surfaces are not connected or advertised; individual KB tools
+are passed as disabled tools. A selected embedded Make stand takes precedence
+over a bound reader conversation. A separate stand window uses the bound
+Playwright Reader route. Core's `openStandWindow` callback checks the reader
+capability and Make conversation ownership, reuses or creates a reader
+conversation, starts its browser window and persists the binding.
+Core also supplies the deployment and browser-MCP availability to turn handling
+and publishes branch-history updates through the user-scoped frame channel.
 
 ## Core frontend ownership
 

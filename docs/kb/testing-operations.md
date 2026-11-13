@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-11-09
-checked: c5fd9ebe4
+updated: 2026-11-13
+checked: 4ffb793da
 areas:
   - scripts
   - apps/server/vitest.config.ts
@@ -18,6 +18,23 @@ areas:
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`
+
+## Clean stand fixture checks
+
+Run `node --import tsx --test scripts/stand-seed.test.mjs` for offline
+credential/address checks and dump normalization. PostgreSQL restore and
+reproducibility cases skip unless `VC_TEST_DB_URL` is set. To execute all four,
+use `VC_TEST_DB_URL=postgres://USER@127.0.0.1:5432/postgres node --import tsx --test scripts/stand-seed.test.mjs`
+with PostgreSQL client tools on PATH and database-creation permission.
+
+The tests restore the committed dump through `psql -X -v ON_ERROR_STOP=1`,
+open `VoiceChatDb`, compare schema columns, verify both logins/roles,
+onboarding and tariff access, and check empty conversations and one team space.
+They also regenerate the fixture twice and check cleanup after an exception.
+Only generated `stand_seed_*` databases are created and removed; the URL's
+database path is replaced by the maintenance database `postgres`.
+The fixture hashes are intentionally public test credentials, not secrets.
+See [generation and restore](deploy.md#clean-stand-database-fixture).
 
 ## Deployment failure regression checks
 
