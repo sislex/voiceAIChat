@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-11-05
-checked: 29ee2a0e8
+updated: 2026-11-13
+checked: d676c82e
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -1440,7 +1440,7 @@ history references stored files through `MessageAttachment.storage` /
 
 ## Conversation message branches
 
-Messages form a server-side tree through messages.parent_message_id. Siblings with the same parent and role are alternatives; branch_selected records the selected child. Only the selected root-to-leaf path has state = published, so all existing history/context queries continue to send only the active path to the model. Other variants use state = branched and remain stored. Startup migration message_branches_v1 links legacy linear histories without changing their visible order.
+Messages form a server-side tree through messages.parent_message_id. Siblings with the same parent and role are alternatives; branch_selected records the selected child. Only the selected root-to-leaf path has state = published, so all existing history/context queries continue to send only the active path to the model. Other variants use state = branched and remain stored. Startup migration message_branches_v1 links legacy linear histories without changing their visible order. A message is active when it and every stored ancestor are selected; a missing parent ends the walk, so deleted rows reparent their children and system notes or dequeued turns attach to the current active leaf instead of disappearing. Ordinary appends only deselect siblings below the leaf and do not rescan the conversation.
 
 POST /api/conversations/:id/messages/:messageId/branch accepts { action: edit | retry | select, text? } and returns the complete active message path. edit is allowed for a user message and creates a sibling with copied attachments, metadata and execution target; retry is allowed for an AI message and temporarily ends the active path at its parent; the next saved AI reply becomes the selected sibling. select selects an existing sibling and restores its previously selected descendants. Every mutation clears the resumable model session.
 

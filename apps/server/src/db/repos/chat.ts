@@ -1016,8 +1016,9 @@ export class ChatRepo extends BaseRepo {
       if (!owned) return
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [id])) as { position: number }).position
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
-      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position)
-        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?)`, [noteId, id, tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position])
+      const parentId = await this.activeLeafId(id)
+      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position, parent_message_id)
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?, ?)`, [noteId, id, tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position, parentId])
     })
     return await this.getConversation(userId, id)
   }
@@ -1190,9 +1191,10 @@ export class ChatRepo extends BaseRepo {
       const historyPosition = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
 
       await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [id])
+      const activeParent = (await this.sql.get<{ parent_message_id: string | null }>(`SELECT parent_message_id FROM messages WHERE id = ? AND conversation_id = ?`, [activeMessageId, conversationId]))?.parent_message_id ?? null
       await this.sql.run(`DELETE FROM messages WHERE id IN (?, ?) AND conversation_id = ?`, [activeMessageId, queued.message_id, conversationId])
-      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, exec_target, attachments, state, history_position)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`, [messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target, details.length ? JSON.stringify(details) : null, historyPosition])
+      await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, exec_target, attachments, state, history_position, parent_message_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)`, [messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target, details.length ? JSON.stringify(details) : null, historyPosition, activeParent])
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [createdAt, conversationId, userId])
 
       const message = await this.getMessage(userId, conversationId, messageId)
@@ -1209,7 +1211,8 @@ export class ChatRepo extends BaseRepo {
          ORDER BY position LIMIT 1`, [userId, conversationId, id ?? null, id ?? null])) as { id: string; message_id: string; payload: string } | undefined
       if (!row) return null
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`, [conversationId])) as { position: number }).position
-      await this.sql.run(`UPDATE messages SET state = 'published', history_position = ? WHERE id = ? AND conversation_id = ? AND state = 'queued'`, [position, row.message_id, conversationId])
+      const parentId = await this.activeLeafId(conversationId)
+      await this.sql.run(`UPDATE messages SET state = 'published', history_position = ?, parent_message_id = ?, branch_selected = 1 WHERE id = ? AND conversation_id = ? AND state = 'queued'`, [position, parentId, row.message_id, conversationId])
       await this.sql.run(`DELETE FROM conversation_turn_queue WHERE id = ?`, [row.id])
       const message = await this.getMessage(userId, conversationId, row.message_id)
       if (!message) throw new Error('queued message not found')
@@ -1249,33 +1252,53 @@ export class ChatRepo extends BaseRepo {
     }
   }
 
+  /** Id of the newest published message; new active-path messages hang below it. */
+  private async activeLeafId(conversationId: string): Promise<string | null> {
+    return (await this.sql.get<{ id: string }>(
+      `SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1`,
+      [conversationId]
+    ))?.id ?? null
+  }
+
+  /**
+   * A message is on the active path when it and every stored ancestor are
+   * selected. Missing parents (deleted rows, legacy or system inserts) end the
+   * walk instead of hiding the rest of the conversation.
+   */
   private async recomputeActiveBranch(conversationId: string): Promise<void> {
-    const rows = await this.sql.all<{ id: string; parent_message_id: string | null; branch_selected: number | boolean; history_position: number | null }>(
-      `SELECT id, parent_message_id, branch_selected, history_position FROM messages
-       WHERE conversation_id = ? AND state IN ('published','branched')
-       ORDER BY history_position ASC, id ASC`,
+    const rows = await this.sql.all<{ id: string; parent_message_id: string | null; branch_selected: number | boolean; state: string }>(
+      `SELECT id, parent_message_id, branch_selected, state FROM messages
+       WHERE conversation_id = ? AND state IN ('published','branched')`,
       [conversationId]
     )
-    const byParent = new Map<string, typeof rows>()
+    const byId = new Map(rows.map(row => [row.id, row]))
+    const visible = new Map<string, boolean>()
+    const isVisible = (start: (typeof rows)[number]): boolean => {
+      const chain: (typeof rows)[number][] = []
+      let result = true
+      for (let row: (typeof rows)[number] | undefined = start; row; row = row.parent_message_id ? byId.get(row.parent_message_id) : undefined) {
+        const known = visible.get(row.id)
+        if (known !== undefined) { result = known; break }
+        if (chain.includes(row)) break
+        chain.push(row)
+      }
+      for (let i = chain.length - 1; i >= 0; i--) {
+        result = result && (chain[i].branch_selected === true || chain[i].branch_selected === 1)
+        visible.set(chain[i].id, result)
+      }
+      return visible.get(start.id)!
+    }
+    const publish: string[] = []
+    const hide: string[] = []
     for (const row of rows) {
-      const key = row.parent_message_id ?? ''
-      const group = byParent.get(key) ?? []
-      group.push(row)
-      byParent.set(key, group)
+      const next = isVisible(row) ? 'published' : 'branched'
+      if (next !== row.state) (next === 'published' ? publish : hide).push(row.id)
     }
-    const active: string[] = []
-    let parent = ''
-    const seen = new Set<string>()
-    while (!seen.has(parent)) {
-      seen.add(parent)
-      const selected = (byParent.get(parent) ?? []).find(row => row.branch_selected === true || row.branch_selected === 1)
-      if (!selected) break
-      active.push(selected.id)
-      parent = selected.id
-    }
-    await this.sql.run(`UPDATE messages SET state = 'branched' WHERE conversation_id = ? AND state IN ('published','branched')`, [conversationId])
-    if (active.length) {
-      await this.sql.run(`UPDATE messages SET state = 'published' WHERE conversation_id = ? AND id IN (${active.map(() => '?').join(',')})`, [conversationId, ...active])
+    for (const [state, ids] of [['published', publish], ['branched', hide]] as const) {
+      for (let i = 0; i < ids.length; i += 500) {
+        const chunk = ids.slice(i, i + 500)
+        await this.sql.run(`UPDATE messages SET state = ? WHERE conversation_id = ? AND id IN (${chunk.map(() => '?').join(',')})`, [state, conversationId, ...chunk])
+      }
     }
   }
 
@@ -1399,24 +1422,25 @@ export class ChatRepo extends BaseRepo {
     const touch = this.sql.prepare(`UPDATE conversations SET updated_at = ?, context_usage_json = COALESCE(?, context_usage_json) WHERE id = ?`)
     const metaJson = meta && Object.keys(meta).length > 0 ? JSON.stringify(stripServiceData(meta)) : null
     await this.sql.transaction(async () => {
-      const parent = await this.sql.get<{ id: string }>(
-        `SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position DESC, id DESC LIMIT 1`,
-        [conversationId]
-      )
-      const parentId = parent?.id ?? null
+      const parentId = await this.activeLeafId(conversationId)
       const position = ((await this.sql.get(`SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ?`, [conversationId])) as { position: number }).position
-      await this.sql.run(
-        `UPDATE messages SET branch_selected = 0, state = 'branched'
-         WHERE conversation_id = ? AND role = ? AND (parent_message_id = ? OR (parent_message_id IS NULL AND ? IS NULL))
-           AND state IN ('published','branched')`,
+      const siblingWhere = `conversation_id = ? AND role = ? AND (parent_message_id = ? OR (parent_message_id IS NULL AND ? IS NULL))
+           AND state IN ('published','branched')`
+      // Only a retried reply has siblings below the active leaf; a published
+      // sibling there is unexpected, so fall back to a full path recompute.
+      const publishedSibling = parentId !== null && await this.sql.get(
+        `SELECT 1 AS found FROM messages WHERE ${siblingWhere} AND state = 'published' LIMIT 1`,
         [conversationId, role, parentId, parentId]
       )
+      if (parentId !== null) {
+        await this.sql.run(`UPDATE messages SET branch_selected = 0 WHERE ${siblingWhere}`, [conversationId, role, parentId, parentId])
+      }
       await insert.run(id, conversationId, role, text, time, createdAt, engine ?? null, metaJson, execTarget ?? null, attachments?.length ? JSON.stringify(attachments) : null, position, parentId)
       if (meta) {
         meta = await this.storeServiceData(id, conversationId, meta)
         await this.sql.run('UPDATE messages SET meta = ? WHERE id = ?', [JSON.stringify(meta), id])
       }
-      await this.recomputeActiveBranch(conversationId)
+      if (publishedSibling) await this.recomputeActiveBranch(conversationId)
       await touch.run(createdAt, contextUsage ? JSON.stringify(contextUsage) : null, conversationId)
     })
     const created: Message = {
@@ -1571,7 +1595,15 @@ export class ChatRepo extends BaseRepo {
   /** Удаляет одно сообщение по id (в рамках разговора пользователя). */
   async deleteMessage(userId: string, conversationId: string, messageId: string): Promise<void> {
     if (!(await this.ownsConversation(userId, conversationId))) return
-    await this.sql.run(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])
+    await this.sql.transaction(async () => {
+      // Children move up to the deleted message's parent so the active path stays connected.
+      await this.sql.run(
+        `UPDATE messages SET parent_message_id = (SELECT parent_message_id FROM messages WHERE id = ? AND conversation_id = ?)
+         WHERE conversation_id = ? AND parent_message_id = ?`,
+        [messageId, conversationId, conversationId, messageId]
+      )
+      await this.sql.run(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`, [messageId, conversationId])
+    })
   }
 
   async listMessages(userId: string, conversationId: string): Promise<Message[]> {
