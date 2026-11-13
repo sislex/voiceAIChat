@@ -185,7 +185,8 @@ const supervised = new Set()
 // Core UI is this stand's front door: its Vite proxies /api straight to the stand Core. A Kanban
 // devProcess passes SISLEXA_STAND_URL (the UI port itself), which would make Vite proxy to itself;
 // a null value removes the variable from the child environment.
-function coreUiEnv() { return { VC_API_PORT: P.core, VC_WEB_PORT: P.ui, SISLEXA_STAND_URL: null } }
+function coreUiEnv() { return { VC_API_PORT: P.core, VC_WEB_PORT: P.ui, SISLEXA_STAND_URL: null,
+  SISLEXA_STAND_MODEL_API: PORTABLE && env.SISLEXA_MODEL_API_URL && env.SISLEXA_MODEL_API_TOKEN ? '1' : '' } }
 
 function fail(message) {
   if (process.argv[2] === 'run') throw new Error(message)

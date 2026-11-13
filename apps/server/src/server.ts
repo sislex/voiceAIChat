@@ -1630,7 +1630,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let accountingTimer: NodeJS.Timeout | undefined
   const billingTransport = opts.billingTransport ?? (managedBilling && component
     ? { ...managedBilling, environmentId: component.config.environmentId } : undefined)
-  if (billingTransport) {
+  // Model API upstream owns admission and settlement using the workspace token.
+  if (billingTransport && !opts.config.chatModelApi) {
     mkdirSync(opts.config.dataDir, { recursive: true })
     accountingStore = new AccountingStore(join(opts.config.dataDir, 'chat-accounting.sqlite'))
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
@@ -1661,6 +1662,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     requestsPerMinute: opts.config.modelApiRequestsPerMinute })
   const turnManager = createTurnManager({
     chatTextOnly: opts.config.chatTextOnly,
+    chatModelApi: opts.config.chatModelApi,
     chatModels: opts.config.chatModels,
     deployment,
     delegation,

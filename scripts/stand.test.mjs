@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main } from './stand.mjs'
+import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main, doctorModels, modelApiWarning } from './stand.mjs'
 import { walkFiles } from './test-files.mjs'
 import { selectAffected } from './affected-check.mjs'
 
@@ -27,6 +27,48 @@ test('model settings are optional, validated and never echoed in errors', () => 
   assert.throws(() => modelConfig({ SISLEXA_MODEL_API_URL: 'file:///private' }), /HTTP/)
   assert.throws(() => modelConfig({ SISLEXA_MODEL_API_URL: 'https://example.org' }), /TOKEN/)
   assert.throws(() => modelConfig({ VC_LLM_RUNNER_TOKEN: 'secret whitespace' }), error => !error.message.includes('secret'))
+})
+test('model API overrides direct runners and forces text-only execution without local billing', () => {
+  const config = modelConfig({ SISLEXA_MODEL_API_URL: 'https://core.test/api/model-runner/',
+    SISLEXA_MODEL_API_TOKEN: 'workspace-token', VC_LLM_RUNNER_CLAUDE_URL: 'http://local:8080' })
+  assert.equal(config.VC_LLM_RUNNER_CLAUDE_URL, 'https://core.test/api/model-runner')
+  assert.equal(config.VC_LLM_RUNNER_CODEX_URL, config.VC_LLM_RUNNER_CLAUDE_URL)
+  assert.equal(config.VC_LLM_RUNNER_TOKEN, 'workspace-token')
+  assert.equal(config.VC_CHAT_MODEL_API, 'true')
+  assert.equal(config.VC_CHAT_TEXT_ONLY, 'true')
+  assert.equal(config.VC_CHAT_REQUIRE_BILLING, 'false')
+  assert.throws(() => modelConfig({ SISLEXA_MODEL_API_TOKEN: 'token' }), /URL/)
+  assert.throws(() => modelConfig({ SISLEXA_MODEL_API_URL: 'https://core.test/?token=secret', SISLEXA_MODEL_API_TOKEN: 'token' }), /query/)
+})
+test('doctor probes the prefixed model catalog, handles auth/balance and never echoes secrets', async () => {
+  const config = { SISLEXA_MODEL_API_URL: 'https://core.test/api/model-runner/', SISLEXA_MODEL_API_TOKEN: 'private-token' }
+  await doctorModels(config, async (url, options) => {
+    assert.equal(url, 'https://core.test/api/model-runner/v1/models')
+    assert.equal(options.headers.authorization, 'Bearer private-token')
+    assert.equal(options.redirect, 'error')
+    return Response.json({ models: [{ id: 'model' }] })
+  })
+  for (const [status, message] of [[401, /токен недействителен/], [402, /недостаточно средств/], [403, /доступ токена/], [500, /HTTP 500/]]) {
+    await assert.rejects(doctorModels(config, async () => new Response('', { status })), message)
+  }
+  await assert.rejects(doctorModels(config, async () => { throw Error('private-token') }), e => !e.message.includes('private-token'))
+  await assert.rejects(doctorModels(config, async () => Response.json({ models: [] })), /нет доступных моделей/)
+  await assert.rejects(doctorModels(config, async () => new Response('<html>')), /ожидался JSON/)
+  await doctorModels({}, async () => { throw Error('must not probe') })
+})
+test('status forwards API credentials to the launcher and warns without a network request', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stand-api-')), calls = [], warnings = []
+  const warn = console.warn
+  console.warn = value => warnings.push(value)
+  try {
+    mkdirSync(join(root, '.stand'))
+    writeFileSync(join(root, '.stand/.env'), 'SISLEXA_MODEL_API_URL=https://core.test/api/model-runner\nSISLEXA_MODEL_API_TOKEN=private-token')
+    await main(['status'], root, { env: {}, execute: (...args) => calls.push(args) })
+    assert.equal(calls[0][2].env.VC_LLM_RUNNER_TOKEN, 'private-token')
+    assert.equal(calls[0][2].env.VC_CHAT_MODEL_API, 'true')
+    assert.ok(warnings.includes(modelApiWarning))
+    assert.ok(!warnings.join('').includes('private-token'))
+  } finally { console.warn = warn; rmSync(root, { recursive: true, force: true }) }
 })
 test('doctor returns actionable failures without network', () => {
   const errors = doctorCommands('20.1.0', () => false)

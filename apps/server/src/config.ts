@@ -15,6 +15,8 @@ export interface ServerConfig {
   fileStorage?: FileStorageConfig
   chatModels?: ChatModelPolicy
   chatTextOnly?: boolean
+  /** Use upstream model API billing and disable workspace tools on the stand. */
+  chatModelApi?: boolean
   chatRequireBilling?: boolean
   deployment?: DeploymentManifest
   /** Explicit opt-in for delegated external applications; disabled until S3 acceptance. */
@@ -284,6 +286,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     smtpUrl: env.VC_SMTP_URL ?? null,
     chatModels: parseChatModelPolicy(env.VC_CHAT_MODELS || undefined),
     chatTextOnly: env.VC_CHAT_TEXT_ONLY === 'true',
+    chatModelApi: env.VC_CHAT_MODEL_API === 'true',
     chatRequireBilling: env.VC_CHAT_REQUIRE_BILLING === 'true',
     mailFrom: env.VC_MAIL_FROM ?? null,
     publicUrl: env.PUBLIC_URL ?? env.VC_PUBLIC_URL ?? null,

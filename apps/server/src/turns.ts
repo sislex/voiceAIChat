@@ -49,6 +49,8 @@ export function enabledContextSkills(skillNames: string[], disabledContext: Iter
 export interface TurnManagerDeps {
   chatModels?: ChatModelPolicy
   chatTextOnly?: boolean
+  /** Disable workspace tools when using the upstream model API. */
+  chatModelApi?: boolean
   deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
@@ -693,7 +695,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!requiredContext.has(itemId)) disabledContext.add(itemId)
       }
     }
-    const workspaceMode = isWorkspaceAssistantMode(conv?.assistantMode)
+    const workspaceMode = !deps.chatModelApi && isWorkspaceAssistantMode(conv?.assistantMode)
     const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
     // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
     const effectiveSkills = workspaceMode ? enabledContextSkills(conv?.skillNames ?? [], disabledContext) : []

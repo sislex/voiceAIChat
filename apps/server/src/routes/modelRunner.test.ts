@@ -113,8 +113,10 @@ it('a second Core chats over WebSocket using only runner URL and token configura
   cleanup.push(() => db.close())
   const app = await buildServer({ db, sessionSecret: 'second-secret', config: loadConfig({
     PORT: '0', VC_DATA_DIR: dir, VC_LLM_RUNNER_CODEX_URL: upstream.url + '/api/model-runner',
-    VC_LLM_RUNNER_CLAUDE_URL: upstream.url + '/api/model-runner', VC_LLM_RUNNER_TOKEN: upstream.token
-  }) })
+    VC_LLM_RUNNER_CLAUDE_URL: upstream.url + '/api/model-runner', VC_LLM_RUNNER_TOKEN: upstream.token,
+    VC_CHAT_MODEL_API: 'true', VC_CHAT_TEXT_ONLY: 'true', VC_CHAT_REQUIRE_BILLING: 'false'
+  }), billingTransport: { url: 'http://local-billing.invalid', environmentId: 'stand',
+    fetchImpl: async () => { throw Error('stand must not bill locally') } } })
   cleanup.push(async () => { app.server.closeAllConnections(); await app.close() })
   const token = signToken({ name: 'admin', role: 'admin' }, 'second-secret')
   const settings = await app.inject({ method: 'PUT', url: '/api/settings', headers: { authorization: 'Bearer ' + token },
@@ -130,6 +132,12 @@ it('a second Core chats over WebSocket using only runner URL and token configura
     socket.send(JSON.stringify({ t: 'claude.send', conversationId: conversation.id, segments: [{ speakerId: 1, text: 'hello' }] }))
     await vi.waitFor(() => expect(frames.filter(frame => frame.t === 'claude.error')).toEqual([]))
     await vi.waitFor(() => expect(frames).toContainEqual(expect.objectContaining({ t: 'claude.done', text: 'Hello from production Core' })), { timeout: 10_000 })
+    await vi.waitFor(async () => {
+      const usage = await upstream.app.inject({ url: '/api/me/usage', headers: upstream.headers })
+      expect(usage.json().tokens).toEqual([{ sid: verifyToken(upstream.token, 'secret')!.sid,
+        tenantId: expect.any(String), requests: 1, actualMicroUsd: 600 }])
+    })
+    expect(upstream.bodies[0]).toMatchObject({ textOnly: true, executionDisabled: true })
   } finally { socket.terminate() }
 })
 

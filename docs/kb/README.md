@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1483. Последние:
+Всего записей: 1484. Последние:
 
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md) — stand-model-api
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md) — stand-runtime-kb-gaps
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md) — stand-kb-reconciliation
@@ -76,7 +77,6 @@
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-runner-api.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-runner-api.md) — model-runner-api
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-api-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-api-kb-reconciliation.md) — model-api-kb-reconciliation
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-message-branches.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-message-branches.md) — message-branches
-- [2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-tests-wave1-release-only.md](log/2026-11-09-alexeys-macbook-air-tailae39a6-ts-net-tests-wave1-release-only.md) — tests-wave1-release-only
 
 ## Исторические планы
 

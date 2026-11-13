@@ -5,6 +5,16 @@ import { RemoteLlmClient } from './remoteClient.js'
 import type { RunnerRunBody } from './protocol.js'
 import type { LlmStreamHandlers } from '../claude/types.js'
 
+it('health retains the model API base path and token', async () => {
+  const client = new RemoteLlmClient({ kind: 'claude', baseUrl: 'https://core.test/api/model-runner/', token: 'workspace-token',
+    fetchImpl: async (url, options) => {
+      expect(String(url)).toBe('https://core.test/api/model-runner/v1/health?userId=stand-user')
+      expect(options?.headers).toMatchObject({ authorization: 'Bearer workspace-token' })
+      return Response.json({ ok: true })
+    } })
+  expect(await client.health('stand-user')).toEqual({ ok: true })
+})
+
 // --- фейковый исполнитель на 127.0.0.1 ------------------------------------
 
 interface FakeRunner {

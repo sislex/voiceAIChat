@@ -24,6 +24,24 @@ const fixtureCredential1 = randomUUID()
 
 const U = 'admin'
 
+it('model API stands disable workspace MCP even when a conversation requests it', async () => {
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Workspace', 'make', null, 'make')
+    await db.chat.setConversationAssistantMode(U, conv.id, 'workspace')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, chatModelApi: true,
+      mcpBaseUrl: 'http://stand/mcp?token=test', makeMcpBaseUrl: 'http://stand/make?token=test',
+      kanbanMcpBaseUrl: 'http://stand/kanban?token=test', kbMcpBaseUrl: 'http://stand/kb?token=test' })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+    await turns.idle()
+    expect(rec.last()).toMatchObject({ textOnly: true, executionDisabled: true })
+    for (const key of ['makeMcpUrl', 'kbMcpUrl', 'kanbanMcpUrl', 'remote', 'toolOnly']) {
+      expect(rec.last()).not.toHaveProperty(key, expect.anything())
+    }
+  } finally { await db.close() }
+})
+
 it('refuses a client message id that is not stored in the conversation, before the model or the queue', async () => {
   const db = await freshDb()
   try {

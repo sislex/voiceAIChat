@@ -18,6 +18,7 @@ import {
   parseRunnerLine,
   runnerCancelUrl,
   runnerRunUrl,
+  runnerBase,
   type RunnerKind,
   type RunnerRunBody
 } from './protocol.js'
@@ -149,7 +150,7 @@ export class RemoteLlmClient implements LlmClient {
     return { kind: this.opts.kind, baseUrl: this.opts.baseUrl }
   }
   private async accountingFetch(path: string, body?: unknown): Promise<Response> {
-    return (this.opts.fetchImpl ?? fetch)(new URL(path, this.opts.baseUrl), {
+    return (this.opts.fetchImpl ?? fetch)(runnerBase(this.opts.baseUrl) + path, {
       method: body === undefined ? 'GET' : 'POST', redirect: 'error', signal: AbortSignal.timeout(10_000),
       headers: { ...(this.opts.token ? { authorization: 'Bearer '+this.opts.token } : {}),
         ...(body === undefined ? {} : { 'content-type': 'application/json' }) },

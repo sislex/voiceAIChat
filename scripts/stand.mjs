@@ -44,9 +44,35 @@ export function modelConfig(env) {
       if (!url || /\s/.test(value) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw Error(key + ': set an HTTP(S) URL without credentials in .stand/.env')
     } else if (/\s/.test(value)) throw Error(key + ': token must not contain whitespace; edit .stand/.env')
   }
+  if (values.SISLEXA_MODEL_API_TOKEN && !values.SISLEXA_MODEL_API_URL) throw Error('Set SISLEXA_MODEL_API_URL in .stand/.env')
   if (values.SISLEXA_MODEL_API_URL && !values.SISLEXA_MODEL_API_TOKEN) throw Error('Set SISLEXA_MODEL_API_TOKEN in .stand/.env')
+  if (values.SISLEXA_MODEL_API_URL) {
+    const url = new URL(values.SISLEXA_MODEL_API_URL)
+    if (url.search || url.hash) throw Error('SISLEXA_MODEL_API_URL: query and fragment are not supported')
+    const base = values.SISLEXA_MODEL_API_URL.replace(/\/+$/, '')
+    return { ...values, VC_LLM_RUNNER_CLAUDE_URL: base, VC_LLM_RUNNER_CODEX_URL: base,
+      VC_LLM_RUNNER_TOKEN: values.SISLEXA_MODEL_API_TOKEN, VC_CHAT_TEXT_ONLY: 'true',
+      VC_CHAT_MODEL_API: 'true', VC_CHAT_REQUIRE_BILLING: 'false' }
+  }
   if ((values.VC_LLM_RUNNER_CLAUDE_URL || values.VC_LLM_RUNNER_CODEX_URL) && !values.VC_LLM_RUNNER_TOKEN) throw Error('Set VC_LLM_RUNNER_TOKEN in .stand/.env')
   return values
+}
+export const modelApiWarning = 'Стенд: модели через API прод-Core. Инструменты моделей (Make, KB, Kanban MCP) отключены. Расход списывается с баланса пользователя токена.'
+export async function doctorModels(models, fetchImpl = fetch) {
+  if (!models.SISLEXA_MODEL_API_URL) return
+  let response
+  try {
+    response = await fetchImpl(models.SISLEXA_MODEL_API_URL.replace(/\/+$/, '') + '/v1/models', {
+      headers: { authorization: 'Bearer ' + models.SISLEXA_MODEL_API_TOKEN },
+      redirect: 'error', signal: AbortSignal.timeout(10_000)
+    })
+  } catch { throw Error('API моделей недоступен. Проверьте SISLEXA_MODEL_API_URL в .stand/.env и соединение с прод-Core.') }
+  if (response.status === 401) throw Error('API моделей: 401 — токен недействителен или отозван. Замените SISLEXA_MODEL_API_TOKEN в .stand/.env.')
+  if (response.status === 402) throw Error('API моделей: 402 — недостаточно средств. Пополните баланс пользователя токена на проде.')
+  if (!response.ok) throw Error('API моделей: HTTP ' + response.status + '. Проверьте доступ токена к моделям.')
+  let body
+  try { body = await response.json() } catch { throw Error('API моделей: ожидался JSON каталога. Проверьте SISLEXA_MODEL_API_URL.') }
+  if (!Array.isArray(body?.models) || !body.models.length) throw Error('API моделей: нет доступных моделей. Проверьте адрес API и права пользователя токена.')
 }
 export const selectedFull = (args, env, saved = {}) => args.includes('--full') || env.SISLEXA_STAND_FULL === '1' || (env.SISLEXA_STAND_FULL === undefined && saved.full === true)
 export function doctorCommands(version = process.versions.node, probe = (cmd, args) => spawnSync(cmd, args, { stdio: 'ignore' }).status === 0) {
@@ -95,6 +121,7 @@ export async function main(args = process.argv.slice(2), root = fileURLToPath(ne
   if (!/^[a-z0-9][a-z0-9-]{0,30}$/.test(name)) throw Error('Set SISLEXA_STAND_NAME to lowercase letters, digits and dashes')
   if (saved.name && name !== saved.name) throw Error('Restore SISLEXA_STAND_NAME before restarting or destroying this stand')
   const models = modelConfig(config)
+  if (models.SISLEXA_MODEL_API_URL) console.warn(modelApiWarning)
   if (!models.VC_LLM_RUNNER_CLAUDE_URL && !models.VC_LLM_RUNNER_CODEX_URL) console.warn('модели не настроены')
   const base = Number(config.SISLEXA_STAND_PORT_BASE || 28000), ui = Number(config.SISLEXA_STAND_UI_PORT || 25273)
   if (![base, ui].every(n => Number.isInteger(n) && n >= 1024) || base + 899 > 65535 || ui + 10 > 65535) throw Error('Set valid SISLEXA_STAND_PORT_BASE / SISLEXA_STAND_UI_PORT in .stand/.env')
@@ -154,6 +181,7 @@ export async function main(args = process.argv.slice(2), root = fileURLToPath(ne
     return
   }
   chmodSync(envFile, 0o600)
+  await doctorModels(models, runtime.fetch)
   if (command === 'update') launch('stop')
   const servicePorts = Object.entries(offsets).filter(([id]) => full || ['core','make','makeUi','kanban','identity','billing','analytics'].includes(id))
   const ports = [ui, ...servicePorts.map(([, n]) => base + n), ...(full ? [ui + 8, ui + 9, ui + 10] : [])]

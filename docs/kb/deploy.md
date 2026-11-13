@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: 2267228d
+checked: 4a6c358ff
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/stand.mjs
@@ -91,9 +91,31 @@ bootstraps `admin`; stand users receive `SISLEXA_STAND_USERS_PASSWORD` (default
 `123`). Generated credentials, logs, data and process records stay in `.stand/`.
 Do not reuse production credentials or a production database.
 
-`SISLEXA_MODEL_API_URL` and `SISLEXA_MODEL_API_TOKEN` are read and format-checked
-for the future workspace model API. Temporary runner URLs/token can be supplied
-in the same file. Without runner endpoints, startup and status report
+Set both `SISLEXA_MODEL_API_URL=https://<production-core>/api/model-runner`
+(without `/v1`) and `SISLEXA_MODEL_API_TOKEN` in `.stand/.env` to use a
+production workspace model token. The stand maps them to both
+`VC_LLM_RUNNER_CLAUDE_URL` / `VC_LLM_RUNNER_CODEX_URL` and
+`VC_LLM_RUNNER_TOKEN`, overriding direct runner settings. No local runner is
+needed. Startup doctor requests `GET <base>/v1/models` with Bearer authorization,
+a ten-second timeout and no redirects before starting services; 401 explains
+token replacement, 402 explains replenishing the token user's production balance.
+An invalid or empty catalog also stops startup. The catalog does not reserve
+funds: a later run can still fail with 402.
+
+This mode sets `VC_CHAT_MODEL_API=true`, `VC_CHAT_TEXT_ONLY=true` and
+`VC_CHAT_REQUIRE_BILLING=false`. Core suppresses workspace MCP (Make, KB,
+Kanban and other tools), even for saved workspace conversations, and skips its
+local Billing accounting wrapper. Production Core alone admits and settles the
+run using the token owner's balance and token sid. The two-Core WebSocket test in
+`routes/modelRunner.test.ts` verifies a reply and upstream token usage even when
+the stand has a local Billing transport configured. It uses a fake runner and
+does not constitute a live production smoke test.
+
+Startup/status print an explicit tools-disabled and billing warning. Core UI's
+dev server receives only `SISLEXA_STAND_MODEL_API=1` for its warning banner;
+the banner contains no API URL or token. Both the Core and Core UI changes must
+be present in their dev checkouts. Direct runner URLs/token remain supported
+without this mode. Without either kind of endpoint, startup/status report
 “модели не настроены”; other services can still run.
 Existing `dev:stand` shared mode, source overrides and foreground `run`
 retain their existing behavior. `.stand/` is excluded from Git, test selection,
