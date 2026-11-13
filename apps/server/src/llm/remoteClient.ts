@@ -33,6 +33,8 @@ export interface RemoteLlmClientOptions {
   connectTimeoutMs?: number
   /** Инъекция fetch (для тестов). */
   fetchImpl?: typeof fetch
+  /** Core's authenticated model API forwards the original wire frames. */
+  onFrame?: (frame: import('./protocol.js').RunnerStreamEvent) => void
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 20_000
@@ -139,6 +141,10 @@ function describeHttpError(kind: RunnerKind, url: string, status: number, body: 
 export class RemoteLlmClient implements LlmClient {
   constructor(private readonly opts: RemoteLlmClientOptions) {}
 
+  observingFrames(onFrame: NonNullable<RemoteLlmClientOptions['onFrame']>): RemoteLlmClient {
+    return new RemoteLlmClient({ ...this.opts, onFrame })
+  }
+
   get accountingTarget(): { kind: RunnerKind; baseUrl: string } {
     return { kind: this.opts.kind, baseUrl: this.opts.baseUrl }
   }
@@ -148,6 +154,11 @@ export class RemoteLlmClient implements LlmClient {
       headers: { ...(this.opts.token ? { authorization: 'Bearer '+this.opts.token } : {}),
         ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  }
+  async health(userId: string): Promise<import('@voicechat/shared').LlmRunnerHealth> {
+    const response = await this.accountingFetch('/v1/health?userId=' + encodeURIComponent(userId))
+    if (!response.ok) throw Error('runner_unavailable')
+    return response.json() as Promise<import('@voicechat/shared').LlmRunnerHealth>
   }
   async accountingReady(): Promise<boolean> {
     const response = await this.accountingFetch('/v1/health')
@@ -166,11 +177,18 @@ export class RemoteLlmClient implements LlmClient {
 
   send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle {
     const runId = req.accounting?.operationId ?? randomUUID()
-    const sink = createSink(this.opts.kind, handlers)
+    let terminal: (() => void) | undefined
+    // Raw-frame consumers must see the exit frame even when a provider emits its
+    // semantic result before process exit. Ordinary chat retains its early result.
+    const sink = createSink(this.opts.kind, this.opts.onFrame ? {
+      ...handlers,
+      onDone: (text, meta) => { terminal = () => handlers.onDone(text, meta) },
+      onError: message => { terminal = () => handlers.onError(message) }
+    } : handlers)
     const abort = new AbortController()
     let cancelled = false
 
-    void this.pump(runId, req, sink, abort)
+    void this.pump(runId, req, sink, abort).finally(() => { if (!cancelled) terminal?.() })
 
     return {
       cancel: () => {
@@ -241,6 +259,7 @@ export class RemoteLlmClient implements LlmClient {
       for await (const line of createInterface({ input: stream })) {
         const ev = parseRunnerLine(line)
         if (!ev) continue
+        this.opts.onFrame?.(ev)
         if (ev.t === 'out') sink.line(ev.s)
         else if (ev.t === 'err') sink.stderrChunk(ev.s)
         else {

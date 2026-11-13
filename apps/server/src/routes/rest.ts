@@ -854,6 +854,7 @@ export async function registerRest(
   db: VoiceChatDb,
   dataDir: string,
   opts: {
+    modelTokenUsage?: (login: string, from?: number, to?: number) => Array<{ sid: string; tenantId: string; actualMicroUsd: number; requests: number }>
     chatModels?: ChatModelPolicy
     chatTextOnly?: boolean
     runnerFs?: RunnerFsClient
@@ -1899,7 +1900,8 @@ export async function registerRest(
     const from = number(query.from)
     const to = number(query.to)
     if ((query.from && from === undefined) || (query.to && to === undefined)) return reply.code(400).send({ error: 'from and to must be timestamps' })
-    return await db.chat.usageReport(userId, unit as UsageUnit, from, to, query.conversationId || undefined)
+    return { ...await db.chat.usageReport(userId, unit as UsageUnit, from, to, query.conversationId || undefined),
+      tokens: query.conversationId ? [] : opts.modelTokenUsage?.(userId, from, to) ?? [] }
   }
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.usage, async (req, reply) => usageForMe(uid(req), req.query, reply))
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))

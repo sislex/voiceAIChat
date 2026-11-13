@@ -1,7 +1,7 @@
 ---
 title: External agent access through API tokens
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: dec40f6b5
 areas:
   - packages/shared/src/protocol.ts
   - apps/server/src/routes/rest.apiTokens.test.ts
@@ -9,6 +9,38 @@ areas:
 ---
 
 # External agent access through API tokens
+
+## API моделей
+
+A models API token has `access: "models"` and a required workspace `tenantId`.
+The shared Identity creation contract is
+`POST /api/session/api-tokens {name, ttlDays, access:"models", tenantId}`;
+listing returns token metadata including tenantId, and DELETE by sid revokes it.
+Identity owns membership checks, token issuance and one-time secret display.
+Until the Identity release supports issuance of this scope, use an existing
+`access:"full"` API token; Core does not mint or reinterpret a user-supplied scope.
+
+Core consumes verified Identity `access`, `sid` and `tenantId` metadata.
+Absent access is treated as full for compatibility with older Identity releases.
+The legacy signed-session path resolves metadata through the Identity session
+port, never through an unverified JWT payload. A models token is accepted only
+under `/api/model-runner/v1/`; the global preHandler and shared authenticator
+return 403 `{error:"token_scope_denied"}` on other Core routes, including
+conversations, token management and personal usage. Use the owner's ordinary
+session or full token to inspect `GET /api/me/usage`: its `tokens` array groups
+confirmed model-API spending by sid and tenantId in integer micro-USD.
+
+Both models and full tokens require Bearer authentication for model execution.
+A models token uses its bound tenant (with a membership check if it differs from
+the current account context); full uses the user's active tenant. Caller tenant
+headers cannot change this selection. The body cannot select the billed user or
+CLI profile. The private runner credential never leaves Core.
+
+See [API models transport and accounting](llm.md#api-моделей) for endpoints,
+limits, HTTP errors and the no-tools v1 policy. Full-token transport is covered
+against the pinned Identity package; models metadata is covered by a simulated
+Identity response/session until its issuing release is installed.
+
 
 ## Obtain and manage a token
 

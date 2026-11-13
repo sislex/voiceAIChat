@@ -165,6 +165,8 @@ export interface ServerConfig {
   llmRunnerCodexUrl?: string
   /** Bearer-токен исполнителей (пусто — закрытая сеть без авторизации). */
   llmRunnerToken?: string
+  modelApiConcurrency?: number
+  modelApiRequestsPerMinute?: number
   /** Таймаут ожидания заголовков /v1/run, мс (сам ход не ограничен). */
   llmRunnerConnectTimeoutMs?: number
   /** Browser Runner (Playwright Reader): изолированный Chromium; сервер сам его не запускает. */
@@ -349,6 +351,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerClaudeUrl: env.VC_LLM_RUNNER_CLAUDE_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
+    modelApiConcurrency: parsePositiveInt(env.VC_MODEL_API_CONCURRENCY) ?? 2,
+    modelApiRequestsPerMinute: parsePositiveInt(env.VC_MODEL_API_REQUESTS_PER_MINUTE) ?? 60,
     browserRunnerUrl: env.VC_BROWSER_RUNNER_URL,
     browserRunnerToken: env.VC_BROWSER_RUNNER_TOKEN,
     llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS),

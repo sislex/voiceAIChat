@@ -19,6 +19,10 @@ export interface ChatAccountingOptions {
   now?: () => number
 }
 export interface AccountingTurn {
+  modelApi?: boolean
+  onOperation?: (operationId: string) => void
+  onDispatch?: (operationId: string) => void
+  onAdmissionError?: (status: number, reason: string) => void
   application?: import('@voicechat/shared').ChatApplicationAttribution
   authorize?: () => Promise<void>
   delegatedAuthorization?: () => Promise<{ authorization: string; principal: { userId: string; tenantId: string; delegationId: string } }>
@@ -83,7 +87,7 @@ export class ChatAccounting {
   wrap(client: LlmClient, turn: AccountingTurn): LlmClient {
     return { send: (request, handlers) => {
       let cancelled = false, inner: ReturnType<LlmClient['send']> | undefined, job: AccountingJob | undefined
-      const backgroundStop = this.stopsInBackground(turn.originModuleId, !!turn.application || !!turn.delegatedAuthorization)
+      const backgroundStop = !turn.modelApi && this.stopsInBackground(turn.originModuleId, !!turn.application || !!turn.delegatedAuthorization)
       let terminal = false
       let finishExecution: (() => void) | undefined
       let execution: Promise<void> | undefined
@@ -115,16 +119,18 @@ export class ChatAccounting {
             throw Error('billing_principal_mismatch')
           }
           if (!authorization || !principal) {
+            turn.onAdmissionError?.(401, 'user_session_required')
             error('Для запуска очереди нужно восстановить исходную сессию входа. Откройте чат в ней или отправьте запрос заново.'); return
           }
           if (cancelled) return
           await turn.authorize?.()
           const id = randomUUID()
-          job = { id, application: turn.application, login: turn.login, session: { ...principal }, originModuleId: turn.originModuleId,
+          job = { id, modelApi: turn.modelApi, createdAt: this.now(), application: turn.application, login: turn.login, session: { ...principal }, originModuleId: turn.originModuleId,
             input: { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded', expiresAt: this.now()+60_000 },
             target: { ...client.accountingTarget, ...(turn.engineId ? { engineId: turn.engineId } : {}) },
             model: request.model, prices: estimatePrices(request.model), state: 'admitting' }
           this.active.add(id); this.opts.store.save(job)
+          turn.onOperation?.(id)
           const admitted = await this.call<BillingReservation>('reservations', { ...job.input, application: job.application, originModuleId: turn.originModuleId }, authorization, !!delegated)
           this.assertReservation(job, admitted)
           job.reservation = admitted; job.state = 'reserved'; this.opts.store.save(job)
@@ -155,8 +161,11 @@ export class ChatAccounting {
             onUsage: usage => { if (!cancelled) handlers.onUsage?.(usage) },
             onDone: (text, meta) => { void complete(() => handlers.onDone(text, meta)) },
             onError: message => { void complete(() => handlers.onError(message)) } }
+          turn.onDispatch?.(job.id)
           inner = client.send({ ...request, accounting: this.context(job) }, forwarded)
         } catch (failure) {
+          turn.onAdmissionError?.(failure instanceof AdmissionError ? failure.status : 503,
+            failure instanceof AdmissionError ? failure.reason : 'accounting_unavailable')
           if (job && job.state === 'admitting' && failure instanceof AdmissionError && failure.status >= 400 && failure.status < 500) {
             job.state = 'done'; this.opts.store.save(job)
           }

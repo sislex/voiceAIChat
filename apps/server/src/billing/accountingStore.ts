@@ -5,6 +5,8 @@ import type { LlmBillingSession } from '@voicechat/shared'
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
 export interface AccountingJob {
+  modelApi?: boolean
+  createdAt?: number
   application?: import('@voicechat/shared').ChatApplicationAttribution
   id: string
   login: string
@@ -35,6 +37,22 @@ export class AccountingStore {
   get(id: string): AccountingJob | undefined {
     const row = this.db.prepare('SELECT value FROM chat_accounting_outbox WHERE id=?').get(id)
     return row ? JSON.parse(String(row.value)) as AccountingJob : undefined
+  }
+  modelUsage(login: string, from = 0, to = Date.now()) {
+    const rows = this.db.prepare("SELECT value FROM chat_accounting_outbox").all()
+    const totals = new Map<string, { sid: string; tenantId: string; actualMicroUsd: number; requests: number }>()
+    for (const row of rows) {
+      const job = JSON.parse(String(row.value)) as AccountingJob
+      if (!job.modelApi || job.login !== login || job.state !== 'done' || !job.settlement || !('sid' in job.session)
+        || (job.createdAt ?? 0) < from || (job.createdAt ?? 0) > to) continue
+      const { sid, tenantId } = job.session
+      const key = JSON.stringify([sid, tenantId])
+      const item = totals.get(key) ?? { sid, tenantId, actualMicroUsd: 0, requests: 0 }
+      item.actualMicroUsd += job.settlement.actualMicroUsd
+      item.requests++
+      totals.set(key, item)
+    }
+    return [...totals.values()]
   }
   pending(): AccountingJob[] {
     return this.db.prepare("SELECT value FROM chat_accounting_outbox WHERE state!='done'").all()

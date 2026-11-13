@@ -1,3 +1,6 @@
+/** Public, user-authenticated subset of the private LLM Runner v1 contract. */
+export const MODEL_RUNNER_API_PREFIX = '/api/model-runner/v1/'
+
 import type { BoardRequestOptions } from './projects'
 import type { MakePresenceClient } from '@voicechat/make-contracts/make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
