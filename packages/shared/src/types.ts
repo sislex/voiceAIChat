@@ -85,6 +85,13 @@ export interface Message {
   execTarget?: string | null
   /** Метаданные файлов, приложенных к этой реплике; без байтов. */
   attachments?: MessageAttachment[]
+  /** Серверная группа альтернатив этой реплики. Отсутствует, пока вариант один. */
+  branch?: {
+    index: number
+    count: number
+    previousId: string | null
+    nextId: string | null
+  }
 }
 
 /** Сегмент распознанной речи после диаризации. */

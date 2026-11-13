@@ -885,6 +885,8 @@ export async function registerRest(
     delegatedAssistantKind?: (grant: string) => string | undefined
     /** Publish a persisted message to every authenticated connection of its owner. */
     publishChatMessage?: (userId: string, conversationId: string, message: import('@voicechat/shared').Message) => void | Promise<void>
+    /** Publish a complete active branch after a branch mutation. */
+    publishChatHistory?: (userId: string, conversationId: string, messages: import('@voicechat/shared').Message[]) => void | Promise<void>
     fileStorage?: import('../../../../packages/file-storage/src/service.js').FileStorageService
     conversationSummary?: () => ConversationSummaryService | undefined
     resetThread?: import('../turns.js').TurnManager['resetThread']
@@ -1702,6 +1704,25 @@ export async function registerRest(
       }
     }
   )
+
+  app.post<{
+    Params: { id: string; messageId: string }
+    Body: { action: 'edit' | 'retry' | 'select'; text?: string }
+  }>(REST.messageBranch(':id', ':messageId').replace('%3Aid', ':id').replace('%3AmessageId', ':messageId'), async (req, reply) => {
+    if (!req.body || !['edit', 'retry', 'select'].includes(req.body.action)) {
+      return reply.code(400).send({ error: 'invalid branch action' })
+    }
+    try {
+      const userId = uid(req)
+      const messages = await db.chat.branchMessage(userId, req.params.id, req.params.messageId, req.body.action, req.body.text)
+      const projected = await clientMessages(db, userId, req.params.id, messages)
+      await opts.publishChatHistory?.(userId, req.params.id, projected)
+      opts.conversationSummary?.()?.consider(userId, req.params.id)
+      return projected
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+    }
+  })
 
   app.delete<{ Params: { id: string; messageId: string } }>(
     '/api/conversations/:id/messages/:messageId',

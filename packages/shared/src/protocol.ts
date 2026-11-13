@@ -335,6 +335,7 @@ export const REST = {
   messages: (id: string) => `/api/conversations/${id}/messages`,
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
+  messageBranch: (id: string, messageId: string) => `/api/conversations/${encodeURIComponent(id)}/messages/${encodeURIComponent(messageId)}/branch`,
   messageServiceData: (conversationId: string, messageId: string) =>
     `/api/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/service-data`,
   /** JSON base64, raw bytes or one multipart file; see ChatUploadMetadata in fileStorage.ts. Returns UploadInfo; auth/CSRF required. */
@@ -970,6 +971,8 @@ export type ServerMessage =
    * чём — поэтому это не `claude.done`.
    */
   | { t: 'chat.message'; conversationId: string; message: Message }
+  /** Активная цепочка сменилась при редактировании, повторе или выборе ветки. */
+  | { t: 'chat.history'; conversationId: string; messages: Message[] }
   | { t: 'chat.conversation'; conversation: Conversation }
   /**
    * Обращение к базе знаний (авто-инъекция сервером или вызов mcp__kb__*
@@ -1088,6 +1091,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'ci.interaction',
   'merge.snapshot',
   'chat.message',
+  'chat.history',
   'chat.conversation',
   'kb.usage',
   'preview.action',
