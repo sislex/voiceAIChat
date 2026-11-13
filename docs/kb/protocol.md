@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-11-13
-checked: d676c82e
+checked: 059901fdf
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -24,6 +24,21 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Model runner API
+
+Shared exports `MODEL_RUNNER_API_PREFIX = '/api/model-runner/v1/'`.
+Core publishes POST `run`, DELETE `run/:id`, GET `health` and GET `models`.
+The run response preserves runner NDJSON frames and `x-run-id`; filesystem,
+lifecycle, preview grants and MCP inventory are not public routes.
+Bearer `models` tokens cannot access the other Core APIs; `full` tokens can
+use this subset with their user's active tenant. See [the complete transport
+and accounting boundary](llm.md#api-моделей).
+
+The existing personal usage response adds `tokens`, grouped by `sid` and
+`tenantId`, with `actualMicroUsd` and `requests` from completed model API
+settlements. A conversation filter returns an empty token breakdown.
+The usage endpoint itself requires ordinary/full authority.
 
 ## Admin storage quota contract
 

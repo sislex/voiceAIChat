@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-11
-checked: 92494505
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -8,6 +8,22 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Model API registration
+
+`buildServer` installs `modelTokenAuthority` before `registerAuthGuard` and
+passes its verified token metadata to `registerModelRunner` after accounting
+initialization. Only the explicit run/cancel/health/models routes are registered.
+The existing REST usage callback reads completed model-token settlements from
+`AccountingStore`. Raw runner frame observation waits for the transport exit
+before invoking terminal handlers; ordinary chat keeps its existing early
+semantic-result behavior. See [model API](llm.md#api-моделей).
+
+The adjacent chat changes publish projected `chat.history` after branch
+edit/retry/select and strip service data from each message. Make's Core RPC
+dispatcher validates `currentContext`, `projectUsage` and
+`conversationAttachments` explicitly for compatibility with the pinned owner
+contract. These are separate authenticated APIs, unavailable to models tokens.
 
 ## Operator handoff integration (SK-115)
 

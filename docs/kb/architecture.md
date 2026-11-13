@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 5ceebde17
+updated: 2026-11-13
+checked: 059901fdf
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -18,6 +18,14 @@ areas:
 ---
 
 # Архитектура: кто с кем разговаривает
+
+## Public model execution boundary
+
+Core exposes the authenticated, billed runner subset at `/api/model-runner/v1/`.
+`server.ts` registers its scope guard before the generic Identity guard and wires
+the routes to the existing remote LLM clients and ChatAccounting. The private
+runner remains behind Core; callers cannot supply machine or MCP authority.
+See [model API](llm.md#api-моделей) and [token authority](agent-api-access.md#api-моделей).
 
 Module details: `voice:README.md`
 

@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -12,6 +12,15 @@ areas:
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
+
+## Core as a model provider
+
+A server-side client can set both `VC_LLM_RUNNER_CLAUDE_URL` and
+`VC_LLM_RUNNER_CODEX_URL` to `<provider-core>/api/model-runner`, with
+`VC_LLM_RUNNER_TOKEN` holding the user's token. The provider Core authenticates
+and bills the token owner. This API is text-only and does not relay client MCP
+tools. Its `models` token cannot be used for browser sessions, conversations or
+other Core APIs. See [API models](llm.md#api-моделей).
 
 Module details: `web-reader:README.md`
 Module details: `core-ui:README.md`

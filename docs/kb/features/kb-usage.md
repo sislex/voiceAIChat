@@ -2,8 +2,8 @@
 id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
-updated: 2026-11-05
-checked: f82b55f09
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -102,6 +102,12 @@ Kanban model hooks run in `sislexa-kanban`; UI paths below belong to Core UI.
 `auto` — авто-инъекция ДА, инструменты ДА, системный хинт «БЗ в первую очередь» плюс уже вставленный блок контекста. `manual` — авто-инъекции НЕТ, инструменты ДА, хинт усиленный (инструменты — единственный путь к базе). `off` — ничего. До этой фичи `manual` был эквивалентен `off`: `turns.ts` проверял только `'auto'`. Комбинация `manual` + `VC_KB_TOOL=off` вырождается в `off`, и панель показывает это чипом «инструмент БЗ отключён администратором».
 
 ## Инструменты модели (`kb/kbMcp.ts`)
+
+Effective assistant configuration also gates individual KB calls.
+`turns.ts` supplies `disabledTools` for search/document/topics after Required
+inheritance; `packages/knowledge/src/mcp.ts` rejects a disabled call before
+opening its usage tracker. Chat mode supplies no KB tool context. Model API
+requests are tool-free and do not relay the caller's KB MCP URL.
 
 Stateless MCP-эндпоинт `/mcp/kb`: доступ по секрету процесса `?k=`, ход адресуется токеном `?turn=` через in-memory `kbToolBroker`. Токен выдаёт `TurnManager` и снимает во всех выходах хода (готово, ошибка, отмена, `flushInterrupted`) — иначе каждый отменённый ход оставлял бы живой токен. `mcp__kb__document` режет раздел чистой функцией `sectionOf` и обрезает его на 8000 символах: без капа один вызов вливает в контекст всю базу.
 

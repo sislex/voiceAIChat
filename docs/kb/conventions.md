@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-11-09
-checked: 2d771f92
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - package.json
   - packages/shared/tsconfig.json

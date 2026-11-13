@@ -1,7 +1,7 @@
 ---
 title: "Проверки по замене закреплённых архивов"
-updated: 2026-11-02
-checked: 8fa1c9744
+updated: 2026-11-13
+checked: 059901fdf
 areas:
   - scripts/owner-pins.mjs
   - scripts/application-gate.mjs
@@ -38,6 +38,12 @@ immutable vendor-release URLs (and legacy `file:vendor/...` references) в `pack
   владельцев — `toolIntegration`, для core-ui и Desktop — бюджеты маршрутов.
 
 ## Release base and independent checks
+
+Development planning separates Kanban stand browser suites into
+`releaseE2eFiles` and selects development tooling plus tests related to changed
+scripts. Release planning restores those suites and complete tooling.
+The full release command passes `--release` to `gate:all`; a development
+result alone does not cover the deferred release suites.
 
 `gate:release` runs `scripts/release-gate.mjs`. The release center supplies
 `VOICECHAT_RELEASE_BASE_SHA`, or the caller passes `--base`: a full 40-character

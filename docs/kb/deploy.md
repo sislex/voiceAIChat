@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-09
-checked: 694e6cbdf
+updated: 2026-11-13
+checked: 059901fdf
 title: Деплой: Docker, HTTPS, прод-сервер, env
 areas:
   - scripts/dev-stand-local.mjs
@@ -365,6 +365,17 @@ by C01's sandbox worker (deployment is prohibited in that task).
 
 
 # Деплой: Docker, HTTPS, прод-сервер, env
+
+## Public model API configuration
+
+Core's `VC_MODEL_API_CONCURRENCY` defaults to 2 concurrent operations per token;
+`VC_MODEL_API_REQUESTS_PER_MINUTE` defaults to 60 run requests per token.
+Both use positive integer configuration. Unsettled model API outbox jobs retain
+concurrency slots. The public adapter requires configured Billing and a remote
+runner; it does not expose the private runner service directly.
+A consuming Core uses `<provider-core>/api/model-runner` as its runner base URL
+and a user Bearer token as `VC_LLM_RUNNER_TOKEN`. See
+[execution and authorization](llm.md#api-моделей).
 
 ## Core memory diagnostics
 
