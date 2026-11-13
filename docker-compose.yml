@@ -222,7 +222,7 @@ services:
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
     profiles: ["make"]
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:05cd7ed3c0b471e409b41ee1b2e57789f8704ce6}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:f48a6c6433820bcc6b6ac0e1355e69e020de7d2e}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0
@@ -246,7 +246,7 @@ services:
   # разговоры и авторизация приходят от ядра, профили Chromium остаются в browser-runner.
   playwright-reader:
     profiles: ["playwright-reader"]
-    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:c5642e5ffb708e71da63dc9132c8313e249cd069}
+    image: ${SISLEXA_PLAYWRIGHT_READER_IMAGE:-ghcr.io/sislex/playwrightreader-api:f70c70d5294bd09882867dcace00a756a85e405f}
     mem_limit: 256m
     depends_on:
       browser-runner: {condition: service_started, required: false}
@@ -472,7 +472,7 @@ services:
   # публикуется — ходит к нему только сервер по внутренней сети compose.
   browser-runner:
     profiles: ["browser-runner"]
-    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:c5642e5ffb708e71da63dc9132c8313e249cd069}
+    image: ${SISLEXA_BROWSER_RUNNER_IMAGE:-ghcr.io/sislex/playwrightreader-browser:f70c70d5294bd09882867dcace00a756a85e405f}
     environment:
       HOST: 0.0.0.0
       PORT: "8792"

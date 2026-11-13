@@ -114,7 +114,7 @@ export function createMakeCoreDispatcher(core: MakeCore) {
       if (request.method === 'openStandWindow') {
         const parsed = standWindowArgs.safeParse(request.args)
         if (!parsed.success) throw new RpcError(400, 'Invalid stand window arguments')
-        const fn = (core as MakeCore & { openStandWindow?: (...args: typeof parsed.data) => Promise<unknown> }).openStandWindow
+        const fn = (core as MakeCore & { openStandWindow?: (...args: z.infer<typeof standWindowArgs>) => Promise<unknown> }).openStandWindow
         if (typeof fn !== 'function') throw new RpcError(503, 'stand_window_unavailable')
         return makeStandWindowSchema.parse(await fn.call(core, ...parsed.data))
       }
