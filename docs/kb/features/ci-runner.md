@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-11-09
-checked: bc7d4930c
+updated: 2026-11-13
+checked: e8f70a79e
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -99,6 +99,14 @@ run in Kanban; `/api/ci` and `/mcp/ci-commands` are proxied through Core.
 The [ownership map](../projects.md#kanban-implementation-ownership) explains
 extracted paths in the retained detailed sections below. Manager and UI paths
 are owner migration references, not local Core implementations.
+
+## Portable stand and Core check selection
+
+The Core compatibility planner in `scripts/affected-check.mjs` treats `.stand/`
+paths as local state with no affected packages. The portable stand lifecycle is
+implemented by `scripts/stand.mjs`; it is separate from Kanban's task workspace
+preparation and workflow execution. Core keeps the existing CI readers and ports;
+this exclusion does not change stage selection or retry policy in Kanban.
 
 ## Development preview (CHAT-447)
 

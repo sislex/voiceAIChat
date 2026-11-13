@@ -1,7 +1,7 @@
 ---
 title: Конвенции: код, тесты, гейты, коммиты
-updated: 2026-11-09
-checked: 2d771f92
+updated: 2026-11-13
+checked: e8f70a79e
 areas:
   - package.json
   - packages/shared/tsconfig.json
@@ -105,6 +105,15 @@ Development tooling uses `test:tooling:dev` plus related changed-script tests;
 release plans select complete tooling. Kanban stand browser suites are retained
 in `releaseE2eFiles` and run in development only when explicitly changed.
 `gate:release:full` passes `--release` to the full gate.
+
+## Portable stand exclusions
+
+`.stand/` contains independent development clones and generated state. Core's
+TypeScript and Vitest configurations exclude it, and the Core `tsx watch` command
+ignores `**/.stand/**`. Application/quick planners filter `.stand` path components;
+the legacy affected-package selector treats root `.stand/` paths as harmless.
+Test-file and task-test tree walks skip `.stand` directories. This prevents an
+owner test such as `.stand/repos/x/a.test.ts` from entering Core's test selection.
 
 ## Покрытие: пороги по каталогам, когда пакет считать целиком бессмысленно
 

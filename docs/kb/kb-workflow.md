@@ -1,7 +1,7 @@
 ---
 title: Как устроена и ведётся база знаний
-updated: 2026-11-09
-checked: 2dfd7992
+updated: 2026-11-13
+checked: e8f70a79e
 areas:
   - scripts/kb.mjs
   - scripts/kb-search.mjs
@@ -228,6 +228,19 @@ Kanban owns `MergeRunManager` and its model hooks. The Core copies of
 `apps/server/src/ci/modelHooks.ts` and `merge/` no longer exist; Core retains
 `kb/codeUpdate.ts`, `kb/modelDocs.ts` and its RPC boundary. Manager references in
 the merge-workflow section above refer to the extracted Kanban owner.
+
+## Portable stand directories
+
+Both CLI topic discovery (`packages/kb-tools/kb.mjs`) and lexical search/index
+preparation (`packages/kb-tools/search.mjs`) skip entries named `.stand`. Local
+owner clones must not contribute duplicate topics when the configured KB root
+includes them. The exclusion does not bypass checked-SHA freshness, package
+instructions or link validation for actual topics.
+
+A stand change can touch several topics through shared planner, config and CLI
+areas even when its main instructions live in `deploy.md`. Review and reconcile
+every affected topic, not only the deployment guide; record the checked source
+paths in the session log before regenerating the index.
 
 ## Почему нет merge-конфликтов
 
