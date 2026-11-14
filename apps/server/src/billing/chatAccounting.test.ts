@@ -209,6 +209,21 @@ it('accepts a receipt bound to the master runner token and rejects any other own
   }
 })
 
+it('closes records dispatched before settlement started without a charge', async () => {
+  const f = await fixture(), id = 'dispatched-before-settlement'
+  const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: f.outbox.settleSince - 1 + 60_000 }
+  const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
+  const reservation = f.ledger.reserve(principal, { ...input, expiresAt: Date.now()+60_000 })
+  f.ledger.transition(principal, reservation.id, 'start')
+  f.outbox.save({ id, login: 'login', session: f.session, originModuleId: 'chat', input: { ...input, expiresAt: reservation.expiresAt },
+    createdAt: f.outbox.settleSince - 1, target: f.client.accountingTarget, model: 'gpt-5.6-sol', reservation, state: 'dispatching' })
+  // No receipt exists for the record: it must not be consulted at all.
+  await f.accounting.reconcile(id)
+  expect(f.ledger.reservation(principal, reservation.id)).toMatchObject({ state: 'settled', actualMicroUsd: 0 })
+  expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 0, spentMicroUsd: 0 })
+  expect(f.outbox.pending()).toHaveLength(0)
+})
+
 it('retains a concurrency hold when terminal usage cannot be priced or proved', async () => {
   const f = await fixture(), id = 'unknown-result'
   const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
