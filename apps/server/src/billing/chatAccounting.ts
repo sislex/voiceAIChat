@@ -241,6 +241,10 @@ export class ChatAccounting {
       else await this.call(path+'/settle', { eventId: 'no-spawn:'+job.id, actualMicroUsd: 0 })
       job.state = 'done'; this.opts.store.save(job); return
     }
+    if (!job.settlement && this.opts.store.predatesSettlement(job)) {
+      job.settlement = { eventId: 'unsettled-before-accounting:'+job.id, actualMicroUsd: 0 }
+      job.state = 'settling'; this.opts.store.save(job)
+    }
     if (!job.settlement) {
       const runner = await this.opts.resolveRunner(job.target)
       if (!runner || runner.accountingTarget.baseUrl !== job.target.baseUrl || runner.accountingTarget.kind !== job.target.kind) return

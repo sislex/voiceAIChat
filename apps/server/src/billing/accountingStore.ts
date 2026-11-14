@@ -24,10 +24,21 @@ export interface AccountingJob {
 /** Delivery outbox only. Billing remains the spending authority. No bearer or prompt is stored. */
 export class AccountingStore {
   private db: SqliteDatabase
-  constructor(filename: string) {
+  constructor(filename: string, now: () => number = Date.now) {
     this.db = new DatabaseSync(filename)
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=10000;
-      CREATE TABLE IF NOT EXISTS chat_accounting_outbox (id TEXT PRIMARY KEY, state TEXT NOT NULL, value TEXT NOT NULL);`)
+      CREATE TABLE IF NOT EXISTS chat_accounting_outbox (id TEXT PRIMARY KEY, state TEXT NOT NULL, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS chat_accounting_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`)
+    this.db.prepare("INSERT OR IGNORE INTO chat_accounting_meta VALUES ('settleSince', ?)").run(String(now()))
+    this.settleSince = Number(this.db.prepare("SELECT value FROM chat_accounting_meta WHERE key='settleSince'").get()!.value)
+  }
+  /**
+   * Moment this deployment started settling receipts bound to the master runner token. Records that were
+   * dispatched earlier could never settle; they are closed without a charge instead of billing users in arrears.
+   */
+  readonly settleSince: number
+  predatesSettlement(job: AccountingJob): boolean {
+    return (job.createdAt ?? job.input.expiresAt - 60_000) < this.settleSince
   }
   close(): void { this.db.close() }
   save(job: AccountingJob): void {

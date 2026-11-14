@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-14
-checked: 15b46eec
+checked: 8fa5d70a
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -108,7 +108,11 @@ Cancellation and socket disconnect send the internal runner DELETE;
 the actual usage. A receipt is accepted when the runner bound it to `core` (managed
 service token of Core) or to `master` (Core reaches the runner with the master
 token, as stands do); any other owner is `execution_receipt_mismatch` and the
-record stays pending. Uncertain work retains its reservation, and pending receipts
+record stays pending. The outbox remembers when it first ran with this rule
+(`chat_accounting_meta.settleSince`): records dispatched earlier could never settle
+under the master token, so reconcile closes them with a zero settlement
+(`unsettled-before-accounting:<id>`) instead of charging users in arrears.
+Uncertain work retains its reservation, and pending receipts
 continue to occupy the token's concurrency allowance. `GET /api/me/usage`,
 called with an ordinary session or full token, adds `tokens` grouped by sid and
 tenant from completed model-API settlements; reporting can lag the last output
