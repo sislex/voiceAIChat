@@ -187,6 +187,28 @@ it('reconciles a lost start response without execution and fences a possibly dis
   expect(f.ledger.balance('test', 'tenant')).toMatchObject({ requests: 2, active: 0, spentMicroUsd: 0 })
 })
 
+it('accepts a receipt bound to the master runner token and rejects any other owner', async () => {
+  for (const [owner, accepted] of [['master', true], ['make', false]] as const) {
+    const f = await fixture(), id = 'receipt-owner-' + owner
+    const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
+    const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
+    const reservation = f.ledger.reserve(principal, input)
+    f.ledger.transition(principal, reservation.id, 'start')
+    f.outbox.save({ id, login: 'login', session: f.session, originModuleId: 'chat', input,
+      target: f.client.accountingTarget, model: 'unknown-model', reservation, state: 'dispatching' })
+    f.receipts.set(id, { version: 1, runId: id, kind: 'codex', state: 'finished', finalUsage: false,
+      context: { operationId: id, reservationId: reservation.id, userId: 'subject', tenantId: 'tenant', environmentId: 'test', originModuleId: owner },
+      createdAt: 1, updatedAt: 2 })
+    if (accepted) {
+      await f.accounting.reconcile(id)
+      expect(f.ledger.reservation(principal, reservation.id).state).toBe('uncertain')
+    } else {
+      await expect(f.accounting.reconcile(id)).rejects.toThrow('execution_receipt_mismatch')
+      expect(f.ledger.reservation(principal, reservation.id).state).toBe('running')
+    }
+  }
+})
+
 it('retains a concurrency hold when terminal usage cannot be priced or proved', async () => {
   const f = await fixture(), id = 'unknown-result'
   const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
