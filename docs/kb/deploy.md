@@ -1,7 +1,9 @@
 ---
 updated: 2026-11-14
-checked: 4a6c358ff
+checked: f49ccc8e
 title: Деплой: Docker, HTTPS, прод-сервер, env
+aliases:
+  - core:deploy.md#стенд-за-3-шага
 areas:
   - scripts/stand.mjs
   - scripts/stand.test.mjs
@@ -63,6 +65,12 @@ areas:
    missing owner repositories from `dev` into `.stand/repos` using GitHub CLI,
    installs their locked dependencies and Playwright Chromium, and starts services.
    Core runs directly from the current checkout. No `~/sislexa-dev` is needed.
+
+`package.json` maps `npm run stand:create` to `node scripts/stand.mjs create`.
+The first invocation only creates `.stand/.env` and returns; after the operator
+fills that file, the second invocation validates the configuration and starts the
+stand. In particular, a configured `SISLEXA_MODEL_API_URL`/`SISLEXA_MODEL_API_TOKEN`
+pair is checked against `<url>/v1/models` before any stand service starts.
 
 Repeated `stand:create` runs reuse existing `dev` clones and reinstall a repository
 only when its `package-lock.json` digest changed or `node_modules` is absent. The

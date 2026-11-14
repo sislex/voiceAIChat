@@ -1,7 +1,9 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
+aliases:
+  - /api/model-runner/v1
 updated: 2026-11-14
-checked: f30e2a6c0
+checked: f49ccc8e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -47,14 +49,20 @@ See [stand configuration](deploy.md#стенд-за-3-шага).
 
 ## API моделей
 
-Core exposes only the chat subset of the runner protocol at
-`/api/model-runner/v1/`: POST `run`, DELETE `run/:id`, GET `health` and
-GET `models`. Filesystem, lifecycle/admin, preview grants, MCP inventory and
-executor accounting receipts remain private (404). To publish models, the
-provider Core must have Billing and a private remote runner configured; a
-consumer points `VC_LLM_RUNNER_CLAUDE_URL` and `VC_LLM_RUNNER_CODEX_URL` at
-`<provider-core>/api/model-runner` and supplies the user's API token through
-`VC_LLM_RUNNER_TOKEN`.
+Core exposes only the chat subset of the runner protocol under the canonical
+`MODEL_RUNNER_API_PREFIX` (`/api/model-runner/v1/`) from
+`packages/shared/src/protocol.ts`. `modelTokenAuthority` recognizes that prefix,
+and `routes/modelRunner.ts` registers the exact public endpoints
+`GET /api/model-runner/v1/models`, `GET /api/model-runner/v1/health`,
+`POST /api/model-runner/v1/run` and `DELETE /api/model-runner/v1/run/:id`.
+Filesystem, lifecycle/admin, preview grants, MCP inventory and executor accounting
+receipts remain private (404).
+
+To publish models, the provider Core must have Billing and a private remote runner
+configured. A consumer points `VC_LLM_RUNNER_CLAUDE_URL` and
+`VC_LLM_RUNNER_CODEX_URL` at `<provider-core>/api/model-runner` (without `/v1`)
+and supplies the user's API token through `VC_LLM_RUNNER_TOKEN`; the remote client
+appends the `/v1/*` operation path while preserving the Core API base path.
 
 The canonical private wire contract is documented in
 `llm-runner:docs/kb/http-api.md` and typed in
