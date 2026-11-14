@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-11-14
-checked: 2267228d
+checked: f30e2a6c0
 
 areas:
   - packages/shared/src/projects.ts
@@ -23,6 +23,13 @@ areas:
 ---
 
 # Проекты и канбан-доска
+
+## Model API stand conversations
+
+`VC_CHAT_MODEL_API=true` disables workspace context assembly in `turns.ts`,
+including project/task context and Kanban MCP even for saved Workspace mode.
+Project bindings and board APIs remain stored and available independently.
+See [stand restrictions](features/kanban-assistant.md#model-api-stand-restriction).
 
 ## Kanban implementation ownership
 

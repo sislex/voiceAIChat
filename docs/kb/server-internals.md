@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -8,6 +8,14 @@ areas:
 ---
 
 # Backend изнутри: сборка, маршруты, сессии и сервисы
+
+## Consuming models from another Core
+
+`loadConfig` reads `VC_CHAT_MODEL_API=true` into `chatModelApi`. `buildServer`
+passes it to turn assembly and skips local ChatAccounting initialization when
+it is enabled, even with a Billing transport. Turn assembly disables workspace
+tools. The upstream Core remains responsible for admission and settlement.
+See [consumer configuration](llm.md#local-stand-consumer-mode).
 
 ## Model API registration
 

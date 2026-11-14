@@ -2,8 +2,8 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
@@ -30,6 +30,13 @@ aliases:
 ---
 
 # Исполнители LLM: контейнеры с claude/codex CLI
+
+## Model API base paths
+
+`RemoteLlmClient.accountingFetch` appends the endpoint to `runnerBase(baseUrl)`.
+Health therefore preserves `/api/model-runner` and the bearer token instead of
+resolving `/v1/health` against the origin. The stand supplies both provider URLs
+and the token from its model API pair; see [stand setup](../deploy.md#стенд-за-3-шага).
 
 ## Public Core adapter
 

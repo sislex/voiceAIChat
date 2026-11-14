@@ -1,7 +1,7 @@
 ---
 title: Локальная AI-ретушь изображений
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - packages/shared/src/types.ts
   - packages/shared/src/ipc.ts

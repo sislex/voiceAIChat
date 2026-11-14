@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -44,6 +44,13 @@ Chromium, иначе `panel`. Движок меняется переключен
 
 Режим `panel` выполняет действия только в клиенте, где открыт этот чат Web Reader.
 Для работы без открытой панели нужен движок Chromium.
+
+## Model API stand restriction
+
+The Make browser/tool assembly described below requires effective workspace
+mode. `VC_CHAT_MODEL_API=true` disables that mode even for a Make conversation;
+the model request omits Make MCP, browser/remote tools and `toolOnly`. This does
+not change the stored browser binding or its HTTP management contract.
 
 ## Scoped Make execution
 

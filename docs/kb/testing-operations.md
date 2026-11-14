@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: 2267228d
+checked: f30e2a6c0
 title: Разработка, тестирование, диагностика и эксплуатация
 areas:
   - scripts
@@ -18,6 +18,19 @@ areas:
 
 Module details: `core-ui:README.md`
 Module details: `web-reader:README.md`
+
+## Stand model API regression checks
+
+`node --test scripts/stand.test.mjs` checks model API configuration precedence,
+mandatory URL/token pairing, catalog doctor errors (including 401/402), and
+status warning/credential forwarding without a network probe. The runner client
+health test preserves the API base path and bearer token. `turns.test.ts` checks
+that explicit workspace mode cannot enable MCP in model API mode.
+
+`npm run test:files -- apps/server/src/routes/modelRunner.test.ts` includes a
+two-Core WebSocket test with a local Billing transport that must never be called,
+a fake upstream runner reply, and an upstream token-attributed usage assertion.
+It does not establish a live production-token smoke test.
 
 ## Clean stand fixture checks
 

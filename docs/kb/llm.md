@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-11-14
-checked: ad7d876b
+checked: f30e2a6c0
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -33,6 +33,17 @@ areas:
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
+
+## Local stand consumer mode
+
+With `VC_CHAT_MODEL_API=true`, `server.ts` skips local ChatAccounting even when
+Billing is configured, and `turns.ts` disables workspace context/tools regardless
+of the conversation's assistant mode. The upstream Core admits and settles the
+request against the API token owner. `scripts/stand.mjs` sets this flag together
+with `VC_CHAT_TEXT_ONLY=true` and `VC_CHAT_REQUIRE_BILLING=false` when the
+`SISLEXA_MODEL_API_URL`/`SISLEXA_MODEL_API_TOKEN` pair is configured. Setting only
+`VC_CHAT_REQUIRE_BILLING=false` does not bypass a configured local Billing service.
+See [stand configuration](deploy.md#стенд-за-3-шага).
 
 ## API моделей
 

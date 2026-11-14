@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -22,6 +22,13 @@ areas:
 ---
 
 # Канбан-ассистент
+
+## Model API stand restriction
+
+When `VC_CHAT_MODEL_API=true`, turn assembly disables workspace mode even for a
+Workspace or Make conversation. It does not attach Kanban MCP or widget context
+to the model request. The ordinary Kanban HTTP proxy and board contracts are
+unchanged; this restriction concerns the stand's model turns.
 
 ## Current Core boundary
 

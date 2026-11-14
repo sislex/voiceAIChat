@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src/config.ts
   - apps/server/src/server.ts
@@ -12,6 +12,14 @@ areas:
 ---
 
 # Клиенты и упаковка: web, desktop и agent-tray
+
+## Portable stand model warning
+
+The portable launcher passes `SISLEXA_STAND_MODEL_API=1` to the source Core UI
+when both model API settings are present. The warning rendering belongs to the
+Core UI owner; this does not upgrade the pinned browser artifact. The stand Core
+uses upstream billing and disables workspace model tools; see
+[consumer mode](llm.md#local-stand-consumer-mode).
 
 ## Core as a model provider
 

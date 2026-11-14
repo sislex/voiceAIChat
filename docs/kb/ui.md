@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -22,6 +22,14 @@ areas:
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
+
+## Model API stand warning
+
+`dev-stand-local.mjs` passes `SISLEXA_STAND_MODEL_API=1` to the source Core UI
+for the portable model API configuration. The owner renders the warning about
+disabled Make/KB/Kanban MCP and spending from the token owner's balance.
+Core enforces tool suppression through `chatModelApi`; this change publishes no
+new UI archive. See [consumer mode](llm.md#local-stand-consumer-mode).
 
 ## Current Core consumer contracts
 

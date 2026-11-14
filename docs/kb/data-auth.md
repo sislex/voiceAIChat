@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -32,6 +32,14 @@ areas:
 ---
 
 # Данные и доступ: SQLite, пользователи, роли
+
+## Model API stand billing
+
+`VC_CHAT_MODEL_API=true` makes the consuming stand skip local ChatAccounting
+initialization, including its local accounting store and reconciliation timer.
+Admission and settlement belong to the upstream Core and token owner. This flag
+is set by the portable stand launcher; ordinary provider Core accounting remains
+unchanged. Disabling `VC_CHAT_REQUIRE_BILLING` alone does not skip local accounting.
 
 ## Model API authority and spend
 

@@ -2,8 +2,8 @@
 id: kb-usage
 title: Использование базы знаний (телеметрия и панель)
 kind: feature
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 areas:
   - apps/server/src/kb/usage.ts
   - apps/server/src/kb/kbMcp.ts
@@ -75,6 +75,13 @@ related:
 ## Назначение
 
 Панель использования БЗ открывается из вкладки «Общее» настроек активного разговора и сохраняет историческую статистику: какие разделы базы знаний получила модель, сколько раз, сколько это дало символов и токенов (оценка), а также агрегат по всем чатам проекта. Считается только то, что видела модель: авто-инъекция контекста сервером и вызовы инструментов `mcp__kb__*`. Ручной поиск человека на странице «База знаний» в телеметрию не попадает — иначе метрика «сколько раз модель обращалась» врала бы.
+
+## Model API stand restriction
+
+With `VC_CHAT_MODEL_API=true`, `turns.ts` forces workspace mode off and effective
+KB mode to `off`. Model turns receive neither automatic KB context nor KB MCP,
+regardless of the saved conversation mode. This does not remove stored usage
+reports or change the KB HTTP API.
 
 ## Current implementation map
 

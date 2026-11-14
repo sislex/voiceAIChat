@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: 2267228d
+checked: f30e2a6c0
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -18,6 +18,13 @@ areas:
 ---
 
 # Архитектура: кто с кем разговаривает
+
+## Model API stand boundary
+
+A portable stand can consume the production Core model API without a local LLM
+Runner. The stand's `VC_CHAT_MODEL_API` mode disables workspace tool assembly
+and local chat accounting; the upstream Core bills the API token owner.
+See [consumer configuration](llm.md#local-stand-consumer-mode).
 
 ## Public model execution boundary
 

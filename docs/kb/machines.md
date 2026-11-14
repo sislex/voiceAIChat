@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-14
+checked: f30e2a6c0
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -27,6 +27,12 @@ areas:
 ---
 
 # Машины: компаньон-агент, политика, PTY, проводник
+
+## Model API stand execution
+
+With `VC_CHAT_MODEL_API=true`, turn assembly disables workspace mode and does
+not resolve a conversation machine or attach remote execution tools. Saved machine
+bindings, agent connections, PTY/file APIs and their authorization are unchanged.
 
 ## Operator handoff (SK-115)
 
