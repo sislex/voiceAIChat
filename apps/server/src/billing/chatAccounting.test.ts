@@ -201,7 +201,7 @@ it('accepts a receipt bound to any runner credential of Core and rejects one wit
       createdAt: 1, updatedAt: 2 })
     if (accepted) {
       await f.accounting.reconcile(id)
-      expect(f.ledger.reservation(principal, reservation.id).state).toBe('uncertain')
+      expect(f.ledger.reservation(principal, reservation.id)).toMatchObject({ state: 'settled', actualMicroUsd: 0 })
     } else {
       await expect(f.accounting.reconcile(id)).rejects.toThrow('execution_receipt_mismatch')
       expect(f.ledger.reservation(principal, reservation.id).state).toBe('running')
@@ -224,21 +224,30 @@ it('closes records dispatched before settlement started without a charge', async
   expect(f.outbox.pending()).toHaveLength(0)
 })
 
-it('retains a concurrency hold when terminal usage cannot be priced or proved', async () => {
-  const f = await fixture(), id = 'unknown-result'
-  const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
-  const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
-  const reservation = f.ledger.reserve(principal, input)
-  f.ledger.transition(principal, reservation.id, 'start')
-  f.outbox.save({ id, login: 'login', session: f.session, originModuleId: 'chat', input,
-    target: f.client.accountingTarget, model: 'unknown-model', reservation, state: 'dispatching' })
-  f.receipts.set(id, { version: 1, runId: id, kind: 'codex', state: 'finished', finalUsage: false,
-    context: { operationId: id, reservationId: reservation.id, userId: 'subject', tenantId: 'tenant', environmentId: 'test', originModuleId: 'core' },
-    createdAt: 1, updatedAt: 2 })
-  await f.accounting.reconcile(id)
-  expect(f.ledger.reservation(principal, reservation.id).state).toBe('uncertain')
-  expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 1, spentMicroUsd: 0 })
-  expect(f.outbox.pending()).toHaveLength(1)
+it('closes a finished run without final usage free and retains the hold of an uncertain one', async () => {
+  for (const state of ['finished', 'uncertain'] as const) {
+    const f = await fixture(), id = 'unknown-result-' + state
+    const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
+    const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
+    const reservation = f.ledger.reserve(principal, input)
+    f.ledger.transition(principal, reservation.id, 'start')
+    f.outbox.save({ id, login: 'login', session: f.session, originModuleId: 'chat', input,
+      target: f.client.accountingTarget, model: 'unknown-model', reservation, state: 'dispatching' })
+    f.receipts.set(id, { version: 1, runId: id, kind: 'codex', state, finalUsage: false,
+      context: { operationId: id, reservationId: reservation.id, userId: 'subject', tenantId: 'tenant', environmentId: 'test', originModuleId: 'core' },
+      createdAt: 1, updatedAt: 2 })
+    await f.accounting.reconcile(id)
+    if (state === 'finished') {
+      // A rejected model or a failed turn: the process ended by itself and nothing can ever price it.
+      expect(f.ledger.reservation(principal, reservation.id)).toMatchObject({ state: 'settled', actualMicroUsd: 0 })
+      expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 0, spentMicroUsd: 0 })
+      expect(f.outbox.pending()).toHaveLength(0)
+    } else {
+      expect(f.ledger.reservation(principal, reservation.id).state).toBe('uncertain')
+      expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 1, spentMicroUsd: 0 })
+      expect(f.outbox.pending()).toHaveLength(1)
+    }
+  }
 })
 
 const executeDelegated = (f: Awaited<ReturnType<typeof fixture>>): Promise<{ text?: string; error?: string }> =>
@@ -386,20 +395,17 @@ it('closes the runner with a connected socket that has not sent HTTP headers', a
   }
 })
 
-it('retains the stable user hold when a stopped executor finishes without authoritative usage', async () => {
+it('releases the stable user hold free when a stopped executor finishes without final usage', async () => {
   const f = await fixture(5_000_000, true), held = f.holdRunner(), run = publicTurn(f)
   f.missingUsage()
   await vi.waitFor(() => expect(f.runs()).toBe(1))
   run.handle.cancel(); held.release()
   await vi.waitFor(() => expect(f.receipts.get(f.lastRequest()!.runId!)?.state).toBe('finished'))
-  await vi.waitFor(() => expect(f.ledger.reservation({ userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' },
-    f.outbox.pending()[0]!.reservation!.id).state).toBe('uncertain'))
-  expect((await execute(f)).error).toContain('учёта его стоимости')
+  await vi.waitFor(() => expect(f.outbox.pending()).toHaveLength(0))
+  expect(f.accounting.hasPendingUser('subject')).toBe(false)
+  expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 0, spentMicroUsd: 0 })
   await f.accounting.shutdown()
-  expect(f.accounting.hasPendingUser('subject')).toBe(true)
   expect(f.runs()).toBe(1)
-  expect(f.ledger.balance('test', 'tenant')).toMatchObject({ active: 1, spentMicroUsd: 0 })
-  expect(f.outbox.pending()).toHaveLength(1)
 })
 
 it('waits for a stopped background executor and reconciliation before shutdown can close the outbox', async () => {
