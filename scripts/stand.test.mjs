@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main, doctorModels, modelApiWarning, prebuildNeeded } from './stand.mjs'
+import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main, doctorModels, modelApiWarning, prebuildNeeded, portableRunner, UNCONFIGURED_RUNNER_URL } from './stand.mjs'
 import { walkFiles } from './test-files.mjs'
 import { selectAffected } from './affected-check.mjs'
 
@@ -186,4 +186,13 @@ test('owner prebuild runs for a fresh or updated Identity clone and is skipped o
   assert.equal(prebuildNeeded('identity', '/stand/identity', { exists: built }), null)
   assert.equal(prebuildNeeded('identity', '/stand/identity', { installed: true, exists: built }), 'build:ui')
   assert.equal(prebuildNeeded('make', '/stand/make', { exists: missing }), null)
+})
+
+test('a stand without models still gets runner settings so every service can start', () => {
+  const bare = portableRunner({})
+  assert.equal(bare.configured, false)
+  assert.deepEqual(bare.values, { VC_LLM_RUNNER_CLAUDE_URL: UNCONFIGURED_RUNNER_URL, VC_LLM_RUNNER_CODEX_URL: UNCONFIGURED_RUNNER_URL, VC_LLM_RUNNER_TOKEN: 'models-not-configured' })
+  const direct = portableRunner({ VC_LLM_RUNNER_CLAUDE_URL: 'http://runner:8790', VC_LLM_RUNNER_TOKEN: 't' })
+  assert.equal(direct.configured, true)
+  assert.equal(direct.values.VC_LLM_RUNNER_CLAUDE_URL, 'http://runner:8790')
 })

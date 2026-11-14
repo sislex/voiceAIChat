@@ -66,7 +66,7 @@ areas:
    installs their locked dependencies and Playwright Chromium, and starts services.
    Core runs directly from the current checkout. No `~/sislexa-dev` is needed.
 
-A fresh Identity clone has no built login and account pages, and its server refuses to start without them. `stand:create` therefore runs the owner build step from `ownerPrebuilds` in `scripts/stand.mjs` (Identity: `npm run build:ui`) after installing dependencies, after `stand:update`, and whenever the built pages are missing. Core's model API logs the reason of a failed run as `[model-api] run failed`; the caller only receives an exit frame.
+A fresh Identity clone has no built login and account pages, and its server refuses to start without them. `stand:create` therefore runs the owner build step from `ownerPrebuilds` in `scripts/stand.mjs` (Identity: `npm run build:ui`) after installing dependencies, after `stand:update`, and whenever the built pages are missing. Core's model API logs the reason of a failed run as `[model-api] run failed`; the caller only receives an exit frame. A stand without model settings still starts: `portableRunner` gives its services a closed local runner address (`UNCONFIGURED_RUNNER_URL`), because Kanban refuses to boot without one; a model call then fails at once and the launcher prints «модели не настроены».
 
 `package.json` maps `npm run stand:create` to `node scripts/stand.mjs create`.
 The first invocation only creates `.stand/.env` and returns; after the operator
