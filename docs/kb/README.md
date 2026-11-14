@@ -42,12 +42,12 @@
 | [modules.md](modules.md) | Module ownership map | 2026-11-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ✓ |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ✓ |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1487. Последние:
+Всего записей: 1488. Последние:
 
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md) — stand-model-api
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md) — stand-model-api-search-gaps
@@ -76,7 +77,6 @@
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md) — stand-runtime-kb-gaps
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md) — stand-kb-reconciliation
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md) — stand-create
-- [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-clean-seed.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-clean-seed.md) — stand-clean-seed
 
 ## Исторические планы
 

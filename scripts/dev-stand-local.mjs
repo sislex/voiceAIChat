@@ -37,7 +37,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { STAND_BASE_PORT_OFFSETS, STAND_PROXY_PORT_OFFSETS } from './dev-stand-local-ports.mjs'
 
-import { basicRepos, fullRepos, modelConfig, selectServices, hashStandPassword } from './stand.mjs'
+import { basicRepos, fullRepos, modelConfig, portableRunner, selectServices, hashStandPassword } from './stand.mjs'
 
 const env = process.env
 const PORTABLE = env.SISLEXA_STAND_PORTABLE === '1'
@@ -275,8 +275,8 @@ function prepareSharedComponents(shared) {
 
 function loadRunner() {
   if (PORTABLE) {
-    const values = modelConfig(env)
-    if (!values.VC_LLM_RUNNER_CLAUDE_URL && !values.VC_LLM_RUNNER_CODEX_URL) console.warn('модели не настроены')
+    const { values, configured } = portableRunner(env)
+    if (!configured) console.warn('модели не настроены')
     return values
   }
   if (!existsSync(RUNNER_FILE)) fail(`LLM Runner configuration not found: ${RUNNER_FILE}\n  Create it (mode 600) with VC_LLM_RUNNER_CLAUDE_URL, VC_LLM_RUNNER_CODEX_URL and VC_LLM_RUNNER_TOKEN.`)

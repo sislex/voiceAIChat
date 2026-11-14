@@ -66,6 +66,18 @@ export function modelConfig(env) {
   if ((values.VC_LLM_RUNNER_CLAUDE_URL || values.VC_LLM_RUNNER_CODEX_URL) && !values.VC_LLM_RUNNER_TOKEN) throw Error('Set VC_LLM_RUNNER_TOKEN in .stand/.env')
   return values
 }
+/**
+ * Runner settings for a portable stand. Kanban and other services refuse to start without a runner
+ * address, so a stand without models gets a closed local address: the stand starts and a model call
+ * fails at once instead of the whole stand failing to boot.
+ */
+export const UNCONFIGURED_RUNNER_URL = 'http://127.0.0.1:9'
+export function portableRunner(env) {
+  const values = modelConfig(env)
+  if (values.VC_LLM_RUNNER_CLAUDE_URL || values.VC_LLM_RUNNER_CODEX_URL) return { values, configured: true }
+  return { configured: false, values: { ...values, VC_LLM_RUNNER_CLAUDE_URL: UNCONFIGURED_RUNNER_URL,
+    VC_LLM_RUNNER_CODEX_URL: UNCONFIGURED_RUNNER_URL, VC_LLM_RUNNER_TOKEN: 'models-not-configured' } }
+}
 export const modelApiWarning = 'Стенд: модели через API прод-Core. Инструменты моделей (Make, KB, Kanban MCP) отключены. Расход списывается с баланса пользователя токена.'
 export async function doctorModels(models, fetchImpl = fetch) {
   if (!models.SISLEXA_MODEL_API_URL) return
