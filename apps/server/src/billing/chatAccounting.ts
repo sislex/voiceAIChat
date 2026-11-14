@@ -90,7 +90,10 @@ export class ChatAccounting {
   wrap(client: LlmClient, turn: AccountingTurn): LlmClient {
     return { send: (request, handlers) => {
       let cancelled = false, inner: ReturnType<LlmClient['send']> | undefined, job: AccountingJob | undefined
-      const backgroundStop = !turn.modelApi && this.stopsInBackground(turn.originModuleId, !!turn.application || !!turn.delegatedAuthorization)
+      // A model API run is always text-only, so it is safe to let it finish after its caller left. Killing the
+      // CLI instead leaves a receipt without final usage: the reservation turns `uncertain` and the unsettled
+      // job occupies the token's concurrency slot forever.
+      const backgroundStop = turn.modelApi === true || this.stopsInBackground(turn.originModuleId, !!turn.application || !!turn.delegatedAuthorization)
       let terminal = false
       let finishExecution: (() => void) | undefined
       let execution: Promise<void> | undefined

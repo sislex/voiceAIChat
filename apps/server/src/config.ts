@@ -354,7 +354,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerClaudeUrl: env.VC_LLM_RUNNER_CLAUDE_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
-    modelApiConcurrency: parsePositiveInt(env.VC_MODEL_API_CONCURRENCY) ?? 2,
+    modelApiConcurrency: parsePositiveInt(env.VC_MODEL_API_CONCURRENCY) ?? 4,
     modelApiRequestsPerMinute: parsePositiveInt(env.VC_MODEL_API_REQUESTS_PER_MINUTE) ?? 60,
     browserRunnerUrl: env.VC_BROWSER_RUNNER_URL,
     browserRunnerToken: env.VC_BROWSER_RUNNER_TOKEN,
