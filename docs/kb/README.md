@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-14 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ✓ |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 850056a3 chore(ui): pin Core UI 1.5.51 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-14 | ✓ |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ✓ |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 850056a3 chore(ui): pin Core UI 1.5.51 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-14 | ✓ |
@@ -42,12 +42,12 @@
 | [modules.md](modules.md) | Module ownership map | 2026-11-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ✓ |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: f9c538fc fix(stand): build Identity pages for a fresh clone and log model API run failures |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1488. Последние:
+Всего записей: 1489. Последние:
 
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
@@ -73,10 +73,10 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md) — stand-model-api-search-gaps
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md) — stand-model-api-kb-review
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md) — stand-identity-prebuild
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md) — stand-runtime-kb-gaps
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md) — stand-kb-reconciliation
-- [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md) — stand-create
 
 ## Исторические планы
 
