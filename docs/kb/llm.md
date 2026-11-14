@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-14
-checked: 8fa5d70a
+checked: a12cb6c3
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -105,10 +105,12 @@ from verified token authority, never to a `userId` supplied in the request body.
 
 Cancellation and socket disconnect send the internal runner DELETE;
 `ChatAccounting` then reconciles the authoritative execution receipt and settles
-the actual usage. A receipt is accepted when the runner bound it to `core` (managed
-service token of Core) or to `master` (Core reaches the runner with the master
-token, as stands do); any other owner is `execution_receipt_mismatch` and the
-record stays pending. The outbox remembers when it first ran with this rule
+the actual usage. The runner returns a receipt only to the
+credential that started the run and rebinds `originModuleId` to it (`master`, or the
+application of a managed service token: `core`, `chat-production`), so Core
+requires that field to be present but not to equal a fixed name; the other context
+fields must match exactly, otherwise `execution_receipt_mismatch` keeps the record
+pending. The outbox remembers when it first ran with this rule
 (`chat_accounting_meta.settleSince`): records dispatched earlier could never settle
 under the master token, so reconcile closes them with a zero settlement
 (`unsettled-before-accounting:<id>`) instead of charging users in arrears.

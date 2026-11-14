@@ -250,9 +250,10 @@ export class ChatAccounting {
       if (!runner || runner.accountingTarget.baseUrl !== job.target.baseUrl || runner.accountingTarget.kind !== job.target.kind) return
       const context = this.context(job), receipt = await runner.executionReceipt(context)
       if (receipt.version !== 1 || receipt.runId !== job.id || receipt.kind !== job.target.kind ||
-        // The runner binds a receipt to the credential that started the run: `core` for the managed service
-        // token of Core, `master` when Core reaches the runner with the master token (stands, single-host deploys).
-        !['core', 'master'].includes(receipt.context?.originModuleId ?? '') ||
+        // The runner returns a receipt only to the credential that started the run and rebinds
+        // `originModuleId` to that credential (`master`, or the application of a managed service token such as
+        // `core` or `chat-production`). Its value therefore names Core's own credential, not the product module.
+        !receipt.context?.originModuleId ||
         Object.entries(context).some(([key, value]) => key !== 'originModuleId' &&
           !isDeepStrictEqual(receipt.context?.[key as keyof LlmAccountingContext], value))) throw Error('execution_receipt_mismatch')
       if (receipt.state === 'not_started') job.settlement = { eventId: 'no-spawn:'+job.id, actualMicroUsd: 0 }

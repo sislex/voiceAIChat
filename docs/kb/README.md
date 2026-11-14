@@ -15,7 +15,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-14 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 850056a3 chore(ui): pin Core UI 1.5.51 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 4b129148 fix(accounting): settle receipts bound to the master runner token … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 78b48350 fix(accounting): close records dispatched before settlement without a charge … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-14 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: cf44efb8 fix(model-api): keep token attribution out of the runner accounting context … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 4b129148 fix(accounting): settle receipts bound to the master runner token … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 78b48350 fix(accounting): close records dispatched before settlement without a charge … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1492. Последние:
+Всего записей: 1493. Последние:
 
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
@@ -76,7 +76,7 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md) — model-api-runner-context
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
-- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-accounting-master-receipt.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-accounting-master-receipt.md) — accounting-master-receipt
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-accounting-receipt-owner.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-accounting-receipt-owner.md) — accounting-receipt-owner
 
 ## Исторические планы
 

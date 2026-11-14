@@ -187,9 +187,9 @@ it('reconciles a lost start response without execution and fences a possibly dis
   expect(f.ledger.balance('test', 'tenant')).toMatchObject({ requests: 2, active: 0, spentMicroUsd: 0 })
 })
 
-it('accepts a receipt bound to the master runner token and rejects any other owner', async () => {
-  for (const [owner, accepted] of [['master', true], ['make', false]] as const) {
-    const f = await fixture(), id = 'receipt-owner-' + owner
+it('accepts a receipt bound to any runner credential of Core and rejects one without an owner', async () => {
+  for (const [owner, accepted] of [['master', true], ['chat-production', true], ['', false]] as const) {
+    const f = await fixture(), id = 'receipt-owner-' + (owner || 'none')
     const input = { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded' as const, expiresAt: Date.now()+60_000 }
     const principal = { userId: 'subject', tenantId: 'tenant', environmentId: 'test', actorClientId: 'core', originModuleId: 'chat' }
     const reservation = f.ledger.reserve(principal, input)
