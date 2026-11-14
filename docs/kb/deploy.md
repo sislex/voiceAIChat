@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: cb357d07
+checked: f5b62304
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3784,3 +3784,6 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:5436e4fd-d581-44d2-97a1-77ea3518b8cd -->
 - sislex/make: 1.8.20
+
+<!-- release-train:e7555569-5dfd-48ed-b1e6-75f3b1a96be4 -->
+- sislex/make: 1.8.21
