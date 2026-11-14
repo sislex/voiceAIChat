@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main, doctorModels, modelApiWarning } from './stand.mjs'
+import { parseEnv, modelConfig, clonePlan, selectedFull, doctorCommands, servicePort, basicServices, selectServices, hashStandPassword, main, doctorModels, modelApiWarning, prebuildNeeded } from './stand.mjs'
 import { walkFiles } from './test-files.mjs'
 import { selectAffected } from './affected-check.mjs'
 
@@ -147,10 +147,14 @@ test('create twice reuses clones/dependencies; update pulls dev; destroy preserv
     const clones = calls.filter(c => c.cmd === 'gh').length
     assert.equal(clones, clonePlan(root, true).length)
     assert.ok(calls.filter(c => c.cmd === 'gh').every(c => c.args.slice(-2).join(' ') === '--branch dev'))
-    const installs = calls.filter(c => c.cmd === 'npm').length
+    const ci = () => calls.filter(c => c.cmd === 'npm' && c.args[0] === 'ci').length
+    const installs = ci()
+    // A fresh Identity clone has no built login/account pages; its server refuses to start without them.
+    const identityBuilds = () => calls.filter(c => c.cmd === 'npm' && c.args.join(' ') === 'run build:ui' && c.options.cwd.endsWith('/.stand/repos/identity')).length
+    assert.equal(identityBuilds(), 1)
     await main(['create'], root, runtime)
     assert.equal(calls.filter(c => c.cmd === 'gh').length, clones)
-    assert.equal(calls.filter(c => c.cmd === 'npm').length, installs)
+    assert.equal(ci(), installs)
     const launches = calls.filter(c => c.cmd === process.execPath && c.args[1] === 'start')
     assert.equal(launches.length, 2)
     assert.equal(launches[0].options.env.SISLEXA_STAND_CORE_SOURCE, root)
@@ -175,3 +179,11 @@ test('gate tree walk and affected selection exclude nested stand tests', () => {
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
+
+test('owner prebuild runs for a fresh or updated Identity clone and is skipped once its pages exist', () => {
+  const built = () => true, missing = () => false
+  assert.equal(prebuildNeeded('identity', '/stand/identity', { exists: missing }), 'build:ui')
+  assert.equal(prebuildNeeded('identity', '/stand/identity', { exists: built }), null)
+  assert.equal(prebuildNeeded('identity', '/stand/identity', { installed: true, exists: built }), 'build:ui')
+  assert.equal(prebuildNeeded('make', '/stand/make', { exists: missing }), null)
+})

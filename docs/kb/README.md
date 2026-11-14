@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1486. Последние:
+Всего записей: 1487. Последние:
 
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md) — stand-model-api
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-search-gaps.md) — stand-model-api-search-gaps
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md) — stand-model-api-kb-review
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md) — stand-identity-prebuild
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md) — stand-runtime-kb-gaps
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md) — stand-kb-reconciliation
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-create.md) — stand-create
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-clean-seed.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-clean-seed.md) — stand-clean-seed
-- [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-runner-api.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-model-runner-api.md) — model-runner-api
 
 ## Исторические планы
 
