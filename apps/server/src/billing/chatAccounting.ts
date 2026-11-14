@@ -263,6 +263,10 @@ export class ChatAccounting {
       else {
         const settlement = receiptSettlement(receipt, job.model, job.prices)
         if (settlement) job.settlement = { eventId: 'usage:'+job.id, ...settlement }
+        // The executor process ended on its own and reported no final usage (a rejected model, a failed turn).
+        // Nothing can ever price it, and an eternal hold blocks the user and the token slot; close it free.
+        // A receipt that is `uncertain` (the runner restarted mid-run) still keeps its hold.
+        else if (receipt.state === 'finished' && receipt.finalUsage === false) job.settlement = { eventId: 'no-usage:'+job.id, actualMicroUsd: 0 }
         else {
           if ((receipt.state === 'uncertain' || receipt.state === 'finished') && current.state === 'running') await this.call(path+'/uncertain', {})
           return

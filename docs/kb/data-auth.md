@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: f30e2a6c0
+checked: abb9cb535
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -776,8 +776,10 @@ the hidden answer never replaces the saved partial. The selected model's hidden
 continuation can remain in the runner's thread history. New requests remain
 blocked for the same stable user across conversations and tenants until settlement.
 The queue stays paused after Stop and requires an explicit resume after settlement;
-attempts to resume early preserve its messages. Missing final usage keeps the
-uncertain hold. Graceful Core shutdown waits for these executions and their
+attempts to resume early preserve its messages. A run whose process ended on its own
+without final usage (rejected model, failed turn; receipt `finished`, `finalUsage: false`)
+settles as a zero charge (`no-usage:<id>`); only a receipt the runner itself marks
+`uncertain` (restart mid-run) keeps the hold. Graceful Core shutdown waits for these executions and their
 reconciliation before closing its outbox. A stop before dispatch reconciles the
 authoritative no-spawn zero charge. Other server modes, internal modules and
 delegated application turns retain hard cancellation; a request's `textOnly`
