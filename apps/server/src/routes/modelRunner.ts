@@ -155,12 +155,15 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
         }
       }).send(request, {
         onDelta() {}, onSession() {},
-        onDone() {
+        onDone(text, meta) {
+          if (!exit) console.warn('[model-api] run finished without an exit frame', JSON.stringify({ runId, kind: body.kind, text: String(text ?? '').slice(0, 300), meta }))
           release()
           if (!exit && !stream.writableEnded) stream.write(JSON.stringify({ t: 'exit', code: 1 }) + '\n')
           stream.end()
         },
-        onError() {
+        onError(message) {
+          // The caller only sees an exit frame; keep the reason for the operator.
+          console.warn('[model-api] run failed', JSON.stringify({ runId, kind: body.kind, dispatched, message: String(message).slice(0, 500) }))
           if (!dispatched) { fail(503, 'runner_unavailable'); return }
           release()
           if (!exit) stream.write(JSON.stringify({ t: 'exit', code: 1 }) + '\n')

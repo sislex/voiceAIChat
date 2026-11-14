@@ -14,6 +14,15 @@ export const basicRepos = ['identity', 'sislexa-core-ui', 'sislexa-kanban', 'mak
 export const basicServices = ['identity', 'billing', 'analytics', 'core', 'kanban', 'make', 'make-ui', 'make-ui-build', 'core-ui']
 export const selectServices = (services, full) => services.filter(service => full || basicServices.includes(service.id))
 export const fullRepos = [...basicRepos, 'webreader', 'playwrightreader', 'image-studio', 'voice']
+/** Build steps a fresh owner clone needs before its server can start (tsx watch does not build browser assets). */
+export const ownerPrebuilds = {
+  identity: { script: 'build:ui', outputs: ['apps/login/dist/index.html', 'apps/account/dist/index.html'] },
+}
+export function prebuildNeeded(repo, path, { installed = false, exists = existsSync } = {}) {
+  const step = ownerPrebuilds[repo]
+  if (!step) return null
+  return installed || step.outputs.some(file => !exists(join(path, file))) ? step.script : null
+}
 export function clonePlan(root, full = false) {
   return (full ? fullRepos : basicRepos).map(repo => ({ repo, source: 'sislex/' + repo, path: join(root, '.stand/repos', repo) }))
 }
@@ -222,10 +231,14 @@ export async function main(args = process.argv.slice(2), root = fileURLToPath(ne
       execute('git', ['pull', '--ff-only', 'origin', 'dev'], { cwd: item.path })
     }
     const hash = createHash('sha256').update(readFileSync(join(item.path, 'package-lock.json'))).digest('hex'), stamp = join(home, item.repo + '.deps')
+    let installed = false
     if (!existsSync(join(item.path, 'node_modules')) || !existsSync(stamp) || readFileSync(stamp, 'utf8') !== hash) {
       execute('npm', ['ci'], { cwd: item.path })
       writeFileSync(stamp, hash)
+      installed = true
     }
+    const prebuild = prebuildNeeded(item.repo, item.path, { installed: installed || command === 'update' })
+    if (prebuild) execute('npm', ['run', prebuild], { cwd: item.path })
   }
   execute('npx', ['--no-install', 'playwright', 'install', 'chromium'], { cwd: full ? join(home, 'repos/playwrightreader') : root })
   writeFileSync(stateFile, JSON.stringify({ name, full }) + '\n')
