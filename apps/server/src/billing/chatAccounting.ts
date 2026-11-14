@@ -74,7 +74,10 @@ export class ChatAccounting {
     const r = job.reservation!
     return { operationId: job.id, reservationId: r.id, userId: job.session.userId,
       tenantId: job.session.tenantId, environmentId: this.opts.environmentId, originModuleId: job.originModuleId,
-      ...(job.application ? { application: job.application } : {}) }
+      // The runner accepts application attribution only from a managed service token of Core. The model API
+      // must also work over a master runner token, and its token attribution already lives in the Billing
+      // reservation and the Core outbox, so the runner context of a model API run stays unattributed.
+      ...(job.application && !job.modelApi ? { application: job.application } : {}) }
   }
   private assertReservation(job: AccountingJob, r: BillingReservation): void {
     if (r.operationId !== job.id || r.userId !== job.session.userId || r.tenantId !== job.session.tenantId ||

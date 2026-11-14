@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-14
-checked: f49ccc8e
+checked: c23acfff
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -95,9 +95,12 @@ separate balance ledger or payment collection.
 `routes/modelRunner.ts` registers the authenticated token session and wraps the
 remote client with `billing/chatAccounting.ts`: Billing admission and reservation
 complete before dispatch. The durable outbox in `billing/accountingStore.ts`
-stores the token sid, tenant, start timestamp and immutable settlement. Billing
-and runner context additionally carry `application.tokenId=sid`, with Core as
-origin/executor application. Thus spend belongs to the user and workspace selected
+stores the token sid, tenant, start timestamp and immutable settlement. The Billing
+reservation additionally carries `application.tokenId=sid`, with Core as
+origin/executor application. The runner context of a model API run carries no
+`application`: the runner accepts it only from a managed service token of Core
+and answers `invalid_accounting_context` to a master token, which is how Core
+reaches the runner on production and on stands. Thus spend belongs to the user and workspace selected
 from verified token authority, never to a `userId` supplied in the request body.
 
 Cancellation and socket disconnect send the internal runner DELETE;

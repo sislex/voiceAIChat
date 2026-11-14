@@ -102,7 +102,9 @@ it('a second Core uses the first as its runner, with token profile and settled s
     expect(usage.statusCode).toBe(200)
     expect(usage.json().tokens).toEqual([{ sid: verifyToken(f.token, 'secret')!.sid, tenantId: expect.any(String), requests: 1, actualMicroUsd: 600 }])
   })
-  expect(f.bodies[0].accounting?.application).toMatchObject({ tokenId: expect.any(String), originApplicationId: 'core' })
+  // A runner reached with a master token rejects application attribution; the token stays in Billing and the outbox.
+  expect(f.bodies[0].accounting).toMatchObject({ userId: expect.any(String), tenantId: expect.any(String) })
+  expect(f.bodies[0].accounting).not.toHaveProperty('application')
 })
 
 it('a second Core chats over WebSocket using only runner URL and token configuration', async () => {

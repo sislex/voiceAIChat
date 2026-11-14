@@ -17,7 +17,7 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-14 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-14 | ✓ |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ✓ |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-13 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-14 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -45,10 +45,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ✓ |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: fa0bbd24 chore: pin Identity 1.6.1 and Billing 1.2.5 (workspace models API tokens) … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c23acfff Pin release train 5436e4fd-d581-44d2-97a1-77ea3518b8cd |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
@@ -65,7 +65,7 @@
 
 ## Журнал сессий
 
-Всего записей: 1489. Последние:
+Всего записей: 1490. Последние:
 
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
@@ -74,9 +74,9 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md) — stand-model-api-kb-review
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md) — stand-identity-prebuild
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
+- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md) — model-api-runner-context
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
 - [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-runtime-kb-gaps.md) — stand-runtime-kb-gaps
-- [2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md](log/2026-11-13-alexeys-macbook-air-tailae39a6-ts-net-stand-kb-reconciliation.md) — stand-kb-reconciliation
 
 ## Исторические планы
 
