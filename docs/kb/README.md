@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 7 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 3199813aa fix(accounting): settle a finished run without final usage as a zero charge … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
