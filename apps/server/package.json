@@ -21,7 +21,7 @@
     "@sislexa/agent-contracts": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-agent-contracts-1.5.0-3117b819912f.tgz",
     "@sislexa/auth-client": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-auth-client-1.0.0-244df6cf1646.tgz",
     "@sislexa/component-runtime": "*",
-    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.5.2-d3e0e16d58cd.tgz",
+    "@sislexa/identity": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-identity-1.6.1-475bcb596f20.tgz",
     "@sislexa/image-studio": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-image-studio-1.1.2-c7a49a428d85.tgz",
     "@sislexa/make": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-make-1.8.19-1421e3b50d44.tgz",
     "@sislexa/playwright-reader": "https://github.com/sislex/voiceAIChat/releases/download/vendor/sislexa-playwright-reader-1.2.8-39e57fc825af.tgz",

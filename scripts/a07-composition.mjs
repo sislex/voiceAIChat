@@ -7,8 +7,8 @@ import { archiveFiles, digest, root } from './shared-chat-artifacts.mjs'
 import { ensureVendorArchive, isVendorRef } from './vendor-store.mjs'
 
 export const requiredSources = Object.freeze({
-  '@sislexa/identity': ['sislex/identity', 'b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e'],
-  '@sislexa/billing': ['sislex/billing', 'db6000b7a87cfb200bf7cc697dbafafde6a60171'],
+  '@sislexa/identity': ['sislex/identity', '15cbb00539bbd6d2938614f4881b47c348b1dd6f'],
+  '@sislexa/billing': ['sislex/billing', '5b4840a35e0dfed3108141794d7290d25f267e4a'],
   '@sislex/llm-runner': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
   '@sislex/runner-contracts': ['sislex/llm-runner', 'edcfb71a3ddc7b6f8ecf00558a392ec1f85315f4'],
   '@sislexa/sdk': ['sislex/sdk', 'f6313db5ff58cc35fa8dacc90b9844f9706dcfba'],

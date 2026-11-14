@@ -3,13 +3,13 @@
   "packages": [
     {
       "name": "@sislexa/identity",
-      "version": "1.5.2",
-      "filename": "sislexa-identity-1.5.2.tgz",
-      "integrity": "sha512-gigz+0vR9sSCAMysTk9Nf3+A3jGB6NOnJfS9Q2HmHl81Da7sfHo6N5YwziG1yFHJkmpr/cdI7rYk077I84oYNg==",
-      "sha256": "d3e0e16d58cd6a67421e4d26a1bc127f7a46faf33f7fbd41d215671b1a85a851",
+      "version": "1.6.1",
+      "filename": "sislexa-identity-1.6.1.tgz",
+      "integrity": "sha512-pU6vapQAYpGCeL9UE16G3PNcPXhz6SvqKk2q1t5uB8JryzmWclvD4Ho/tPOOnadp0iVZLOkeZz/EIPmyiH1Phw==",
+      "sha256": "475bcb596f207c0c53b90f5239244885260707cca54e954dc5628bc4ef522eba",
       "repository": "https://github.com/sislex/identity",
-      "commit": "b71a98ec8ee2bb7ecedc2128a8c7f3184c3ff14e",
-      "asset": "sislexa-identity-1.5.2-d3e0e16d58cd.tgz"
+      "commit": "15cbb00539bbd6d2938614f4881b47c348b1dd6f",
+      "asset": "sislexa-identity-1.6.1-475bcb596f20.tgz"
     },
     {
       "name": "@sislexa/make",
@@ -116,13 +116,13 @@
     },
     {
       "name": "@sislexa/billing",
-      "version": "1.2.4",
-      "filename": "sislexa-billing-1.2.4.tgz",
-      "integrity": "sha512-/EH8GdAkrCDC1LIh6Vam2LCB0O75Ol//+23Jm8vKtsl8pdQxpYuO1pTjQaB6TPPZSZ+IZ/b2rY6q1eqBxDBfUA==",
-      "sha256": "56b4cbab3a3327c146a58579d98f2688b7ea9da48ccf498df385ca4ebb25b250",
+      "version": "1.2.5",
+      "filename": "sislexa-billing-1.2.5.tgz",
+      "integrity": "sha512-J9QFg7YAWTA1ZpPge0GgBdm5Lwe8kb9rMC+vk3VA3qkDDChliat6KuATY3FJqmFRSTKRP44fGv6WPfp1Nf1PvA==",
+      "sha256": "95d60549df81d74a733831c5859eaf52c0c9951df2f3f413f585440e5662ed2c",
       "repository": "https://github.com/sislex/billing",
-      "commit": "db6000b7a87cfb200bf7cc697dbafafde6a60171",
-      "asset": "sislexa-billing-1.2.4-56b4cbab3a33.tgz"
+      "commit": "5b4840a35e0dfed3108141794d7290d25f267e4a",
+      "asset": "sislexa-billing-1.2.5-95d60549df81.tgz"
     },
     {
       "name": "@sislexa/sdk",
