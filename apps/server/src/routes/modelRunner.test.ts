@@ -227,7 +227,7 @@ it('enforces verified models scope globally, including public routes and wrong t
   const app: FastifyInstance = Fastify()
   cleanup.push(async () => { app.server.closeAllConnections(); await app.close() })
   let access = 'models', tenantId = 'tenant'
-  const authority = modelTokenAuthority(async () => ({ ok: true, access, sid: 'sid', tenantId,
+  const authority = modelTokenAuthority(async () => ({ ok: true, access: access as 'models', sid: 'sid', tenantId,
     user: { name: 'owner', role: 'developer', account: { userId: 'subject', tenantId: 'tenant', tariffId: 'standard', tariffRevision: 1, capabilities: ['chat.use'] } } }),
     async () => undefined)
   authority.register(app)
