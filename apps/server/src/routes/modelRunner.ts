@@ -29,7 +29,7 @@ const positive = (value: number | undefined, fallback: number) =>
 export function registerModelRunner(app: FastifyInstance, opts: Options): void {
   const active = new Map<string, { sid: string; operationId?: string; cancel(): void }>()
   const windows = new Map<string, { start: number; count: number }>()
-  const concurrency = positive(opts.concurrency, 2)
+  const concurrency = positive(opts.concurrency, 4)
   const rate = positive(opts.requestsPerMinute, 60)
   const catalog = async (req: FastifyRequest) => {
     const access = deploymentModelAccess(await opts.db.identity.getUserLlmAccess(req.user!.name), opts.chatModels)

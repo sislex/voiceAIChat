@@ -36,6 +36,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   const runner = Fastify({ forceCloseConnections: true })
   const bodies: LlmRunBody[] = [], receipts = new Map<string, LlmExecutionReceipt>()
   let release: (() => void) | undefined, hold: Promise<void> | undefined
+  let stops = 0
   runner.get('/v1/health', async () => ({ ok: true, accountingVersion: 1, application: { version: '0.3.8' },
     bins: { codex: { present: true, version: null }, claude: { present: true, version: null } }, login: {}, runs: 0 }))
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
@@ -47,6 +48,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
       usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreationTokens: 0 } })
   }
   runner.delete<{ Params: { id: string } }>('/v1/run/:id', async req => {
+    stops += 1
     const body = bodies.find(body => body.runId === req.params.id)
     if (body) finish(body)
     release?.()
@@ -82,6 +84,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   token = created.json().token
   headers.authorization = 'Bearer ' + token
   return { app, url, headers, token, payload, db, ledger, bodies,
+    get stops() { return stops },
     hold() { hold = new Promise(resolve => { release = resolve }); return () => release?.() } }
 }
 
@@ -156,7 +159,7 @@ it('denies an exhausted budget before dispatch and keeps private runner routes c
 })
 
 it('limits concurrent token runs and settles actual usage after cancellation', async () => {
-  const f = await fixture(), release = f.hold()
+  const f = await fixture({ VC_MODEL_API_CONCURRENCY: '2' }), release = f.hold()
   const first = fetch(f.url + '/api/model-runner/v1/run', { method: 'POST', headers: { ...f.headers, 'content-type': 'application/json' },
     body: JSON.stringify({ ...f.payload, runId: 'first' }) })
   await vi.waitFor(() => expect(f.bodies).toHaveLength(1))
@@ -192,19 +195,25 @@ it('rate limits a token independently of concurrent runs and filters its model c
   expect(health.json()).toMatchObject({ ok: true, bins: { codex: { present: true } }, runs: 0 })
 })
 
-it('accounts for work after the calling Core disconnects', async () => {
-  const f = await fixture()
-  f.hold()
+it('lets the run finish after the calling Core disconnects, settles it and frees the token slot', async () => {
+  const f = await fixture({ VC_MODEL_API_CONCURRENCY: '1' })
+  const release = f.hold()
   const abort = new AbortController()
   const response = fetch(f.url + '/api/model-runner/v1/run', { method: 'POST', signal: abort.signal,
     headers: { ...f.headers, 'content-type': 'application/json' }, body: JSON.stringify(f.payload) }).catch(() => undefined)
   await vi.waitFor(() => expect(f.bodies).toHaveLength(1))
   abort.abort()
   await response
+  // The executor is not stopped: a killed CLI reports no final usage and the hold could never settle.
+  await vi.waitFor(async () => expect((await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: f.headers, payload: f.payload })).statusCode).toBe(429))
+  expect(f.stops).toBe(0)
+  release()
   await vi.waitFor(async () => {
     const access = await f.db.identity.getAccountAccess('admin')
     expect(f.ledger.balance('test', access!.tenant.id).spentMicroUsd).toBe(600)
   }, { timeout: 10_000 })
+  const next = await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: f.headers, payload: f.payload })
+  expect(next.statusCode, next.body).toBe(200)
 })
 
 it('applies future Identity models metadata in the real Core global guard', async () => {

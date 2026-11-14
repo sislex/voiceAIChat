@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-14
-checked: f5b62304
+checked: 80741797d
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -452,7 +452,8 @@ by C01's sandbox worker (deployment is prohibited in that task).
 
 ## Public model API configuration
 
-Core's `VC_MODEL_API_CONCURRENCY` defaults to 2 concurrent operations per token;
+Core's `VC_MODEL_API_CONCURRENCY` defaults to 4 concurrent operations per token
+(one token usually serves a whole stand: chat turns plus titles and summaries);
 `VC_MODEL_API_REQUESTS_PER_MINUTE` defaults to 60 run requests per token.
 Both use positive integer configuration. Unsettled model API outbox jobs retain
 concurrency slots. The public adapter requires configured Billing and a remote

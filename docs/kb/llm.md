@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-14
-checked: a12cb6c3
+checked: 80741797d
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -120,7 +120,10 @@ called with an ordinary session or full token, adds `tokens` grouped by sid and
 tenant from completed model-API settlements; reporting can lag the last output
 frame until settlement. A models-scoped token cannot call that reporting route.
 
-`VC_MODEL_API_CONCURRENCY` defaults to 2 and
+A caller that disconnects or deletes a run does not stop the executor: the text-only run finishes in the
+background, its receipt settles the actual usage and only then the token slot is released (a killed CLI
+reports no final usage, which used to leave an `uncertain` hold on the slot forever).
+`VC_MODEL_API_CONCURRENCY` defaults to 4 and
 `VC_MODEL_API_REQUESTS_PER_MINUTE` to 60 POST run attempts per token in a
 60-second window. Excess requests return 429. Rate windows and active public
 run IDs belong to one Core process; durable pending accounting survives restart.
