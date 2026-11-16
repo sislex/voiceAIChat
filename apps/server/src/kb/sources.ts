@@ -53,7 +53,9 @@ export function createKbGit(dataDir: string, credentials?: KbCredentials): KbGit
       env.GIT_CONFIG_KEY_2 = `http.${source.repository}.extraHeader`
       env.GIT_CONFIG_VALUE_2 = `Authorization: Basic ${Buffer.from(`${credential.username}:${credential.password}`).toString('base64')}`
     }
-    const git = async (...args: string[]): Promise<string> => (await execute('git', args, {
+    // No background maintenance: a helper git detaches after a fetch outlives its parent and is adopted
+    // by PID 1, which in a container is Core itself and never reaps it.
+    const git = async (...args: string[]): Promise<string> => (await execute('git', ['-c', 'gc.auto=0', '-c', 'maintenance.auto=false', ...args], {
       cwd: checkout, env, timeout: 60_000, maxBuffer: 2 * 1024 * 1024
     })).stdout.trim()
     if (!existsSync(join(checkout, '.git'))) await git('init', '--quiet')

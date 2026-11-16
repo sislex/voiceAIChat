@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 66ec4973d chore: pin Make 1.8.21 packages (make-ui frontend without crypto.randomUUID on http) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-14 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-16 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: c348e39fd Pin release train e7555569-5dfd-48ed-b1e6-75f3b1a96be4 … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
@@ -43,7 +43,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 7 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 3199813aa fix(accounting): settle a finished run without final usage as a zero charge … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1496. Последние:
+Всего записей: 1497. Последние:
 
+- [2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md](log/2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md) — core-zombie-git-processes
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api.md) — stand-model-api
@@ -76,7 +77,6 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md) — release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md) — model-api-runner-context
-- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-contract-accounting.md) — model-api-contract-accounting
 
 ## Исторические планы
 
