@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: 80741797d
+updated: 2026-11-16
+checked: d4d43a4d5
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -461,6 +461,16 @@ runner; it does not expose the private runner service directly.
 A consuming Core uses `<provider-core>/api/model-runner` as its runner base URL
 and a user Bearer token as `VC_LLM_RUNNER_TOKEN`. See
 [execution and authorization](llm.md#api-моделей).
+
+## Core process reaping
+
+The `voicechat` Compose service runs with `init: true`. Core is otherwise PID 1 and does not wait for
+processes it did not spawn: helpers that git detached during the module knowledge base refresh were adopted
+by it and stayed zombies (72 every 10 minutes on production) until the container's process limit (`pids.max`,
+about 9400) was exhausted after roughly 43 hours. From then on Core could not spawn anything and
+`docker exec` failed with `procReady not received`, while HTTP kept answering. The refresh also runs git with
+`gc.auto=0` and `maintenance.auto=false`. Diagnose with `docker stats --no-stream` (PIDs column) and
+`ps -eo stat,ppid,comm | grep '^Z'` on the host; a container restart clears the zombies.
 
 ## Core memory diagnostics
 

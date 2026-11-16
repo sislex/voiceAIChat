@@ -32,6 +32,10 @@ services:
         VC_APPLICATION_DATA_VERSION: ${VC_APPLICATION_DATA_VERSION:-}
         VC_APPLICATION_COMMIT: ${VC_APPLICATION_COMMIT:-}
     image: voicechat-server
+    # Core is PID 1 and never waits for processes it did not spawn. Helpers that git detaches during the
+    # knowledge base refresh were adopted by it and stayed zombies until the container's process limit was
+    # exhausted (about 43 hours): no spawn and no `docker exec` after that. The init process reaps them.
+    init: true
     command:
       - sh
       - -c
