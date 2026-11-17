@@ -339,7 +339,16 @@ if [ -n "$worktree_status" ]; then
   }
   notice="незакоммиченные изменения ($dirty_count зап.: $dirty_head) спрятаны в stash «\${stash_name}»; вернуть их: git -C $repo stash apply 'stash^{/$stash_name}'"
 fi
-git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
+# The fetch is the only network step and it runs before every project turn: on a slow link it
+# added 8–9 s to each answer. A fetch that succeeded less than two minutes ago is reused; the
+# local checks above and below still run on every turn.
+fetch_stamp="$(git -C "$repo" rev-parse --absolute-git-dir)/vc-autosync-fetch-$(printf '%s' "$base" | tr -c 'A-Za-z0-9._-' '_')"
+if [ -n "$(find "$fetch_stamp" -mmin -2 2>/dev/null)" ] && git -C "$repo" rev-parse -q --verify "refs/remotes/origin/$base" >/dev/null 2>&1; then
+  :
+else
+  git -C "$repo" fetch --no-tags origin "refs/heads/\${base}:refs/remotes/origin/\${base}"
+  : > "$fetch_stamp"
+fi
 current="$(git -C "$repo" branch --show-current)"
 if [ "$current" != "$base" ]; then
   # Ветку задачи в общей копии оставляет чат задачи или Git-панель. Дерево здесь
