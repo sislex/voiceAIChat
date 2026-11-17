@@ -2394,6 +2394,26 @@ describe('turns: управляемая персистентная очеред�
     await turns.idle()
     db.close()
   })
+
+  it('restores a failed queue item of a non-chat conversation in the connect snapshot', async () => {
+    const db = await freshDb()
+    try {
+      const make = await db.chat.createConversation(U, 'Project', 'make')
+      expect(make.scope).toBe('make')
+      const message = await db.chat.addMessage(U, make.id, 'u0', 'Rejected', '10:00')
+      await db.chat.enqueueTurn(U, make.id, message.id, { segments: [{ speakerId: 1, text: message.text }] }, false)
+      await db.chat.markQueuedTurnFailed(U, make.id, message.id)
+      const llm = controlled()
+      const turns = createTurnManager({ db, claude: llm.client })
+      const events: import('@voicechat/shared').ServerMessage[] = []
+      turns.subscribe(event => events.push(event))
+      await turns.resumeQueues(U); await turns.idle()
+      expect(events).toEqual([expect.objectContaining({ t: 'claude.queue', conversationId: make.id,
+        items: [expect.objectContaining({ messageId: message.id, status: 'failed' })] })])
+      // A failed item waits for the user's decision; the reload must not rerun it.
+      expect(llm.requests).toHaveLength(0)
+    } finally { await db.close() }
+  })
 })
 
 describe('ProjectMainSnapshotCoordinator', () => {

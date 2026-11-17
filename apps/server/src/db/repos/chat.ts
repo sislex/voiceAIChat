@@ -1050,6 +1050,13 @@ export class ChatRepo extends BaseRepo {
     })
   }
 
+  /** Conversations of any scope that hold waiting or failed turns; the connect snapshot covers them all. */
+  async listTurnQueueConversationIds(userId: string): Promise<string[]> {
+    const rows = (await this.sql.all(`SELECT DISTINCT conversation_id FROM conversation_turn_queue
+       WHERE user_id = ? AND status IN ('queued','failed')`, [userId])) as Array<{ conversation_id: string }>
+    return rows.map(row => row.conversation_id)
+  }
+
   async isTurnQueuePaused(userId: string, conversationId: string): Promise<boolean> {
     if (!(await this.ownsConversation(userId, conversationId))) return false
     const row = (await this.sql.get(`SELECT paused FROM conversation_turn_control WHERE conversation_id = ?`, [conversationId])) as { paused: number } | undefined
