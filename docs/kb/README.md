@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1505. Последние:
+Всего записей: 1506. Последние:
 
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-text-only-system-prompt.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-text-only-system-prompt.md) — text-only-system-prompt
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-without-text.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-without-text.md) — stopped-answer-without-text
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stop-frees-conversation.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stop-frees-conversation.md) — stop-frees-conversation
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-queue-snapshot-all-scopes.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-queue-snapshot-all-scopes.md) — queue-snapshot-all-scopes
+- [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-pricing-2026-11-17.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-pricing-2026-11-17.md) — pricing-2026-11-17
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md) — model-api-thread-busy-message
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-make-text-files.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-make-text-files.md) — make-text-files
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-claude-text-only-no-resume.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-claude-text-only-no-resume.md) — claude-text-only-no-resume
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md) — chat-plain-answer-storage-error
 - [2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md](log/2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md) — core-zombie-git-processes
-- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 
 ## Исторические планы
 
