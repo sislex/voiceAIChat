@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-17
-checked: 31bef6281
+checked: dc3661513
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -127,6 +127,13 @@ While such a run finishes, another run of the same conversation is refused by th
 the stream then carries `{t:'err', s:'model_api_thread_busy'}` before the exit frame and the calling Core shows
 «Предыдущий ответ в этой беседе ещё завершается…» instead of a bare CLI exit code. Other failure reasons are
 not forwarded to the caller.
+
+The calling Core (`VC_CHAT_MODEL_API=true`) does not wait for that run. On Stop it forgets the conversation's
+provider thread, so the next message starts at once on a fresh thread whose prompt is rebuilt from the saved
+history (the stopped part included). The stopped answer is saved with `meta.interrupted`, `meta.stopped` and
+`meta.costPending` (the cost is settled later by the model API owner and is not copied back into the message).
+If a busy-thread refusal still arrives (for example a run abandoned by a restart), the thread is forgotten and
+the message is retried once on a fresh thread instead of failing in the queue.
 
 #### Make on a model API stand: files as text
 

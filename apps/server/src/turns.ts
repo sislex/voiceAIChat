@@ -32,6 +32,7 @@ import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
 import { ACCOUNTING_PENDING_MESSAGE, type ChatAccounting } from './billing/chatAccounting.js'
 import type { LlmBillingSession } from '@voicechat/shared'
+import { THREAD_BUSY_MESSAGE } from './llm/sinks.js'
 
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
@@ -1455,7 +1456,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           finish()
           // The runner lost the Codex thread (for example a recreated runner volume): forget it so
           // the next turn starts a fresh thread, and retry this message instead of failing it.
-          const lostThread = provider === 'codex' && !!sessionId && isLostCodexThread(message)
+          // The same applies to a thread still held by a stopped model API run: retry on a fresh thread.
+          const lostThread = !!sessionId && ((provider === 'codex' && isLostCodexThread(message))
+            || (!!deps.chatModelApi && message === THREAD_BUSY_MESSAGE))
           if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {
             const pendingAdmission = backgroundStop && message === ACCOUNTING_PENDING_MESSAGE
@@ -1565,11 +1568,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     releaseTurnTools(turn)
     turn.handle.cancel()
     await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, turn.backgroundStop === true)
+    // A model API run keeps finishing in the background and holds its thread until then. Forget the
+    // thread so the next message starts at once on a fresh one, with the history as its context.
+    if (deps.chatModelApi) await deps.db.chat.setClaudeSession(turn.userId, conversationId, null)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
       model: turn.model,
       interrupted: true,
+      stopped: true,
+      ...(deps.chatModelApi || turn.backgroundStop ? { costPending: true } : {}),
       request: turn.requestInfo,
       ...(turn.activity.length ? { activity: turn.activity } : {})
     }

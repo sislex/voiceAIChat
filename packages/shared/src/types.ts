@@ -1331,6 +1331,13 @@ export interface TurnMeta extends TurnUsage {
    * набранная к этому моменту часть ответа.
    */
   interrupted?: boolean
+  /** The user pressed Stop; the saved text is the part produced so far. */
+  stopped?: boolean
+  /**
+   * The stopped run still finishes in the background on the model API and is charged by actual
+   * usage, so the cost of this message is not final.
+   */
+  costPending?: boolean
   /**
    * Сообщение не является ответом хода, а продублированный в чат вопрос
    * CI-рана: ответ на него уходит в ран, а не запускает новый ход чата.
