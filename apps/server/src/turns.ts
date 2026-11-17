@@ -1693,10 +1693,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   async function resumeQueues(userId: string): Promise<void> {
-    const conversations = await deps.db.chat.listConversations(userId)
-    for (const conversation of conversations) {
-      if (!await deps.db.chat.isTurnQueuePaused(userId, conversation.id)) await dispatchNext(userId, conversation.id)
-      else await emitQueue(userId, conversation.id)
+    // The chat list covers only the `chat` scope; Make, Kanban and reader conversations keep their
+    // queue too, so a reload must restore it (a failed item would otherwise look like a lost message).
+    const ids = new Set([
+      ...(await deps.db.chat.listConversations(userId)).map(conversation => conversation.id),
+      ...await deps.db.chat.listTurnQueueConversationIds(userId)
+    ])
+    for (const id of ids) {
+      if (!await deps.db.chat.isTurnQueuePaused(userId, id)) await dispatchNext(userId, id)
+      else await emitQueue(userId, id)
     }
   }
 

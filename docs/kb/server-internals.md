@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: dc3661513
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -570,7 +570,7 @@ close. Regression tests cover ordering, initialization failure and early close.
 
 A Codex turn that fails with `no rollout found for thread id` (the runner lost the thread, for example after its volume was recreated) clears the conversation's stored `codex:` session and re-queues the same message without marking it failed, so it runs once more in a fresh thread; a second failure follows the normal error path (`isLostCodexThread` in `turns.ts`).
 
-`TurnManager` также публикует весь lifecycle хода и авторитетные снимки очереди всем сессиям владельца через подписку с `ownerUserId`. В `createSession.onOpen` подписка на ходы устанавливается до отправки `claude.active`, затем сессия подписывается на `UserFrameHub` до первого ожидания БД и вызывает `resumeQueues(userId)`. Поэтому reconnect получает накопленный active-turn, восстановленные из SQLite очереди и последующие `start/token/log/usage/done/error`; история сообщений остаётся авторитетным REST-снимком `conversations:get`, который клиент сливает с уже увиденными realtime-кадрами.
+`TurnManager` также публикует весь lifecycle хода и авторитетные снимки очереди всем сессиям владельца через подписку с `ownerUserId`. В `createSession.onOpen` подписка на ходы устанавливается до отправки `claude.active`, затем сессия подписывается на `UserFrameHub` до первого ожидания БД и вызывает `resumeQueues(userId)`. Поэтому reconnect получает накопленный active-turn, восстановленные из SQLite очереди и последующие `start/token/log/usage/done/error`; история сообщений остаётся авторитетным REST-снимком `conversations:get`, который клиент сливает с уже увиденными realtime-кадрами. `resumeQueues` обходит беседы области `chat` и, сверх них, все беседы пользователя с ожидающими или неудачными элементами очереди (`listTurnQueueConversationIds`): у бесед Make, Kanban и ридеров своя область, и без этого их очередь после перезагрузки страницы не приходила — неудачное сообщение выглядело отправленным без ответа.
 
 При подключении сервер отправляет активные LLM turns. Обрыв сокета закрывает микрофон, TTS, observer-tail и PTY подписки, но не модельный turn. Все callback-и должны быть сняты в одном cleanup, иначе reconnect удвоит события. В интеграционных тестах `ws.close()` только начинает closing handshake: перед `app.close()` нужно дождаться события `close`, поскольку именно оно запускает session cleanup. Локальные Fastify, WebSocket и SQLite ресурсы регистрируются в `afterEach`, чтобы assertion или timeout не оставляли worker с живым listener.
 
