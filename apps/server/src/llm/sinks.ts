@@ -70,8 +70,13 @@ export function describeClaudeExit(code: number | null, stderr: string): string 
 }
 
 /** Ненулевой код codex — аналогично. */
+/** Reason frame of the public model API: the conversation's previous run is still finishing. */
+export const MODEL_API_THREAD_BUSY = 'model_api_thread_busy'
+export const THREAD_BUSY_MESSAGE = 'Предыдущий ответ в этой беседе ещё завершается. Дождитесь его окончания и отправьте сообщение снова.'
+
 export function describeCodexExit(code: number | null, stderr: string): string {
   const s = stderr.trim()
+  if (s.includes(MODEL_API_THREAD_BUSY)) return THREAD_BUSY_MESSAGE
   if (/log ?in|not logged|authenticat|unauthor|credential/i.test(s)) {
     return 'Похоже, вход в Codex не выполнен. Выполните `codex login` в терминале.'
   }

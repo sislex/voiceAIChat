@@ -2,8 +2,8 @@
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
-updated: 2026-11-14
-checked: 80741797d
+updated: 2026-11-17
+checked: 5ffb4058d
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -123,6 +123,10 @@ frame until settlement. A models-scoped token cannot call that reporting route.
 A caller that disconnects or deletes a run does not stop the executor: the text-only run finishes in the
 background, its receipt settles the actual usage and only then the token slot is released (a killed CLI
 reports no final usage, which used to leave an `uncertain` hold on the slot forever).
+While such a run finishes, another run of the same conversation is refused by the runner (thread in use);
+the stream then carries `{t:'err', s:'model_api_thread_busy'}` before the exit frame and the calling Core shows
+«Предыдущий ответ в этой беседе ещё завершается…» instead of a bare CLI exit code. Other failure reasons are
+not forwarded to the caller.
 `VC_MODEL_API_CONCURRENCY` defaults to 4 and
 `VC_MODEL_API_REQUESTS_PER_MINUTE` to 60 POST run attempts per token in a
 60-second window. Excess requests return 429. Rate windows and active public

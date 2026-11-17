@@ -5,7 +5,8 @@ import { allowedModels, normalizeClaudeModel, type LlmClient, type LlmHandle, ty
 import type { VoiceChatDb } from '../db/database.js'
 import { MODEL_API_PREFIX, type ModelToken } from '../auth/modelTokens.js'
 import { deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
-import { RemoteLlmClient } from '../llm/remoteClient.js'
+import { CODEX_THREAD_IN_USE_MESSAGE, RemoteLlmClient } from '../llm/remoteClient.js'
+import { MODEL_API_THREAD_BUSY } from '../llm/sinks.js'
 import type { ChatAccounting } from '../billing/chatAccounting.js'
 import type { AccountingStore } from '../billing/accountingStore.js'
 import type { BillingSessions } from '../billing/sessions.js'
@@ -166,6 +167,9 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
           console.warn('[model-api] run failed', JSON.stringify({ runId, kind: body.kind, dispatched, message: String(message).slice(0, 500) }))
           if (!dispatched) { fail(503, 'runner_unavailable'); return }
           release()
+          // The only reason a caller can act on: a stopped run of this conversation still finishes in the
+          // background. Other reasons stay with the operator (they may name internal addresses).
+          if (!exit && message === CODEX_THREAD_IN_USE_MESSAGE) stream.write(JSON.stringify({ t: 'err', s: MODEL_API_THREAD_BUSY }) + '\n')
           if (!exit) stream.write(JSON.stringify({ t: 'exit', code: 1 }) + '\n')
           stream.end()
         }

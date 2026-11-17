@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { describeCodexExit, THREAD_BUSY_MESSAGE } from '../llm/sinks.js'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -37,6 +38,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   const bodies: LlmRunBody[] = [], receipts = new Map<string, LlmExecutionReceipt>()
   let release: (() => void) | undefined, hold: Promise<void> | undefined
   let stops = 0
+  let busy = false
   runner.get('/v1/health', async () => ({ ok: true, accountingVersion: 1, application: { version: '0.3.8' },
     bins: { codex: { present: true, version: null }, claude: { present: true, version: null } }, login: {}, runs: 0 }))
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
@@ -56,6 +58,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   })
   runner.post<{ Body: LlmRunBody }>('/v1/run', async (req, reply) => {
     bodies.push(req.body)
+    if (busy) return reply.code(409).send({ error: 'codex_thread_in_use' })
     await hold
     finish(req.body)
     return reply.type('application/x-ndjson').send([
@@ -85,6 +88,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   headers.authorization = 'Bearer ' + token
   return { app, url, headers, token, payload, db, ledger, bodies,
     get stops() { return stops },
+    busy() { busy = true },
     hold() { hold = new Promise(resolve => { release = resolve }); return () => release?.() } }
 }
 
@@ -214,6 +218,17 @@ it('lets the run finish after the calling Core disconnects, settles it and frees
   }, { timeout: 10_000 })
   const next = await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: f.headers, payload: f.payload })
   expect(next.statusCode, next.body).toBe(200)
+})
+
+it('tells the caller that the previous run of the conversation is still finishing', async () => {
+  const f = await fixture()
+  f.busy()
+  const response = await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: f.headers, payload: f.payload })
+  expect(response.statusCode, response.body).toBe(200)
+  const frames = response.body.trim().split('\n').map(line => JSON.parse(line))
+  expect(frames).toEqual([{ t: 'err', s: 'model_api_thread_busy' }, { t: 'exit', code: 1 }])
+  expect(describeCodexExit(1, frames[0].s)).toBe(THREAD_BUSY_MESSAGE)
+  expect(describeCodexExit(1, '')).toBe('Codex CLI завершился с кодом 1')
 })
 
 it('applies future Identity models metadata in the real Core global guard', async () => {
