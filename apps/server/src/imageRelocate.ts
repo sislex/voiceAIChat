@@ -28,6 +28,15 @@ export function machineImagePath(root: string, name: string): string {
   return `${root.replace(/[/\\]$/, '')}${sep}${MACHINE_IMAGE_DIR}${sep}${name}`
 }
 
+/**
+ * Whether an answer carries a server-side image that still has to be moved to the chat's machine.
+ * An answer without one must not touch the storage at all: an offline storage machine is then irrelevant
+ * and no storage error may be appended to plain text.
+ */
+export function hasImagesToRelocate(text: string): boolean {
+  return parseImages(text).images.some((image) => !image.agentId)
+}
+
 export async function relocateImagesToMachine(
   text: string,
   agentId: string,

@@ -22,7 +22,7 @@ import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHi
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
-import { relocateImagesToMachine } from './imageRelocate.js'
+import { hasImagesToRelocate, relocateImagesToMachine } from './imageRelocate.js'
 import { resolveManagedChatStorage } from './uploads.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 import type { KnowledgeBaseService } from './kb/types.js'
@@ -1387,6 +1387,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           pendingSaves.add(finalize)
 
           const prepared = (async (): Promise<string> => {
+            if (!hasImagesToRelocate(taskLaunch.text)) return taskLaunch.text
             const a = deps.agents
             // Чат без привязки к хранилищу: перед первой записью файла привязываем его к ChatAI машины по умолчанию.
             const binding = await deps.db.machines.getChatStorageBinding(userId, conversationId)
