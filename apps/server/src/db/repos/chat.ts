@@ -292,7 +292,9 @@ export class ChatRepo extends BaseRepo {
 
   async historyText(userId: string, conversationId: string): Promise<Array<{ role: MessageRole; text: string }>> {
     if (!await this.ownsConversation(userId, conversationId)) return []
-    return this.sql.all("SELECT role, text FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
+    const rows = await this.sql.all<{ role: MessageRole; text: string }>("SELECT role, text FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
+    // An answer stopped before its first text is stored empty for its note; it is not a reply.
+    return rows.filter(row => row.text.trim() !== '')
   }
 
   async historyFiles(userId: string, conversationId: string): Promise<Array<{ text: string; attachments?: MessageAttachment[] }>> {
