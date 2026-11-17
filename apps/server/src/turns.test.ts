@@ -2257,6 +2257,42 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('Stop before the first text on a model API stand keeps an empty stopped answer that stays out of the next prompt', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'stop-empty')
+    const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Напиши статью', '10:00')
+    const llm = controlled()
+    const done: unknown[] = []
+    const turns = createTurnManager({ db, claude: llm.client, chatModelApi: true })
+    turns.subscribe((m) => { if (m.t === 'claude.done') done.push(m.message) })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+    await turns.cancel(conversation.id)
+
+    const stopped = (await db.chat.listMessages(U, conversation.id)).find((m) => m.role === 'ai')
+    expect(stopped).toMatchObject({ text: '', meta: { interrupted: true, stopped: true, costPending: true } })
+    expect(done).toEqual([expect.objectContaining({ id: stopped!.id })])
+    expect(await db.chat.historyText(U, conversation.id)).toEqual([{ role: 'u1', text: 'Напиши статью' }])
+
+    const second = await db.chat.addMessage(U, conversation.id, 'u1', 'Короче', '10:01')
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: second.text }] })
+    expect(llm.requests[1]?.prompt).toContain('Короче')
+    await llm.handlers[1]!.onDone('Готово')
+    await turns.idle()
+    db.close()
+  })
+
+  it('Stop before the first text without the model API saves no answer', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'stop-local')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Привет' }] })
+    await turns.cancel(conversation.id)
+    expect((await db.chat.listMessages(U, conversation.id)).filter((m) => m.role === 'ai')).toEqual([])
+    await turns.idle()
+    db.close()
+  })
+
   it('a thread still held by a stopped model API run is forgotten and the message is retried at once', async () => {
     const db = await freshDb()
     await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })

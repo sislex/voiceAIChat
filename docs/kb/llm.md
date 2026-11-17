@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-17
-checked: d324bb953
+checked: d05cf5e8
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -132,6 +132,8 @@ The calling Core (`VC_CHAT_MODEL_API=true`) does not wait for that run. On Stop 
 provider thread, so the next message starts at once on a fresh thread whose prompt is rebuilt from the saved
 history (the stopped part included). The stopped answer is saved with `meta.interrupted`, `meta.stopped` and
 `meta.costPending` (the cost is settled later by the model API owner and is not copied back into the message).
+A model API answer often arrives in one piece at the end, so Stop usually comes before any text: the stopped
+answer is then saved with an empty text (for its note) and is left out of the rebuilt prompt.
 If a busy-thread refusal still arrives (for example a run abandoned by a restart), the thread is forgotten and
 the message is retried once on a fresh thread instead of failing in the queue.
 

@@ -1586,10 +1586,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       request: turn.requestInfo,
       ...(turn.activity.length ? { activity: turn.activity } : {})
     }
-    const message = turn.partial.trim()
-      ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
+    // A model API answer may arrive in one piece at the end, so Stop usually comes before any text. The
+    // stopped answer is still kept (empty) for its «stopped, cost pending» note.
+    const message = turn.partial.trim() || deps.chatModelApi
+      ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial.trim() ? turn.partial : '', timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
-    if (message) deps.conversationSummary?.consider(turn.userId, conversationId)
+    if (message && turn.partial.trim()) deps.conversationSummary?.consider(turn.userId, conversationId)
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn
