@@ -44,7 +44,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       try { return client instanceof RemoteLlmClient ? await client.health(req.user!.name) : undefined } catch { return undefined }
     }
     const [claude, codex] = await Promise.all([health('claude'), health('codex')])
-    return { ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
+    return { capabilities: { systemPrompt: true }, ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
       bins: { claude: claude?.bins?.claude ?? { present: false, version: null }, codex: codex?.bins?.codex ?? { present: false, version: null } },
       login: { claude: claude?.login?.claude ?? { loggedIn: false }, codex: codex?.login?.codex ?? { loggedIn: false } },
       runs: [...active.values()].filter(run => run.sid === opts.token(req)?.sid).length }
@@ -72,6 +72,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
     if (!token || !user) return reply.code(403).send({ error: 'token_scope_denied' })
     if (!user.account?.capabilities.includes('chat.use') || user.role === 'observer') return reply.code(403).send({ error: 'tariff_denied' })
     if (!body || (body.kind !== 'claude' && body.kind !== 'codex') || typeof body.prompt !== 'string' || !body.prompt.trim()
+      || (body.systemPrompt !== undefined && (typeof body.systemPrompt !== 'string' || body.systemPrompt.length > 100_000))
       || typeof body.model !== 'string' || (body.sessionId != null && typeof body.sessionId !== 'string')
       || (body.runId !== undefined && (typeof body.runId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.runId)))) {
       return reply.code(400).send({ error: 'invalid_request' })
@@ -135,6 +136,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       const request: LlmRequest = {
         userId: user.name, prompt: body.prompt, model: body.model || model!, sessionId: body.sessionId as string | null ?? null,
         textOnly: true, executionDisabled: true,
+        ...(typeof body.systemPrompt === 'string' ? { systemPrompt: body.systemPrompt } : {}),
         ...(typeof body.deepThinking === 'boolean' ? { deepThinking: body.deepThinking } : {}),
         ...(['low', 'medium', 'high', 'xhigh', 'max'].includes(String(body.reasoningEffort))
           ? { reasoningEffort: body.reasoningEffort as LlmRequest['reasoningEffort'] } : {})

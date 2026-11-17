@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-17
-checked: dc3661513
+checked: 6850d93b1
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -10,6 +10,18 @@ areas:
 # Backend изнутри: сборка, маршруты, сессии и сервисы
 
 ## Consuming models from another Core
+
+Text-only turn assembly keeps history in `prompt` and Core instructions in
+`systemPrompt`; request diagnostics retain their combined text and character
+count. Make file snapshots remain user data, while Core applies the text output
+protocol through its own Make calls. See [transport](llm.md#text-only-claude-turns-never-resume)
+and [Make text execution](features/make-browser.md#model-api-stand-restriction).
+
+Model API Stop clears the saved runner session so the next message can start with
+rebuilt history while the upstream run finishes. It records `stopped` and
+`costPending`, even before the first text delta. Empty stopped messages are
+excluded by `historyText` and `coldStartPrompt` and do not trigger summarization.
+This differs from the paid local Chat queue pause described below.
 
 `loadConfig` reads `VC_CHAT_MODEL_API=true` into `chatModelApi`. `buildServer`
 passes it to turn assembly and skips local ChatAccounting initialization when

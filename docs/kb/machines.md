@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -29,6 +29,12 @@ areas:
 # Машины: компаньон-агент, политика, PTY, проводник
 
 ## Model API stand execution
+
+Before resolving or writing chat image storage, `turns.ts` calls
+`hasImagesToRelocate`. Plain answers and images already associated with an agent
+skip relocation, so an offline storage machine does not append an error to an
+unrelated text answer. The separate text-only `systemPrompt` does not grant
+machine or remote-tool access.
 
 With `VC_CHAT_MODEL_API=true`, turn assembly disables workspace mode and does
 not resolve a conversation machine or attach remote execution tools. Saved machine

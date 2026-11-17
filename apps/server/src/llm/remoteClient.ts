@@ -217,6 +217,25 @@ export class RemoteLlmClient implements LlmClient {
     // на верхнем уровне тела (apps/llm-runner/src/server.ts) и на конверт
     // `{ id, request }` отвечает `400 prompt обязателен`.
     const body: RunnerRunBody = { ...req, kind: this.opts.kind, runId }
+    if (req.systemPrompt) {
+      // Negotiate before dispatch: older runners/Core silently ignore unknown fields.
+      // Never retry a run, which could duplicate model work and accounting.
+      let supported = false
+      try {
+        const response = await fetchImpl(runnerBase(this.opts.baseUrl) + '/v1/health', {
+          headers: this.headers(), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5_000)])
+        })
+        if (response.ok) {
+          const health = await response.json() as { capabilities?: { systemPrompt?: boolean } }
+          supported = health.capabilities?.systemPrompt === true
+        }
+      } catch { /* Legacy combined prompt remains usable when discovery fails. */ }
+      if (abort.signal.aborted) return
+      if (!supported) {
+        body.prompt = req.prompt + (req.systemPrompt.startsWith('\n') ? '' : '\n\n') + req.systemPrompt
+        delete body.systemPrompt
+      }
+    }
     const connectTimeoutMs = this.opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     let timedOut = false
     const timer = setTimeout(() => {

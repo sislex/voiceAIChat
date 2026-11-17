@@ -145,6 +145,19 @@ API stand) is started by the runner with `--no-session-persistence`, so there is
 therefore ignores the stored Claude session id for such turns and rebuilds the prompt from the
 stored history (`coldStartPrompt`). Codex keeps its thread in the user profile and still resumes.
 
+Text-only turns keep conversation history and the current message in `prompt`; Core chat
+instructions and hints travel separately in optional `systemPrompt`. Make's text output
+protocol is system content; current project files remain user data. The model API validates
+`systemPrompt` as a string of at most 100,000 UTF-16 code units and forwards it to the runner.
+Both health endpoints advertise `capabilities.systemPrompt: true`. Before dispatch,
+`RemoteLlmClient` checks this capability (also when the endpoint is another Core's model API).
+Missing capability or failed discovery preserves legacy behavior by appending the instructions
+to the user prompt and omitting the field. Discovery cancellation never dispatches a run;
+there is no model-run retry. Claude uses `--append-system-prompt`, including its early
+text-only branch. Codex prefixes the instructions to stdin and retains text-only restrictions
+and session resume. These changes require separate Core and runner rollout; an old hop still
+uses the legacy combined prompt.
+
 #### Make on a model API stand: files as text
 
 A model API run has no tools, so a Make conversation of a stand with `VC_CHAT_MODEL_API=true` carries project

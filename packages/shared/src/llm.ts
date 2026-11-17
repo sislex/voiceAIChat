@@ -48,6 +48,8 @@ export interface LlmRequest {
   userId?: string
   /** Готовый текст промпта (сборка — на стороне вызывающего: см. session.ts). */
   prompt: string
+  /** Optional system instructions; at most 100,000 UTF-16 code units. */
+  systemPrompt?: string
   /** session-id Claude для продолжения разговора (null — новый/сброшенный). */
   sessionId: string | null
   /** Модель для CLI (алиас, напр. 'sonnet' | 'opus'). */
@@ -247,6 +249,7 @@ export interface LlmRunnerBinStatus {
 
 /** Ответ `GET /v1/health` исполнителя. */
 export interface LlmRunnerHealth {
+  capabilities?: { systemPrompt?: boolean }
   ok: boolean
   bins: Record<LlmRunKind, LlmRunnerBinStatus>
   /** Статус входа обоих CLI в общем профиле исполнителя. */

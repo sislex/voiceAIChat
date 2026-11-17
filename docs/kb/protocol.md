@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 areas:
   - apps/server/src/playwrightReaderBridge
   - packages/shared/src/androidRelease.ts
@@ -26,6 +26,17 @@ areas:
 # Контракт клиент↔сервер (REST, WS, мосты)
 
 ## Model runner API
+
+POST `run` accepts optional `systemPrompt`: a string of at most 100,000
+UTF-16 code units, rejected with HTTP 400 when malformed or oversized.
+GET `health` advertises `capabilities.systemPrompt: true`. Consumers negotiate
+this capability and retain a combined prompt with older endpoints. This adds no
+tool or filesystem authority and does not change the NDJSON frame shapes.
+
+A busy Codex thread is conveyed with `{t:"err",s:"model_api_thread_busy"}` before
+the exit frame. Chat `TurnMeta` additionally has optional `stopped` and
+`costPending` flags. A model API Stop can persist an empty assistant message for
+these flags; cold-start history excludes empty messages.
 
 Shared exports `MODEL_RUNNER_API_PREFIX = '/api/model-runner/v1/'`.
 Core publishes POST `run`, DELETE `run/:id`, GET `health` and GET `models`.

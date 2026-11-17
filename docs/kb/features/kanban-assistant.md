@@ -1,7 +1,7 @@
 ---
 title: Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/kanbanSimilarity.ts
@@ -24,6 +24,11 @@ areas:
 # Канбан-ассистент
 
 ## Model API stand restriction
+
+Reconnect restores queued/failed turns for Kanban conversations as well as ordinary
+Chat: `resumeQueues` unions the chat list with `listTurnQueueConversationIds`.
+The model API stand restriction below still applies; splitting text-only instructions
+into `systemPrompt` does not enable Kanban MCP or widget authority.
 
 When `VC_CHAT_MODEL_API=true`, turn assembly disables workspace mode even for a
 Workspace or Make conversation. It does not attach Kanban MCP or widget context

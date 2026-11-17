@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 
 areas:
   - packages/shared/src/projects.ts
@@ -25,6 +25,11 @@ areas:
 # Проекты и канбан-доска
 
 ## Model API stand conversations
+
+Queue restoration includes every conversation with queued or failed turns through
+`ChatRepo.listTurnQueueConversationIds`, including Kanban and Make scopes.
+Prompt separation is confined to tool-free turns; project/task context and Kanban
+tool authority remain governed by effective workspace mode.
 
 `VC_CHAT_MODEL_API=true` disables workspace context assembly in `turns.ts`,
 including project/task context and Kanban MCP even for saved Workspace mode.

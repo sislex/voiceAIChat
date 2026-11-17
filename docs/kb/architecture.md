@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -20,6 +20,12 @@ areas:
 # Архитектура: кто с кем разговаривает
 
 ## Model API stand boundary
+
+Tool-free turns separate Core instructions into `LlmRequest.systemPrompt` while
+conversation history stays in `prompt`. The HTTP client negotiates support and
+falls back to the combined prompt for older endpoints. This preserves the
+stand/upstream ownership boundary; see
+[instruction transport](llm.md#text-only-claude-turns-never-resume).
 
 A portable stand can consume the production Core model API without a local LLM
 Runner. The stand's `VC_CHAT_MODEL_API` mode disables workspace tool assembly
