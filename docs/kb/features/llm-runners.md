@@ -2,8 +2,8 @@
 id: llm-runners
 title: Исполнители LLM: контейнеры с claude/codex CLI
 kind: feature
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 areas:
   - apps/server/src/llm
   - apps/server/src/config.ts
@@ -32,6 +32,18 @@ aliases:
 # Исполнители LLM: контейнеры с claude/codex CLI
 
 ## Model API base paths
+
+The optional `LlmRequest.systemPrompt` carries instructions separately from the
+user prompt. `RemoteLlmClient` checks `capabilities.systemPrompt` at the same
+base-path-preserving health URL before dispatch (five-second discovery timeout).
+Missing support or discovery failure appends instructions back to the prompt and
+omits the field; cancellation during discovery prevents dispatch. No model run is
+retried by this negotiation. See [text-only transport](../llm.md#text-only-claude-turns-never-resume).
+
+The public model API defaults to four concurrent operations per token. A busy Codex
+thread is reported as an `err` frame containing `model_api_thread_busy`; the
+consumer maps it to the localized busy-thread message. Other internal runner
+errors are not forwarded as user-facing reason frames.
 
 `RemoteLlmClient.accountingFetch` appends the endpoint to `runnerBase(baseUrl)`.
 Health therefore preserves `/api/model-runner` and the bearer token instead of

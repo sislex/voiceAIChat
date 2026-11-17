@@ -1,7 +1,7 @@
 ---
 title: "Make: браузер ассистента"
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 areas:
   - apps/server/src/turns.ts
   - apps/server/src/routes/rest.ts
@@ -46,6 +46,13 @@ Chromium, иначе `panel`. Движок меняется переключен
 Для работы без открытой панели нужен движок Chromium.
 
 ## Model API stand restriction
+
+On a model API stand, Core can still edit Make files through its own configured
+Make MCP endpoint. `makeTextFilesContext` reads a bounded file snapshot into
+the user prompt and places the `<make-file>`/`<make-delete>` output protocol
+in `systemPrompt`. Core filters file bodies from live chat output and applies
+the completed blocks through Make. An explicit Plan request forbids writes.
+This text path does not give the model browser, shell or Make MCP tools.
 
 The Make browser/tool assembly described below requires effective workspace
 mode. `VC_CHAT_MODEL_API=true` disables that mode even for a Make conversation;

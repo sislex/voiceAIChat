@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-13
-checked: 059901fdf
+updated: 2026-11-17
+checked: 6850d93b1
 title: Общий пакет: типы, контракты и чистая логика
 areas:
   - packages/shared/src
@@ -9,6 +9,12 @@ areas:
 # Общий пакет: типы, контракты и чистая логика
 
 ## Public model API prefix
+
+`llm.ts` adds optional `LlmRequest.systemPrompt` and
+`LlmRunnerHealth.capabilities.systemPrompt`. The HTTP boundary validates the
+instruction string at 100,000 UTF-16 code units; the frame union stays unchanged.
+`types.ts` adds optional `TurnMeta.stopped` and `costPending` to distinguish
+a user Stop from final settled usage. See [model transport](protocol.md#model-runner-api).
 
 `protocol.ts` exports `MODEL_RUNNER_API_PREFIX` for Core's user-authenticated
 runner subset. The existing `llm.ts` declares Core's runner wire types and parser;

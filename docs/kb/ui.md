@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-17
+checked: 6850d93b1
 areas:
   - apps/server/src/browserUi
   - packages/shared/src/browserUiRelease.ts
@@ -32,6 +32,13 @@ Core enforces tool suppression through `chatModelApi`; this change publishes no
 new UI archive. See [consumer mode](llm.md#local-stand-consumer-mode).
 
 ## Current Core consumer contracts
+
+Core sends `stopped` and `costPending` in assistant message metadata. On a
+model API stand it also persists an empty stopped answer when Stop precedes the
+first text delta; prompt history ignores that empty row. Reconnect restores
+queued/failed turns for Make, Kanban and Reader scopes as well as ordinary Chat.
+The text-only instruction split preserves combined prompt diagnostics and their
+character count; these backend contracts do not publish a new UI archive.
 
 Core now exposes the [model API](llm.md#api-моделей), but token creation UI is
 owned by Identity/Core UI. This backend change does not publish a new UI artifact.
