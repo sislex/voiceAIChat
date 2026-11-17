@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-14 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ⚠ 6 коммит(ов) в areas после проверенного SHA: 2aa0593a6 fix(model-api): tell the caller when the conversation's previous run is still finishing … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 66ec4973d chore: pin Make 1.8.21 packages (make-ui frontend without crypto.randomUUID on http) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
@@ -22,7 +22,7 @@
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 2aa0593a6 fix(model-api): tell the caller when the conversation's previous run is still finishing … |
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-14 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
@@ -42,8 +42,8 @@
 | [modules.md](modules.md) | Module ownership map | 2026-11-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 10 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 2aa0593a6 fix(model-api): tell the caller when the conversation's previous run is still finishing … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 11 коммит(ов) в areas после проверенного SHA: 2aa0593a6 fix(model-api): tell the caller when the conversation's previous run is still finishing … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
