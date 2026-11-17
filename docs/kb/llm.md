@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-17
-checked: 5ffb4058d
+checked: 31bef6281
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -127,6 +127,20 @@ While such a run finishes, another run of the same conversation is refused by th
 the stream then carries `{t:'err', s:'model_api_thread_busy'}` before the exit frame and the calling Core shows
 «Предыдущий ответ в этой беседе ещё завершается…» instead of a bare CLI exit code. Other failure reasons are
 not forwarded to the caller.
+
+#### Make on a model API stand: files as text
+
+A model API run has no tools, so a Make conversation of a stand with `VC_CHAT_MODEL_API=true` carries project
+files as text (`apps/server/src/makeTextFiles.ts`). Before the turn Core itself calls the Make MCP endpoint
+(`make_list_files`, `make_read_file`; stateless JSON-RPC `tools/call` with the same `k`/`conv`/`turn`/`note`
+address a model would get) and appends the protocol and the current text files (60 KB per file, 150 KB in
+total, other files by name only) to the prompt. The model answers with `<make-file path="…">full content</make-file>`
+and `<make-delete path="…"/>` blocks. After the answer Core writes them with one `make_apply_changes` call, so the
+per-turn snapshot, the compile rollback and `make.changed` behave as with model-driven tools. The saved answer keeps
+the text outside the blocks plus «Файлы проекта обновлены: …» or the refusal reason; the live stream shows
+`📄 path…` in place of file contents. An explicit «План» makes the turn read-only; the automatic plan of big
+requests is not applied in this mode. The toggle `mcp-make-files` switches the mode off, and an unreachable Make
+leaves the turn an ordinary text answer.
 `VC_MODEL_API_CONCURRENCY` defaults to 4 and
 `VC_MODEL_API_REQUESTS_PER_MINUTE` to 60 POST run attempts per token in a
 60-second window. Excess requests return 429. Rate windows and active public

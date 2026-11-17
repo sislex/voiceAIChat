@@ -16,6 +16,7 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
+import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesPrompt, makeToolCaller } from './makeTextFiles.js'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
 import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
@@ -103,6 +104,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Transport of Core's own Make tool calls on a model API stand; tests replace it. */
+  makeToolFetch?: typeof fetch
   /** Per-turn MCP URL of an external application signed for this core (deployment-profiles B17). */
   externalMcpUrl?: (application: import('@voicechat/shared').ApplicationId, context: { userId: string; conversationId: string; turnId?: string }) => string | undefined
   /** Base URL for Image Studio tools; the current user and conversation are appended per turn. */
@@ -818,7 +821,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     )
     // Тумблер `make-context` — такой же, как у прочих источников: инспектор его
     // показывает, значит ход обязан его слушать.
-    const makeContextBlock = workspaceMode && !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
+    // Model API stand: the model has no tools, so Core reads and writes Make files itself (makeTextFiles.ts).
+    // Only an explicit «План» is read-only: the automatic plan of big requests needs the tool-driven flow.
+    const makeText = deps.chatModelApi && makeToolsEnabled && !req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl
+      ? { readOnly: permissionMode === 'plan' && !makeAutoPlan,
+          call: makeToolCaller(`${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}&note=${encodeURIComponent(req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80))}`, deps.makeToolFetch),
+          live: makeFileStreamFilter() }
+      : undefined
+    const makeTextBlock = makeText ? await makeTextFilesPrompt(makeText.call, makeText.readOnly) : ''
+    const makeContextBlock = (workspaceMode || makeTextBlock) && !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
       ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
     // Чат студии картинок: модель должна знать, что уже лежит в галерее, и
@@ -835,7 +846,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities)
       : null
     const makeBrowserBlock = makeBrowser ? makeBrowserPromptBlock(makeBrowser) : ''
-    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeTextBlock ? `\n\n${makeTextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = workspaceMode && conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
@@ -1257,7 +1268,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         onDelta: async (delta) => {
           if (turn.done) return
           turn.partial += delta
-          broadcast({ t: 'claude.token', conversationId, delta }, userId)
+          const visible = makeText ? makeText.live(delta) : delta
+          if (visible) broadcast({ t: 'claude.token', conversationId, delta: visible }, userId)
         },
         // Живой счётчик токенов: рассылается всем клиентам всегда (в отличие от
         // claude.log, который зависит от verbose) и попадает в снапшот active().
@@ -1314,6 +1326,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // Модель явно запрашивает выбор через структурированный блок. Сам блок
           // служебный: в историю и видимый ответ он не попадает.
           const taskLaunch = parseTaskLaunchRequest(rawText)
+          // An unreachable Make prompt section means the model was never told about file blocks.
+          if (makeText && makeTextBlock) taskLaunch.text = await applyMakeFileBlocks(makeText.call, taskLaunch.text, makeText.readOnly)
           if (taskLaunch.request) merged.taskLaunch = taskLaunch.request
           if (taskLaunch.requests) merged.taskLaunches = taskLaunch.requests
 
