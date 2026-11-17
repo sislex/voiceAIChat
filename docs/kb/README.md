@@ -17,7 +17,7 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-16 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: c348e39fd Pin release train e7555569-5dfd-48ed-b1e6-75f3b1a96be4 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-14 | ✓ |
@@ -27,11 +27,11 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-14 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-14 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-13 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-14 | ✓ |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ✓ |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: c348e39fd Pin release train e7555569-5dfd-48ed-b1e6-75f3b1a96be4 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-13 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-14 | ✓ |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -43,12 +43,12 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 3199813aa fix(accounting): settle a finished run without final usage as a zero charge … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 9 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 5 коммит(ов) в areas после проверенного SHA: c348e39fd Pin release train e7555569-5dfd-48ed-b1e6-75f3b1a96be4 … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 6 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1497. Последние:
+Всего записей: 1498. Последние:
 
+- [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md) — chat-plain-answer-storage-error
 - [2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md](log/2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md) — core-zombie-git-processes
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-seed-and-owner-gaps.md) — stand-seed-and-owner-gaps
@@ -76,7 +77,6 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md) — stand-identity-prebuild
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md) — release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
-- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-model-api-runner-context.md) — model-api-runner-context
 
 ## Исторические планы
 

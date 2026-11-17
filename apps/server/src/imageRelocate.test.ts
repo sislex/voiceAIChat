@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync, readFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseImages } from '@voicechat/shared'
-import { machineImagePath, relocateImagesToMachine } from './imageRelocate.js'
+import { hasImagesToRelocate, machineImagePath, relocateImagesToMachine } from './imageRelocate.js'
 import { machineStoragePath, machineUploadDir, machineUploadPath, resolveManagedChatStorage } from './uploads.js'
 
 let home: string
@@ -149,5 +149,13 @@ describe('relocateImagesToMachine', () => {
     const d = deps()
     expect(await relocateImagesToMachine('обычный ответ', 'm1', d)).toBe('обычный ответ')
     expect(d.fsList).not.toHaveBeenCalled()
+  })
+})
+
+describe('hasImagesToRelocate', () => {
+  it('leaves a plain answer alone so an offline storage machine adds no error to it', () => {
+    expect(hasImagesToRelocate('51')).toBe(false)
+    expect(hasImagesToRelocate('```image\n{"path":"/home/user/.generated_images/a.png","agentId":"m1"}\n```')).toBe(false)
+    expect(hasImagesToRelocate('Готово\n\n```image\n{"path":"/srv/generated/a.png"}\n```')).toBe(true)
   })
 })
