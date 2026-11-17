@@ -1034,10 +1034,10 @@ export interface ClaudeModelInfo {
  */
 export const CLAUDE_MODELS: ClaudeModelInfo[] = [
   { id: 'default', label: 'Default (recommended)' },
-  { id: 'opus[1m]', label: 'Opus (1M context)', hint: 'Opus 5 with 1M context' },
-  { id: 'fable', label: 'Fable', hint: 'Fable 5' },
-  { id: 'sonnet', label: 'Sonnet', hint: 'Sonnet 5' },
-  { id: 'haiku', label: 'Haiku', hint: 'Haiku 4.5' }
+  { id: 'opus[1m]', label: 'Opus (1M context)', hint: 'Opus 5.5 with 1M context' },
+  { id: 'fable', label: 'Fable', hint: 'Fable 5.2' },
+  { id: 'sonnet', label: 'Sonnet', hint: 'Sonnet 5.5' },
+  { id: 'haiku', label: 'Haiku', hint: 'Haiku 5.5' }
 ]
 
 /**
