@@ -647,7 +647,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const engineNotice = notices.join('\n')
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
-    const sessionId = resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
+    // A text-only Claude run is started with `--no-session-persistence`: the runner keeps no session
+    // to resume, so `--resume` fails with "No conversation found". Such a turn always rebuilds the
+    // prompt from the stored history instead. Codex keeps its thread in the profile and resumes.
+    const textOnlyClaude = provider === 'claude' && !req.delegation
+      && (!!deps.chatModelApi || !!deps.chatTextOnly || !isWorkspaceAssistantMode(conv?.assistantMode))
+    const sessionId = textOnlyClaude ? null : resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
     // Reasoning settings are snapshotted before the turn starts; later UI changes affect only the next turn.
     const reasoningEffort = conv?.reasoningEffort ?? settings.reasoningEffort ?? 'medium'
     const deepThinking = conv?.deepThinking ?? settings.deepThinking ?? false

@@ -42,6 +42,25 @@ it('model API stands disable workspace MCP even when a conversation requests it'
   } finally { await db.close() }
 })
 
+it('a text-only Claude turn never resumes a runner session and rebuilds the prompt from history', async () => {
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Chat')
+    await db.chat.setClaudeSession(U, conv.id, 'claude:d2a85602-62e1-4348-838c-47e78d74f229')
+    await db.chat.addMessage(U, conv.id, 'u1', 'Remember 61', '10:00')
+    await db.chat.addMessage(U, conv.id, 'ai', 'Accepted', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, chatModelApi: true })
+    const question = await db.chat.addMessage(U, conv.id, 'u1', 'Which number?', '10:01')
+    await turns.start({ userId: U, conversationId: conv.id, messageId: question.id, segments: [{ speakerId: 1, text: question.text }] })
+    await turns.idle()
+    expect(rec.last()).toMatchObject({ textOnly: true })
+    expect(rec.last()?.sessionId ?? null).toBeNull()
+    expect(rec.last()?.prompt).toContain('Remember 61')
+    expect(rec.last()?.prompt).toContain('Which number?')
+  } finally { await db.close() }
+})
+
 it('model API stands carry Make files as text: project files go into the prompt and answer blocks are written', async () => {
   const db = await freshDb()
   try {
