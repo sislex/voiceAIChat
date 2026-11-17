@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-17
-checked: 31bef6281
+checked: d324bb953
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -127,6 +127,14 @@ While such a run finishes, another run of the same conversation is refused by th
 the stream then carries `{t:'err', s:'model_api_thread_busy'}` before the exit frame and the calling Core shows
 «Предыдущий ответ в этой беседе ещё завершается…» instead of a bare CLI exit code. Other failure reasons are
 not forwarded to the caller.
+
+#### Text-only Claude turns never resume
+
+A text-only Claude run (`textOnly`: a chat outside workspace mode, `VC_CHAT_TEXT_ONLY`, or a model
+API stand) is started by the runner with `--no-session-persistence`, so there is no session to
+`--resume`: the second turn failed with "No conversation found with session ID". `turns.ts`
+therefore ignores the stored Claude session id for such turns and rebuilds the prompt from the
+stored history (`coldStartPrompt`). Codex keeps its thread in the user profile and still resumes.
 
 #### Make on a model API stand: files as text
 
