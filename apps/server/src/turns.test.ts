@@ -16,6 +16,7 @@ import { REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { KB_MCP_PATH } from './kb/kbMcp.js'
 import type { ChatAccounting } from './billing/chatAccounting.js'
 import { ACCOUNTING_PENDING_MESSAGE } from './billing/chatAccounting.js'
+import { THREAD_BUSY_MESSAGE } from './llm/sinks.js'
 import * as dbSeed from './test/seed.js'
 // Карантин Postgres (docs/plans/db-postgres.md, круг 2): тесты опираются на порядок событий синхронного
 // драйвера; на Postgres между шагами есть сетевые await — аудит параллелизма менеджеров вынесен отдельно.
@@ -2228,6 +2229,56 @@ describe('turns: управляемая персистентная очеред�
     await turns.idle()
     expect(llm.handlers).toHaveLength(2)
     expect(errors).toHaveLength(1)
+    db.close()
+  })
+
+  it('Stop on a model API stand frees the conversation: the stopped answer is kept and the next message starts a fresh thread', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'stop')
+    const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Напиши статью', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client, chatModelApi: true })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+    await llm.handlers[0]!.onSession('thread-one')
+    await llm.handlers[0]!.onDelta('Начало статьи')
+    await turns.cancel(conversation.id)
+
+    const stopped = (await db.chat.listMessages(U, conversation.id)).find((m) => m.role === 'ai')
+    expect(stopped).toMatchObject({ text: 'Начало статьи', meta: { interrupted: true, stopped: true, costPending: true } })
+    expect((await db.chat.getConversation(U, conversation.id))?.claudeSessionId ?? null).toBeNull()
+
+    const second = await db.chat.addMessage(U, conversation.id, 'u1', 'Короче', '10:01')
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: second.text }] })
+    expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+    expect(llm.requests[1]?.prompt).toContain('Начало статьи')
+    expect(llm.requests[1]?.prompt).toContain('Короче')
+    await llm.handlers[1]!.onDone('Готово')
+    await turns.idle()
+    db.close()
+  })
+
+  it('a thread still held by a stopped model API run is forgotten and the message is retried at once', async () => {
+    const db = await freshDb()
+    await db.settings.saveSettings(U, { ...await db.settings.getSettings(U), llmProvider: 'codex' })
+    const conversation = await db.chat.createConversation(U, 'busy')
+    await db.chat.setClaudeSession(U, conversation.id, 'codex:thread-held')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Следующий вопрос', '10:00')
+    const llm = controlled()
+    const errors: string[] = []
+    const turns = createTurnManager({ db, claude: llm.client, codex: llm.client, chatModelApi: true })
+    turns.subscribe((m) => { if (m.t === 'claude.error') errors.push(m.message) })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    expect(llm.requests[0]?.sessionId).toBe('thread-held')
+    await llm.handlers[0]!.onError(THREAD_BUSY_MESSAGE)
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+    expect(llm.requests[1]?.prompt).toContain('Следующий вопрос')
+    expect(errors).toEqual([])
+    expect((await db.chat.listQueuedTurns(U, conversation.id)).filter((item) => item.status === 'failed')).toEqual([])
+    await llm.handlers[1]!.onDone('Ответ')
+    await turns.idle()
     db.close()
   })
 
