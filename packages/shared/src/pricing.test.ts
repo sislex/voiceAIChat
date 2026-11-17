@@ -30,7 +30,7 @@ describe('estimateCostUsd', () => {
     const FACTS = [
       {
         what: 'CHAT-68 f08bd335, работа модели',
-        model: 'opus',
+        model: 'claude-opus-5',
         usage: {
           inputTokens: 317,
           outputTokens: 133_011,
@@ -41,7 +41,7 @@ describe('estimateCostUsd', () => {
       },
       {
         what: 'CHAT-70 dfcd9e0e, работа модели',
-        model: 'opus',
+        model: 'claude-opus-5',
         usage: {
           inputTokens: 345,
           outputTokens: 78_228,
@@ -52,7 +52,7 @@ describe('estimateCostUsd', () => {
       },
       {
         what: 'fable, самый крупный ход в ci_run_usage',
-        model: 'fable',
+        model: 'claude-fable-5',
         usage: {
           inputTokens: 46,
           outputTokens: 32_182,
@@ -105,5 +105,41 @@ describe('GPT-6 Sol and Luna rates', () => {
     const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheCreationTokens: 1_000_000 }
     expect(estimateCostUsd(model, usage)).toBeCloseTo(short, 6)
     expect(estimateCostUsd(model, { ...usage, contextTier: 'long' })).toBeCloseTo(long, 6)
+  })
+})
+
+// Rates of https://platform.claude.com/docs/en/about-claude/pricing and of the OpenAI pricing page, 2026-11-17.
+describe('current Claude and long-context OpenAI rates', () => {
+  const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheCreationTokens: 1_000_000 }
+  it.each([
+    ['claude-fable-5-2', 8 + 40 + 0.2 + 16],
+    ['claude-fable-5-1', 10 + 50 + 0.25 + 20],
+    ['fable', 8 + 40 + 0.2 + 16],
+    ['claude-fable-5', 10 + 50 + 1 + 20],
+    ['claude-opus-5-5', 4 + 20 + 0.2 + 8],
+    ['claude-opus-5[1m]', 5 + 25 + 0.5 + 10],
+    ['claude-opus-4-1', 15 + 75 + 1.5 + 30],
+    ['claude-sonnet-5-5', 2 + 10 + 0.1 + 4],
+    ['claude-sonnet-5', 2 + 10 + 0.2 + 4],
+    ['sonnet', 2 + 10 + 0.1 + 4],
+    ['opus[1m]', 4 + 20 + 0.2 + 8],
+    ['claude-sonnet-4-6', 3 + 15 + 0.3 + 6],
+    ['claude-haiku-5-5', 0.1 + 0.5 + 0.01 + 0.2],
+    ['claude-haiku-4-5-20251001', 1 + 5 + 0.1 + 2],
+    ['haiku', 0.1 + 0.5 + 0.01 + 0.2]
+  ] as const)('%s', (model, expected) => {
+    expect(estimateCostUsd(model, usage)).toBeCloseTo(expected, 6)
+  })
+
+  it('matches the cost the CLI reported for real text turns of 2026-11-17', () => {
+    // Haiku 4.5: 929 input, 125 output, 6363 written to the 1-hour cache.
+    expect(estimateCostUsd('claude-haiku-4-5-20251001', { inputTokens: 929, outputTokens: 125, cacheCreationTokens: 6363 })).toBeCloseTo(0.01428, 5)
+  })
+
+  it('prices long prompts of Haiku 5.5, GPT-5.5 and GPT-5.4 at the long-context rate', () => {
+    expect(estimateCostUsd('claude-haiku-5-5', { ...usage, contextTier: 'long' })).toBeCloseTo(0.5 + 2.5 + 0.05 + 1, 6)
+    expect(estimateCostUsd('claude-sonnet-5-5', { ...usage, contextTier: 'long' })).toBeCloseTo(16.1, 6)
+    expect(estimateCostUsd('gpt-5.5', { ...usage, contextTier: 'long' })).toBeCloseTo(10 + 45 + 1, 6)
+    expect(estimateCostUsd('gpt-5.4', { ...usage, contextTier: 'long' })).toBeCloseTo(5 + 22.5 + 0.5, 6)
   })
 })

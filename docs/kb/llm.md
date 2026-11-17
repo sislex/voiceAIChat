@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-17
-checked: d05cf5e8
+checked: 3becc0737
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -1214,3 +1214,18 @@ model to list and visually open files first, use localized retouch for people
 and objects, extract/edit/place isolated objects, and restore versions without
 destroying history. Plan turns receive the same endpoint with `ro=1`, enforced
 again by every mutating MCP handler.
+
+### Price table and model hints (2026-11-17)
+
+`packages/shared/src/pricing.ts` follows the official pages
+(<https://platform.claude.com/docs/en/about-claude/pricing>, <https://developers.openai.com/api/docs/pricing>).
+Claude rows are ordered: a version row (`claude-sonnet-5-5`) stands before its family row, and the first
+match wins. A bare alias (`fable`, `opus`, `sonnet`, `haiku`) is priced as the model the runner CLI
+resolves it to, so the alias moves to a new row together with the `CLAUDE_CLI_VERSION` pin of the LLM
+runner; the hints of `CLAUDE_MODELS` in `types.ts` change in the same step. With Claude Code 2.1.326 the
+aliases resolve to Fable 5.2, Opus 5.5, Sonnet 5.5 and Haiku 5.5 (2.1.274 gave Fable 5.1, Opus 5,
+Sonnet 5 and Haiku 4.5 and rejected `claude-opus-5-5` / `claude-fable-5-2`). `cacheWrite` is the 1-hour
+rate because Claude Code writes its prompt cache with the 1-hour TTL (checked against `total_cost_usd`
+of real turns). Only Haiku 5.5 has a long-prompt premium among Claude models (over 100K tokens,
+`contextTier: 'long'`); GPT-5.5 and GPT-5.4 have long-context rates above 272K input tokens. Codex
+models do not know their exact version, so a model check must read the turn metadata, not the answer.
