@@ -34,9 +34,15 @@ export function makeToolCaller(url: string, fetchImpl: typeof fetch = fetch): Ma
 
 /** Prompt section: the text protocol plus the current project files. Empty when Make is unreachable. */
 export async function makeTextFilesPrompt(call: MakeToolCall, readOnly: boolean): Promise<string> {
+  const context = await makeTextFilesContext(call, readOnly)
+  return context ? context.instructions + '\n' + context.files : ''
+}
+
+/** Keep the file snapshot as user data, separate from the trusted output protocol. */
+export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean): Promise<{ instructions: string; files: string } | null> {
   let listing: MakeToolResult
-  try { listing = await call('make_list_files', {}) } catch { return '' }
-  if (listing.isError) return ''
+  try { listing = await call('make_list_files', {}) } catch { return null }
+  if (listing.isError) return null
   const files = listing.text.split('\n').flatMap(line => {
     const match = /^(.+) \((\d+) байт\)$/u.exec(line.trim())
     return match ? [{ path: match[1]!, size: Number(match[2]) }] : []
@@ -61,11 +67,10 @@ export async function makeTextFilesPrompt(call: MakeToolCall, readOnly: boolean)
 </make-file>
 Чтобы удалить файл: <make-delete path="old.css"/>
 Сервер сам запишет блоки в проект, превью у пользователя обновится. Выводи только те файлы, которые меняешь. Вне блоков — короткое пояснение (1–3 предложения), код в нём не повторяй и не проси пользователя сохранять файлы вручную.`
-  return `## Мастерская Make: файлы через текст
+  return { instructions: `## Мастерская Make: файлы через текст
 Ты ассистент мастерской Make: пользователь описывает, что сделать, и видит превью проекта (статический сайт, точка входа — index.html). Инструменты mcp__make__* в этом режиме недоступны — не упоминай и не вызывай их.
-${rules}
-Текущие файлы проекта:
-${sections.length ? sections.join('\n') : '(проект пуст)'}`
+${rules}`, files: `Текущие файлы проекта:
+${sections.length ? sections.join('\n') : '(проект пуст)'}` }
 }
 
 export interface MakeFileBlocks {

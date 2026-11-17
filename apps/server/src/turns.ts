@@ -16,10 +16,10 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesPrompt, makeToolCaller } from './makeTextFiles.js'
+import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesContext, makeToolCaller } from './makeTextFiles.js'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
-import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
+import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, chatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
 import { type AgentPolicy } from '@sislexa/agent-contracts'
 import { isBigMakeRequest } from '@voicechat/make-contracts/make'
 import type { VoiceChatDb } from './db/database.js'
@@ -683,7 +683,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Хинт о формате уточняющих вопросов (```questions) — форма ответов в чате;
     // ```image — созданная картинка показывается прямо в сообщении.
     let kbContext: TurnRequestInfo['kbContext']
-    let basePrompt = sessionId
+    let conversationPrompt = sessionId
       ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths)
       : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths, conv?.summary?.text)
     // Режимы БЗ разговора (одно место на все три ветки):
@@ -705,6 +705,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
     }
     const workspaceMode = !deps.chatModelApi && isWorkspaceAssistantMode(conv?.assistantMode)
+    const textOnlyTurn = !workspaceMode || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation))
+    // Build Core instructions independently of the conversation for tool-free turns.
+    let basePrompt = textOnlyTurn ? '' : conversationPrompt
     const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
     // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
     const effectiveSkills = workspaceMode ? enabledContextSkills(conv?.skillNames ?? [], disabledContext) : []
@@ -834,7 +837,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           call: makeToolCaller(`${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}&note=${encodeURIComponent(req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80))}`, deps.makeToolFetch),
           live: makeFileStreamFilter() }
       : undefined
-    const makeTextBlock = makeText ? await makeTextFilesPrompt(makeText.call, makeText.readOnly) : ''
+    const makeTextContext = makeText ? await makeTextFilesContext(makeText.call, makeText.readOnly) : null
+    const makeTextBlock = makeTextContext?.instructions ?? ''
+    if (makeTextContext) conversationPrompt += `\n\n${makeTextContext.files}`
     const makeContextBlock = (workspaceMode || makeTextBlock) && !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
       ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
@@ -852,7 +857,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? await makeBrowserSession(deps.db, userId, conv, entitlements.capabilities)
       : null
     const makeBrowserBlock = makeBrowser ? makeBrowserPromptBlock(makeBrowser) : ''
-    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeTextBlock ? `\n\n${makeTextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
+    const instructionPrompt = textOnlyTurn && conversationPrompt.trim()
+      ? basePrompt + chatInstructionHints(instructions).map(hint => `\n\n${hint}`).join('')
+      : appendChatInstructionHints(basePrompt, instructions)
+    const promptBase = instructionPrompt + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeTextBlock ? `\n\n${makeTextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = workspaceMode && conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
@@ -1162,8 +1170,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const requestInfo: TurnRequestInfo = {
       provider,
       model,
-      prompt,
-      promptChars: prompt.length,
+      prompt: textOnlyTurn ? conversationPrompt + prompt : prompt,
+      promptChars: prompt.length + (textOnlyTurn ? conversationPrompt.length : 0),
       resumed: Boolean(sessionId),
       reasoningEffort,
       deepThinking,
@@ -1243,7 +1251,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(req.delegation ? { application: deps.delegation!.attribution(req.delegation), ...(ticketDelegated ? {} : { textOnly: true }) } : {}),
         ...(!workspaceMode || deps.chatTextOnly ? { textOnly: true } : {}),
         ...(workspaceMode && makeChat ? { toolOnly: true } : {}),
-        userId, prompt, sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
+        userId, prompt: textOnlyTurn ? conversationPrompt : prompt,
+        ...(textOnlyTurn && prompt ? { systemPrompt: prompt } : {}),
+        sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
         ...(!makeChat && attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),

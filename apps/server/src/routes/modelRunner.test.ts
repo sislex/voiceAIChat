@@ -39,7 +39,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   let release: (() => void) | undefined, hold: Promise<void> | undefined
   let stops = 0
   let busy = false
-  runner.get('/v1/health', async () => ({ ok: true, accountingVersion: 1, application: { version: '0.3.8' },
+  runner.get('/v1/health', async () => ({ ok: true, accountingVersion: 1, capabilities: { systemPrompt: true }, application: { version: '0.3.8' },
     bins: { codex: { present: true, version: null }, claude: { present: true, version: null } }, login: {}, runs: 0 }))
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
     receipts.get(req.params.id) ?? reply.code(404).send({ error: 'not_found' }))
@@ -92,15 +92,26 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
     hold() { hold = new Promise(resolve => { release = resolve }); return () => release?.() } }
 }
 
+it('rejects invalid system instructions before dispatch or billing', async () => {
+  const f = await fixture()
+  for (const systemPrompt of [null, 42, {}, 'x'.repeat(100_001)]) {
+    const res = await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run',
+      headers: f.headers, payload: { ...f.payload, systemPrompt } })
+    expect(res.statusCode).toBe(400)
+  }
+  expect(f.bodies).toHaveLength(0)
+})
+
 it('a second Core uses the first as its runner, with token profile and settled sid usage', async () => {
   const f = await fixture()
   const caller = new RemoteLlmClient({ kind: 'codex', baseUrl: f.url + '/api/model-runner', token: f.token })
   const result = await new Promise(resolve => caller.send({
-    prompt: 'hello', model: 'gpt-5.6-sol', sessionId: null, userId: 'victim',
+    prompt: 'hello', systemPrompt: 'Use questions blocks', model: 'gpt-5.6-sol', sessionId: null, userId: 'victim',
     remote: { mcpUrl: 'http://caller.invalid/mcp', agentName: 'caller' }, kbMcpUrl: 'http://caller.invalid/kb', cwd: '/secret'
   }, { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }))
   expect(result).toEqual({ text: 'Hello from production Core' })
   expect(f.bodies[0]).toMatchObject({ userId: 'admin', textOnly: true, executionDisabled: true })
+  expect(f.bodies[0]).toMatchObject({ prompt: 'hello', systemPrompt: 'Use questions blocks' })
   expect(f.bodies[0]).not.toHaveProperty('remote')
   expect(f.bodies[0]).not.toHaveProperty('kbMcpUrl')
   expect(f.bodies[0]).not.toHaveProperty('cwd')

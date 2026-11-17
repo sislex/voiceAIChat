@@ -15,6 +15,26 @@ it('health retains the model API base path and token', async () => {
   expect(await client.health('stand-user')).toEqual({ ok: true })
 })
 
+it.each([true, false, 'unavailable'])('negotiates system instructions without retrying a run (%s)', async support => {
+  const posts: RunnerRunBody[] = []
+  const client = new RemoteLlmClient({ kind: 'claude', baseUrl: 'https://core.test/api/model-runner', token: 'token',
+    fetchImpl: async (url, options) => {
+      if (String(url).endsWith('/v1/health')) {
+        expect(options?.headers).toMatchObject({ authorization: 'Bearer token' })
+        if (support === 'unavailable') throw Error('offline')
+        return Response.json(support ? { capabilities: { systemPrompt: true } } : { ok: true })
+      }
+      posts.push(JSON.parse(String(options?.body)))
+      return new Response(JSON.stringify({ t: 'exit', code: 0 }) + '\n')
+    } })
+  const collected = collect()
+  client.send({ prompt: 'User history', systemPrompt: '\n\nCore instructions', model: 'haiku', sessionId: null }, collected.handlers)
+  await collected.finished
+  expect(posts).toHaveLength(1)
+  expect(posts[0].prompt).toBe(support === true ? 'User history' : 'User history\n\nCore instructions')
+  expect(posts[0].systemPrompt).toBe(support === true ? '\n\nCore instructions' : undefined)
+})
+
 // --- фейковый исполнитель на 127.0.0.1 ------------------------------------
 
 interface FakeRunner {
