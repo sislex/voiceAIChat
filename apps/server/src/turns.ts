@@ -372,6 +372,8 @@ interface TurnState {
   /** Контекст хода — чтобы flushInterrupted мог сохранить прерванный ответ. */
   provider: 'claude' | 'codex'
   model: string
+  /** Real Claude model id from `system/init`; the alias stays in `model`. */
+  resolvedModel?: string
   startedAt: number
   requestInfo: TurnRequestInfo
   execTarget: string | null
@@ -1280,6 +1282,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         onInit: (info) => {
           initInfo = info
+          if (info.model) turn.resolvedModel = info.model
         },
         onDelta: async (delta) => {
           if (turn.done) return
@@ -1323,6 +1326,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
             model: resolvedModel,
+            // The alias above is what the user picked; this is the model that really answered.
+            // `modelUsage` of the result wins over `system/init` (set by the stream parser).
+            ...(provider === 'claude' && (meta?.resolvedModel ?? turn.resolvedModel)
+              ? { resolvedModel: meta?.resolvedModel ?? turn.resolvedModel } : {}),
             request: {
               ...requestInfo,
               model: resolvedModel,
@@ -1590,6 +1597,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
       model: turn.model,
+      ...(turn.resolvedModel ? { resolvedModel: turn.resolvedModel } : {}),
       interrupted: true,
       stopped: true,
       ...(deps.chatModelApi || turn.backgroundStop ? { costPending: true } : {}),
@@ -1756,6 +1764,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...turn.usage,
         durationMs: now() - turn.startedAt,
         model: turn.model,
+        ...(turn.resolvedModel ? { resolvedModel: turn.resolvedModel } : {}),
         interrupted: true,
         request: turn.requestInfo,
         ...(turn.activity.length ? { activity: turn.activity } : {})

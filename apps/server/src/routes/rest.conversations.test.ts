@@ -1371,6 +1371,46 @@ describe('REST: conversations/messages/settings', () => {
     expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: 'нет-такого' } })).statusCode).toBe(404)
   })
 
+  it('leaving Required restores a conversation with nothing disabled, like a fresh Chat', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Required and back' } })).json()
+    const toggle = (itemId: string, enabled: boolean) =>
+      inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${itemId}`, payload: { enabled } })
+    const stored = async (): Promise<string[]> =>
+      ((await inj({ method: 'GET', url: '/api/conversations' })).json() as Array<{ id: string; disabledContext?: string[] }>)
+        .find((entry) => entry.id === created.id)?.disabledContext ?? []
+    expect(await stored()).toEqual([])
+
+    // The client applies Required by disabling every configurable block and then setting the marker.
+    // Some of those blocks (MCP families, skills) are not listed by the Chat snapshot afterwards.
+    const blocks = ['personalization', 'knowledge-mode', 'mcp-kb-search', 'mcp-history', 'mcp-remote-bash', 'skill-review']
+    for (const itemId of blocks) expect((await toggle(itemId, false)).statusCode).toBe(200)
+    expect((await toggle('required-only', false)).statusCode).toBe(200)
+    expect((await stored()).sort()).toEqual([...blocks, 'required-only'].sort())
+
+    // Back to Chat: the client only removes the marker and re-enables what its snapshot lists.
+    const left = await toggle('required-only', true)
+    expect(left.statusCode).toBe(200)
+    expect(await stored()).toEqual([])
+    const stillDisabled = (left.json().groups as Array<{ items: Array<{ id: string; enabled: boolean }> }>)
+      .flatMap((group) => group.items).filter((item) => !item.enabled).map((item) => item.id)
+    expect(stillDisabled).toEqual([])
+  })
+
+  it('copying the context of a plain conversation into a Required one keeps exactly the source list', async () => {
+    const source = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Source' } })).json()
+    const target = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Required target' } })).json()
+    const toggle = (id: string, itemId: string) =>
+      inj({ method: 'POST', url: `/api/conversations/${id}/context/${itemId}`, payload: { enabled: false } })
+    await toggle(source.id, 'personalization')
+    for (const itemId of ['personalization', 'knowledge-mode', 'mcp-history', 'required-only']) await toggle(target.id, itemId)
+
+    const copied = await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: source.id } })
+    expect(copied.statusCode).toBe(200)
+    const list = ((await inj({ method: 'GET', url: '/api/conversations' })).json() as Array<{ id: string; disabledContext?: string[] }>)
+      .find((entry) => entry.id === target.id)?.disabledContext
+    expect(list).toEqual(['personalization'])
+  })
+
   it('снимок отдаёт имена вложений, историю размеров и оценку стоимости', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Размеры' } })).json()
     const turn = (chars: number, model: string, at: string) => inj({ method: 'POST', url: `/api/conversations/${created.id}/messages`, payload: {

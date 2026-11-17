@@ -65,7 +65,7 @@ describe('claudeModelAlias', () => {
     // Старые значения из БД (до перехода на алиасы) тоже понимаются.
     expect(claudeModelAlias('sonnet-4.5')).toBe('sonnet')
     expect(claudeModelAlias('opus-4.5')).toBe('opus[1m]')
-    // Неизвестное → пункт «Default (recommended)», модель выбирает сам CLI.
+    // Неизвестное → пункт «Default (Fable 5.2)», модель выбирает сам CLI.
     expect(claudeModelAlias('что-то')).toBe('default')
   })
 })

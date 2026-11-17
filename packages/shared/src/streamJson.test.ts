@@ -66,6 +66,17 @@ describe('parseStreamJsonLine', () => {
     expect(parseStreamJsonLine(line)).toEqual({ kind: 'ignore' })
   })
 
+  it.each([
+    ['a single main model', { 'claude-sonnet-5-5': {} }, 'claude-sonnet-5-5'],
+    ['a main model next to the Haiku helper', { 'claude-haiku-5-5': {}, 'claude-fable-5-2[1m]': {} }, 'claude-fable-5-2[1m]'],
+    ['only Haiku (helper or a Haiku turn: init decides)', { 'claude-haiku-5-5': {} }, undefined],
+    ['two main models', { 'claude-sonnet-5-5': {}, 'claude-opus-5-5': {} }, undefined],
+    ['no modelUsage', undefined, undefined]
+  ])('result reports the real model from modelUsage: %s', (_name, modelUsage, expected) => {
+    const ev = parseStreamJsonLine(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok', modelUsage }))
+    expect(ev && ev.kind === 'result' ? ev.meta.resolvedModel : 'not a result').toBe(expected)
+  })
+
   it('разбирает финальный result с текстом и session_id', () => {
     const line = JSON.stringify({
       type: 'result',

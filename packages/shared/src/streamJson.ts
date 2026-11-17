@@ -50,7 +50,21 @@ function parseTurnMeta(obj: Record<string, unknown>): TurnMeta {
   if (typeof obj.num_turns === 'number') meta.numTurns = obj.num_turns
   if (typeof obj.total_cost_usd === 'number') meta.costUsd = obj.total_cost_usd
   Object.assign(meta, parseUsage(obj.usage))
+  const resolved = soleMainModel(obj.modelUsage)
+  if (resolved) meta.resolvedModel = resolved
   return meta
+}
+
+/**
+ * The real model of the turn from the result's `modelUsage` (keyed by real model ids). The CLI
+ * runs its helper calls (titles, summaries) on Haiku, so Haiku keys are skipped; the answer is
+ * unambiguous only when exactly one other model remains. Otherwise the caller falls back to the
+ * model of `system/init`.
+ */
+function soleMainModel(modelUsage: unknown): string | undefined {
+  if (!modelUsage || typeof modelUsage !== 'object' || Array.isArray(modelUsage)) return undefined
+  const main = Object.keys(modelUsage).filter((id) => id && !/haiku/i.test(id))
+  return main.length === 1 ? main[0] : undefined
 }
 
 /** Достаёт счётчики токенов из usage-объекта API (снапшот одного сообщения). */

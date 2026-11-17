@@ -29,7 +29,8 @@ interface ModelPrice {
  * `cacheWrite` is the 1-hour rate: Claude Code writes its prompt cache with the 1-hour TTL.
  */
 const CLAUDE_PRICES: { match: RegExp; price: ModelPrice; long?: ModelPrice }[] = [
-  { match: /(fable|mythos)-5-2|^fable$/i, price: { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 16 } },
+  // The bare `default` alias resolves to Fable 5.2 in the current runner CLI.
+  { match: /(fable|mythos)-5-2|^fable$|^default$/i, price: { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 16 } },
   { match: /(fable|mythos)-5-1/i, price: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 20 } },
   { match: /fable|mythos/i, price: { input: 10, output: 50, cacheRead: 1, cacheWrite: 20 } },
   { match: /opus-5-5|^opus(\[1m\])?$/i, price: { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 8 } },

@@ -115,6 +115,8 @@ describe('current Claude and long-context OpenAI rates', () => {
     ['claude-fable-5-2', 8 + 40 + 0.2 + 16],
     ['claude-fable-5-1', 10 + 50 + 0.25 + 20],
     ['fable', 8 + 40 + 0.2 + 16],
+    // The bare `default` alias is Fable 5.2 in the current runner CLI.
+    ['default', 8 + 40 + 0.2 + 16],
     ['claude-fable-5', 10 + 50 + 1 + 20],
     ['claude-opus-5-5', 4 + 20 + 0.2 + 8],
     ['claude-opus-5[1m]', 5 + 25 + 0.5 + 10],
