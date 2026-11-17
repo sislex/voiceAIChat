@@ -105,7 +105,7 @@ function describeTransportError(kind: RunnerKind, url: string, err: unknown): st
   }
 }
 
-const CODEX_THREAD_IN_USE_MESSAGE =
+export const CODEX_THREAD_IN_USE_MESSAGE =
   'Этот Codex thread уже выполняется. Дождитесь завершения или остановите текущий ход либо сбросьте сессию.'
 
 function isCodexThreadInUse(status: number, body: string): boolean {

@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-14 | ✓ |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 66ec4973d chore: pin Make 1.8.21 packages (make-ui frontend without crypto.randomUUID on http) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-14 | ⚠ 5 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 66ec4973d chore: pin Make 1.8.21 packages (make-ui frontend without crypto.randomUUID on http) … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ✓ |
@@ -20,12 +20,12 @@
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
-| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-14 | ✓ |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-14 | ✓ |
+| [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released |
-| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-14 | ✓ |
+| [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-14 | ✓ |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-14 | ✓ |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-13 | ✓ |
 | [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ✓ |
@@ -37,19 +37,19 @@
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-11-14 | ✓ |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-11-13 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-11-14 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-11-14 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-11-17 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [modules.md](modules.md) | Module ownership map | 2026-11-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ✓ |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: cf240dc27 fix(model-api): finish a run after its caller left so the token slot is released … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 9 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-14 | ⚠ 10 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-13 | ✓ |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 6 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3475a8de1 fix(chat): do not touch chat storage for an answer without images |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
 
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1498. Последние:
+Всего записей: 1499. Последние:
 
+- [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md) — model-api-thread-busy-message
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-chat-plain-answer-storage-error.md) — chat-plain-answer-storage-error
 - [2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md](log/2026-11-16-alexeys-macbook-air-tailae39a6-ts-net-core-zombie-git-processes.md) — core-zombie-git-processes
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-start-without-models.md) — stand-start-without-models
@@ -76,7 +77,6 @@
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-model-api-kb-review.md) — stand-model-api-kb-review
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-stand-identity-prebuild.md) — stand-identity-prebuild
 - [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4.md) — release-train-e7555569-5dfd-48ed-b1e6-75f3b1a96be4
-- [2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md](log/2026-11-14-alexeys-macbook-air-tailae39a6-ts-net-release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd.md) — release-train-5436e4fd-d581-44d2-97a1-77ea3518b8cd
 
 ## Исторические планы
 
