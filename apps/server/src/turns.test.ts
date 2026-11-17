@@ -42,6 +42,40 @@ it('model API stands disable workspace MCP even when a conversation requests it'
   } finally { await db.close() }
 })
 
+it('model API stands carry Make files as text: project files go into the prompt and answer blocks are written', async () => {
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Site', 'make', null, 'make')
+    const calls: { url: string; name: string; args: Record<string, unknown> }[] = []
+    const makeToolFetch = (async (url: string, init: RequestInit) => {
+      const { params } = JSON.parse(String(init.body)) as { params: { name: string; arguments: Record<string, unknown> } }
+      calls.push({ url, name: params.name, args: params.arguments })
+      const text = params.name === 'make_list_files' ? 'index.html (12 байт)' : params.name === 'make_read_file' ? '<h1>Old</h1>' : 'Записано файлов: 1. Файлов в проекте: 1.'
+      return Response.json({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text }] } })
+    }) as typeof fetch
+    const reply = 'Готово.\n<make-file path="index.html">\n<h1>New</h1>\n</make-file>'
+    let request: LlmRequest | undefined
+    const claude: LlmClient = { send(req, h) { request = req; void h.onDelta(reply); void h.onDone(reply); return { cancel: () => {} } } }
+    const turns = createTurnManager({ db, claude, chatModelApi: true, makeMcpBaseUrl: 'http://stand/mcp/make?k=test', makeToolFetch })
+    const tokens: string[] = []
+    const done = new Promise<void>(resolve => turns.subscribe(message => {
+      if (message.t === 'claude.token') tokens.push(message.delta)
+      if (message.t === 'claude.done') resolve()
+    }))
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Сделай заголовок' }] })
+    await done
+    expect(request).toMatchObject({ textOnly: true, executionDisabled: true })
+    expect(request).not.toHaveProperty('makeMcpUrl', expect.anything())
+    expect(request!.prompt).toContain('<make-current-file path="index.html">\n<h1>Old</h1>\n</make-current-file>')
+    expect(tokens.join('')).toBe('Готово.\n\n📄 index.html…\n')
+    const write = calls.at(-1)!
+    expect(write).toMatchObject({ name: 'make_apply_changes', args: { files: [{ path: 'index.html', content: '<h1>New</h1>' }] } })
+    expect(write.url).toContain(`&conv=${conv.id}&turn=`)
+    expect(write.url).toContain('&note=' + encodeURIComponent('Сделай заголовок'))
+    expect((await db.chat.listMessages(U, conv.id)).at(-1)!.text).toBe('Готово.\n\nФайлы проекта обновлены: `index.html`.')
+  } finally { await db.close() }
+})
+
 it('refuses a client message id that is not stored in the conversation, before the model or the queue', async () => {
   const db = await freshDb()
   try {
