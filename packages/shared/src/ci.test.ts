@@ -299,8 +299,8 @@ describe('ciUsageTotals', () => {
 
   it('без стоимости от CLI считает оценку по прайсу и помечает итог', () => {
     const t = ciUsageTotals([row({ model: 'sonnet' })])
-    // sonnet: 100·3 + 200·15 + 300·0.3 + 400·3.75 за 1M токенов.
-    expect(t.costUsd).toBeCloseTo((100 * 3 + 200 * 15 + 300 * 0.3 + 400 * 3.75) / 1e6, 12)
+    // sonnet (Sonnet 5.5): 100·2 + 200·10 + 300·0.1 + 400·4 за 1M токенов.
+    expect(t.costUsd).toBeCloseTo((100 * 2 + 200 * 10 + 300 * 0.1 + 400 * 4) / 1_000_000, 12)
     expect(t.costEstimated).toBe(true)
   })
 
