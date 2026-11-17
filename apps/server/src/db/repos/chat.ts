@@ -370,7 +370,9 @@ export class ChatRepo extends BaseRepo {
     if (values.disabledContext !== undefined) {
       const disabled = values.disabledContext as string[]
       if (disabled.some(key => !isContextToggleable(key))) throw new InvalidChatSettings('Context item cannot be disabled')
-      for (const key of new Set([...(current.disabledContext ?? []), ...disabled])) {
+      // The Required marker goes first: removing it clears the whole list (see
+      // `setConversationContextEnabled`), and the wanted items are written after that.
+      for (const key of new Set([REQUIRED_ONLY_CONTEXT_ID, ...(current.disabledContext ?? []), ...disabled])) {
         await this.setConversationContextEnabled(userId, id, key, !disabled.includes(key))
       }
     }
@@ -923,6 +925,13 @@ export class ChatRepo extends BaseRepo {
     const was = !disabled.has(itemId)
     if (was === enabled) return conversation
     if (enabled) disabled.delete(itemId); else disabled.add(itemId)
+    // Leaving the built-in Required mode. While the marker is set no other item can be toggled
+    // (REST rejects it), so every other id in the list was written by applying Required itself.
+    // A client re-enables only the items its new snapshot lists, and the Chat snapshot lists
+    // fewer items than the Required one — the rest stayed disabled forever. The server owns
+    // the cleanup: without the marker the conversation is back to "nothing disabled", and a
+    // context preset chosen instead of Required writes its own list afterwards.
+    if (enabled && itemId === REQUIRED_ONLY_CONTEXT_ID) disabled.clear()
     // Набор system-инструкций и MCP фиксируется при старте Claude/Codex thread.
     // Без сброса resume продолжает старую сессию и реально сохраняет уже
     // выключенный инструмент — снимок обещает одно, а модель получает другое.

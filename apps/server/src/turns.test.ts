@@ -2346,6 +2346,95 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('saves the real Claude model next to the picked alias; Codex leaves it unset', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'resolved model')
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'claude', 'haiku')
+    const llm = controlled()
+    const done: Array<Record<string, unknown> | undefined> = []
+    const turns = createTurnManager({ db, claude: llm.client, codex: llm.client })
+    turns.subscribe((m) => { if (m.t === 'claude.done') done.push(m.message?.meta as Record<string, unknown> | undefined) })
+    const ask = async (text: string): Promise<void> => {
+      const message = await db.chat.addMessage(U, conversation.id, 'u1', text, '10:00')
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text }] })
+    }
+    const replies = async () => (await db.chat.listMessages(U, conversation.id)).filter((m) => m.role === 'ai').map((m) => m.meta)
+
+    // The init event names the model the alias resolved to.
+    await ask('One')
+    await llm.handlers[0]!.onSession('s-1')
+    llm.handlers[0]!.onInit?.({ model: 'claude-haiku-5-5' })
+    await llm.handlers[0]!.onDone('First', { inputTokens: 10 })
+    await turns.idle()
+    expect((await replies())[0]).toMatchObject({ model: 'haiku', resolvedModel: 'claude-haiku-5-5' })
+    expect(done[0]).toMatchObject({ model: 'haiku', resolvedModel: 'claude-haiku-5-5' })
+
+    // The result's modelUsage wins: a "haiku" turn answered and billed as Sonnet is visible.
+    await ask('Two')
+    await llm.handlers[1]!.onSession('s-2')
+    llm.handlers[1]!.onInit?.({ model: 'claude-haiku-5-5' })
+    await llm.handlers[1]!.onDone('Second', { inputTokens: 10, resolvedModel: 'claude-sonnet-5-5' })
+    await turns.idle()
+    expect((await replies())[1]).toMatchObject({ model: 'haiku', resolvedModel: 'claude-sonnet-5-5' })
+
+    // A stopped turn keeps what init reported.
+    await ask('Three')
+    await llm.handlers[2]!.onSession('s-3')
+    llm.handlers[2]!.onInit?.({ model: 'claude-haiku-5-5' })
+    await llm.handlers[2]!.onDelta('Partial')
+    await turns.cancel(conversation.id)
+    expect((await replies())[2]).toMatchObject({ model: 'haiku', resolvedModel: 'claude-haiku-5-5', stopped: true })
+
+    await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, 'codex', 'gpt-5.6-luna')
+    await ask('Four')
+    await llm.handlers[3]!.onSession('thread-1')
+    await llm.handlers[3]!.onDone('Fourth', { inputTokens: 10 })
+    await turns.idle()
+    const codexReply = (await replies())[3]!
+    expect(codexReply.model).toBe('gpt-5.6-luna')
+    expect(codexReply).not.toHaveProperty('resolvedModel')
+    db.close()
+  })
+
+  // Decision record (docs/kb/llm.md, "Provider switch and thread resume"): one conversation keeps one
+  // session slot. A Codex thread that missed a Claude turn must not be resumed — it would answer
+  // without that turn — so the turn after a provider switch starts a fresh thread from the full history.
+  it.each([
+    ['model API stand', true],
+    ['direct runner', false]
+  ])('a Codex turn after a Claude turn starts a fresh thread with the whole history (%s)', async (_name, chatModelApi) => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'alternating models')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client, codex: llm.client, chatModelApi })
+    let n = 0
+    const turn = async (provider: 'claude' | 'codex', model: string, text: string, sessionId: string, answer: string): Promise<LlmRequest> => {
+      await db.chat.setConversationExecTarget(U, conversation.id, undefined, undefined, undefined, provider, model)
+      const message = await db.chat.addMessage(U, conversation.id, 'u1', text, '10:00')
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text }] })
+      const index = n++
+      await llm.handlers[index]!.onSession(sessionId)
+      await llm.handlers[index]!.onDone(answer, { inputTokens: 10 })
+      await turns.idle()
+      return llm.requests[index]!
+    }
+    await turn('claude', 'haiku', 'Remember 61', 'claude-1', 'Haiku noted 61')
+    const luna = await turn('codex', 'gpt-5.6-luna', 'Add 1', 'thread-luna', 'Luna says 62')
+    expect(luna.sessionId ?? null).toBeNull()
+    expect(luna.prompt).toContain('Haiku noted 61')
+    await turn('claude', 'sonnet', 'Double it', 'claude-2', 'Sonnet says 124')
+    const terra = await turn('codex', 'gpt-5.6-terra', 'Subtract 4', 'thread-terra', 'Terra says 120')
+    // `thread-luna` never saw "Sonnet says 124": resuming it would lose that turn.
+    expect(terra.sessionId ?? null).toBeNull()
+    expect(terra.prompt).toContain('Luna says 62')
+    expect(terra.prompt).toContain('Sonnet says 124')
+    // Consecutive Codex turns do resume, also across Codex models.
+    const again = await turn('codex', 'gpt-5.6-luna', 'And now?', 'thread-terra', 'Still 120')
+    expect(again.sessionId).toBe('thread-terra')
+    expect(again.prompt).not.toContain('Sonnet says 124')
+    db.close()
+  })
+
   it('isLostCodexThread recognises only the missing rollout error', () => {
     expect(isLostCodexThread('Error: thread/resume: thread/resume failed: no rollout found for thread id abc (code -32600)')).toBe(true)
     expect(isLostCodexThread('runner failed')).toBe(false)

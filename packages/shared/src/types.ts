@@ -1012,7 +1012,7 @@ export interface MessageSearchResult {
 /**
  * Алиас модели Claude. В `claude --model` уходит именно алиас — конкретную
  * версию («latest») резолвит сам CLI, поэтому версии тут не фиксируем.
- * `default` — тот же пункт, что «Default (recommended)» в самом CLI: модель
+ * `default` — тот же пункт, что «Default (recommended)» в самом CLI (Claude Code 2.1.326 resolves it to Fable 5.2): модель
  * выбирает Claude Code. `opus[1m]` — суффикс окна 1M, который CLI понимает
  * наравне с голым алиасом.
  */
@@ -1033,7 +1033,7 @@ export interface ClaudeModelInfo {
  * меняется только резолв — правим подсказку здесь.
  */
 export const CLAUDE_MODELS: ClaudeModelInfo[] = [
-  { id: 'default', label: 'Default (recommended)' },
+  { id: 'default', label: 'Default (Fable 5.2)', hint: 'Fable 5.2' },
   { id: 'opus[1m]', label: 'Opus (1M context)', hint: 'Opus 5.5 with 1M context' },
   { id: 'fable', label: 'Fable', hint: 'Fable 5.2' },
   { id: 'sonnet', label: 'Sonnet', hint: 'Sonnet 5.5' },
@@ -1306,6 +1306,12 @@ export interface TurnMeta extends TurnUsage {
   costUsd?: number
   /** Модель, которой отправлен ход (алиас claude / id codex). */
   model?: string
+  /**
+   * Real model id that answered a Claude turn, as reported by the CLI stream (`system/init`,
+   * or the single non-helper key of the result's `modelUsage`). `model` keeps the picked alias,
+   * so the two together show when an alias was served by another model. Codex does not report it.
+   */
+  resolvedModel?: string
   /**
    * Cumulative thread totals reported by Codex `turn.completed` (whole thread,
    * not this turn). Kept so the next turn of the thread can be priced as the

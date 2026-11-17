@@ -1350,7 +1350,12 @@ export async function registerRest(
     if (!target || !source) return reply.code(404).send({ error: 'not found' })
     if (source.id === target.id) return reply.code(400).send({ error: 'Разговор-источник совпадает с текущим' })
     const wanted = new Set((source.disabledContext ?? []).filter(isContextToggleable))
-    const current = new Set((target.disabledContext ?? []).filter(isContextToggleable))
+    // Removing the Required marker clears every other disabled item of the target, so it is
+    // applied first and the remaining items are compared with the list left after it.
+    const leftRequired = !wanted.has(REQUIRED_ONLY_CONTEXT_ID) && target.disabledContext?.includes(REQUIRED_ONLY_CONTEXT_ID)
+      ? await db.chat.setConversationContextEnabled(userId, target.id, REQUIRED_ONLY_CONTEXT_ID, true, userId)
+      : null
+    const current = new Set(((leftRequired ?? target).disabledContext ?? []).filter(isContextToggleable))
     for (const itemId of new Set([...wanted, ...current])) {
       const shouldBeEnabled = !wanted.has(itemId)
       const enabledNow = !current.has(itemId)

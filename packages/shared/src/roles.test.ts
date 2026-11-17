@@ -80,8 +80,10 @@ describe('меню моделей Claude', () => {
   it('повторяет список CLI по порядку и id', () => {
     expect(CLAUDE_MODELS.map((m) => m.id)).toEqual(['default', 'opus[1m]', 'fable', 'sonnet', 'haiku'])
     expect(CLAUDE_MODELS.map((m) => m.label)).toEqual([
-      'Default (recommended)', 'Opus (1M context)', 'Fable', 'Sonnet', 'Haiku'
+      'Default (Fable 5.2)', 'Opus (1M context)', 'Fable', 'Sonnet', 'Haiku'
     ])
+    // `default` silently means the most expensive model, so the menu names it.
+    expect(CLAUDE_MODELS.find((m) => m.id === 'default')?.hint).toBe('Fable 5.2')
   })
 
   it('нормализует старые значения настроек в пункты меню', () => {

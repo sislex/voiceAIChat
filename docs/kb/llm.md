@@ -2,8 +2,8 @@
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
-updated: 2026-11-17
-checked: 3becc0737
+updated: 2026-11-18
+checked: 8ccf2a2f9
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -349,7 +349,7 @@ The preview gateway removes caller-supplied user identity, cwd, MCP configuratio
 `POST /api/prompt/suggest` удалена; старые `aiAssist*` поля настроек читаются
 совместимо, но раздел настроек, кнопка и клиентские actions помощника отсутствуют.
 `ConversationSettings` редактирует LLM-переопределение конкретного разговора на адресуемой вкладке `/chat/:id/settings/general`: общий `LlmSettingsEditor` показывает исполнитель, провайдер и модель, а `showEngine` сохраняет видимость селектора даже при пустом каталоге персональных engine. Изменение записывает `llmEngineId`, `llmProvider` и `llmModel` только в разговор. Сброс выключает override и при сохранении передаёт для всех трёх полей `null`; это возвращает динамическое наследование эффективных проектных/пользовательских настроек. Вкладка `/chat/:id/settings/context` содержит `ContextInspector`, а legacy `/chat/:id/context` заменяется этим каноническим адресом. У
-Claude это `default` («Default (recommended)» — модель выбирает сам CLI),
+Claude это `default` («Default (Fable 5.2)» — модель выбирает сам CLI; Claude Code 2.1.326 резолвит алиас в Fable 5.2, подсказка и цена в `pricing.ts` это повторяют),
 `opus[1m]` («Opus (1M context)»), `fable`, `sonnet`, `haiku`. У Codex актуальный каталог
 состоит из `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
 `gpt-5.5`; первый пункт является `DEFAULT_CODEX_MODEL`. Чистая проекция `chatModelMenu` считает чат
@@ -1242,3 +1242,39 @@ rate because Claude Code writes its prompt cache with the 1-hour TTL (checked ag
 of real turns). Only Haiku 5.5 has a long-prompt premium among Claude models (over 100K tokens,
 `contextTier: 'long'`); GPT-5.5 and GPT-5.4 have long-context rates above 272K input tokens. Codex
 models do not know their exact version, so a model check must read the turn metadata, not the answer.
+
+### Real model of a turn, `default` alias, Required exit, provider switch (2026-11-18)
+
+**Real model (`TurnMeta.resolvedModel`).** `meta.model` of a Claude turn is the alias the user picked
+(`haiku`, `sonnet`, `default`, `opus[1m]`, `fable`); the price estimate and other code rely on it. The
+model that really answered is saved separately as `resolvedModel`: `turns.ts` takes it from the
+`system/init` event (`ClaudeInitInfo.model`), and `parseTurnMeta` in `streamJson.ts` overrides it from
+the result's `modelUsage` when exactly one key remains after skipping Haiku (the CLI's helper model).
+A stopped or interrupted turn keeps the init value. Codex does not report a resolved model, so the
+field is absent there. The field travels with the message meta to every client; a mismatch between
+`model` and `resolvedModel` means an alias was served and billed as another model.
+
+**`default` alias.** `CLAUDE_MODELS` shows `default` as «Default (Fable 5.2)» with the hint `Fable 5.2`,
+and `CLAUDE_PRICES` prices the bare `default` like Fable 5.2. When the runner CLI changes what
+`default` resolves to, update the label, the hint and the price row together.
+
+**Leaving Required.** The client applies Required by disabling every configurable block one by one and
+then setting the `required-only` marker; on the way back it removes the marker and re-enables only the
+items of its new snapshot, which lists fewer items in Chat. The server therefore owns the cleanup:
+`setConversationContextEnabled` clears the whole disabled list when the marker is removed (while the
+marker is set no other item can be toggled, so the rest of the list belongs to Required). A preset
+chosen instead writes its own list afterwards; the chat-settings patch and `context-copy` apply the
+marker first for the same reason. A custom disabled list that existed before Required is not kept:
+the client overwrites it before the marker is set.
+
+**Provider switch and thread resume.** A conversation has one session slot (`claudeSessionId`, with a
+`claude:`/`codex:` prefix). Every turn writes its own session there, so a Codex turn that follows a
+Claude turn finds a foreign id, starts a fresh thread and gets the whole stored history as the prompt.
+This is identical on a model-API stand and with a direct runner (pinned by a test in `turns.test.ts`)
+and is intentional: the earlier Codex thread never saw the turns of the other provider, and resuming
+it would silently drop them from the model's context. Cached input seen on such a turn is the
+provider's prefix cache, not a resumed thread. Resuming would need a per-provider thread slot with a
+watermark of the last message the thread saw, a catch-up prompt for the missed turns, and
+invalidation at every place that resets the session (edit/delete, context toggles, summary reset,
+Stop on a model-API stand, lost thread); OpenAI's prompt cache is also per model, so switching between
+Codex models gains little. Consecutive Codex turns resume the thread, also across Codex models.
