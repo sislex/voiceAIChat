@@ -243,4 +243,27 @@ describe('синхронизация общей базовой ветки пер
       rmSync(root, { recursive: true, force: true })
     }
   })
+  it('reuses a fetch made less than two minutes ago and still heals the copy locally', () => {
+    const { root, seed, checkout, head, git } = seedSharedCheckout('vc-fetch-throttle-')
+    try {
+      expect(execSync(projectMainRefreshScript(checkout, 'main'), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })).toContain(`BASE_SHA=${head}`)
+      // origin moves on right after the first sync.
+      writeFileSync(join(seed, 'later.txt'), 'later')
+      git('-C', seed, 'add', '.')
+      git('-C', seed, 'commit', '-m', 'later')
+      git('-C', seed, 'push', 'origin', 'main')
+      const later = git('-C', seed, 'rev-parse', 'HEAD')
+      // A turn within the window does not go to the network, but a dirty copy is still stashed.
+      writeFileSync(join(checkout, 'scratch.txt'), 'left by a previous turn')
+      const second = execSync(projectMainRefreshScript(checkout, 'main'), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })
+      expect(second).toContain(`BASE_SHA=${head}`)
+      expect(second).toContain('AUTOHEAL=')
+      expect(git('-C', checkout, 'status', '--porcelain', '--untracked-files=all')).toBe('')
+      // Once the stamp is gone (or older than two minutes) the next turn fetches again.
+      rmSync(join(checkout, '.git', 'vc-autosync-fetch-main'))
+      expect(execSync(projectMainRefreshScript(checkout, 'main'), { shell: '/bin/sh', stdio: 'pipe', encoding: 'utf8' })).toContain(`BASE_SHA=${later}`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

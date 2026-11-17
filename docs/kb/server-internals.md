@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-17
-checked: 6850d93b1
+updated: 2026-11-18
+checked: 8ccf2a2f9
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1791,3 +1791,14 @@ only the registration message's optional `supervisor` to include `android`, beca
 the pinned `@sislexa/agent-contracts` archive predates that owner-side extension.
 The server consumes this widened `AgentToServer` type; the remaining owner protocol
 and the dev-process extensions keep their existing sources.
+
+### Project copy sync before a turn: the fetch is throttled (2026-11-18)
+
+`ensureProjectMainCurrent` (`server.ts`, script `projectMainRefreshScript`) runs on the project machine
+before every Workspace turn of a Git project. Its only network step, `git fetch origin <base>`, used
+to run on every turn; over a slow link it added 8–9 s to each answer (measured on production: two
+`/internal/kanban/exec-stream` calls of 6.3 s and 2.3 s inside one turn while the CLI itself took
+1.7 s). The script now keeps a stamp `<git-dir>/vc-autosync-fetch-<branch>` and reuses a fetch that
+succeeded less than two minutes ago. Everything local still runs on each turn: the status check,
+the automatic stash, the return to the base branch and the fast-forward to the already fetched ref.
+A copy without the remote ref always fetches.
