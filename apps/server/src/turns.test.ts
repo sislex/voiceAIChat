@@ -1,7 +1,7 @@
 import { parseChatModelPolicy } from './chatModelPolicy.js'
 import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
-import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread } from './turns.js'
+import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread, TOOL_FREE_TURN_HINT } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { imageBlock, parseApplications } from '@voicechat/shared'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
@@ -63,6 +63,8 @@ it('a text-only Claude turn never resumes a runner session and rebuilds the prom
     expect(rec.last()?.systemPrompt).toContain('```questions')
     expect(rec.last()?.systemPrompt).not.toContain('Remember 61')
     expect(rec.last()?.systemPrompt).not.toContain('Which number?')
+    // Without tools the model is told so, otherwise it answers with made-up tool calls.
+    expect(rec.last()?.systemPrompt).toContain(TOOL_FREE_TURN_HINT)
   } finally { await db.close() }
 })
 
@@ -92,6 +94,7 @@ it('model API stands carry Make files as text: project files go into the prompt 
     expect(request).not.toHaveProperty('makeMcpUrl', expect.anything())
     expect(request!.systemPrompt).toContain('<make-file path="css/app.css">')
     expect(request!.systemPrompt).not.toContain('<h1>Old</h1>')
+    expect(request!.systemPrompt).not.toContain(TOOL_FREE_TURN_HINT)
     expect(request!.prompt).toContain('<make-current-file path="index.html">\n<h1>Old</h1>\n</make-current-file>')
     expect(tokens.join('')).toBe('Готово.\n\n📄 index.html…\n')
     const write = calls.at(-1)!

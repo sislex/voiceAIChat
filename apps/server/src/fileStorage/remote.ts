@@ -66,12 +66,17 @@ export async function createRemoteStorageRuntime(config: FileStorageConfig, user
     // The service answers 413 as soon as a streamed body passes the quota and closes the socket, so
     // fetch fails without a response. Count what was sent to tell a quota refusal from an outage.
     let sentBytes = body instanceof Uint8Array ? body.byteLength : 0
+    // A failure of the source (for example the attachment size limit) also aborts fetch without a
+    // response; it must reach the caller as itself, not as a storage outage.
+    let sourceError: unknown
     const sent = body instanceof Uint8Array ? body : (async function* () {
-      for await (const chunk of body as AsyncIterable<Uint8Array>) { sentBytes += chunk.byteLength; yield chunk }
+      try { for await (const chunk of body as AsyncIterable<Uint8Array>) { sentBytes += chunk.byteLength; yield chunk } }
+      catch (error) { sourceError = error; throw error }
     })()
     let response: Response
     try { response=await call(u,query(STORAGE_REST.file(s),{path}),{method:'PUT',body:sent as never,duplex:'half',headers:{'content-type':options.mimeType ?? 'application/octet-stream',...(options.size===undefined?{}:{'content-length':String(options.size)}),...(options.ifMatch===undefined?{}:{'if-match':String(options.ifMatch)}),...(options.createOnly?{'if-none-match':'*'}:{})}} as RequestInit) }
     catch (error) {
+      if (sourceError) throw sourceError
       if (!(error instanceof StorageServiceError) || (error.code !== 'storage_unavailable' && error.code !== 'quota_exceeded')) throw error
       const usage = await json<{usedBytes:number;quotaBytes:number}>(u, STORAGE_REST.usage).catch(() => null)
       if (!usage) throw error

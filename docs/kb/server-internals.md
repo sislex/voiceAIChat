@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: e9d5ca5b1
+checked: 4cf5dea8a
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -261,6 +261,9 @@ paths are reserved in memory, because parallel upload bodies are streams), and
 conversation so the files stop counting against the quota. A storage failure is
 logged and never undoes the deletion. Older attachments keep their
 `<hash>/<name>` paths; an upload record stores the path, so both layouts resolve.
+Spaces left by earlier deletions are found by `orphanChatSpaces` and removed with
+`POST /api/admin/storage/orphan-chat-spaces` (admin; body `{ userId?, apply? }`,
+a dry run that only lists the spaces unless `apply` is `true`).
 
 Remote adapter (`fileStorage/remote.ts`): the user's `admin` role travels as
 `x-sislexa-role` (cluster and quota administration are authorized by the
@@ -270,11 +273,20 @@ and stays `storage_unavailable` otherwise; a failed preview falls back to the
 original for PNG/JPEG/WebP/GIF up to 2 MB and answers 501
 `preview_unavailable` for anything else.
 
+A chat attachment is limited to `MAX_CHAT_UPLOAD_BYTES` (32 MB; the 64 MB body
+limit of `POST /api/uploads` only covers base64 inflation). Every over-limit
+path answers 413 `file_too_large` with `limitBytes` (`uploadTooLarge` in
+`uploadBody.ts`). The limit is enforced inside the streamed body, so the remote
+adapter rethrows a failure of the source instead of reporting a storage outage.
+
 Tool-free turns (Chat, Required, `VC_CHAT_TEXT_ONLY`, a model API stand) cannot
 open attachment paths. `prompt/inlineAttachments.ts` puts UTF-8 text attachments
 (64 KB each, 200 KB per turn) into the prompt, lists images, binary and larger
 files with the reason they are unreadable, and the files are not sent to the
 executor at all. Make conversations keep their own attachment labels.
+The system part of such a turn starts with `TOOL_FREE_TURN_HINT` (`turns.ts`):
+no tools, files or shell, answer with text only. Without it a model asked for
+something only a tool could do printed made-up tool calls. Make turns are exempt.
 Image uploads additionally expose `thumbnailAvailable`; consumers construct the
 preview URL from the storage reference rather than routing preview bytes through
 the transient upload map.

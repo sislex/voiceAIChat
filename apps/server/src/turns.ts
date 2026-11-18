@@ -35,6 +35,12 @@ import { ACCOUNTING_PENDING_MESSAGE, type ChatAccounting } from './billing/chatA
 import type { LlmBillingSession } from '@voicechat/shared'
 import { THREAD_BUSY_MESSAGE } from './llm/sinks.js'
 
+/**
+ * Tool-free turns (Chat, Required, text-only deployments): without it a model asked for something
+ * only a tool could do answers with made-up tool calls instead of text.
+ */
+export const TOOL_FREE_TURN_HINT = 'В этом ходе у тебя нет инструментов, доступа к файлам и командной строке. Отвечай только текстом и не изображай вызовы инструментов (invoke, Bash, Read и подобные); если просьба требует инструмента — скажи об этом и ответь текстом, насколько возможно.'
+
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
@@ -717,7 +723,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const workspaceMode = !deps.chatModelApi && isWorkspaceAssistantMode(conv?.assistantMode)
     const textOnlyTurn = !workspaceMode || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation))
     // Build Core instructions independently of the conversation for tool-free turns.
-    let basePrompt = textOnlyTurn ? '' : conversationPrompt
+    let basePrompt = textOnlyTurn ? (conv?.assistantKind === 'make' ? '' : TOOL_FREE_TURN_HINT) : conversationPrompt
     const kbMode = workspaceMode && !disabledContext.has('knowledge-mode') ? (conv?.kbContextMode ?? 'auto') : 'off'
     // Chat намеренно не передаёт навыки: этот режим остаётся чистым диалогом.
     const effectiveSkills = workspaceMode ? enabledContextSkills(conv?.skillNames ?? [], disabledContext) : []
