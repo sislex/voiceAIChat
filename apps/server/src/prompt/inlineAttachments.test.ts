@@ -46,4 +46,16 @@ describe('inlineAttachmentsPrompt', () => {
     expect(prompt).toContain('больше лимита одного запроса (18.0 МБ)')
     expect(prompt).not.toContain('нужен режим Workspace')
   })
+
+  it('advises Workspace only where Workspace has tools', () => {
+    const files = [file('photo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2])), file('big.log', 'x'.repeat(INLINE_ATTACHMENT_FILE_BYTES + 1))]
+    const chosenMode = inlineAttachmentsPrompt(files, 'no-tools')
+    expect(chosenMode).toContain('нужен режим Workspace')
+    const server = inlineAttachmentsPrompt(files, 'server-no-tools')
+    expect(server).not.toContain('Workspace')
+    expect(server).toContain('на этом сервере чтение таких файлов недоступно')
+    expect(server).toContain('Не советуй сменить режим')
+    expect(server).toContain('- photo.png (7 Б): изображение; на этом сервере модель изображений не получает')
+    expect(server).toContain('- big.log (64.0 КБ): файл слишком большой для передачи текстом')
+  })
 })

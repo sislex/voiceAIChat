@@ -36,10 +36,15 @@ export function attachmentsExceedExecutorBudget(attachments: Pick<LlmAttachment,
 }
 
 /**
- * `oversize`: the turn has tools, but its attachments together are too large to be sent to the
- * executor, so they degrade to the same prompt form instead of failing the turn with HTTP 413.
+ * - `no-tools`: the user chose a mode without tools (Chat, Required) on a server that has Workspace;
+ * - `server-no-tools`: the server itself runs every turn without tools (text-only deployment, model
+ *   API stand), so advising «switch to Workspace» would be wrong — the turn may already be there;
+ * - `oversize`: the turn has tools, but its attachments together are too large to be sent to the
+ *   executor, so they degrade to the same prompt form instead of failing the turn with HTTP 413.
  */
-export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runnerName' | 'dataBase64'>[], mode: 'no-tools' | 'oversize' = 'no-tools'): string {
+export type InlineAttachmentsMode = 'no-tools' | 'server-no-tools' | 'oversize'
+
+export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runnerName' | 'dataBase64'>[], mode: InlineAttachmentsMode = 'no-tools'): string {
   if (!attachments.length) return ''
   let budget = INLINE_ATTACHMENT_TOTAL_BYTES
   const blocks: string[] = []
@@ -48,12 +53,12 @@ export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runner
     const bytes = Buffer.from(attachment.dataBase64, 'base64')
     const name = attachment.runnerName
     if (IMAGE_NAME.test(name) && !/\.svg$/i.test(name)) {
-      notes.push(`- ${name} (${size(bytes.byteLength)}): ${mode === 'oversize' ? 'изображение; не передано из-за общего размера вложений' : 'изображение; в этом режиме модель изображений не получает'}`)
+      notes.push(`- ${name} (${size(bytes.byteLength)}): ${mode === 'oversize' ? 'изображение; не передано из-за общего размера вложений' : mode === 'server-no-tools' ? 'изображение; на этом сервере модель изображений не получает' : 'изображение; в этом режиме модель изображений не получает'}`)
       continue
     }
     const text = bytes.byteLength <= INLINE_ATTACHMENT_FILE_BYTES && bytes.byteLength <= budget ? textOf(bytes) : null
     if (text === null) {
-      const reason = mode === 'oversize' ? 'не передан из-за общего размера вложений' : bytes.byteLength > INLINE_ATTACHMENT_FILE_BYTES || bytes.byteLength > budget ? 'файл слишком большой для этого режима' : 'двоичный файл'
+      const reason = mode === 'oversize' ? 'не передан из-за общего размера вложений' : bytes.byteLength > INLINE_ATTACHMENT_FILE_BYTES || bytes.byteLength > budget ? (mode === 'server-no-tools' ? 'файл слишком большой для передачи текстом' : 'файл слишком большой для этого режима') : 'двоичный файл'
       notes.push(`- ${name} (${size(bytes.byteLength)}): ${reason}`)
       continue
     }
@@ -66,9 +71,14 @@ export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runner
     parts.push(mode === 'oversize'
       ? `Приложены файлы, которые не переданы тебе: вместе вложения сообщения больше лимита одного запроса (${size(EXECUTOR_ATTACHMENT_BASE64_BUDGET / 4 * 3)}).\n${notes.join('\n')}\n` +
         'Не пытайся открыть эти файлы и не выдумывай их содержимое. Скажи пользователю, что вложения слишком велики, и попроси прислать их по частям или меньшего размера.'
-      : `Приложены файлы, содержимое которых в этом режиме недоступно:\n${notes.join('\n')}\n` +
-        'Инструментов для чтения файлов у тебя нет: не пытайся их открыть и не выдумывай содержимое. ' +
-        'Если без этих файлов ответить нельзя, скажи пользователю, что для работы с ними нужен режим Workspace.')
+      : mode === 'server-no-tools'
+        ? `Приложены файлы, содержимое которых на этом сервере недоступно:\n${notes.join('\n')}\n` +
+          'Инструментов для чтения файлов у тебя нет: не пытайся их открыть и не выдумывай содержимое. ' +
+          'Если без этих файлов ответить нельзя, скажи пользователю, что на этом сервере чтение таких файлов недоступно, ' +
+          'и предложи прислать содержимое текстом. Не советуй сменить режим.'
+        : `Приложены файлы, содержимое которых в этом режиме недоступно:\n${notes.join('\n')}\n` +
+          'Инструментов для чтения файлов у тебя нет: не пытайся их открыть и не выдумывай содержимое. ' +
+          'Если без этих файлов ответить нельзя, скажи пользователю, что для работы с ними нужен режим Workspace.')
   }
   return parts.join('\n\n')
 }

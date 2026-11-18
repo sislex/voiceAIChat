@@ -1,4 +1,5 @@
 import { buildUnixInstallScript } from '@sislexa/agent/installers'
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { readFileSync } from 'node:fs'
 // Беседы, сообщения, настройки и полнотекстовый поиск.
@@ -731,6 +732,58 @@ describe('REST: conversations/messages/settings', () => {
     const refused = await inj({ method: 'DELETE', url: `/api/uploads/${sent.id}` })
     expect(refused.statusCode).toBe(409)
     expect(refused.json().error).toBe('upload_in_use')
+  })
+
+  it('restores the draft of a conversation, drops upload records with the conversation and names a deleted conversation', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Черновик 2' } })).json()
+    const add = async (name: string) => (await inj({ method: 'POST', url: '/api/uploads',
+      payload: { name, dataBase64: Buffer.from('привет').toString('base64'), conversationId: c.id } })).json() as { id: string; path: string; name: string; mimeType: string; size: number }
+    const draft = await add('draft.txt')
+    const sent = await add('sent.txt')
+    await db.chat.addMessage(U, c.id, 'u1', 'с файлом', '10:00', undefined, undefined, undefined,
+      [{ uploadId: sent.id, path: sent.path, name: sent.name, mimeType: sent.mimeType, size: sent.size }])
+    expect((await app.inject({ method: 'GET', url: `/api/conversations/${c.id}/draft-uploads` })).statusCode).toBe(401)
+    const listed = (await inj({ method: 'GET', url: `/api/conversations/${c.id}/draft-uploads` })).json()
+    // Only the attachment no message uses yet belongs to the draft.
+    expect(listed.uploads).toEqual([{ id: draft.id, name: 'draft.txt', path: draft.path, mimeType: draft.mimeType, size: draft.size }])
+    await vi.waitFor(async () => expect((await db.chat.listUploadRecords()).length).toBe(2))
+
+    expect((await inj({ method: 'DELETE', url: `/api/conversations/${c.id}` })).json()).toEqual({ ok: true })
+    await vi.waitFor(async () => expect(await db.chat.listUploadRecords()).toEqual([]))
+    expect(existsSync(draft.path)).toBe(false)
+    expect(existsSync(sent.path)).toBe(false)
+
+    const gone = await inj({ method: 'GET', url: `/api/conversations/${c.id}/draft-uploads` })
+    expect(gone.statusCode).toBe(404)
+    const message = await inj({ method: 'POST', url: `/api/conversations/${c.id}/messages`, payload: { role: 'u1', text: 'в удалённую', time: '10:01' } })
+    expect(message.statusCode).toBe(404)
+    expect(message.json()).toEqual({ error: 'conversation_not_found', message: 'Беседа не найдена или удалена.' })
+  })
+
+  it('keeps binary bytes unchanged through every upload form', async () => {
+    // Every byte value, repeated: periodic binary content must survive JSON, raw and multipart bodies.
+    const source = Buffer.from(Array.from({ length: 4096 }, (_, index) => index % 256))
+    const boundary = '----probe'
+    const multipartBody = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="blue.png"\r\nContent-Type: image/png\r\n\r\n`),
+      source, Buffer.from(`\r\n--${boundary}--\r\n`)])
+    const forms = {
+      json: await inj({ method: 'POST', url: '/api/uploads', payload: { name: 'blue.png', dataBase64: source.toString('base64') } }),
+      raw: await inj({ method: 'POST', url: '/api/uploads?name=blue.png', headers: { 'content-type': 'image/png' }, payload: source }),
+      multipart: await inj({ method: 'POST', url: '/api/uploads', headers: { 'content-type': `multipart/form-data; boundary=${boundary}` }, payload: multipartBody })
+    }
+    for (const [form, res] of Object.entries(forms)) {
+      expect([form, res.statusCode]).toEqual([form, 200])
+      expect([form, readFileSync(res.json().path).equals(source)]).toEqual([form, true])
+    }
+  })
+
+  it('refuses an upload by its declared length before the body arrives and closes the connection', async () => {
+    const res = await inj({ method: 'POST', url: '/api/uploads?name=big.bin',
+      headers: { 'content-type': 'application/octet-stream', 'content-length': String(40 * 1024 * 1024) } })
+    expect(res.statusCode).toBe(413)
+    expect(res.json()).toMatchObject({ error: 'file_too_large', message: 'Файл больше допустимого размера вложения: 32 МБ', limitBytes: 32 * 1024 * 1024 })
+    expect(res.headers.connection).toBe('close')
   })
 
   it('rename и delete', async () => {

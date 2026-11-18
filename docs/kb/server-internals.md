@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: 27b045974
+checked: 164b15c80
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -395,8 +395,25 @@ attachments of abandoned drafts 30 s after start and then hourly: an upload olde
 uses is deleted from the chat space together with its record. Whether an upload is bound is derived from
 the messages at sweep time (queued turns, edits and branches included), not stored as a flag. Only files
 with an upload record are touched, so files put into a chat space through the storage panel are safe; a
-bound upload or one whose conversation is gone only loses its record. Machine and server uploads are
-reported but not deleted. Storage errors are logged and retried by the next sweep.
+upload whose conversation is gone only loses its record, a bound upload keeps it. Machine and server
+uploads are reported but not deleted. Storage errors are logged and retried by the next sweep.
+
+`GET /api/conversations/:id/draft-uploads` returns `{ uploads }` — the uploads of the conversation that no
+message uses yet (`conversationDraftUploads`), so the composer can restore a draft after a page reload.
+Deleting a conversation (`conversationDeleted` → `removeConversationUploads`) removes its upload records
+at once and, in the background, the files Core stored for them on the server or on a machine (5 s per
+machine call; an offline machine keeps the file). Only files with an upload record are removed; records of
+bound uploads are kept by the sweep for exactly this purpose.
+
+`POST /api/uploads` refuses a body whose declared `Content-Length` already exceeds the attachment limit
+in `onRequest` (`declaredUploadTooLarge`: 413 `file_too_large`, `connection: close`). Without the early
+refusal the server drains the whole oversized body before the client reads the answer. A message or a
+command addressed to a missing conversation answers `CONVERSATION_GONE` («Беседа не найдена или удалена.»):
+404 `conversation_not_found` on `POST /api/conversations/:id/messages`, `claude.error` over WebSocket.
+
+The note about unreadable attachments of a tool-free turn (`inlineAttachmentsPrompt`) depends on why the
+turn has no tools: `no-tools` (the user chose Chat or Required) may advise Workspace; `server-no-tools`
+(`VC_CHAT_TEXT_ONLY`, model API stand) says the server cannot read such files and forbids that advice.
 
 Turn attachments and the executor body: a turn with tools sends files inside the run request (runner body
 limit 32 MiB). When the attachments of a turn exceed `EXECUTOR_ATTACHMENT_BASE64_BUDGET` (24 MiB of

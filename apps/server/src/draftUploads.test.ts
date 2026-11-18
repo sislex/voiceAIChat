@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MessageAttachment } from '@voicechat/shared'
 import { VoiceChatDb } from './db/database.js'
-import { sweepDraftUploads } from './draftUploads.js'
+import { conversationDraftUploads, removeConversationUploads, sweepDraftUploads } from './draftUploads.js'
 import { UploadStore, type StoredUpload, type UploadPersistence } from './uploads.js'
 
 const HOUR = 60 * 60_000
@@ -62,13 +62,13 @@ describe('sweepDraftUploads', () => {
     expect(applied).toMatchObject({ applied: true, removed: 1, freedBytes: 100, failed: 0 })
     expect(deleted).toEqual(['space-c1/2026-11-18/abandoned.txt'])
     expect(uploads.get(abandoned.id)).toBeUndefined()
-    // A sent attachment keeps its file; only the record of the finished upload is dropped.
-    expect(uploads.get(sent.id)).toBeUndefined()
+    // A sent attachment keeps its file and its record: the record removes the file with the conversation.
+    expect(uploads.get(sent.id)).toBeDefined()
     expect(uploads.get(gone.id)).toBeUndefined()
     expect(uploads.get(fresh.id)).toBeDefined()
     // Files on the server or a machine keep the previous behaviour.
     expect(uploads.get(local.id)).toBeDefined()
-    await vi.waitFor(() => expect([...stored.keys()].sort()).toEqual([fresh.id, local.id].sort()))
+    await vi.waitFor(() => expect([...stored.keys()].sort()).toEqual([fresh.id, local.id, sent.id].sort()))
   })
 
   it('keeps the upload for the next sweep when storage fails and honours the owner filter and a custom age', async () => {
@@ -117,5 +117,45 @@ describe('upload records', () => {
       second.remove(kept.id)
       await vi.waitFor(async () => expect(await db.chat.listUploadRecords()).toHaveLength(0))
     } finally { await db.close() }
+  })
+
+  it('lists the draft of a conversation without sent attachments and without other owners or conversations', async () => {
+    const now = { value: 1_000_000_000_000 }
+    const { uploads, add } = setup(now)
+    const draft = add('draft.txt', 'c1')
+    const sent = add('sent.txt', 'c1')
+    add('other-conversation.txt', 'c2')
+    add('other-owner.txt', 'c1', 'stranger')
+    const deps = { uploads, conversationAttachments: async (): Promise<MessageAttachment[]> => [{ name: 'sent.txt', path: sent.path, uploadId: sent.id } as MessageAttachment] }
+    expect((await conversationDraftUploads(deps, 'owner', 'c1')).map(upload => upload.id)).toEqual([draft.id])
+    expect(await conversationDraftUploads(deps, 'owner', 'none')).toEqual([])
+  })
+
+  it('removes the records of a deleted conversation at once and its machine files without waiting for a broken machine', async () => {
+    const now = { value: 1_000_000_000_000 }
+    const { uploads, stored, add } = setup(now)
+    const inStorage = add('in-storage.txt', 'c1')
+    const onMachine = uploads.saveRemote('m.png', '/home/u/.voicechat_uploads/aa.png', 'machine-1', 10, 'image/png', 'owner')
+    onMachine.conversationId = 'c1'; uploads.track(onMachine)
+    const offline = uploads.saveRemote('o.png', '/home/u/.voicechat_uploads/bb.png', 'machine-2', 10, 'image/png', 'owner')
+    offline.conversationId = 'c1'; uploads.track(offline)
+    const local = uploads.save('local.txt', Buffer.from('x'), 'text/plain', 'owner')
+    local.conversationId = 'c1'; uploads.track(local)
+    const kept = add('kept.txt', 'c2')
+    const deletedOnMachine: string[] = []
+    const logged: string[] = []
+    const pending = removeConversationUploads({
+      uploads,
+      deleteMachineFile: async (agentId, path) => { if (agentId === 'machine-2') throw new Error('offline'); deletedOnMachine.push(`${agentId}:${path}`) },
+      log: message => logged.push(message)
+    }, 'owner', 'c1')
+    // Records are gone before any machine answered.
+    expect([inStorage, onMachine, offline, local].map(upload => uploads.get(upload.id))).toEqual([undefined, undefined, undefined, undefined])
+    expect(existsSync(local.path)).toBe(false)
+    expect(await pending).toEqual({ records: 4, machineFiles: 1, failed: 1 })
+    expect(deletedOnMachine).toEqual(['machine-1:/home/u/.voicechat_uploads/aa.png'])
+    expect(logged.join()).toContain('machine-2')
+    expect(uploads.get(kept.id)).toBeDefined()
+    await vi.waitFor(() => expect([...stored.keys()]).toEqual([kept.id]))
   })
 })

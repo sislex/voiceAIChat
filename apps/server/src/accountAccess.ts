@@ -63,6 +63,9 @@ export function registerAccountAccess(app: FastifyInstance, db: VoiceChatDb): vo
   })
 }
 
+/** A command or a message addressed to a conversation that is not there: deleted (often in another tab) or never the user's. */
+export const CONVERSATION_GONE = 'Беседа не найдена или удалена.'
+
 /** Cancellation stays available; new execution always uses the stored conversation kind. */
 export async function commandAccessError(db: VoiceChatDb, user: SessionUser, msg: ClientMessage): Promise<ServerMessage | null> {
   let capability: ProductCapability | null = null
@@ -72,7 +75,7 @@ export async function commandAccessError(db: VoiceChatDb, user: SessionUser, msg
   else if (msg.t === 'board.subscribe' || msg.t === 'ci.subscribe') capability = 'projects.use'
   else if (msg.t.startsWith('claude.') && 'conversationId' in msg && typeof msg.conversationId === 'string') {
     const conversation = await db.chat.getConversation(user.name, msg.conversationId)
-    if (!conversation) return { t: 'claude.error', conversationId: msg.conversationId, message: 'Разговор недоступен.' }
+    if (!conversation) return { t: 'claude.error', conversationId: msg.conversationId, message: CONVERSATION_GONE }
     if (conversation.tenantId && conversation.tenantId !== user.account?.tenantId) return { t: 'claude.error', conversationId: msg.conversationId, message: 'Разговор недоступен.' }
     if (msg.t === 'claude.send' || msg.t === 'claude.queue.now' || msg.t === 'claude.queue.edit') {
       capability = conversation.scope === 'kanban' && !hasProductCapability(user.account, 'projects.use') ? 'projects.use' : capabilityForConversation(conversation)
