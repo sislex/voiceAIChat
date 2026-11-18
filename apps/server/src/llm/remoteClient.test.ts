@@ -35,6 +35,25 @@ it.each([true, false, 'unavailable'])('negotiates system instructions without re
   expect(posts[0].systemPrompt).toBe(support === true ? '\n\nCore instructions' : undefined)
 })
 
+it('refuses an oversize run before dispatch and words an executor 413 the same way', async () => {
+  let posts = 0
+  const fetchImpl: typeof fetch = async () => { posts++; return new Response('{"code":"FST_ERR_CTP_BODY_TOO_LARGE"}', { status: 413 }) }
+  const attachment = { serverPath: '/tmp/a.bin', runnerName: 'a.bin', dataBase64: 'A'.repeat(3 * 1024 * 1024) }
+  const limited = collect()
+  new RemoteLlmClient({ kind: 'claude', baseUrl: 'https://core.test/api/model-runner', fetchImpl, maxBodyBytes: 1024 * 1024 })
+    .send({ prompt: 'q', model: 'haiku', sessionId: null, attachments: [attachment] }, limited.handlers)
+  await limited.finished
+  expect(posts).toBe(0)
+  expect(limited.events).toEqual([{ t: 'error', message: 'Вложения слишком велики для этого режима: 3,0 МБ при лимите 1,0 МБ. Уберите или уменьшите вложения и отправьте сообщение снова.' }])
+
+  const rejected = collect()
+  new RemoteLlmClient({ kind: 'claude', baseUrl: 'https://core.test/api/model-runner', fetchImpl })
+    .send({ prompt: 'q', model: 'haiku', sessionId: null }, rejected.handlers)
+  await rejected.finished
+  expect(posts).toBe(1)
+  expect((rejected.events[0] as { message: string }).message).toMatch(/^Запрос слишком велик для этого режима: 0,0 МБ\. Сократите сообщение/)
+})
+
 // --- фейковый исполнитель на 127.0.0.1 ------------------------------------
 
 interface FakeRunner {

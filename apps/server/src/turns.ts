@@ -2,7 +2,7 @@ import { effectiveCapabilities } from './deploymentApplications.js'
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
 import { conversationThreadCost, resetConversationThread, ThreadResetError } from './conversationThread.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
-import { inlineAttachmentsPrompt } from './prompt/inlineAttachments.js'
+import { attachmentsExceedExecutorBudget, inlineAttachmentsPrompt } from './prompt/inlineAttachments.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
@@ -688,10 +688,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const attachmentPaths = attachments.map((att) => att.serverPath)
     // A model without tools cannot open a path: its attachments travel as prompt text instead, and
     // the files themselves are not sent to the executor (a 1 MB file overflowed the model API body).
-    const inlineAttachments = conv?.assistantKind !== 'make' && (deps.chatModelApi || !isWorkspaceAssistantMode(conv?.assistantMode)
+    const toolFreeAttachments = conv?.assistantKind !== 'make' && (deps.chatModelApi || !isWorkspaceAssistantMode(conv?.assistantMode)
       || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation)))
+    // A turn with tools sends the files to the executor inside the request body. Attachments that
+    // do not fit there degrade to the prompt form instead of failing the turn with HTTP 413.
+    const oversizeAttachments = !toolFreeAttachments && conv?.assistantKind !== 'make' && attachmentsExceedExecutorBudget(attachments)
+    const inlineAttachments = toolFreeAttachments || oversizeAttachments
     const promptAttachmentPaths = inlineAttachments ? [] : attachmentPaths
-    const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments) : ''
+    const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments, oversizeAttachments ? 'oversize' : 'no-tools') : ''
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).

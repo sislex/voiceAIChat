@@ -718,8 +718,11 @@ describe('REST: conversations/messages/settings', () => {
     const add = async (name: string) => (await inj({ method: 'POST', url: '/api/uploads',
       payload: { name, dataBase64: Buffer.from('привет').toString('base64'), conversationId: c.id } })).json() as { id: string; path: string; name: string; mimeType: string; size: number }
     const draft = await add('draft.txt')
+    // The record is durable: a restarted Core still knows the draft attachment.
+    await vi.waitFor(async () => expect((await db.chat.listUploadRecords()).map(row => [row.id, row.userId, row.conversationId])).toEqual([[draft.id, U, c.id]]))
     expect((await app.inject({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).statusCode).toBe(401)
     expect((await inj({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).json()).toEqual({ ok: true })
+    await vi.waitFor(async () => expect(await db.chat.listUploadRecords()).toEqual([]))
     expect((await inj({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).statusCode).toBe(404)
 
     const sent = await add('sent.txt')

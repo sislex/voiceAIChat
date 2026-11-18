@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: ebe32ef2d
+checked: 27b045974
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -262,8 +262,10 @@ conversation so the files stop counting against the quota. A storage failure is
 logged and never undoes the deletion. Older attachments keep their
 `<hash>/<name>` paths; an upload record stores the path, so both layouts resolve.
 Spaces left by earlier deletions are found by `orphanChatSpaces` and removed with
-`POST /api/admin/storage/orphan-chat-spaces` (admin; body `{ userId?, apply? }`,
-a dry run that only lists the spaces unless `apply` is `true`).
+`POST /api/admin/storage/orphan-chat-spaces` (admin; body `{ userId?, apply?, draftMaxAgeMs? }`,
+a dry run that only lists the spaces unless `apply` is `true`). The answer also carries `draftUploads`:
+unbound attachment uploads of that user older than `draftMaxAgeMs` (default — the sweep threshold), removed
+with `apply`.
 
 Remote adapter (`fileStorage/remote.ts`): the user's `admin` role travels as
 `x-sislexa-role` (cluster and quota administration are authorized by the
@@ -384,9 +386,24 @@ The explicit host ports are:
 `DELETE /api/uploads/:id` removes an attachment that was taken out of an unsent draft: only the owner,
 and only while no message of the conversation (any state or branch, `conversationAttachments`) uses the
 file; otherwise 409 `upload_in_use`. A storage-backed upload deletes the file from the chat space, so the
-quota is released at once. Upload records live in memory: after a Core restart an abandoned draft file can
-only be removed through the «Файлы» panel or with the conversation. There is no sweep of unreferenced files,
-because a chat space may also hold files the user put there through the storage panel.
+quota is released at once.
+
+Records of conversation uploads are durable (`chat_uploads`, written by `UploadStore.track`, loaded at start
+by `hydrate`), so a draft attachment can be sent or removed after a Core restart. `draftUploads.ts` sweeps
+attachments of abandoned drafts 30 s after start and then hourly: an upload older than
+`VC_DRAFT_UPLOAD_MAX_AGE_HOURS` (default 24, `0` turns the sweep off) that no message of its conversation
+uses is deleted from the chat space together with its record. Whether an upload is bound is derived from
+the messages at sweep time (queued turns, edits and branches included), not stored as a flag. Only files
+with an upload record are touched, so files put into a chat space through the storage panel are safe; a
+bound upload or one whose conversation is gone only loses its record. Machine and server uploads are
+reported but not deleted. Storage errors are logged and retried by the next sweep.
+
+Turn attachments and the executor body: a turn with tools sends files inside the run request (runner body
+limit 32 MiB). When the attachments of a turn exceed `EXECUTOR_ATTACHMENT_BASE64_BUDGET` (24 MiB of
+base64) they degrade to the prompt form of tool-free turns (`inlineAttachmentsPrompt(…, 'oversize')`):
+small text files inline, the rest named with the reason. `RemoteLlmClient` refuses a body above
+`maxBodyBytes` before dispatch (30 MiB for a runner, just under 1 MiB for a model API stand) and words an
+executor 413 the same way («Вложения слишком велики для этого режима: X МБ при лимите Y МБ»).
 
 Automatic context injection (`buildKbAutoContext`, chat turns and CI runs) sets `KbView.lexicalOnly`
 and never calls the reranker: it is a separate model run of 3.5–5 s in front of every Workspace and

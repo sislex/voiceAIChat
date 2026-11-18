@@ -78,6 +78,8 @@ export interface ServerConfig {
   kbRoot: string
   /** CLI для выборочного semantic reranking; disabled оставляет чистый BM25. */
   kbRerankProvider: 'disabled' | 'claude' | 'codex'
+  /** Age after which the stored file of an unsent draft attachment is removed; 0 turns the sweep off. */
+  draftUploadMaxAgeMs?: number
   /** Студия картинок: встроенный модуль для dev/desktop или отдельный процесс. */
   imageStudioMode: 'embedded' | 'remote' | 'off'
   imageStudioUrl?: string
@@ -317,6 +319,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     kbOwnerModules: env.VC_KB_OWNER_MODULES === '1',
     kbRoot: env.VC_KB_ROOT ?? join(REPO_ROOT, 'docs/kb'),
     kbRerankProvider: env.VC_KB_RERANK_PROVIDER === 'disabled' || env.VC_KB_RERANK_PROVIDER === 'claude' ? env.VC_KB_RERANK_PROVIDER : 'codex',
+    draftUploadMaxAgeMs: env.VC_DRAFT_UPLOAD_MAX_AGE_HOURS !== undefined && Number.isFinite(Number(env.VC_DRAFT_UPLOAD_MAX_AGE_HOURS)) && Number(env.VC_DRAFT_UPLOAD_MAX_AGE_HOURS) >= 0
+      ? Math.round(Number(env.VC_DRAFT_UPLOAD_MAX_AGE_HOURS) * 60 * 60_000)
+      : undefined,
     mcpPublicBase: env.VC_MCP_PUBLIC_BASE,
     applicationFrontends: env.VC_APPLICATION_FRONTENDS ? JSON.parse(env.VC_APPLICATION_FRONTENDS) as Record<string, string> : undefined,
     applicationFrontendsOverride: env.NODE_ENV !== 'production' || env.VC_APPLICATION_FRONTENDS_OVERRIDE === '1',

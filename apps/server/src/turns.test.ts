@@ -1308,6 +1308,24 @@ describe('turns: вложения для удалённого исполните
     db.close()
   })
 
+  it('a turn with tools does not send attachments that exceed one executor request', async () => {
+    const db = new VoiceChatDb(':memory:')
+    await db.identity.createUser(U, '', 'admin')
+    const conv = await db.chat.createConversation(U, 'Чат')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, resolveUpload: (id) => id === 'a1'
+      ? { serverPath: '/srv/uploads/notes.txt', runnerName: 'notes.txt', dataBase64: Buffer.from('Кодовое слово: клён').toString('base64') }
+      : { serverPath: '/srv/uploads/archive.bin', runnerName: 'archive.bin', dataBase64: 'A'.repeat(24 * 1024 * 1024 + 4) } })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'разбери вложения' }], attachments: ['a1', 'a2'] })
+
+    const sent = rec.last()
+    expect(sent?.attachments).toBeUndefined()
+    expect(sent?.prompt).toContain('<attached-file name="notes.txt">\nКодовое слово: клён\n</attached-file>')
+    expect(sent?.prompt).toContain('- archive.bin (18.0 МБ): не передан из-за общего размера вложений')
+    expect(sent?.prompt).not.toContain('/srv/uploads/archive.bin')
+    db.close()
+  })
+
   it('принимает уже прочитанное с пользовательской машины вложение', async () => {
     const db = new VoiceChatDb(':memory:')
     await db.identity.createUser(U, '', 'admin')

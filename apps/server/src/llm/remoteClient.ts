@@ -34,11 +34,28 @@ export interface RemoteLlmClientOptions {
   connectTimeoutMs?: number
   /** Инъекция fetch (для тестов). */
   fetchImpl?: typeof fetch
+  /** Largest request body the executor accepts; a larger run is refused before it is sent. */
+  maxBodyBytes?: number
   /** Core's authenticated model API forwards the original wire frames. */
   onFrame?: (frame: import('./protocol.js').RunnerStreamEvent) => void
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 20_000
+/** The runner accepts bodies up to 32 MiB (llm-runner `bodyLimit`); the margin covers headers and re-encoding. */
+export const DEFAULT_RUN_BODY_LIMIT_BYTES = 30 * 1024 * 1024
+/** Core's model API run route keeps Fastify's default 1 MiB body limit. */
+export const MODEL_API_RUN_BODY_LIMIT_BYTES = 1024 * 1024 - 16 * 1024
+
+function megabytes(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',')
+}
+
+/** One wording for a refused oversize run: before dispatch (limit known) and for an executor 413. */
+export function runTooLargeMessage(bodyBytes: number, hasAttachments: boolean, limitBytes?: number): string {
+  const subject = hasAttachments ? 'Вложения слишком велики для этого режима' : 'Запрос слишком велик для этого режима'
+  const advice = hasAttachments ? 'Уберите или уменьшите вложения и отправьте сообщение снова.' : 'Сократите сообщение или начните новый тред.'
+  return `${subject}: ${megabytes(bodyBytes)} МБ${limitBytes ? ` при лимите ${megabytes(limitBytes)} МБ` : ''}. ${advice}`
+}
 
 function label(kind: RunnerKind): string {
   return kind === 'codex' ? 'Codex' : 'Claude'
@@ -236,6 +253,15 @@ export class RemoteLlmClient implements LlmClient {
         delete body.systemPrompt
       }
     }
+    const payload = JSON.stringify(body)
+    const payloadBytes = Buffer.byteLength(payload)
+    const hasAttachments = (req.attachments?.length ?? 0) > 0
+    const maxBodyBytes = this.opts.maxBodyBytes ?? DEFAULT_RUN_BODY_LIMIT_BYTES
+    if (payloadBytes > maxBodyBytes) {
+      // The executor would answer 413 after the whole body was uploaded; say why before sending.
+      sink.fail(runTooLargeMessage(payloadBytes, hasAttachments, maxBodyBytes))
+      return
+    }
     const connectTimeoutMs = this.opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     let timedOut = false
     const timer = setTimeout(() => {
@@ -248,7 +274,7 @@ export class RemoteLlmClient implements LlmClient {
       res = await fetchImpl(url, {
         method: 'POST',
         headers: this.headers({ 'content-type': 'application/json', accept: 'application/x-ndjson' }),
-        body: JSON.stringify(body),
+        body: payload,
         signal: abort.signal
       })
     } catch (err) {
@@ -265,7 +291,9 @@ export class RemoteLlmClient implements LlmClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      sink.fail(describeHttpError(this.opts.kind, url, res.status, text))
+      sink.fail(res.status === 413
+        ? runTooLargeMessage(payloadBytes, hasAttachments)
+        : describeHttpError(this.opts.kind, url, res.status, text))
       return
     }
     if (!res.body) {
