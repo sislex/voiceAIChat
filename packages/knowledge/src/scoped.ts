@@ -117,7 +117,7 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     const limit = Math.min(Math.max(request.limit ?? 20, 1), 50)
     const stored = await this.visibleStored(effective)
     const [usage, own] = await Promise.all([
-      this.usageIncluded(effective) ? this.base.search({ ...request, module: effective.module, limit }) : Promise.resolve([]),
+      this.usageIncluded(effective) ? this.base.search({ ...request, module: effective.module, limit }, effective) : Promise.resolve([]),
       // Stored articles are ranked lexically here; the shared reranker below
       // orders them together with the usage corpus in a single LLM call.
       stored.length ? searchDocuments(stored.map((item) => item.indexed), { ...request, limit }) : Promise.resolve([])
@@ -146,7 +146,7 @@ export class ScopedKnowledgeBase implements KnowledgeBaseService {
     // The usage corpus is already reranked by its own service. Without stored
     // articles there is nothing to fuse, so a second LLM call would only repeat
     // the same ordering at extra cost.
-    if (!this.reranker || !own.length || candidates.length < 2) return candidates.slice(0, limit)
+    if (!this.reranker || effective.lexicalOnly || !own.length || candidates.length < 2) return candidates.slice(0, limit)
     try {
       const ids = await this.reranker.rerank(
         request.query,

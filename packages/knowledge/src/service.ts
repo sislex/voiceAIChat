@@ -36,10 +36,10 @@ export class FileKnowledgeBaseService implements KnowledgeBaseService {
     return this.byId.get(`${module}:${path}`)?.document
       ?? this.documents.find(item => item.document.module === module && item.aliases.includes(path))?.document ?? null
   }
-  async search(request: KbSearchRequest): Promise<KbSearchResult[]> { return searchDocuments(this.documents, request, this.reranker) }
+  async search(request: KbSearchRequest, view?: KbView): Promise<KbSearchResult[]> { return searchDocuments(this.documents, request, view?.lexicalOnly ? undefined : this.reranker) }
   async context(query: string, budget = 3500, view?: KbView): Promise<KbContextBundle> {
     void budget
     const texts = new Map(this.documents.flatMap((item) => item.chunks.map((chunk) => [chunk.id, chunk.text] as const)))
-    return buildContext(query, await this.search({ query, limit: 8, module: view?.module }), async (result) => texts.get(result.chunkId))
+    return buildContext(query, await this.search({ query, limit: 8, module: view?.module }, view), async (result) => texts.get(result.chunkId))
   }
 }
