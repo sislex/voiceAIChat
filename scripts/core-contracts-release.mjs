@@ -23,7 +23,8 @@ const peerDependencies = {}
 // S4 adds compatible Identity and SDK APIs without changing the Shared contract.
 // Keep the accepted baseline in the lock and bound the newer consumer versions.
 const compatiblePeers = {
-  '@sislexa/identity': { locked: ['1.5.1', '1.5.2'], range: '>=1.4.2 <1.6.0' },
+  // 1.6.1 reviewed 2026-11-18: Shared imports from Identity are unchanged since the 0.1.49 archive.
+  '@sislexa/identity': { locked: ['1.5.1', '1.5.2', '1.6.1'], range: '>=1.4.2 <1.7.0' },
   '@sislexa/sdk': { locked: ['1.2.0'], range: '>=1.2.0 <1.4.0' }
 }
 for (const name of Object.keys(source.dependencies)) {
