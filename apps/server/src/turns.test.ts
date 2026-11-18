@@ -1286,6 +1286,25 @@ describe('turns: вложения для удалённого исполните
     db.close()
   })
 
+  it('a tool-free turn gets a text attachment inside the prompt and sends no file to the executor', async () => {
+    const db = new VoiceChatDb(':memory:')
+    await db.identity.createUser(U, '', 'admin')
+    const conv = await db.chat.createConversation(U, 'Чат')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, chatTextOnly: true, resolveUpload: (id) => id === 'a1'
+      ? { serverPath: 'storage:space/2026-11-18/notes.txt', runnerName: 'notes.txt', dataBase64: Buffer.from('Секретное слово: ромашка').toString('base64'), preserveServerPath: true }
+      : { serverPath: 'storage:space/2026-11-18/photo.png', runnerName: 'photo.png', dataBase64: Buffer.from([0x89, 0x50, 0, 1]).toString('base64'), preserveServerPath: true } })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'что в файле?' }], attachments: ['a1', 'a2'] })
+
+    const sent = rec.last()
+    expect(sent?.prompt).toContain('<attached-file name="notes.txt">\nСекретное слово: ромашка\n</attached-file>')
+    expect(sent?.prompt).toContain('- photo.png (4 Б): изображение')
+    expect(sent?.prompt).not.toContain('storage:space')
+    expect(sent?.prompt).not.toContain('прочитай их')
+    expect(sent?.attachments).toBeUndefined()
+    db.close()
+  })
+
   it('принимает уже прочитанное с пользовательской машины вложение', async () => {
     const db = new VoiceChatDb(':memory:')
     await db.identity.createUser(U, '', 'admin')

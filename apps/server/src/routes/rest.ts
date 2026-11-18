@@ -1,6 +1,7 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { effectiveCapabilities } from '../deploymentApplications.js'
 import { storageError } from '../fileStorage/routes.js'
+import { deleteChatSpaces, renameChatSpaces } from '../fileStorage/chatSpace.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
@@ -1524,7 +1525,11 @@ export async function registerRest(
       ) {
         return reply.code(403).send({ error: 'machine is not available for this conversation' })
       }
-      if (typeof req.body.title === 'string') await db.chat.renameConversation(userId, req.params.id, req.body.title)
+      if (typeof req.body.title === 'string') {
+        await db.chat.renameConversation(userId, req.params.id, req.body.title)
+        if (opts.fileStorage) await renameChatSpaces(opts.fileStorage, userId, req.params.id, req.body.title)
+          .catch(error => req.log.warn({ err: error, conversationId: req.params.id }, 'chat storage space was not renamed'))
+      }
       if (req.body.kbContextMode === 'auto' || req.body.kbContextMode === 'manual' || req.body.kbContextMode === 'off') await db.chat.setConversationKbContextMode(uid(req), req.params.id, req.body.kbContextMode)
       if (req.body.assistantMode === 'make' && current.assistantKind !== 'make') {
         return reply.code(400).send({ error: 'Make mode belongs to a Make conversation' })
@@ -1704,7 +1709,15 @@ export async function registerRest(
 
   app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
     try {
-      await db.chat.deleteConversation(uid(req), req.params.id)
+      const userId = uid(req)
+      const existed = opts.fileStorage ? await db.chat.getConversation(userId, req.params.id) : null
+      await db.chat.deleteConversation(userId, req.params.id)
+      // The conversation is gone for good, so its files must stop counting against the quota.
+      // A storage outage must not undo the deletion; the leftover space stays visible in «Файлы».
+      if (existed && opts.fileStorage) {
+        await deleteChatSpaces(opts.fileStorage, userId, req.params.id)
+          .catch(error => req.log.warn({ err: error, conversationId: req.params.id }, 'chat storage space was not removed with its conversation'))
+      }
       return { ok: true }
     } catch (err) {
       return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) })

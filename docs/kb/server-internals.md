@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: 264d4b6e6
+checked: e9d5ca5b1
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -252,6 +252,29 @@ transaction. Chat and Make project identities use the same uniquely indexed
 SQL mapping, while legacy duplicate spaces remain listable. See
 [idempotent spaces and cleanup](data-auth.md#idempotent-chat-and-make-spaces-sisl-808).
 The default backend remains `machine`.
+
+Chat space lifecycle (`fileStorage/chatSpace.ts`): the space title equals the
+conversation title (synced on upload and on rename), a new attachment is stored
+as `YYYY-MM-DD/<name>` with ` (2)`, ` (3)`… for a repeated name (recently issued
+paths are reserved in memory, because parallel upload bodies are streams), and
+`DELETE /api/conversations/:id` removes the owner's `chat` spaces of that
+conversation so the files stop counting against the quota. A storage failure is
+logged and never undoes the deletion. Older attachments keep their
+`<hash>/<name>` paths; an upload record stores the path, so both layouts resolve.
+
+Remote adapter (`fileStorage/remote.ts`): the user's `admin` role travels as
+`x-sislexa-role` (cluster and quota administration are authorized by the
+service); a streamed upload dropped by the service is reported as 413
+`quota_exceeded` with used/limit text when the sent bytes exceed the free quota,
+and stays `storage_unavailable` otherwise; a failed preview falls back to the
+original for PNG/JPEG/WebP/GIF up to 2 MB and answers 501
+`preview_unavailable` for anything else.
+
+Tool-free turns (Chat, Required, `VC_CHAT_TEXT_ONLY`, a model API stand) cannot
+open attachment paths. `prompt/inlineAttachments.ts` puts UTF-8 text attachments
+(64 KB each, 200 KB per turn) into the prompt, lists images, binary and larger
+files with the reason they are unreadable, and the files are not sent to the
+executor at all. Make conversations keep their own attachment labels.
 Image uploads additionally expose `thumbnailAvailable`; consumers construct the
 preview URL from the storage reference rather than routing preview bytes through
 the transient upload map.
