@@ -68,6 +68,24 @@ it('a model API stand keeps its own MCP tools while the provider relays them', a
   } finally { await db.close() }
 })
 
+it('a text-only model API stand keeps the Make text protocol even when the provider relays tools', async () => {
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Make', 'make', null, 'make')
+    const rec = recorder()
+    const makeToolFetch = vi.fn<typeof fetch>(async () => Response.json({ result: { content: [{ type: 'text', text: 'index.html (10 байт)' }] } }))
+    const turns = createTurnManager({ db, claude: rec.client, chatModelApi: true, chatTextOnly: true, modelApiTools: () => true,
+      makeMcpBaseUrl: 'http://stand/make?token=test', makeToolFetch })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+    await turns.idle()
+    expect(rec.last()).toMatchObject({ textOnly: true })
+    expect(rec.last()).not.toHaveProperty('makeMcpUrl', expect.anything())
+    expect(rec.last()).not.toHaveProperty('toolOnly', true)
+    // The project files travel as text: without that the model has neither tools nor files.
+    expect(makeToolFetch).toHaveBeenCalled()
+  } finally { await db.close() }
+})
+
 it('a text-only Claude turn never resumes a runner session and rebuilds the prompt from history', async () => {
   const db = await freshDb()
   try {

@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: a90c136b4
+checked: 78ca5de15
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -1330,3 +1330,7 @@ A failed Claude `result` event has no `result` text: `parseStreamJsonLine` takes
 `errors` list. Without it a missing `--resume` session surfaced as the bare «Claude вернул ошибку»
 and the lost-session retry of a model API application never matched. HTTP 429
 `concurrency_limit_exceeded` from a model API is shown as `MODEL_API_BUSY_MESSAGE`.
+
+A model API stand with `VC_CHAT_TEXT_ONLY=true` stays tool-free even when the provider relays tools:
+Make then keeps the text file protocol (`makeTextFiles.ts`). Before this the transit switched the text
+protocol off while text-only switched the tools off, so Make had neither.
