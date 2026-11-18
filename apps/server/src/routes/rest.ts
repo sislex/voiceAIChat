@@ -1,7 +1,7 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { effectiveCapabilities } from '../deploymentApplications.js'
 import { storageError } from '../fileStorage/routes.js'
-import { deleteChatSpaces, renameChatSpaces } from '../fileStorage/chatSpace.js'
+import { deleteChatSpaces, orphanChatSpaces, renameChatSpaces } from '../fileStorage/chatSpace.js'
 import { coldStartPrompt } from '../prompt/coldStart.js'
 import { INVALID_HISTORY_CURSOR, normalizeClaudeModel } from '@voicechat/shared'
 import { turnChatInstructions } from '../prompt/chatInstructionFilter.js'
@@ -1706,6 +1706,25 @@ export async function registerRest(
       return conversation
     }
   )
+
+  // Admin maintenance: chat spaces of conversations that no longer exist. A dry run unless `apply`.
+  app.post<{ Body: { userId?: string; apply?: boolean } }>('/api/admin/storage/orphan-chat-spaces', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden' })
+    if (!opts.fileStorage) return reply.code(404).send({ error: 'storage_disabled' })
+    const body = req.body ?? {}
+    if ((body.userId !== undefined && typeof body.userId !== 'string') || (body.apply !== undefined && typeof body.apply !== 'boolean')) return reply.code(400).send({ error: 'invalid request' })
+    const owner = body.userId?.trim() || uid(req)
+    try {
+      const orphans = await orphanChatSpaces(opts.fileStorage, owner, async id => Boolean(await db.chat.getConversation(owner, id)))
+      const removed: string[] = []
+      if (body.apply === true) for (const space of orphans) { await opts.fileStorage.deleteSpace(owner, space.id); removed.push(space.id) }
+      return {
+        userId: owner, applied: body.apply === true, removed: removed.length,
+        freedBytes: body.apply === true ? orphans.reduce((sum, space) => sum + space.usedBytes, 0) : 0,
+        spaces: orphans.map(space => ({ id: space.id, title: space.title, conversationId: space.ref, usedBytes: space.usedBytes, fileCount: space.fileCount }))
+      }
+    } catch (error) { return storageError(reply, error) }
+  })
 
   app.delete<{ Params: { id: string } }>('/api/conversations/:id', async (req, reply) => {
     try {

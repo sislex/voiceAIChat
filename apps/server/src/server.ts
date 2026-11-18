@@ -1395,7 +1395,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         .send({ error: 'upload_rate_limit', retryAfterSec: verdict.retryAfterSec })
     } }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const upload = await readUpload(req)
+      let upload: Awaited<ReturnType<typeof readUpload>>
+      try { upload = await readUpload(req) } catch (error) { return storageError(reply, error) as never }
       const { name, agentId: requestedAgentId, conversationId, mimeType } = upload.metadata
       const userId = uid(req)
       if (browserSessions.requests.has(req) && !conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
@@ -1423,7 +1424,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }
         } catch (error) { return storageError(reply, error) as never }
       }
-      const bytes = await bufferUpload(upload.bytes)
+      let bytes: Buffer
+      try { bytes = await bufferUpload(upload.bytes) } catch (error) { return storageError(reply, error) as never }
       let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
       if (conversationId) {
         try {

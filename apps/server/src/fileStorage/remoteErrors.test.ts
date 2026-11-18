@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { createRemoteStorageRuntime, withStorageTenant } from './remote.js'
+import { limitUpload } from '../uploadBody.js'
 
 let server: Server, root: string, runtime: Awaited<ReturnType<typeof createRemoteStorageRuntime>>
 let usage = { userId: 'alice', usedBytes: 0, quotaBytes: 100 * 1024 * 1024, fileCount: 0 }
@@ -45,6 +46,12 @@ it('keeps an outage an outage when the upload would have fit', async () => {
   usage = { ...usage, usedBytes: 0 }
   await expect(runtime.service.writeFile('alice', 'space', 'small.bin', Readable.from(chunks(2)), { createOnly: true }))
     .rejects.toMatchObject({ code: 'storage_unavailable' })
+})
+
+it('reports the attachment size limit instead of an outage when the source stops the stream', async () => {
+  usage = { ...usage, usedBytes: 0 }
+  await expect(runtime.service.writeFile('alice', 'space', 'huge.bin', limitUpload(chunks(2), 10), { createOnly: true }))
+    .rejects.toMatchObject({ code: 'file_too_large', statusCode: 413, details: { limitBytes: 10 } })
 })
 
 it('forwards the admin role so the service can authorize cluster requests', async () => {

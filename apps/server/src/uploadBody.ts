@@ -1,10 +1,15 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import multipart from '@fastify/multipart'
 import { Readable } from 'node:stream'
+import { StorageServiceError } from '../../../packages/file-storage/src/errors.js'
 import { CHAT_UPLOAD_METADATA_HEADERS, MAX_CHAT_UPLOAD_BYTES, type ChatUploadJsonRequest, type ChatUploadMetadata } from '@voicechat/shared/fileStorage'
 
 function bad(message: string, statusCode = 400): never {
   throw Object.assign(new Error(message), { statusCode })
+}
+/** One refusal for every way a chat attachment can exceed its limit, so the client can name the reason. */
+export function uploadTooLarge(limit = MAX_CHAT_UPLOAD_BYTES): never {
+  throw new StorageServiceError('file_too_large', `Файл больше допустимого размера вложения: ${Math.floor(limit / 1024 / 1024)} МБ`, { limitBytes: limit })
 }
 function multipartError(error: unknown): never {
   if (error instanceof Error && 'statusCode' in error) throw error
@@ -42,7 +47,7 @@ export async function readUpload(req: FastifyRequest): Promise<{
     source = (async function* () {
       try {
         yield* file.file
-        if (file.file.truncated) bad('too large', 413)
+        if (file.file.truncated) uploadTooLarge()
         // Finish parsing before the storage coordinator commits metadata.
         if (!(await parts.next()).done) bad('single file required')
       } catch (error) { multipartError(error) }
@@ -53,7 +58,7 @@ export async function readUpload(req: FastifyRequest): Promise<{
     let size = 0
     for await (const chunk of req.body as Readable) {
       size += chunk.length
-      if (size > 64 * 1024 * 1024) bad('too large', 413)
+      if (size > 64 * 1024 * 1024) uploadTooLarge()
       chunks.push(Buffer.from(chunk))
     }
     let body: ChatUploadJsonRequest
@@ -63,9 +68,11 @@ export async function readUpload(req: FastifyRequest): Promise<{
     if (typeof data !== 'string' || !data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data) || data.length % 4 !== 0) bad('invalid data')
     info = { ...body, name: body.name ?? 'file' }
     source = Buffer.from(data, 'base64')
-    if (source.byteLength > MAX_CHAT_UPLOAD_BYTES) bad('too large', 413)
+    if (source.byteLength > MAX_CHAT_UPLOAD_BYTES) uploadTooLarge()
   } else {
     info.mimeType ??= contentType
+    // A declared length over the limit is refused before a byte reaches the storage.
+    if (Number(req.headers['content-length']) > MAX_CHAT_UPLOAD_BYTES) uploadTooLarge()
     source = req.body as Readable ?? Readable.from([])
   }
   for (const key of Object.keys(CHAT_UPLOAD_METADATA_HEADERS) as Array<keyof ChatUploadMetadata>) {
@@ -79,7 +86,7 @@ export async function* limitUpload(source: AsyncIterable<Uint8Array> | Iterable<
   let size = 0
   for await (const chunk of source) {
     size += chunk.byteLength
-    if (size > limit) bad('too large', 413)
+    if (size > limit) uploadTooLarge(limit)
     yield chunk
   }
 }

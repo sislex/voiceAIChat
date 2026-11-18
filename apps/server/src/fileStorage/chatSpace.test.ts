@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
-import { chatSpaceTitle, chatUploadPath, deleteChatSpaces, openChatSpace, renameChatSpaces } from './chatSpace.js'
+import { chatSpaceTitle, chatUploadPath, deleteChatSpaces, openChatSpace, orphanChatSpaces, renameChatSpaces } from './chatSpace.js'
 
 const space = (id: string, over: Record<string, unknown> = {}) => ({ id, kind: 'chat', ownerId: 'u', title: 'Chat files', ref: 'c1', ...over })
 const storage = (over: Record<string, unknown>) => over as unknown as FileStorageService
@@ -40,5 +40,14 @@ describe('chat storage space', () => {
     expect(await chatUploadPath(service, 'u', 'sp-a', 'report.pdf', day)).toBe('2026-11-18/report (2).pdf')
     expect(await chatUploadPath(service, 'u', 'sp-a', 'a/b\\c', day)).toBe('2026-11-18/a_b_c')
     expect(await chatUploadPath(service, 'u', 'sp-b', 'notes.txt', day)).toBe('2026-11-18/notes.txt')
+  })
+
+  it('finds only the owner\'s chat spaces whose conversation is gone', async () => {
+    const listSpaces = async () => [
+      space('live', { ref: 'c1' }), space('gone', { ref: 'c2' }), space('foreign', { ref: 'c3', ownerId: 'other' }),
+      space('personal', { kind: 'personal', ref: null }), space('make', { kind: 'make-project', ref: 'c4' })
+    ]
+    const orphans = await orphanChatSpaces(storage({ listSpaces }), 'u', async id => id === 'c1')
+    expect(orphans.map(item => item.id)).toEqual(['gone'])
   })
 })

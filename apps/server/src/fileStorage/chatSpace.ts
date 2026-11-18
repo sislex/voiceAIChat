@@ -35,6 +35,19 @@ export async function deleteChatSpaces(storage: FileStorageService, userId: stri
   return spaces.length
 }
 
+/**
+ * Chat spaces whose conversation no longer exists: left behind by deletions made before spaces
+ * were removed with their conversation, or by a storage outage during a deletion.
+ */
+export async function orphanChatSpaces(storage: FileStorageService, userId: string, conversationExists: (conversationId: string) => Promise<boolean>): Promise<StorageSpace[]> {
+  const orphans: StorageSpace[] = []
+  for (const space of await storage.listSpaces(userId)) {
+    if (space.kind !== 'chat' || space.ownerId !== userId || !space.ref) continue
+    if (!await conversationExists(space.ref)) orphans.push(space)
+  }
+  return orphans
+}
+
 const reserved = new Map<string, number>()
 const RESERVE_MS = 10 * 60_000
 
