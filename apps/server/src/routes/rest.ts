@@ -1712,6 +1712,20 @@ export async function registerRest(
     }
   )
 
+  // The tool transit right of a model API token (sid of its Identity session). Identity knows only
+  // the access class of a token, so the right lives in Core and is granted explicitly by an admin.
+  app.get<{ Params: { sid: string } }>('/api/admin/model-tokens/:sid/tool-transit', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden' })
+    return { sid: req.params.sid, enabled: await db.llm.modelTokenToolTransit(req.params.sid) }
+  })
+  app.put<{ Params: { sid: string }; Body: { enabled?: unknown } }>('/api/admin/model-tokens/:sid/tool-transit', async (req, reply) => {
+    if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden' })
+    const sid = req.params.sid
+    if (!/^[A-Za-z0-9_.:-]{6,128}$/.test(sid) || typeof req.body?.enabled !== 'boolean') return reply.code(400).send({ error: 'invalid_request' })
+    await db.llm.setModelTokenToolTransit(sid, req.body.enabled, uid(req))
+    return { sid, enabled: req.body.enabled }
+  })
+
   // Admin maintenance: chat spaces of conversations that no longer exist. A dry run unless `apply`.
   app.post<{ Body: { userId?: string; apply?: boolean; draftMaxAgeMs?: number } }>('/api/admin/storage/orphan-chat-spaces', async (req, reply) => {
     if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden' })

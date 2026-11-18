@@ -131,6 +131,10 @@ function describeTransportError(kind: RunnerKind, url: string, err: unknown): st
 export const TOOL_TRANSIT_UNAVAILABLE_MESSAGE =
   'Канал инструментов к поставщику моделей недоступен: ход не запущен. Повторите запрос через несколько секунд.'
 
+/** The provider's administrator has not granted this token the tool transit right. */
+export const TOOL_TRANSIT_DENIED_MESSAGE =
+  'У токена моделей нет права на инструменты у поставщика: ход не запущен. Попросите администратора поставщика выдать право или отключите инструменты.'
+
 export const CODEX_THREAD_IN_USE_MESSAGE =
   'Этот Codex thread уже выполняется. Дождитесь завершения или остановите текущий ход либо сбросьте сессию.'
 
@@ -153,6 +157,7 @@ function isCodexThreadInUse(status: number, body: string): boolean {
 function describeHttpError(kind: RunnerKind, url: string, status: number, body: string): string {
   if (kind === 'codex' && isCodexThreadInUse(status, body)) return CODEX_THREAD_IN_USE_MESSAGE
   if (status === 409 && body.includes('tool_transit_unavailable')) return TOOL_TRANSIT_UNAVAILABLE_MESSAGE
+  if (status === 403 && body.includes('tool_transit_denied')) return TOOL_TRANSIT_DENIED_MESSAGE
   const snippet = body.trim().slice(0, 300)
   if (status === 401 || status === 403) {
     return (

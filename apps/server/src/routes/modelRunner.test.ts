@@ -305,10 +305,13 @@ async function applicationTools() {
   cleanup.push(() => tools.close())
   return { url, seen }
 }
+/** The administrator grant every transit test starts from; tests of the refusal skip it. */
+const grantTransit = (f: { db: VoiceChatDb; token: string }) => f.db.llm.setModelTokenToolTransit(verifyToken(f.token, 'secret')!.sid!, true, 'admin')
 const transitPath = (address: string | undefined) => { const url = new URL(address!); return url.pathname + url.search }
 
 it('relays the runner\'s tool calls back to the application that declared them', async () => {
   const f = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  await grantTransit(f)
   const tools = await applicationTools()
   const health = await f.app.inject({ url: '/api/model-runner/v1/health', headers: f.headers })
   expect(health.json().capabilities).toMatchObject({ toolTransit: true })
@@ -377,6 +380,7 @@ it('refuses declared tools without a live transit and stays text-only when the f
   expect(off.bodies[0]).not.toHaveProperty('kbMcpUrl')
 
   const on = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  await grantTransit(on)
   // A real address instead of a placeholder is never accepted: the provider calls nothing a caller names.
   const direct = await on.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: on.headers,
     payload: { ...on.payload, transit: { id: 'x' }, kbMcpUrl: 'http://169.254.169.254/latest' } })
@@ -386,8 +390,42 @@ it('refuses declared tools without a live transit and stays text-only when the f
   expect(on.bodies).toHaveLength(0)
 })
 
+it('keeps the transit closed for a model token without the administrator grant', async () => {
+  const f = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  // Not announced, so an application stays text-only without an error for its user.
+  expect((await f.app.inject({ url: '/api/model-runner/v1/health', headers: f.headers })).json().capabilities).not.toHaveProperty('toolTransit')
+  const transit = new ToolTransitClient({ baseUrl: f.url + '/api/model-runner', token: f.token, reconnectMs: 50 })
+  transit.start()
+  cleanup.push(() => transit.stop())
+  await new Promise(resolve => setTimeout(resolve, 200))
+  expect(transit.available()).toBe(false)
+  const declared = { ...f.payload, transit: { id: 'x' }, kbMcpUrl: 'transit:AAAAAAAAAAAAAAAAAAAAAAAA' }
+  const refused = await f.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: f.headers, payload: declared })
+  expect(refused.statusCode).toBe(403)
+  expect(refused.json()).toEqual({ error: 'tool_transit_denied' })
+  expect(f.bodies).toHaveLength(0)
+  const caller = new RemoteLlmClient({ kind: 'codex', baseUrl: f.url + '/api/model-runner', token: f.token, transit })
+  const result = await new Promise(resolve => caller.send({ prompt: 'hello', model: 'gpt-5.6-sol', sessionId: null, kbMcpUrl: 'http://127.0.0.1:9/kb' },
+    { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }))
+  expect(result).toEqual({ text: 'Hello from production Core' })
+  expect(f.bodies[0]).toMatchObject({ textOnly: true })
+
+  // The grant is explicit and revocable; only an administrator session may change it.
+  const sid = verifyToken(f.token, 'secret')!.sid!
+  expect((await f.app.inject({ method: 'PUT', url: `/api/admin/model-tokens/${sid}/tool-transit`, headers: f.headers, payload: { enabled: 'yes' } })).statusCode).toBe(400)
+  const granted = await f.app.inject({ method: 'PUT', url: `/api/admin/model-tokens/${sid}/tool-transit`, headers: f.headers, payload: { enabled: true } })
+  expect(granted.json()).toEqual({ sid, enabled: true })
+  expect((await f.app.inject({ url: `/api/admin/model-tokens/${sid}/tool-transit`, headers: f.headers })).json()).toEqual({ sid, enabled: true })
+  expect(await f.db.llm.modelTokenToolTransit(sid)).toBe(true)
+  await vi.waitFor(() => expect(transit.available()).toBe(true))
+  expect((await f.app.inject({ url: '/api/model-runner/v1/health', headers: f.headers })).json().capabilities).toMatchObject({ toolTransit: true })
+  await f.db.llm.setModelTokenToolTransit(sid, false, 'admin')
+  expect(await f.db.llm.modelTokenToolTransit(sid)).toBe(false)
+})
+
 it('fails a relayed call when the application disconnects instead of hanging the run', async () => {
   const f = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  await grantTransit(f)
   const tools = await applicationTools()
   const transit = new ToolTransitClient({ baseUrl: f.url + '/api/model-runner', token: f.token, reconnectMs: 10_000 })
   transit.start()

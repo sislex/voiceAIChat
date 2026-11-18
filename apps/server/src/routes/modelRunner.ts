@@ -25,6 +25,8 @@ interface Options {
   requestsPerMinute?: number
   /** Tool transit of applications; absent — the model API stays text-only. */
   transit?: ToolTransitHub
+  /** The separate right of a token to use the tool transit; absent — every model token may. */
+  transitAllowed?(sid: string): Promise<boolean>
 }
 const positive = (value: number | undefined, fallback: number) =>
   Number.isSafeInteger(value) && value! > 0 ? value! : fallback
@@ -47,7 +49,10 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       try { return client instanceof RemoteLlmClient ? await client.health(req.user!.name) : undefined } catch { return undefined }
     }
     const [claude, codex] = await Promise.all([health('claude'), health('codex')])
-    return { capabilities: { systemPrompt: true, ...(opts.transit ? { toolTransit: true } : {}) }, ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
+    const sid = opts.token(req)?.sid
+    // Announced only to a token that holds the right: others keep the text-only behaviour.
+    const toolTransit = !!opts.transit && !!sid && (await opts.transitAllowed?.(sid).catch(() => false) ?? true)
+    return { capabilities: { systemPrompt: true, ...(toolTransit ? { toolTransit: true } : {}) }, ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
       bins: { claude: claude?.bins?.claude ?? { present: false, version: null }, codex: codex?.bins?.codex ?? { present: false, version: null } },
       login: { claude: claude?.login?.claude ?? { loggedIn: false }, codex: codex?.login?.codex ?? { loggedIn: false } },
       runs: [...active.values()].filter(run => run.sid === opts.token(req)?.sid).length }
@@ -96,6 +101,9 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
     const declared = body.transit === undefined ? undefined : transitRequest(body)
     const transitId = (body.transit as { id?: unknown } | undefined)?.id
     if (body.transit !== undefined && (!declared || typeof transitId !== 'string')) return reply.code(400).send({ error: 'invalid_request' })
+    if (declared && opts.transit && opts.transitAllowed && !await opts.transitAllowed(token.sid).catch(() => false)) {
+      return reply.code(403).send({ error: 'tool_transit_denied' })
+    }
     const transit = declared ? opts.transit?.open(token.sid, transitId as string, declared.slots) ?? null : undefined
     if (transit === null) return reply.code(409).send({ error: 'tool_transit_unavailable' })
     // Reserve the token slot before any asynchronous policy or Billing work.

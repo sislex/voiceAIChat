@@ -39,6 +39,18 @@ export class LlmRepo extends BaseRepo {
     }
   }
 
+  /** Whether an administrator allowed this model API token to relay tool calls (tool transit). */
+  async modelTokenToolTransit(sid: string): Promise<boolean> {
+    const row = await this.sql.get('SELECT tool_transit FROM model_token_grants WHERE sid = ?', [sid]) as { tool_transit: number } | undefined
+    return Number(row?.tool_transit ?? 0) === 1
+  }
+
+  async setModelTokenToolTransit(sid: string, enabled: boolean, grantedBy: string): Promise<void> {
+    if (!enabled) { await this.sql.run('DELETE FROM model_token_grants WHERE sid = ?', [sid]); return }
+    await this.sql.run(`INSERT INTO model_token_grants (sid, tool_transit, granted_by, granted_at) VALUES (?, 1, ?, ?)
+      ON CONFLICT(sid) DO UPDATE SET tool_transit = 1, granted_by = excluded.granted_by, granted_at = excluded.granted_at`, [sid, grantedBy, Date.now()])
+  }
+
   async listLlmEngines(): Promise<AdminLlmEngine[]> {
     const rows = (await this.sql.all(`SELECT * FROM llm_engines ORDER BY kind ASC, is_default DESC, created_at ASC`)) as LlmEngineRow[]
     return rows.map((row) => this.mapLlmEngine(row))
