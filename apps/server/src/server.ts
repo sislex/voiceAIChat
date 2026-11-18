@@ -149,6 +149,10 @@ import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
+import { MODEL_TOOL_TRANSIT_LIMITS } from '@voicechat/shared'
+import { ToolTransitHub } from './llm/toolTransit.js'
+import { registerToolTransit } from './llm/toolTransitRoutes.js'
+import { ToolTransitClient } from './llm/toolTransitClient.js'
 import { RemoteLlmClient, MODEL_API_RUN_BODY_LIMIT_BYTES } from './llm/remoteClient.js'
 import { RunnerFsClient } from './llm/runnerFsClient.js'
 // CLI spawning and profiles belong to the independent LLM Runner. Core
@@ -892,9 +896,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       )
     }
   })
+  // A model API stand keeps its own tools: the provider relays the runner's MCP calls back over
+  // this outgoing connection. An older provider refuses the upgrade and the stand stays text-only.
+  const toolTransitClient = opts.config.chatModelApi && opts.config.llmRunnerClaudeUrl && !opts.claude
+    ? new ToolTransitClient({
+        baseUrl: opts.config.llmRunnerClaudeUrl,
+        ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
+        log: (event) => app.log.info({ event })
+      })
+    : undefined
+  if (toolTransitClient) {
+    toolTransitClient.start()
+    app.addHook('onClose', async () => toolTransitClient.stop())
+  }
   // Core orchestrates HTTP clients; CLI profiles and spawning belong to the runner.
   const runner = async (kind: 'claude' | 'codex', baseUrl: string): Promise<LlmClient> =>
     new RemoteLlmClient({
+      ...(toolTransitClient ? { transit: toolTransitClient } : {}),
       kind,
       baseUrl,
       ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
@@ -1764,13 +1782,29 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accountingTimer.unref()
     void reconcile()
   }
+  const toolTransitHub = opts.config.modelApiToolTransit
+    ? new ToolTransitHub(opts.config.mcpPublicBase ?? `http://127.0.0.1:${opts.config.port}`)
+    : undefined
+  if (toolTransitHub) {
+    registerToolTransit(app, {
+      hub: toolTransitHub,
+      requestBytes: MODEL_TOOL_TRANSIT_LIMITS.requestBytes,
+      authorize: async (req) => {
+        const verdict = await modelTokens.authenticate(req)
+        if (!verdict.ok || !verdict.user.account?.capabilities.includes('chat.use') || verdict.user.role === 'observer') return undefined
+        return modelTokens.token(req)
+      }
+    })
+  }
   registerModelRunner(app, { db, token: modelTokens.token, accounting, store: accountingStore, sessions: billingSessions,
+    ...(toolTransitHub ? { transit: toolTransitHub } : {}),
     claude, codex, chatModels: opts.config.chatModels,
     concurrency: opts.config.modelApiConcurrency,
     requestsPerMinute: opts.config.modelApiRequestsPerMinute })
   const turnManager = createTurnManager({
     chatTextOnly: opts.config.chatTextOnly,
     chatModelApi: opts.config.chatModelApi,
+    ...(toolTransitClient ? { modelApiTools: () => toolTransitClient.available() } : {}),
     chatModels: opts.config.chatModels,
     deployment,
     delegation,

@@ -43,6 +43,31 @@ it('model API stands disable workspace MCP even when a conversation requests it'
   } finally { await db.close() }
 })
 
+it('a model API stand keeps its own MCP tools while the provider relays them', async () => {
+  const db = await freshDb()
+  try {
+    const conv = await db.chat.createConversation(U, 'Workspace', 'make', null, 'make')
+    await db.chat.setConversationAssistantMode(U, conv.id, 'workspace')
+    const rec = recorder()
+    let relayed = true
+    const makeToolFetch = vi.fn<typeof fetch>()
+    const turns = createTurnManager({ db, claude: rec.client, chatModelApi: true, modelApiTools: () => relayed,
+      makeMcpBaseUrl: 'http://stand/make?token=test', kbMcpBaseUrl: 'http://stand/kb?token=test', makeToolFetch })
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Hello' }] })
+    await turns.idle()
+    // The stand's own endpoints go on the wire; the transit client replaces them with placeholders.
+    expect(rec.last()).toMatchObject({ toolOnly: true, makeMcpUrl: expect.stringContaining('http://stand/make?token=test') })
+    expect(rec.last()).not.toHaveProperty('textOnly', true)
+    // The text protocol for Make files belongs to the tool-free stand only.
+    expect(makeToolFetch).not.toHaveBeenCalled()
+    relayed = false
+    await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Again' }] })
+    await turns.idle()
+    expect(rec.last()).toMatchObject({ textOnly: true, executionDisabled: true })
+    expect(rec.last()).not.toHaveProperty('makeMcpUrl', expect.anything())
+  } finally { await db.close() }
+})
+
 it('a text-only Claude turn never resumes a runner session and rebuilds the prompt from history', async () => {
   const db = await freshDb()
   try {

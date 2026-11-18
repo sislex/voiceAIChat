@@ -12,6 +12,7 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { RemoteLlmClient } from '../llm/remoteClient.js'
 import { modelTokenAuthority } from '../auth/modelTokens.js'
+import { ToolTransitClient } from '../llm/toolTransitClient.js'
 
 const cleanup: Array<() => unknown | Promise<unknown>> = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
@@ -39,6 +40,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   let release: (() => void) | undefined, hold: Promise<void> | undefined
   let stops = 0
   let busy = false
+  let onRun: ((body: LlmRunBody) => Promise<void>) | undefined
   runner.get('/v1/health', async () => ({ ok: true, accountingVersion: 1, capabilities: { systemPrompt: true }, application: { version: '0.3.8' },
     bins: { codex: { present: true, version: null }, claude: { present: true, version: null } }, login: {}, runs: 0 }))
   runner.get<{ Params: { id: string } }>('/v1/execution-receipts/:id', async (req, reply) =>
@@ -60,6 +62,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
     bodies.push(req.body)
     if (busy) return reply.code(409).send({ error: 'codex_thread_in_use' })
     await hold
+    await onRun?.(req.body)
     finish(req.body)
     return reply.type('application/x-ndjson').send([
       { t: 'out', s: JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Hello from production Core' } }) },
@@ -89,6 +92,7 @@ async function fixture(env: NodeJS.ProcessEnv = {}) {
   return { app, url, headers, token, payload, db, ledger, bodies,
     get stops() { return stops },
     busy() { busy = true },
+    onRun(fn: (body: LlmRunBody) => Promise<void>) { onRun = fn },
     hold() { hold = new Promise(resolve => { release = resolve }); return () => release?.() } }
 }
 
@@ -279,4 +283,126 @@ it('enforces verified models scope globally, including public routes and wrong t
   expect((await app.inject({ url: '/api/model-runner/v1/health', headers: { authorization: 'Bearer models' } })).statusCode).toBe(403)
   access = 'full'
   expect((await app.inject({ url: '/api/conversations', headers: { authorization: 'Bearer full' } })).statusCode).toBe(200)
+})
+
+/** A local MCP-like endpoint of the calling application: JSON on `/kb`, an event stream on `/remote`. */
+async function applicationTools() {
+  const tools = Fastify({ forceCloseConnections: true })
+  const seen: { url: string; body: unknown; session?: string }[] = []
+  tools.post('/kb', async (req, reply) => {
+    seen.push({ url: req.url, body: req.body, session: req.headers['mcp-session-id'] as string | undefined })
+    return reply.header('mcp-session-id', 's-1').send({ jsonrpc: '2.0', id: 1, result: { from: 'application' } })
+  })
+  tools.post('/remote', async (req, reply) => {
+    seen.push({ url: req.url, body: req.body })
+    reply.hijack()
+    reply.raw.writeHead(200, { 'content-type': 'text/event-stream' })
+    reply.raw.write('data: one\n\n')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    reply.raw.end('data: two\n\n')
+  })
+  const url = await tools.listen({ port: 0, host: '127.0.0.1' })
+  cleanup.push(() => tools.close())
+  return { url, seen }
+}
+const transitPath = (address: string | undefined) => { const url = new URL(address!); return url.pathname + url.search }
+
+it('relays the runner\'s tool calls back to the application that declared them', async () => {
+  const f = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  const tools = await applicationTools()
+  const health = await f.app.inject({ url: '/api/model-runner/v1/health', headers: f.headers })
+  expect(health.json().capabilities).toMatchObject({ toolTransit: true })
+  const transit = new ToolTransitClient({ baseUrl: f.url + '/api/model-runner', token: f.token, reconnectMs: 50 })
+  transit.start()
+  cleanup.push(() => transit.stop())
+  await vi.waitFor(() => expect(transit.available()).toBe(true))
+  const calls: Record<string, unknown> = {}
+  f.onRun(async body => {
+    const kb = await fetch(f.url + transitPath(body.kbMcpUrl), { method: 'POST',
+      headers: { 'content-type': 'application/json', 'mcp-session-id': 'client-7', 'x-private': 'never-forwarded' }, body: JSON.stringify({ method: 'tools/call' }) })
+    calls.kb = { status: kb.status, session: kb.headers.get('mcp-session-id'), body: await kb.json() }
+    const remote = await fetch(f.url + transitPath(body.remote?.mcpUrl), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    calls.remote = { status: remote.status, type: remote.headers.get('content-type'), body: await remote.text() }
+    // An address the application did not declare for this run resolves nowhere.
+    const foreign = body.kbMcpUrl!.replace(/[^/]+$/, 'AAAAAAAAAAAAAAAAAAAAAAAA')
+    calls.foreign = (await fetch(f.url + transitPath(foreign), { method: 'POST', body: '{}' })).status
+  })
+  const caller = new RemoteLlmClient({ kind: 'codex', baseUrl: f.url + '/api/model-runner', token: f.token, transit })
+  const result = await new Promise(resolve => caller.send({
+    prompt: 'hello', model: 'gpt-5.6-sol', sessionId: null, permissionMode: 'bypassPermissions', cwd: '/secret',
+    attachments: [{ serverPath: '/tmp/a.txt', name: 'a.txt', contentBase64: 'YQ==' }] as never,
+    kbMcpUrl: tools.url + '/kb?k=application-secret&turn=1', kbMode: 'manual',
+    remote: { mcpUrl: tools.url + '/remote?agent=a&k=application-secret&make=1', agentName: 'Stand machine' }
+  }, { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }))
+  expect(result).toEqual({ text: 'Hello from production Core' })
+  const body = f.bodies[0]!
+  // The provider adds nothing of its own and gives the runner no built-in tool.
+  expect(body).toMatchObject({ toolOnly: true, kbMode: 'manual', permissionMode: 'bypassPermissions', remote: { agentName: 'Stand machine' } })
+  expect(body).not.toHaveProperty('textOnly')
+  expect(body).not.toHaveProperty('attachments')
+  expect(body).not.toHaveProperty('cwd')
+  expect(body).not.toHaveProperty('transit')
+  expect(body.kbMcpUrl).toMatch(/\/mcp\/transit\/[\w-]{16,}\/[\w-]{8,}$/)
+  expect(body.remote!.mcpUrl).toMatch(/\/mcp\/transit\/[\w-]{16,}\/[\w-]{8,}\?make=1$/)
+  expect(JSON.stringify(body)).not.toContain('application-secret')
+  expect(calls.kb).toEqual({ status: 200, session: 's-1', body: { jsonrpc: '2.0', id: 1, result: { from: 'application' } } })
+  expect(calls.remote).toEqual({ status: 200, type: 'text/event-stream', body: 'data: one\n\ndata: two\n\n' })
+  expect(calls.foreign).toBe(404)
+  expect(tools.seen).toEqual([
+    { url: '/kb?k=application-secret&turn=1', body: { method: 'tools/call' }, session: 'client-7' },
+    { url: '/remote?agent=a&k=application-secret&make=1', body: {} }
+  ])
+  // The addresses live exactly as long as the run.
+  await vi.waitFor(async () => expect((await fetch(f.url + transitPath(body.kbMcpUrl), { method: 'POST', body: '{}' })).status).toBe(404))
+})
+
+it('refuses declared tools without a live transit and stays text-only when the flag is off', async () => {
+  const off = await fixture()
+  expect((await off.app.inject({ url: '/api/model-runner/v1/health', headers: off.headers })).json().capabilities).not.toHaveProperty('toolTransit')
+  const declared = { ...off.payload, transit: { id: 'missing' }, kbMcpUrl: 'transit:AAAAAAAAAAAAAAAAAAAAAAAA' }
+  const refused = await off.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: off.headers, payload: declared })
+  expect(refused.statusCode).toBe(409)
+  expect(refused.json()).toEqual({ error: 'tool_transit_unavailable' })
+  // An older stand that knows nothing about the transit keeps its text-only runs.
+  const transit = new ToolTransitClient({ baseUrl: off.url + '/api/model-runner', token: off.token, reconnectMs: 10_000 })
+  transit.start()
+  cleanup.push(() => transit.stop())
+  await new Promise(resolve => setTimeout(resolve, 150))
+  expect(transit.available()).toBe(false)
+  const caller = new RemoteLlmClient({ kind: 'codex', baseUrl: off.url + '/api/model-runner', token: off.token, transit })
+  const result = await new Promise(resolve => caller.send({ prompt: 'hello', model: 'gpt-5.6-sol', sessionId: null, kbMcpUrl: 'http://127.0.0.1:9/kb' },
+    { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }))
+  expect(result).toEqual({ text: 'Hello from production Core' })
+  expect(off.bodies[0]).toMatchObject({ textOnly: true, executionDisabled: true })
+  expect(off.bodies[0]).not.toHaveProperty('kbMcpUrl')
+
+  const on = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  // A real address instead of a placeholder is never accepted: the provider calls nothing a caller names.
+  const direct = await on.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: on.headers,
+    payload: { ...on.payload, transit: { id: 'x' }, kbMcpUrl: 'http://169.254.169.254/latest' } })
+  expect(direct.statusCode).toBe(400)
+  const unknown = await on.app.inject({ method: 'POST', url: '/api/model-runner/v1/run', headers: on.headers, payload: declared })
+  expect(unknown.statusCode).toBe(409)
+  expect(on.bodies).toHaveLength(0)
+})
+
+it('fails a relayed call when the application disconnects instead of hanging the run', async () => {
+  const f = await fixture({ VC_MODEL_API_TOOL_TRANSIT: 'true' })
+  const tools = await applicationTools()
+  const transit = new ToolTransitClient({ baseUrl: f.url + '/api/model-runner', token: f.token, reconnectMs: 10_000 })
+  transit.start()
+  cleanup.push(() => transit.stop())
+  await vi.waitFor(() => expect(transit.available()).toBe(true))
+  let status = 0
+  f.onRun(async body => {
+    transit.stop()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    status = (await fetch(f.url + transitPath(body.kbMcpUrl), { method: 'POST', body: '{}' })).status
+  })
+  const caller = new RemoteLlmClient({ kind: 'codex', baseUrl: f.url + '/api/model-runner', token: f.token, transit })
+  const result = await new Promise(resolve => caller.send({ prompt: 'hello', model: 'gpt-5.6-sol', sessionId: null, kbMcpUrl: tools.url + '/kb?k=s' },
+    { onDelta() {}, onSession() {}, onDone: text => resolve({ text }), onError: error => resolve({ error }) }))
+  expect(result).toEqual({ text: 'Hello from production Core' })
+  expect(status).toBe(502)
+  expect(tools.seen).toHaveLength(0)
 })

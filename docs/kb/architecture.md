@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-17
-checked: 6850d93b1
+updated: 2026-11-19
+checked: dd013f623
 title: Архитектура: кто с кем разговаривает
 areas:
   - packages/file-storage
@@ -32,12 +32,17 @@ Runner. The stand's `VC_CHAT_MODEL_API` mode disables workspace tool assembly
 and local chat accounting; the upstream Core bills the API token owner.
 See [consumer configuration](llm.md#local-stand-consumer-mode).
 
+While the provider relays tool calls (`VC_MODEL_API_TOOL_TRANSIT` there), the stand keeps workspace
+tool assembly: its own MCP endpoints and machines serve the model through the
+[tool transit](llm.md#tool-transit-the-application-keeps-its-own-tools).
+
 ## Public model execution boundary
 
 Core exposes the authenticated, billed runner subset at `/api/model-runner/v1/`.
 `server.ts` registers its scope guard before the generic Identity guard and wires
 the routes to the existing remote LLM clients and ChatAccounting. The private
-runner remains behind Core; callers cannot supply machine or MCP authority.
+runner remains behind Core; callers cannot supply machine or MCP authority of the provider. With the
+tool transit enabled a caller may declare its own MCP endpoints, which the provider only relays.
 See [model API](llm.md#api-моделей) and [token authority](agent-api-access.md#api-моделей).
 
 Module details: `voice:README.md`

@@ -7,6 +7,7 @@ import { MODEL_API_PREFIX, type ModelToken } from '../auth/modelTokens.js'
 import { deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
 import { CODEX_THREAD_IN_USE_MESSAGE, RemoteLlmClient } from '../llm/remoteClient.js'
 import { MODEL_API_THREAD_BUSY } from '../llm/sinks.js'
+import { transitRequest, type ToolTransitHub } from '../llm/toolTransit.js'
 import type { ChatAccounting } from '../billing/chatAccounting.js'
 import type { AccountingStore } from '../billing/accountingStore.js'
 import type { BillingSessions } from '../billing/sessions.js'
@@ -22,6 +23,8 @@ interface Options {
   chatModels?: ChatModelPolicy
   concurrency?: number
   requestsPerMinute?: number
+  /** Tool transit of applications; absent — the model API stays text-only. */
+  transit?: ToolTransitHub
 }
 const positive = (value: number | undefined, fallback: number) =>
   Number.isSafeInteger(value) && value! > 0 ? value! : fallback
@@ -44,7 +47,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       try { return client instanceof RemoteLlmClient ? await client.health(req.user!.name) : undefined } catch { return undefined }
     }
     const [claude, codex] = await Promise.all([health('claude'), health('codex')])
-    return { capabilities: { systemPrompt: true }, ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
+    return { capabilities: { systemPrompt: true, ...(opts.transit ? { toolTransit: true } : {}) }, ok: !!opts.accounting && !!(claude?.ok || codex?.ok),
       bins: { claude: claude?.bins?.claude ?? { present: false, version: null }, codex: codex?.bins?.codex ?? { present: false, version: null } },
       login: { claude: claude?.login?.claude ?? { loggedIn: false }, codex: codex?.login?.codex ?? { loggedIn: false } },
       runs: [...active.values()].filter(run => run.sid === opts.token(req)?.sid).length }
@@ -88,10 +91,25 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
     if (running + pending >= concurrency) return reply.code(429).send({ error: 'concurrency_limit_exceeded' })
     const runId = body.runId as string | undefined ?? randomUUID()
     if (active.has(runId)) return reply.code(409).send({ error: 'run_already_exists' })
+    // The application declared its own tools: every address must be a placeholder of its live
+    // transit. Without one the run is refused rather than silently started without tools.
+    const declared = body.transit === undefined ? undefined : transitRequest(body)
+    const transitId = (body.transit as { id?: unknown } | undefined)?.id
+    if (body.transit !== undefined && (!declared || typeof transitId !== 'string')) return reply.code(400).send({ error: 'invalid_request' })
+    const transit = declared ? opts.transit?.open(token.sid, transitId as string, declared.slots) ?? null : undefined
+    if (transit === null) return reply.code(409).send({ error: 'tool_transit_unavailable' })
     // Reserve the token slot before any asynchronous policy or Billing work.
     let handle: LlmHandle | undefined, cancelled = false
     const stream = new PassThrough()
-    const release = () => { if (active.get(runId) === entry) active.delete(runId) }
+    let transitClosed = false
+    const release = () => {
+      if (active.get(runId) === entry) active.delete(runId)
+      if (transit && !transitClosed) {
+        transitClosed = true
+        // Audit without content: how many tool calls the run relayed.
+        console.info('[model-api] tool transit', JSON.stringify({ runId, sid: token.sid, slots: declared!.slots.length, ...transit.close() }))
+      }
+    }
     const cancel = () => {
       if (cancelled) return
       cancelled = true; handle?.cancel(); release()
@@ -135,7 +153,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       })
       const request: LlmRequest = {
         userId: user.name, prompt: body.prompt, model: body.model || model!, sessionId: body.sessionId as string | null ?? null,
-        textOnly: true, executionDisabled: true,
+        ...(transit ? declared!.build(transit.url) : { textOnly: true, executionDisabled: true }),
         ...(typeof body.systemPrompt === 'string' ? { systemPrompt: body.systemPrompt } : {}),
         ...(typeof body.deepThinking === 'boolean' ? { deepThinking: body.deepThinking } : {}),
         ...(['low', 'medium', 'high', 'xhigh', 'max'].includes(String(body.reasoningEffort))

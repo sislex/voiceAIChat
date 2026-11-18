@@ -38,6 +38,11 @@ export interface RemoteLlmClientOptions {
   maxBodyBytes?: number
   /** Core's authenticated model API forwards the original wire frames. */
   onFrame?: (frame: import('./protocol.js').RunnerStreamEvent) => void
+  /**
+   * Model API stand: declares this deployment's MCP endpoints to the provider's tool transit and
+   * returns the request to put on the wire (toolTransitClient.ts). Null — send the request as is.
+   */
+  transit?: { prepare(req: LlmRequest): { req: LlmRequest; release(): void } | null }
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 20_000
@@ -122,6 +127,10 @@ function describeTransportError(kind: RunnerKind, url: string, err: unknown): st
   }
 }
 
+/** The provider lost this deployment's tool transit between the declaration and the run. */
+export const TOOL_TRANSIT_UNAVAILABLE_MESSAGE =
+  'Канал инструментов к поставщику моделей недоступен: ход не запущен. Повторите запрос через несколько секунд.'
+
 export const CODEX_THREAD_IN_USE_MESSAGE =
   'Этот Codex thread уже выполняется. Дождитесь завершения или остановите текущий ход либо сбросьте сессию.'
 
@@ -143,6 +152,7 @@ function isCodexThreadInUse(status: number, body: string): boolean {
 /** Ненулевой HTTP-статус: чаще всего это токен или адрес, а не модель. */
 function describeHttpError(kind: RunnerKind, url: string, status: number, body: string): string {
   if (kind === 'codex' && isCodexThreadInUse(status, body)) return CODEX_THREAD_IN_USE_MESSAGE
+  if (status === 409 && body.includes('tool_transit_unavailable')) return TOOL_TRANSIT_UNAVAILABLE_MESSAGE
   const snippet = body.trim().slice(0, 300)
   if (status === 401 || status === 403) {
     return (
@@ -206,7 +216,8 @@ export class RemoteLlmClient implements LlmClient {
     const abort = new AbortController()
     let cancelled = false
 
-    void this.pump(runId, req, sink, abort).finally(() => { if (!cancelled) terminal?.() })
+    const declared = this.opts.transit?.prepare(req) ?? null
+    void this.pump(runId, declared?.req ?? req, sink, abort).finally(() => { declared?.release(); if (!cancelled) terminal?.() })
 
     return {
       cancel: () => {
@@ -214,6 +225,7 @@ export class RemoteLlmClient implements LlmClient {
         cancelled = true
         // Приёмник глушим сразу: события после отмены хода никому не нужны.
         sink.detach()
+        declared?.release()
         // Сначала явная отмена у исполнителя (он убивает CLI), затем разрыв потока.
         void this.requestCancel(runId)
         abort.abort()
