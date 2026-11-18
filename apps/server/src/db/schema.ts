@@ -150,6 +150,17 @@ CREATE TABLE IF NOT EXISTS conversation_turn_control (
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+-- Uploaded chat attachments. The record outlives a Core restart, so an attachment of an unsent
+-- draft can still be sent, removed, or swept together with its stored file when it is abandoned.
+CREATE TABLE IF NOT EXISTS chat_uploads (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  conversation_id  TEXT NOT NULL,
+  record           TEXT NOT NULL,
+  created_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_uploads_created ON chat_uploads(created_at);
+
 -- Редактируемый прайс моделей: USD за 1M токенов. Начальные строки Codex/OpenAI
 -- зафиксированы по developers.openai.com/api/docs/pricing (Standard, short context,
 -- 08.09.2026); INSERT OR IGNORE сохраняет будущие ручные обновления.

@@ -72,6 +72,14 @@ export interface StoredUpload {
   /** Scope enforced by standalone browser transports before dispatch. */
   tenantId?: string
   conversationId?: string
+  /** Upload time; drives the sweep of attachments of abandoned drafts. */
+  createdAt?: number
+}
+
+/** Durable side of the registry: conversation uploads are stored so that they outlive a restart. */
+export interface UploadPersistence {
+  save(upload: StoredUpload & { ownerId: string; conversationId: string; createdAt: number }): Promise<void>
+  remove(id: string): Promise<void>
 }
 
 export function machineUploadDir(root: string): string {
@@ -103,8 +111,35 @@ export function attachmentUsesUpload(
 export class UploadStore {
   private readonly byId = new Map<string, StoredUpload>()
 
-  constructor(private readonly dir: string) {
+  constructor(private readonly dir: string, private readonly persistence?: UploadPersistence, private readonly now: () => number = Date.now) {
     mkdirSync(dir, { recursive: true })
+  }
+
+  /** Puts back the records stored before a restart. A record already in memory wins. */
+  hydrate(records: StoredUpload[]): void {
+    for (const record of records) if (!this.byId.has(record.id)) this.byId.set(record.id, record)
+  }
+
+  /**
+   * Stores the record of a conversation upload once all its fields are set. Uploads without an
+   * owner or a conversation (task attachments, widgets) stay in memory as before.
+   */
+  track(record: StoredUpload): void {
+    record.createdAt ??= this.now()
+    if (!this.persistence || !record.ownerId || !record.conversationId) return
+    void this.persistence.save(record as StoredUpload & { ownerId: string; conversationId: string; createdAt: number })
+      .catch(error => console.error('[uploads] record not stored:', error instanceof Error ? error.message : error))
+  }
+
+  /** Every known record, oldest first. */
+  list(): StoredUpload[] {
+    return [...this.byId.values()].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  }
+
+  /** Forgets the record and keeps the file: the upload is now owned by a sent message. */
+  forget(id: string): void {
+    if (!this.byId.delete(id)) return
+    void this.persistence?.remove(id).catch(() => undefined)
   }
 
   /** Сохраняет файл, возвращает метаданные (id — для передачи в claude.send). */
@@ -152,5 +187,6 @@ export class UploadStore {
     if (!rec) return
     if (!rec.agentId && !rec.storage) rmSync(rec.path, { force: true })
     this.byId.delete(id)
+    void this.persistence?.remove(id).catch(error => console.error('[uploads] record not removed:', error instanceof Error ? error.message : error))
   }
 }

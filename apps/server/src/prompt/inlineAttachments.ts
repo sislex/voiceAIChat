@@ -24,7 +24,22 @@ function textOf(bytes: Buffer): string | null {
  * model cannot open a path, and asked to «read the file» it invents tool calls. Small text files
  * therefore travel inside the prompt; every other file is named with the reason it is not readable.
  */
-export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runnerName' | 'dataBase64'>[]): string {
+/**
+ * Base64 characters of attachments one executor request may carry. The runner accepts a 32 MiB
+ * body; the rest is left for the prompt, the history and JSON framing.
+ */
+export const EXECUTOR_ATTACHMENT_BASE64_BUDGET = 24 * 1024 * 1024
+
+/** True when the attachments of a turn do not fit into one executor request. */
+export function attachmentsExceedExecutorBudget(attachments: Pick<LlmAttachment, 'dataBase64'>[]): boolean {
+  return attachments.reduce((sum, attachment) => sum + attachment.dataBase64.length, 0) > EXECUTOR_ATTACHMENT_BASE64_BUDGET
+}
+
+/**
+ * `oversize`: the turn has tools, but its attachments together are too large to be sent to the
+ * executor, so they degrade to the same prompt form instead of failing the turn with HTTP 413.
+ */
+export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runnerName' | 'dataBase64'>[], mode: 'no-tools' | 'oversize' = 'no-tools'): string {
   if (!attachments.length) return ''
   let budget = INLINE_ATTACHMENT_TOTAL_BYTES
   const blocks: string[] = []
@@ -33,12 +48,12 @@ export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runner
     const bytes = Buffer.from(attachment.dataBase64, 'base64')
     const name = attachment.runnerName
     if (IMAGE_NAME.test(name) && !/\.svg$/i.test(name)) {
-      notes.push(`- ${name} (${size(bytes.byteLength)}): изображение; в этом режиме модель изображений не получает`)
+      notes.push(`- ${name} (${size(bytes.byteLength)}): ${mode === 'oversize' ? 'изображение; не передано из-за общего размера вложений' : 'изображение; в этом режиме модель изображений не получает'}`)
       continue
     }
     const text = bytes.byteLength <= INLINE_ATTACHMENT_FILE_BYTES && bytes.byteLength <= budget ? textOf(bytes) : null
     if (text === null) {
-      const reason = bytes.byteLength > INLINE_ATTACHMENT_FILE_BYTES || bytes.byteLength > budget ? 'файл слишком большой для этого режима' : 'двоичный файл'
+      const reason = mode === 'oversize' ? 'не передан из-за общего размера вложений' : bytes.byteLength > INLINE_ATTACHMENT_FILE_BYTES || bytes.byteLength > budget ? 'файл слишком большой для этого режима' : 'двоичный файл'
       notes.push(`- ${name} (${size(bytes.byteLength)}): ${reason}`)
       continue
     }
@@ -48,9 +63,12 @@ export function inlineAttachmentsPrompt(attachments: Pick<LlmAttachment, 'runner
   const parts: string[] = []
   if (blocks.length) parts.push(`К сообщению приложены файлы, их содержимое ниже:\n${blocks.join('\n')}`)
   if (notes.length) {
-    parts.push(`Приложены файлы, содержимое которых в этом режиме недоступно:\n${notes.join('\n')}\n` +
-      'Инструментов для чтения файлов у тебя нет: не пытайся их открыть и не выдумывай содержимое. ' +
-      'Если без этих файлов ответить нельзя, скажи пользователю, что для работы с ними нужен режим Workspace.')
+    parts.push(mode === 'oversize'
+      ? `Приложены файлы, которые не переданы тебе: вместе вложения сообщения больше лимита одного запроса (${size(EXECUTOR_ATTACHMENT_BASE64_BUDGET / 4 * 3)}).\n${notes.join('\n')}\n` +
+        'Не пытайся открыть эти файлы и не выдумывай их содержимое. Скажи пользователю, что вложения слишком велики, и попроси прислать их по частям или меньшего размера.'
+      : `Приложены файлы, содержимое которых в этом режиме недоступно:\n${notes.join('\n')}\n` +
+        'Инструментов для чтения файлов у тебя нет: не пытайся их открыть и не выдумывай содержимое. ' +
+        'Если без этих файлов ответить нельзя, скажи пользователю, что для работы с ними нужен режим Workspace.')
   }
   return parts.join('\n\n')
 }

@@ -1106,6 +1106,22 @@ export class ChatRepo extends BaseRepo {
     return Boolean(row?.paused)
   }
 
+  /** Persists the record of an uploaded chat attachment; `record` is the serialized upload. */
+  async saveUploadRecord(upload: { id: string; userId: string; conversationId: string; record: string; createdAt: number }): Promise<void> {
+    await this.sql.run(`INSERT INTO chat_uploads (id, user_id, conversation_id, record, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET record = excluded.record`, [upload.id, upload.userId, upload.conversationId, upload.record, upload.createdAt])
+  }
+
+  async deleteUploadRecord(id: string): Promise<void> {
+    await this.sql.run('DELETE FROM chat_uploads WHERE id = ?', [id])
+  }
+
+  async listUploadRecords(): Promise<Array<{ id: string; userId: string; conversationId: string; record: string; createdAt: number }>> {
+    const rows = await this.sql.all<{ id: string; user_id: string; conversation_id: string; record: string; created_at: number }>(
+      'SELECT id, user_id, conversation_id, record, created_at FROM chat_uploads ORDER BY created_at ASC, id ASC')
+    return rows.map(row => ({ id: row.id, userId: row.user_id, conversationId: row.conversation_id, record: row.record, createdAt: Number(row.created_at) }))
+  }
+
   async setTurnQueuePaused(userId: string, conversationId: string, paused: boolean): Promise<void> {
     if (!(await this.ownsConversation(userId, conversationId))) return
     await this.sql.run(`INSERT INTO conversation_turn_control (conversation_id, paused) VALUES (?, ?)

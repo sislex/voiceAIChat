@@ -883,6 +883,8 @@ export async function registerRest(
      * offline-машины.
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
+    /** Uploads of abandoned drafts (see draftUploads.ts); null while the upload registry is not ready. */
+    draftUploads?: (options: { maxAgeMs?: number; apply?: boolean; userId?: string }) => Promise<import('../draftUploads.js').DraftUploadReport | null>
     /** Conversation kind a ticket-delegated application may create (`x-sislexa-delegation`), or undefined to refuse. */
     delegatedAssistantKind?: (grant: string) => string | undefined
     /** Publish a persisted message to every authenticated connection of its owner. */
@@ -1708,20 +1710,24 @@ export async function registerRest(
   )
 
   // Admin maintenance: chat spaces of conversations that no longer exist. A dry run unless `apply`.
-  app.post<{ Body: { userId?: string; apply?: boolean } }>('/api/admin/storage/orphan-chat-spaces', async (req, reply) => {
+  app.post<{ Body: { userId?: string; apply?: boolean; draftMaxAgeMs?: number } }>('/api/admin/storage/orphan-chat-spaces', async (req, reply) => {
     if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'forbidden' })
     if (!opts.fileStorage) return reply.code(404).send({ error: 'storage_disabled' })
     const body = req.body ?? {}
-    if ((body.userId !== undefined && typeof body.userId !== 'string') || (body.apply !== undefined && typeof body.apply !== 'boolean')) return reply.code(400).send({ error: 'invalid request' })
+    if ((body.userId !== undefined && typeof body.userId !== 'string') || (body.apply !== undefined && typeof body.apply !== 'boolean')
+      || (body.draftMaxAgeMs !== undefined && (typeof body.draftMaxAgeMs !== 'number' || !Number.isFinite(body.draftMaxAgeMs) || body.draftMaxAgeMs < 0))) return reply.code(400).send({ error: 'invalid request' })
     const owner = body.userId?.trim() || uid(req)
     try {
       const orphans = await orphanChatSpaces(opts.fileStorage, owner, async id => Boolean(await db.chat.getConversation(owner, id)))
       const removed: string[] = []
       if (body.apply === true) for (const space of orphans) { await opts.fileStorage.deleteSpace(owner, space.id); removed.push(space.id) }
+      // Attachments of abandoned drafts: uploaded, never sent. `draftMaxAgeMs` overrides the age threshold.
+      const drafts = await opts.draftUploads?.({ userId: owner, apply: body.apply === true, ...(body.draftMaxAgeMs !== undefined ? { maxAgeMs: body.draftMaxAgeMs } : {}) }) ?? null
       return {
         userId: owner, applied: body.apply === true, removed: removed.length,
         freedBytes: body.apply === true ? orphans.reduce((sum, space) => sum + space.usedBytes, 0) : 0,
-        spaces: orphans.map(space => ({ id: space.id, title: space.title, conversationId: space.ref, usedBytes: space.usedBytes, fileCount: space.fileCount }))
+        spaces: orphans.map(space => ({ id: space.id, title: space.title, conversationId: space.ref, usedBytes: space.usedBytes, fileCount: space.fileCount })),
+        ...(drafts ? { draftUploads: { maxAgeMs: drafts.maxAgeMs, removed: drafts.removed, freedBytes: drafts.freedBytes, failed: drafts.failed, uploads: drafts.drafts } } : {})
       }
     } catch (error) { return storageError(reply, error) }
   })

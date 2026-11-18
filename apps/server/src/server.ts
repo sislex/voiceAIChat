@@ -149,7 +149,7 @@ import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
-import { RemoteLlmClient } from './llm/remoteClient.js'
+import { RemoteLlmClient, MODEL_API_RUN_BODY_LIMIT_BYTES } from './llm/remoteClient.js'
 import { RunnerFsClient } from './llm/runnerFsClient.js'
 // CLI spawning and profiles belong to the independent LLM Runner. Core
 // requires configured HTTP endpoints instead of silently starting a local CLI.
@@ -161,7 +161,8 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { UploadStore, attachmentUsesUpload, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
+import { DEFAULT_DRAFT_UPLOAD_MAX_AGE_MS, startDraftUploadSweep, sweepDraftUploads, type DraftUploadDeps, type DraftUploadReport } from './draftUploads.js'
+import { UploadStore, type StoredUpload, attachmentUsesUpload, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
 import type { TtsClient } from './tts/client/types.js'
@@ -831,7 +832,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const fileStorage = storageRuntime?.service
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
   registerFileStorageRoutes(app, fileStorage)
+  // The upload registry is created further down; the admin route reaches the sweep through this holder.
+  let draftUploadSweep: ((options: { maxAgeMs?: number; apply?: boolean; userId?: string }) => Promise<DraftUploadReport>) | undefined
   await registerRest(app, db, opts.config.dataDir, {
+    draftUploads: options => draftUploadSweep ? draftUploadSweep(options) : Promise.resolve(null),
     modelTokenUsage: (login, from, to) => accountingStore?.modelUsage(login, from, to) ?? [],
     fileStorage,
     chatModels: opts.config.chatModels,
@@ -894,7 +898,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
       ...(opts.config.llmRunnerConnectTimeoutMs
         ? { connectTimeoutMs: opts.config.llmRunnerConnectTimeoutMs }
-        : {})
+        : {}),
+      // A model API stand talks to another Core, whose run route accepts a much smaller body.
+      ...(opts.config.chatModelApi ? { maxBodyBytes: MODEL_API_RUN_BODY_LIMIT_BYTES } : {})
     })
   const claude =
     await (opts.claude ??
@@ -1328,7 +1334,32 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
-  const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
+  const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'), {
+    save: upload => db.chat.saveUploadRecord({ id: upload.id, userId: upload.ownerId, conversationId: upload.conversationId, record: JSON.stringify(upload), createdAt: upload.createdAt }),
+    remove: id => db.chat.deleteUploadRecord(id)
+  })
+  // Records of conversation uploads outlive a restart: a draft attachment can still be sent or removed.
+  try {
+    uploads.hydrate((await db.chat.listUploadRecords()).flatMap(row => {
+      try { return [{ ...(JSON.parse(row.record) as StoredUpload), id: row.id, ownerId: row.userId, conversationId: row.conversationId, createdAt: row.createdAt }] } catch { return [] }
+    }))
+  } catch (error) { console.error('[uploads] stored records not loaded:', error instanceof Error ? error.message : error) }
+  const draftUploadDeps: DraftUploadDeps = {
+    uploads,
+    conversationExists: async (userId, conversationId) => Boolean(await db.chat.getConversation(userId, conversationId)),
+    conversationAttachments: (userId, conversationId) => db.chat.conversationAttachments(userId, conversationId),
+    ...(fileStorage ? { deleteStorageFile: async (userId: string, spaceId: string, path: string) => {
+      try { await fileStorage.deleteFile(userId, spaceId, path) } catch (error) {
+        // A file or a space that is already gone is the wanted result.
+        if ((error as { code?: unknown } | null)?.code !== 'not_found') throw error
+      }
+    } } : {}),
+    log: message => app.log.warn(message)
+  }
+  draftUploadSweep = options => sweepDraftUploads(draftUploadDeps, options)
+  const draftUploadMaxAgeMs = opts.config.draftUploadMaxAgeMs ?? DEFAULT_DRAFT_UPLOAD_MAX_AGE_MS
+  if (draftUploadMaxAgeMs > 0) app.addHook('onClose', async () => stopDraftUploadSweep())
+  const stopDraftUploadSweep = draftUploadMaxAgeMs > 0 ? startDraftUploadSweep(draftUploadDeps, draftUploadMaxAgeMs) : () => {}
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
   // Хранилище разговора на машине — общий helper ядра и модуля машин (полный лог долгой команды из чата).
   const { ensureChatStorage, managedChatStorage } = createManagedChatStorage({ db, machines: agentRegistry, log: (m, extra) => app.log.info(extra ?? {}, m) })
@@ -1421,6 +1452,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
           const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)
           rec.tenantId = req.user?.account?.tenantId
+          uploads.track(rec)
           return { id: rec.id, name: rec.name, path: rec.path, size: rec.size, mimeType: rec.mimeType, storage: rec.storage, thumbnailAvailable }
         } catch (error) { return storageError(reply, error) as never }
       }
@@ -1453,6 +1485,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime, userId)
           rec.tenantId = req.user?.account?.tenantId
           rec.conversationId = conversationId
+          uploads.track(rec)
           return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }
         } catch (err) {
           return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
@@ -1461,6 +1494,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const rec = uploads.save(uploadName, bytes, safeMime, userId)
       rec.tenantId = req.user?.account?.tenantId
       rec.conversationId = conversationId
+      uploads.track(rec)
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
