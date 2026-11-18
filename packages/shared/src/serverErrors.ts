@@ -26,6 +26,7 @@ const MESSAGES: Readonly<Record<string, string>> = {
   codex_thread_in_use: 'Диалог Codex занят другим раном.',
   invalid_url: 'Некорректный адрес.',
   not_found: 'Объект не найден.',
+  conversation_not_found: 'Беседа не найдена или удалена.',
   // Панель кода: коды отказов git. Без перевода человек видел в тосте
   // `workspace_not_found` и не понимал, что делать.
   workspace_not_found: 'Рабочая копия не найдена — возможно, её удалили вместе с задачей.',
