@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-17
-checked: 6850d93b1
+updated: 2026-11-19
+checked: dd013f623
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -39,6 +39,8 @@ machine or remote-tool access.
 With `VC_CHAT_MODEL_API=true`, turn assembly disables workspace mode and does
 not resolve a conversation machine or attach remote execution tools. Saved machine
 bindings, agent connections, PTY/file APIs and their authorization are unchanged.
+The exception is a provider with the tool transit: while `modelApiTools()` is true the stand resolves
+its machine and attaches its own remote tools as usual (see `llm.md`, tool transit).
 
 ## Operator handoff (SK-115)
 

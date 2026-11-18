@@ -2,8 +2,8 @@
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
-updated: 2026-11-18
-checked: 8ccf2a2f9
+updated: 2026-11-19
+checked: dd013f623
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -182,6 +182,37 @@ and full-token configuration (upstream Core owns Billing in this composition).
 Coverage includes
 profile spoofing, 402/403/429, cancellation, disconnect and sid attribution.
 
+
+### Tool transit: the application keeps its own tools
+
+An application that uses the model API owns its tools and its chat context; the provider adds none
+and executes none. Because the model runs on the provider's runner, a tool call has to travel back.
+The mechanism repeats what production already does (runner → MCP address of Core; a machine agent
+behind NAT holds an outgoing socket), contract `packages/shared/src/modelToolTransit.ts`:
+
+- **Application** (`VC_CHAT_MODEL_API=true`, `llm/toolTransitClient.ts`): opens a WebSocket to
+  `/api/model-runner/v1/transit` with its model token. Before a run `RemoteLlmClient` replaces every
+  MCP address of the request (`kbMcpUrl`, `remote.mcpUrl`, `makeMcpUrl`, …) with an opaque
+  `transit:<slot>` placeholder, drops `attachments`/`cwd` and sets `toolOnly` and `transit.id`. While
+  the run lasts it answers relayed HTTP requests for its slots from its own local endpoints. The
+  provider never sees an address or a secret of the application.
+- **Provider** (`VC_MODEL_API_TOOL_TRANSIT=true`, off by default; `llm/toolTransit.ts`,
+  `llm/toolTransitRoutes.ts`): `POST …/run` with `transit` accepts placeholders only, opens run-scoped
+  addresses `<VC_MCP_PUBLIC_BASE>/mcp/transit/<run token>/<slot>` and starts the runner with
+  `toolOnly` — the application's MCP tools and no shell, file or web tool of the runner. Requests to
+  those addresses are relayed over the application's socket without parsing the MCP content. The
+  addresses stop resolving when the run ends; the log line `[model-api] tool transit` records the
+  number of calls without content.
+- **Limits** (`MODEL_TOOL_TRANSIT_LIMITS`): 24 endpoints per run, 4 MiB request, 16 MiB response,
+  330 s per call, 2000 calls and 16 concurrent calls per run. A disconnected application fails the
+  call with 502, a silent one with 504; the run itself continues and the model sees a tool error.
+- **Compatibility**: health advertises `capabilities.toolTransit`. A provider without the flag
+  refuses the upgrade, the stand's `modelApiTools()` stays false and its turns remain text-only as
+  before. A run that declares tools without a live transit is refused with 409
+  `tool_transit_unavailable` rather than started without tools.
+- The stand must not set `VC_CHAT_TEXT_ONLY=true` if it wants tools: that flag disables them on its
+  own. Built-in CLI tools (Read/Bash on the runner) are never available to an application; files and
+  commands go through the application's `remote` MCP and its machines.
 
 ## Storage-backed chat attachments
 

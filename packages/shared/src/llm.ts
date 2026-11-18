@@ -75,6 +75,11 @@ export interface LlmRequest {
   /** only MCP tools; no shell, file or web tools */
   toolOnly?: boolean
   /**
+   * Model API only: the application's live tool transit. Its MCP addresses in this request are
+   * `transit:<slot>` placeholders, resolved by the application itself.
+   */
+  transit?: { id: string }
+  /**
    * true — remote-инструменты доступны, но только для чтения (фаза плана CI):
    * модель исследует рабочую копию на машине, но ничего в ней не меняет.
    */
@@ -249,7 +254,8 @@ export interface LlmRunnerBinStatus {
 
 /** Ответ `GET /v1/health` исполнителя. */
 export interface LlmRunnerHealth {
-  capabilities?: { systemPrompt?: boolean }
+  /** `toolTransit`: the model API relays tool calls back to the application (modelToolTransit.ts). */
+  capabilities?: { systemPrompt?: boolean; toolTransit?: boolean }
   ok: boolean
   bins: Record<LlmRunKind, LlmRunnerBinStatus>
   /** Статус входа обоих CLI в общем профиле исполнителя. */

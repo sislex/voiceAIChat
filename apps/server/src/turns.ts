@@ -60,6 +60,11 @@ export interface TurnManagerDeps {
   chatTextOnly?: boolean
   /** Disable workspace tools when using the upstream model API. */
   chatModelApi?: boolean
+  /**
+   * Model API stand: true while the provider relays this deployment's tools (llm/toolTransitClient.ts).
+   * Workspace turns then keep their MCP tools; without it the stand is text-only.
+   */
+  modelApiTools?: () => boolean
   deployment?: import('@voicechat/shared').DeploymentManifest
   delegation?: ChatDelegation
   accounting?: ChatAccounting
@@ -655,13 +660,15 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       reportModelFallback && permittedModel !== requestedModel ? `⚠️ Модель «${requestedModel}» недоступна; выбрана «${permittedModel}».` : ''
     ].filter(Boolean)
     const engineNotice = notices.join('\n')
+    // Snapshot for the whole turn: a model API stand has tools only while the provider relays them.
+    const modelApiNoTools = !!deps.chatModelApi && !deps.modelApiTools?.()
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     // A text-only Claude run is started with `--no-session-persistence`: the runner keeps no session
     // to resume, so `--resume` fails with "No conversation found". Such a turn always rebuilds the
     // prompt from the stored history instead. Codex keeps its thread in the profile and resumes.
     const textOnlyClaude = provider === 'claude' && !req.delegation
-      && (!!deps.chatModelApi || !!deps.chatTextOnly || !isWorkspaceAssistantMode(conv?.assistantMode))
+      && (modelApiNoTools || !!deps.chatTextOnly || !isWorkspaceAssistantMode(conv?.assistantMode))
     const sessionId = textOnlyClaude ? null : resumeSessionIdFor(conv?.claudeSessionId ?? null, provider)
     // Reasoning settings are snapshotted before the turn starts; later UI changes affect only the next turn.
     const reasoningEffort = conv?.reasoningEffort ?? settings.reasoningEffort ?? 'medium'
@@ -688,7 +695,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const attachmentPaths = attachments.map((att) => att.serverPath)
     // A model without tools cannot open a path: its attachments travel as prompt text instead, and
     // the files themselves are not sent to the executor (a 1 MB file overflowed the model API body).
-    const toolFreeAttachments = conv?.assistantKind !== 'make' && (deps.chatModelApi || !isWorkspaceAssistantMode(conv?.assistantMode)
+    const toolFreeAttachments = conv?.assistantKind !== 'make' && (modelApiNoTools || !isWorkspaceAssistantMode(conv?.assistantMode)
       || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation)))
     // A turn with tools sends the files to the executor inside the request body. Attachments that
     // do not fit there degrade to the prompt form instead of failing the turn with HTTP 413.
@@ -697,7 +704,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const promptAttachmentPaths = inlineAttachments ? [] : attachmentPaths
     const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments, oversizeAttachments ? 'oversize'
       // Advice to switch to Workspace is right only where Workspace has tools.
-      : deps.chatModelApi || deps.chatTextOnly ? 'server-no-tools' : 'no-tools') : ''
+      : modelApiNoTools || deps.chatTextOnly ? 'server-no-tools' : 'no-tools') : ''
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
@@ -726,7 +733,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         if (!requiredContext.has(itemId)) disabledContext.add(itemId)
       }
     }
-    const workspaceMode = !deps.chatModelApi && isWorkspaceAssistantMode(conv?.assistantMode)
+    const workspaceMode = !modelApiNoTools && isWorkspaceAssistantMode(conv?.assistantMode)
     const textOnlyTurn = !workspaceMode || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation))
     // Build Core instructions independently of the conversation for tool-free turns.
     let basePrompt = textOnlyTurn ? (conv?.assistantKind === 'make' ? '' : TOOL_FREE_TURN_HINT) : conversationPrompt
@@ -854,7 +861,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // показывает, значит ход обязан его слушать.
     // Model API stand: the model has no tools, so Core reads and writes Make files itself (makeTextFiles.ts).
     // Only an explicit «План» is read-only: the automatic plan of big requests needs the tool-driven flow.
-    const makeText = deps.chatModelApi && makeToolsEnabled && !req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl
+    const makeText = modelApiNoTools && makeToolsEnabled && !req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl
       ? { readOnly: permissionMode === 'plan' && !makeAutoPlan,
           call: makeToolCaller(`${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}&note=${encodeURIComponent(req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80))}`, deps.makeToolFetch),
           live: makeFileStreamFilter() }
