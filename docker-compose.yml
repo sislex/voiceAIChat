@@ -164,6 +164,9 @@ services:
       # loopback, а в контейнере исполнителя на 127.0.0.1:8787 никого нет —
       # инструменты mcp__remote__*/mcp__kb__* тогда молча пропадают у модели.
       VC_MCP_PUBLIC_BASE: ${VC_MCP_PUBLIC_BASE:-http://voicechat:8787}
+      # Tool transit for applications that reach models through this Core's model API: the
+      # application keeps its own MCP tools, Core only relays the calls. Off unless set to true.
+      VC_MODEL_API_TOOL_TRANSIT: ${VC_MODEL_API_TOOL_TRANSIT:-false}
       # Адрес сервера для изолированного Chromium: по нему он открывает прокси
       # превью в браузерных проверках задач. Должен совпадать с
       # VC_BROWSER_PREVIEW_ORIGIN у browser-runner — иначе SSRF-гейт раннера
