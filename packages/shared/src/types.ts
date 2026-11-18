@@ -1264,7 +1264,7 @@ export interface TurnUsage {
   pricingMode?: 'standard' | 'batch' | 'flex' | 'fast'
   /** Фактическая категория контекста, если её сообщил источник usage. */
   contextTier?: 'short' | 'long'
-  /** Latest turn input reported separately from cumulative Codex thread totals. */
+  /** Input of the latest model call: Codex thread totals and multi-call Claude turns are cumulative. */
   contextInputTokens?: number
 }
 
