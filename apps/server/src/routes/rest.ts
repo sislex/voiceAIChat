@@ -1762,7 +1762,8 @@ export async function registerRest(
       const userId = uid(req)
       // The conversation may have been deleted in another tab: say so instead of a bare 500.
       if (!(await db.chat.getConversation(userId, req.params.id))) {
-        return reply.code(404).send({ error: 'conversation_not_found', message: CONVERSATION_GONE }) as never
+        // `error` carries the text: clients pinned to older contracts print `error` as it is.
+        return reply.code(404).send({ error: CONVERSATION_GONE, code: 'conversation_not_found', message: CONVERSATION_GONE }) as never
       }
       // Ответ без движка/машины (самодиагностика пишет текст сама) получает
       // эффективные значения разговора: проектное наследование знает только сервер.

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: 164b15c80
+checked: 0e181751e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -409,7 +409,8 @@ bound uploads are kept by the sweep for exactly this purpose.
 in `onRequest` (`declaredUploadTooLarge`: 413 `file_too_large`, `connection: close`). Without the early
 refusal the server drains the whole oversized body before the client reads the answer. A message or a
 command addressed to a missing conversation answers `CONVERSATION_GONE` («Беседа не найдена или удалена.»):
-404 `conversation_not_found` on `POST /api/conversations/:id/messages`, `claude.error` over WebSocket.
+404 on `POST /api/conversations/:id/messages` (`code: conversation_not_found`; `error` carries the text, because
+clients pinned to older contracts print `error` as it is), `claude.error` over WebSocket.
 
 The note about unreadable attachments of a tool-free turn (`inlineAttachmentsPrompt`) depends on why the
 turn has no tools: `no-tools` (the user chose Chat or Required) may advise Workspace; `server-no-tools`

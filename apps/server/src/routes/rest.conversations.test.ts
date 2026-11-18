@@ -757,7 +757,7 @@ describe('REST: conversations/messages/settings', () => {
     expect(gone.statusCode).toBe(404)
     const message = await inj({ method: 'POST', url: `/api/conversations/${c.id}/messages`, payload: { role: 'u1', text: 'в удалённую', time: '10:01' } })
     expect(message.statusCode).toBe(404)
-    expect(message.json()).toEqual({ error: 'conversation_not_found', message: 'Беседа не найдена или удалена.' })
+    expect(message.json()).toEqual({ error: 'Беседа не найдена или удалена.', code: 'conversation_not_found', message: 'Беседа не найдена или удалена.' })
   })
 
   it('keeps binary bytes unchanged through every upload form', async () => {
