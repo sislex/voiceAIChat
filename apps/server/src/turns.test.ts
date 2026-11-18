@@ -2287,14 +2287,21 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it('Stop before the first text without the model API saves no answer', async () => {
+  it('Stop before the first text on a runner keeps an empty stopped answer without a tool-free permission mode', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'stop-local')
     const llm = controlled()
+    const done: unknown[] = []
     const turns = createTurnManager({ db, claude: llm.client })
+    turns.subscribe((m) => { if (m.t === 'claude.done') done.push(m.message) })
     await turns.start({ userId: U, conversationId: conversation.id, segments: [{ speakerId: 1, text: 'Привет' }] })
     await turns.cancel(conversation.id)
-    expect((await db.chat.listMessages(U, conversation.id)).filter((m) => m.role === 'ai')).toEqual([])
+    const answers = (await db.chat.listMessages(U, conversation.id)).filter((m) => m.role === 'ai')
+    expect(answers).toHaveLength(1)
+    expect(answers[0]).toMatchObject({ text: '', meta: { interrupted: true, stopped: true } })
+    expect(answers[0]!.meta?.costPending).toBeUndefined()
+    expect(done).toEqual([expect.objectContaining({ id: answers[0]!.id })])
+    expect(await db.chat.historyText(U, conversation.id)).toEqual([])
     await turns.idle()
     db.close()
   })

@@ -1177,7 +1177,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       resumed: Boolean(sessionId),
       reasoningEffort,
       deepThinking,
-      ...(permissionMode ? { permissionMode } : {}),
+      // A tool-free turn has nothing to permit: the runner drops the mode for Claude and uses it only
+      // as the Codex sandbox, so «plan» in the turn details would describe a mode the user never chose.
+      ...(permissionMode && !textOnlyTurn ? { permissionMode } : {}),
       ...(cwd ? { cwd } : {}),
       ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
       ...(executionDisabled ? { execTarget: 'Без машины (команды запрещены)' } : remote ? { execTarget: remote.agentName } : {}),
@@ -1604,11 +1606,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       request: turn.requestInfo,
       ...(turn.activity.length ? { activity: turn.activity } : {})
     }
-    // A model API answer may arrive in one piece at the end, so Stop usually comes before any text. The
-    // stopped answer is still kept (empty) for its «stopped, cost pending» note.
-    const message = turn.partial.trim() || deps.chatModelApi
-      ? await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial.trim() ? turn.partial : '', timeHHMM(), turn.provider, meta, turn.execTarget)
-      : undefined
+    // Stop often comes before any text: a model API answer may arrive in one piece, Codex prints
+    // nothing while it reasons, and a CLI needs seconds to start. The stopped answer is kept even
+    // when empty, otherwise the question stays in the conversation with no trace of the turn.
+    const message = await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial.trim() ? turn.partial : '', timeHHMM(), turn.provider, meta, turn.execTarget)
     if (message && turn.partial.trim()) deps.conversationSummary?.consider(turn.userId, conversationId)
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)

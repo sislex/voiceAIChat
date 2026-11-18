@@ -1288,6 +1288,13 @@ export async function registerRest(
     const conversation = await db.chat.getConversation(owner, req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     if (conversation.disabledContext?.includes(REQUIRED_ONLY_CONTEXT_ID) && req.params.itemId !== REQUIRED_ONLY_CONTEXT_ID) {
+      // Turning off what Required already keeps off changes nothing: a client that applies a mode
+      // item by item, or repeats its last request, gets the snapshot instead of an error toast.
+      const settings = await db.settings.getSettings(owner)
+      if (req.body?.enabled === false && !(settings.requiredContextItems ?? []).includes(req.params.itemId)) {
+        const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
+        return snapshot ?? reply.code(404).send({ error: 'not found' })
+      }
       return reply.code(400).send({ error: 'Источники базового мода Required меняются в редакторе мода' })
     }
     const settings = await db.settings.getSettings(owner)
@@ -1297,6 +1304,44 @@ export async function registerRest(
     const updated = await db.chat.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = await contextSnapshot(db, owner, req.params.id, { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) })
+    return snapshot ?? reply.code(404).send({ error: 'not found' })
+  })
+
+  /**
+   * Applies an assistant mode or a context preset in one request: the assistant mode and the whole
+   * disabled list are written together, so the last request wins and a quick second switch cannot
+   * interleave with the first. `requiredOnly` builds the Required list on the server (the marker
+   * plus every configurable item outside the base mode), `disabled` is a preset's own list.
+   */
+  app.post<{ Params: { id: string }; Body: { assistantMode?: string; requiredOnly?: boolean; disabled?: string[] } }>('/api/conversations/:id/context-configuration', async (req, reply) => {
+    const owner = await contextOwnerFor(req, req.params.id)
+    if (!owner) return reply.code(404).send({ error: 'not found' })
+    const conversation = await db.chat.getConversation(owner, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    const requiredOnly = req.body?.requiredOnly === true
+    const mode = requiredOnly ? 'chat' : req.body?.assistantMode
+    if (mode !== 'chat' && mode !== 'workspace' && mode !== 'make' && mode !== 'console') return reply.code(400).send({ error: 'Неизвестный режим ассистента' })
+    if (mode === 'make' && conversation.assistantKind !== 'make') return reply.code(400).send({ error: 'Make mode belongs to a Make conversation' })
+    if (mode === 'console' && conversation.assistantKind !== 'console-reader') return reply.code(400).send({ error: 'Console mode belongs to a Console Assistant conversation' })
+    const requested = Array.isArray(req.body?.disabled) ? req.body.disabled.filter((item): item is string => typeof item === 'string') : []
+    if (requested.some((item) => !isContextToggleable(item))) return reply.code(400).send({ error: 'Этот пункт нельзя выключить' })
+    const snapshotOptions = { chatModels: opts.chatModels, isOnline: opts.isAgentOnline, kbStatus: await kbStatusSafe(), viewer: uid(req) }
+    const required = new Set((await db.settings.getSettings(owner)).requiredContextItems ?? [])
+    await db.chat.setConversationAssistantMode(owner, req.params.id, mode)
+    let disabled = requested.filter((item) => item !== REQUIRED_ONLY_CONTEXT_ID && !required.has(item))
+    if (requiredOnly) {
+      // The list of the target mode with nothing disabled: the same items a client used to turn off one by one.
+      const clean = await contextSnapshot(db, owner, req.params.id, {
+        ...snapshotOptions, preview: { assistantMode: 'chat', assistantKind: conversation.assistantKind ?? null, disabledContext: [] }
+      })
+      disabled = [
+        REQUIRED_ONLY_CONTEXT_ID,
+        ...(clean?.groups.flatMap((group) => group.items) ?? []).filter((item) => (item.configurable ?? item.toggleable) && !required.has(item.id)).map((item) => item.id)
+      ]
+    }
+    const updated = await db.chat.replaceConversationDisabledContext(owner, req.params.id, disabled, uid(req))
+    if (!updated) return reply.code(404).send({ error: 'not found' })
+    const snapshot = await contextSnapshot(db, owner, req.params.id, snapshotOptions)
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 

@@ -912,6 +912,31 @@ export class ChatRepo extends BaseRepo {
    * применяются при сборке хода (turns.ts).
    */
   /**
+   * Writes the whole disabled list in one statement. A mode switch used to be a series of per-item
+   * requests; two switches in a row interleaved and left the conversation in the earlier mode.
+   * One write makes the last request win. Events are logged only for items that changed.
+   */
+  async replaceConversationDisabledContext(userId: string, id: string, disabledIds: string[], actor = userId): Promise<Conversation | null> {
+    const conversation = await this.getConversation(userId, id)
+    if (!conversation) return null
+    const next = [...new Set(disabledIds.filter(isContextToggleable))]
+    const before = new Set(conversation.disabledContext ?? [])
+    const after = new Set(next)
+    const changed = [...new Set([...before, ...after])].filter(itemId => before.has(itemId) !== after.has(itemId))
+    if (!changed.length) return conversation
+    // The engine thread fixed its instructions and tools at start, as in `setConversationContextEnabled`.
+    await this.sql.run(
+      `UPDATE conversations SET disabled_context_json = ?, claude_session_id = NULL, context_usage_json = NULL WHERE id = ? AND user_id = ?`,
+      [JSON.stringify(next), id, userId]
+    )
+    const at = this.now()
+    for (const itemId of changed) {
+      await this.sql.run(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled) VALUES (?, ?, ?, ?, ?, ?)`, [at, id, userId, actor, itemId, after.has(itemId) ? 0 : 1])
+    }
+    return await this.getConversation(userId, id)
+  }
+
+  /**
    * Тумблер пункта контекста. `actor` пишется в журнал: обычно это владелец, но
    * админ правит и чужие чаты, и «почему этот чат ведёт себя иначе» без имени
    * не ответить. Повторное выставление того же значения событие не пишет —

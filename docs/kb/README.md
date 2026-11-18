@@ -21,13 +21,13 @@
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-17 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 7d3844531 Merge remote-tracking branch 'origin/dev' into fix/chat-model-defects … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-17 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 7d3844531 Merge remote-tracking branch 'origin/dev' into fix/chat-model-defects … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-11-17 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 3508c4444 fix(knowledge): automatic context injection no longer waits for the LLM reranker … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-11-17 | ⚠ 1 коммит(ов) в areas после проверенного SHA: a1eb1781a perf(chat): reuse a recent fetch of the project copy instead of fetching before every turn |
 | [features/make-browser.md](features/make-browser.md) | Make: браузер ассистента | 2026-11-17 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 7d3844531 Merge remote-tracking branch 'origin/dev' into fix/chat-model-defects … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: a1eb1781a perf(chat): reuse a recent fetch of the project copy instead of fetching before every turn |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-11-17 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 7d3844531 Merge remote-tracking branch 'origin/dev' into fix/chat-model-defects … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-11-13 | ⚠ 3 коммит(ов) в areas после проверенного SHA: aa7507b91 fix(chat): real model in turn meta, Required exit cleanup, default alias hint and price … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 002a0e499 fix(deploy): reap orphaned git processes in the Core container |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-11-14 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 3508c4444 fix(knowledge): automatic context injection no longer waits for the LLM reranker … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ⚠ 1 коммит(ов) в areas после проверенного SHA: a1eb1781a perf(chat): reuse a recent fetch of the project copy instead of fetching before every turn |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1511. Последние:
+Всего записей: 1512. Последние:
 
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-project-sync-fetch-throttle.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-project-sync-fetch-throttle.md) — project-sync-fetch-throttle
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-kb-auto-context-lexical.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-kb-auto-context-lexical.md) — kb-auto-context-lexical
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-model-defects.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-model-defects.md) — chat-model-defects
+- [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-mode-stop-defects.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-mode-stop-defects.md) — chat-mode-stop-defects
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-text-only-system-prompt.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-text-only-system-prompt.md) — text-only-system-prompt
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-without-text.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-without-text.md) — stopped-answer-without-text
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stop-frees-conversation.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-stop-frees-conversation.md) — stop-frees-conversation
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-release-train-503e21c3-673d-44dd-a5e8-9c75761c5912.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-release-train-503e21c3-673d-44dd-a5e8-9c75761c5912.md) — release-train-503e21c3-673d-44dd-a5e8-9c75761c5912
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-queue-snapshot-all-scopes.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-queue-snapshot-all-scopes.md) — queue-snapshot-all-scopes
 - [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-pricing-2026-11-17.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-pricing-2026-11-17.md) — pricing-2026-11-17
-- [2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md](log/2026-11-17-alexeys-macbook-air-tailae39a6-ts-net-model-api-thread-busy-message.md) — model-api-thread-busy-message
 
 ## Исторические планы
 
