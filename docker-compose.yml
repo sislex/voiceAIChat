@@ -274,7 +274,7 @@ services:
   # Студия картинок владеет /data/image-studio; авторизация и LLM остаются у ядра.
   image-studio:
     profiles: ["image-studio"]
-    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:9dca9c9357617d52754d32d480952f1ac9f3aa30}
+    image: ${SISLEXA_IMAGE_STUDIO_IMAGE:-ghcr.io/sislex/image-studio-api:f073759869d8c5c01a85ee42ab6932cc3c2fdfa3}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0

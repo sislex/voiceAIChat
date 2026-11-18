@@ -26,8 +26,8 @@
       "package": "@sislexa/image-studio",
       "workspace": "apps/image-studio",
       "repository": "https://github.com/sislex/image-studio",
-      "version": "1.1.5",
-      "commit": "9dca9c9357617d52754d32d480952f1ac9f3aa30"
+      "version": "1.1.6",
+      "commit": "f073759869d8c5c01a85ee42ab6932cc3c2fdfa3"
     },
     "stt-runner": {
       "package": "@sislexa/voice",
