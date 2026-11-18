@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: a96e81ad9
+checked: 264d4b6e6
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -557,6 +557,20 @@ other configurable source dynamically; non-toggleable platform/application
 instructions, history and the current message remain. Settings presets may carry
 a mode and description; Make conversation creation selects Make mode independently
 of the ordinary-chat default and does not inherit the required-only marker.
+
+`POST /api/conversations/:id/context-configuration` (`REST.conversationContextConfiguration`) applies a
+mode or a preset in one request: body `{ assistantMode, disabled? }` or `{ requiredOnly: true }`. The
+assistant mode and the whole disabled list (`replaceConversationDisabledContext`, one `UPDATE`) are
+written together, so the last request wins. A client that applies Required with one
+`context/:itemId` request per block needs about 12 s on production, and a switch back during that
+time interleaves with it and leaves the marker with every block disabled; clients must use the
+single request. While the marker is set, `context/:itemId` with `enabled: false` returns the snapshot
+(the block is already off); enabling a block is still rejected.
+
+Stop keeps the stopped answer even when no text arrived (`cancelTurn` in `turns.ts`): the empty
+message carries `meta.stopped` and stays out of the next prompt. A tool-free turn (Chat, Required,
+model API) does not record `permissionMode` in its request details; the runner still receives it
+because Codex uses it as the sandbox.
 
 Защищённый `GET /api/conversations/:id/context-snapshot` в `apps/server/src/routes/rest.ts` формирует preview сохранённого контекста следующего хода. Effective LLM разрешается атомарно по цепочке: явные provider/model разговора → собственная `ci_llm_config` привязанного проекта → пользовательские настройки. Проектная конфигурация читается только при отсутствии override provider разговора; если выбранный уровень не задаёт модель, fallback берётся из пользовательской модели соответствующего provider.
 

@@ -329,6 +329,7 @@ export const REST = {
    * POST с телом `{ fromConversationId }`: разговор-источник — не параметр
    * адреса, а данные операции, и в URL ему не место.
    */
+  conversationContextConfiguration: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-configuration`,
   conversationContextCopy: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-copy`,
   /** Чем контекст этого разговора отличается от другого (без изменений). */
   conversationContextDiff: (id: string, otherId: string) =>

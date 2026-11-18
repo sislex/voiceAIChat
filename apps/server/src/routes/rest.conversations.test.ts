@@ -1371,6 +1371,43 @@ describe('REST: conversations/messages/settings', () => {
     expect((await inj({ method: 'POST', url: `/api/conversations/${target.id}/context-copy`, payload: { fromConversationId: 'нет-такого' } })).statusCode).toBe(404)
   })
 
+  it('applies a mode in one request, so a quick switch back is not undone by the first one', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Atomic mode' } })).json()
+    const configure = (payload: Record<string, unknown>) =>
+      inj({ method: 'POST', url: `/api/conversations/${created.id}/context-configuration`, payload })
+    const stored = async (): Promise<{ assistantMode?: string; disabledContext?: string[] }> =>
+      ((await inj({ method: 'GET', url: '/api/conversations' })).json() as Array<{ id: string; assistantMode?: string; disabledContext?: string[] }>)
+        .find((entry) => entry.id === created.id) ?? {}
+    const disabledOf = (response: { json: () => { groups: Array<{ items: Array<{ id: string; enabled: boolean; configurable?: boolean }> }> } }) =>
+      response.json().groups.flatMap((group) => group.items).filter((item) => item.configurable && !item.enabled).map((item) => item.id)
+
+    const required = await configure({ requiredOnly: true })
+    expect(required.statusCode).toBe(200)
+    const requiredState = await stored()
+    expect(requiredState.assistantMode).toBe('chat')
+    expect(requiredState.disabledContext).toContain('required-only')
+    expect(requiredState.disabledContext!.length).toBeGreaterThan(1)
+    expect(disabledOf(required).length).toBeGreaterThan(0)
+    // Repeating what Required already holds is not an error; enabling a block still is.
+    const off = requiredState.disabledContext!.find((itemId) => itemId !== 'required-only')!
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${off}`, payload: { enabled: false } })).statusCode).toBe(200)
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/${off}`, payload: { enabled: true } })).statusCode).toBe(400)
+
+    const chat = await configure({ assistantMode: 'chat' })
+    expect(chat.statusCode).toBe(200)
+    expect((await stored()).disabledContext ?? []).toEqual([])
+    expect(disabledOf(chat)).toEqual([])
+
+    const preset = await configure({ assistantMode: 'workspace', disabled: ['personalization', 'mcp-history'] })
+    expect(preset.statusCode).toBe(200)
+    expect(await stored()).toMatchObject({ assistantMode: 'workspace', disabledContext: ['personalization', 'mcp-history'] })
+
+    expect((await configure({ assistantMode: 'make' })).statusCode).toBe(400)
+    expect((await configure({ assistantMode: 'nope' })).statusCode).toBe(400)
+    expect((await configure({ assistantMode: 'chat', disabled: ['current-message'] })).statusCode).toBe(400)
+    expect((await inj({ method: 'POST', url: '/api/conversations/нет-такого/context-configuration', payload: { assistantMode: 'chat' } })).statusCode).toBe(404)
+  })
+
   it('leaving Required restores a conversation with nothing disabled, like a fresh Chat', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Required and back' } })).json()
     const toggle = (itemId: string, enabled: boolean) =>
