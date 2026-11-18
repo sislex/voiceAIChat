@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-19
-checked: dd013f623
+checked: 5ab41b195
 title: Машины: компаньон-агент, политика, PTY, проводник
 areas:
   - apps/server/src/agents
@@ -1229,3 +1229,7 @@ self-update survives an APK upgrade. The same runtime restores
 90 seconds, then clears the pending marker. Consequently the self-updated JS bundle
 remains the delivery path for new Agent behavior on upgraded Android installs while
 APK bundle replacement is intentionally suppressed.
+
+The `read` machine tool resolves attachments of the current turn first (by upload id, printed path
+such as `storage:<space>/<path>`, or file name), the same way `image` does; such a file lives in file
+storage and has no machine cwd.

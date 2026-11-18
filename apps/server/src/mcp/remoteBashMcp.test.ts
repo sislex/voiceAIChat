@@ -1143,6 +1143,29 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
     expect(reads).toBe(0)
   })
 
+  it('read returns a turn attachment by its storage path without touching the machine', async () => {
+    let reads = 0
+    const registry = {
+      fsRead: async () => { reads++; return { root: '/', cwd: '', dataBase64: Buffer.from('machine').toString('base64') } },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    const server = Fastify({ logger: false })
+    const path = 'storage:space-1/2026-11-18/code.txt'
+    registerRemoteBashMcp(server, registry, SECRET, undefined, async () => [
+      { agentId: 'a1', name: 'Мак', path: '/project' }
+    ], (token) => token === 'turn-files' ? [{ path, name: 'code.txt', dataBase64: Buffer.from('Кодовое слово: ФИЛИН').toString('base64') }] : undefined)
+    await server.ready(); app = server
+    const query = `${Q}&files=turn-files`
+    await rpc(app, INIT_BODY, query)
+    for (const requested of [path, 'code.txt']) {
+      const call = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'read', arguments: { path: requested } } }, query)
+      const result = (call.json() as { result: { isError?: boolean; content: Array<{ type: string; text?: string }> } }).result
+      expect(result.isError).not.toBe(true)
+      expect(result.content[0]?.text).toContain('ФИЛИН')
+    }
+    expect(reads).toBe(0)
+  })
+
   it('image различает отсутствующий файл и найденный неподдерживаемый формат', async () => {
     const registry = {
       fsRead: async (_agentId: string, path: string) => {
