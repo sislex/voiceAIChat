@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: 78ca5de15
+checked: 3886cbcdb
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -943,6 +943,10 @@ open Make panel, requires `browser_capabilities` first and uses `screenshot`
 when supported, otherwise `read`. `make_preview_closed` asks the user to open
 that preview. Bound Reader browsers keep their own conversation token and
 `panel`/`chromium` surface. See [Make browser routing](features/make-browser.md#scoped-make-execution).
+
+The same prompt explains `make_stand_proxy_off`: a stand frame with the server proxy off (Make
+`boundProxy: false`) answers assistant actions with this code, and the model is told to enable the
+proxy with `stand_update` (`proxy: true`) instead of asking the user to reopen an open preview.
 
 Сборка блока контекста (порог `autoInjectAllowed`, формат разделов, точные
 символы каждого) живёт в `kb/autoContext.ts` — ОДНА на ход чата и на ход модели
