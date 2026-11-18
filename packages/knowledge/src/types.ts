@@ -16,6 +16,11 @@ export interface KbView {
   scope?: KbScope
   /** Фильтр проекта; должен быть среди projectIds, иначе выдача пустая. */
   projectId?: string | null
+  /**
+   * Skip the LLM reranker and keep the lexical order. Automatic context injection sets it: the
+   * reranker is a separate model run of several seconds in front of every turn.
+   */
+  lexicalOnly?: boolean
 }
 
 /** Вид по умолчанию: только общий раздел «Использование». */

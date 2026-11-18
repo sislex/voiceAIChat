@@ -1,4 +1,5 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { buildKbAutoContext } from './autoContext.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -94,6 +95,16 @@ describe('FileKnowledgeBaseService', () => {
     expect(found.slice(0, 3).map((r) => r.chunkId)).toContain('core:features/projects.md#фронтенд')
     const hit = found.find((r) => r.chunkId === 'core:features/projects.md#фронтенд')!
     expect(hit.matchTypes).toContain('symbol')
+  })
+  it('skips the reranker for automatic context and keeps it for an explicit search', async () => {
+    const rerank = { rerank: vi.fn(async (_q: string, candidates: { chunkId: string }[]) => [candidates.at(-1)!.chunkId]) }
+    const kb = new FileKnowledgeBaseService(fixture(), rerank)
+    const auto = await buildKbAutoContext(kb, 'websocket', { userId: 'u', projectIds: [] })
+    expect(rerank.rerank).not.toHaveBeenCalled()
+    expect(auto.bundle.sections.every(section => !section.matchTypes.includes('semantic'))).toBe(true)
+    expect((await kb.search({ query: 'websocket' }, { userId: 'u', projectIds: [], lexicalOnly: true }))[0].matchTypes).not.toContain('semantic')
+    await kb.search({ query: 'websocket' })
+    expect(rerank.rerank).toHaveBeenCalledOnce()
   })
   it('выборочно вызывает reranker для неоднозначной выдачи и проверяет ids', async () => { const rerank = { rerank: vi.fn(async (_q, candidates) => [candidates.at(-1)!.chunkId, 'unknown']) }; const kb = new FileKnowledgeBaseService(fixture(), rerank); const found = await kb.search({ query: 'websocket' }); expect(rerank.rerank).toHaveBeenCalledOnce(); expect(found[0].matchTypes).toContain('semantic') })
 })

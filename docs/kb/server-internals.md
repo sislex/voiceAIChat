@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: 8ccf2a2f9
+checked: a96e81ad9
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -345,6 +345,10 @@ The explicit host ports are:
 | `KbDocumentStore` | `kb/rpc.ts` | Persistent document lookup, save and delete through `db.kb` |
 | `KbRpcPorts.usage` | `kb/rpc.ts` | Authorized conversation/project/run/task usage reports |
 | `KbUsageTracker` | `kb/usage.ts` | MCP delivery telemetry and Core event publication |
+
+Automatic context injection (`buildKbAutoContext`, chat turns and CI runs) sets `KbView.lexicalOnly`
+and never calls the reranker: it is a separate model run of 3.5–5 s in front of every Workspace and
+Make turn, and on production it lowered the share of injected turns. Explicit `kb:search` calls keep it.
 
 `createInProcessKbRpc` implements every method in Shared's B01
 `KB_SERVICE_RPC` registry. `createLocalKbRpc` binds concrete database/access

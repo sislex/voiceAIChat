@@ -112,6 +112,9 @@ export async function buildKbAutoContext(
   budget: number = KB_AUTO_CONTEXT_BUDGET,
   skipPreferred = false
 ): Promise<KbAutoContext> {
+  // Injection runs in front of every turn, so it must not wait for a model: the LLM reranker
+  // added 3.5–5 s to each Workspace turn. Explicit `kb:search` calls keep the reranker.
+  if (!view.lexicalOnly) view = { ...view, lexicalOnly: true }
   const preferred = skipPreferred ? undefined : await kb.preferredModule?.(view)
   if (preferred && !view.module) {
     // Оставляем часть бюджета для навигации по другим модулям. Основной модуль
