@@ -669,7 +669,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     ].filter(Boolean)
     const engineNotice = notices.join('\n')
     // Snapshot for the whole turn: a model API stand has tools only while the provider relays them.
-    const modelApiNoTools = !!deps.chatModelApi && !deps.modelApiTools?.()
+    // A stand configured as text-only stays tool-free even when the provider offers the transit:
+    // otherwise Make would lose both its tools and the text file protocol.
+    const modelApiNoTools = !!deps.chatModelApi && (!deps.modelApiTools?.() || !!deps.chatTextOnly)
     // session-id хранится с префиксом провайдера ("claude:…"/"codex:…"); при
     // смене движка чужой resume-id игнорируем (свежий ход).
     // A text-only Claude run is started with `--no-session-persistence`: the runner keeps no session
