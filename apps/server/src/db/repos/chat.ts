@@ -216,6 +216,18 @@ function compactRequest(request: TurnRequestInfo): TurnRequestInfo {
   return { ...rest, ...(messages && rest.messageCount === undefined ? { messageCount: messages.length } : {}) }
 }
 
+/** Notes that replace or close a user-stopped answer in a cold-start prompt. */
+export const STOPPED_EMPTY_NOTE = '[Пользователь остановил этот ответ до его начала. Запрос выше не выполнен и отменён: не выполняй и не продолжай его, пока пользователь явно не попросит снова.]'
+export const STOPPED_PARTIAL_NOTE = '[Пользователь остановил ответ на этом месте. Не продолжай и не повторяй этот запрос, пока пользователь явно не попросит.]'
+
+function stoppedByUser(meta: unknown): boolean {
+  if (!meta) return false
+  try {
+    const value = typeof meta === 'string' ? JSON.parse(meta) as { stopped?: unknown } : meta as { stopped?: unknown }
+    return value?.stopped === true
+  } catch { return false }
+}
+
 export class ChatRepo extends BaseRepo {
   /** Always remove legacy diagnostics in SQL, before transferring/parsing history. */
   private messageColumns(alias = ''): string {
@@ -290,11 +302,24 @@ export class ChatRepo extends BaseRepo {
     return (await this.sql.get<{ id: string }>("SELECT id FROM messages WHERE conversation_id = ? AND state = 'published' AND role <> 'ai' ORDER BY history_position DESC, id DESC LIMIT 1", [conversationId]))?.id
   }
 
-  async historyText(userId: string, conversationId: string): Promise<Array<{ role: MessageRole; text: string }>> {
+  /**
+   * Conversation text for a cold-start prompt. `untilMessageId` bounds it at the message the turn
+   * answers: a message queued behind a running turn is already stored after it, and a prompt that
+   * ended with the queued question made the model answer that one instead.
+   */
+  async historyText(userId: string, conversationId: string, untilMessageId?: string): Promise<Array<{ role: MessageRole; text: string }>> {
     if (!await this.ownsConversation(userId, conversationId)) return []
-    const rows = await this.sql.all<{ role: MessageRole; text: string }>("SELECT role, text FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
-    // An answer stopped before its first text is stored empty for its note; it is not a reply.
-    return rows.filter(row => row.text.trim() !== '')
+    const all = await this.sql.all<{ id: string; role: MessageRole; text: string; meta: string | null }>("SELECT id, role, text, meta FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
+    const end = untilMessageId ? all.findIndex(row => row.id === untilMessageId) : -1
+    const rows = end >= 0 ? all.slice(0, end + 1) : all
+    return rows.flatMap((row) => {
+      const stopped = row.role === 'ai' && stoppedByUser(row.meta)
+      // A stopped answer must stay visible to the model as stopped: without the note a cold start
+      // sees an unanswered request and carries it out again together with the next question.
+      if (stopped) return [{ role: row.role, text: row.text.trim() ? `${row.text}\n\n${STOPPED_PARTIAL_NOTE}` : STOPPED_EMPTY_NOTE }]
+      // An answer interrupted before its first text for another reason is not a reply.
+      return row.text.trim() !== '' ? [{ role: row.role, text: row.text }] : []
+    })
   }
 
   /** Attachments of every message of the conversation in any state or branch (queued turns included). */

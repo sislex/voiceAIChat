@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-19
-checked: 5c5a118e2
+checked: c2059328c
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1902,3 +1902,13 @@ The turn `onError` handler runs without an awaiting caller. A conversation delet
 is failing rejects the queue writes (`conversation not found`); the handler catches that, logs
 `[turns] failed turn could not be queued` and still broadcasts `claude.error`. An escaping
 rejection there terminated the whole server process.
+
+### Cold-start history boundaries
+
+`ChatRepo.historyText(userId, conversationId, untilMessageId)` feeds every turn that has no engine
+session (Chat and Required, tool-free servers, model API applications). It stops at the message
+the turn answers: a message queued behind a running turn is stored after it, and an unbounded
+prompt made the model answer the queued question. A user-stopped answer (`meta.stopped`) stays in
+the prompt as a note (`STOPPED_EMPTY_NOTE`, or the partial text closed with
+`STOPPED_PARTIAL_NOTE`); without it the next turn saw an unanswered request and carried it out
+again.

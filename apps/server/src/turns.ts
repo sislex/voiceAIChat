@@ -723,7 +723,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let conversationPrompt = sessionId
       ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths)
-      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths, conv?.summary?.text)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId, req.messageId), conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths, conv?.summary?.text)
     if (inlineAttachmentText) conversationPrompt = conversationPrompt ? `${conversationPrompt}\n\n${inlineAttachmentText}` : inlineAttachmentText
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
