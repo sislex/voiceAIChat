@@ -141,9 +141,12 @@ export function parseStreamJsonLine(line: string): ClaudeStreamEvent | null {
       return usageEvent(msg?.id, msg?.usage) ?? { kind: 'ignore' }
     }
     case 'result': {
+      // A failed run carries no `result`; the reason is in `errors` (for example
+      // "No conversation found with session ID: …" when `--resume` names a missing session).
+      const errors = Array.isArray(obj.errors) ? obj.errors.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : []
       return {
         kind: 'result',
-        text: typeof obj.result === 'string' ? obj.result : '',
+        text: typeof obj.result === 'string' ? obj.result : errors.join('\n'),
         sessionId: typeof obj.session_id === 'string' ? obj.session_id : undefined,
         isError: obj.is_error === true || obj.subtype === 'error_during_execution',
         meta: parseTurnMeta(obj)

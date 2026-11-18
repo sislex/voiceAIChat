@@ -94,6 +94,11 @@ describe('parseStreamJsonLine', () => {
     })
   })
 
+  it('takes the failure text of a result without `result` from `errors`', () => {
+    const ev = parseStreamJsonLine(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: 's', errors: ['No conversation found with session ID: s'] }))
+    expect(ev).toMatchObject({ kind: 'result', isError: true, text: 'No conversation found with session ID: s' })
+  })
+
   it('помечает result как ошибочный при is_error', () => {
     const line = JSON.stringify({ type: 'result', is_error: true, result: '' })
     expect(parseStreamJsonLine(line)).toMatchObject({ kind: 'result', isError: true })

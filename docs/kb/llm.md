@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: 067489784
+checked: a90c136b4
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -1325,3 +1325,8 @@ watermark of the last message the thread saw, a catch-up prompt for the missed t
 invalidation at every place that resets the session (edit/delete, context toggles, summary reset,
 Stop on a model-API stand, lost thread); OpenAI's prompt cache is also per model, so switching between
 Codex models gains little. Consecutive Codex turns resume the thread, also across Codex models.
+
+A failed Claude `result` event has no `result` text: `parseStreamJsonLine` takes the reason from its
+`errors` list. Without it a missing `--resume` session surfaced as the bare «Claude вернул ошибку»
+and the lost-session retry of a model API application never matched. HTTP 429
+`concurrency_limit_exceeded` from a model API is shown as `MODEL_API_BUSY_MESSAGE`.

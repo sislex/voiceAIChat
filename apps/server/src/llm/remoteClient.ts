@@ -154,10 +154,14 @@ function isCodexThreadInUse(status: number, body: string): boolean {
 }
 
 /** Ненулевой HTTP-статус: чаще всего это токен или адрес, а не модель. */
+/** The model API of another Core limits concurrent runs per token; the turn is safe to repeat. */
+export const MODEL_API_BUSY_MESSAGE = 'Слишком много одновременных ходов через API моделей для этого токена. Повторите ход чуть позже.'
+
 function describeHttpError(kind: RunnerKind, url: string, status: number, body: string): string {
   if (kind === 'codex' && isCodexThreadInUse(status, body)) return CODEX_THREAD_IN_USE_MESSAGE
   if (status === 409 && body.includes('tool_transit_unavailable')) return TOOL_TRANSIT_UNAVAILABLE_MESSAGE
   if (status === 403 && body.includes('tool_transit_denied')) return TOOL_TRANSIT_DENIED_MESSAGE
+  if (status === 429 && body.includes('concurrency_limit_exceeded')) return MODEL_API_BUSY_MESSAGE
   const snippet = body.trim().slice(0, 300)
   if (status === 401 || status === 403) {
     return (
