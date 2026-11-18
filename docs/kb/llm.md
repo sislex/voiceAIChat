@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: 321201f4e
+checked: 067489784
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -184,6 +184,9 @@ profile spoofing, 402/403/429, cancellation, disconnect and sid attribution.
 
 
 ### Tool transit: the application keeps its own tools
+
+Production switch: `docker-compose.yml` passes `VC_MODEL_API_TOOL_TRANSIT` (default `false`) to the
+Core container; set it to `true` in the checkout `.env` and recreate the `voicechat` service.
 
 An application that uses the model API owns its tools and its chat context; the provider adds none
 and executes none. Because the model runs on the provider's runner, a tool call has to travel back.
