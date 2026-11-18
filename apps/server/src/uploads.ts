@@ -90,6 +90,16 @@ export function machineUploadPath(root: string, id: string, name: string): strin
   return machineManagedFilePath(machineUploadDir(root), id, name)
 }
 
+/** True when a message attachment points at this upload: by id, or by the same stored file. */
+export function attachmentUsesUpload(
+  attachment: { uploadId?: string; path?: string; agentId?: string; storage?: { spaceId: string; path: string } },
+  upload: StoredUpload
+): boolean {
+  if (attachment.uploadId && attachment.uploadId === upload.id) return true
+  if (upload.storage) return attachment.storage?.spaceId === upload.storage.spaceId && attachment.storage.path === upload.storage.path
+  return attachment.path === upload.path && (attachment.agentId ?? undefined) === (upload.agentId ?? undefined)
+}
+
 export class UploadStore {
   private readonly byId = new Map<string, StoredUpload>()
 

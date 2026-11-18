@@ -161,7 +161,7 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
+import { UploadStore, attachmentUsesUpload, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
 import type { TtsClient } from './tts/client/types.js'
@@ -1464,6 +1464,36 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
     }
   )
+  })
+
+  // An attachment removed from an unsent draft: the stored file must not stay in the chat space
+  // and in the quota. Only the owner, and only while no message of the conversation uses it.
+  app.delete<{ Params: { id: string } }>(`${REST.uploads}/:id`, async (req, reply) => {
+    const userId = uid(req)
+    const upload = uploads.get(req.params.id)
+    if (!upload || upload.ownerId !== userId || (upload.tenantId && upload.tenantId !== req.user?.account?.tenantId)) {
+      return reply.code(404).send({ error: 'not_found' })
+    }
+    if (upload.conversationId) {
+      const used = await db.chat.conversationAttachments(userId, upload.conversationId)
+      if (used.some(attachment => attachmentUsesUpload(attachment, upload))) {
+        return reply.code(409).send({ error: 'upload_in_use', message: 'Вложение уже отправлено в сообщении.' })
+      }
+    }
+    try {
+      if (upload.storage) {
+        if (!fileStorage) return reply.code(404).send({ error: 'storage_disabled' })
+        await fileStorage.deleteFile(userId, upload.storage.spaceId, upload.storage.path)
+      } else if (upload.agentId) {
+        // The machine may be offline; the record still goes away so the draft stays consistent.
+        await agentRegistry.fsDeleteFileSafe(upload.agentId, upload.path).catch(() => undefined)
+      }
+    } catch (error) {
+      // A file that is already gone is the wanted result.
+      if (!(error instanceof Error) || !/not_found/.test(String((error as { code?: unknown }).code ?? error.message))) return storageError(reply, error)
+    }
+    uploads.remove(upload.id)
+    return { ok: true }
   })
 
   app.post<{ Body: ImageRetouchRequest }>(

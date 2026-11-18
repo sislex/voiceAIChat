@@ -297,6 +297,13 @@ export class ChatRepo extends BaseRepo {
     return rows.filter(row => row.text.trim() !== '')
   }
 
+  /** Attachments of every message of the conversation in any state or branch (queued turns included). */
+  async conversationAttachments(userId: string, conversationId: string): Promise<MessageAttachment[]> {
+    if (!(await this.ownsConversation(userId, conversationId))) return []
+    const rows = await this.sql.all<{ attachments: string | null }>('SELECT attachments FROM messages WHERE conversation_id = ? AND attachments IS NOT NULL', [conversationId])
+    return rows.flatMap(row => parseAttachments(row.attachments) ?? [])
+  }
+
   async historyFiles(userId: string, conversationId: string): Promise<Array<{ text: string; attachments?: MessageAttachment[] }>> {
     if (!await this.ownsConversation(userId, conversationId)) return []
     const rows = await this.sql.all<{ text: string; attachments: string | null }>("SELECT text, attachments FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
