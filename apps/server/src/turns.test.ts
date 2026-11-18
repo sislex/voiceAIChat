@@ -1951,6 +1951,7 @@ describe('turns: MCP-инструменты веб-превью (mcp__browser__*
     expect(rec.last()?.prompt).toContain('Пользователь видит каждое действие')
     expect(rec.last()?.prompt).toContain('browser_capabilities')
     expect(rec.last()?.prompt).toContain('make_preview_closed')
+    expect(rec.last()?.prompt).toContain('make_stand_proxy_off')
     expect(rec.last()?.prompt).toContain('screenshot')
     expect(rec.last()?.prompt).toContain('иначе read')
     await turns.idle()
