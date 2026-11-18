@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-18
-checked: 0e181751e
+updated: 2026-11-19
+checked: 5c5a118e2
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1897,3 +1897,8 @@ to run on every turn; over a slow link it added 8–9 s to each answer (measured
 succeeded less than two minutes ago. Everything local still runs on each turn: the status check,
 the automatic stash, the return to the base branch and the fast-forward to the already fetched ref.
 A copy without the remote ref always fetches.
+
+The turn `onError` handler runs without an awaiting caller. A conversation deleted while its turn
+is failing rejects the queue writes (`conversation not found`); the handler catches that, logs
+`[turns] failed turn could not be queued` and still broadcasts `claude.error`. An escaping
+rejection there terminated the whole server process.
