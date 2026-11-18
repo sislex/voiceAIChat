@@ -17,7 +17,7 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-18 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 16 коммит(ов) в areas после проверенного SHA: c605aafbe fix(mcp): the machine read tool resolves attachments of the current turn … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-17 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 61ed3842f fix(turns): a text-only model API stand keeps the Make text protocol when tools are relayed … |
@@ -37,13 +37,13 @@
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-11-13 | ✓ |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-11-19 | ✓ |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-11-19 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c605aafbe fix(mcp): the machine read tool resolves attachments of the current turn |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-11-19 | ✓ |
 | [modules.md](modules.md) | Module ownership map | 2026-11-14 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-17 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 61ed3842f fix(turns): a text-only model API stand keeps the Make text protocol when tools are relayed … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-18 | ⚠ 7 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-19 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 61ed3842f fix(turns): a text-only model API stand keeps the Make text protocol when tools are relayed … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-19 | ⚠ 3 коммит(ов) в areas после проверенного SHA: c605aafbe fix(mcp): the machine read tool resolves attachments of the current turn … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 9 коммит(ов) в areas после проверенного SHA: 5f027265a fix(llm): surface the reason of a failed Claude result and the model API concurrency limit … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
