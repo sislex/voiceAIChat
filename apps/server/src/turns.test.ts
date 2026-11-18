@@ -2534,6 +2534,20 @@ describe('turns: управляемая персистентная очеред�
     expect(isLostCodexThread('runner failed')).toBe(false)
   })
 
+  it('a turn that fails after its conversation was deleted does not reject the error handler', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'deleted while failing')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Вопрос', '10:00')
+    const llm = controlled()
+    const turns = createTurnManager({ db: await db, claude: llm.client })
+
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    await db.chat.deleteConversation(U, conversation.id)
+    // The LLM client calls onError without awaiting it: a rejection here is an unhandled rejection.
+    await expect(llm.handlers[0]!.onError('runner failed')).resolves.toBeUndefined()
+    await turns.idle()
+  })
+
   it('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'queue')

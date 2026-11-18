@@ -1519,6 +1519,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           const lostThread = !!sessionId && ((provider === 'codex' && isLostCodexThread(message))
             || (!!deps.chatModelApi && provider === 'claude' && isLostClaudeSession(message))
             || (!!deps.chatModelApi && message === THREAD_BUSY_MESSAGE))
+          // A conversation deleted while its turn was failing rejects every queue write below. This
+          // handler is called without an awaiting caller, so an escaping rejection would terminate
+          // the whole server process: report the failure and keep the other conversations running.
+          try {
           if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {
             const pendingAdmission = backgroundStop && message === ACCOUNTING_PENDING_MESSAGE
@@ -1542,6 +1546,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           }
           if (!lostThread || !req.messageId) broadcast({ t: 'claude.error', conversationId, message }, userId)
           await dispatchNext(userId, conversationId)
+          } catch (error) {
+            console.warn('[turns] failed turn could not be queued', JSON.stringify({ conversationId, error: error instanceof Error ? error.message : String(error) }))
+            broadcast({ t: 'claude.error', conversationId, message }, userId)
+          }
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.

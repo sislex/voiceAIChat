@@ -16,8 +16,8 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 10 коммит(ов) в areas после проверенного SHA: 3574f0c44 chore(ui): pin Core UI 1.5.58 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 13 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-18 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-18 | ⚠ 4 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ✓ |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-17 | ⚠ 12 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-13 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-14 | ⚠ 8 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -43,12 +43,12 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-10-07 | ✓ |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-11-17 | ⚠ 11 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-18 | ⚠ 7 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
-| [server-internals.md](server-internals.md) | server-internals | 2026-11-18 | ⚠ 2 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
+| [server-internals.md](server-internals.md) | server-internals | 2026-11-19 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 8 коммит(ов) в areas после проверенного SHA: f70245fcb feat(model-api): relay tool calls back to the application that declared them … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 9 коммит(ов) в areas после проверенного SHA: 164b15c80 Pin release train 6139415b-cb52-44ed-8c8d-e2ac58c4b28e … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 10 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 3b9bc1804 fix(deploy): pass VC_MODEL_API_TOOL_TRANSIT to the Core container … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 16 коммит(ов) в areas после проверенного SHA: 78ae9f02d feat(model-api): a separate token right for the tool transit; retry a lost Claude session on a stand … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1521. Последние:
+Всего записей: 1522. Последние:
 
+- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md) — turn-error-deleted-conversation
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md) — tool-transit-token-grant
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md) — model-api-tool-transit
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-compose-tool-transit-flag.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-compose-tool-transit-flag.md) — compose-tool-transit-flag
@@ -76,7 +77,6 @@
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-kb-auto-context-lexical.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-kb-auto-context-lexical.md) — kb-auto-context-lexical
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-draft-upload-sweep.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-draft-upload-sweep.md) — draft-upload-sweep
 - [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-draft-upload-removal.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-draft-upload-removal.md) — draft-upload-removal
-- [2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-limit-orphans.md](log/2026-11-18-alexeys-macbook-air-tailae39a6-ts-net-chat-upload-limit-orphans.md) — chat-upload-limit-orphans
 
 ## Исторические планы
 
