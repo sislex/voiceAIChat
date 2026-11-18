@@ -92,7 +92,7 @@ it('checks owned conversation kind and speech capability before dispatching WebS
   expect(await commandAccessError(db, user, { t: 'audio.start', sampleRate: 16000 })).toMatchObject({ t: 'stt.error' })
   expect(await commandAccessError(db, user, { t: 'tts.speak', text: 'Test', voice: '' })).toMatchObject({ t: 'tts.error' })
   expect(await commandAccessError(db, user, { t: 'claude.send', conversationId: own.id, segments: [] })).toMatchObject({ message: TARIFF_DENIED })
-  expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: foreign.id })).toMatchObject({ message: 'Разговор недоступен.' })
+  expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: foreign.id })).toMatchObject({ message: 'Беседа не найдена или удалена.' })
   expect(await commandAccessError(db, user, { t: 'claude.cancel', conversationId: own.id })).toBeNull()
 })
 

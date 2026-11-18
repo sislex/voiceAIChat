@@ -24,6 +24,27 @@ function metadata(req: FastifyRequest): ChatUploadMetadata {
   }))
 }
 
+/** Room for multipart boundaries and part headers around one file. */
+const MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+/** A JSON upload carries the file as base64, about a third larger than the file. */
+const JSON_UPLOAD_BODY_BYTES = 64 * 1024 * 1024
+
+/**
+ * The size refusal a declared `Content-Length` already proves, or null. Checked before a byte of
+ * the body is read: otherwise the server keeps receiving (and discarding) the whole oversized body
+ * before the client sees the answer — minutes on a slow uplink.
+ */
+export function declaredUploadTooLarge(headers: { 'content-length'?: string; 'content-type'?: string }): StorageServiceError | null {
+  const length = Number(headers['content-length'])
+  if (!Number.isFinite(length) || length <= 0) return null
+  const type = headers['content-type']?.split(';')[0].trim().toLowerCase()
+  const limit = type === 'application/json' ? JSON_UPLOAD_BODY_BYTES
+    : type === 'multipart/form-data' ? MAX_CHAT_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES
+      : MAX_CHAT_UPLOAD_BYTES
+  if (length <= limit) return null
+  try { uploadTooLarge() } catch (error) { return error as StorageServiceError }
+}
+
 /** Scoped to uploads: leave all other JSON/text routes untouched. */
 export async function registerUploadParsers(app: FastifyInstance) {
   app.removeAllContentTypeParsers()
@@ -58,7 +79,7 @@ export async function readUpload(req: FastifyRequest): Promise<{
     let size = 0
     for await (const chunk of req.body as Readable) {
       size += chunk.length
-      if (size > 64 * 1024 * 1024) uploadTooLarge()
+      if (size > JSON_UPLOAD_BODY_BYTES) uploadTooLarge()
       chunks.push(Buffer.from(chunk))
     }
     let body: ChatUploadJsonRequest

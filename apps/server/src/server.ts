@@ -21,7 +21,7 @@ import type { DelegationIntrospectionClient } from '@sislexa/identity/contracts/
 import { ChatDelegation, DELEGATION_HEADER, DelegationDenied, registerChatDelegation, rejectsAttribution } from './auth/delegation.js'
 import type { ChatDelegationReference } from '@voicechat/shared'
 import { registerBrowserUi } from './browserUi/routes.js'
-import { registerAccountAccess, commandAccessError, TARIFF_DENIED, userHasCapability } from './accountAccess.js'
+import { registerAccountAccess, commandAccessError, CONVERSATION_GONE, TARIFF_DENIED, userHasCapability } from './accountAccess.js'
 import { registerHttpDiagnostics, requestIdOf, REQUEST_ID_HEADER } from './httpDiagnostics.js'
 import { sameAccountContext, accountContext } from '@sislexa/identity/server/users/productPolicy'
 import { registerBillingProxy } from './billingBridge.js'
@@ -161,7 +161,7 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { DEFAULT_DRAFT_UPLOAD_MAX_AGE_MS, startDraftUploadSweep, sweepDraftUploads, type DraftUploadDeps, type DraftUploadReport } from './draftUploads.js'
+import { DEFAULT_DRAFT_UPLOAD_MAX_AGE_MS, conversationDraftUploads, removeConversationUploads, startDraftUploadSweep, sweepDraftUploads, type DraftUploadDeps, type DraftUploadReport } from './draftUploads.js'
 import { UploadStore, type StoredUpload, attachmentUsesUpload, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
@@ -211,7 +211,7 @@ import { HistoricalEvidence, type HistoricalEvidencePort } from './mcp/historica
 
 import { createStorageRuntime } from './fileStorage/runtime.js'
 import { createRemoteStorageRuntime } from './fileStorage/remote.js'
-import { registerUploadParsers, readUpload, bufferUpload } from './uploadBody.js'
+import { registerUploadParsers, readUpload, bufferUpload, declaredUploadTooLarge } from './uploadBody.js'
 import { registerFileStorageRoutes, storageError } from './fileStorage/routes.js'
 import type { StorageNodeClient } from '../../../packages/file-storage/src/client.js'
 
@@ -833,9 +833,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
   registerFileStorageRoutes(app, fileStorage)
   // The upload registry is created further down; the admin route reaches the sweep through this holder.
+  let conversationUploadsRemoved: ((userId: string, conversationId: string) => Promise<void>) | undefined
   let draftUploadSweep: ((options: { maxAgeMs?: number; apply?: boolean; userId?: string }) => Promise<DraftUploadReport>) | undefined
   await registerRest(app, db, opts.config.dataDir, {
     draftUploads: options => draftUploadSweep ? draftUploadSweep(options) : Promise.resolve(null),
+    conversationDeleted: async (userId, conversationId) => { await conversationUploadsRemoved?.(userId, conversationId) },
     modelTokenUsage: (login, from, to) => accountingStore?.modelUsage(login, from, to) ?? [],
     fileStorage,
     chatModels: opts.config.chatModels,
@@ -1357,6 +1359,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     log: message => app.log.warn(message)
   }
   draftUploadSweep = options => sweepDraftUploads(draftUploadDeps, options)
+  conversationUploadsRemoved = async (userId, conversationId) => {
+    // Machine calls are bounded: an offline or slow machine must not hold the deletion.
+    const deleteMachineFile = (agentId: string, path: string) => Promise.race([
+      agentRegistry.fsDeleteFileSafe(agentId, path),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('machine timeout')), 5_000).unref?.())
+    ])
+    // Records are removed before this returns; files on machines are removed in the background.
+    void removeConversationUploads({ uploads, deleteMachineFile, log: message => app.log.warn(message) }, userId, conversationId)
+      .catch(error => app.log.warn({ err: error, conversationId }, 'uploads of a deleted conversation were not removed'))
+  }
   const draftUploadMaxAgeMs = opts.config.draftUploadMaxAgeMs ?? DEFAULT_DRAFT_UPLOAD_MAX_AGE_MS
   if (draftUploadMaxAgeMs > 0) app.addHook('onClose', async () => stopDraftUploadSweep())
   const stopDraftUploadSweep = draftUploadMaxAgeMs > 0 ? startDraftUploadSweep(draftUploadDeps, draftUploadMaxAgeMs) : () => {}
@@ -1418,7 +1430,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   await registerUploadParsers(uploadScope)
   uploadScope.post(
     REST.uploads,
-    { bodyLimit: 64 * 1024 * 1024, preHandler: async (req, reply) => {
+    { bodyLimit: 64 * 1024 * 1024, onRequest: async (req, reply) => {
+      // Refuse an oversized upload by its declared length, before the body is read, and close the
+      // connection: without it the server would still drain the whole body before the client reads
+      // the answer. Runs after the global auth guard.
+      const tooLarge = declaredUploadTooLarge(req.headers)
+      if (tooLarge) { reply.header('connection', 'close'); return storageError(reply, tooLarge) }
+    }, preHandler: async (req, reply) => {
       // The auth guard runs first; sessions and IP changes share the same user budget.
       const total = uploadTotal.hit('uploads')
       const verdict = total.ok ? uploadByUser.hit(uid(req)) : total
@@ -1528,6 +1546,22 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     uploads.remove(upload.id)
     return { ok: true }
+  })
+
+  // Attachments of the unsent draft of a conversation. Upload records outlive a reload and a
+  // restart, so the composer can show them again and let the user send or remove them.
+  app.get<{ Params: { id: string } }>('/api/conversations/:id/draft-uploads', async (req, reply) => {
+    const userId = uid(req)
+    const conversation = await db.chat.getConversation(userId, req.params.id)
+    if (!conversation || conversation.tenantId && conversation.tenantId !== req.user?.account?.tenantId) {
+      return reply.code(404).send({ error: 'conversation_not_found', message: CONVERSATION_GONE })
+    }
+    const drafts = await conversationDraftUploads(draftUploadDeps, userId, req.params.id)
+    return { uploads: drafts.map(upload => ({
+      id: upload.id, name: upload.name, path: upload.path, mimeType: upload.mimeType, size: upload.size,
+      ...(upload.agentId ? { agentId: upload.agentId } : {}),
+      ...(upload.storage ? { storage: upload.storage, thumbnailAvailable: upload.storage.thumbnailAvailable === true } : {})
+    })) }
   })
 
   app.post<{ Body: ImageRetouchRequest }>(

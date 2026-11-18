@@ -1,4 +1,5 @@
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from '../chatModelPolicy.js'
+import { CONVERSATION_GONE } from '../accountAccess.js'
 import { effectiveCapabilities } from '../deploymentApplications.js'
 import { storageError } from '../fileStorage/routes.js'
 import { deleteChatSpaces, orphanChatSpaces, renameChatSpaces } from '../fileStorage/chatSpace.js'
@@ -884,6 +885,8 @@ export async function registerRest(
      */
     refreshProjectMain?: (userId: string, projectId: string) => void
     /** Uploads of abandoned drafts (see draftUploads.ts); null while the upload registry is not ready. */
+    /** A conversation was deleted for good: drop its upload records and the files stored for them. */
+    conversationDeleted?: (userId: string, conversationId: string) => Promise<void>
     draftUploads?: (options: { maxAgeMs?: number; apply?: boolean; userId?: string }) => Promise<import('../draftUploads.js').DraftUploadReport | null>
     /** Conversation kind a ticket-delegated application may create (`x-sislexa-delegation`), or undefined to refuse. */
     delegatedAssistantKind?: (grant: string) => string | undefined
@@ -1737,6 +1740,9 @@ export async function registerRest(
       const userId = uid(req)
       const existed = opts.fileStorage ? await db.chat.getConversation(userId, req.params.id) : null
       await db.chat.deleteConversation(userId, req.params.id)
+      // Upload records and the attachment files Core stored for them go with the conversation.
+      await opts.conversationDeleted?.(userId, req.params.id)
+        .catch(error => req.log.warn({ err: error, conversationId: req.params.id }, 'uploads of a deleted conversation were not removed'))
       // The conversation is gone for good, so its files must stop counting against the quota.
       // A storage outage must not undo the deletion; the leftover space stays visible in «Файлы».
       if (existed && opts.fileStorage) {
@@ -1751,9 +1757,13 @@ export async function registerRest(
 
   app.post<{ Params: { id: string }; Body: AddMessageArgs }>(
     '/api/conversations/:id/messages',
-    async (req) => {
+    async (req, reply) => {
       const { messageId, role, text, time, engine, meta, execTarget, attachments } = req.body
       const userId = uid(req)
+      // The conversation may have been deleted in another tab: say so instead of a bare 500.
+      if (!(await db.chat.getConversation(userId, req.params.id))) {
+        return reply.code(404).send({ error: 'conversation_not_found', message: CONVERSATION_GONE }) as never
+      }
       // Ответ без движка/машины (самодиагностика пишет текст сама) получает
       // эффективные значения разговора: проектное наследование знает только сервер.
       let effectiveEngine = engine

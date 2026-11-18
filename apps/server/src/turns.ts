@@ -5,7 +5,7 @@ import { coldStartPrompt } from './prompt/coldStart.js'
 import { attachmentsExceedExecutorBudget, inlineAttachmentsPrompt } from './prompt/inlineAttachments.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
-import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
+import { billingOriginForConversation, capabilityForConversation, CONVERSATION_GONE, TARIFF_DENIED } from './accountAccess.js'
 // Процесс-глобальный реестр ходов LLM. Ход привязан к разговору, а не к
 // WS-соединению: обновление страницы/обрыв сети его НЕ отменяет — модель
 // доигрывает ответ, сервер сам сохраняет его в БД. События хода рассылаются
@@ -510,7 +510,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const entitlements = await deps.db.identity.getAccountAccess(userId, conv?.tenantId)
     if (entitlements && deps.deployment) entitlements.capabilities = effectiveCapabilities(entitlements.capabilities, deps.deployment)
     if (!conv || !entitlements?.capabilities.includes(capabilityForConversation(conv)) || conv.scope === 'kanban' && !entitlements.capabilities.includes('projects.use')) {
-      broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : 'Разговор недоступен.' }, userId)
+      broadcast({ t: 'claude.error', conversationId, message: conv ? TARIFF_DENIED : CONVERSATION_GONE }, userId)
       return
     }
     // Роль observer (auth-roadmap п.17) — только чтение: ходы модели не запускает.
@@ -695,7 +695,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const oversizeAttachments = !toolFreeAttachments && conv?.assistantKind !== 'make' && attachmentsExceedExecutorBudget(attachments)
     const inlineAttachments = toolFreeAttachments || oversizeAttachments
     const promptAttachmentPaths = inlineAttachments ? [] : attachmentPaths
-    const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments, oversizeAttachments ? 'oversize' : 'no-tools') : ''
+    const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments, oversizeAttachments ? 'oversize'
+      // Advice to switch to Workspace is right only where Workspace has tools.
+      : deps.chatModelApi || deps.chatTextOnly ? 'server-no-tools' : 'no-tools') : ''
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).

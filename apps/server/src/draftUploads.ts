@@ -49,7 +49,7 @@ function backendOf(upload: StoredUpload): DraftUploadReportItem['backend'] {
 /**
  * Finds uploads of abandoned drafts and, with `apply`, removes them.
  *
- * - bound to a message: the record is dropped, the file stays with the message;
+ * - bound to a message: nothing happens; the record is kept until its conversation is deleted;
  * - conversation is gone: the record is dropped (its chat space went with the conversation);
  * - unbound and older than `maxAgeMs`: reported; with `apply` a storage-backed file is deleted
  *   together with its record. Files on a machine or on the server keep the previous behaviour and
@@ -75,7 +75,8 @@ export async function sweepDraftUploads(deps: DraftUploadDeps, options: { maxAge
       }
       const used = attachments.get(key)
       if (used === null || used === undefined) { if (apply) deps.uploads.forget(upload.id); continue }
-      if (used.some(attachment => attachmentUsesUpload(attachment, upload))) { if (apply) deps.uploads.forget(upload.id); continue }
+      // The record of a sent attachment stays: deleting the conversation later removes its file by it.
+      if (used.some(attachment => attachmentUsesUpload(attachment, upload))) continue
       report.drafts.push({ id: upload.id, name: upload.name, conversationId: upload.conversationId, size: upload.size, ageMs, backend: backendOf(upload) })
       if (!apply || !upload.storage || !deps.deleteStorageFile) continue
       await deps.deleteStorageFile(upload.ownerId, upload.storage.spaceId, upload.storage.path)
@@ -103,4 +104,43 @@ export function startDraftUploadSweep(deps: DraftUploadDeps, maxAgeMs: number, i
   first.unref?.()
   timer.unref?.()
   return () => { clearTimeout(first); clearInterval(timer) }
+}
+
+/** Uploads of a conversation that no message uses yet: the attachments of its unsent draft. */
+export async function conversationDraftUploads(deps: Pick<DraftUploadDeps, 'conversationAttachments'> & { uploads: Pick<UploadStore, 'list'> }, userId: string, conversationId: string): Promise<StoredUpload[]> {
+  const own = deps.uploads.list().filter(upload => upload.ownerId === userId && upload.conversationId === conversationId)
+  if (!own.length) return []
+  const used = await deps.conversationAttachments(userId, conversationId)
+  return own.filter(upload => !used.some(attachment => attachmentUsesUpload(attachment, upload)))
+}
+
+/**
+ * A conversation was deleted for good: its upload records go at once and so do the files Core put
+ * on a machine or on the server for them. Only files with an upload record are touched, so nothing
+ * the user placed there by hand can be removed. A machine that is offline keeps its files; the
+ * deletion of the conversation never waits for it. Storage-backed files go with the chat space.
+ */
+export async function removeConversationUploads(
+  deps: { uploads: Pick<UploadStore, 'list' | 'remove'>; deleteMachineFile?(agentId: string, path: string): Promise<unknown>; log?: (message: string) => void },
+  userId: string,
+  conversationId: string
+): Promise<{ records: number; machineFiles: number; failed: number }> {
+  const result = { records: 0, machineFiles: 0, failed: 0 }
+  const onMachines: StoredUpload[] = []
+  // Records go first and synchronously: a caller that does not wait for the machines still gets them removed.
+  for (const upload of deps.uploads.list()) {
+    if (upload.ownerId !== userId || upload.conversationId !== conversationId) continue
+    if (upload.agentId && !upload.storage) onMachines.push(upload)
+    // Removes the record and, for a server-side upload, its file.
+    deps.uploads.remove(upload.id)
+    result.records++
+  }
+  if (!deps.deleteMachineFile) return result
+  await Promise.all(onMachines.map(async upload => {
+    try { await deps.deleteMachineFile!(upload.agentId!, upload.path); result.machineFiles++ } catch (error) {
+      result.failed++
+      deps.log?.(`[uploads] ${upload.id}: file on machine ${upload.agentId} not removed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }))
+  return result
 }
