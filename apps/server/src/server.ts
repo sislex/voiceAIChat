@@ -79,6 +79,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { registerAuth, registerAuthGuard, type AuthenticateFn, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
+import { chatUploadPath, openChatSpace } from './fileStorage/chatSpace.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
@@ -1413,10 +1414,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (fileStorage && (oauth || (await db.settings.getSettings(userId)).chatFilesBackend === 'storage')) {
         if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
         try {
-          const space = await fileStorage.createSpace(userId, {
-            kind: 'chat', title: 'Chat files', ref: conversationId,
-          })
-          const path = randomBytes(16).toString('hex') + '/' + uploadName.replace(/[/\\\\]/g, '_')
+          const space = await openChatSpace(fileStorage, userId, conversationId, (await db.chat.getConversation(userId, conversationId))?.title)
+          const path = await chatUploadPath(fileStorage, userId, space.id, uploadName)
           const entry = await fileStorage.writeFile(userId, space.id, path, upload.bytes, { mimeType: safeMime, createOnly: true })
           const thumbnailAvailable = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(entry.mimeType.toLowerCase())
           const rec = uploads.saveStorage(uploadName, {spaceId: space.id, path, thumbnailAvailable}, entry.size, entry.mimeType, userId, conversationId)

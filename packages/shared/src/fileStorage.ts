@@ -97,6 +97,8 @@ export type StorageErrorCode =
   | 'node_unavailable'
   | 'unsupported_media_type'
   | 'range_not_satisfiable'
+  /** The file is stored, but its preview cannot be built (no image tool on the storage host). */
+  | 'preview_unavailable'
 
 export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   storage_disabled: 503,
@@ -111,6 +113,7 @@ export const STORAGE_ERROR_STATUS: Record<StorageErrorCode, number> = {
   node_unavailable: 503,
   unsupported_media_type: 415,
   range_not_satisfiable: 416,
+  preview_unavailable: 501,
 }
 
 /** HTTP validator used by Core for a stored file revision. */

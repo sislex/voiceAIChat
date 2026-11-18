@@ -2,6 +2,7 @@ import { effectiveCapabilities } from './deploymentApplications.js'
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
 import { conversationThreadCost, resetConversationThread, ThreadResetError } from './conversationThread.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
+import { inlineAttachmentsPrompt } from './prompt/inlineAttachments.js'
 import { clientEvent } from './serviceData.js'
 import type { ChatDelegation } from './auth/delegation.js'
 import { billingOriginForConversation, capabilityForConversation, TARIFF_DENIED } from './accountAccess.js'
@@ -679,6 +680,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeAttachmentLabels = loadedAttachments.flatMap(({ uploadId, attachment }) => attachment
       ? [JSON.stringify({ uploadId, name: attachment.runnerName })] : [])
     const attachmentPaths = attachments.map((att) => att.serverPath)
+    // A model without tools cannot open a path: its attachments travel as prompt text instead, and
+    // the files themselves are not sent to the executor (a 1 MB file overflowed the model API body).
+    const inlineAttachments = conv?.assistantKind !== 'make' && (deps.chatModelApi || !isWorkspaceAssistantMode(conv?.assistantMode)
+      || !!deps.chatTextOnly || Boolean(req.delegation && !deps.delegation!.referenceTicket(req.delegation)))
+    const promptAttachmentPaths = inlineAttachments ? [] : attachmentPaths
+    const inlineAttachmentText = inlineAttachments ? inlineAttachmentsPrompt(attachments) : ''
     // Есть сессия → продолжаем одним ходом (--resume). Нет (новый разговор или
     // сессия сброшена после удаления/правки) → пересобираем промпт из текущей
     // истории БД, чтобы контекст модели совпадал с видимым (без удалённых реплик).
@@ -686,8 +693,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // ```image — созданная картинка показывается прямо в сообщении.
     let kbContext: TurnRequestInfo['kbContext']
     let conversationPrompt = sessionId
-      ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths)
-      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : attachmentPaths, conv?.summary?.text)
+      ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId), conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths, conv?.summary?.text)
+    if (inlineAttachmentText) conversationPrompt = conversationPrompt ? `${conversationPrompt}\n\n${inlineAttachmentText}` : inlineAttachmentText
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
@@ -1259,7 +1267,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(textOnlyTurn && prompt ? { systemPrompt: prompt } : {}),
         sessionId, model, reasoningEffort, deepThinking, permissionMode: executionPermissionMode, cwd,
         remote: ticketDelegated ? undefined : executionRemote, readOnlyRemote, executionDisabled: executionDisabled || ticketDelegated,
-        ...(!makeChat && attachments.length ? { attachments } : {}),
+        ...(!makeChat && !inlineAttachments && attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(historyMcpUrl ? { historyMcpUrl } : {}),

@@ -11,7 +11,7 @@ import { createBrotliCompress, createBrotliDecompress, createGunzip, createGzip 
 import { withStorageTenant } from './remote.js'
 
 export function storageError(reply: FastifyReply, error: unknown) {
-  if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message})
+  if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message, ...error.details})
   throw error
 }
 type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string; withContent?: string}; Body: unknown }>
@@ -33,7 +33,7 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
         if (!service) return reply.code(503).send({error: 'storage_disabled', message: 'File storage is disabled'})
       },
       handler: async (req, reply) => {
-        try { return await withStorageTenant(req.user?.account?.tenantId, () => handler(service!, req as Request, reply)) }
+        try { return await withStorageTenant(req.user?.account?.tenantId, () => handler(service!, req as Request, reply), req.user?.role) }
         catch (error) { return storageError(reply, error) }
       },
     })
