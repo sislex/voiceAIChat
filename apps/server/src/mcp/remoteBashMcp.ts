@@ -469,7 +469,7 @@ export function registerRemoteBashMcp(
             description:
               `Окно строк файла в рабочей директории (не весь файл): до ${toolLimits.readLines} строк и ${toolLimits.readChars} символов.`,
             inputSchema: {
-              path: z.string().describe('Путь относительно cwd рана или абсолютный внутри него'),
+              path: z.string().describe('Путь относительно cwd рана или абсолютный внутри него; вложение текущего хода — по его пути или имени'),
               offset: z.number().int().min(1).optional().describe('Первая строка (с 1)'),
               // Кап окна — настройка: `.max()` считается на запрос, поэтому
               // заниженный лимит модель видит сразу в схеме инструмента.
@@ -482,9 +482,19 @@ export function registerRemoteBashMcp(
             const { path, offset, limit } = args
             const machine = (args as { machine?: string }).machine
             try {
+              const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
+              // An attachment of the current turn is addressed by the path printed in the prompt
+              // (`storage:<space>/<path>` with file storage) and lives outside any machine cwd.
+              const requested = path.trim()
+              const attachment = (req.query.files && fileContexts ? fileContexts(req.query.files) ?? [] : []).find((item) =>
+                item.uploadId === requested || item.path === requested || item.name === requested || imageName(item.path) === requested)
+              if (attachment) {
+                return {
+                  content: [{ type: 'text' as const, text: readWindow(fileText(attachment.dataBase64), offset ?? 1, window, toolLimits.readChars) }]
+                }
+              }
               const target = resolveMachine(machine)
               const result = await registry.fsRead(target.agentId, await safePath(target, path))
-              const window = Math.min(limit ?? DEFAULT_READ_LIMIT, toolLimits.readLines)
               return {
                 content: [{
                   type: 'text' as const,
