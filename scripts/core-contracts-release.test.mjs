@@ -27,7 +27,7 @@ test('published Shared contracts resolve the S4 Identity and SDK releases', () =
   assert.equal(source.commit, commit)
   // Published peers are optional and non-binding; the exact Core versions are kept in provenance.
   for (const range of Object.values(manifest.peerDependencies)) assert.equal(range, '*')
-  assert.equal(source.corePeers['@sislexa/identity'], '>=1.4.2 <1.6.0')
+  assert.equal(source.corePeers['@sislexa/identity'], '>=1.4.2 <1.7.0')
   assert.equal(source.corePeers['@sislexa/sdk'], '>=1.2.0 <1.4.0')
   assert.equal(source.corePeers['@sislexa/voice'], lock.packages['node_modules/@sislexa/voice'].version)
   assert.deepEqual(Object.keys(manifest.peerDependenciesMeta).sort(), Object.keys(manifest.peerDependencies).sort())
