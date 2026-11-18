@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread, TOOL_FREE_TURN_HINT } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
+import { STOPPED_EMPTY_NOTE, STOPPED_PARTIAL_NOTE } from './db/repos/chat.js'
 import { imageBlock, parseApplications } from '@voicechat/shared'
 import { DEFAULT_AGENT_POLICY } from '@sislexa/agent-contracts'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './claude/types.js'
@@ -2383,13 +2384,47 @@ describe('turns: управляемая персистентная очеред�
     const stopped = (await db.chat.listMessages(U, conversation.id)).find((m) => m.role === 'ai')
     expect(stopped).toMatchObject({ text: '', meta: { interrupted: true, stopped: true, costPending: true } })
     expect(done).toEqual([expect.objectContaining({ id: stopped!.id })])
-    expect(await db.chat.historyText(U, conversation.id)).toEqual([{ role: 'u1', text: 'Напиши статью' }])
+    expect(await db.chat.historyText(U, conversation.id)).toEqual([{ role: 'u1', text: 'Напиши статью' }, { role: 'ai', text: STOPPED_EMPTY_NOTE }])
 
     const second = await db.chat.addMessage(U, conversation.id, 'u1', 'Короче', '10:01')
     await turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: second.text }] })
     expect(llm.requests[1]?.prompt).toContain('Короче')
+    // The stopped request stays in the prompt as cancelled, so the model does not carry it out again.
+    expect(llm.requests[1]?.prompt).toContain(STOPPED_EMPTY_NOTE)
     await llm.handlers[1]!.onDone('Готово')
     await turns.idle()
+    db.close()
+  })
+
+  it('a cold start ends at the message of its turn, not at a message queued behind it', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'queued-behind')
+    const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Напиши три предложения про лес', '10:00')
+    const queued = await db.chat.addMessage(U, conversation.id, 'u1', 'Ответь одним словом: очередь', '10:00')
+    expect(await db.chat.historyText(U, conversation.id, first.id)).toEqual([{ role: 'u1', text: first.text }])
+    expect(await db.chat.historyText(U, conversation.id, queued.id)).toHaveLength(2)
+    expect(await db.chat.historyText(U, conversation.id, 'missing')).toHaveLength(2)
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client, chatModelApi: true })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+    expect(llm.requests[0]?.prompt).toContain('про лес')
+    expect(llm.requests[0]?.prompt).not.toContain('очередь')
+    await llm.handlers[0]!.onDone('Лес шумит.')
+    await turns.idle()
+    db.close()
+  })
+
+  it('a partly written stopped answer is closed with a note in the next cold start', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'stopped-partial')
+    await db.chat.addMessage(U, conversation.id, 'u1', 'Выполни sleep 40', '10:00')
+    await db.chat.addMessage(U, conversation.id, 'ai', 'Запускаю', '10:00', 'claude', { interrupted: true, stopped: true })
+    await db.chat.addMessage(U, conversation.id, 'ai', 'Обрыв', '10:00', 'claude', { interrupted: true })
+    expect(await db.chat.historyText(U, conversation.id)).toEqual([
+      { role: 'u1', text: 'Выполни sleep 40' },
+      { role: 'ai', text: `Запускаю\n\n${STOPPED_PARTIAL_NOTE}` },
+      { role: 'ai', text: 'Обрыв' }
+    ])
     db.close()
   })
 
@@ -2407,7 +2442,7 @@ describe('turns: управляемая персистентная очеред�
     expect(answers[0]).toMatchObject({ text: '', meta: { interrupted: true, stopped: true } })
     expect(answers[0]!.meta?.costPending).toBeUndefined()
     expect(done).toEqual([expect.objectContaining({ id: answers[0]!.id })])
-    expect(await db.chat.historyText(U, conversation.id)).toEqual([])
+    expect(await db.chat.historyText(U, conversation.id)).toEqual([{ role: 'ai', text: STOPPED_EMPTY_NOTE }])
     await turns.idle()
     db.close()
   })
