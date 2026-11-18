@@ -1792,12 +1792,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       authorize: async (req) => {
         const verdict = await modelTokens.authenticate(req)
         if (!verdict.ok || !verdict.user.account?.capabilities.includes('chat.use') || verdict.user.role === 'observer') return undefined
-        return modelTokens.token(req)
+        const token = modelTokens.token(req)
+        // The transit is a separate right of the token, granted by an administrator.
+        return token && await db.llm.modelTokenToolTransit(token.sid) ? token : undefined
       }
     })
   }
   registerModelRunner(app, { db, token: modelTokens.token, accounting, store: accountingStore, sessions: billingSessions,
-    ...(toolTransitHub ? { transit: toolTransitHub } : {}),
+    ...(toolTransitHub ? { transit: toolTransitHub, transitAllowed: (sid: string) => db.llm.modelTokenToolTransit(sid) } : {}),
     claude, codex, chatModels: opts.config.chatModels,
     concurrency: opts.config.modelApiConcurrency,
     requestsPerMinute: opts.config.modelApiRequestsPerMinute })

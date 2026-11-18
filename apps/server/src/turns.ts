@@ -44,6 +44,14 @@ export const TOOL_FREE_TURN_HINT = 'В этом ходе у тебя нет ин
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
+/**
+ * Claude Code cannot resume a session its profile does not hold. A model API stand meets this after
+ * its provider changed: the stored session belongs to the previous provider's runner.
+ */
+export function isLostClaudeSession(message: string): boolean {
+  return /no conversation found/i.test(message)
+}
+
 /** Codex cannot resume a thread whose rollout is gone; such a turn must start a new thread. */
 export function isLostCodexThread(message: string): boolean {
   return /no rollout found for thread id|thread\/resume failed/i.test(message)
@@ -1509,6 +1517,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           // the next turn starts a fresh thread, and retry this message instead of failing it.
           // The same applies to a thread still held by a stopped model API run: retry on a fresh thread.
           const lostThread = !!sessionId && ((provider === 'codex' && isLostCodexThread(message))
+            || (!!deps.chatModelApi && provider === 'claude' && isLostClaudeSession(message))
             || (!!deps.chatModelApi && message === THREAD_BUSY_MESSAGE))
           if (lostThread) await deps.db.chat.setClaudeSession(userId, conversationId, null)
           if (req.messageId) {

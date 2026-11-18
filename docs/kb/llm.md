@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: dd013f623
+checked: 321201f4e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -213,6 +213,19 @@ behind NAT holds an outgoing socket), contract `packages/shared/src/modelToolTra
 - The stand must not set `VC_CHAT_TEXT_ONLY=true` if it wants tools: that flag disables them on its
   own. Built-in CLI tools (Read/Bash on the runner) are never available to an application; files and
   commands go through the application's `remote` MCP and its machines.
+
+**Right of the token.** The server flag alone opens the transit to nobody. Identity knows only the
+access class of a token (`full`, `read`, `models`), so the right lives in Core: table
+`model_token_grants`, keyed by the token `sid`. An administrator grants it with
+`PUT /api/admin/model-tokens/:sid/tool-transit` and body `{"enabled": true}` (`false` revokes,
+`GET` reads). Without the grant the socket is closed, `capabilities.toolTransit` is not announced and a
+run with `transit` answers 403 `tool_transit_denied`; the application stays text-only. A grant given
+later takes effect on the next reconnect of the application (15 s).
+
+**Sessions and a changed provider.** A stand resumes CLI sessions only in turns with tools. A session
+of a previous provider is unknown to the new runner: Codex answers `thread/resume failed`, Claude
+`No conversation found`. Both are forgotten and the message is retried once on a fresh thread built
+from the stored history (`isLostCodexThread`, `isLostClaudeSession` in `turns.ts`).
 
 ## Storage-backed chat attachments
 

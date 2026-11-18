@@ -2303,6 +2303,28 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('a model API stand forgets a Claude session of a previous provider and retries on a fresh one', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'make')
+    await db.chat.setClaudeSession(U, conversation.id, 'claude:11111111-2222-3333-4444-555555555555')
+    const message = await db.chat.addMessage(U, conversation.id, 'u1', 'Сделай кнопку', '10:00')
+    const llm = controlled()
+    const errors: string[] = []
+    const turns = createTurnManager({ db: await db, claude: llm.client, codex: llm.client, chatModelApi: true, modelApiTools: () => true })
+    turns.subscribe((m) => { if (m.t === 'claude.error') errors.push(m.message) })
+
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: message.id, segments: [{ speakerId: 1, text: message.text }] })
+    expect(llm.requests[0]?.sessionId).toBe('11111111-2222-3333-4444-555555555555')
+    await llm.handlers[0]!.onError('No conversation found with session ID: 11111111-2222-3333-4444-555555555555')
+    await turns.idle()
+
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+    expect(llm.requests[1]?.prompt).toContain('Сделай кнопку')
+    expect(errors).toEqual([])
+    db.close()
+  })
+
   it('Stop on a model API stand frees the conversation: the stopped answer is kept and the next message starts a fresh thread', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'stop')

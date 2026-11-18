@@ -400,6 +400,15 @@ CREATE TABLE IF NOT EXISTS llm_engines (
   created_at    INTEGER NOT NULL
 );
 
+-- Rights of model API tokens that Identity does not model. A row exists only after an explicit
+-- administrator grant; \`sid\` is the Identity session id of the token.
+CREATE TABLE IF NOT EXISTS model_token_grants (
+  sid          TEXT PRIMARY KEY,
+  tool_transit INTEGER NOT NULL DEFAULT 0,
+  granted_by   TEXT NOT NULL DEFAULT '',
+  granted_at   INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_llm_engines_kind_enabled
   ON llm_engines(kind, enabled, created_at);
 
