@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-18
-checked: 4cf5dea8a
+checked: ebe32ef2d
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -380,6 +380,13 @@ The explicit host ports are:
 | `KbDocumentStore` | `kb/rpc.ts` | Persistent document lookup, save and delete through `db.kb` |
 | `KbRpcPorts.usage` | `kb/rpc.ts` | Authorized conversation/project/run/task usage reports |
 | `KbUsageTracker` | `kb/usage.ts` | MCP delivery telemetry and Core event publication |
+
+`DELETE /api/uploads/:id` removes an attachment that was taken out of an unsent draft: only the owner,
+and only while no message of the conversation (any state or branch, `conversationAttachments`) uses the
+file; otherwise 409 `upload_in_use`. A storage-backed upload deletes the file from the chat space, so the
+quota is released at once. Upload records live in memory: after a Core restart an abandoned draft file can
+only be removed through the «Файлы» panel or with the conversation. There is no sweep of unreferenced files,
+because a chat space may also hold files the user put there through the storage panel.
 
 Automatic context injection (`buildKbAutoContext`, chat turns and CI runs) sets `KbView.lexicalOnly`
 and never calls the reranker: it is a separate model run of 3.5–5 s in front of every Workspace and

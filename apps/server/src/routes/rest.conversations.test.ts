@@ -713,6 +713,23 @@ describe('REST: conversations/messages/settings', () => {
     expect(body.name).toBe('заметка.txt')
   })
 
+  it('removes a draft upload for its owner and keeps one that a message already uses', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Черновик' } })).json()
+    const add = async (name: string) => (await inj({ method: 'POST', url: '/api/uploads',
+      payload: { name, dataBase64: Buffer.from('привет').toString('base64'), conversationId: c.id } })).json() as { id: string; path: string; name: string; mimeType: string; size: number }
+    const draft = await add('draft.txt')
+    expect((await app.inject({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).statusCode).toBe(401)
+    expect((await inj({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).json()).toEqual({ ok: true })
+    expect((await inj({ method: 'DELETE', url: `/api/uploads/${draft.id}` })).statusCode).toBe(404)
+
+    const sent = await add('sent.txt')
+    await db.chat.addMessage(U, c.id, 'u1', 'с файлом', '10:00', undefined, undefined, undefined,
+      [{ uploadId: sent.id, path: sent.path, name: sent.name, mimeType: sent.mimeType, size: sent.size }])
+    const refused = await inj({ method: 'DELETE', url: `/api/uploads/${sent.id}` })
+    expect(refused.statusCode).toBe(409)
+    expect(refused.json().error).toBe('upload_in_use')
+  })
+
   it('rename и delete', async () => {
     const c = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Старое' } })).json()
     await inj({ method: 'PATCH', url: `/api/conversations/${c.id}`, payload: { title: 'Новое' } })
