@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-19
-checked: c2059328c
+checked: cd9cacc7e
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -766,6 +766,10 @@ unused workflow writers on production ports.
 `POST /api/conversations/:id/thread/reset` атомарно очищает session и usage и
 оставляет заметку в ленте; следующий ход поэтому проходит через `coldStartPrompt`
 со свежим ограниченным хвостом и серверным резюме, а не через resume.
+
+For Claude the fill is the input of the last model call of the turn (`TurnMeta.contextInputTokens`, set by
+`createClaudeSink` from the per-message usage events). The result line carries the sum over all calls, so a
+turn with four tool calls used to show about four times the real fill (`197 453 / 128 000` in Make).
 
 ## LLM и MCP
 

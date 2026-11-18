@@ -89,6 +89,9 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
   // Живые счётчики токенов: суммируем usage-события, дубли не рассылаем.
   const usageAcc = createUsageAccumulator()
   let lastUsageJson = ''
+  // Input of the latest model call: the result line only carries the sum over all calls of the
+  // turn, which overstates the context fill of a turn with tools several times over.
+  let lastCallInput: number | undefined
   return {
     line: async (line) => {
       // Параллельно: активность для режима консоли (только если запрошена).
@@ -107,6 +110,10 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
           if (!core.finished()) await handlers.onDelta(ev.text)
           break
         case 'usage': {
+          {
+            const call = (ev.usage.inputTokens ?? 0) + (ev.usage.cacheReadTokens ?? 0) + (ev.usage.cacheCreationTokens ?? 0)
+            if (call > 0) lastCallInput = call
+          }
           if (core.finished() || !handlers.onUsage) break
           const total = usageAcc.add(ev)
           const json = JSON.stringify(total)
@@ -119,7 +126,7 @@ export function createClaudeSink(handlers: LlmStreamHandlers): LlmStreamSink {
         case 'result':
           if (ev.sessionId) await handlers.onSession(ev.sessionId)
           if (ev.isError) core.fail(ev.text || 'Claude вернул ошибку')
-          else core.done(ev.text, ev.meta)
+          else core.done(ev.text, lastCallInput !== undefined ? { ...ev.meta, contextInputTokens: lastCallInput } : ev.meta)
           break
         default:
           break

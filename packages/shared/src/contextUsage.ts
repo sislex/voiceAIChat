@@ -19,9 +19,12 @@ export function conversationContextUsage(
   meta: TurnMeta,
   measuredAt: number
 ): ConversationContextUsage | undefined {
+  // A Claude turn with tools makes several model calls and its result usage is their sum; the
+  // context fill is the input of the last call, reported separately when the stream had it.
   const usedTokens = provider === 'codex'
     ? meta.contextInputTokens
-    : (meta.inputTokens ?? 0) + (meta.cacheReadTokens ?? 0) + (meta.cacheCreationTokens ?? 0)
+    : meta.contextInputTokens
+      ?? (meta.inputTokens ?? 0) + (meta.cacheReadTokens ?? 0) + (meta.cacheCreationTokens ?? 0)
   if (typeof usedTokens !== 'number' || !Number.isFinite(usedTokens) || usedTokens < 0) return undefined
   return { usedTokens, windowTokens: modelWindowTokens(model), provider, model, measuredAt }
 }

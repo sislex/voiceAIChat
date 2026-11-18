@@ -203,7 +203,7 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
         {
           t: 'done',
           text: 'Привет',
-          meta: { durationMs: 42, inputTokens: 12, outputTokens: 5 }
+          meta: { durationMs: 42, inputTokens: 12, outputTokens: 5, contextInputTokens: 12 }
         }
       ])
     } finally {
