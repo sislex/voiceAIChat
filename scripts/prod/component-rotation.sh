@@ -42,6 +42,9 @@ exec 9>/run/voicechat-component-rotation.lock
 flock -n 9 || { echo 'Another component rotation is running' >&2; exit 1; }
 
 mount_source() { docker inspect "$1" --format "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}"; }
+# Host path of a mount source: Docker Desktop may report bind sources under /host_mnt, and the
+# same directory can be mounted through a symlink, so compare resolved paths.
+host_path() { local path=${1#/host_mnt}; readlink -f "$path" 2>/dev/null || printf '%s' "$path"; }
 
 declare -A APP_CONTAINER=()
 for c in $(docker ps ${PROJECT:+--filter "label=com.docker.compose.project=$PROJECT"} --format '{{.Names}}'); do
@@ -62,14 +65,14 @@ restart=() failed=0
 for consumer in "${!APP_CONTAINER[@]}"; do
   outgoing=$(mount_source "${APP_CONTAINER[$consumer]}" /run/sislexa/outgoing)
   [[ -n $outgoing ]] || continue
-  outgoing=$(readlink -f "$outgoing")
+  outgoing=$(host_path "$outgoing")
   for file in "$outgoing"/*.token; do
     [[ -f $file ]] || continue
     provider=$(basename "$file" .token)
     [[ -z $PAIR || $PAIR == "$consumer->$provider" ]] || continue
     pc=${APP_CONTAINER[$provider]:-}
     [[ -n $pc ]] || { echo "skip $consumer->$provider: provider is not running"; continue; }
-    registry=$(readlink -f "$(mount_source "$pc" /run/sislexa/provider)")
+    registry=$(host_path "$(mount_source "$pc" /run/sislexa/provider)")
     [[ -d $registry ]] || { echo "skip $consumer->$provider: provider has no registry"; continue; }
     owner=$(stat -c %u:%g "$registry")
     contract=$(docker exec "$pc" sh -c "cd /app && for f in component-contract.json apps/*/component-contract.json packages/*/component-contract.json; do [ -f \"\$f\" ] && grep -q '\"applicationId\": *\"$provider\"' \"\$f\" && { echo \"/app/\$f\"; break; }; done")
@@ -97,7 +100,7 @@ for consumer in "${!APP_CONTAINER[@]}"; do
     for other in $(docker ps ${PROJECT:+--filter "label=com.docker.compose.project=$PROJECT"} --format '{{.Names}}'); do
       [[ $other == "${APP_CONTAINER[$consumer]}" ]] && continue
       docker inspect "$other" --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' | while read -r source; do
-        [[ -n $source && $(readlink -f "$source") == "$outgoing" ]] && echo "$other"
+        [[ -n $source && $(host_path "$source") == "$outgoing" ]] && echo "$other"
       done | head -1 | grep -q . && restart+=("$other")
     done
   done
