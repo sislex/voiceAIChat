@@ -905,7 +905,7 @@ export type ServerMessage =
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
-  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message; removedMessageIds?: string[] }
+  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean; pauseReason?: QueuePauseReason; published?: Message; removedMessageIds?: string[] }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }
@@ -1115,3 +1115,6 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
 export function makeDesignPreviewUrl(conversationId: string, path: string): string {
   return `${REST.makePreview(conversationId)}${path.replace(/^\/+/, '')}`
 }
+
+/** Why a queue is paused: `accounting` waits for the cost of the previous answer; absent means an error stopped it. */
+export type QueuePauseReason = 'accounting'

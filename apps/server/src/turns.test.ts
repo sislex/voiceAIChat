@@ -2109,6 +2109,8 @@ describe('turns: управляемая персистентная очеред�
       } }))
       const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
         accounting: { wrap, hasPendingUser: (id: string) => id === subject && pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      const queueEvents: Array<{ paused: boolean; pauseReason?: string }> = []
+      turns.subscribe((m) => { if (m.t === 'claude.queue') queueEvents.push({ paused: m.paused, pauseReason: (m as { pauseReason?: string }).pauseReason }) })
       await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
       await turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: second.text }] })
       // The runner receipt lags behind the reply: the queue waits for settlement instead of failing.
@@ -2116,6 +2118,8 @@ describe('turns: управляемая персистентная очеред�
       await turns.idle()
       expect(wrap).toHaveBeenCalledTimes(1)
       expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      // The UI must tell a wait for settlement from a queue stopped by an error.
+      expect(queueEvents.filter(e => e.paused).at(-1)).toEqual({ paused: true, pauseReason: 'accounting' })
       pending = false
       await turns.resumeAfterAccounting('another-subject')
       expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)

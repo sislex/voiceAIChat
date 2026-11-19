@@ -125,6 +125,8 @@ services:
       BILLING_DATA_DIR: /data
       BILLING_DAILY_USER_MICRO_USD: ${PUBLIC_DAILY_USER_MICRO_USD}
       BILLING_DAILY_USER_TIME_ZONE: ${PUBLIC_TIME_ZONE}
+      # One Billing owns this database: a changed limit replaces the saved policy (Billing #15).
+      BILLING_DAILY_POLICY_REPLACE: "1"
       SISLEXA_COMPONENT_CONFIG: /run/sislexa/config.json
     volumes:
       - billing-data:/data
@@ -155,11 +157,14 @@ services:
       STORAGE_IDENTITY_URL: http://identity:8798
       VC_APPLICATION_STORAGE_TOKEN_FILE: /run/public/storage/app.token
       STORAGE_CORE_SERVICE_TOKEN_FILE: /run/public/storage/core-service.token
-      STORAGE_IDENTITY_TOKEN_FILE: /run/public/storage/identity.token
+      # Core's own Identity credential, read from Core's outgoing directory so a token rotation
+      # reaches storage too (the rotation restarts storage with Core).
+      STORAGE_IDENTITY_TOKEN_FILE: /run/public/core-outgoing/identity.token
     depends_on:
       postgres: {condition: service_healthy}
     volumes:
       - ${PUBLIC_STATE_DIR}/storage:/run/public/storage:ro
+      - ${PUBLIC_STATE_DIR}/components/core/outgoing:/run/public/core-outgoing:ro
     mem_limit: 256m
     logging: *logging
 
