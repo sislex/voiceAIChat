@@ -1,6 +1,6 @@
 import { effectiveCapabilities } from './deploymentApplications.js'
 import { deploymentModel, deploymentModelAccess, type ChatModelPolicy } from './chatModelPolicy.js'
-import { conversationThreadCost, resetConversationThread, ThreadResetError } from './conversationThread.js'
+import { conversationThreadCost, makeThreadRolloverDue, makeThreadRolloverNote, makeThreadRolloverTokens, resetConversationThread, ThreadResetError } from './conversationThread.js'
 import { coldStartPrompt } from './prompt/coldStart.js'
 import { attachmentsExceedExecutorBudget, inlineAttachmentsPrompt } from './prompt/inlineAttachments.js'
 import { clientEvent } from './serviceData.js'
@@ -456,9 +456,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
 
-  async function performThreadReset(userId: string, conversationId: string, summarize: boolean): Promise<Conversation | null> {
+  async function performThreadReset(userId: string, conversationId: string, summarize: boolean, note?: string): Promise<Conversation | null> {
     const refresh = deps.conversationSummary?.refresh
-    const conversation = await resetConversationThread(deps.db, refresh ? { refresh } : undefined, userId, conversationId, summarize)
+    const conversation = await resetConversationThread(deps.db, refresh ? { refresh } : undefined, userId, conversationId, summarize, note)
     if (conversation) {
       const page = await deps.db.chat.pageMessages(userId, conversationId, 1)
       const note = page?.messages.at(-1)
@@ -603,6 +603,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           conv = await performThreadReset(userId, conversationId, true) ?? conv
         }
       }
+      const rolloverTokens = makeThreadRolloverTokens()
+      if (conv && makeThreadRolloverDue(conv, rolloverTokens)) {
+        conv = await performThreadReset(userId, conversationId, true, makeThreadRolloverNote(rolloverTokens)) ?? conv
+      }
     } catch (error) {
       try {
         if (req.fromQueue && req.messageId) await restoreQueuedTurn(req)
@@ -723,7 +727,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let kbContext: TurnRequestInfo['kbContext']
     let conversationPrompt = sessionId
       ? buildPrompt(req.segments, conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths)
-      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId, req.messageId), conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths, conv?.summary?.text)
+      : coldStartPrompt(await deps.db.chat.historyText(userId, conversationId, req.messageId,
+          // A Make thread restarted after its summary carries the summary plus what followed it.
+          conv?.assistantKind === 'make' && conv.summary ? { afterMessageId: conv.summary.coversUntilMessageId, minMessages: 4 } : undefined), conv?.assistantKind === 'make' ? makeAttachmentLabels : promptAttachmentPaths, conv?.summary?.text)
     if (inlineAttachmentText) conversationPrompt = conversationPrompt ? `${conversationPrompt}\n\n${inlineAttachmentText}` : inlineAttachmentText
     // Режимы БЗ разговора (одно место на все три ветки):
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;

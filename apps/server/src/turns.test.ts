@@ -1,6 +1,6 @@
 import { parseChatModelPolicy } from './chatModelPolicy.js'
 import { randomUUID } from 'node:crypto'
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { createTurnManager, ProjectMainSnapshotCoordinator, isLostCodexThread, TOOL_FREE_TURN_HINT } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { STOPPED_EMPTY_NOTE, STOPPED_PARTIAL_NOTE } from './db/repos/chat.js'
@@ -2477,6 +2477,72 @@ describe('turns: управляемая персистентная очеред�
     await llm.handlers[1]!.onDone('Ответ')
     await turns.idle()
     db.close()
+  })
+
+  describe('Make thread rollover', () => {
+    async function twoTurns(kind: 'make' | 'chat', firstContextTokens: number) {
+      const db = await freshDb()
+      const conversation = kind === 'make'
+        ? await db.chat.createConversation(U, 'Make', 'make', null, 'make')
+        : await db.chat.createConversation(U, 'Chat')
+      const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Сделай страницу', '10:00')
+      const llm = controlled()
+      const turns = createTurnManager({ db, claude: llm.client })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+      await llm.handlers[0]!.onSession('thread-one')
+      await llm.handlers[0]!.onDone('Страница готова', { model: 'claude-haiku-5-5', inputTokens: 10, contextInputTokens: firstContextTokens })
+      await turns.idle()
+      const next = await db.chat.addMessage(U, conversation.id, 'u1', 'Перекрась кнопку', '10:01')
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: next.id, segments: [{ speakerId: 1, text: next.text }] })
+      return { db, conversation, llm, turns }
+    }
+    afterEach(() => { delete process.env.VC_MAKE_THREAD_ROLLOVER_TOKENS })
+
+    it('keeps the session while the Make context stays below the threshold', async () => {
+      const { db, llm } = await twoTurns('make', 89_999)
+      expect(llm.requests[1]?.sessionId).toBe('thread-one')
+      db.close()
+    })
+
+    it('starts a fresh thread with the summary once the Make context reaches the threshold', async () => {
+      const { db, conversation, llm } = await twoTurns('make', 90_000)
+      expect(llm.requests[1]?.sessionId ?? null).toBeNull()
+      expect(llm.requests[1]?.prompt).toContain('Перекрась кнопку')
+      const after = await db.chat.getConversation(U, conversation.id)
+      expect(after?.summary?.text).toContain('Сделай страницу')
+      const texts = (await db.chat.listMessages(U, conversation.id)).map(m => m.text)
+      expect(texts).toContain('Начат новый тред: контекст беседы превысил 90 тыс. токенов, предыдущее сохранено в сводке.')
+      db.close()
+    })
+
+    it('follows the configured threshold and turns off at zero', async () => {
+      process.env.VC_MAKE_THREAD_ROLLOVER_TOKENS = '20000'
+      const low = await twoTurns('make', 25_000)
+      expect(low.llm.requests[1]?.sessionId ?? null).toBeNull()
+      low.db.close()
+      process.env.VC_MAKE_THREAD_ROLLOVER_TOKENS = '0'
+      const off = await twoTurns('make', 500_000)
+      expect(off.llm.requests[1]?.sessionId).toBe('thread-one')
+      off.db.close()
+    })
+
+    it('a restarted Make thread takes the history after the summary with a short verbatim tail', async () => {
+      const db = await freshDb()
+      const conversation = await db.chat.createConversation(U, 'Make', 'make', null, 'make')
+      const ids: string[] = []
+      for (let i = 1; i <= 8; i++) ids.push((await db.chat.addMessage(U, conversation.id, i % 2 ? 'u1' : 'ai', `M${i}`, '10:00')).id)
+      const after = await db.chat.historyText(U, conversation.id, undefined, { afterMessageId: ids[3]!, minMessages: 2 })
+      expect(after.map(m => m.text)).toEqual(['M5', 'M6', 'M7', 'M8'])
+      const tail = await db.chat.historyText(U, conversation.id, undefined, { afterMessageId: ids[6]!, minMessages: 4 })
+      expect(tail.map(m => m.text)).toEqual(['M5', 'M6', 'M7', 'M8'])
+      db.close()
+    })
+
+    it('leaves conversations other than Make on their session', async () => {
+      const { db, llm } = await twoTurns('chat', 150_000)
+      expect(llm.requests[1]?.sessionId).toBe('thread-one')
+      db.close()
+    })
   })
 
   it('persists latest context fill and clears it when the provider starts another thread', async () => {
