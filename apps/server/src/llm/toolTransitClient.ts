@@ -21,6 +21,8 @@ export interface ToolTransitClientOptions {
   connect?: (url: string, headers: Record<string, string>) => TransitClientSocket
   reconnectMs?: number
   log?: (event: string, detail?: Record<string, unknown>) => void
+  /** Log every relayed call (server kind, JSON-RPC method, local time). VC_TOOL_TRANSIT_TRACE=1. */
+  trace?: boolean
 }
 
 export interface TransitClientSocket {
@@ -163,8 +165,12 @@ export class ToolTransitClient {
     if (!url) { this.push(socket, { t: 'err', call, message: 'unknown_slot' }); return }
     const controller = new AbortController()
     this.calls.set(call, controller)
+    const started = Date.now()
+    let rpc = ''
+    let status = 0
     try {
       const body = frame.body ? Buffer.from(frame.body, 'base64') : undefined
+      if (this.opts.trace) rpc = transitRpcLabel(frame.method, body)
       const response = await (this.opts.fetchImpl ?? fetch)(url, {
         method: frame.method, headers: frame.headers, redirect: 'error',
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(MODEL_TOOL_TRANSIT_LIMITS.callTimeoutMs)]),
@@ -172,6 +178,7 @@ export class ToolTransitClient {
       })
       const headers: Record<string, string> = {}
       response.headers.forEach((value, name) => { headers[name.toLowerCase()] = value })
+      status = response.status
       this.push(socket, { t: 'head', call, status: response.status, headers })
       if (response.body) {
         for await (const part of response.body as unknown as AsyncIterable<Uint8Array>) {
@@ -186,6 +193,24 @@ export class ToolTransitClient {
       if (!controller.signal.aborted) this.push(socket, { t: 'err', call, message: error instanceof Error ? error.message : String(error) })
     } finally {
       this.calls.delete(call)
+      if (this.opts.trace) this.opts.log?.('tool_transit_call', { server: transitServerLabel(url), rpc, status, ms: Date.now() - started })
     }
   }
+}
+
+/** Server kind of a local MCP address for the trace (`/mcp/make?...` → `make`); never the secret. */
+export function transitServerLabel(url: string): string {
+  try { return new URL(url).pathname.split('/').filter(Boolean).slice(-1)[0] ?? 'mcp' } catch { return 'mcp' }
+}
+
+/** JSON-RPC method (and tool name for tools/call) of a relayed MCP request, for the trace only. */
+export function transitRpcLabel(method: string, body: Buffer | undefined): string {
+  if (!body?.length) return method
+  try {
+    type Rpc = { method?: string; params?: { name?: string } }
+    const parsed = JSON.parse(body.toString('utf8')) as Rpc | Rpc[]
+    const first = Array.isArray(parsed) ? parsed[0] : parsed
+    const name = first?.params?.name
+    return [first?.method ?? method, name].filter(Boolean).join(' ')
+  } catch { return method }
 }

@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: 3886cbcdb
+checked: 9d9f39baf
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -213,6 +213,23 @@ behind NAT holds an outgoing socket), contract `packages/shared/src/modelToolTra
   refuses the upgrade, the stand's `modelApiTools()` stays false and its turns remain text-only as
   before. A run that declares tools without a live transit is refused with 409
   `tool_transit_unavailable` rather than started without tools.
+- **Trace**: `VC_TOOL_TRANSIT_TRACE=1` on the application prints `[tool-transit]` lines for every
+  relayed request (server kind, JSON-RPC method and tool name, local handling time, status) to the
+  process log. Stand measurements 2026-11-19: local handling 1–27 ms per request; each tool call
+  costs one network round trip (~0.3–0.5 s from a Mac via Tailscale); MCP start-up of four servers is
+  five sequential round trips (`server/discover`, `initialize`, `notifications/initialized`, `GET`,
+  `tools/list`), about 0.3–0.6 s over a text-only start.
+
+**Speed of a Make turn with tools.** The cost of a tool turn is the number of model calls, not the
+relay: each call re-sends ~16 k tokens of CLI context (tools system prompt and deferred tool names),
+while the text protocol makes one ~5 k-token call. Before 2026-11-19 a Haiku edit of a new project
+took 6 calls (ToolSearch, `make_list_files`, `make_read_file`, edit, `make_check`, final answer),
+10.7 s end to end. Core now puts the same file snapshot as the text protocol into a Make turn with
+tools (`makeToolFilesContext`, limits `MAKE_TOOL_SNAPSHOT_LIMITS`: 20 KB per file, 40 KB total, no
+snapshot above 60 files — a stand working copy) and tells the model that write tools already check
+the file. The same edit is 3 calls (ToolSearch, `make_edit_file`, final), 8.9 s, $0.0018; the text
+protocol is 1 call, 6.5–6.9 s, $0.0005–0.0012. The remaining gap is the ToolSearch round — the runner
+defers MCP schemas in `toolOnly` runs — and the final answer call after the tool result.
 - The stand must not set `VC_CHAT_TEXT_ONLY=true` if it wants tools: that flag disables them on its
   own. Built-in CLI tools (Read/Bash on the runner) are never available to an application; files and
   commands go through the application's `remote` MCP and its machines.

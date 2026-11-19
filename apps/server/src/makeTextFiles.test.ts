@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesPrompt, makeToolCaller, parseMakeFileBlocks, type MakeToolCall } from './makeTextFiles.js'
+import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesPrompt, makeToolCaller, makeToolFilesContext, parseMakeFileBlocks, type MakeToolCall } from './makeTextFiles.js'
 
 const answer = 'Сделал страницу.\n<make-file path="index.html">\n<h1>Hi</h1>\n</make-file>\n<make-file path="notes.md">\n```md\n# Notes\n```\n</make-file>\n<make-delete path="old.css"/>\nГотово.'
 
@@ -24,6 +24,26 @@ it('puts the protocol and the current text files of the project into the prompt'
   expect(prompt).toContain('<make-current-file path="logo.png" size="900" omitted="true"/>')
   expect(prompt).toContain('<make-current-file path="big.js" size="999999" omitted="true"/>')
   expect(await makeTextFilesPrompt(call, true)).toContain('блоки <make-file> не выводи')
+})
+
+it('gives a turn with tools the project files and tells the model not to re-read or re-check them', async () => {
+  const { call } = tools({
+    make_list_files: { text: 'index.html (20 байт)\nhuge.css (30000 байт)' },
+    'read:index.html': { text: '<h1>Old</h1>' }
+  })
+  const context = await makeToolFilesContext(call, false)
+  expect(context).toContain('<make-current-file path="index.html">\n<h1>Old</h1>\n</make-current-file>')
+  expect(context).toContain('<make-current-file path="huge.css" size="30000" omitted="true"/>')
+  expect(context).toContain('Не вызывай для них make_list_files и make_read_file')
+  expect(context).toContain('отдельный make_check после них не вызывай')
+  expect(await makeToolFilesContext(call, true)).toContain('отвечай по ним')
+})
+
+it('skips the snapshot for a large working copy such as a stand repository', async () => {
+  const many = Array.from({ length: 61 }, (_, i) => `f${i}.js (10 байт)`).join('\n')
+  const { call, calls } = tools({ make_list_files: { text: many } })
+  expect(await makeToolFilesContext(call, false)).toBeNull()
+  expect(calls.map((c) => c.name)).toEqual(['make_list_files'])
 })
 
 it('stays silent when Make cannot be reached', async () => {

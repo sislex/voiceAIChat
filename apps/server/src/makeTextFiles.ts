@@ -38,8 +38,19 @@ export async function makeTextFilesPrompt(call: MakeToolCall, readOnly: boolean)
   return context ? context.instructions + '\n' + context.files : ''
 }
 
-/** Keep the file snapshot as user data, separate from the trusted output protocol. */
-export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean): Promise<{ instructions: string; files: string } | null> {
+/** Size limits of a project file snapshot placed into a turn prompt. */
+export interface MakeSnapshotLimits {
+  maxFileBytes: number
+  maxTotalBytes: number
+  /** More files than this: no snapshot at all (a stand working copy, a large repository). */
+  maxFiles?: number
+}
+
+/**
+ * Current project files as prompt data: `<make-current-file>` sections, larger or binary files as
+ * `omitted` markers. Null when Make is unreachable or the project exceeds `maxFiles`.
+ */
+export async function makeProjectFilesSnapshot(call: MakeToolCall, limits: MakeSnapshotLimits = { maxFileBytes: MAX_FILE_BYTES, maxTotalBytes: MAX_TOTAL_BYTES }): Promise<string | null> {
   let listing: MakeToolResult
   try { listing = await call('make_list_files', {}) } catch { return null }
   if (listing.isError) return null
@@ -47,10 +58,11 @@ export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean
     const match = /^(.+) \((\d+) байт\)$/u.exec(line.trim())
     return match ? [{ path: match[1]!, size: Number(match[2]) }] : []
   })
-  let budget = MAX_TOTAL_BYTES
+  if (limits.maxFiles !== undefined && files.length > limits.maxFiles) return null
+  let budget = limits.maxTotalBytes
   const sections: string[] = []
   for (const file of files) {
-    if (!TEXT_FILE.test(file.path) || file.size > MAX_FILE_BYTES || file.size > budget) {
+    if (!TEXT_FILE.test(file.path) || file.size > limits.maxFileBytes || file.size > budget) {
       sections.push(`<make-current-file path="${file.path}" size="${file.size}" omitted="true"/>`)
       continue
     }
@@ -59,6 +71,30 @@ export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean
     budget -= file.size
     sections.push(`<make-current-file path="${file.path}">\n${content.text}\n</make-current-file>`)
   }
+  return `Текущие файлы проекта:\n${sections.length ? sections.join('\n') : '(проект пуст)'}`
+}
+
+/**
+ * A Make turn with tools gets the same file snapshot as the text protocol, so the model edits at
+ * once instead of spending model calls on make_list_files/make_read_file; writes check the file
+ * themselves, so a separate make_check call is not needed either. Smaller limits than the text
+ * protocol: the model can still read an omitted file with a tool.
+ */
+export const MAKE_TOOL_SNAPSHOT_LIMITS: MakeSnapshotLimits = { maxFileBytes: 20_000, maxTotalBytes: 40_000, maxFiles: 60 }
+
+export async function makeToolFilesContext(call: MakeToolCall, readOnly: boolean): Promise<string | null> {
+  const files = await makeProjectFilesSnapshot(call, MAKE_TOOL_SNAPSHOT_LIMITS)
+  if (!files) return null
+  const rules = readOnly
+    ? 'Файлы ниже уже прочитаны: отвечай по ним, make_list_files и make_read_file для них не вызывай.'
+    : 'Файлы ниже — состояние проекта на начало хода. Не вызывай для них make_list_files и make_read_file: правь сразу — make_edit_file для точечной правки, make_apply_changes для нескольких файлов, make_write_file для нового файла. Инструменты записи сами проверяют файл и возвращают замечания, поэтому отдельный make_check после них не вызывай. Файлы с omitted="true" при необходимости читай make_read_file.'
+  return `## Файлы проекта Make уже в запросе\n${rules}\n${files}`
+}
+
+/** Keep the file snapshot as user data, separate from the trusted output protocol. */
+export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean): Promise<{ instructions: string; files: string } | null> {
+  const files = await makeProjectFilesSnapshot(call)
+  if (files === null) return null
   const rules = readOnly
     ? 'Сейчас режим «План»: файлы менять нельзя, блоки <make-file> не выводи — ответь по существу или опиши будущие правки.'
     : `Чтобы создать или изменить файл, выведи в ответе блок с ПОЛНЫМ новым содержимым файла (не diff, без обёртки \`\`\`):
@@ -69,8 +105,7 @@ export async function makeTextFilesContext(call: MakeToolCall, readOnly: boolean
 Сервер сам запишет блоки в проект, превью у пользователя обновится. Выводи только те файлы, которые меняешь. Вне блоков — короткое пояснение (1–3 предложения), код в нём не повторяй и не проси пользователя сохранять файлы вручную.`
   return { instructions: `## Мастерская Make: файлы через текст
 Ты ассистент мастерской Make: пользователь описывает, что сделать, и видит превью проекта (статический сайт, точка входа — index.html). Инструменты mcp__make__* в этом режиме недоступны — не упоминай и не вызывай их.
-${rules}`, files: `Текущие файлы проекта:
-${sections.length ? sections.join('\n') : '(проект пуст)'}` }
+${rules}`, files }
 }
 
 export interface MakeFileBlocks {

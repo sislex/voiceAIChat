@@ -17,7 +17,7 @@ import { personalizationPromptBlock, projectContextBlock, taskContextBlock } fro
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import type { MakeService } from '@voicechat/make-contracts'
-import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesContext, makeToolCaller } from './makeTextFiles.js'
+import { applyMakeFileBlocks, makeFileStreamFilter, makeTextFilesContext, makeToolCaller, makeToolFilesContext } from './makeTextFiles.js'
 import { conversationContextUsage } from '@voicechat/shared'
 import { turnChatInstructions } from './prompt/chatInstructionFilter.js'
 import { type ChatStorageBinding, type CodexThreadUsage, appendChatInstructionHints, chatInstructionHints, codexTurnUsage, effectiveChatInstructions, stripDisabledInstructionBlocks, parseTaskLaunchRequest, resumeSessionIdFor, buildPrompt, designPromptLines, makeDesignPreviewUrl, firstAllowedProvider, isProviderAllowed, claudeModelAlias, normalizeClaudeModel, parseImages, type ActiveTurn, type ClaudeInitInfo, type ClaudeLogEntry, type Message, type ServerMessage, type SttSegmentWire, type TurnMeta, type TurnRequestInfo, type TurnUsage, type LlmAttachment, type LlmProvider, type WidgetAssistantContext, toolNameForContextId, instructionContextId, effectiveDisabledContext, REQUIRED_ONLY_CONTEXT_ID, CONTEXT_MCP_ITEM_IDS, isChromiumReaderConversation, type Conversation, isWorkspaceAssistantMode } from '@voicechat/shared'
@@ -879,6 +879,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const makeTextContext = makeText ? await makeTextFilesContext(makeText.call, makeText.readOnly) : null
     const makeTextBlock = makeTextContext?.instructions ?? ''
     if (makeTextContext) conversationPrompt += `\n\n${makeTextContext.files}`
+    // A Make turn with tools starts from the same file snapshot, so the model edits at once instead of
+    // spending model calls (each a full context round trip) on listing and reading the project.
+    const makeToolFiles = !makeText && workspaceMode && makeToolsEnabled && !req.delegation && conv?.assistantKind === 'make' && deps.makeMcpBaseUrl
+      ? await makeToolFilesContext(
+          makeToolCaller(`${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`, deps.makeToolFetch),
+          permissionMode === 'plan'
+        ).catch(() => null)
+      : null
     const makeContextBlock = (workspaceMode || makeTextBlock) && !req.delegation && conv?.assistantKind === 'make' && deps.make && !disabledContext.has('make-context')
       ? await deps.make.promptContext(conversationId).catch(() => '')
       : ''
@@ -899,7 +907,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const instructionPrompt = textOnlyTurn && conversationPrompt.trim()
       ? basePrompt + chatInstructionHints(instructions).map(hint => `\n\n${hint}`).join('')
       : appendChatInstructionHints(basePrompt, instructions)
-    const promptBase = instructionPrompt + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeTextBlock ? `\n\n${makeTextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
+    const promptBase = instructionPrompt + (makeContextBlock ? `\n\n${makeContextBlock}` : '') + (makeToolFiles ? `\n\n${makeToolFiles}` : '') + (makeTextBlock ? `\n\n${makeTextBlock}` : '') + (makeBrowserBlock ? `\n\n${makeBrowserBlock}` : '') + (studioContextBlock ? `\n\n${studioContextBlock}` : '')
     // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
     const makeQuestion = workspaceMode && conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
     const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
