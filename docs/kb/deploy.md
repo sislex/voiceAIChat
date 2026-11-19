@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-19
-checked: ef2f58f3
+checked: f395e789c
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -2343,17 +2343,28 @@ The private `.rotation-lock` directory excludes concurrent rotations. After a
 killed process, verify no rotation is running before removing a stale lock.
 The CLI prints only provider/consumer IDs, expiry and actions; never secrets.
 
-`deploy/voicechat-component-rotation.timer` runs hourly with up to five minutes
-of jitter and catches missed runs after boot. Its service reads
-`VC_REPO_DIR` and `SISLEXA_COMPONENTS_DIR` from
-`/etc/voicechat/production.env` before switching to UID 1000. The host must expose
-Node 22 on systemd's PATH, and that UID must be able to read the checkout and own
-the private installation. A successful `voicechat-deploy` installs/enables the
-timer when `SISLEXA_COMPONENTS_DIR` is configured. For an existing installation,
-root can run `bash scripts/prod/component-rotation.sh --install` from the verified
-release checkout; this preserves the operator environment and does not rerun the
-production installer. Inspect `systemctl status voicechat-component-rotation.timer`
-and `journalctl -u voicechat-component-rotation.service`.
+`deploy/voicechat-component-rotation.timer` runs daily at 03:30 UTC (up to five minutes of
+jitter, missed runs caught after boot) because a renewal restarts the affected consumers. Its
+service runs `scripts/prod/component-rotation.sh` as root: the production host has no Node on
+systemd's PATH, the release checkout lives under `/root` without dependencies, and the
+installation mixes directories with symlinks into an older components directory, which
+`scripts/component-rotation.mjs` rejects. The shell rotation therefore works through the running
+containers: it maps each container to its application by the `/run/sislexa/config.json` mount,
+lists the provider registry as the registry owner, and for every consumer whose newest active
+token from that provider expires within `--days` (7) it issues a replacement inside the provider
+container into `/run/sislexa/provider` (outgoing mounts are read-only), moves it into the
+consumer's outgoing file with the original owner and mode (previous file kept as `.previous`),
+and restarts the renewed consumers. `--dry-run` lists pairs; `--pair consumer->provider` limits a
+run (quote it: `>` is a shell redirect). Token values are never printed; a host lock excludes
+concurrent runs. A successful `voicechat-deploy` installs/enables the timer when
+`SISLEXA_COMPONENTS_DIR` is configured; root can also run `bash scripts/prod/component-rotation.sh
+--install` from a verified release checkout. Inspect
+`systemctl list-timers voicechat-component-rotation.timer` and
+`journalctl -u voicechat-component-rotation.service`.
+
+On 2026-11-19 every token issued on 2026-10-20 expired because the previous hourly service, run
+as UID 1000, could not enter the checkout under `/root`; the model API answered
+`503 accounting_unavailable` until all pairs were renewed by hand (new expiry 2026-12-19).
 
 `GET /v1/ready` reports `nearestExpiresAt` and each dependency's
 `expiresAt` plus `warning: "component_token_expiring"` at seven days or less.

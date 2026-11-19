@@ -1,8 +1,9 @@
 [Unit]
-Description=Check Sislexa component grant expiry hourly
+Description=Renew Sislexa component grants daily before they expire
 
 [Timer]
-OnCalendar=hourly
+# Renewal restarts the affected consumers, so it runs once a day at a quiet hour.
+OnCalendar=*-*-* 03:30:00 UTC
 Persistent=true
 RandomizedDelaySec=300
 Unit=voicechat-component-rotation.service

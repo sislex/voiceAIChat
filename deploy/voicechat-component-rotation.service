@@ -1,12 +1,13 @@
 [Unit]
 Description=Renew installed Sislexa component grants
-After=local-fs.target
+After=docker.service local-fs.target
+Requires=docker.service
 
 [Service]
 Type=oneshot
-User=1000
-EnvironmentFile=/etc/voicechat/production.env
+# Root runs docker; tokens are issued inside the provider containers as their registry owner.
+User=root
 UMask=0077
-ExecStart=/bin/bash /usr/local/lib/voicechat/component-rotation.sh
-TimeoutStartSec=300
+ExecStart=/bin/bash /usr/local/lib/voicechat/component-rotation.sh --days 7
+TimeoutStartSec=600
 NoNewPrivileges=true
