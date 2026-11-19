@@ -16,6 +16,8 @@ export interface ChatAccountingOptions {
   /** Public chat Stop hides output while the dispatched executor finishes its paid work. */
   finishStoppedChatInBackground?: boolean
   resolveRunner(target: AccountingJob['target']): Promise<RemoteLlmClient | undefined>
+  /** The user has no unsettled operation left (a held public chat queue may continue). */
+  onUserSettled?: (userId: string) => void
   now?: () => number
 }
 export interface AccountingTurn {
@@ -221,7 +223,10 @@ export class ChatAccounting {
     if (this.active.has(id)) return Promise.resolve()
     const pending = this.reconciling.get(id)
     if (pending) return pending
-    const work = this.reconcileInside(id).finally(() => { this.reconciling.delete(id) })
+    const work = this.reconcileInside(id).finally(() => { this.reconciling.delete(id) }).then(() => {
+      const job = this.opts.store.get(id)
+      if (job?.state === 'done' && !this.hasPendingUser(job.session.userId)) this.opts.onUserSettled?.(job.session.userId)
+    })
     this.reconciling.set(id, work)
     return work
   }

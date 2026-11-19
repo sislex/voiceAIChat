@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-19
-checked: f395e789c
+checked: 8357ef065
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3818,3 +3818,42 @@ The subsequent train releases the remaining owners without republishing Make.
 
 <!-- release-train:34a4cd09-cb9c-4096-a532-1b00863b4297 -->
 - sislex/make: 1.8.23
+
+
+## Public minimal build (sislexa.by)
+
+`deploy/public/` is a separate, self-contained installation for open registration: Core with
+`VC_APPLICATIONS=chat,identity,storage=<public files host>`, `VC_CHAT_TEXT_ONLY=true` and
+`VC_CHAT_REQUIRE_BILLING=true`, Identity and Billing from pinned owner images, the
+`sislex/storage` service plus one `file-storage-node`, one Postgres for Core and Identity, and Caddy
+with automatic certificates for `PUBLIC_DOMAIN`, `www.` and `files.`. `scripts/public-build.mjs`
+holds the shared defaults (Codex `gpt-5.6-terra`/`gpt-5.6-luna`, $0.10 daily limit per user in
+`Europe/Minsk`, 50 MB storage quota) and four commands: `npm run public:install` (state directory
+with secrets, component tokens for `core,identity,billing` only — `component-installation.mjs
+--applications` — and storage credentials), `public:docker` (Compose project, then `app_config`
+`signup.enabled=1`, `signup.role=developer` and the `standard` tariff narrowed to `chat.use`),
+`public:docker:down` (removes volumes) and `public:dev` (the same services from working copies on
+ports 29787/29273/29798/29800/29899/29895 with SQLite).
+
+Facts this build depends on:
+- Identity signs the sessions Core verifies, so Core's `session.secret` must equal Identity's
+  `IDENTITY_SESSION_SECRET_FILE`; otherwise billing has no session for the user and every turn
+  stops with «Для запуска очереди нужно восстановить исходную сессию входа».
+- Component peers check each other's release metadata: Core must report its release version
+  (newest `release/0.1.*` branch) and a 40-hex commit, Identity needs Core ≥ 0.1.315.
+- External application URLs must be HTTPS or loopback HTTP, so the storage application gets its own
+  `files.` host.
+- Chat attachments go to file storage when the user's plan has no `machines.use`
+  (`chatFilesUseStorage`).
+- Billing refuses to start when `BILLING_DAILY_USER_MICRO_USD` differs from the policy it stored
+  on first start; change the stored `daily_admission_policy` and the setting together.
+- `scripts/prod/component-rotation.sh --project <compose project>` keeps two installations on one
+  host apart.
+- The storage service needs its own Postgres database (`storage`, created by
+  `deploy/public/postgres-init.sql`): Core creates its embedded `storage_spaces` and related tables
+  even with `VC_FILE_STORAGE_MODE=remote`, and the service's tables of the same name have another
+  layout (`column "kind" does not exist`).
+- A public chat turn is settled after the reply; while its operation is pending the next queued turn
+  waits (queue paused). `ChatAccounting` reports `onUserSettled`, and the turn manager resumes only
+  queues it held for that billed subject (`resumeAfterAccounting`); a queue paused by «Стоп» or an
+  error still needs an explicit resume.

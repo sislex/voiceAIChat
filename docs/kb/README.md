@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 10 коммит(ов) в areas после проверенного SHA: 7234fee31 fix(chat): context fill of a Claude turn is the last model call, not the sum of calls … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 17 коммит(ов) в areas после проверенного SHA: 807813aa2 perf(make): give Make turns with tools the project files and skip redundant checks … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 11 коммит(ов) в areas после проверенного SHA: cd9cacc7e Pin release train 34a4cd09-cb9c-4096-a532-1b00863b4297 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 12 коммит(ов) в areas после проверенного SHA: 955090bbe fix(prod): renew component tokens through the running containers … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 17 коммит(ов) в areas после проверенного SHA: 807813aa2 perf(make): give Make turns with tools the project files and skip redundant checks … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 24 коммит(ов) в areas после проверенного SHA: 1b43be234 feat(make): start a fresh thread with a summary before a Make turn crosses the long-context price … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,18 +65,18 @@
 
 ## Журнал сессий
 
-Всего записей: 1533. Последние:
+Всего записей: 1534. Последние:
 
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md) — turn-error-deleted-conversation
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md) — tool-transit-token-grant
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-remote-read-attachment.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-remote-read-attachment.md) — remote-read-attachment
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-34a4cd09-cb9c-4096-a532-1b00863b4297.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-34a4cd09-cb9c-4096-a532-1b00863b4297.md) — release-train-34a4cd09-cb9c-4096-a532-1b00863b4297
+- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md) — public-minimal-build
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md) — pg-init-deadlock-retry
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md) — model-api-tool-transit
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-text-only-with-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-text-only-with-transit.md) — model-api-text-only-with-transit
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-tool-turn-speed.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-tool-turn-speed.md) — make-tool-turn-speed
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-thread-rollover.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-thread-rollover.md) — make-thread-rollover
-- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-stand-proxy-off-hint.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-make-stand-proxy-off-hint.md) — make-stand-proxy-off-hint
 
 ## Исторические планы
 

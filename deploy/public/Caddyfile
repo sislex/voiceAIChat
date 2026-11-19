@@ -1,0 +1,19 @@
+# Site addresses come from public:install: a real domain gets automatic Let's Encrypt
+# (PUBLIC_TLS_LINE="tls <e-mail>"); a local test uses plain HTTP on localhost and 127.0.0.1.
+{$PUBLIC_SITE} {
+	{$PUBLIC_TLS_LINE}
+	encode zstd gzip
+	reverse_proxy voicechat:8787
+}
+
+{$PUBLIC_WWW_SITE} {
+	{$PUBLIC_TLS_LINE}
+	redir {$PUBLIC_URL}{uri} permanent
+}
+
+# The storage application (raw files UI) on its own host; Core links to it from «Инструменты».
+{$PUBLIC_FILES_SITE} {
+	{$PUBLIC_TLS_LINE}
+	encode zstd gzip
+	reverse_proxy storage:8799
+}
