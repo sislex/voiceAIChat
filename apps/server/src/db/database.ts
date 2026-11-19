@@ -43,6 +43,18 @@ export type { Repos, RepoContext, AsyncPort, Ports, PortOverrides } from './repo
 import { createSqlMetadataStore } from '../fileStorage/metadata.js'
 import type { StorageMetadataStore } from '../../../../packages/file-storage/src/metadata.js'
 
+/** Retries an operation that lost a Postgres deadlock (40P01); other errors pass through. */
+export async function retryOnDeadlock<T>(operation: () => Promise<T>, attempts = 5, delayMs = 200): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation()
+    } catch (error) {
+      if ((error as { code?: string } | null)?.code !== '40P01' || attempt >= attempts) throw error
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt))
+    }
+  }
+}
+
 export class VoiceChatDb {
   /** Enter the reentrant domain lane before SQL, so Identity quota reads cannot deadlock behind it. */
   storageMetadata(): StorageMetadataStore {
@@ -185,7 +197,9 @@ export class VoiceChatDb {
       // `CREATE TABLE IF NOT EXISTS …` у двух сессий берёт замки связанных таблиц в разном порядке — Postgres
       // валит одну deadlock-ом (40P01), а `CREATE SCHEMA IF NOT EXISTS` наперегонки даёт duplicate key. Схему
       // ставит тот, кто первым взял advisory-замок транзакции; остальные ждут и находят всё уже созданным.
-      await this.sql.transaction(async () => {
+      // A running sibling process (the other stand on the same database) writes tables that schema DDL
+      // locks exclusively, so the init transaction can still lose a deadlock (40P01). Retry it whole.
+      await retryOnDeadlock(() => this.sql.transaction(async () => {
         await this.sql.run(`SELECT pg_advisory_xact_lock(?)`, [PG_SCHEMA_LOCK_KEY])
         if (schema) await this.sql.exec(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
         // Existing PostgreSQL tables are not changed by CREATE TABLE IF NOT EXISTS.
@@ -200,11 +214,14 @@ export class VoiceChatDb {
         if (upgrade.keys.has('tasks.auto_pilot_requires_manual_qa')) {
           await this.sql.exec(`UPDATE tasks SET auto_pilot_requires_manual_qa = COALESCE((SELECT autopilot_requires_manual_qa FROM projects WHERE projects.id = tasks.project_id), 0)`)
         }
-        await this.sql.exec('DROP INDEX IF EXISTS idx_environment_active_operation')
+        // DROP INDEX takes an exclusive table lock even when the index is already gone; skip it then.
+        if (await this.sql.get(`SELECT 1 AS present FROM pg_indexes WHERE schemaname = current_schema() AND indexname = 'idx_environment_active_operation'`)) {
+          await this.sql.exec('DROP INDEX IF EXISTS idx_environment_active_operation')
+        }
         await this.sql.exec(PG_SCHEMA.afterColumnsSql)
         await this.sql.exec(`CREATE INDEX IF NOT EXISTS idx_messages_history_page ON messages(conversation_id, state, history_position, id)`)
         await initializePersonalTenants(this.sql, this.now, this.newId)
-      })
+      }))
       await this.ctx.repos.projects.seedBuiltinProjectTypes()
     } else {
       // Старый model_prices ещё не знает tiers_json, а актуальный сид уже пишет в

@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: abb9cb535
+updated: 2026-11-19
+checked: 749e7fa35
 title: Данные и доступ: SQLite, пользователи, роли
 areas:
   - packages/component-runtime/src/index.ts
@@ -693,6 +693,11 @@ OAuth token exchange or automatic model-cost settlement. Without a
 managed Identity dependency, development/tests use the same external implementation
 embedded in Core. Historical SQLite migrations stay in Core; current identity DDL
 is imported from its owner. PostgreSQL initializers share the schema advisory lock.
+
+The advisory lock does not cover a sibling process that is already running on the same database (two
+stands sharing `sislexa_dev`): its writes can deadlock with schema DDL. `VoiceChatDb.init` therefore
+retries the whole Postgres init transaction on `40P01` (`retryOnDeadlock`, 5 attempts) and skips
+`DROP INDEX idx_environment_active_operation` once the index is gone, since the drop takes an exclusive table lock.
 
 Remote user deletion blocks the account/revokes sessions before idempotent Core
 cleanup callbacks. A failed callback leaves a blocked, retryable account; credentials
