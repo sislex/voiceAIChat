@@ -22,14 +22,17 @@ fi
 # newest active token from a provider expires within DAYS are renewed; they are restarted at the
 # end so they read the new file. Token values are never printed.
 #
-#   component-rotation.sh [--dry-run] [--days N] [--pair consumer->provider]
+#   component-rotation.sh [--dry-run] [--days N] [--pair consumer->provider] [--project compose-project]
+#
+# --project limits the run to one Compose project, so two installations on one host never mix.
 [[ $EUID == 0 ]] || { echo 'Component rotation needs root (docker and installation files)' >&2; exit 1; }
-DAYS=7 APPLY=1 PAIR=
+DAYS=7 APPLY=1 PAIR= PROJECT=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dry-run) APPLY=0 ;;
     --days) DAYS=$2; shift ;;
     --pair) PAIR=$2; shift ;;
+    --project) PROJECT=$2; shift ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -41,7 +44,7 @@ flock -n 9 || { echo 'Another component rotation is running' >&2; exit 1; }
 mount_source() { docker inspect "$1" --format "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Source}}{{end}}{{end}}"; }
 
 declare -A APP_CONTAINER=()
-for c in $(docker ps --format '{{.Names}}'); do
+for c in $(docker ps ${PROJECT:+--filter "label=com.docker.compose.project=$PROJECT"} --format '{{.Names}}'); do
   config=$(mount_source "$c" /run/sislexa/config.json)
   [[ -n $config ]] || continue
   APP_CONTAINER[$(basename "$(dirname "$config")")]=$c

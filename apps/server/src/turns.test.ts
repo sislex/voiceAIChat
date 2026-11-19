@@ -2094,6 +2094,38 @@ describe('turns: управляемая персистентная очеред�
     return { client, handlers, requests, cancels: () => cancels }
   }
 
+  it('continues a public queue held by the unsettled previous turn once its subject is settled', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Public queue')
+      const first = await db.chat.addMessage(U, conversation.id, 'u0', 'First', '10:00')
+      const second = await db.chat.addMessage(U, conversation.id, 'u0', 'Second', '10:01')
+      const llm = controlled()
+      let pending = false
+      const subject = (await db.identity.getAccountAccess(U))!.userId
+      const wrap = vi.fn((client: LlmClient) => ({ send: (req: LlmRequest, handlers: LlmStreamHandlers) => {
+        pending = true
+        return client.send(req, handlers)
+      } }))
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap, hasPendingUser: (id: string) => id === subject && pending, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: second.id, segments: [{ speakerId: 1, text: second.text }] })
+      // The runner receipt lags behind the reply: the queue waits for settlement instead of failing.
+      await llm.handlers[0].onDone('Reply 1')
+      await turns.idle()
+      expect(wrap).toHaveBeenCalledTimes(1)
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      pending = false
+      await turns.resumeAfterAccounting('another-subject')
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
+      await turns.resumeAfterAccounting(subject!)
+      await vi.waitFor(() => expect(wrap).toHaveBeenCalledTimes(2))
+      expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(false)
+      expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([])
+    } finally { await db.close() }
+  })
+
   it('preserves a stopped public queue and rejects resume/send-now across conversations until stable-user settlement', async () => {
     const db = await freshDb()
     try {

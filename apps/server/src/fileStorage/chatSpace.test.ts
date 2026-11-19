@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 import { chatSpaceTitle, chatUploadPath, deleteChatSpaces, openChatSpace, orphanChatSpaces, renameChatSpaces } from './chatSpace.js'
+import { chatFilesUseStorage } from './chatSpace.js'
 
 const space = (id: string, over: Record<string, unknown> = {}) => ({ id, kind: 'chat', ownerId: 'u', title: 'Chat files', ref: 'c1', ...over })
 const storage = (over: Record<string, unknown>) => over as unknown as FileStorageService
@@ -50,4 +51,14 @@ describe('chat storage space', () => {
     const orphans = await orphanChatSpaces(storage({ listSpaces }), 'u', async id => id === 'c1')
     expect(orphans.map(item => item.id)).toEqual(['gone'])
   })
+})
+
+it('stores chat attachments in file storage when the plan has no machines', () => {
+  const base = { storage: true, oauth: false, setting: 'machine' }
+  expect(chatFilesUseStorage({ ...base, capabilities: ['chat.use'] })).toBe(true)
+  expect(chatFilesUseStorage({ ...base, capabilities: ['chat.use', 'machines.use'] })).toBe(false)
+  expect(chatFilesUseStorage({ ...base, capabilities: undefined })).toBe(false)
+  expect(chatFilesUseStorage({ ...base, setting: 'storage', capabilities: undefined })).toBe(true)
+  expect(chatFilesUseStorage({ ...base, oauth: true, capabilities: undefined })).toBe(true)
+  expect(chatFilesUseStorage({ ...base, storage: false, capabilities: ['chat.use'] })).toBe(false)
 })

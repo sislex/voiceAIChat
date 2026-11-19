@@ -79,7 +79,7 @@ import { syncProjectWithRetry } from './projectSync.js'
 
 import { registerAuth, registerAuthGuard, type AuthenticateFn, requireAdmin, uid } from "@sislexa/identity/server/users/auth"
 import { createManagedChatStorage } from './chatStorage.js'
-import { chatUploadPath, openChatSpace } from './fileStorage/chatSpace.js'
+import { chatFilesUseStorage, chatUploadPath, openChatSpace } from './fileStorage/chatSpace.js'
 import { GitWorkspaceService } from './git/workspaceService.js'
 import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { registerProjectComponentsRoutes } from './routes/projectComponents.js'
@@ -148,7 +148,7 @@ import { registerMakeProxy } from './makeBridge/proxy.js'
 import { registerInternalRoutes } from './routes/internal.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
-import { createTurnManager } from './turns.js'
+import { createTurnManager, type TurnManager } from './turns.js'
 import { MODEL_TOOL_TRANSIT_LIMITS } from '@voicechat/shared'
 import { ToolTransitHub } from './llm/toolTransit.js'
 import { registerToolTransit } from './llm/toolTransitRoutes.js'
@@ -1484,7 +1484,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
-      if (fileStorage && (oauth || (await db.settings.getSettings(userId)).chatFilesBackend === 'storage')) {
+      if (fileStorage && chatFilesUseStorage({ storage: true, oauth: Boolean(oauth), setting: (await db.settings.getSettings(userId)).chatFilesBackend, capabilities: req.user?.account?.capabilities })) {
         if (!conversationId) return reply.code(400).send({ error: 'conversation required' }) as never
         try {
           const space = await openChatSpace(fileStorage, userId, conversationId, (await db.chat.getConversation(userId, conversationId))?.title)
@@ -1759,6 +1759,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   let accounting: ChatAccounting | undefined
   let accountingStore: AccountingStore | undefined
   let accountingTimer: NodeJS.Timeout | undefined
+  let settledTurns: TurnManager | undefined
   const billingTransport = opts.billingTransport ?? (managedBilling && component
     ? { ...managedBilling, environmentId: component.config.environmentId } : undefined)
   // Model API upstream owns admission and settlement using the workspace token.
@@ -1768,6 +1769,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     accounting = new ChatAccounting({ store: accountingStore, sessions: billingSessions,
       billing: billingTransport, environmentId: billingTransport.environmentId,
       finishStoppedChatInBackground: opts.config.chatTextOnly,
+      // Assigned below; a settlement needs network round trips, so it never fires before that.
+      onUserSettled: userId => { void settledTurns?.resumeAfterAccounting(userId).catch(() => {}) },
       resolveRunner: async target => {
         if (target.engineId) {
           const resolved = await db.llm.resolveLlmEngine(target.engineId, target.kind, 'admin')
@@ -1808,7 +1811,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     claude, codex, chatModels: opts.config.chatModels,
     concurrency: opts.config.modelApiConcurrency,
     requestsPerMinute: opts.config.modelApiRequestsPerMinute })
-  const turnManager = createTurnManager({
+  const turnManager: TurnManager = settledTurns = createTurnManager({
     chatTextOnly: opts.config.chatTextOnly,
     chatModelApi: opts.config.chatModelApi,
     ...(toolTransitClient ? { modelApiTools: () => toolTransitClient.available() } : {}),

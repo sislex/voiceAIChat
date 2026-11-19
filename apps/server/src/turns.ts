@@ -317,6 +317,8 @@ export interface TurnManager {
   sendQueuedNow(userId: string, conversationId: string, id: string): Promise<void>
   queueSnapshot(userId: string, conversationId: string): Promise<void>
   resumeQueues(userId: string): Promise<void>
+  /** Resume queues paused only because the previous public chat turn of this billed subject was not settled yet. */
+  resumeAfterAccounting(subject: string): Promise<void>
   /**
    * Подписка на события ходов (token/done/error/log). Слушатель получает id
    * владельца хода — сессия форвардит клиенту только события своего пользователя.
@@ -418,6 +420,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   // Закрывает async-окно подготовки prompt/вложений до появления TurnState.
   const starting = new Set<string>()
   const saving = new Set<string>()
+  /** Public chat queues held only until the previous turn is settled: conversation → Core user and billed subject. */
+  const accountingPaused = new Map<string, { userId: string; subject: string }>()
   // Короткое окно атомарной замены хода через «Отправить сейчас»: повторная
   // команда не должна успеть продвинуть другой элемент очереди.
   const restarting = new Set<string>()
@@ -566,6 +570,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       if (req.fromQueue && req.messageId) {
         await restoreQueuedTurn(req)
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        if (entitlements.userId) accountingPaused.set(conversationId, { userId, subject: entitlements.userId })
         await emitQueue(userId, conversationId)
       }
       broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
@@ -618,6 +623,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
     await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+    accountingPaused.delete(conversationId)
 
     const settings = await deps.db.settings.getSettings(userId)
     // Связанный с проектом чат всегда работает на паре проекта (или на
@@ -1617,6 +1623,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (restored) await deps.db.chat.prioritizeQueuedTurn(req.userId, req.conversationId, restored.id)
   }
 
+  async function accountingSubject(userId: string, conversationId: string): Promise<string | undefined> {
+    const conversation = await deps.db.chat.getConversation(userId, conversationId)
+    if (!conversation) return undefined
+    return (await deps.db.identity.getAccountAccess(userId, conversation.tenantId))?.userId ?? undefined
+  }
+
   async function pendingPublicAccounting(userId: string, conversationId: string, delegated = false): Promise<boolean> {
     if (!deps.chatTextOnly || !deps.accounting || delegated) return false
     const conversation = await deps.db.chat.getConversation(userId, conversationId)
@@ -1635,6 +1647,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const payload = queued ? await deps.db.chat.queuedTurnPayload(userId, conversationId, queued.id) : undefined
     if (queued && await pendingPublicAccounting(userId, conversationId, !!payload?.delegation)) {
       await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+      const subject = await accountingSubject(userId, conversationId)
+      if (subject) accountingPaused.set(conversationId, { userId, subject })
       await emitQueue(userId, conversationId)
       return
     }
@@ -1787,6 +1801,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     })
   }
 
+  /** The previous turn is settled: release the queues held only by its pending accounting. */
+  async function resumeAfterAccounting(subject: string): Promise<void> {
+    for (const [conversationId, { userId, subject: owner }] of [...accountingPaused]) {
+      if (owner !== subject) continue
+      accountingPaused.delete(conversationId)
+      if (!await deps.db.chat.isTurnQueuePaused(userId, conversationId)) continue
+      await deps.db.chat.setTurnQueuePaused(userId, conversationId, false)
+      await dispatchNext(userId, conversationId)
+    }
+  }
+
   async function resumeQueues(userId: string): Promise<void> {
     // The chat list covers only the `chat` scope; Make, Kanban and reader conversations keep their
     // queue too, so a reload must restore it (a failed item would otherwise look like a lost message).
@@ -1864,6 +1889,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     sendQueuedNow,
     queueSnapshot,
     resumeQueues,
+    resumeAfterAccounting,
     flushInterrupted,
     idle: async () => { while (inflight.size) await Promise.all([...inflight]) },
     subscribe(listener) {

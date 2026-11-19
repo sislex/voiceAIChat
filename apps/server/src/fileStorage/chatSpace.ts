@@ -75,3 +75,12 @@ export async function chatUploadPath(storage: FileStorageService, userId: string
     return path
   }
 }
+
+/**
+ * Chat attachments go to file storage when the deployment signs in through Identity, when the user
+ * chose storage, or when the user's plan has no machines: a machine backend has nowhere to write then.
+ */
+export function chatFilesUseStorage(input: { storage: boolean; oauth: boolean; setting: string | undefined; capabilities: readonly string[] | undefined }): boolean {
+  if (!input.storage) return false
+  return input.oauth || input.setting === 'storage' || (Array.isArray(input.capabilities) && !input.capabilities.includes('machines.use'))
+}

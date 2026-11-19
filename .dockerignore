@@ -29,3 +29,4 @@ docker-compose.yml
 **/storybook-static
 **/test-results
 artifacts
+.public

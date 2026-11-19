@@ -140,9 +140,12 @@ it('admits a real HTTP model request with stable identity and settles once after
   expect(f.outbox.pending()).toHaveLength(1)
   expect(f.outbox.pending()[0]?.application).toEqual(application)
   f.revoke()
-  const recovered = new ChatAccounting(f.options)
+  const settled: string[] = []
+  const recovered = new ChatAccounting({ ...f.options, onUserSettled: userId => settled.push(userId) })
   await recovered.reconcileAll()
   expect(f.outbox.pending()).toHaveLength(0)
+  // A held public chat queue of this subject may continue now.
+  expect(settled).toEqual(['subject'])
   expect(f.outbox.get(f.lastRequest()!.runId!)?.application).toEqual(application)
   expect(f.ledger.balance('test', 'tenant').spentMicroUsd).toBe(600)
   expect(f.ledger.usageReport({ userId: 'subject', tenantId: 'tenant', environmentId: 'test' },

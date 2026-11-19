@@ -29,3 +29,16 @@ test('installation issues distinct provider-owned tokens and refuses an existing
     } finally { runtime.close() }
   } finally { rmSync(parent, { recursive: true, force: true }) }
 })
+
+test('a smaller installation keeps only grants and dependencies between the selected applications', async () => {
+  const parent = mkdtempSync(join(tmpdir(), 'sislexa-install-')), directory = join(parent, 'components')
+  try {
+    const result = await initializeComponents({ directory, environmentId: 'public', container: true, applications: ['core', 'identity', 'billing'] })
+    assert.deepEqual(result.issued.map(p => p.consumerId + '<-' + p.providerId).sort(), ['billing<-identity', 'core<-billing', 'core<-identity', 'identity<-core'])
+    const core = JSON.parse(readFileSync(join(directory, 'core/config.json'), 'utf8'))
+    assert.deepEqual(core.dependencies.map(d => d.applicationId), ['identity', 'billing'])
+    assert.deepEqual(core.grants.map(g => g.consumerId), ['identity'])
+    assert.equal(core.registryDirectory, '/run/sislexa/provider')
+    await assert.rejects(initializeComponents({ directory: join(parent, 'other'), environmentId: 'public', applications: ['core', 'storage'] }))
+  } finally { rmSync(parent, { recursive: true, force: true }) }
+})
