@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-20
-checked: c1cc347e7
+checked: 8d8349d1a
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3852,7 +3852,8 @@ Facts this build depends on:
   from the setting on their own.
 - Storage reads Core's Identity credential straight from Core's outgoing directory, and the
   rotation restarts every container of the project that mounts a renewed outgoing directory,
-  so a rotated token reaches storage without a copy.
+  so a rotated token reaches storage without a copy. Mount sources are compared as resolved host
+  paths without Docker Desktop's `/host_mnt` prefix.
 - A storage failure the service does not classify reaches the browser as `storage_unavailable`
   with the service message; `node_unavailable` is only the service's own node report. A queue
   held for the previous answer's cost carries `pauseReason: 'accounting'` in `claude.queue`.
