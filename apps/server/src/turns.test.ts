@@ -51,7 +51,10 @@ it('a model API stand keeps its own MCP tools while the provider relays them', a
     await db.chat.setConversationAssistantMode(U, conv.id, 'workspace')
     const rec = recorder()
     let relayed = true
-    const makeToolFetch = vi.fn<typeof fetch>()
+    const makeToolFetch = vi.fn<typeof fetch>(async (_url, init) => {
+      const name = (JSON.parse(String(init?.body)) as { params: { name: string } }).params.name
+      return Response.json({ result: { content: [{ type: 'text', text: name === 'make_list_files' ? 'index.html (10 байт)' : '<h1>Hi</h1>' }] } })
+    })
     const turns = createTurnManager({ db, claude: rec.client, chatModelApi: true, modelApiTools: () => relayed,
       makeMcpBaseUrl: 'http://stand/make?token=test', kbMcpBaseUrl: 'http://stand/kb?token=test', makeToolFetch })
     await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Hello' }] })
@@ -59,8 +62,12 @@ it('a model API stand keeps its own MCP tools while the provider relays them', a
     // The stand's own endpoints go on the wire; the transit client replaces them with placeholders.
     expect(rec.last()).toMatchObject({ toolOnly: true, makeMcpUrl: expect.stringContaining('http://stand/make?token=test') })
     expect(rec.last()).not.toHaveProperty('textOnly', true)
-    // The text protocol for Make files belongs to the tool-free stand only.
-    expect(makeToolFetch).not.toHaveBeenCalled()
+    // The text protocol for Make files belongs to the tool-free stand only: a turn with tools reads
+    // the project snapshot (list and read) and never writes through Core.
+    const called = makeToolFetch.mock.calls.map(([, init]) => (JSON.parse(String(init?.body)) as { params: { name: string } }).params.name)
+    expect(called).toEqual(['make_list_files', 'make_read_file'])
+    expect(rec.last()?.prompt).toContain('<make-current-file path="index.html">\n<h1>Hi</h1>\n</make-current-file>')
+    expect(rec.last()?.prompt).not.toContain('<make-file path=')
     relayed = false
     await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'Again' }] })
     await turns.idle()

@@ -902,7 +902,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? new ToolTransitClient({
         baseUrl: opts.config.llmRunnerClaudeUrl,
         ...(opts.config.llmRunnerToken ? { token: opts.config.llmRunnerToken } : {}),
-        log: (event) => app.log.info({ event })
+        log: (event, detail) => {
+          app.log.info({ event, ...detail })
+          // The Fastify logger is off on stands; the trace must reach the process log.
+          if (process.env.VC_TOOL_TRANSIT_TRACE === '1') console.log('[tool-transit]', JSON.stringify({ event, ...detail }))
+        },
+        trace: process.env.VC_TOOL_TRANSIT_TRACE === '1'
       })
     : undefined
   if (toolTransitClient) {
