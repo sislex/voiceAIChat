@@ -55,9 +55,10 @@ password reset links are only written to the Identity log.
   `bash scripts/prod/component-rotation.sh --project sislexa-public` (root; `--dry-run` first),
   or install its daily timer (`scripts/prod/component-rotation.sh --install`, add `--project` to
   the unit's `ExecStart` when the host runs more than one installation).
-- Storage reads Core's Identity token copy (`state/storage/identity.token`) for personal-token
-  introspection; copy `components/core/outgoing/identity.token` again after a rotation.
-- Billing refuses to start when `BILLING_DAILY_USER_MICRO_USD` differs from the policy it saved on
-  first start (`daily_admission_policy`): change both together.
+- Storage reads Core's Identity token from `components/core/outgoing/identity.token` directly;
+  the rotation restarts storage together with Core, so nothing is copied by hand.
+- Change the daily limit with `npm run public:limit -- --usd 0.25` (add `--mode dev` for the dev
+  build, `--time-zone Europe/Minsk` to change the day boundary): it updates the saved `.env` and
+  Billing's stored policy together and restarts Billing.
 - Back up the `postgres`, `core-data`, `billing-data` and `storage-blobs` volumes
   and the state directory.

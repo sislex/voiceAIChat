@@ -92,6 +92,14 @@ for consumer in "${!APP_CONTAINER[@]}"; do
     mv "$registry/$tmp" "$file"
     echo "  renewed until $(printf '%s' "$issued" | python3 -c 'import json,sys,datetime; print(datetime.datetime.utcfromtimestamp(json.load(sys.stdin)["expiresAt"]/1000).strftime("%FT%RZ"))')"
     restart+=("${APP_CONTAINER[$consumer]}")
+    # Containers that read this outgoing directory without being its consumer (the storage service
+    # reads Core's identity token) cache the file at start, so they restart with the consumer.
+    for other in $(docker ps ${PROJECT:+--filter "label=com.docker.compose.project=$PROJECT"} --format '{{.Names}}'); do
+      [[ $other == "${APP_CONTAINER[$consumer]}" ]] && continue
+      docker inspect "$other" --format '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' | while read -r source; do
+        [[ -n $source && $(readlink -f "$source") == "$outgoing" ]] && echo "$other"
+      done | head -1 | grep -q . && restart+=("$other")
+    done
   done
 done
 if (( ${#restart[@]} )); then

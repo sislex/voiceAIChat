@@ -449,6 +449,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       conversationId,
       items: await deps.db.chat.listQueuedTurns(userId, conversationId),
       paused: await deps.db.chat.isTurnQueuePaused(userId, conversationId),
+      // A queue held only for the previous answer's cost is waiting, not failed.
+      ...(accountingPaused.has(conversationId) ? { pauseReason: 'accounting' as const } : {}),
       ...(published ? { published } : {}),
       ...(removedMessageIds?.length ? { removedMessageIds } : {})
     }, userId)

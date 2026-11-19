@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-19
-checked: 8357ef065
+updated: 2026-11-20
+checked: c1cc347e7
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3845,8 +3845,17 @@ Facts this build depends on:
   `files.` host.
 - Chat attachments go to file storage when the user's plan has no `machines.use`
   (`chatFilesUseStorage`).
-- Billing refuses to start when `BILLING_DAILY_USER_MICRO_USD` differs from the policy it stored
-  on first start; change the stored `daily_admission_policy` and the setting together.
+- Billing saves the daily policy on first start. `npm run public:limit -- --usd <dollars>`
+  (`--mode dev`, `--time-zone`) changes the saved `.env` and Billing's stored
+  `daily_admission_policy` together and restarts Billing; Billing #15 adds
+  `BILLING_DAILY_POLICY_REPLACE=1` (set by the public build) so newer images replace the policy
+  from the setting on their own.
+- Storage reads Core's Identity credential straight from Core's outgoing directory, and the
+  rotation restarts every container of the project that mounts a renewed outgoing directory,
+  so a rotated token reaches storage without a copy.
+- A storage failure the service does not classify reaches the browser as `storage_unavailable`
+  with the service message; `node_unavailable` is only the service's own node report. A queue
+  held for the previous answer's cost carries `pauseReason: 'accounting'` in `claude.queue`.
 - `scripts/prod/component-rotation.sh --project <compose project>` keeps two installations on one
   host apart.
 - The storage service needs its own Postgres database (`storage`, created by

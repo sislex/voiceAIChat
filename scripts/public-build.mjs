@@ -94,9 +94,8 @@ export async function install(opts = {}) {
   writePrivate(join(storage, 'app.token'), appToken + '\n')
   writePrivate(join(storage, 'core-service.token'), secret() + '\n')
   writePrivate(join(storage, 'node.token'), secret() + '\n')
-  // Storage introspects personal tokens through Identity with Core's identity credential.
-  copyFileSync(join(state, 'components/core/outgoing/identity.token'), join(storage, 'identity.token'))
-  chmodSync(join(storage, 'identity.token'), 0o600)
+  // Storage introspects personal tokens through Identity with Core's identity credential; it reads
+  // Core's outgoing file directly, so a rotated token needs no copy.
   // Identity signs sessions and Core verifies them: both read the same session secret.
   writePrivate(join(state, 'identity-session.secret'), randomBytes(32).toString('hex'))
   const values = {
@@ -167,6 +166,36 @@ async function docker(opts) {
   console.log(`Public build is up: ${env.PUBLIC_URL} (Compose project ${project}, state ${state})`)
 }
 
+/** Sets the daily limit per user: the saved .env and Billing's stored policy change together. */
+export function dailyLimitPolicyScript(limitMicroUsd, timeZone) {
+  return "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(process.argv[1]);" +
+    "db.exec('CREATE TABLE IF NOT EXISTS daily_admission_policy (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL)');" +
+    "db.prepare('INSERT INTO daily_admission_policy (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value')" +
+    ".run(" + JSON.stringify(JSON.stringify({ limitMicroUsd, timeZone })) + "); db.close()"
+}
+function limit(opts) {
+  const mode = opts.mode ?? 'docker'
+  const state = resolve(opts.state ?? defaultState(mode))
+  const usd = Number(opts.usd)
+  if (!Number.isFinite(usd) || usd < 0) throw Error('Daily limit: --usd <dollars>, for example --usd 0.25')
+  const env = load(state)
+  const micro = Math.round(usd * 1_000_000), timeZone = opts['time-zone'] ?? env.PUBLIC_TIME_ZONE
+  writeFileSync(join(state, '.env'), renderEnv({ ...env, PUBLIC_DAILY_USER_MICRO_USD: String(micro), PUBLIC_TIME_ZONE: timeZone }), { mode: 0o600 })
+  chmodSync(join(state, '.env'), 0o600)
+  const script = dailyLimitPolicyScript(micro, timeZone)
+  if (mode === 'docker') {
+    const project = opts.project ?? 'sislexa-public'
+    // Billing images without BILLING_DAILY_POLICY_REPLACE refuse a changed policy, so the stored one changes first.
+    if (compose(state, project, ['exec', '-T', 'billing', 'node', '-e', script, '/data/billing.sqlite']).status !== 0) throw Error('Billing policy update failed')
+    if (compose(state, project, ['up', '-d', '--no-deps', 'billing']).status !== 0) throw Error('Billing restart failed')
+  } else {
+    const file = join(state, 'data', 'billing', 'billing.sqlite')
+    if (existsSync(file) && spawnSync(process.execPath, ['-e', script, file], { stdio: 'inherit' }).status !== 0) throw Error('Billing policy update failed')
+    console.log('Restart npm run public:dev to apply the new limit.')
+  }
+  console.log('Daily limit per user: $' + usd + ' (' + micro + ' micro-USD), ' + timeZone)
+}
+
 function dockerDown(opts) {
   const state = resolve(opts.state ?? defaultState('docker'))
   const project = opts.project ?? 'sislexa-public'
@@ -205,13 +234,13 @@ async function dev(opts) {
     { name: 'billing', cwd: dirs.billing, cmd: ['npx', 'tsx', 'src/main.ts'], env: {
       HOST: '127.0.0.1', PORT: String(p.billing), BILLING_DATA_DIR: join(data, 'billing'),
       BILLING_DAILY_USER_MICRO_USD: env.PUBLIC_DAILY_USER_MICRO_USD, BILLING_DAILY_USER_TIME_ZONE: env.PUBLIC_TIME_ZONE,
-      SISLEXA_COMPONENT_CONFIG: join(components, 'billing/config.json') } },
+      BILLING_DAILY_POLICY_REPLACE: '1', SISLEXA_COMPONENT_CONFIG: join(components, 'billing/config.json') } },
     { name: 'storage', cwd: dirs.storage, cmd: ['npm', 'start', '--workspace', '@sislexa/storage-service'], env: {
       HOST: '127.0.0.1', PORT: String(p.storage), STORAGE_DB_URL: `sqlite:${join(data, 'storage.sqlite')}`, STORAGE_NODES: nodes,
       STORAGE_DEFAULT_QUOTA_BYTES: env.PUBLIC_STORAGE_QUOTA_BYTES, STORAGE_AUTH_MODE: 'legacy', STORAGE_CORE_ID: env.PUBLIC_DOMAIN,
       STORAGE_CORE_URL: `http://127.0.0.1:${p.core}`, STORAGE_CORE_PUBLIC_URL: env.PUBLIC_URL, STORAGE_IDENTITY_URL: `http://127.0.0.1:${p.identity}`,
       VC_APPLICATION_STORAGE_TOKEN_FILE: join(storage, 'app.token'), STORAGE_CORE_SERVICE_TOKEN_FILE: join(storage, 'core-service.token'),
-      STORAGE_IDENTITY_TOKEN_FILE: join(storage, 'identity.token') } },
+      STORAGE_IDENTITY_TOKEN_FILE: join(components, 'core/outgoing/identity.token') } },
     { name: 'core', cwd: join(repository, 'apps/server'), cmd: ['npx', 'tsx', 'src/index.ts'], env: {
       HOST: '127.0.0.1', PORT: String(p.core), VC_DATA_DIR: join(data, 'core'), VC_CORE_ID: env.PUBLIC_DOMAIN,
       VC_PUBLIC_URL: env.PUBLIC_URL, PUBLIC_URL: env.PUBLIC_URL, SISLEXA_COMPONENT_CONFIG: join(components, 'core/config.json'),
@@ -273,7 +302,7 @@ db.close()`
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [command, ...rest] = process.argv.slice(2)
   const opts = options(rest)
-  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts) }[command]
-  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|docker-down|dev [options]'); process.exit(2) }
+  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts), limit: () => limit(opts) }[command]
+  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|docker-down|dev|limit [options]'); process.exit(2) }
   Promise.resolve(run()).catch(error => { console.error(`public-build: ${error.message}`); process.exitCode = 1 })
 }

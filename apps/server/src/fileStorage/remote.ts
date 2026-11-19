@@ -36,9 +36,13 @@ export async function createRemoteStorageRuntime(config: FileStorageConfig, user
       let error: Partial<StorageError> = {}
       try { error = await response.json() as StorageError } catch { /* invalid upstream error */ }
       const code = error.error
+      const detail = typeof error.message === 'string' && error.message.trim() && error.message.trim() !== code ? error.message.trim().slice(0, 300) : ''
       if (code && code in STORAGE_ERROR_STATUS)
-        throw new StorageServiceError(code)
-      throw new StorageServiceError(response.status === 503 ? 'storage_unavailable' : 'node_unavailable')
+        throw new StorageServiceError(code, detail || code)
+      // A failure the service does not classify is a service error, not an unavailable node: the
+      // node code is reserved for the service's own `node_unavailable`. The service text is kept so
+      // the user sees what failed.
+      throw new StorageServiceError('storage_unavailable', detail || `HTTP ${response.status}`)
     }
     return response
   }
