@@ -17,6 +17,30 @@ export function threadCostThresholds(): ConversationThreadCost['thresholds'] {
   return resetTokens >= considerTokens ? { considerTokens, resetTokens } : { ...THREAD_COST_THRESHOLDS }
 }
 
+/**
+ * Make conversations start a fresh thread before a turn whose context would cross Haiku's long-context
+ * price step (100k input tokens): every later call of a long thread re-reads and re-writes the whole
+ * cache at the higher rate. `VC_MAKE_THREAD_ROLLOVER_TOKENS=0` turns the rule off.
+ */
+export const MAKE_THREAD_ROLLOVER_TOKENS = 90_000
+
+export function makeThreadRolloverTokens(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.VC_MAKE_THREAD_ROLLOVER_TOKENS
+  if (raw === undefined || raw.trim() === '') return MAKE_THREAD_ROLLOVER_TOKENS
+  const n = Number(raw)
+  return Number.isSafeInteger(n) && n >= 0 ? n : MAKE_THREAD_ROLLOVER_TOKENS
+}
+
+/** Threshold crossed by the context of the latest completed turn; 0 when no rollover is due. */
+export function makeThreadRolloverDue(conv: Conversation, threshold = makeThreadRolloverTokens()): number {
+  const used = conv.contextUsage?.usedTokens
+  return conv.assistantKind === 'make' && threshold > 0 && typeof used === 'number' && used >= threshold ? used : 0
+}
+
+export function makeThreadRolloverNote(threshold: number): string {
+  return `Начат новый тред: контекст беседы превысил ${Math.round(threshold / 1000)} тыс. токенов, предыдущее сохранено в сводке.`
+}
+
 export async function conversationThreadCost(db: VoiceChatDb, userId: string, conv: Conversation): Promise<ConversationThreadCost> {
   const settings = await db.settings.getSettings(userId)
   const project = conv.projectId && conv.llmProvider === null
@@ -35,7 +59,7 @@ export async function conversationThreadCost(db: VoiceChatDb, userId: string, co
 /** Caller holds the turn admission lock across summary generation and session clearing. */
 export async function resetConversationThread(
   db: VoiceChatDb, summary: Pick<ConversationSummaryService, 'refresh'> | undefined,
-  userId: string, conversationId: string, summarize: boolean
+  userId: string, conversationId: string, summarize: boolean, note?: string
 ): Promise<Conversation | null> {
   const conv = await db.chat.getConversation(userId, conversationId)
   if (!conv) return null
@@ -59,5 +83,5 @@ export async function resetConversationThread(
     }
   }
   return db.chat.resetConversationThread(userId, conversationId,
-    cost.last ? cost.last.inputTokens + cost.last.cacheReadTokens : 0)
+    cost.last ? cost.last.inputTokens + cost.last.cacheReadTokens : 0, note)
 }

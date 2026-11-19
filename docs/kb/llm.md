@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-19
-checked: 9d9f39baf
+checked: 08221a0a9
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -660,6 +660,16 @@ publish existing `chat.message` / `chat.conversation` frames.
 Clients should refetch cost on opening a conversation and after `claude.done`;
 no new WS frame is required. Core UI is a separate owner and can hide its
 indicator on 404 until this Core contract is deployed.
+
+Make conversations also roll over automatically, independent of `threadReset`: before a turn, when
+the context of the latest completed turn (`contextUsage.usedTokens`, the input of its last model call)
+reaches `VC_MAKE_THREAD_ROLLOVER_TOKENS` (default 90 000; `0` turns it off), Core summarises the
+conversation, clears the provider thread and starts a fresh one. Above 100k input tokens Haiku bills the
+long-context rate, and every call of a long thread re-reads and re-writes its whole cache there (a Make
+turn at 106k cost $0.11 instead of ~$0.02). The note reads “Начат новый тред: контекст беседы превысил
+N тыс. токенов, предыдущее сохранено в сводке.” A cold Make start with a summary takes only the messages
+after `summary.coversUntilMessageId`, keeping at least the last four verbatim, plus the summary and the
+project file snapshot; other conversations keep the whole bounded history.
 
 
 `packages/shared/src/streamJson.ts` — построчный парсер stream-json:

@@ -307,11 +307,20 @@ export class ChatRepo extends BaseRepo {
    * answers: a message queued behind a running turn is already stored after it, and a prompt that
    * ended with the queued question made the model answer that one instead.
    */
-  async historyText(userId: string, conversationId: string, untilMessageId?: string): Promise<Array<{ role: MessageRole; text: string }>> {
+  async historyText(
+    userId: string, conversationId: string, untilMessageId?: string,
+    since?: { afterMessageId: string; minMessages: number }
+  ): Promise<Array<{ role: MessageRole; text: string }>> {
     if (!await this.ownsConversation(userId, conversationId)) return []
     const all = await this.sql.all<{ id: string; role: MessageRole; text: string; meta: string | null }>("SELECT id, role, text, meta FROM messages WHERE conversation_id = ? AND state = 'published' ORDER BY history_position ASC, id ASC", [conversationId])
     const end = untilMessageId ? all.findIndex(row => row.id === untilMessageId) : -1
-    const rows = end >= 0 ? all.slice(0, end + 1) : all
+    let rows = end >= 0 ? all.slice(0, end + 1) : all
+    // A summary covers everything up to its message: a fresh thread starts after it, keeping a short
+    // verbatim tail so the latest exchange is never known only through the summary.
+    if (since) {
+      const covered = rows.findIndex(row => row.id === since.afterMessageId)
+      if (covered >= 0) rows = rows.slice(Math.max(0, Math.min(covered + 1, rows.length - since.minMessages)))
+    }
     return rows.flatMap((row) => {
       const stopped = row.role === 'ai' && stoppedByUser(row.meta)
       // A stopped answer must stay visible to the model as stopped: without the note a cold start
@@ -1076,7 +1085,7 @@ export class ChatRepo extends BaseRepo {
   }
 
   /** Clears the provider thread and leaves a visible, non-provider-authored audit note. */
-  async resetConversationThread(userId: string, id: string, tokensPerTurn?: number): Promise<Conversation | null> {
+  async resetConversationThread(userId: string, id: string, tokensPerTurn?: number, note?: string): Promise<Conversation | null> {
     const resetAt = this.now()
     const noteId = this.newId()
     await this.sql.transaction(async () => {
@@ -1086,7 +1095,7 @@ export class ChatRepo extends BaseRepo {
       await this.sql.run(`UPDATE conversations SET claude_session_id = NULL, context_usage_json = NULL, updated_at = ? WHERE id = ? AND user_id = ?`, [resetAt, id, userId])
       const parentId = await this.activeLeafId(id)
       await this.sql.run(`INSERT INTO messages (id, conversation_id, role, text, time, created_at, state, history_position, parent_message_id)
-        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?, ?)`, [noteId, id, tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position, parentId])
+        VALUES (?, ?, 'ai', ?, ?, ?, 'published', ?, ?)`, [noteId, id, note !== undefined ? note : tokensPerTurn === undefined ? 'Системная заметка: контекст потока сброшен. Следующий ход начнётся с ограниченной истории и резюме разговора.' : `Тред сброшен: было ${Math.round(tokensPerTurn)} токенов на ход`, new Date(resetAt).toISOString().slice(11, 16), resetAt, position, parentId])
     })
     return await this.getConversation(userId, id)
   }
