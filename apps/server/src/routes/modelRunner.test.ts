@@ -235,6 +235,24 @@ it('lets the run finish after the calling Core disconnects, settles it and frees
   expect(next.statusCode, next.body).toBe(200)
 })
 
+it('reports a stopped run as settling while it finishes in the background, then its actual cost', async () => {
+  const f = await fixture()
+  const release = f.hold()
+  const abort = new AbortController()
+  const response = fetch(f.url + '/api/model-runner/v1/run', { method: 'POST', signal: abort.signal,
+    headers: { ...f.headers, 'content-type': 'application/json' }, body: JSON.stringify({ ...f.payload, runId: 'stopped-run' }) }).catch(() => undefined)
+  await vi.waitFor(() => expect(f.bodies).toHaveLength(1))
+  const client = new RemoteLlmClient({ kind: 'codex', baseUrl: f.url + '/api/model-runner', token: f.token })
+  expect(await client.runOutcome('stopped-run')).toEqual({ state: 'running' })
+  abort.abort()
+  await response
+  await vi.waitFor(async () => expect(await client.runOutcome('stopped-run')).toEqual({ state: 'settling' }))
+  release()
+  await vi.waitFor(async () => expect(await client.runOutcome('stopped-run')).toEqual({ state: 'done', costUsd: 0.0006 }), { timeout: 10_000 })
+  expect(await client.runOutcome('unknown-run')).toBeUndefined()
+  expect((await f.app.inject({ url: '/api/model-runner/v1/run/stopped-run' })).statusCode).not.toBe(200)
+})
+
 it('tells the caller that the previous run of the conversation is still finishing', async () => {
   const f = await fixture()
   f.busy()

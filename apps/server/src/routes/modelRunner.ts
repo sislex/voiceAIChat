@@ -75,6 +75,17 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
     run.cancel()
     return { stopped: true }
   })
+  // A stopped run keeps finishing in the background; its caller asks here for the actual cost.
+  app.get<{ Params: { id: string } }>(MODEL_API_PREFIX + 'run/:id', async (req, reply) => {
+    const token = opts.token(req)
+    if (!token) return reply.code(403).send({ error: 'token_scope_denied' })
+    const run = active.get(req.params.id)
+    if (run) return run.sid === token.sid ? { state: 'running' } : reply.code(404).send({ error: 'run_not_found' })
+    const job = opts.store?.modelRun(req.params.id)
+    if (!job || !('sid' in job.session) || job.session.sid !== token.sid) return reply.code(404).send({ error: 'run_not_found' })
+    if (job.state !== 'done' || !job.settlement) return { state: 'settling' }
+    return { state: 'done', costUsd: job.settlement.actualMicroUsd / 1_000_000 }
+  })
   app.post<{ Body: Record<string, unknown> }>(MODEL_API_PREFIX + 'run', async (req, reply) => {
     const token = opts.token(req), user = req.user, body = req.body
     if (!token || !user) return reply.code(403).send({ error: 'token_scope_denied' })
@@ -169,7 +180,7 @@ export function registerModelRunner(app: FastifyInstance, opts: Options): void {
       }
       if (cancelled) return
       handle = opts.accounting.wrap(client, {
-        login: user.name, session, originModuleId: 'chat', modelApi: true, engineId: resolved.engine?.id,
+        login: user.name, session, originModuleId: 'chat', modelApi: true, modelApiRunId: runId, engineId: resolved.engine?.id,
         application: { version: 1, originApplicationId: 'core', executorApplicationId: 'core', tokenId: token.sid, delegationId: null },
         onOperation(operationId) {
           entry.operationId = operationId

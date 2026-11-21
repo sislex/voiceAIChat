@@ -6,6 +6,7 @@ import type { LlmBillingSession } from '@voicechat/shared'
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite')
 export interface AccountingJob {
   modelApi?: boolean
+  modelApiRunId?: string
   createdAt?: number
   application?: import('@voicechat/shared').ChatApplicationAttribution
   id: string
@@ -64,6 +65,11 @@ export class AccountingStore {
       totals.set(key, item)
     }
     return [...totals.values()]
+  }
+  /** The accounting record of a model API run, by its public run id. */
+  modelRun(runId: string): AccountingJob | undefined {
+    const row = this.db.prepare("SELECT value FROM chat_accounting_outbox WHERE json_extract(value, '$.modelApiRunId') = ? LIMIT 1").get(runId)
+    return row ? JSON.parse(String(row.value)) as AccountingJob : undefined
   }
   pending(): AccountingJob[] {
     return this.db.prepare("SELECT value FROM chat_accounting_outbox WHERE state!='done'").all()

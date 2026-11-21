@@ -177,6 +177,18 @@ export interface LlmStreamHandlers {
 export interface LlmHandle {
   /** Прервать текущий запрос (barge-in/смена разговора). */
   cancel(): void
+  /**
+   * Model API only: state of this run at the provider after Stop. A stopped run keeps finishing in the
+   * background and is charged by actual usage; `undefined` when the provider does not know the run.
+   */
+  outcome?(): Promise<ModelApiRunStatus | undefined>
+}
+
+/** `GET /api/model-runner/v1/run/:id`: a stopped run is `settling` until its actual cost is known. */
+export interface ModelApiRunStatus {
+  state: 'running' | 'settling' | 'done'
+  /** Actual charged cost, USD; present when `state` is `done`. */
+  costUsd?: number
 }
 
 /** Клиент к LLM. Потоковый: результаты приходят через handlers. */

@@ -11,9 +11,9 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-10-07 | ✓ |
 | [agent-api-access.md](agent-api-access.md) | External agent access through API tokens | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-19 | ⚠ 19 коммит(ов) в areas после проверенного SHA: c7570f2eb feat(public): from-dev test stand and background dev mode … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-11-19 | ⚠ 20 коммит(ов) в areas после проверенного SHA: bad4f3a56 chore(ui): pin Core UI 1.5.62 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-11-14 | ⚠ 13 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 16 коммит(ов) в areas после проверенного SHA: c7570f2eb feat(public): from-dev test stand and background dev mode … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 17 коммит(ов) в areas после проверенного SHA: bad4f3a56 chore(ui): pin Core UI 1.5.62 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-19 | ⚠ 5 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-21 | ✓ |
@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 12 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 1 коммит(ов) в areas после проверенного SHA: c7570f2eb feat(public): from-dev test stand and background dev mode |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 2 коммит(ов) в areas после проверенного SHA: df7432092 fix(public): bundle the dev Identity UI into --from-dev stands … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 29 коммит(ов) в areas после проверенного SHA: 18e1558be fix(chat): start a fresh thread after a background Stop … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1541. Последние:
+Всего записей: 1542. Последние:
 
+- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-final-cost.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-final-cost.md) — stopped-answer-final-cost
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md) — stop-cost-fresh-thread
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md) — stand-proxy-host
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults
@@ -76,7 +77,6 @@
 - [2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md](log/2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md) — public-build-followups
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md) — turn-error-deleted-conversation
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md) — tool-transit-token-grant
-- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-remote-read-attachment.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-remote-read-attachment.md) — remote-read-attachment
 
 ## Исторические планы
 
