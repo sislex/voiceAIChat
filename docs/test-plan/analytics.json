@@ -1,0 +1,21 @@
+{
+  "id": "analytics",
+  "title": "Analytics",
+  "description": "Аналитика использования.",
+  "checks": [
+    {
+      "id": "analytics.report",
+      "title": "Отчёт аналитики",
+      "steps": [
+        "Войти admin и открыть отчёт аналитики"
+      ],
+      "expected": "Отчёт открывается, цифры за период видны",
+      "role": "admin",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "extended"
+    }
+  ]
+}

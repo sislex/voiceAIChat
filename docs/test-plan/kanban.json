@@ -1,0 +1,36 @@
+{
+  "id": "kanban",
+  "title": "Kanban",
+  "description": "Доска проектов и задачи.",
+  "checks": [
+    {
+      "id": "kanban.board.open",
+      "title": "Доска проекта",
+      "steps": [
+        "Открыть проект и его доску"
+      ],
+      "expected": "Колонки и карточки загружаются, перетаскивание работает",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "smoke"
+    },
+    {
+      "id": "kanban.card.create",
+      "title": "Создание карточки",
+      "steps": [
+        "Создать карточку с описанием в колонке",
+        "Открыть её"
+      ],
+      "expected": "Карточка сохраняется, видна после перезагрузки",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "core"
+    }
+  ]
+}

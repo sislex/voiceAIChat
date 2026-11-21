@@ -47,7 +47,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 11 коммит(ов) в areas после проверенного SHA: aa1a28bf2 fix(public): storage errors, queue pause reason, daily limit and storage token rotation … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 19 коммит(ов) в areas после проверенного SHA: 4fd684f98 fix(public): queue questions while a stopped answer settles, start chats in Chat, hide the internal KB … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-14 | ⚠ 16 коммит(ов) в areas после проверенного SHA: 4fd684f98 fix(public): queue questions while a stopped answer settles, start chats in Chat, hide the internal KB … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 19 коммит(ов) в areas после проверенного SHA: 4fd684f98 fix(public): queue questions while a stopped answer settles, start chats in Chat, hide the internal KB … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 27 коммит(ов) в areas после проверенного SHA: 4fd684f98 fix(public): queue questions while a stopped answer settles, start chats in Chat, hide the internal KB … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
@@ -65,10 +65,11 @@
 
 ## Журнал сессий
 
-Всего записей: 1537. Последние:
+Всего записей: 1538. Последние:
 
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md) — stand-proxy-host
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults
+- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-browser-test-plan.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-browser-test-plan.md) — browser-test-plan
 - [2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md](log/2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md) — public-build-followups
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md) — turn-error-deleted-conversation
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md) — tool-transit-token-grant
@@ -76,7 +77,6 @@
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-34a4cd09-cb9c-4096-a532-1b00863b4297.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-release-train-34a4cd09-cb9c-4096-a532-1b00863b4297.md) — release-train-34a4cd09-cb9c-4096-a532-1b00863b4297
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md) — public-minimal-build
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md) — pg-init-deadlock-retry
-- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md) — model-api-tool-transit
 
 ## Исторические планы
 

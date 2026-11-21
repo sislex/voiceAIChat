@@ -1,0 +1,64 @@
+{
+  "id": "make",
+  "title": "Make",
+  "description": "Мастерская: проекты, правки, превью, стенды.",
+  "checks": [
+    {
+      "id": "make.edit.preview",
+      "title": "Правка проекта и превью",
+      "steps": [
+        "Открыть проект Make, попросить «перекрась кнопку в синий»"
+      ],
+      "expected": "Файл изменён, превью обновилось",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "smoke"
+    },
+    {
+      "id": "make.plan-mode",
+      "title": "Режим «План»",
+      "steps": [
+        "Включить «План», попросить изменить файл"
+      ],
+      "expected": "Файлы не меняются, ассистент описывает правку",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "core"
+    },
+    {
+      "id": "make.stand.url",
+      "title": "Стенд по адресу",
+      "steps": [
+        "Добавить стенд с внешним адресом и прокси, открыть в превью",
+        "Попросить ассистента прочитать заголовок страницы стенда"
+      ],
+      "expected": "Страница открывается через прокси; ассистент читает её (поддомены вне адреса стенда закрыты)",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "core"
+    },
+    {
+      "id": "make.queue",
+      "title": "Очередь в Make",
+      "steps": [
+        "Отправить вторую правку, пока идёт первая"
+      ],
+      "expected": "«В очереди · 1», обе правки применяются",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "extended"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "playwright-reader",
+  "title": "Playwright Reader",
+  "description": "Удалённый браузер Chromium.",
+  "checks": [
+    {
+      "id": "playwright-reader.open",
+      "title": "Открыть страницу в Chromium",
+      "steps": [
+        "Открыть Playwright Reader и ввести адрес сайта"
+      ],
+      "expected": "Изображение страницы приходит, клики и ввод работают",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "smoke"
+    }
+  ]
+}

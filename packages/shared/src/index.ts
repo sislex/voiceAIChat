@@ -1,4 +1,5 @@
 export * from './threadCost'
+export * from './testPlan'
 export * from './uiPerformance'
 
 export * from './androidRelease'

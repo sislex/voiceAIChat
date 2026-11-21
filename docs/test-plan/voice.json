@@ -1,0 +1,35 @@
+{
+  "id": "voice",
+  "title": "Голос",
+  "description": "Распознавание и озвучка.",
+  "checks": [
+    {
+      "id": "voice.dictation",
+      "title": "Диктовка",
+      "steps": [
+        "Нажать микрофон в поле ввода и продиктовать фразу"
+      ],
+      "expected": "Текст появляется в поле ввода",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "smoke"
+    },
+    {
+      "id": "voice.tts",
+      "title": "Озвучка ответа",
+      "steps": [
+        "Включить озвучку и получить ответ"
+      ],
+      "expected": "Ответ озвучивается, остановка работает",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "core"
+    }
+  ]
+}

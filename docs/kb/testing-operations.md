@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-14
-checked: f30e2a6c0
+updated: 2026-11-21
+checked: 80d927c1d
 title: Разработка, тестирование, диагностика и эксплуатация
 areas:
   - scripts
@@ -1756,3 +1756,17 @@ implementations from Core. The original files match Runner's contract tests
 verbatim; Core retains five conversation-resume mapping cases using runner DTOs.
 Two account-store lifecycle cases move from Core's mixed database suite to
 Identity's store suite; cross-domain deletion remains a Core integration check.
+
+## Browser test plan
+
+Manual click-through checks of every component live in `docs/test-plan/<library>.json`, one file
+per library (`core-ui`, `chat`, `identity`, `billing`, `storage`, `core`, `llm-runner`, `make`,
+`kanban`, `image-studio`, `web-reader`, `playwright-reader`, `voice`, `analytics`). Each check has
+`id` (`<library>.<area>.<name>`), `title`, click `steps`, `expected`, `role`
+(`guest`/`user`/`admin`), `builds` (`minimal` — the sislexa.by build with Identity, Billing,
+Chat/Required and storage; `full` — the complete production), `needsModel` (spends model turns)
+and `priority` (`smoke`/`core`/`extended`). The schema is `TestPlanLibrary` in
+`packages/shared/src/testPlan.ts`; `apps/server/src/routes/testPlan.test.ts` validates every file,
+so a malformed plan fails the gate. Admins read it through `GET /api/admin/test-plan`
+(`defaultBuild` is `minimal` when the deployment has no Make) and the Core UI page `#/test-plan`.
+Whoever changes user-visible behaviour adds or updates the matching checks in the same change.
