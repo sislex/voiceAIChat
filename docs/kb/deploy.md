@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: 65fa169dc
+checked: 2c61e1cfa
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3867,3 +3867,7 @@ Facts this build depends on:
   waits (queue paused). `ChatAccounting` reports `onUserSettled`, and the turn manager resumes only
   queues it held for that billed subject (`resumeAfterAccounting`); a queue paused by «Стоп» or an
   error still needs an explicit resume.
+
+The public build starts new ordinary conversations in Chat (`VC_DEFAULT_ASSISTANT_MODE=chat`; Make and
+reader conversations keep their own mode) and points `VC_KB_ROOT` at the empty `deploy/public/kb`, so the
+internal Sislexa knowledge base is neither listed nor injected for public users.

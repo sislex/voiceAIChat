@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: 65fa169dc
+checked: 2c61e1cfa
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1918,3 +1918,7 @@ prompt made the model answer the queued question. A user-stopped answer (`meta.s
 the prompt as a note (`STOPPED_EMPTY_NOTE`, or the partial text closed with
 `STOPPED_PARTIAL_NOTE`); without it the next turn saw an unanswered request and carried it out
 again.
+
+A question sent while a stopped public answer is still being settled (`hasPendingUser`) is no longer
+rejected with `ACCOUNTING_PENDING_MESSAGE`: a stored message (new, edited or retried) goes into the
+conversation queue, which is paused with `pauseReason: 'accounting'` and resumes after settlement.
