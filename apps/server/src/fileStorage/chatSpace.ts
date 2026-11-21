@@ -28,6 +28,20 @@ export async function renameChatSpaces(storage: FileStorageService, userId: stri
     if (space.title !== title) await storage.updateSpace(userId, space.id, { title })
 }
 
+/**
+ * Chat spaces created before spaces carried the conversation title are still «Chat files». Renames
+ * them to their conversation title; a failed rename keeps the old title and never fails the list.
+ */
+export async function syncLegacyChatSpaceTitles(storage: FileStorageService, userId: string, spaces: StorageSpace[], conversationTitle: (userId: string, conversationId: string) => Promise<string | null | undefined>): Promise<StorageSpace[]> {
+  return Promise.all(spaces.map(async space => {
+    if (space.kind !== 'chat' || space.ownerId !== userId || !space.ref || space.title !== FALLBACK_TITLE) return space
+    try {
+      const title = chatSpaceTitle(await conversationTitle(userId, space.ref))
+      return title === space.title ? space : await storage.updateSpace(userId, space.id, { title })
+    } catch { return space }
+  }))
+}
+
 /** Removes the files of a deleted conversation; they would otherwise stay in the owner's quota. */
 export async function deleteChatSpaces(storage: FileStorageService, userId: string, conversationId: string): Promise<number> {
   const spaces = await ownedChatSpaces(storage, userId, conversationId)
@@ -57,13 +71,19 @@ function withSuffix(name: string, index: number): string {
   return dot > 0 ? `${name.slice(0, dot)} (${index})${name.slice(dot)}` : `${name} (${index})`
 }
 
+/** `YYYY-MM-DD` in the server time zone (`TZ`, Europe/Minsk on the public stack), not UTC: a file sent at 01:00 belongs to that day. */
+export function localDate(time: number, timeZone?: string): string {
+  // en-CA formats as YYYY-MM-DD.
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(time)
+}
+
 /**
  * Path of a new chat attachment: `YYYY-MM-DD/<name>`, with ` (2)`, ` (3)`… when the name is taken
  * that day. Paths handed out recently are reserved in memory, because several attachments of one
  * message are uploaded in parallel and their bodies are streams that cannot be retried.
  */
 export async function chatUploadPath(storage: FileStorageService, userId: string, spaceId: string, name: string, now = Date.now()): Promise<string> {
-  const folder = new Date(now).toISOString().slice(0, 10)
+  const folder = localDate(now)
   const safe = name.replace(/[/\\]/g, '_').replace(/^\.+$/, '_') || 'file'
   const taken = new Set((await storage.listEntries(userId, spaceId, folder + '/')).entries.map(entry => entry.path))
   for (const [key, until] of reserved) if (until < now) reserved.delete(key)

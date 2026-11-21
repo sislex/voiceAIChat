@@ -836,7 +836,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     : opts.config.fileStorage?.mode === 'remote' ? await createRemoteStorageRuntime(opts.config.fileStorage, oauth?.storageToken) : undefined
   const fileStorage = storageRuntime?.service
   if (storageRuntime) app.addHook('onClose', async () => storageRuntime.close())
-  registerFileStorageRoutes(app, fileStorage)
+  registerFileStorageRoutes(app, fileStorage, async (userId, conversationId) => (await db.chat.getConversation(userId, conversationId))?.title)
   // The upload registry is created further down; the admin route reaches the sweep through this holder.
   let conversationUploadsRemoved: ((userId: string, conversationId: string) => Promise<void>) | undefined
   let draftUploadSweep: ((options: { maxAgeMs?: number; apply?: boolean; userId?: string }) => Promise<DraftUploadReport>) | undefined
