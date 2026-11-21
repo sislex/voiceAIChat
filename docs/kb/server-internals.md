@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-19
-checked: cd9cacc7e
+updated: 2026-11-21
+checked: 7dacf2736
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -1558,6 +1558,8 @@ component and has a config) bypass Kanban dev-stands: options/create/status/atta
 start or probe the command and return the inspector lease URL; files/git act on
 the machine root; detach only unbinds. Without a config, options report
 `preview_command_missing`; `preview_*` error codes pass through to Make.
+
+Local URL stands (`us-<machine>-<port>`) may carry the stand URL host (`preview.host`, only `localhost`/`127.0.0.1` with the same port). The proxy then sends that Host and Origin to the lease root instead of `127.0.0.1:<port>`, and rewrites absolute redirects to that host into the lease origin. Servers that route by Host (Caddy virtual hosts, Vite `allowedHosts`) otherwise serve another site: the minimal sislexa.by build answered with its storage UI on `127.0.0.1`, which redirected to `localhost` outside the lease, and login in the frame failed.
 
 ### User stands (Make stands library)
 

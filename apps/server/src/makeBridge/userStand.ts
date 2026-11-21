@@ -57,7 +57,9 @@ export const USER_STAND_GIT_OUTPUT_MAX = 200_000
 export const userStandOperationSchema = z.union([
   z.object({ op: z.literal('machines') }).strict(),
   z.object({ op: z.enum(['start', 'status', 'stop']), machineId, folder, command, port }).strict(),
-  z.object({ op: z.literal('preview'), machineId, port, routes: z.array(proxyRoute).max(20).optional() }).strict(),
+  // `host` is the stand URL host (`localhost:5173`); servers routing by Host (Caddy, Vite allowedHosts) need it, not 127.0.0.1.
+  z.object({ op: z.literal('preview'), machineId, port, routes: z.array(proxyRoute).max(20).optional(),
+    host: z.string().regex(/^(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/).optional() }).strict(),
   // External http(s) stand (no machine): proxied through a `ue-` lease after the SSRF guard.
   z.object({ op: z.literal('preview'), url: z.string().min(1).max(4000) }).strict(),
   z.object({ op: z.literal('files'), machineId, folder, action: z.literal('list'), dir: relative }).strict(),
@@ -92,7 +94,7 @@ export type UserStandStatus = 'stopped' | 'starting' | 'running' | 'failed'
 export type UserStandOperation =
   | { op: 'machines' }
   | { op: 'start' | 'status' | 'stop'; machineId: string; folder: string; command: string; port: number }
-  | { op: 'preview'; machineId: string; port: number; routes?: UserStandProxyRoute[] }
+  | { op: 'preview'; machineId: string; port: number; routes?: UserStandProxyRoute[]; host?: string }
   | { op: 'preview'; url: string }
   | { op: 'files'; machineId: string; folder: string; action: 'list'; dir: string }
   | { op: 'files'; machineId: string; folder: string; action: 'read'; path: string }
@@ -169,6 +171,7 @@ export class UserStands {
   private readonly external = new Map<string, string>()
   /** Per-user route configuration of active local stand leases. */
   private readonly routes = new Map<string, UserStandProxyRoute[]>()
+  private readonly hosts = new Map<string, string>()
   constructor(private readonly deps: Deps) {}
 
   /** Usable machine of the user or `machine_forbidden`; `write` requires owner or full share access. */
@@ -197,9 +200,11 @@ export class UserStands {
     if (!parsed) throw Object.assign(new Error('stand_not_found'), { statusCode: 404 })
     await this.machine(user, parsed.machineId, false)
     const routes = this.routes.get(this.routeKey(user, standId))
+    const host = this.hosts.get(this.routeKey(user, standId))
     return {
       machineId: parsed.machineId,
       gatewayPort: this.port(parsed.port),
+      ...(host ? { host } : {}),
       ...(routes?.length ? { routes: routes.map(route => ({
         path: route.path, target: { machineId: parsed.machineId, gatewayPort: this.port(route.port) },
         targetHost: route.targetHost, origin: route.origin, stripPrefix: route.stripPrefix,
@@ -236,11 +241,17 @@ export class UserStands {
       const standId = userStandId(op.machineId, op.port)
       const routeKey = this.routeKey(user, standId)
       const previousRoutes = this.routes.get(routeKey)
+      const previousHost = this.hosts.get(routeKey)
       this.routes.delete(routeKey); this.routes.set(routeKey, op.routes ?? [])
+      this.hosts.delete(routeKey)
+      if (op.host && Number(new URL('http://' + op.host).port || 80) === op.port) this.hosts.set(routeKey, op.host)
+      if (this.hosts.size > 1000) this.hosts.delete(this.hosts.keys().next().value!)
       if (this.routes.size > 1000) this.routes.delete(this.routes.keys().next().value!)
       const lease = await this.deps.previewAccess(user, standId).catch((error: { statusCode?: number }) => {
         this.routes.delete(routeKey)
         if (previousRoutes) this.routes.set(routeKey, previousRoutes)
+        this.hosts.delete(routeKey)
+        if (previousHost) this.hosts.set(routeKey, previousHost)
         if (error?.statusCode === 403) userStandError('machine_forbidden')
         userStandError('stand_proxy_unavailable')
       })
@@ -254,6 +265,7 @@ export class UserStands {
         try { standId = externalUserStandId(new URL(op.url).origin) } catch { userStandError('invalid_user_stand') }
       } else standId = userStandId(op.machineId, op.port)
       this.routes.delete(this.routeKey(user, standId))
+      this.hosts.delete(this.routeKey(user, standId))
       await this.deps.releaseAccess?.(user, standId)
       return { ok: true }
     }
