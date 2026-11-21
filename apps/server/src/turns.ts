@@ -1689,9 +1689,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     releaseTurnTools(turn)
     turn.handle.cancel()
     await deps.db.chat.setTurnQueuePaused(turn.userId, conversationId, turn.backgroundStop === true)
-    // A model API run keeps finishing in the background and holds its thread until then. Forget the
-    // thread so the next message starts at once on a fresh one, with the history as its context.
-    if (deps.chatModelApi) await deps.db.chat.setClaudeSession(turn.userId, conversationId, null)
+    // A model API run, and a public chat run stopped in the background, keep finishing after Stop and
+    // hold their thread until then. Forget the thread so the next message starts on a fresh one with
+    // the history as its context: Codex reports thread-cumulative usage, and resuming the stopped
+    // thread charged the rest of the stopped answer to the next one.
+    if (deps.chatModelApi || turn.backgroundStop) await deps.db.chat.setClaudeSession(turn.userId, conversationId, null)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,

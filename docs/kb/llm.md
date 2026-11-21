@@ -2,8 +2,8 @@
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
-updated: 2026-11-19
-checked: 08221a0a9
+updated: 2026-11-21
+checked: 5a04cb4ee
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -1365,3 +1365,5 @@ and the lost-session retry of a model API application never matched. HTTP 429
 A model API stand with `VC_CHAT_TEXT_ONLY=true` stays tool-free even when the provider relays tools:
 Make then keeps the text file protocol (`makeTextFiles.ts`). Before this the transit switched the text
 protocol off while text-only switched the tools off, so Make had neither.
+
+After a background Stop of a public chat run (`chatTextOnly` with accounting) Core also forgets the conversation thread, as it does for model API runs: Codex reports thread-cumulative usage, and resuming the stopped thread charged the rest of the stopped answer to the next one.

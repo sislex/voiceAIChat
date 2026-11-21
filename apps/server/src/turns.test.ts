@@ -2244,6 +2244,22 @@ describe('turns: управляемая персистентная очеред�
     } finally { await db.close() }
   })
 
+  it('starts the next public turn on a fresh thread after a background Stop', async () => {
+    const db = await freshDb()
+    try {
+      const conversation = await db.chat.createConversation(U, 'Stop then ask')
+      const question = await db.chat.addMessage(U, conversation.id, 'u0', 'Long answer', '10:00')
+      const llm = controlled()
+      const turns = createTurnManager({ db, claude: llm.client, chatTextOnly: true,
+        accounting: { wrap: (client: LlmClient) => client, hasPendingUser: () => false, stopsInBackground: () => true } as unknown as ChatAccounting })
+      await turns.start({ userId: U, conversationId: conversation.id, messageId: question.id, segments: [{ speakerId: 1, text: 'Long answer' }] })
+      await llm.handlers[0].onSession('thread-1')
+      expect((await db.chat.getConversation(U, conversation.id))?.claudeSessionId).toContain('thread-1')
+      await turns.cancel(conversation.id)
+      expect((await db.chat.getConversation(U, conversation.id))?.claudeSessionId ?? null).toBeNull()
+    } finally { await db.close() }
+  })
+
   it('keeps the first public queue item queued when Billing rejects an admission race', async () => {
     const db = await freshDb()
     try {
