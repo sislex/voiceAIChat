@@ -2,8 +2,8 @@
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
-updated: 2026-11-21
-checked: a6fda6b58
+updated: 2026-11-22
+checked: b583320e0
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -138,7 +138,8 @@ answer is then saved with an empty text (for its note) and is left out of the re
 finishing or not yet settled) or `done` with `costUsd` from the settlement; the accounting record keeps the
 public run id (`modelApiRunId`). After Stop the calling Core polls it through `LlmHandle.outcome()` every 30 s
 for up to an hour and replaces the pending note with the cost (`costPending: false`, `costUsd`, pushed as
-`chat.message`). Polling is in memory; a provider without the route answers 404 and the note stays pending.
+`chat.message`). Polling is in memory. A 404 (`run_not_found`: the run was stopped before admission and has
+no accounting record, so nothing is charged; or a provider without the route) clears the note without a cost.
 If a busy-thread refusal still arrives (for example a run abandoned by a restart), the thread is forgotten and
 the message is retried once on a fresh thread instead of failing in the queue.
 

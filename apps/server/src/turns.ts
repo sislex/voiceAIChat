@@ -1722,6 +1722,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   /**
    * A stopped model API run keeps finishing in the background and is charged by actual usage. Ask the
    * provider until the cost is known, then replace the «cost pending» note of the stopped answer with it.
+   * A run the provider does not know (stopped before admission) clears the note without a cost.
    * In-memory only: after a restart the note stays pending.
    */
   function followStoppedCost(userId: string, conversationId: string, messageId: string, outcome: NonNullable<LlmHandle['outcome']>): void {
@@ -1730,11 +1731,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const step = async (): Promise<void> => {
       let status: Awaited<ReturnType<typeof outcome>>
       try { status = await outcome() } catch { status = { state: 'settling' } }
-      if (!status) return // the provider does not know the run (or predates this endpoint)
-      if (status.state === 'done') {
+      // A provider without a record of the run stopped it before admission: nothing is charged, so the
+      // note must not stay «cost pending» forever. The same applies to a provider without this endpoint.
+      if (!status || status.state === 'done') {
         try {
           const message = await deps.db.chat.updateMessageMeta(userId, conversationId, messageId,
-            { costPending: false, ...(status.costUsd !== undefined ? { costUsd: status.costUsd } : {}) })
+            { costPending: false, ...(status?.costUsd !== undefined ? { costUsd: status.costUsd } : {}) })
           broadcast(await clientEvent(deps.db, userId, { t: 'chat.message', conversationId, message }), userId)
         } catch { /* the message was deleted meanwhile */ }
         return

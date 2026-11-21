@@ -2513,6 +2513,24 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('a stopped model API answer the provider does not know clears the pending cost note', async () => {
+    const db = await freshDb()
+    const conversation = await db.chat.createConversation(U, 'stop-unknown-run')
+    const first = await db.chat.addMessage(U, conversation.id, 'u1', 'Привет', '10:00')
+    const llm = controlled()
+    const client: LlmClient = { send(req, h) { const handle = llm.client.send(req, h); return { ...handle, outcome: async () => undefined } } }
+    const updates: Array<{ id: string; meta?: unknown }> = []
+    const turns = createTurnManager({ db, claude: client, chatModelApi: true, stoppedCostPollMs: 5 })
+    turns.subscribe((m) => { if (m.t === 'chat.message') updates.push(m.message) })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: first!.id, segments: [{ speakerId: 1, text: first!.text }] })
+    await turns.cancel(conversation.id)
+    const stopped = (await db.chat.listMessages(U, conversation.id)).find((m) => m.role === 'ai')!
+    await vi.waitFor(() => expect(updates).toEqual([expect.objectContaining({ id: stopped.id, meta: expect.objectContaining({ costPending: false, stopped: true }) })]))
+    expect((await db.chat.listMessages(U, conversation.id)).find((m) => m.id === stopped.id)?.meta).not.toHaveProperty('costUsd')
+    await turns.idle()
+    db.close()
+  })
+
   it('Stop before the first text on a runner keeps an empty stopped answer without a tool-free permission mode', async () => {
     const db = await freshDb()
     const conversation = await db.chat.createConversation(U, 'stop-local')
