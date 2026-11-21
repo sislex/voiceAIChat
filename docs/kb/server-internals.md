@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-21
-checked: 2c61e1cfa
+updated: 2026-11-22
+checked: 4ddfaa5e8
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -254,8 +254,11 @@ SQL mapping, while legacy duplicate spaces remain listable. See
 The default backend remains `machine`.
 
 Chat space lifecycle (`fileStorage/chatSpace.ts`): the space title equals the
-conversation title (synced on upload and on rename), a new attachment is stored
-as `YYYY-MM-DD/<name>` with ` (2)`, ` (3)`… for a repeated name (recently issued
+conversation title (synced on upload and on rename; legacy spaces still titled
+«Chat files» are renamed to their conversation title the first time
+`GET /api/storage/spaces` lists them), a new attachment is stored
+as `YYYY-MM-DD/<name>` — the date in the server time zone (`TZ`; the public stack
+sets it from `PUBLIC_TIME_ZONE`, default Europe/Minsk), not UTC — with ` (2)`, ` (3)`… for a repeated name (recently issued
 paths are reserved in memory, because parallel upload bodies are streams), and
 `DELETE /api/conversations/:id` removes the owner's `chat` spaces of that
 conversation so the files stop counting against the quota. A storage failure is

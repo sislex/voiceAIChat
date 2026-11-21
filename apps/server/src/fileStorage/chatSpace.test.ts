@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
-import { chatSpaceTitle, chatUploadPath, deleteChatSpaces, openChatSpace, orphanChatSpaces, renameChatSpaces } from './chatSpace.js'
+import { chatSpaceTitle, chatUploadPath, deleteChatSpaces, localDate, openChatSpace, orphanChatSpaces, renameChatSpaces, syncLegacyChatSpaceTitles } from './chatSpace.js'
 import { chatFilesUseStorage } from './chatSpace.js'
 
 const space = (id: string, over: Record<string, unknown> = {}) => ({ id, kind: 'chat', ownerId: 'u', title: 'Chat files', ref: 'c1', ...over })
@@ -41,6 +41,25 @@ describe('chat storage space', () => {
     expect(await chatUploadPath(service, 'u', 'sp-a', 'report.pdf', day)).toBe('2026-11-18/report (2).pdf')
     expect(await chatUploadPath(service, 'u', 'sp-a', 'a/b\\c', day)).toBe('2026-11-18/a_b_c')
     expect(await chatUploadPath(service, 'u', 'sp-b', 'notes.txt', day)).toBe('2026-11-18/notes.txt')
+  })
+
+  it('dates attachment folders in the server time zone, not UTC', () => {
+    // Prod check 2026-11-22: a file sent at 01:10 in Minsk landed in the previous day's folder.
+    const lateUtc = Date.UTC(2026, 10, 21, 22, 10)
+    expect(localDate(lateUtc, 'UTC')).toBe('2026-11-21')
+    expect(localDate(lateUtc, 'Europe/Minsk')).toBe('2026-11-22')
+  })
+
+  it('renames legacy «Chat files» spaces to their conversation title once listed', async () => {
+    const updateSpace = vi.fn(async (_u: string, id: string, patch: { title: string }) => space(id, patch))
+    const service = storage({ updateSpace })
+    const titles: Record<string, string | null> = { c1: 'План отпуска', c2: null }
+    const result = await syncLegacyChatSpaceTitles(service, 'u', [
+      space('legacy', { ref: 'c1' }), space('untitled', { ref: 'c2' }), space('named', { ref: 'c1', title: 'Своё имя' }),
+      space('foreign', { ref: 'c1', ownerId: 'other' }), space('personal', { kind: 'personal', ref: null })
+    ] as never, async (_u, id) => titles[id])
+    expect(updateSpace.mock.calls).toEqual([['u', 'legacy', { title: 'План отпуска' }]])
+    expect(result.map(item => item.title)).toEqual(['План отпуска', 'Chat files', 'Своё имя', 'Chat files', 'Chat files'])
   })
 
   it('finds only the owner\'s chat spaces whose conversation is gone', async () => {

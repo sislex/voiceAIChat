@@ -9,13 +9,18 @@ import { StorageServiceError } from '../../../../packages/file-storage/src/error
 import type { FileStorageService } from '../../../../packages/file-storage/src/service.js'
 import { createBrotliCompress, createBrotliDecompress, createGunzip, createGzip } from 'node:zlib'
 import { withStorageTenant } from './remote.js'
+import { syncLegacyChatSpaceTitles } from './chatSpace.js'
 
 export function storageError(reply: FastifyReply, error: unknown) {
   if (error instanceof StorageServiceError) return reply.code(STORAGE_ERROR_STATUS[error.code]).send({error: error.code, message: error.message, ...error.details})
   throw error
 }
 type Request = FastifyRequest<{ Params: {id: string; uploadId: string; n: string; shareId: string; token: string}; Querystring: {path?: string; prefix?: string; size?: string; withContent?: string}; Body: unknown }>
-export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService): void {
+/**
+ * `conversationTitle` lets the space list show conversation titles for chat spaces created before
+ * spaces followed their conversation (titled «Chat files»): they are renamed once when listed.
+ */
+export function registerFileStorageRoutes(root: FastifyInstance, service?: FileStorageService, conversationTitle?: (userId: string, conversationId: string) => Promise<string | null | undefined>): void {
   root.register(async app => {
   app.setErrorHandler((error, _req, reply) => {
     const code = (error as {code?: string}).code
@@ -100,7 +105,10 @@ export function registerFileStorageRoutes(root: FastifyInstance, service?: FileS
     if (r.user?.role !== 'admin') throw new StorageServiceError('forbidden')
     return s.cluster(uid(r))
   })
-  route('GET', STORAGE_REST.spaces, (s, r) => s.listSpaces(uid(r)))
+  route('GET', STORAGE_REST.spaces, async (s, r) => {
+    const spaces = await s.listSpaces(uid(r))
+    return conversationTitle ? syncLegacyChatSpaceTitles(s, uid(r), spaces, conversationTitle) : spaces
+  })
   route('POST', STORAGE_REST.spaces, (s, r) => {
     const b = body(r)
     string(b.title); string(b.kind)

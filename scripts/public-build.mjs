@@ -343,7 +343,7 @@ async function dev(opts) {
       VC_APPLICATION_STORAGE_TOKEN_FILE: join(storage, 'app.token'), STORAGE_CORE_SERVICE_TOKEN_FILE: join(storage, 'core-service.token'),
       STORAGE_IDENTITY_TOKEN_FILE: join(components, 'core/outgoing/identity.token') } },
     { name: 'core', cwd: join(repository, 'apps/server'), cmd: ['npx', 'tsx', 'src/index.ts'], env: {
-      HOST: '127.0.0.1', PORT: String(p.core), VC_DATA_DIR: join(data, 'core'), VC_CORE_ID: env.PUBLIC_DOMAIN,
+      HOST: '127.0.0.1', PORT: String(p.core), VC_DATA_DIR: join(data, 'core'), VC_CORE_ID: env.PUBLIC_DOMAIN, TZ: env.PUBLIC_TIME_ZONE ?? 'Europe/Minsk',
       VC_PUBLIC_URL: env.PUBLIC_URL, PUBLIC_URL: env.PUBLIC_URL, SISLEXA_COMPONENT_CONFIG: join(components, 'core/config.json'),
       VC_APPLICATIONS: `chat,identity,storage=http://127.0.0.1:${p.storage}`, VC_APPLICATION_STORAGE_TOKEN: env.PUBLIC_STORAGE_APP_TOKEN,
       VC_CHAT_MODELS: env.PUBLIC_CHAT_MODELS, VC_CHAT_TEXT_ONLY: 'true', VC_CHAT_REQUIRE_BILLING: 'true', VC_KANBAN_MODE: 'off',
