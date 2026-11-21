@@ -29,7 +29,7 @@ daily limit $0.10 per user (`100000` micro-USD, `Europe/Minsk`), storage quota 5
 
 Install options: `--mode docker|dev`, `--state DIR` (default `.public/<mode>`), `--domain`,
 `--url`, `--tls <acme e-mail>` (default `admin@<domain>`), `--http-port`, `--https-port`, `--runner-url`,
-`--runner-token-file`, `--smtp-url`, `--storage-source <sislex/storage checkout>`, `--models`,
+`--runner-token-file`, `--smtp-url`, `--storage-source <sislex/storage checkout>` (test stand only), `--models`,
 `--daily-micro-usd`, `--quota-bytes`, `--admin-password`. Without `--domain`, Docker serves plain HTTP on
 `http://localhost:29080` (storage UI on `http://127.0.0.1:29080`); dev uses `http://127.0.0.1:29273`.
 `public:dev` expects working copies of Identity, Billing, storage and Core UI next to each other
@@ -41,7 +41,7 @@ Install options: `--mode docker|dev`, `--state DIR` (default `.public/<mode>`), 
 2. DNS: `A` records for `sislexa.by`, `www.sislexa.by` and `files.sislexa.by` → the server address.
 3. Clone this repository and `sislex/storage` side by side; run `npm ci` in this repository
    (the installer uses the component runtime).
-4. `npm run public:install -- --domain sislexa.by --tls admin@sislexa.by --runner-url <url> --runner-token-file <file> --smtp-url smtp://… --storage-source ../storage`
+4. `npm run public:install -- --domain sislexa.by --tls admin@sislexa.by --runner-url <url> --runner-token-file <file> --smtp-url smtp://…`
 5. `npm run public:docker`
 6. The administrator account is `admin`; its password is `PUBLIC_ADMIN_PASSWORD` in the state `.env`.
 

@@ -7,3 +7,8 @@ services:
       VC_WEB_DIR: /opt/core-ui-dev
     volumes:
       - ${PUBLIC_CORE_UI_DIR:?Core UI bundle directory}:/opt/core-ui-dev:ro
+  storage:
+    build:
+      context: ${PUBLIC_STORAGE_SOURCE:?Path of a sislex/storage checkout}
+      dockerfile: apps/service/Dockerfile
+    image: sislexa-public-storage:dev

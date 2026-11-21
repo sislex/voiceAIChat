@@ -1,7 +1,7 @@
 # Append after Identity; its provider grants must include this Billing installation.
 services:
   billing:
-    image: ${SISLEXA_BILLING_IMAGE:-ghcr.io/sislex/billing:5b4840a35e0dfed3108141794d7290d25f267e4a}
+    image: ${SISLEXA_BILLING_IMAGE:-ghcr.io/sislex/billing:810919d57c37886beade9f27a0179988d5edefa2}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0

@@ -96,7 +96,7 @@ services:
     logging: *logging
 
   identity:
-    image: ${PUBLIC_IDENTITY_IMAGE:-ghcr.io/sislex/identity:15cbb00539bbd6d2938614f4881b47c348b1dd6f}
+    image: ${PUBLIC_IDENTITY_IMAGE:-ghcr.io/sislex/identity:b1cecb5c6cf2d71beff57f570aa03f6e2c3a8c88}
     restart: unless-stopped
     depends_on:
       postgres: {condition: service_healthy}
@@ -120,7 +120,7 @@ services:
     logging: *logging
 
   billing:
-    image: ${PUBLIC_BILLING_IMAGE:-ghcr.io/sislex/billing:5b4840a35e0dfed3108141794d7290d25f267e4a}
+    image: ${PUBLIC_BILLING_IMAGE:-ghcr.io/sislex/billing:810919d57c37886beade9f27a0179988d5edefa2}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -140,10 +140,8 @@ services:
     logging: *logging
 
   storage:
-    build:
-      context: ${PUBLIC_STORAGE_SOURCE:?Path of a sislex/storage checkout}
-      dockerfile: apps/service/Dockerfile
-    image: ${PUBLIC_STORAGE_IMAGE:-sislexa-public-storage}
+    # Published storage release; the test stand builds it from a working copy (compose.from-dev.yml).
+    image: ${PUBLIC_STORAGE_IMAGE:-ghcr.io/sislex/storage:21e7265b51ebcce281160bd9340c76a328e7fa62}
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0

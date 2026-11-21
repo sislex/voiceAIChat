@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: 38e6c0647
+checked: a6fda6b58
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3371,6 +3371,11 @@ archive bytes and embedded release provenance before Core accepts them.
 Core's database ownership manifest also assigns the provider's three new
 application registry tables to Identity so SQLite and PostgreSQL schema checks
 agree after the archive update.
+
+Identity and Billing are outside the automated release train for this reason: release them from
+the owner repository, publish with `scripts/owner-release-publish.mjs --source <clean clone>`, then
+run `scripts/release-composition.mjs apply --dir <downloaded releases>` and update this inventory and
+the `requiredSources` allowlist by hand (Identity 1.6.2 and Billing 1.2.6 on 2026-11-21).
 
 These are development dependencies for A04 and do not deploy the S3 services.
 The S2 browser/desktop release snapshot in `dependency-snapshots.json` remains
