@@ -17,6 +17,7 @@
     "public:docker": "node --import tsx scripts/public-build.mjs docker",
     "public:docker:down": "node --import tsx scripts/public-build.mjs docker-down",
     "public:dev": "node --import tsx scripts/public-build.mjs dev",
+    "public:dev:stop": "node --import tsx scripts/public-build.mjs dev-stop",
     "public:limit": "node --import tsx scripts/public-build.mjs limit",
     "dev:gateway": "node --import tsx scripts/dev-gateway.mjs",
     "dev:component": "node scripts/dev-component.mjs",

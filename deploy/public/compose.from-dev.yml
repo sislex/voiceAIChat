@@ -1,0 +1,9 @@
+# Test stand only (npm run public:docker -- --from-dev): Core serves a Core UI bundle built from a
+# Core UI working copy instead of the pinned release. Identity, Billing and storage images come from
+# working copies through PUBLIC_IDENTITY_IMAGE, PUBLIC_BILLING_IMAGE and PUBLIC_STORAGE_SOURCE.
+services:
+  voicechat:
+    environment:
+      VC_WEB_DIR: /opt/core-ui-dev
+    volumes:
+      - ${PUBLIC_CORE_UI_DIR:?Core UI bundle directory}:/opt/core-ui-dev:ro
