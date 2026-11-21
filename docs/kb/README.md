@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: aa1a28bf2 fix(public): storage errors, queue pause reason, daily limit and storage token rotation … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 18 коммит(ов) в areas после проверенного SHA: aa1a28bf2 fix(public): storage errors, queue pause reason, daily limit and storage token rotation … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-19 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 3d7e29bc0 feat(deploy): public minimal build (chat, identity, billing, storage) with dev and Docker commands … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-20 | ✓ |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-21 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 21 коммит(ов) в areas после проверенного SHA: aa1a28bf2 fix(public): storage errors, queue pause reason, daily limit and storage token rotation … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3ae3d0648 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX |
@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1536. Последние:
+Всего записей: 1537. Последние:
 
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md) — stand-proxy-host
+- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults
 - [2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md](log/2026-11-20-alexeys-macbook-air-tailae39a6-ts-net-public-build-followups.md) — public-build-followups
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-turn-error-deleted-conversation.md) — turn-error-deleted-conversation
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-tool-transit-token-grant.md) — tool-transit-token-grant
@@ -76,7 +77,6 @@
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-public-minimal-build.md) — public-minimal-build
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-pg-init-deadlock-retry.md) — pg-init-deadlock-retry
 - [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-tool-transit.md) — model-api-tool-transit
-- [2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-text-only-with-transit.md](log/2026-11-19-alexeys-macbook-air-tailae39a6-ts-net-model-api-text-only-with-transit.md) — model-api-text-only-with-transit
 
 ## Исторические планы
 

@@ -15,6 +15,8 @@ export interface ServerConfig {
   fileStorage?: FileStorageConfig
   chatModels?: ChatModelPolicy
   chatTextOnly?: boolean
+  /** Assistant mode of new ordinary conversations; a chat-only deployment uses `chat` (VC_DEFAULT_ASSISTANT_MODE). */
+  defaultAssistantMode?: 'chat' | 'workspace'
   /** Use upstream model API billing and disable workspace tools on the stand. */
   chatModelApi?: boolean
   chatRequireBilling?: boolean
@@ -293,6 +295,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     smtpUrl: env.VC_SMTP_URL ?? null,
     chatModels: parseChatModelPolicy(env.VC_CHAT_MODELS || undefined),
     chatTextOnly: env.VC_CHAT_TEXT_ONLY === 'true',
+    defaultAssistantMode: env.VC_DEFAULT_ASSISTANT_MODE === 'chat' ? 'chat' : 'workspace',
     chatModelApi: env.VC_CHAT_MODEL_API === 'true',
     chatRequireBilling: env.VC_CHAT_REQUIRE_BILLING === 'true',
     mailFrom: env.VC_MAIL_FROM ?? null,

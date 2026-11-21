@@ -859,6 +859,8 @@ export async function registerRest(
     modelTokenUsage?: (login: string, from?: number, to?: number) => Array<{ sid: string; tenantId: string; actualMicroUsd: number; requests: number }>
     chatModels?: ChatModelPolicy
     chatTextOnly?: boolean
+    /** Mode of new ordinary conversations (not Make/readers); defaults to the schema value `workspace`. */
+    defaultAssistantMode?: 'chat' | 'workspace'
     runnerFs?: RunnerFsClient
     authStatus?: AuthStatusState
     isAgentOnline?: (agentId: string) => boolean
@@ -1047,6 +1049,9 @@ export async function registerRest(
     }
     try {
       const conversation = await db.chat.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' || kind === 'make' || kind === 'images' ? kind : null, req.body?.projectId ?? null, scope, req.user!.account!.tenantId)
+      if (conversation && !kind && opts.defaultAssistantMode === 'chat') {
+        return await db.chat.setConversationAssistantMode(uid(req), conversation.id, 'chat') ?? conversation
+      }
       // Новый Make-чат стартует от актуального main: копию обновляет сервер один
       // раз здесь, потому что сама модель Make к репозиторию доступа не имеет.
       if (kind === 'make' && conversation?.projectId) opts.refreshProjectMain?.(uid(req), conversation.projectId)
@@ -1108,6 +1113,9 @@ export async function registerRest(
     try {
       const userId = uid(req)
       const result = await db.chat.createConversationDraft(userId, idempotencyKey, title, projectId ?? null, message, req.user!.account!.tenantId, assistantKind ?? null)
+      if (result.created && !assistantKind && opts.defaultAssistantMode === 'chat') {
+        result.conversation = await db.chat.setConversationAssistantMode(userId, result.conversation.id, 'chat') ?? result.conversation
+      }
       const persisted = result.messages[0]
       if (persisted) await opts.publishChatMessage?.(userId, result.conversation.id, persisted)
       if (result.created && assistantKind === 'make' && result.conversation.projectId) {

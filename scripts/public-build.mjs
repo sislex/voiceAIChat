@@ -246,6 +246,7 @@ async function dev(opts) {
       VC_PUBLIC_URL: env.PUBLIC_URL, PUBLIC_URL: env.PUBLIC_URL, SISLEXA_COMPONENT_CONFIG: join(components, 'core/config.json'),
       VC_APPLICATIONS: `chat,identity,storage=http://127.0.0.1:${p.storage}`, VC_APPLICATION_STORAGE_TOKEN: env.PUBLIC_STORAGE_APP_TOKEN,
       VC_CHAT_MODELS: env.PUBLIC_CHAT_MODELS, VC_CHAT_TEXT_ONLY: 'true', VC_CHAT_REQUIRE_BILLING: 'true', VC_KANBAN_MODE: 'off',
+      VC_DEFAULT_ASSISTANT_MODE: 'chat', VC_KB_ROOT: join(repository, 'deploy/public/kb'),
       VC_TTS_RUNNER_URL: '', VC_STT_RUNNER_URL: '', VC_FILE_STORAGE_MODE: 'remote', VC_FILE_STORAGE_URL: `http://127.0.0.1:${p.storage}`,
       VC_FILE_STORAGE_SERVICE_TOKEN_FILE: join(storage, 'core-service.token'), VC_FILE_STORAGE_NODES: nodes,
       VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES: env.PUBLIC_STORAGE_QUOTA_BYTES,

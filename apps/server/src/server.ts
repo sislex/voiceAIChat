@@ -846,6 +846,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     fileStorage,
     chatModels: opts.config.chatModels,
     chatTextOnly: opts.config.chatTextOnly,
+    defaultAssistantMode: opts.config.defaultAssistantMode,
     deployment,
     browserMcpEnabled: opts.config.readerMode !== 'off',
     runnerFs: runnerFs ?? undefined,

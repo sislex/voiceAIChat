@@ -2163,7 +2163,11 @@ describe('turns: управляемая персистентная очеред�
       expect(hasPendingUser).toHaveBeenCalledWith(stableUserId)
       expect(await db.chat.isTurnQueuePaused(U, conversation.id)).toBe(true)
       expect(await db.chat.listQueuedTurns(U, conversation.id)).toEqual([expect.objectContaining({ id: queueId, messageId: queued.id, status: 'queued', text: queued.text })])
-      expect(events.filter(event => event.t === 'claude.error')).toEqual(expect.arrayContaining([expect.objectContaining({ conversationId: other.id, message: expect.stringContaining('учёта его стоимости') })]))
+      // A question sent while the stopped answer is still settling waits in the paused queue instead of failing.
+      expect(events.filter(event => event.t === 'claude.error' && event.conversationId === other.id)).toEqual([])
+      expect(await db.chat.isTurnQueuePaused(U, other.id)).toBe(true)
+      expect(await db.chat.listQueuedTurns(U, other.id)).toEqual([expect.objectContaining({ messageId: elsewhere.id, status: 'queued' })])
+      expect(events).toContainEqual(expect.objectContaining({ t: 'claude.queue', conversationId: other.id, pauseReason: 'accounting' }))
       llm.handlers[0].onDelta('Hidden'); llm.handlers[0].onDone('Hidden complete'); llm.handlers[0].onError('Hidden failure')
       await turns.idle()
       const answers = (await db.chat.listMessages(U, conversation.id)).filter(message => message.role === 'ai')

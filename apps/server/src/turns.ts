@@ -574,6 +574,26 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
         if (entitlements.userId) accountingPaused.set(conversationId, { userId, subject: entitlements.userId })
         await emitQueue(userId, conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
+        return
+      }
+      // A stopped answer is still being settled in the background, and the stop notice tells the
+      // user they may ask the next question right away: keep a stored question (a new message, an
+      // edit or a retry) in the paused queue; it starts once the previous answer is accounted.
+      if (req.messageId && entitlements.userId) {
+        await deps.db.chat.enqueueTurn(userId, conversationId, req.messageId, {
+          segments: req.segments,
+          attachments: req.attachments,
+          verbose: req.verbose,
+          execTarget: req.execTarget,
+          assistantContext: req.assistantContext,
+          delegation: req.delegation,
+          billingSession: req.billingSession
+        })
+        await deps.db.chat.setTurnQueuePaused(userId, conversationId, true)
+        accountingPaused.set(conversationId, { userId, subject: entitlements.userId })
+        await emitQueue(userId, conversationId)
+        return
       }
       broadcast({ t: 'claude.error', conversationId, message: ACCOUNTING_PENDING_MESSAGE }, userId)
       return
