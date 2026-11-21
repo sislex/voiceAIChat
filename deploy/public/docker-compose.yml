@@ -60,6 +60,9 @@ services:
       VC_APPLICATION_STORAGE_TOKEN: ${PUBLIC_STORAGE_APP_TOKEN}
       VC_CHAT_MODELS: ${PUBLIC_CHAT_MODELS}
       VC_CHAT_TEXT_ONLY: "true"
+      # New chats start in Chat; the internal Sislexa knowledge base is not served to public users.
+      VC_DEFAULT_ASSISTANT_MODE: chat
+      VC_KB_ROOT: /app/deploy/public/kb
       VC_CHAT_REQUIRE_BILLING: "true"
       VC_MACHINES_MODE: embedded
       VC_KANBAN_MODE: "off"
