@@ -33,8 +33,10 @@ export async function renameChatSpaces(storage: FileStorageService, userId: stri
  * them to their conversation title; a failed rename keeps the old title and never fails the list.
  */
 export async function syncLegacyChatSpaceTitles(storage: FileStorageService, userId: string, spaces: StorageSpace[], conversationTitle: (userId: string, conversationId: string) => Promise<string | null | undefined>): Promise<StorageSpace[]> {
+  // The list must reach the user whatever the storage service answered: only an array can be synced.
+  if (!Array.isArray(spaces)) return spaces
   return Promise.all(spaces.map(async space => {
-    if (space.kind !== 'chat' || space.ownerId !== userId || !space.ref || space.title !== FALLBACK_TITLE) return space
+    if (!space || space.kind !== 'chat' || space.ownerId !== userId || !space.ref || space.title !== FALLBACK_TITLE) return space
     try {
       const title = chatSpaceTitle(await conversationTitle(userId, space.ref))
       return title === space.title ? space : await storage.updateSpace(userId, space.id, { title })

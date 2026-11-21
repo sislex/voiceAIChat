@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-22
-checked: 4ddfaa5e8
+checked: 465026819
 areas:
   - apps/server/src
   - packages/knowledge/src
@@ -269,6 +269,8 @@ Spaces left by earlier deletions are found by `orphanChatSpaces` and removed wit
 a dry run that only lists the spaces unless `apply` is `true`). The answer also carries `draftUploads`:
 unbound attachment uploads of that user older than `draftMaxAgeMs` (default — the sweep threshold), removed
 with `apply`.
+
+The space list never fails on the title sync: a storage answer that is not an array (or holds empty entries) is returned unchanged, and a failed conversation lookup or rename keeps the old title.
 
 Remote adapter (`fileStorage/remote.ts`): the user's `admin` role travels as
 `x-sislexa-role` (cluster and quota administration are authorized by the
