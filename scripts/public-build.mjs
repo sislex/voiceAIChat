@@ -12,10 +12,10 @@
 //
 // Both modes use the same defaults (models, daily limit, storage quota) from DEFAULTS below.
 // Secrets live only in the private state directory and are never printed.
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -153,12 +153,41 @@ const packageVersion = dir => JSON.parse(readFileSync(join(dir, 'package.json'),
  * The choice is remembered in the state directory so later public:docker runs keep it until
  * `--pinned` switches back to published releases.
  */
+/**
+ * Core UI bundles the Identity login, profile and admin card from its pinned `@sislexa/identity`
+ * archive, so Identity UI fixes in dev would not reach a --from-dev stand until a release and a
+ * pin. The build temporarily swaps every installed copy of the package for a pack of the dev
+ * working copy and restores the pinned copies afterwards, also when the build fails.
+ */
+export function withDevIdentityPackage(uiDir, identityDir, build) {
+  const work = mkdtempSync(join(tmpdir(), 'public-identity-'))
+  const targets = [join(uiDir, 'node_modules', '@sislexa', 'identity'),
+    ...readdirSync(join(uiDir, 'packages')).map(name => join(uiDir, 'packages', name, 'node_modules', '@sislexa', 'identity'))]
+    .filter(path => existsSync(join(path, 'package.json')))
+  const swapped = []
+  try {
+    const [packed] = JSON.parse(spawnSync('npm', ['pack', '--pack-destination', work, '--json'], { cwd: identityDir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout || '[]')
+    if (!packed?.filename) throw Error('npm pack of the Identity working copy failed')
+    run('tar', ['-xzf', join(work, packed.filename), '-C', work], work)
+    targets.forEach((target, index) => {
+      const saved = join(work, `pinned-${index}`)
+      renameSync(target, saved)
+      swapped.push([target, saved])
+      cpSync(join(work, 'package'), target, { recursive: true })
+    })
+    build()
+  } finally {
+    for (const [target, saved] of swapped) { rmSync(target, { recursive: true, force: true }); renameSync(saved, target) }
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
 function prepareFromDev(state, opts) {
   const root = resolve(opts.workspace ?? join(homedir(), 'sislexa-dev'))
   const dirs = { ui: join(root, 'sislexa-core-ui'), identity: join(root, 'identity'), billing: join(root, 'billing'), storage: join(root, 'storage') }
   for (const [name, dir] of Object.entries(dirs)) if (!existsSync(join(dir, 'package.json'))) throw Error(`--from-dev needs the ${name} working copy at ${dir}`)
-  console.log('[public:docker] building Core UI from ' + dirs.ui)
-  run('npm', ['run', '-w', '@voicechat/web', 'build'], dirs.ui)
+  console.log('[public:docker] building Core UI from ' + dirs.ui + ' with the Identity UI package from ' + dirs.identity)
+  withDevIdentityPackage(dirs.ui, dirs.identity, () => run('npm', ['run', '-w', '@voicechat/web', 'build'], dirs.ui))
   const bundle = join(state, 'core-ui-dev')
   rmSync(bundle, { recursive: true, force: true })
   cpSync(join(dirs.ui, 'apps', 'web', 'dist'), bundle, { recursive: true })

@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: 9be7e25b8
+checked: 38e6c0647
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -568,6 +568,10 @@ test these adapters without contacting real owners.
 ## Release train execution (C01)
 
 `node scripts/release-train.mjs run [--apps a,b] [--deploy] [--from-dev]` executes the plan.
+
+A `--from-dev` build also bundles the Identity UI (login page, profile, admin user card) from the
+Identity working copy: the Core UI build temporarily replaces its pinned `@sislexa/identity`
+package with an `npm pack` of the dev checkout and restores the pinned copies afterwards.
 
 Selected owner repositories release concurrently in separate checkouts; applications
 sharing a repository use one owner release. Commands run asynchronously, with isolated
