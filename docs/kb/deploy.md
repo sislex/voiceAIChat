@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: a6fda6b58
+checked: 2e9a3b0c
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3888,3 +3888,6 @@ Facts this build depends on:
 The public build starts new ordinary conversations in Chat (`VC_DEFAULT_ASSISTANT_MODE=chat`; Make and
 reader conversations keep their own mode) and points `VC_KB_ROOT` at the empty `deploy/public/kb`, so the
 internal Sislexa knowledge base is neither listed nor injected for public users.
+
+<!-- release-train:bc72462c-a9d0-44c4-98e9-0cb48bfcf07d -->
+- sislex/make: 1.8.24
