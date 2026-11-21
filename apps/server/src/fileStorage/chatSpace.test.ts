@@ -62,6 +62,26 @@ describe('chat storage space', () => {
     expect(result.map(item => item.title)).toEqual(['План отпуска', 'Chat files', 'Своё имя', 'Chat files', 'Chat files'])
   })
 
+  it('returns the list untouched when the storage answer is not an array or has holes', async () => {
+    const updateSpace = vi.fn()
+    const lookup = async () => 'Название'
+    const wrapped = { spaces: [space('legacy')] }
+    expect(await syncLegacyChatSpaceTitles(storage({ updateSpace }), 'u', wrapped as never, lookup)).toBe(wrapped)
+    expect(await syncLegacyChatSpaceTitles(storage({ updateSpace }), 'u', null as never, lookup)).toBeNull()
+    const result = await syncLegacyChatSpaceTitles(storage({ updateSpace }), 'u', [null, space('legacy')] as never, lookup)
+    expect(result[0]).toBeNull()
+    expect(updateSpace).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a legacy title when the conversation lookup or the rename fails', async () => {
+    const failingRename = vi.fn(async () => { throw new Error('storage down') })
+    const lookupFails = await syncLegacyChatSpaceTitles(storage({ updateSpace: vi.fn() }), 'u', [space('a')] as never, async () => { throw new Error('db down') })
+    expect(lookupFails.map(item => item.title)).toEqual(['Chat files'])
+    const renameFails = await syncLegacyChatSpaceTitles(storage({ updateSpace: failingRename }), 'u', [space('b')] as never, async () => 'План')
+    expect(failingRename).toHaveBeenCalledTimes(1)
+    expect(renameFails.map(item => item.title)).toEqual(['Chat files'])
+  })
+
   it('finds only the owner\'s chat spaces whose conversation is gone', async () => {
     const listSpaces = async () => [
       space('live', { ref: 'c1' }), space('gone', { ref: 'c2' }), space('foreign', { ref: 'c3', ownerId: 'other' }),
