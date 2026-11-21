@@ -4,12 +4,15 @@
 //
 //   npm run public:install -- [--mode docker|dev] [--state DIR] [--domain D] [--url URL] ...
 //   npm run public:docker                 # Compose project from deploy/public (builds images)
+//   npm run public:docker -- --from-dev   # test stand: Core UI, Identity, Billing, storage from dev checkouts
+//   npm run public:docker -- --pinned     # back to the published releases
 //   npm run public:docker:down            # stop it and remove its volumes
-//   npm run public:dev                    # the same services from working copies, no Docker
+//   npm run public:dev                    # the same services from working copies, no Docker (foreground)
+//   npm run public:dev -- --detach        # same in the background; npm run public:dev:stop stops it
 //
 // Both modes use the same defaults (models, daily limit, storage quota) from DEFAULTS below.
 // Secrets live only in the private state directory and are never printed.
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -131,7 +134,43 @@ export async function install(opts = {}) {
 }
 
 const load = state => parseEnv(readFileSync(join(state, '.env'), 'utf8'))
-const compose = (state, project, args, extra = {}) => spawnSync('docker', ['compose', '-p', project, '-f', composeFile, '--env-file', join(state, '.env'), ...args], { stdio: 'inherit', ...extra })
+const composeFromDev = join(dirname(composeFile), 'compose.from-dev.yml')
+/** Compose for one installation; a --from-dev stand adds the overlay and its environment overrides. */
+const compose = (state, project, args, extra = {}) => {
+  const dev = existsSync(join(state, 'from-dev.json')) ? JSON.parse(readFileSync(join(state, 'from-dev.json'), 'utf8')) : null
+  const files = dev ? ['-f', composeFile, '-f', composeFromDev] : ['-f', composeFile]
+  return spawnSync('docker', ['compose', '-p', project, ...files, '--env-file', join(state, '.env'), ...args], { stdio: 'inherit', ...extra, env: { ...process.env, ...(dev?.env ?? {}), ...(extra.env ?? {}) } })
+}
+const run = (cmd, args, cwd) => {
+  const result = spawnSync(cmd, args, { cwd, stdio: 'inherit' })
+  if (result.status !== 0) throw Error(`${cmd} ${args.join(' ')} failed in ${cwd}`)
+}
+const packageVersion = dir => JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version
+
+/**
+ * Test stand from working copies: Core UI bundle, Identity, Billing and storage images are built from
+ * the dev checkouts under the workspace (default ~/sislexa-dev); Core is this checkout as usual.
+ * The choice is remembered in the state directory so later public:docker runs keep it until
+ * `--pinned` switches back to published releases.
+ */
+function prepareFromDev(state, opts) {
+  const root = resolve(opts.workspace ?? join(homedir(), 'sislexa-dev'))
+  const dirs = { ui: join(root, 'sislexa-core-ui'), identity: join(root, 'identity'), billing: join(root, 'billing'), storage: join(root, 'storage') }
+  for (const [name, dir] of Object.entries(dirs)) if (!existsSync(join(dir, 'package.json'))) throw Error(`--from-dev needs the ${name} working copy at ${dir}`)
+  console.log('[public:docker] building Core UI from ' + dirs.ui)
+  run('npm', ['run', '-w', '@voicechat/web', 'build'], dirs.ui)
+  const bundle = join(state, 'core-ui-dev')
+  rmSync(bundle, { recursive: true, force: true })
+  cpSync(join(dirs.ui, 'apps', 'web', 'dist'), bundle, { recursive: true })
+  const image = (name, dir) => {
+    const tag = `sislexa-public-${name}:dev`
+    console.log(`[public:docker] building ${tag} from ${dir}`)
+    run('docker', ['build', '-t', tag, '--build-arg', `APPLICATION_VERSION=${packageVersion(dir)}`, '--build-arg', `APPLICATION_COMMIT=${gitCommit(dir)}`, dir], dir)
+    return tag
+  }
+  const env = { PUBLIC_CORE_UI_DIR: bundle, PUBLIC_IDENTITY_IMAGE: image('identity', dirs.identity), PUBLIC_BILLING_IMAGE: image('billing', dirs.billing), PUBLIC_STORAGE_SOURCE: dirs.storage }
+  writeFileSync(join(state, 'from-dev.json'), JSON.stringify({ workspace: root, commits: Object.fromEntries(Object.entries(dirs).map(([k, d]) => [k, gitCommit(d)])), env }, null, 2) + '\n')
+}
 
 /** Settings Identity reads from Core's app_config and the tariff every personal tenant gets. */
 export const CONFIGURE_SQL = [
@@ -153,7 +192,9 @@ async function docker(opts) {
   const project = opts.project ?? 'sislexa-public'
   if (!existsSync(join(state, '.env'))) await install({ ...opts, mode: 'docker', state })
   const env = load(state)
-  if (compose(state, project, ['up', '-d', '--build']).status !== 0) throw Error('docker compose up failed')
+  if (opts.pinned) rmSync(join(state, 'from-dev.json'), { force: true })
+  if (opts['from-dev']) prepareFromDev(state, opts)
+  if (compose(state, project, ['up', '-d', '--build', '--remove-orphans']).status !== 0) throw Error('docker compose up failed')
   await waitHealthy(`http://127.0.0.1:${env.PUBLIC_HTTP_PORT}/api/health`).catch(() => {})
   for (let i = 0; i < 60; i++) {
     const ready = compose(state, project, ['exec', '-T', 'postgres', 'psql', '-U', 'sislexa', '-d', 'sislexa', '-tAc', "SELECT count(*) FROM information_schema.tables WHERE table_name IN ('app_config','tariff_plans')"], { stdio: 'pipe', encoding: 'utf8' })
@@ -203,7 +244,38 @@ function dockerDown(opts) {
 }
 
 /** Runs the same services from working copies; SQLite replaces Postgres. */
+const devPidFile = state => join(state, 'dev.pid')
+const alive = pid => { try { process.kill(pid, 0); return true } catch { return false } }
+/** Background dev mode: the supervisor runs in its own session, so closing the terminal does not stop it. */
+async function devDetached(opts) {
+  const state = resolve(opts.state ?? defaultState('dev'))
+  mkdirSync(state, { recursive: true })
+  const pidFile = devPidFile(state)
+  if (existsSync(pidFile) && alive(Number(readFileSync(pidFile, 'utf8')))) throw Error('Dev build is already running; npm run public:dev:stop stops it')
+  const args = process.argv.slice(2).filter(arg => arg !== '--detach')
+  const out = openSync(join(state, 'dev-supervisor.log'), 'a')
+  const child = spawn(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url), ...args], { detached: true, stdio: ['ignore', out, out], env: process.env })
+  child.unref()
+  writeFileSync(pidFile, String(child.pid))
+  const env = existsSync(join(state, '.env')) ? load(state) : null
+  const url = env?.PUBLIC_URL ?? `http://127.0.0.1:${DEV_PORTS.ui}`
+  for (let i = 0; i < 180 && alive(child.pid); i++) {
+    if (await fetch(url, { signal: AbortSignal.timeout(2000) }).then(r => r.ok).catch(() => false)) break
+    await new Promise(r => setTimeout(r, 1000))
+  }
+  if (!alive(child.pid)) throw Error('Dev build stopped while starting; see ' + join(state, 'dev-supervisor.log'))
+  console.log(`Public build (dev) runs in the background: ${url}; stop with npm run public:dev:stop`)
+}
+function devStop(opts) {
+  const state = resolve(opts.state ?? defaultState('dev'))
+  const pidFile = devPidFile(state)
+  const pid = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : 0
+  if (pid && alive(pid)) { process.kill(pid, 'SIGTERM'); console.log('Dev build stopped') } else console.log('Dev build is not running')
+  rmSync(pidFile, { force: true })
+}
+
 async function dev(opts) {
+  if (opts.detach) return devDetached(opts)
   const state = resolve(opts.state ?? defaultState('dev'))
   if (!existsSync(join(state, '.env'))) await install({ ...opts, mode: 'dev', state })
   const env = load(state)
@@ -264,12 +336,13 @@ async function dev(opts) {
   const versions = { identity: meta(dirs.identity, '1.5.0'), billing: meta(dirs.billing, '1.2.0'), core: meta(repository, '1.1.0') }
   for (const service of services) if (versions[service.name]) Object.assign(service.env, versions[service.name])
   const children = []
-  const stop = () => { for (const child of children) try { child.kill('SIGTERM') } catch { /* gone */ } }
+  // Each service runs in its own process group, so npm and the servers it starts stop together.
+  const stop = () => { for (const child of children) try { process.kill(-child.pid, 'SIGTERM') } catch { try { child.kill('SIGTERM') } catch { /* gone */ } } }
   process.on('SIGINT', () => { stop(); process.exit(0) })
   process.on('SIGTERM', () => { stop(); process.exit(0) })
   for (const service of services) {
     const log = join(logs, service.name + '.log')
-    const child = spawn(service.cmd[0], service.cmd.slice(1), { cwd: service.cwd, env: { ...process.env, ...service.env }, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(service.cmd[0], service.cmd.slice(1), { cwd: service.cwd, env: { ...process.env, ...service.env }, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     const sink = (await import('node:fs')).createWriteStream(log, { flags: 'a' })
     child.stdout.pipe(sink); child.stderr.pipe(sink)
     child.on('exit', code => console.log(`[public:dev] ${service.name} exited with ${code}; log ${log}`))
@@ -303,7 +376,7 @@ db.close()`
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [command, ...rest] = process.argv.slice(2)
   const opts = options(rest)
-  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts), limit: () => limit(opts) }[command]
-  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|docker-down|dev|limit [options]'); process.exit(2) }
+  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts), 'dev-stop': () => devStop(opts), limit: () => limit(opts) }[command]
+  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|docker-down|dev|dev-stop|limit [options]'); process.exit(2) }
   Promise.resolve(run()).catch(error => { console.error(`public-build: ${error.message}`); process.exitCode = 1 })
 }

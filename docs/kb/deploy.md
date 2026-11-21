@@ -1,6 +1,6 @@
 ---
 updated: 2026-11-21
-checked: 2c61e1cfa
+checked: 9be7e25b8
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3834,6 +3834,14 @@ with secrets, component tokens for `core,identity,billing` only — `component-i
 `signup.enabled=1`, `signup.role=developer` and the `standard` tariff narrowed to `chat.use`),
 `public:docker:down` (removes volumes) and `public:dev` (the same services from working copies on
 ports 29787/29273/29798/29800/29899/29895 with SQLite).
+
+Test stand variants: `public:docker -- --from-dev` builds the Core UI bundle (`npm run -w
+@voicechat/web build`) and the Identity, Billing and storage images from the dev working copies under
+`--workspace` (default `~/sislexa-dev`) and adds `deploy/public/compose.from-dev.yml` (Core serves the
+bundle through `VC_WEB_DIR`); the choice is stored in `<state>/from-dev.json` and kept by later runs
+until `--pinned`. `public:dev -- --detach` starts the dev supervisor in its own session (pid in
+`<state>/dev.pid`, log `dev-supervisor.log`) and `public:dev:stop` stops it with all service process
+groups; a foreground `public:dev` dies with its terminal.
 
 Facts this build depends on:
 - Identity signs the sessions Core verifies, so Core's `session.secret` must equal Identity's
