@@ -18,3 +18,29 @@ test('the daily limit script writes and then replaces Billing\'s saved policy', 
     db.close()
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+test('a --from-dev build bundles the dev Identity UI package and restores the pinned copy', async () => {
+  const { withDevIdentityPackage } = await import('./public-build.mjs')
+  const { mkdirSync, writeFileSync, readFileSync, existsSync } = await import('node:fs')
+  const root = mkdtempSync(join(tmpdir(), 'public-identity-test-'))
+  try {
+    const ui = join(root, 'ui'), identity = join(root, 'identity')
+    for (const dir of [join(ui, 'node_modules', '@sislexa', 'identity'), join(ui, 'packages', 'app', 'node_modules', '@sislexa', 'identity'), identity]) mkdirSync(dir, { recursive: true })
+    for (const dir of [join(ui, 'node_modules', '@sislexa', 'identity'), join(ui, 'packages', 'app', 'node_modules', '@sislexa', 'identity')]) {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@sislexa/identity', version: '1.0.0' }))
+      writeFileSync(join(dir, 'marker.txt'), 'pinned')
+    }
+    writeFileSync(join(identity, 'package.json'), JSON.stringify({ name: '@sislexa/identity', version: '9.9.9', files: ['marker.txt'] }))
+    writeFileSync(join(identity, 'marker.txt'), 'dev')
+    const seen = []
+    withDevIdentityPackage(ui, identity, () => {
+      seen.push(readFileSync(join(ui, 'node_modules', '@sislexa', 'identity', 'marker.txt'), 'utf8'))
+      seen.push(readFileSync(join(ui, 'packages', 'app', 'node_modules', '@sislexa', 'identity', 'marker.txt'), 'utf8'))
+    })
+    assert.deepEqual(seen, ['dev', 'dev'])
+    assert.equal(readFileSync(join(ui, 'node_modules', '@sislexa', 'identity', 'marker.txt'), 'utf8'), 'pinned')
+    assert.throws(() => withDevIdentityPackage(ui, identity, () => { throw Error('build failed') }), /build failed/)
+    assert.equal(readFileSync(join(ui, 'packages', 'app', 'node_modules', '@sislexa', 'identity', 'marker.txt'), 'utf8'), 'pinned')
+    assert.equal(existsSync(join(ui, 'node_modules', '@sislexa', 'identity', 'package.json')), true)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
