@@ -1,0 +1,35 @@
+{
+  "id": "llm-runner",
+  "title": "LLM Runner",
+  "description": "Исполнение моделей.",
+  "checks": [
+    {
+      "id": "llm-runner.models.identity",
+      "title": "Модель отвечает своим именем",
+      "steps": [
+        "В одной беседе по очереди выбрать модели и спросить «Какая ты модель?»"
+      ],
+      "expected": "Каждая называет себя в соответствии с выбором; в сведениях об ответе — фактическая модель",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "core"
+    },
+    {
+      "id": "llm-runner.workspace.tools",
+      "title": "Workspace с инструментами",
+      "steps": [
+        "В Workspace попросить прочитать вложение и выполнить команду на машине"
+      ],
+      "expected": "Инструменты вызываются, ответ по существу",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "smoke"
+    }
+  ]
+}

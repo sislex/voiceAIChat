@@ -55,6 +55,7 @@ import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { createConversationSummaryService, type ConversationSummaryService } from './conversationSummary.js'
 import { registerAdminRoutes } from './routes/admin.js'
+import { registerTestPlanRoute } from './routes/testPlan.js'
 import { registerUiPerformanceRoutes } from './routes/uiPerformance.js'
 
 
@@ -1293,6 +1294,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       headers.delete('cookie')
     } } : {}) })
   else registerAdminRoutes(app, db, agentRegistry, deployTrigger, make.service, mailer, opts.config.publicUrl, sessionHub, fileStorage, opts.config.oauth ? opts.config.fileStorage?.url : undefined)
+
+  registerTestPlanRoute(app, { defaultBuild: localApplication(deployment, 'make') ? 'full' : 'minimal' })
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому

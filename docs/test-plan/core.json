@@ -1,0 +1,50 @@
+{
+  "id": "core",
+  "title": "Core",
+  "description": "Серверные функции, видимые через браузер: транзит инструментов, безопасность, служебные страницы.",
+  "checks": [
+    {
+      "id": "core.health",
+      "title": "Сервер жив",
+      "steps": [
+        "Открыть адрес /api/health"
+      ],
+      "expected": "JSON с ok: true и версией",
+      "role": "guest",
+      "builds": [
+        "minimal",
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "smoke"
+    },
+    {
+      "id": "core.transit.stand",
+      "title": "Транзит инструментов для приложения через API моделей",
+      "steps": [
+        "На стенде, подключённом к API прода, в Workspace попросить найти раздел в базе знаний стенда и выполнить hostname"
+      ],
+      "expected": "Модель вызывает инструменты стенда, ответ по существу",
+      "role": "admin",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "core"
+    },
+    {
+      "id": "core.make.thread-rollover",
+      "title": "Новый тред в длинной беседе Make",
+      "steps": [
+        "В беседе Make с контекстом больше 90 тыс. токенов сделать правку"
+      ],
+      "expected": "Отметка «Начат новый тред…», индикатор и цена хода падают, правка применяется",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "extended"
+    }
+  ]
+}

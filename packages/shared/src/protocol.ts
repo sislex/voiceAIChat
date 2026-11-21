@@ -438,6 +438,8 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminStorage: '/api/admin/storage',
+  /** Browser test plan grouped by library (admin only). */
+  adminTestPlan: '/api/admin/test-plan',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
   /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
   adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,

@@ -1,0 +1,35 @@
+{
+  "id": "image-studio",
+  "title": "Студия изображений",
+  "description": "Генерация и правка картинок.",
+  "checks": [
+    {
+      "id": "image-studio.generate",
+      "title": "Генерация картинки",
+      "steps": [
+        "Открыть студию, ввести описание, нажать «Нарисовать»"
+      ],
+      "expected": "Задача «Модель рисует» → «Готово», картинка в галерее",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": true,
+      "priority": "smoke"
+    },
+    {
+      "id": "image-studio.failure",
+      "title": "Отказ генерации",
+      "steps": [
+        "Запустить генерацию там, где вспомогательные модели отключены"
+      ],
+      "expected": "Строка задачи «Ошибка» и уведомление «Не удалось нарисовать: …»",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "core"
+    }
+  ]
+}

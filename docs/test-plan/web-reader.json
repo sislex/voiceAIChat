@@ -1,0 +1,21 @@
+{
+  "id": "web-reader",
+  "title": "Web Reader",
+  "description": "Чтение страниц через прокси.",
+  "checks": [
+    {
+      "id": "web-reader.open",
+      "title": "Открыть страницу",
+      "steps": [
+        "Открыть Web Reader и ввести адрес сайта"
+      ],
+      "expected": "Страница открывается, ссылки работают внутри читалки",
+      "role": "user",
+      "builds": [
+        "full"
+      ],
+      "needsModel": false,
+      "priority": "smoke"
+    }
+  ]
+}
