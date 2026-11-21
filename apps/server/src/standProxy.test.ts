@@ -369,6 +369,34 @@ describe('stand proxy listeners', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe(lease.url.slice(0, -1))
   })
 
+  it('sends the stand URL host to the root and keeps its absolute redirects inside the lease', async () => {
+    const site = createServer((req, res) => {
+      if (req.url === '/go') { res.writeHead(302, { location: 'http://' + req.headers.host + '/login?next=%2F' }); res.end(); return }
+      res.end(JSON.stringify({ host: req.headers.host, origin: req.headers.origin ?? null }))
+    })
+    await new Promise<void>((resolve, reject) => { site.once('error', reject); site.listen(ports[2]!, '127.0.0.1', resolve) })
+    cleanup.push(() => { site.closeAllConnections(); return new Promise<void>(resolve => site.close(() => resolve())) })
+    const proxy = new StandProxy({
+      ...deps(),
+      userStand: async () => ({ machineId: 'm', gatewayPort: ports[2]!, host: 'localhost:' + ports[2] }),
+      connect: (_machine, port) => connect(port, '127.0.0.1'),
+    })
+    cleanup.push(() => proxy.close())
+    const lease = await proxy.access('alice', '', 'us-m-' + ports[2], '127.0.0.1:25273')
+    const leaseOrigin = lease.url.slice(0, -1)
+    // Plain requests without connection pooling: earlier tests closed proxies on the same port.
+    const get = (path: string, headers: Record<string, string>) => new Promise<{ status: number; location?: string; body: string }>((resolve, reject) => {
+      const req = request(lease.url + path, { headers, agent: false }, res => {
+        let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk })
+        res.on('end', () => resolve({ status: res.statusCode!, location: res.headers.location, body }))
+      })
+      req.on('error', reject); req.end()
+    })
+    expect(JSON.parse((await get('', { cookie: 'vc_session=alice', origin: leaseOrigin })).body))
+      .toEqual({ host: 'localhost:' + ports[2], origin: 'http://localhost:' + ports[2] })
+    expect((await get('go', { cookie: 'vc_session=alice' })).location).toBe(leaseOrigin + '/login?next=%2F')
+  })
+
   it('keys leases by requested port and forwards to that port', async () => {
     const d = deps(); d.ports = ports.slice(0, 3)
     const proxy = new StandProxy(d); cleanup.push(() => proxy.close())

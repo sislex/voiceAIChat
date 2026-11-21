@@ -108,12 +108,13 @@ export function externalStandResponseHeaders(headers: IncomingHttpHeaders, key: 
 }
 type MachineEndpoint = { machineId: string; gatewayPort: number }
 export type MachineProxyRoute = { path: string; target: MachineEndpoint; targetHost: string; origin: string; stripPrefix: boolean }
-type MachineTarget = MachineEndpoint & { routes?: MachineProxyRoute[] }
+/** `host`: the stand URL host (`localhost:<port>`) sent upstream instead of `127.0.0.1:<port>`. */
+type MachineTarget = MachineEndpoint & { routes?: MachineProxyRoute[]; host?: string }
 type Target = MachineTarget | ExternalStandTarget
 function isExternal(target: Target): target is ExternalStandTarget { return 'kind' in target && target.kind === 'external' }
 function sameTarget(a: Target, b: Target): boolean {
   return isExternal(a) || isExternal(b) ? isExternal(a) && isExternal(b) && a.origin === b.origin
-    : a.machineId === b.machineId && a.gatewayPort === b.gatewayPort && JSON.stringify(a.routes ?? []) === JSON.stringify(b.routes ?? [])
+    : a.machineId === b.machineId && a.gatewayPort === b.gatewayPort && a.host === b.host && JSON.stringify(a.routes ?? []) === JSON.stringify(b.routes ?? [])
 }
 function routeMatches(path: string, route: MachineProxyRoute): boolean { return path === route.path || path.startsWith(route.path + '/') }
 function proxyRoute(target: MachineTarget, path: string): MachineProxyRoute | undefined {
@@ -282,15 +283,18 @@ export class StandProxy {
       responseHeaders = headers => externalStandResponseHeaders(headers, lease.key, lease.parentOrigin, lease.origin, external.origin)
     } else {
       const machine = target
+      // The stand URL host (`localhost:<port>`) keeps host-routed servers on the right site and their absolute redirects inside the lease.
+      const rootHost = route ? undefined : (machine as MachineTarget).host
       try { tunnel = this.deps.connect(machine.machineId, machine.gatewayPort) } catch { return deny(502) }
       const pipe = tunnel
       lease.sockets.add(pipe); pipe.once('close', () => lease.sockets.delete(pipe))
       const requestHeaders = publicArtifact ? { ...req.headers, cookie: undefined } : req.headers
-      upstream = request({ hostname: '127.0.0.1', port: machine.gatewayPort, method: req.method, path: upstreamPath, headers: standHeaders(requestHeaders, lease.key, lease.origin, machine.gatewayPort, route ? { host: route.targetHost, origin: route.origin } : undefined), createConnection: () => pipe })
+      upstream = request({ hostname: '127.0.0.1', port: machine.gatewayPort, method: req.method, path: upstreamPath, headers: standHeaders(requestHeaders, lease.key, lease.origin, machine.gatewayPort, route ? { host: route.targetHost, origin: route.origin } : rootHost ? { host: rootHost, origin: 'http://' + rootHost } : undefined), createConnection: () => pipe })
       pipe.on('data', touch)
       responseHeaders = headers => {
         let result = standFrameHeaders(headers, lease.parentOrigin, lease.origin)
         if (route) result = proxyRouteResponseHeaders(result, route, lease.origin)
+        else if (rootHost) result = proxyRouteResponseHeaders(result, { path: '', target: machine, targetHost: rootHost, origin: 'http://' + rootHost, stripPrefix: false }, lease.origin)
         if (result['set-cookie']) result['set-cookie'] = standCookies(result['set-cookie'], lease.key)
         return result
       }

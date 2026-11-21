@@ -75,6 +75,15 @@ describe('UserStands', () => {
     await expect(s.userStand('alice', { op: 'files', machineId: 'm2', folder, action: 'list', dir: '.' })).rejects.toThrow('machine_forbidden')
   }, 20_000)
 
+  it('keeps the stand URL host for the lease root and refuses a host for another port', async () => {
+    const { stands: s } = stands(undefined, { previewAccess: async () => ({ url: 'http://core.example:24001/' }) })
+    await s.userStand('alice', { op: 'preview', machineId: 'm1', port: 29080, host: 'localhost:29080' })
+    expect(await s.target('alice', userStandId('m1', 29080))).toMatchObject({ machineId: 'm1', gatewayPort: 29080, host: 'localhost:29080' })
+    await s.userStand('alice', { op: 'preview', machineId: 'm1', port: 29080, host: 'localhost:3000' })
+    expect(await s.target('alice', userStandId('m1', 29080))).not.toHaveProperty('host')
+    await expect(s.userStand('alice', { op: 'preview', machineId: 'm1', port: 29080, host: 'evil.example:29080' } as never)).rejects.toThrow('invalid_user_stand')
+  })
+
   it('registers validated proxy routes on a local preview lease and clears them on release', async () => {
     const released: string[] = []
     const { stands: s } = stands(undefined, {
