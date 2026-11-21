@@ -22,6 +22,8 @@ export interface ChatAccountingOptions {
 }
 export interface AccountingTurn {
   modelApi?: boolean
+  /** Public run id of a model API call; lets the caller ask for the run's actual cost later. */
+  modelApiRunId?: string
   onOperation?: (operationId: string) => void
   onDispatch?: (operationId: string) => void
   onAdmissionError?: (status: number, reason: string) => void
@@ -133,7 +135,7 @@ export class ChatAccounting {
           if (cancelled) return
           await turn.authorize?.()
           const id = randomUUID()
-          job = { id, modelApi: turn.modelApi, createdAt: this.now(), application: turn.application, login: turn.login, session: { ...principal }, originModuleId: turn.originModuleId,
+          job = { id, modelApi: turn.modelApi, ...(turn.modelApiRunId ? { modelApiRunId: turn.modelApiRunId } : {}), createdAt: this.now(), application: turn.application, login: turn.login, session: { ...principal }, originModuleId: turn.originModuleId,
             input: { operationId: id, maxMicroUsd: 0, executionBound: 'unbounded', expiresAt: this.now()+60_000 },
             target: { ...client.accountingTarget, ...(turn.engineId ? { engineId: turn.engineId } : {}) },
             model: request.model, prices: estimatePrices(request.model), state: 'admitting' }

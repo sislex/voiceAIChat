@@ -68,6 +68,9 @@ export interface TurnManagerDeps {
   chatTextOnly?: boolean
   /** Disable workspace tools when using the upstream model API. */
   chatModelApi?: boolean
+  /** How often and how long a stopped model API answer asks the provider for its actual cost. */
+  stoppedCostPollMs?: number
+  stoppedCostWaitMs?: number
   /**
    * Model API stand: true while the provider relays this deployment's tools (llm/toolTransitClient.ts).
    * Workspace turns then keep their MCP tools; without it the stand is text-only.
@@ -1710,9 +1713,36 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // when empty, otherwise the question stays in the conversation with no trace of the turn.
     const message = await deps.db.chat.addMessage(turn.userId, conversationId, 'ai', turn.partial.trim() ? turn.partial : '', timeHHMM(), turn.provider, meta, turn.execTarget)
     if (message && turn.partial.trim()) deps.conversationSummary?.consider(turn.userId, conversationId)
+    if (message && deps.chatModelApi && turn.handle.outcome) followStoppedCost(turn.userId, conversationId, message.id, turn.handle.outcome.bind(turn.handle))
     if (notify) broadcast(await clientEvent(deps.db, turn.userId, { t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }), turn.userId)
     await dispatchNext(turn.userId, conversationId)
     return turn
+  }
+
+  /**
+   * A stopped model API run keeps finishing in the background and is charged by actual usage. Ask the
+   * provider until the cost is known, then replace the «cost pending» note of the stopped answer with it.
+   * In-memory only: after a restart the note stays pending.
+   */
+  function followStoppedCost(userId: string, conversationId: string, messageId: string, outcome: NonNullable<LlmHandle['outcome']>): void {
+    const interval = deps.stoppedCostPollMs ?? 30_000
+    const deadline = now() + (deps.stoppedCostWaitMs ?? 60 * 60_000)
+    const step = async (): Promise<void> => {
+      let status: Awaited<ReturnType<typeof outcome>>
+      try { status = await outcome() } catch { status = { state: 'settling' } }
+      if (!status) return // the provider does not know the run (or predates this endpoint)
+      if (status.state === 'done') {
+        try {
+          const message = await deps.db.chat.updateMessageMeta(userId, conversationId, messageId,
+            { costPending: false, ...(status.costUsd !== undefined ? { costUsd: status.costUsd } : {}) })
+          broadcast(await clientEvent(deps.db, userId, { t: 'chat.message', conversationId, message }), userId)
+        } catch { /* the message was deleted meanwhile */ }
+        return
+      }
+      if (now() < deadline) schedule()
+    }
+    const schedule = () => { setTimeout(() => { void step() }, interval).unref?.() }
+    schedule()
   }
 
   async function cancel(conversationId?: string): Promise<void> {

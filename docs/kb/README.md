@@ -67,6 +67,7 @@
 
 Всего записей: 1542. Последние:
 
+- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-final-cost.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stopped-answer-final-cost.md) — stopped-answer-final-cost
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md) — stop-cost-fresh-thread
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md) — stand-proxy-host
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults

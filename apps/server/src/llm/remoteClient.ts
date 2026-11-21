@@ -212,6 +212,16 @@ export class RemoteLlmClient implements LlmClient {
     return response.json() as Promise<LlmExecutionReceipt>
   }
 
+  /** Status of a model API run, `undefined` when the provider does not know it (or is not a model API). */
+  async runOutcome(runId: string): Promise<import('@voicechat/shared').ModelApiRunStatus | undefined> {
+    const response = await this.accountingFetch('/v1/run/' + encodeURIComponent(runId))
+    if (response.status === 404) return undefined
+    if (!response.ok) throw Error('run_status_unavailable')
+    const body = await response.json() as { state?: unknown; costUsd?: unknown }
+    if (body.state !== 'running' && body.state !== 'settling' && body.state !== 'done') return undefined
+    return { state: body.state, ...(typeof body.costUsd === 'number' && Number.isFinite(body.costUsd) ? { costUsd: body.costUsd } : {}) }
+  }
+
   send(req: LlmRequest, handlers: LlmStreamHandlers): LlmHandle {
     const runId = req.accounting?.operationId ?? randomUUID()
     let terminal: (() => void) | undefined
@@ -229,6 +239,7 @@ export class RemoteLlmClient implements LlmClient {
     void this.pump(runId, declared?.req ?? req, sink, abort).finally(() => { declared?.release(); if (!cancelled) terminal?.() })
 
     return {
+      outcome: () => this.runOutcome(runId),
       cancel: () => {
         if (cancelled) return
         cancelled = true

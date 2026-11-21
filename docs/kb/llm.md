@@ -3,7 +3,7 @@ title: LLM: claude/codex CLI, ходы, stream-json, gateway
 aliases:
   - /api/model-runner/v1
 updated: 2026-11-21
-checked: 5a04cb4ee
+checked: a6fda6b58
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -134,6 +134,11 @@ history (the stopped part included). The stopped answer is saved with `meta.inte
 `meta.costPending` (the cost is settled later by the model API owner and is not copied back into the message).
 A model API answer often arrives in one piece at the end, so Stop usually comes before any text: the stopped
 answer is then saved with an empty text (for its note) and is left out of the rebuilt prompt.
+`GET /api/model-runner/v1/run/:id` (same token sid) reports a run as `running`, `settling` (stopped, still
+finishing or not yet settled) or `done` with `costUsd` from the settlement; the accounting record keeps the
+public run id (`modelApiRunId`). After Stop the calling Core polls it through `LlmHandle.outcome()` every 30 s
+for up to an hour and replaces the pending note with the cost (`costPending: false`, `costUsd`, pushed as
+`chat.message`). Polling is in memory; a provider without the route answers 404 and the note stays pending.
 If a busy-thread refusal still arrives (for example a run abandoned by a restart), the thread is forgotten and
 the message is retried once on a fresh thread instead of failing in the queue.
 
