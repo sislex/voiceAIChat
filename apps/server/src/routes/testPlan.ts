@@ -23,7 +23,9 @@ export function loadTestPlan(directory = TEST_PLAN_DIR): TestPlanLibrary[] {
   return libraries.sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
 }
 
+/** The plan is a development tool: the minimal (public) build does not expose it at all. */
 export function registerTestPlanRoute(app: FastifyInstance, opts: { defaultBuild: TestPlanBuild; directory?: string }): void {
+  if (opts.defaultBuild === 'minimal') return
   app.get(REST.adminTestPlan, { preHandler: requireAdmin }, async (): Promise<TestPlanResponse> =>
     ({ defaultBuild: opts.defaultBuild, libraries: loadTestPlan(opts.directory) }))
 }
