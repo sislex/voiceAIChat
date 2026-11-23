@@ -44,3 +44,31 @@ test('a --from-dev build bundles the dev Identity UI package and restores the pi
     assert.equal(existsSync(join(ui, 'node_modules', '@sislexa', 'identity', 'package.json')), true)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
+
+test('the live overlay mounts only existing source directories and runs every service under the restart supervisor', async () => {
+  const { liveOverlay } = await import('./public-build.mjs')
+  const { mkdirSync } = await import('node:fs')
+  const root = mkdtempSync(join(tmpdir(), 'public-live-'))
+  try {
+    const dirs = { core: join(root, 'core'), identity: join(root, 'identity'), billing: join(root, 'billing'), storage: join(root, 'storage'), script: join(root, 'live-run.sh') }
+    for (const dir of [join(dirs.core, 'apps/server/src'), join(dirs.core, 'packages/shared/src'), join(dirs.core, 'packages/kb-tools'), join(dirs.identity, 'apps/server/src'), join(dirs.billing, 'src'), join(dirs.storage, 'apps/service/src')]) mkdirSync(dir, { recursive: true })
+    const text = liveOverlay(dirs)
+    assert.equal((text.match(/usr\/local\/bin\/live-run\",\"/g) ?? []).length, 5)
+    assert.match(text, new RegExp(`${join(dirs.core, 'packages/shared/src')}:/app/packages/shared/src:ro`))
+    assert.doesNotMatch(text, /kb-tools/)
+    assert.match(text, new RegExp(`${join(dirs.billing, 'src')}:/app/src:ro`))
+    assert.match(text, /storage-node:\n {4}command: .*packages\/file-storage\/src\/node\/main\.ts/)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('the live supervisor script is valid shell and restarts only after the old process exited', async () => {
+  const { LIVE_RUN_SCRIPT } = await import('./public-build.mjs')
+  const dir = mkdtempSync(join(tmpdir(), 'public-live-run-'))
+  try {
+    const file = join(dir, 'live-run.sh')
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync(file, LIVE_RUN_SCRIPT)
+    execFileSync('sh', ['-n', file])
+    assert.match(LIVE_RUN_SCRIPT, /kill "\$pid"; break[\s\S]*wait "\$pid"/)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})

@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-21
-checked: 2e9a3b0c
+updated: 2026-11-23
+checked: 56609ad2d
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3844,7 +3844,21 @@ with secrets, component tokens for `core,identity,billing` only — `component-i
 `public:docker:down` (removes volumes) and `public:dev` (the same services from working copies on
 ports 29787/29273/29798/29800/29899/29895 with SQLite).
 
-Test stand variants: `public:docker -- --from-dev` builds the Core UI bundle (`npm run -w
+Live stand (default of `public:docker -- --from-dev`): Core, Identity, Billing, storage and the storage
+node keep their images and run the sources of the working copies mounted read-only from the
+generated `<state>/compose.live.yml` (`src` directories only) under `<state>/live-run.sh`, a small
+supervisor that polls the sources and restarts the process after the old one exited (`tsx watch` and
+`node --watch` restart before the old process is gone, and Core/Identity then fail on the SQLite
+component token registry with «Component credentials require private owner-controlled storage»).
+A source change restarts a service in about 1-3 s. Images are rebuilt only when the `package-lock.json`
+baked into an image differs from the working copy's. `npm run public:update` fast-forwards the five
+copies (Core, Core UI, Identity, Billing, storage) to `origin/dev`, runs `npm install` where the lock moved,
+rebuilds the Core UI bundle (about 50 s, `tsc` + Vite) only when the Core UI or Identity commit moved,
+and waits for `/healthz` (no-change run about 12 s). `--from-dev --build` keeps the earlier behaviour
+(images built from the copies, minutes). The probe path is `/healthz`; `/api/health` answers 404 on the
+public stand.
+
+Test stand variants: `public:docker -- --from-dev --build` builds the Core UI bundle (`npm run -w
 @voicechat/web build`) and the Identity, Billing and storage images from the dev working copies under
 `--workspace` (default `~/sislexa-dev`) and adds `deploy/public/compose.from-dev.yml` (Core serves the
 bundle through `VC_WEB_DIR`); the choice is stored in `<state>/from-dev.json` and kept by later runs
