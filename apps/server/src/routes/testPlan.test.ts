@@ -8,7 +8,8 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '@sislexa/identity/server/users/accounts'
-import { loadTestPlan } from './testPlan.js'
+import Fastify from 'fastify'
+import { loadTestPlan, registerTestPlanRoute } from './testPlan.js'
 
 const SECRET = 'test-secret'
 
@@ -47,5 +48,14 @@ describe('GET admin test plan', () => {
     expect(body.libraries.find(l => l.id === 'chat')?.checks.length).toBeGreaterThan(5)
     const asUser = await app.inject({ method: 'GET', url: REST.adminTestPlan, headers: { authorization: `Bearer ${signToken({ name: 'bob', role: 'developer' }, SECRET)}` } })
     expect(asUser.statusCode).toBe(403)
+  })
+})
+
+describe('test plan route per build', () => {
+  it('is not registered in the minimal build', async () => {
+    const app = Fastify()
+    registerTestPlanRoute(app, { defaultBuild: 'minimal' })
+    expect((await app.inject({ method: 'GET', url: REST.adminTestPlan })).statusCode).toBe(404)
+    await app.close()
   })
 })
