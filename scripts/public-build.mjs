@@ -4,7 +4,9 @@
 //
 //   npm run public:install -- [--mode docker|dev] [--state DIR] [--domain D] [--url URL] ...
 //   npm run public:docker                 # Compose project from deploy/public (builds images)
-//   npm run public:docker -- --from-dev   # test stand: Core UI, Identity, Billing, storage from dev checkouts
+//   npm run public:docker -- --from-dev   # live test stand: dev checkouts mounted under tsx watch (seconds, no image builds)
+//   npm run public:docker -- --from-dev --build  # the same stand with images built from the checkouts
+//   npm run public:update                 # fast-forward all checkouts to origin/dev; the live stand follows
 //   npm run public:docker -- --pinned     # back to the published releases
 //   npm run public:docker:down            # stop it and remove its volumes
 //   npm run public:dev                    # the same services from working copies, no Docker (foreground)
@@ -13,7 +15,7 @@
 // Both modes use the same defaults (models, daily limit, storage quota) from DEFAULTS below.
 // Secrets live only in the private state directory and are never printed.
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -138,7 +140,7 @@ const composeFromDev = join(dirname(composeFile), 'compose.from-dev.yml')
 /** Compose for one installation; a --from-dev stand adds the overlay and its environment overrides. */
 const compose = (state, project, args, extra = {}) => {
   const dev = existsSync(join(state, 'from-dev.json')) ? JSON.parse(readFileSync(join(state, 'from-dev.json'), 'utf8')) : null
-  const files = dev ? ['-f', composeFile, '-f', composeFromDev] : ['-f', composeFile]
+  const files = dev ? ['-f', composeFile, '-f', composeFromDev, ...(dev.mode === 'live' ? ['-f', join(state, 'compose.live.yml')] : [])] : ['-f', composeFile]
   return spawnSync('docker', ['compose', '-p', project, ...files, '--env-file', join(state, '.env'), ...args], { stdio: 'inherit', ...extra, env: { ...process.env, ...(dev?.env ?? {}), ...(extra.env ?? {}) } })
 }
 const run = (cmd, args, cwd) => {
@@ -182,23 +184,116 @@ export function withDevIdentityPackage(uiDir, identityDir, build) {
   }
 }
 
+const sha = data => createHash('sha256').update(data).digest('hex')
+const fileHash = file => (existsSync(file) ? sha(readFileSync(file)) : '')
+/** Hash of the lock file an image was installed from; empty when the image does not exist. */
+function imageLockHash(image) {
+  const result = spawnSync('docker', ['run', '--rm', '--entrypoint', 'cat', image, '/app/package-lock.json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  return result.status === 0 ? sha(result.stdout) : ''
+}
+
+/** Runs a service from mounted sources and restarts it when a source file changes. */
+export const LIVE_RUN_SCRIPT = `#!/bin/sh
+# live-run CWD ENTRY PATHS(colon separated) [node flags...]
+cwd=$1; entry=$2; paths=$(echo "$3" | tr : ' '); shift 3
+cd "$cwd" || exit 1
+mark=$(mktemp); pid=
+trap '[ -n "$pid" ] && kill "$pid" 2>/dev/null; wait; exit 0' TERM INT
+while :; do
+  touch "$mark"
+  node "$@" --import tsx "$entry" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 1
+    if [ -n "$(find $paths -type f -newer "$mark" -print -quit 2>/dev/null)" ]; then
+      echo "[live] source changed, restarting"; kill "$pid"; break
+    fi
+  done
+  wait "$pid" 2>/dev/null
+  sleep 1
+done
+`
+
+/**
+ * Compose overlay of the live stand: every service keeps its image (Node modules, build output)
+ * and runs the sources of the working copy under `tsx watch`, so a merged commit restarts the
+ * service in seconds. Only existing `src` directories are mounted; nothing is written back.
+ */
+export function liveOverlay(dirs, has = existsSync, list = readdirSync) {
+  const sources = (root, rels) => [...rels, ...(has(join(root, 'packages')) ? list(join(root, 'packages')).map(name => `packages/${name}`) : []).map(dir => dir + '/src')]
+    .filter(rel => has(join(root, rel)))
+  // The supervisor (LIVE_RUN_SCRIPT) polls the mounted sources and restarts the service only after
+  // the old process has exited: a component's SQLite token registry must not have two writers,
+  // which `tsx watch` and `node --watch` could not guarantee in a container.
+  const service = (name, root, rels, cwd, entry, flags = []) => {
+    const mounted = sources(root, rels)
+    return [
+      `  ${name}:`,
+      `    command: ${JSON.stringify(['/usr/local/bin/live-run', cwd, entry, mounted.map(rel => '/app/' + rel).join(':'), ...flags])}`,
+      '    volumes:',
+      '      - ' + JSON.stringify(`${dirs.script}:/usr/local/bin/live-run:ro`),
+      ...mounted.map(rel => '      - ' + JSON.stringify(`${join(root, rel)}:/app/${rel}:ro`))
+    ]
+  }
+  const lines = [
+    '# Generated by npm run public:docker -- --from-dev (live mode): sources of the working copies under a restart supervisor.',
+    'services:',
+    ...service('voicechat', dirs.core, ['apps/server/src'], '/app/apps/server', 'src/index.ts', ['--max-old-space-size=768']),
+    ...service('storage-node', dirs.core, ['packages/file-storage/src'], '/app', 'packages/file-storage/src/node/main.ts'),
+    ...service('identity', dirs.identity, ['apps/server/src'], '/app', 'apps/server/src/index.ts'),
+    ...service('billing', dirs.billing, ['src'], '/app', 'src/main.ts'),
+    ...service('storage', dirs.storage, ['apps/service/src'], '/app/apps/service', 'src/main.ts')
+  ]
+  return lines.join('\n') + '\n'
+}
+
+const liveLocks = dirs => ({
+  core: ['sislexa-public-core', dirs.core], identity: ['sislexa-public-identity:dev', dirs.identity],
+  billing: ['sislexa-public-billing:dev', dirs.billing], storage: ['sislexa-public-storage:dev', dirs.storage]
+})
+
 function prepareFromDev(state, opts) {
   const root = resolve(opts.workspace ?? join(homedir(), 'sislexa-dev'))
   const dirs = { ui: join(root, 'sislexa-core-ui'), identity: join(root, 'identity'), billing: join(root, 'billing'), storage: join(root, 'storage') }
   for (const [name, dir] of Object.entries(dirs)) if (!existsSync(join(dir, 'package.json'))) throw Error(`--from-dev needs the ${name} working copy at ${dir}`)
-  console.log('[public:docker] building Core UI from ' + dirs.ui + ' with the Identity UI package from ' + dirs.identity)
-  withDevIdentityPackage(dirs.ui, dirs.identity, () => run('npm', ['run', '-w', '@voicechat/web', 'build'], dirs.ui))
+  const live = !opts.build
   const bundle = join(state, 'core-ui-dev')
-  rmSync(bundle, { recursive: true, force: true })
-  cpSync(join(dirs.ui, 'apps', 'web', 'dist'), bundle, { recursive: true })
+  const previous = existsSync(join(state, 'from-dev.json')) ? JSON.parse(readFileSync(join(state, 'from-dev.json'), 'utf8')) : null
+  const commits = Object.fromEntries(Object.entries(dirs).map(([k, d]) => [k, gitCommit(d)]))
+  // Live mode rebuilds the UI bundle only when the Core UI or Identity commit moved (about 15 s).
+  if (!live || !existsSync(join(bundle, 'index.html')) || previous?.commits?.ui !== commits.ui || previous?.commits?.identity !== commits.identity) {
+    console.log('[public:docker] building Core UI from ' + dirs.ui + ' with the Identity UI package from ' + dirs.identity)
+    withDevIdentityPackage(dirs.ui, dirs.identity, () => run('npm', ['run', '-w', '@voicechat/web', 'build'], dirs.ui))
+    rmSync(bundle, { recursive: true, force: true })
+    cpSync(join(dirs.ui, 'apps', 'web', 'dist'), bundle, { recursive: true })
+  }
   const image = (name, dir) => {
     const tag = `sislexa-public-${name}:dev`
     console.log(`[public:docker] building ${tag} from ${dir}`)
     run('docker', ['build', '-t', tag, '--build-arg', `APPLICATION_VERSION=${packageVersion(dir)}`, '--build-arg', `APPLICATION_COMMIT=${gitCommit(dir)}`, dir], dir)
     return tag
   }
-  const env = { PUBLIC_CORE_UI_DIR: bundle, PUBLIC_IDENTITY_IMAGE: image('identity', dirs.identity), PUBLIC_BILLING_IMAGE: image('billing', dirs.billing), PUBLIC_STORAGE_SOURCE: dirs.storage }
-  writeFileSync(join(state, 'from-dev.json'), JSON.stringify({ workspace: root, commits: Object.fromEntries(Object.entries(dirs).map(([k, d]) => [k, gitCommit(d)])), env }, null, 2) + '\n')
+  const stale = []
+  if (live) {
+    const all = { ...dirs, core: repository }
+    for (const [name, [tag, dir]] of Object.entries(liveLocks(all))) if (imageLockHash(tag) !== fileHash(join(dir, 'package-lock.json'))) stale.push(name)
+    if (stale.length) console.log('[public:docker] lock files changed or images missing, rebuilding: ' + stale.join(', '))
+  }
+  const rebuild = name => !live || stale.includes(name)
+  const env = {
+    PUBLIC_CORE_UI_DIR: bundle,
+    PUBLIC_IDENTITY_IMAGE: rebuild('identity') ? image('identity', dirs.identity) : 'sislexa-public-identity:dev',
+    PUBLIC_BILLING_IMAGE: rebuild('billing') ? image('billing', dirs.billing) : 'sislexa-public-billing:dev',
+    PUBLIC_STORAGE_SOURCE: dirs.storage
+  }
+  if (live) {
+    const script = join(state, 'live-run.sh')
+    writeFileSync(script, LIVE_RUN_SCRIPT, { mode: 0o755 })
+    chmodSync(script, 0o755)
+    writeFileSync(join(state, 'compose.live.yml'), liveOverlay({ core: repository, identity: dirs.identity, billing: dirs.billing, storage: dirs.storage, script }))
+  }
+  writeFileSync(join(state, 'from-dev.json'), JSON.stringify({ mode: live ? 'live' : 'build', workspace: root, commits, env, rebuild: stale }, null, 2) + '\n')
+  return { live, stale }
 }
 
 /** Settings Identity reads from Core's app_config and the tariff every personal tenant gets. */
@@ -222,9 +317,14 @@ async function docker(opts) {
   if (!existsSync(join(state, '.env'))) await install({ ...opts, mode: 'docker', state })
   const env = load(state)
   if (opts.pinned) rmSync(join(state, 'from-dev.json'), { force: true })
-  if (opts['from-dev']) prepareFromDev(state, opts)
-  if (compose(state, project, ['up', '-d', '--build', '--remove-orphans']).status !== 0) throw Error('docker compose up failed')
-  await waitHealthy(`http://127.0.0.1:${env.PUBLIC_HTTP_PORT}/api/health`).catch(() => {})
+  const prepared = opts['from-dev'] ? prepareFromDev(state, opts) : null
+  // Live stand: containers keep their images and only start/restart; a changed lock file rebuilds the image first.
+  const live = prepared ? prepared.live : existsSync(join(state, 'from-dev.json')) && JSON.parse(readFileSync(join(state, 'from-dev.json'), 'utf8')).mode === 'live'
+  const build = !live ? ['--build'] : []
+  if (prepared?.live && prepared.stale.includes('core') && compose(state, project, ['build', 'voicechat', 'storage-node']).status !== 0) throw Error('Core image build failed')
+  if (prepared?.live && prepared.stale.includes('storage') && compose(state, project, ['build', 'storage']).status !== 0) throw Error('Storage image build failed')
+  if (compose(state, project, ['up', '-d', ...build, '--remove-orphans']).status !== 0) throw Error('docker compose up failed')
+  await waitHealthy(`http://127.0.0.1:${env.PUBLIC_HTTP_PORT}/healthz`).catch(() => {})
   for (let i = 0; i < 60; i++) {
     const ready = compose(state, project, ['exec', '-T', 'postgres', 'psql', '-U', 'sislexa', '-d', 'sislexa', '-tAc', "SELECT count(*) FROM information_schema.tables WHERE table_name IN ('app_config','tariff_plans')"], { stdio: 'pipe', encoding: 'utf8' })
     if (ready.stdout?.trim() === '2') break
@@ -234,6 +334,46 @@ async function docker(opts) {
     if (compose(state, project, ['exec', '-T', 'postgres', 'psql', '-U', 'sislexa', '-d', 'sislexa', '-qc', sql]).status !== 0) throw Error('Configuration failed')
   }
   console.log(`Public build is up: ${env.PUBLIC_URL} (Compose project ${project}, state ${state})`)
+}
+
+/**
+ * Brings a live stand up to date: fast-forwards the working copies to origin/dev, installs
+ * dependencies of a copy whose lock file moved, refreshes the Core UI bundle when needed and waits
+ * until the stand answers. The `tsx watch` containers restart themselves on the new sources.
+ */
+async function update(opts) {
+  const started = Date.now()
+  const state = resolve(opts.state ?? defaultState('docker'))
+  const project = opts.project ?? 'sislexa-public'
+  const dev = existsSync(join(state, 'from-dev.json')) ? JSON.parse(readFileSync(join(state, 'from-dev.json'), 'utf8')) : null
+  if (dev?.mode !== 'live') throw Error('public:update works on a live stand; start it with npm run public:docker -- --from-dev')
+  const env = load(state)
+  const root = dev.workspace
+  const copies = { core: repository, ui: join(root, 'sislexa-core-ui'), identity: join(root, 'identity'), billing: join(root, 'billing'), storage: join(root, 'storage') }
+  const git = (dir, ...args) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' })
+  let moved = 0
+  for (const [name, dir] of Object.entries(copies)) {
+    if (git(dir, 'fetch', '-q', 'origin').status !== 0) throw Error(`git fetch failed in ${name} (${dir})`)
+    const before = gitCommit(dir)
+    const merged = git(dir, 'merge', '--ff-only', '-q', 'origin/dev')
+    if (merged.status !== 0) throw Error(`${name} cannot fast-forward to origin/dev: ${(merged.stderr || merged.stdout).trim().split('\n')[0]}`)
+    const after = gitCommit(dir)
+    if (before === after) { console.log(`[public:update] ${name}: up to date ${after.slice(0, 8)}`); continue }
+    moved++
+    console.log(`[public:update] ${name}: ${before.slice(0, 8)} -> ${after.slice(0, 8)}`)
+    if (git(dir, 'diff', '--name-only', before, after, '--', 'package-lock.json').stdout.trim()) {
+      console.log(`[public:update] ${name}: lock file changed, npm install`)
+      run('npm', ['install', '--no-audit', '--no-fund'], dir)
+    }
+  }
+  const prepared = prepareFromDev(state, { ...opts, workspace: root })
+  if (prepared.stale.includes('core') && compose(state, project, ['build', 'voicechat', 'storage-node']).status !== 0) throw Error('Core image build failed')
+  if (prepared.stale.includes('storage') && compose(state, project, ['build', 'storage']).status !== 0) throw Error('Storage image build failed')
+  if (compose(state, project, ['up', '-d', '--remove-orphans'], { stdio: 'pipe' }).status !== 0) throw Error('docker compose up failed')
+  // Give tsx watch time to notice the new files before the first probe.
+  if (moved) await new Promise(r => setTimeout(r, 3000))
+  await waitHealthy(`http://127.0.0.1:${env.PUBLIC_HTTP_PORT}/healthz`, 60)
+  console.log(`[public:update] ${env.PUBLIC_URL} answers; ${moved} copies moved; ${((Date.now() - started) / 1000).toFixed(1)} s`)
 }
 
 /** Sets the daily limit per user: the saved .env and Billing's stored policy change together. */
@@ -376,7 +516,7 @@ async function dev(opts) {
     child.stdout.pipe(sink); child.stderr.pipe(sink)
     child.on('exit', code => console.log(`[public:dev] ${service.name} exited with ${code}; log ${log}`))
     children.push(child)
-    if (service.name === 'core') await waitHealthy(`http://127.0.0.1:${p.core}/api/health`)
+    if (service.name === 'core') await waitHealthy(`http://127.0.0.1:${p.core}/healthz`)
     if (service.name === 'identity') await waitHealthy(`http://127.0.0.1:${p.identity}/v1/health`)
   }
   configureDev(join(data, 'core'))
@@ -405,7 +545,7 @@ db.close()`
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [command, ...rest] = process.argv.slice(2)
   const opts = options(rest)
-  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts), 'dev-stop': () => devStop(opts), limit: () => limit(opts) }[command]
-  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|docker-down|dev|dev-stop|limit [options]'); process.exit(2) }
+  const run = { install: () => install(opts).then(r => console.log(`State ${r.state} (${r.mode}), ${r.url}`)), docker: () => docker(opts), update: () => update(opts), 'docker-down': () => dockerDown(opts), dev: () => dev(opts), 'dev-stop': () => devStop(opts), limit: () => limit(opts) }[command]
+  if (!run) { console.error('Usage: node scripts/public-build.mjs install|docker|update|docker-down|dev|dev-stop|limit [options]'); process.exit(2) }
   Promise.resolve(run()).catch(error => { console.error(`public-build: ${error.message}`); process.exitCode = 1 })
 }

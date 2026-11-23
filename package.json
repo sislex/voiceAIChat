@@ -15,6 +15,7 @@
   "scripts": {
     "public:install": "node --import tsx scripts/public-build.mjs install",
     "public:docker": "node --import tsx scripts/public-build.mjs docker",
+    "public:update": "node --import tsx scripts/public-build.mjs update",
     "public:docker:down": "node --import tsx scripts/public-build.mjs docker-down",
     "public:dev": "node --import tsx scripts/public-build.mjs dev",
     "public:dev:stop": "node --import tsx scripts/public-build.mjs dev-stop",

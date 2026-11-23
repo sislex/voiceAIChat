@@ -16,7 +16,7 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 21 коммит(ов) в areas после проверенного SHA: 481a9f676 chore(ui): pin Core UI 1.5.65 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d88954 feat(test-plan): browser test plan per library and an admin route … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-19 | ⚠ 7 коммит(ов) в areas после проверенного SHA: 4f8ef00e5 fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-21 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 4f8ef00e5 fix(storage): conversation titles for legacy chat spaces, attachment folders in local date |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-23 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 25 коммит(ов) в areas после проверенного SHA: 4f8ef00e5 fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3ae3d0648 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1547. Последние:
+Всего записей: 1548. Последние:
 
+- [2026-11-23-public-live-stand.md](log/2026-11-23-public-live-stand.md) — public-live-stand
 - [2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-storage-spaces-list-guard.md](log/2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-storage-spaces-list-guard.md) — storage-spaces-list-guard
 - [2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-stopped-run-not-found.md](log/2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-stopped-run-not-found.md) — stopped-run-not-found
 - [2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-chat-space-titles-local-date.md](log/2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-chat-space-titles-local-date.md) — chat-space-titles-local-date
@@ -76,7 +77,6 @@
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d.md) — release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-from-dev-identity-ui.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-from-dev-identity-ui.md) — public-from-dev-identity-ui
-- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-build-from-dev.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-build-from-dev.md) — public-build-from-dev
 
 ## Исторические планы
 
