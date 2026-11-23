@@ -17,7 +17,7 @@
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d8895 feat(test-plan): browser test plan per library and an admin route … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-19 | ⚠ 7 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-24 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 25 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 26 коммит(ов) в areas после проверенного SHA: 189d8858 Pin release train c5b1b253-262c-40e1-b9ea-d274fe7a952f … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3ae3d064 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-17 | ⚠ 27 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 24 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 25 коммит(ов) в areas после проверенного SHA: 189d8858 Pin release train c5b1b253-262c-40e1-b9ea-d274fe7a952f … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-13 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 3ae3d064 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -45,11 +45,11 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-18 | ⚠ 12 коммит(ов) в areas после проверенного SHA: e4ae10f8 fix(test-plan): no test plan route in the minimal build … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-22 | ⚠ 1 коммит(ов) в areas после проверенного SHA: e4ae10f8 fix(test-plan): no test plan route in the minimal build |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 13 коммит(ов) в areas после проверенного SHA: a57d091a feat(model-api): a stopped answer gets its actual cost once the run is settled … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 22 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 23 коммит(ов) в areas после проверенного SHA: 189d8858 Pin release train c5b1b253-262c-40e1-b9ea-d274fe7a952f … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 6 коммит(ов) в areas после проверенного SHA: 8b32fa36 feat(public): live stand for --from-dev and public:update … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 22 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 32 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 8 коммит(ов) в areas после проверенного SHA: a9efc02a chore(contracts): accept the reviewed Identity 1.6.2 baseline for the Shared archive … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 23 коммит(ов) в areas после проверенного SHA: 189d8858 Pin release train c5b1b253-262c-40e1-b9ea-d274fe7a952f … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 33 коммит(ов) в areas после проверенного SHA: a9efc02a chore(contracts): accept the reviewed Identity 1.6.2 baseline for the Shared archive … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
 
@@ -65,9 +65,10 @@
 
 ## Журнал сессий
 
-Всего записей: 1549. Последние:
+Всего записей: 1550. Последние:
 
 - [2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f.md](log/2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f.md) — release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f
+- [2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-935a5895-b79c-4b15-a38c-7df0980412f5.md](log/2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-935a5895-b79c-4b15-a38c-7df0980412f5.md) — release-train-935a5895-b79c-4b15-a38c-7df0980412f5
 - [2026-11-23-public-live-stand.md](log/2026-11-23-public-live-stand.md) — public-live-stand
 - [2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-storage-spaces-list-guard.md](log/2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-storage-spaces-list-guard.md) — storage-spaces-list-guard
 - [2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-stopped-run-not-found.md](log/2026-11-22-alexeys-macbook-air-tailae39a6-ts-net-stopped-run-not-found.md) — stopped-run-not-found
@@ -76,7 +77,6 @@
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stop-cost-fresh-thread.md) — stop-cost-fresh-thread
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-stand-proxy-host.md) — stand-proxy-host
 - [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d.md) — release-train-bc72462c-a9d0-44c4-98e9-0cb48bfcf07d
-- [2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md](log/2026-11-21-alexeys-macbook-air-tailae39a6-ts-net-public-round1-chat-defaults.md) — public-round1-chat-defaults
 
 ## Исторические планы
 
