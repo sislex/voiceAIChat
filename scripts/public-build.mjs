@@ -516,7 +516,7 @@ async function dev(opts) {
     child.stdout.pipe(sink); child.stderr.pipe(sink)
     child.on('exit', code => console.log(`[public:dev] ${service.name} exited with ${code}; log ${log}`))
     children.push(child)
-    if (service.name === 'core') await waitHealthy(`http://127.0.0.1:${p.core}/healthz`)
+    if (service.name === 'core') await waitHealthy(`http://127.0.0.1:${p.core}/api/health`)
     if (service.name === 'identity') await waitHealthy(`http://127.0.0.1:${p.identity}/v1/health`)
   }
   configureDev(join(data, 'core'))
