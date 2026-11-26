@@ -46,7 +46,8 @@ services:
 
   storage-node:
     build:
-      context: ..
+      # Relative to the first file of the chain (the repository root), not to this overlay.
+      context: .
       target: file-storage-node
     image: ${VC_STORAGE_NODE_IMAGE:-voicechat-file-storage-node}
     restart: unless-stopped
@@ -67,8 +68,10 @@ services:
   caddy:
     ports:
       - "8799:8799"
+      - "8795:8795"
     environment:
       VC_CADDY_STORAGE_UPSTREAM: ${VC_CADDY_STORAGE_UPSTREAM:-storage:8799}
+      VC_CADDY_STORAGE_NODE_UPSTREAM: ${VC_CADDY_STORAGE_NODE_UPSTREAM:-storage-node:8795}
 
 volumes:
   vc-storage-blobs:

@@ -125,3 +125,11 @@ https://{$VC_PUBLIC_HOST}:8799 {
 	tls internal
 	reverse_proxy {$VC_CADDY_STORAGE_UPSTREAM:storage:8799}
 }
+
+# Blob node of the file storage (deploy/compose.storage.yml): Core installations on other hosts (dev
+# stands) stream file parts to it. The node answers 401 to every request without its bearer token
+# (constant-time comparison, fail closed). Inert while the node is absent.
+https://{$VC_PUBLIC_HOST}:8795 {
+	tls internal
+	reverse_proxy {$VC_CADDY_STORAGE_NODE_UPSTREAM:storage-node:8795}
+}

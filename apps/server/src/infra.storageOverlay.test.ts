@@ -23,6 +23,9 @@ describe('production storage overlay', () => {
   })
   it('publishes the storage port through Caddy with the same local CA and no hard-coded host', () => {
     expect(overlay).toContain('- "8799:8799"')
+    expect(overlay).toContain('- "8795:8795"')
+    expect(caddyfile).toMatch(/https:\/\/\{\$VC_PUBLIC_HOST\}:8795 \{\n\ttls internal\n\treverse_proxy \{\$VC_CADDY_STORAGE_NODE_UPSTREAM:storage-node:8795\}/)
+    expect(overlay).toMatch(/build:\n(?:\s+#[^\n]*\n)?\s+context: \.\n/)
     expect(caddyfile).toMatch(/https:\/\/\{\$VC_PUBLIC_HOST\}:8799 \{\n\ttls internal\n\treverse_proxy \{\$VC_CADDY_STORAGE_UPSTREAM:storage:8799\}/)
   })
   it('does not depend on a profiled service, which would invalidate installations without that profile', () => {
