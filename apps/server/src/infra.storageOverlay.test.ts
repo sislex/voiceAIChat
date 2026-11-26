@@ -7,6 +7,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(`../../../${pa
 const overlay = read('deploy/compose.storage.yml')
 const caddyfile = read('Caddyfile')
 const provision = read('scripts/prod/storage-provision.sh')
+const imageBuild = read('scripts/prod/storage-image-build.sh')
 
 describe('production storage overlay', () => {
   it('needs the provisioned variables instead of defaults for secrets and paths', () => {
@@ -23,6 +24,15 @@ describe('production storage overlay', () => {
   it('publishes the storage port through Caddy with the same local CA and no hard-coded host', () => {
     expect(overlay).toContain('- "8799:8799"')
     expect(caddyfile).toMatch(/https:\/\/\{\$VC_PUBLIC_HOST\}:8799 \{\n\ttls internal\n\treverse_proxy \{\$VC_CADDY_STORAGE_UPSTREAM:storage:8799\}/)
+  })
+  it('does not depend on a profiled service, which would invalidate installations without that profile', () => {
+    expect(overlay).not.toMatch(/depends_on:\s*\n\s+postgres/)
+  })
+  it('builds the amd64 image without printing or keeping the token', () => {
+    expect(imageBuild).toContain('VC_GITHUB_TOKEN')
+    expect(imageBuild).not.toMatch(/echo [^\n]*\$TOKEN/)
+    expect(imageBuild).toMatch(/trap 'rm -rf "\$WORK"' EXIT/)
+    expect(provision).toContain('--storage-image')
   })
   it('provisioning is restart-free and keeps secrets out of its output', () => {
     expect(provision).not.toMatch(/^\s*docker (compose )?(restart|stop|rm|down)\b/m)

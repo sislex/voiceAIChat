@@ -141,6 +141,12 @@ default 3 GiB, so file data cannot consume the release headroom of the host). Co
 opens the service on Caddy port 8799 (`tls internal`, same local CA as the stand ports). The overlay is
 inert until provisioned: its secrets and paths use `${VAR:?}`.
 
+The published `ghcr.io/sislex/storage` image is arm64-only; an amd64 host builds its own with
+`scripts/prod/storage-image-build.sh` (clones sislex/storage with `VC_GITHUB_TOKEN`, builds the pinned commit,
+prints `sislexa-storage:<sha12>`) and passes it to `storage-provision.sh --storage-image`. The overlay has no
+`depends_on` on Postgres: that service sits behind a profile, and an undefined dependency invalidates the
+whole chain.
+
 `scripts/prod/storage-provision.sh [--dry-run]` (root, idempotent, restart-free) creates the private
 directory with the node, core-service and app tokens (uid 1000), the database, an environment block between
 `# >>> storage` markers in `/etc/voicechat/production.env` (variable `VC_APPLICATIONS_WITH_STORAGE`, never

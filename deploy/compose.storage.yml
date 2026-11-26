@@ -16,6 +16,7 @@ services:
       - ${VC_STORAGE_DIR:?Run scripts/prod/storage-provision.sh first}:/run/storage:ro
 
   storage:
+    # The published ghcr image is arm64-only; amd64 hosts build theirs with scripts/prod/storage-image-build.sh.
     image: ${VC_STORAGE_IMAGE:-ghcr.io/sislex/storage:21e7265b51ebcce281160bd9340c76a328e7fa62}
     restart: unless-stopped
     environment:
@@ -35,8 +36,8 @@ services:
       # Core's own Identity credential: the component rotation restarts every container that mounts
       # Core's outgoing directory, so a renewed token reaches storage too.
       STORAGE_IDENTITY_TOKEN_FILE: /run/core-outgoing/identity.token
-    depends_on:
-      postgres: {condition: service_healthy}
+    # No depends_on: `postgres` sits behind a Compose profile that not every installation enables, and an
+    # undefined dependency invalidates the whole chain. The restart policy covers the start order.
     volumes:
       - ${VC_STORAGE_DIR:?Run scripts/prod/storage-provision.sh first}:/run/storage:ro
       - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/core/outgoing:/run/core-outgoing:ro
