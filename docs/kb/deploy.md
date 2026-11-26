@@ -138,7 +138,7 @@ service (legacy auth, metadata in its own database `storage` of the shared Postg
 (`file-storage-node` target, volume `vc-storage-blobs`, hard capacity `VC_STORAGE_CAPACITY_BYTES`,
 default 3 GiB, so file data cannot consume the release headroom of the host). Core runs in
 `VC_FILE_STORAGE_MODE=remote` and gets `storage=<https://host:8799>` in `VC_APPLICATIONS`; the browser
-opens the service on Caddy port 8799 (`tls internal`, same local CA as the stand ports). The overlay is
+opens the service on Caddy port 8799 and the blob node is reachable on 8795 (`tls internal`, same local CA as the stand ports; the node answers 401 without its bearer token), so Core installations on other hosts such as the dev stands can use this storage with `VC_FILE_STORAGE_NODES` pointing at `https://host:8795` (node id `node-1`) and the node and core-service tokens of `/etc/voicechat/storage/`. The overlay is
 inert until provisioned: its secrets and paths use `${VAR:?}`.
 
 The published `ghcr.io/sislex/storage` image is arm64-only; an amd64 host builds its own with
