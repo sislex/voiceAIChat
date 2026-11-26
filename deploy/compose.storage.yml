@@ -1,0 +1,73 @@
+# Optional production overlay: the file storage service (sislex/storage) and one blob node on this host.
+# Append it to COMPOSE_FILE after scripts/prod/storage-provision.sh has created the private directory,
+# tokens, database and environment block. Core talks to the service inside Compose; the browser opens it
+# at VC_STORAGE_PUBLIC_URL (Caddy port 8799, same local CA as the stand ports).
+services:
+  voicechat:
+    environment:
+      VC_APPLICATIONS: ${VC_APPLICATIONS_WITH_STORAGE:?Run scripts/prod/storage-provision.sh first}
+      VC_APPLICATION_STORAGE_TOKEN: ${VC_APPLICATION_STORAGE_TOKEN:?Run scripts/prod/storage-provision.sh first}
+      VC_FILE_STORAGE_MODE: remote
+      VC_FILE_STORAGE_URL: http://storage:8799
+      VC_FILE_STORAGE_SERVICE_TOKEN_FILE: /run/storage/core-service.token
+      VC_FILE_STORAGE_NODES: '[{"id":"node-1","url":"http://storage-node:8795","tokenFile":"/run/storage/node.token"}]'
+      VC_FILE_STORAGE_DEFAULT_QUOTA_BYTES: ${VC_STORAGE_QUOTA_BYTES:-104857600}
+    volumes:
+      - ${VC_STORAGE_DIR:?Run scripts/prod/storage-provision.sh first}:/run/storage:ro
+
+  storage:
+    image: ${VC_STORAGE_IMAGE:-ghcr.io/sislex/storage:21e7265b51ebcce281160bd9340c76a328e7fa62}
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8799"
+      # Metadata lives in its own database `storage` of the shared Postgres.
+      STORAGE_DB_URL: ${VC_STORAGE_DB_URL:?Run scripts/prod/storage-provision.sh first}
+      STORAGE_NODES: '[{"id":"node-1","url":"http://storage-node:8795","tokenFile":"/run/storage/node.token"}]'
+      STORAGE_DEFAULT_QUOTA_BYTES: ${VC_STORAGE_QUOTA_BYTES:-104857600}
+      STORAGE_AUTH_MODE: legacy
+      STORAGE_CORE_ID: ${VC_CORE_ID:-localhost}
+      STORAGE_CORE_URL: http://voicechat:8787
+      STORAGE_CORE_PUBLIC_URL: ${VC_PUBLIC_URL:?Set VC_PUBLIC_URL}
+      STORAGE_IDENTITY_URL: http://identity:8798
+      VC_APPLICATION_STORAGE_TOKEN_FILE: /run/storage/app.token
+      STORAGE_CORE_SERVICE_TOKEN_FILE: /run/storage/core-service.token
+      # Core's own Identity credential: the component rotation restarts every container that mounts
+      # Core's outgoing directory, so a renewed token reaches storage too.
+      STORAGE_IDENTITY_TOKEN_FILE: /run/core-outgoing/identity.token
+    depends_on:
+      postgres: {condition: service_healthy}
+    volumes:
+      - ${VC_STORAGE_DIR:?Run scripts/prod/storage-provision.sh first}:/run/storage:ro
+      - ${SISLEXA_COMPONENTS_DIR:?Set the private component directory}/core/outgoing:/run/core-outgoing:ro
+    mem_limit: 256m
+    cpus: "0.5"
+
+  storage-node:
+    build:
+      context: ..
+      target: file-storage-node
+    image: ${VC_STORAGE_NODE_IMAGE:-voicechat-file-storage-node}
+    restart: unless-stopped
+    environment:
+      VC_FILE_STORAGE_NODE_ID: node-1
+      VC_FILE_STORAGE_DIR: /data/blobs
+      # The node refuses writes beyond this size, so file data cannot eat the release headroom of the host.
+      VC_FILE_STORAGE_CAPACITY_BYTES: ${VC_STORAGE_CAPACITY_BYTES:-3221225472}
+      VC_FILE_STORAGE_TOKEN_FILE: /run/storage/node.token
+      HOST: 0.0.0.0
+      PORT: "8795"
+    volumes:
+      - vc-storage-blobs:/data
+      - ${VC_STORAGE_DIR:?Run scripts/prod/storage-provision.sh first}/node.token:/run/storage/node.token:ro
+    mem_limit: 256m
+    cpus: "0.5"
+
+  caddy:
+    ports:
+      - "8799:8799"
+    environment:
+      VC_CADDY_STORAGE_UPSTREAM: ${VC_CADDY_STORAGE_UPSTREAM:-storage:8799}
+
+volumes:
+  vc-storage-blobs:

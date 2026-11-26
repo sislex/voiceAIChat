@@ -118,3 +118,10 @@ https://{$VC_PUBLIC_HOST}:8790, https://{$VC_PUBLIC_HOST}:8791, https://{$VC_PUB
 	tls internal
 	reverse_proxy voicechat:{http.request.port}
 }
+
+# File storage application (deploy/compose.storage.yml): its own origin so the service can set cookies
+# and signed links; Core opens it through the application entry. Inert while the service is absent.
+https://{$VC_PUBLIC_HOST}:8799 {
+	tls internal
+	reverse_proxy {$VC_CADDY_STORAGE_UPSTREAM:storage:8799}
+}

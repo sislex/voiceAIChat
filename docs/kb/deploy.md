@@ -131,6 +131,25 @@ Existing `dev:stand` shared mode, source overrides and foreground `run`
 retain their existing behavior. `.stand/` is excluded from Git, test selection,
 TypeScript, Core's watcher and KB traversal.
 
+## Production file storage (sislex/storage)
+
+`deploy/compose.storage.yml` is an optional production overlay: the published `ghcr.io/sislex/storage`
+service (legacy auth, metadata in its own database `storage` of the shared Postgres) and one blob node
+(`file-storage-node` target, volume `vc-storage-blobs`, hard capacity `VC_STORAGE_CAPACITY_BYTES`,
+default 3 GiB, so file data cannot consume the release headroom of the host). Core runs in
+`VC_FILE_STORAGE_MODE=remote` and gets `storage=<https://host:8799>` in `VC_APPLICATIONS`; the browser
+opens the service on Caddy port 8799 (`tls internal`, same local CA as the stand ports). The overlay is
+inert until provisioned: its secrets and paths use `${VAR:?}`.
+
+`scripts/prod/storage-provision.sh [--dry-run]` (root, idempotent, restart-free) creates the private
+directory with the node, core-service and app tokens (uid 1000), the database, an environment block between
+`# >>> storage` markers in `/etc/voicechat/production.env` (variable `VC_APPLICATIONS_WITH_STORAGE`, never
+`VC_APPLICATIONS`, because `compose_env.py` validates the latter and does not know `storage`) and appends the
+overlay to `COMPOSE_FILE`. It prints the final command: build `storage-node`, then
+`docker compose up -d storage storage-node voicechat caddy`. Release deploys rewrite the checkout prefix of
+`COMPOSE_FILE`, so the overlay follows each new checkout. The storage service reads Core's Identity token from
+Core's `outgoing` directory; the daily rotation restarts it together with Core.
+
 ## File storage node example
 
 To enable direct transfer, add optional `publicUrl` and `directSecretFile` to
