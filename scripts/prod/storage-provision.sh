@@ -5,9 +5,9 @@ set -euo pipefail
 # environment block in production.env, and adds the overlay to COMPOSE_FILE. It never restarts a container;
 # the final message names the command that applies the change. Secrets are never printed.
 #
-#   storage-provision.sh [--dry-run] [--env FILE] [--dir DIR] [--capacity-gb N] [--quota-mb N] [--port N]
+#   storage-provision.sh [--dry-run] [--env FILE] [--dir DIR] [--capacity-gb N] [--quota-mb N] [--port N] [--storage-image IMAGE]
 [[ $EUID == 0 ]] || { echo 'storage-provision needs root' >&2; exit 1; }
-ENV_FILE=/etc/voicechat/production.env DIR=/etc/voicechat/storage CAPACITY_GB=3 QUOTA_MB=100 PORT=8799 APPLY=1
+ENV_FILE=/etc/voicechat/production.env DIR=/etc/voicechat/storage CAPACITY_GB=3 QUOTA_MB=100 PORT=8799 APPLY=1 IMAGE=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dry-run) APPLY=0 ;;
@@ -16,6 +16,7 @@ while [[ $# -gt 0 ]]; do
     --capacity-gb) CAPACITY_GB=$2; shift ;;
     --quota-mb) QUOTA_MB=$2; shift ;;
     --port) PORT=$2; shift ;;
+    --storage-image) IMAGE=$2; shift ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -70,9 +71,9 @@ APPS=$(printf '%s' "$CURRENT_APPS" | python3 -c 'import sys; items=[i for i in s
 step "environment block in $ENV_FILE (applications: ${APPS})"
 if [[ $APPLY == 1 ]]; then
   cp -p "$ENV_FILE" "$ENV_FILE.bak-storage-$(date +%Y%m%d%H%M%S)"
-  python3 - "$ENV_FILE" "$DIR" "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT" "$APPS" "$CAPACITY_GB" "$QUOTA_MB" "$REPO" <<'PY'
+  python3 - "$ENV_FILE" "$DIR" "$DB_USER" "$DB_PASS" "$DB_HOST" "$DB_PORT" "$APPS" "$CAPACITY_GB" "$QUOTA_MB" "$REPO" "$IMAGE" <<'PY'
 import re, sys
-path, directory, user, password, host, port, apps, capacity_gb, quota_mb, repo = sys.argv[1:]
+path, directory, user, password, host, port, apps, capacity_gb, quota_mb, repo, image = sys.argv[1:]
 token = open(f'{directory}/app.token', encoding='utf-8').read().strip()
 block = '\n'.join([
     '# >>> storage (managed by scripts/prod/storage-provision.sh)',
@@ -82,6 +83,7 @@ block = '\n'.join([
     f'export VC_APPLICATION_STORAGE_TOKEN={token}',
     f'export VC_STORAGE_QUOTA_BYTES={int(quota_mb) * 1024 * 1024}',
     f'export VC_STORAGE_CAPACITY_BYTES={int(capacity_gb) * 1024 ** 3}',
+    *([f'export VC_STORAGE_IMAGE={image}'] if image else []),
     '# <<< storage', ''])
 text = open(path, encoding='utf-8').read()
 text = re.sub(r'# >>> storage .*?# <<< storage\n', '', text, flags=re.S)
