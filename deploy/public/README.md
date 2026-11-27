@@ -25,7 +25,7 @@ daily limit $0.10 per user (`100000` micro-USD, `Europe/Minsk`), storage quota 5
 | `npm run public:install -- [options]` | creates the private state: settings, secrets, component tokens, storage credentials |
 | `npm run public:docker -- [--project P]` | builds and starts the Compose project, then enables sign-up and narrows the tariff to `chat.use` |
 | `npm run public:docker:down -- [--project P]` | stops the project and removes its volumes (all data) |
-| `npm run public:dev` | runs the same services from working copies (SQLite instead of Postgres; the storage service restarts on source changes and its web bundle is rebuilt on every edit, so a storage design change shows after a page reload), logs in `.public/dev/logs` |
+| `npm run public:dev` | runs the same services from working copies (SQLite instead of Postgres; the storage service restarts on source changes and its web bundle is rebuilt on every edit, so a storage design change shows after a page reload; the storage UI also opens without the Core sign-in as `PUBLIC_STORAGE_DEV_USER` (default `admin`, empty turns it off) so that it works inside a preview frame), logs in `.public/dev/logs` |
 
 Install options: `--mode docker|dev`, `--state DIR` (default `.public/<mode>`), `--domain`,
 `--url`, `--tls <acme e-mail>` (default `admin@<domain>`), `--http-port`, `--https-port`, `--runner-url`,
