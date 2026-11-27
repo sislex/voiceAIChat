@@ -476,7 +476,10 @@ async function dev(opts) {
       HOST: '127.0.0.1', PORT: String(p.billing), BILLING_DATA_DIR: join(data, 'billing'),
       BILLING_DAILY_USER_MICRO_USD: env.PUBLIC_DAILY_USER_MICRO_USD, BILLING_DAILY_USER_TIME_ZONE: env.PUBLIC_TIME_ZONE,
       BILLING_DAILY_POLICY_REPLACE: '1', SISLEXA_COMPONENT_CONFIG: join(components, 'billing/config.json') } },
-    { name: 'storage', cwd: dirs.storage, cmd: ['npm', 'start', '--workspace', '@sislexa/storage-service'], env: {
+    // The storage design is edited in a working copy: the web bundle is rebuilt on every change and served from
+    // apps/web/dist by the service, which itself restarts when its sources change (tsx watch).
+    { name: 'storage-web', cwd: join(dirs.storage, 'apps/web'), cmd: ['npx', 'vite', 'build', '--watch'], env: {} },
+    { name: 'storage', cwd: join(dirs.storage, 'apps/service'), cmd: ['npx', 'tsx', 'watch', 'src/main.ts'], env: {
       HOST: '127.0.0.1', PORT: String(p.storage), STORAGE_DB_URL: `sqlite:${join(data, 'storage.sqlite')}`, STORAGE_NODES: nodes,
       STORAGE_DEFAULT_QUOTA_BYTES: env.PUBLIC_STORAGE_QUOTA_BYTES, STORAGE_AUTH_MODE: 'legacy', STORAGE_CORE_ID: env.PUBLIC_DOMAIN,
       STORAGE_CORE_URL: `http://127.0.0.1:${p.core}`, STORAGE_CORE_PUBLIC_URL: env.PUBLIC_URL, STORAGE_IDENTITY_URL: `http://127.0.0.1:${p.identity}`,
@@ -504,6 +507,11 @@ async function dev(opts) {
   }
   const versions = { identity: meta(dirs.identity, '1.5.0'), billing: meta(dirs.billing, '1.2.0'), core: meta(repository, '1.1.0') }
   for (const service of services) if (versions[service.name]) Object.assign(service.env, versions[service.name])
+  // A fresh working copy has no web bundle yet and the service refuses to start without it.
+  if (!existsSync(join(dirs.storage, 'apps/web/dist/index.html'))) {
+    const built = spawnSync('npx', ['vite', 'build'], { cwd: join(dirs.storage, 'apps/web'), stdio: 'inherit' })
+    if (built.status !== 0) throw Error('Storage web build failed')
+  }
   const children = []
   // Each service runs in its own process group, so npm and the servers it starts stop together.
   const stop = () => { for (const child of children) try { process.kill(-child.pid, 'SIGTERM') } catch { try { child.kill('SIGTERM') } catch { /* gone */ } } }
