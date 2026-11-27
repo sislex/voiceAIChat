@@ -482,7 +482,9 @@ async function dev(opts) {
     // apps/web/dist by the service, which itself restarts when its sources change (tsx watch).
     { name: 'storage-web', cwd: join(dirs.storage, 'apps/web'), cmd: ['npx', 'vite', 'build', '--watch'], env: {} },
     { name: 'storage', cwd: join(dirs.storage, 'apps/service'), cmd: ['npx', 'tsx', 'watch', 'src/main.ts'], env: {
-      HOST: '127.0.0.1', PORT: String(p.storage), STORAGE_DB_URL: `sqlite:${join(data, 'storage.sqlite')}`, STORAGE_NODES: nodes,
+      HOST: '127.0.0.1', PORT: String(p.storage),
+      // The storage UI works in a preview frame (Make) without the Core sign-in; PUBLIC_STORAGE_DEV_USER= (empty) turns it off.
+      STORAGE_DEV_USER: env.PUBLIC_STORAGE_DEV_USER ?? 'admin', STORAGE_DB_URL: `sqlite:${join(data, 'storage.sqlite')}`, STORAGE_NODES: nodes,
       STORAGE_DEFAULT_QUOTA_BYTES: env.PUBLIC_STORAGE_QUOTA_BYTES, STORAGE_AUTH_MODE: 'legacy', STORAGE_CORE_ID: env.PUBLIC_DOMAIN,
       STORAGE_CORE_URL: `http://127.0.0.1:${p.core}`, STORAGE_CORE_PUBLIC_URL: env.PUBLIC_URL, STORAGE_IDENTITY_URL: `http://127.0.0.1:${p.identity}`,
       VC_APPLICATION_STORAGE_TOKEN_FILE: join(storage, 'app.token'), STORAGE_CORE_SERVICE_TOKEN_FILE: join(storage, 'core-service.token'),
