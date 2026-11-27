@@ -76,12 +76,14 @@ export async function install(opts = {}) {
   if (existsSync(join(state, '.env'))) throw Error(`State already exists: ${state}`)
   const domain = opts.domain ?? 'localhost'
   // A real domain is served over HTTPS with Let's Encrypt; a local Docker test uses plain HTTP on
-  // localhost (Core) and 127.0.0.1 (storage UI), which Core accepts as loopback application URLs.
+  // localhost (Core) and 127.0.0.1 (storage UI), which Core accepts as loopback application URLs. Dev mode follows the
+  // same split: cookies ignore ports, so a Core UI on 127.0.0.1 would share `vc_session` with every other local stand
+  // that signs sessions with a different secret and sign them out in turn.
   const local = domain === 'localhost'
   const httpsPort = opts['https-port'] ?? (local ? '29443' : '443')
   const httpPort = opts['http-port'] ?? (local ? '29080' : '80')
   const portSuffix = (port, standard) => port === standard ? '' : ':' + port
-  const url = opts.url ?? (mode === 'dev' ? `http://127.0.0.1:${DEV_PORTS.ui}` : local ? `http://localhost${portSuffix(httpPort, '80')}` : `https://${domain}${portSuffix(httpsPort, '443')}`)
+  const url = opts.url ?? (mode === 'dev' ? `http://localhost:${DEV_PORTS.ui}` : local ? `http://localhost${portSuffix(httpPort, '80')}` : `https://${domain}${portSuffix(httpsPort, '443')}`)
   const storageUrl = mode === 'dev' ? `http://127.0.0.1:${DEV_PORTS.storage}` : local ? `http://127.0.0.1${portSuffix(httpPort, '80')}` : `https://files.${domain}${portSuffix(httpsPort, '443')}`
   const tls = opts.tls ?? (local ? '' : `admin@${domain}`)
   const runnerToken = opts['runner-token-file'] ? readFileSync(opts['runner-token-file'], 'utf8').trim() : (opts['runner-token'] ?? '')
@@ -427,7 +429,7 @@ async function devDetached(opts) {
   child.unref()
   writeFileSync(pidFile, String(child.pid))
   const env = existsSync(join(state, '.env')) ? load(state) : null
-  const url = env?.PUBLIC_URL ?? `http://127.0.0.1:${DEV_PORTS.ui}`
+  const url = env?.PUBLIC_URL ?? `http://localhost:${DEV_PORTS.ui}`
   for (let i = 0; i < 180 && alive(child.pid); i++) {
     if (await fetch(url, { signal: AbortSignal.timeout(2000) }).then(r => r.ok).catch(() => false)) break
     await new Promise(r => setTimeout(r, 1000))
