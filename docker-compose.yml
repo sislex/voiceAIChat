@@ -229,7 +229,7 @@ services:
   # без ядра. Том данных общий — мастерские лежат в /data/make, ядро в них не пишет.
   make:
     profiles: ["make"]
-    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:ed75682b7bd9898c712e99330a7e8665abc7fdea}
+    image: ${SISLEXA_MAKE_IMAGE:-ghcr.io/sislex/make-api:9f0bd2ade323ef04d847153a26493b8ab2a03f34}
     mem_limit: 512m
     environment:
       HOST: 0.0.0.0

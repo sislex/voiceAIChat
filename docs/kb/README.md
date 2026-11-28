@@ -16,8 +16,8 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-11-14 | ⚠ 23 коммит(ов) в areas после проверенного SHA: 9f834642 chore(ui): pin Core UI 1.5.67 … |
 | [conversation-groups.md](conversation-groups.md) | Группы и архив бесед | 2026-11-13 | ⚠ 20 коммит(ов) в areas после проверенного SHA: c65d8895 feat(test-plan): browser test plan per library and an admin route … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-11-19 | ⚠ 7 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-26 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 30 коммит(ов) в areas после проверенного SHA: 2150d895 Pin release train bd7f5707-527b-41d0-94a0-3dd30c9e65fe … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-11-28 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-11-14 | ⚠ 31 коммит(ов) в areas после проверенного SHA: 1f45d605 Pin release train f6beff01-5e02-4525-b260-da89e2b50500 … |
 | [features/development-preview.md](features/development-preview.md) | Development CI: isolated Docker preview and browser evidence | 2026-11-09 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-11-13 | ⚠ 1 коммит(ов) в areas после проверенного SHA: 3ae3d064 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX |
 | [features/kanban-assistant.md](features/kanban-assistant.md) | Канбан-ассистент: инструменты проекта, управление UI и оркестрация задач | 2026-11-17 | ⚠ 27 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
@@ -31,7 +31,7 @@
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-11-14 | ⚠ 14 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [features/release-composition.md](features/release-composition.md) | Состав релиза из опубликованных выпусков приложений | 2026-11-02 | ✓ |
 | [features/release-gate-plan.md](features/release-gate-plan.md) | Проверки по замене закреплённых архивов | 2026-11-13 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 29 коммит(ов) в areas после проверенного SHA: 2150d895 Pin release train bd7f5707-527b-41d0-94a0-3dd30c9e65fe … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-11-14 | ⚠ 30 коммит(ов) в areas после проверенного SHA: 1f45d605 Pin release train f6beff01-5e02-4525-b260-da89e2b50500 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-11-13 | ⚠ 3 коммит(ов) в areas после проверенного SHA: 3ae3d064 fix(db): retry Postgres schema init on deadlock and skip a needless exclusive DROP INDEX … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-11-14 | ⚠ 15 коммит(ов) в areas после проверенного SHA: 4f8ef00e fix(storage): conversation titles for legacy chat spaces, attachment folders in local date … |
 | [glossary.md](glossary.md) | Словарь терминов: роли, сервисы, стенды, выпуск, техника | 2026-11-01 | ✓ |
@@ -45,10 +45,10 @@
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-11-18 | ⚠ 12 коммит(ов) в areas после проверенного SHA: e4ae10f8 fix(test-plan): no test plan route in the minimal build … |
 | [server-internals.md](server-internals.md) | server-internals | 2026-11-22 | ⚠ 4 коммит(ов) в areas после проверенного SHA: db2253d2 feat(prod): open the storage blob node on Caddy 8795 for dev stands; fix overlay build context … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-11-17 | ⚠ 13 коммит(ов) в areas после проверенного SHA: a57d091a feat(model-api): a stopped answer gets its actual cost once the run is settled … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 27 коммит(ов) в areas после проверенного SHA: 2150d895 Pin release train bd7f5707-527b-41d0-94a0-3dd30c9e65fe … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-11-14 | ⚠ 28 коммит(ов) в areas после проверенного SHA: 1f45d605 Pin release train f6beff01-5e02-4525-b260-da89e2b50500 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-11-09 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 16 коммит(ов) в areas после проверенного SHA: db2253d2 feat(prod): open the storage blob node on Caddy 8795 for dev stands; fix overlay build context … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 27 коммит(ов) в areas после проверенного SHA: 2150d895 Pin release train bd7f5707-527b-41d0-94a0-3dd30c9e65fe … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-11-21 | ⚠ 20 коммит(ов) в areas после проверенного SHA: 2b7f9f54 feat(public): public:dev starts storage with STORAGE_DEV_USER … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-11-14 | ⚠ 28 коммит(ов) в areas после проверенного SHA: 1f45d605 Pin release train f6beff01-5e02-4525-b260-da89e2b50500 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-11-17 | ⚠ 33 коммит(ов) в areas после проверенного SHA: a9efc02a chore(contracts): accept the reviewed Identity 1.6.2 baseline for the Shared archive … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться sislexa | 2026-10-20 | ✓ |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-11-04 | ✓ |
@@ -65,8 +65,9 @@
 
 ## Журнал сессий
 
-Всего записей: 1557. Последние:
+Всего записей: 1558. Последние:
 
+- [2026-11-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-39ead8f0-85fb-470f-ab02-abc8bce400cc.md](log/2026-11-28-alexeys-macbook-air-tailae39a6-ts-net-release-train-39ead8f0-85fb-470f-ab02-abc8bce400cc.md) — release-train-39ead8f0-85fb-470f-ab02-abc8bce400cc
 - [2026-11-26-alexeys-macbook-air-tailae39a6-ts-net-release-train-490da406-8410-4a21-8870-dd5e779a1d1e.md](log/2026-11-26-alexeys-macbook-air-tailae39a6-ts-net-release-train-490da406-8410-4a21-8870-dd5e779a1d1e.md) — release-train-490da406-8410-4a21-8870-dd5e779a1d1e
 - [2026-11-26-alexeys-macbook-air-tailae39a6-ts-net-prod-storage-overlay.md](log/2026-11-26-alexeys-macbook-air-tailae39a6-ts-net-prod-storage-overlay.md) — prod-storage-overlay
 - [2026-11-26-alexeys-macbook-air-2-release-train-f6beff01-5e02-4525-b260-da89e2b50500.md](log/2026-11-26-alexeys-macbook-air-2-release-train-f6beff01-5e02-4525-b260-da89e2b50500.md) — release-train-f6beff01-5e02-4525-b260-da89e2b50500
@@ -76,7 +77,6 @@
 - [2026-11-25-alexeys-macbook-air-tailae39a6-ts-net-release-train-afaf1ffa-fe02-49c9-be1e-c7bbc838f08d.md](log/2026-11-25-alexeys-macbook-air-tailae39a6-ts-net-release-train-afaf1ffa-fe02-49c9-be1e-c7bbc838f08d.md) — release-train-afaf1ffa-fe02-49c9-be1e-c7bbc838f08d
 - [2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f.md](log/2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f.md) — release-train-c5b1b253-262c-40e1-b9ea-d274fe7a952f
 - [2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-935a5895-b79c-4b15-a38c-7df0980412f5.md](log/2026-11-24-alexeys-macbook-air-tailae39a6-ts-net-release-train-935a5895-b79c-4b15-a38c-7df0980412f5.md) — release-train-935a5895-b79c-4b15-a38c-7df0980412f5
-- [2026-11-23-public-live-stand.md](log/2026-11-23-public-live-stand.md) — public-live-stand
 
 ## Исторические планы
 

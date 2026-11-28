@@ -1,6 +1,6 @@
 ---
-updated: 2026-11-26
-checked: 66da7f1b
+updated: 2026-11-28
+checked: f8df2b64
 title: Деплой: Docker, HTTPS, прод-сервер, env
 aliases:
   - core:deploy.md#стенд-за-3-шага
@@ -3948,3 +3948,6 @@ internal Sislexa knowledge base is neither listed nor injected for public users.
 
 <!-- release-train:f6beff01-5e02-4525-b260-da89e2b50500 -->
 - sislex/make: 1.8.30
+
+<!-- release-train:39ead8f0-85fb-470f-ab02-abc8bce400cc -->
+- sislex/make: 1.8.31
